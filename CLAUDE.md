@@ -76,27 +76,44 @@ sozinho). Pedido original:
 
 Isso está implementado no `index.html`:
 - 5º tipo de inventário em "Módulo 1" (`NewInventory`): "Lista Importada (Excel)".
-- Botão "Baixar modelo padrão (.xlsx)" (`buildImportTemplateWorkbook`) — template com
-  colunas Código* (obrigatório), Descrição, Endereço, Almoxarifado (opcionais), gerado via
-  SheetJS.
+- Botão "Baixar modelo padrão (.xlsx)" (`buildImportTemplateWorkbook`) — template com as
+  colunas **Produto\* (obrigatório), Descrição, End, Sistema, Fisico**, aba "Contar". Esse
+  layout foi ajustado para bater exatamente com a planilha real que o cliente já usa hoje
+  pra contar (ver `Cont_13.07.xlsx`, enviada durante a conversa) — ele não gera a planilha a
+  partir do zero, sempre sobe esse mesmo modelo.
 - Upload + parse client-side (`parseImportedListRows`, usando `XLSX.read` +
-  `sheet_to_json`), com normalização de cabeçalho (acentos/maiúsculas via
-  `normalizeHeaderKey`), validação da coluna Código obrigatória, remoção de duplicatas
+  `sheet_to_json`), com normalização de cabeçalho (`normalizeHeaderKey` cobre
+  acentos/maiúsculas e os dois apelidos de coluna — "Produto"/"Código" pro código,
+  "End"/"Endereço" pro endereço), validação do código obrigatório, remoção de duplicatas
   (mantendo a 1ª ocorrência) e um resumo antes de confirmar (linhas válidas, sem código,
   duplicadas, não encontradas no cache local de 300 produtos).
+- A coluna **Sistema** (saldo do sistema já vindo na própria planilha) é o que faz a
+  importação funcionar de verdade: o cache local do protótipo só tem 300 dos 10.512 SKUs
+  reais, então na prática quase todo código importado não está nele (na planilha real de
+  teste, só 1 de 23 códigos batia com o cache). Quando a planilha traz "Sistema", esse
+  valor prevalece sobre o cache local (mais recente) e a comparação de contagem funciona
+  normalmente mesmo pra item fora do cache — só fica sem comparação automática se o código
+  não estiver no cache **e** a planilha também não trouxer "Sistema" pra ele
+  (`resumo.semSaldoDisponivel` cobre esse caso na tela de criação do inventário).
+- A coluna **Fisico** fica no modelo só por compatibilidade com a planilha que o cliente já
+  usa — o app ignora essa coluna no import, já que a contagem física é feita
+  interativamente dentro do app (câmera + campo de quantidade), não escrita à mão na
+  planilha antes de subir.
 - `ImportedListCountFlow` (paralelo ao `RandomCountFlow`) percorre a lista importada na
   ordem exata da planilha, sem embaralhar. Ao voltar para o inventário no meio da lista,
   retoma a partir de `inv.contados` — não reinicia do item 1 (isso reaproveita o mesmo
   padrão dos outros fluxos de contagem de item único, que também levam de volta para a
   tela de inventários a cada item).
-- Itens cujo código não está no cache local de 300 produtos funcionam normalmente,
-  usando os dados que a própria planilha trouxer como fallback (`foraDoCacheLocal: true`
-  no objeto de produto sintético) — `CountStep` mostra um aviso visual e pula a
-  comparação de saldo (`hasSaldoLocal` controla isso), enviando sempre para análise do
-  líder. Essa limitação é do protótipo (só 300 dos 10.512 SKUs reais); em produção, com o
-  banco sincronizado, o saldo real apareceria normalmente.
+- Itens cujo código não está no cache local de 300 produtos funcionam normalmente, usando
+  os dados que a própria planilha trouxer como fallback (`foraDoCacheLocal: true` no objeto
+  de produto sintético). `CountStep` mostra um aviso visual diferente dependendo do caso: se
+  a planilha trouxe "Sistema" pra esse código, avisa que só dados complementares (unidade,
+  família, valor em estoque) estão faltando mas a comparação funciona; se não trouxe, avisa
+  que não há saldo pra comparar e a contagem vai direto pra análise do líder
+  (`hasSaldoLocal` controla os dois ramos).
 - `MyCounts` e `RecountsPanel` foram ajustados para exibir "—" em vez de quebrar quando
-  `diferenca`/`percentual` são `null` (caso dos itens fora do cache local).
+  `diferenca`/`percentual` são `null` (caso dos itens fora do cache local sem "Sistema" na
+  planilha).
 
 ## Convenções de design (não quebrar ao continuar)
 

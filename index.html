@@ -397,32 +397,44 @@ function generateReportWorkbook(counts, inventories){
 
 /* ---------------- IMPORTAÇÃO DE LISTA DE CONTAGEM (Excel) ---------------- */
 
-const IMPORT_TEMPLATE_COLUMNS = ['Código', 'Descrição', 'Endereço', 'Almoxarifado'];
+// Modelo alinhado com a planilha real que o cliente já usa para contagem
+// (colunas "Produto", "Descrição", "End", "Sistema", "Fisico") — ver
+// Cont_13.07.xlsx. "Fisico" fica em branco no modelo: a contagem física é
+// feita dentro do app, não escrita à mão na planilha.
+const IMPORT_TEMPLATE_COLUMNS = ['Produto', 'Descrição', 'End', 'Sistema', 'Fisico'];
 
 // Aceita variações de acentuação/maiúsculas no cabeçalho da planilha que o
-// usuário sobe (ex: "codigo", "CÓDIGO", "Codigo" caem todos em "codigo").
+// usuário sobe (ex: "codigo", "CÓDIGO", "Codigo" caem todos em "codigo"), e
+// também os dois formatos de coluna já vistos: o nome "cheio" (Código,
+// Endereço) e o abreviado usado na planilha real do cliente (Produto, End).
 function normalizeHeaderKey(h){
   return String(h||'').normalize('NFD').replace(/[̀-ͯ]/g,'').trim().toLowerCase();
 }
 
 const IMPORT_HEADER_MAP = {
   codigo:'codigo',
+  produto:'codigo',
   descricao:'descricao',
   endereco:'endereco',
+  end:'endereco',
   almoxarifado:'almoxarifado',
+  sistema:'saldoSistema',
+  saldosistema:'saldoSistema',
+  saldo:'saldoSistema',
 };
 
 function buildImportTemplateWorkbook(){
   const XLSX = window.XLSX;
   const wb = XLSX.utils.book_new();
   const exemplo = [{
-    'Código': PRODUCTS[0] ? PRODUCTS[0].codigo : '000.35310',
+    'Produto': PRODUCTS[0] ? PRODUCTS[0].codigo : '000.35310',
     'Descrição': PRODUCTS[0] ? PRODUCTS[0].descricao : 'Exemplo de item',
-    'Endereço': '',
-    'Almoxarifado': 'Almox 01',
+    'End': '',
+    'Sistema': PRODUCTS[0] ? PRODUCTS[0].saldoSistema : 0,
+    'Fisico': '',
   }];
   const ws = XLSX.utils.json_to_sheet(exemplo, {header: IMPORT_TEMPLATE_COLUMNS});
-  XLSX.utils.book_append_sheet(wb, ws, 'Lista para Contagem');
+  XLSX.utils.book_append_sheet(wb, ws, 'Contar');
   return wb;
 }
 
@@ -430,6 +442,12 @@ function buildImportTemplateWorkbook(){
 // de itens válidos (código não vazio, duplicatas removidas mantendo a 1ª
 // ocorrência — preserva a ordem original da planilha) mais um resumo para
 // exibir antes de confirmar a criação do inventário.
+//
+// A coluna "Sistema" (saldo do sistema já trazido na própria planilha) é o
+// que viabiliza contar itens fora do cache local de 300 SKUs do protótipo:
+// sem ela, qualquer código que não estivesse nesses 300 ficaria sem saldo
+// para comparar. Quando presente, prevalece sobre o saldo do cache local
+// (mock estático) por ser o dado mais recente que o cliente trouxe.
 function parseImportedListRows(rawRows){
   let totalLinhas = 0;
   let semCodigo = 0;
@@ -448,19 +466,26 @@ function parseImportedListRows(rawRows){
     if(!codigo){ semCodigo++; return; }
     if(vistos.has(codigo)){ duplicadas++; return; }
     vistos.add(codigo);
+    let saldoSistema = null;
+    if(norm.saldoSistema!=null && String(norm.saldoSistema).trim()!==''){
+      const n = Number(String(norm.saldoSistema).replace(',', '.'));
+      if(!Number.isNaN(n)) saldoSistema = n;
+    }
     itens.push({
       codigo,
       descricao: norm.descricao!=null ? String(norm.descricao).trim() : '',
       endereco: norm.endereco!=null ? String(norm.endereco).trim().toUpperCase() : '',
       almoxarifado: norm.almoxarifado!=null ? String(norm.almoxarifado).trim() : '',
+      saldoSistema,
     });
   });
 
   const naoEncontrados = itens.filter(it => !PRODUCTS.some(p=>p.codigo===it.codigo)).length;
+  const semSaldoDisponivel = itens.filter(it => !PRODUCTS.some(p=>p.codigo===it.codigo) && it.saldoSistema==null).length;
 
   return {
     itens,
-    resumo: { totalLinhas, validas: itens.length, semCodigo, duplicadas, naoEncontrados },
+    resumo: { totalLinhas, validas: itens.length, semCodigo, duplicadas, naoEncontrados, semSaldoDisponivel },
   };
 }
 
@@ -1089,11 +1114,14 @@ function NewInventory({users, onCreate}){
             {importResumo.duplicadas>0 && <div>Códigos duplicados removidos: <strong>{importResumo.duplicadas}</strong></div>}
             {importResumo.semCodigo>0 && <div>Linhas sem código (ignoradas): <strong>{importResumo.semCodigo}</strong></div>}
             <div>Códigos não encontrados no cache local (300 SKUs): <strong>{importResumo.naoEncontrados}</strong></div>
+            {importResumo.naoEncontrados>0 && (
+              <div>&nbsp;&nbsp;↳ desses, com saldo do sistema trazido pela própria planilha (coluna "Sistema"): <strong>{importResumo.naoEncontrados - importResumo.semSaldoDisponivel}</strong></div>
+            )}
           </div>
-          {importResumo.naoEncontrados>0 && (
+          {importResumo.semSaldoDisponivel>0 && (
             <div className="divergence-alert" style={{marginTop:12}}>
               <Ic>ℹ</Ic>
-              <span>Itens fora do cache local ainda podem ser contados normalmente — os dados vêm da própria planilha, mas o saldo do sistema não estará disponível para comparação automática (limitação do protótipo, que só tem 300 dos 10.512 SKUs reais).</span>
+              <span><strong>{importResumo.semSaldoDisponivel}</strong> {importResumo.semSaldoDisponivel===1?'item':'itens'} não {importResumo.semSaldoDisponivel===1?'está':'estão'} no cache local de 300 SKUs do protótipo e a planilha não trouxe o saldo do sistema (coluna "Sistema") — ainda {importResumo.semSaldoDisponivel===1?'pode':'podem'} ser contado{importResumo.semSaldoDisponivel===1?'':'s'} normalmente, mas sem comparação automática (vai direto para revisão do líder). Em produção, com o banco sincronizado, o saldo real apareceria para qualquer código.</span>
             </div>
           )}
         </div>
@@ -1334,7 +1362,11 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
       {product.foraDoCacheLocal && (
         <div className="divergence-alert">
           <Ic>ℹ</Ic>
-          <span>Este código não está no cache local de 300 SKUs do protótipo — os dados vieram da planilha importada. O saldo do sistema não está disponível aqui para comparação automática; a contagem será registrada para revisão manual do líder. Em produção, com o banco sincronizado, o saldo real apareceria normalmente.</span>
+          {hasSaldoLocal ? (
+            <span>Este código não está no cache local de 300 SKUs do protótipo, mas o saldo do sistema veio da própria planilha importada (coluna "Sistema") — a comparação funciona normalmente. Só dados complementares (unidade, família, valor em estoque) não estão disponíveis aqui.</span>
+          ) : (
+            <span>Este código não está no cache local de 300 SKUs do protótipo e a planilha não trouxe o saldo do sistema para este item. O saldo não está disponível aqui para comparação automática; a contagem será registrada para revisão manual do líder. Em produção, com o banco sincronizado, o saldo real apareceria normalmente.</span>
+          )}
         </div>
       )}
 
@@ -1618,13 +1650,19 @@ function ImportedListCountFlow({inv, user, onFinish, onAddressProposed, setInven
     return lista.map(item=>{
       const local = PRODUCTS.find(p=>p.codigo===item.codigo);
       if(local){
-        // planilha trouxe um endereço e o cadastro local ainda não tem — usa o da planilha
-        return (item.endereco && !local.enderecoCadastrado)
-          ? {...local, endereco:item.endereco, enderecoCadastrado:true}
-          : local;
+        return {
+          ...local,
+          // planilha trouxe um endereço e o cadastro local ainda não tem — usa o da planilha
+          ...(item.endereco && !local.enderecoCadastrado ? {endereco:item.endereco, enderecoCadastrado:true} : {}),
+          // saldo da própria planilha é mais recente que o cache estático — prevalece quando informado
+          ...(item.saldoSistema!=null ? {saldoSistema:item.saldoSistema} : {}),
+        };
       }
       // código não está no cache local de 300 SKUs — monta o item a partir do
-      // que a própria planilha trouxe (fallback documentado no CLAUDE.md)
+      // que a própria planilha trouxe (fallback documentado no CLAUDE.md). A
+      // coluna "Sistema" da planilha (item.saldoSistema) é o que permite
+      // comparar o saldo mesmo assim — sem ela, fica null e a contagem vai
+      // sem comparação automática para revisão do líder.
       return {
         codigo: item.codigo,
         descricao: item.descricao || item.codigo,
@@ -1635,7 +1673,7 @@ function ImportedListCountFlow({inv, user, onFinish, onAddressProposed, setInven
         almoxarifado: item.almoxarifado || (inv ? inv.almoxarifado : '—'),
         corredor: null,
         rua: null,
-        saldoSistema: null,
+        saldoSistema: item.saldoSistema,
         custoUnit: 0,
         valorFinanceiro: 0,
         semMovimentoRecente: false,
