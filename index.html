@@ -753,6 +753,13 @@ function App(){
     logHistory(target.nome, novoStatus==='bloqueado' ? 'Usuário bloqueado' : 'Usuário desbloqueado', currentUser?currentUser.nome:'—');
   }
 
+  function deleteUser(userId){
+    const target = users.find(u=>u.id===userId);
+    if(!target || userId===currentUserId) return;
+    setUsers(prev=>prev.filter(u=>u.id!==userId));
+    logHistory(target.nome, 'Usuário excluído', currentUser?currentUser.nome:'—');
+  }
+
   // ---- Logout automático por inatividade ----
   useEffect(()=>{
     if(!currentUser) return;
@@ -806,6 +813,7 @@ function App(){
             currentUser={currentUser}
             goto={goto}
             onToggleUserStatus={toggleUserStatus}
+            onDeleteUser={deleteUser}
             onAdminPasswordAction={applyAdminPasswordAction}
             passwordRequests={passwordRequests}
             onResolvePasswordRequest={resolvePasswordRequest}
@@ -2492,11 +2500,12 @@ function isLoginDuplicado(users, usuario, excludeId){
 
 const USERS_PAGE_SIZE = 8;
 
-function UserManagementPanel({users, currentUser, goto, onToggleUserStatus, onAdminPasswordAction}){
+function UserManagementPanel({users, currentUser, goto, onToggleUserStatus, onDeleteUser, onAdminPasswordAction}){
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [pwAction, setPwAction] = useState(null); // userId currently doing a password action
   const [pwValue, setPwValue] = useState('');
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
   const filtered = useMemo(()=>{
     const q = search.trim().toLowerCase();
@@ -2544,6 +2553,9 @@ function UserManagementPanel({users, currentUser, goto, onToggleUserStatus, onAd
                   <button className="btn btn-outline" style={{padding:'7px 10px',fontSize:10.5}} onClick={()=>goto('userForm', {mode:u.id, initialData:u})}>Editar</button>
                   <button className="btn btn-outline" style={{padding:'7px 10px',fontSize:10.5}} onClick={()=>onToggleUserStatus(u.id)}>{u.status==='bloqueado'?'Desbloquear':'Bloquear'}</button>
                   <button className="btn btn-outline" style={{padding:'7px 10px',fontSize:10.5}} onClick={()=>{setPwAction(pwAction===u.id?null:u.id); setPwValue('');}}>Redefinir senha</button>
+                  {u.id!==currentUser.id && (
+                    <button className="btn btn-danger" style={{padding:'7px 10px',fontSize:10.5,width:'auto'}} onClick={()=>setConfirmDeleteId(u.id)}>Excluir</button>
+                  )}
                 </div>
                 {pwAction===u.id && (
                   <div style={{background:'var(--panel-raised)',border:'1px solid var(--line)',borderRadius:8,padding:12,width:260}}>
@@ -2553,6 +2565,15 @@ function UserManagementPanel({users, currentUser, goto, onToggleUserStatus, onAd
                     </div>
                     <input type="text" placeholder="Definir senha manual" value={pwValue} onChange={e=>setPwValue(e.target.value)} style={{width:'100%',padding:8,marginBottom:8,background:'var(--panel)',border:'1px solid var(--line)',borderRadius:6,color:'var(--ink)',fontSize:12}} />
                     <button className="btn btn-primary" style={{padding:'8px',fontSize:10}} disabled={pwValue.length<6} onClick={()=>{onAdminPasswordAction(u.id,'definir',pwValue); setPwAction(null);}}>Confirmar senha definida</button>
+                  </div>
+                )}
+                {confirmDeleteId===u.id && (
+                  <div style={{background:'var(--danger-bg)',border:'1px solid var(--danger)',borderRadius:8,padding:12,width:260}}>
+                    <div style={{fontSize:12,color:'var(--danger)',marginBottom:10}}>Excluir "{u.nome}"? Essa ação não pode ser desfeita.</div>
+                    <div className="btn-row">
+                      <button className="btn btn-secondary" style={{padding:'8px',fontSize:10}} onClick={()=>setConfirmDeleteId(null)}>Cancelar</button>
+                      <button className="btn btn-danger" style={{padding:'8px',fontSize:10}} onClick={()=>{onDeleteUser(u.id); setConfirmDeleteId(null);}}>Confirmar exclusão</button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -2704,7 +2725,7 @@ function AddressValidationPanel({enderecosPropostos=[], onResolve}){
   );
 }
 
-function Settings({role, users=[], currentUser, goto, onToggleUserStatus, onAdminPasswordAction, passwordRequests=[], onResolvePasswordRequest, passwordHistory=[]}){
+function Settings({role, users=[], currentUser, goto, onToggleUserStatus, onDeleteUser, onAdminPasswordAction, passwordRequests=[], onResolvePasswordRequest, passwordHistory=[]}){
   const isAdmin = role==='admin';
   const pendentesSenha = passwordRequests.filter(r=>r.status==='pendente');
 
@@ -2718,6 +2739,7 @@ function Settings({role, users=[], currentUser, goto, onToggleUserStatus, onAdmi
           currentUser={currentUser}
           goto={goto}
           onToggleUserStatus={onToggleUserStatus}
+          onDeleteUser={onDeleteUser}
           onAdminPasswordAction={onAdminPasswordAction}
         />
       ) : (
