@@ -530,6 +530,15 @@ em si foi apagado, sua lógica interna virou parte do corpo de `Home`.
   dentro do media query. Se algum dia mover mais conteúdo `.pnl-*`/`desktop-*` pra dentro
   de um componente que também renderiza no mobile, checar sempre esse padrão.
 
+**Atualização — rótulo voltou a ser "Início"**: o cliente pediu pra trocar o nome do
+item da `Sidebar` de volta pra "Início" (com o ícone de casa, `ic:'home'`) — o conteúdo
+da tela (KPIs, atividades, donut) não mudou, só o nome exibido. Ajustado em 3 lugares pra
+não ficar inconsistente entre sidebar e header: `Sidebar.items[0]` (`label:'Início'`,
+`ic:'home'`), `VIEW_TITLES.home` (`'Início'`, usado pelo título do `DesktopTopbar`), e o
+fallback `VIEW_TITLES[view] || 'Início'` no próprio `DesktopTopbar`. O ícone
+`layoutDashboard` continua definido em `DICON_PATHS` mesmo sem uso no momento — barato
+manter, pode servir de novo se precisar de um ícone de dashboard em outro lugar.
+
 ## Tela de login vira o mockup de 2 colunas (referência exata do cliente)
 
 A primeira versão da tela de login (card único centralizado, ver seção "Rebrand" acima)

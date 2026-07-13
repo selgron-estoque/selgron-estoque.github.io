@@ -1348,7 +1348,7 @@ function TopBar({user, role, onHome, onLogout}){
 }
 
 const VIEW_TITLES = {
-  home:'Dashboard',
+  home:'Início',
   inventories:'Inventários Pendentes',
   newInventory:'Novo Inventário',
   pickCountType:'Nova Contagem',
@@ -1384,7 +1384,7 @@ function SubBar({view, goto}){
 function Sidebar({view, goto, role, user}){
   const podeValidarEnderecos = role==='lider'||role==='admin';
   const items = [
-    {id:'home', ic:'layoutDashboard', label:'Dashboard'},
+    {id:'home', ic:'home', label:'Início'},
     {id:'inventories', ic:'box', label:'Inventários'},
     {id:'pickCountType', ic:'search', label:'Contagens'},
     {id:'recounts', ic:'repeat', label:'Recontagens'},
@@ -1436,7 +1436,7 @@ function DesktopTopbar({view, user, role, onLogout, subtitle, rightExtra}){
   return (
     <div className="desktop-topbar">
       <div className="desktop-topbar-titlewrap">
-        <div className="desktop-topbar-title">{VIEW_TITLES[view] || 'Dashboard'}</div>
+        <div className="desktop-topbar-title">{VIEW_TITLES[view] || 'Início'}</div>
         {subtitle && <div className="desktop-topbar-subtitle">{subtitle}</div>}
       </div>
       <div className="desktop-topbar-right">
