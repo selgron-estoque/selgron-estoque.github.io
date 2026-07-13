@@ -36,22 +36,43 @@ genérica, exista ou não o usuário informado — evita que alguém descubra lo
 tentativa e erro.
 
 **Segurança implementada no protótipo:**
-- Sessão individual por usuário logado (guardada em memória — sem localStorage, que não é
-  suportado em artifacts).
+- Sessão individual por usuário logado, guardada só em memória de propósito — recarregar
+  a página sempre exige login de novo (ver "Persistência local" abaixo para o que já
+  sobrevive a recarregar).
 - Logout manual (botão no topo) e logout automático após 15 minutos de inatividade (sem
   clique, toque ou tecla).
 - Bloqueio de usuário pelo administrador impede login imediatamente.
 - Controle de permissões por perfil em cada tela (criar inventário só líder/admin, gestão
   de usuários só admin, etc.).
 
-**⚠️ O que isso NÃO é ainda:** o protótipo guarda as senhas em texto puro em memória do
-navegador só para simular o fluxo de login sem backend. Isso é aceitável apenas para
+**⚠️ O que isso NÃO é ainda:** o protótipo guarda as senhas em texto puro (agora também no
+`localStorage` do navegador, ver abaixo — antes só existiam em memória enquanto a aba
+ficava aberta) só para simular o fluxo de login sem backend. Isso é aceitável apenas para
 demonstração. Em produção, a autenticação deve usar o **Supabase Auth** (ou equivalente),
 com hash de senha (bcrypt/argon2) feito no servidor — a senha nunca deve trafegar em texto
 puro nem ficar visível para o administrador. As ações "gerar senha temporária" e "definir
 senha manualmente" no protótipo mostram o valor em texto só para fins de demonstração; na
 versão real, isso seria enviado por um canal seguro (e-mail/SMS) e nunca ficaria gravado
 em log.
+
+## Atualização: Persistência local (localStorage)
+
+Antes desta atualização, tudo vivia só em `useState` — recarregar a página apagava
+usuários criados, inventários, contagens, tudo. Agora os dados que o app gera (usuários,
+inventários, contagens, endereços propostos, histórico de senha, histórico de envio de
+relatório) são salvos no `localStorage` do navegador e recarregados automaticamente na
+próxima abertura da página, **neste mesmo aparelho**.
+
+- **O que isso resolve**: perder o trabalho ao recarregar a página sem querer, fechar a
+  aba, ou o tablet reiniciar o navegador.
+- **O que isso NÃO resolve**: sincronizar dados entre tablets/operadores diferentes. Cada
+  aparelho tem sua própria cópia isolada do `localStorage` — se o líder cria um
+  inventário no tablet dele, ele não aparece automaticamente no tablet do operador. Pra
+  isso, precisa do backend real (Supabase) — ver seção "Backend (Supabase) — desenhado,
+  ainda não aplicado" abaixo. Essa persistência local é um passo intermediário, não um
+  substituto.
+- A sessão de login continua **não** persistindo de propósito (ver nota de segurança
+  acima) — só os dados operacionais.
 
 O protótipo agora carrega **300 itens reais** extraídos de uma exportação da tabela SB2
 (Saldo em Estoque) do Protheus — uma amostra dos 10.512 SKUs do Almox 01 (150 de maior

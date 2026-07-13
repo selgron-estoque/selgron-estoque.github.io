@@ -613,28 +613,67 @@ function parseImportedListRows(rawRows){
 /* ---------------- ICONS (inline, no external icon lib) ---------------- */
 const Ic = ({children}) => <span aria-hidden="true">{children}</span>;
 
+/* ---------------- PERSISTÊNCIA (localStorage) ---------------- */
+// Primeiro passo pra sair do protótipo 100% em memória: os dados que o app
+// gera (usuários, inventários, contagens, endereços propostos, histórico)
+// agora sobrevivem a recarregar a página / fechar o navegador NO MESMO
+// aparelho. Isso NÃO sincroniza entre tablets/operadores diferentes — cada
+// aparelho guarda sua própria cópia local. Pra sincronizar de verdade entre
+// aparelhos precisa do backend real (ver backend/schema.sql e README.md).
+// STORAGE_VERSION prefixa a chave — se o formato dos dados mudar de um jeito
+// incompatível no futuro, basta subir a versão pra ignorar dados antigos em
+// vez de o app quebrar tentando ler um formato que não bate mais.
+const STORAGE_VERSION = 'v1';
+
+function loadPersisted(key, fallback){
+  try{
+    const raw = window.localStorage.getItem('stock360:'+STORAGE_VERSION+':'+key);
+    if(raw==null) return fallback;
+    return JSON.parse(raw);
+  } catch(err){
+    return fallback;
+  }
+}
+
+function usePersistedState(key, initialValue){
+  const [state, setState] = useState(()=>loadPersisted(key, initialValue));
+  useEffect(()=>{
+    try{
+      window.localStorage.setItem('stock360:'+STORAGE_VERSION+':'+key, JSON.stringify(state));
+    } catch(err){
+      // localStorage indisponível (modo privado, cota cheia, etc.) — ignora
+      // silenciosamente, o app continua funcionando só sem persistir.
+    }
+  }, [key, state]);
+  return [state, setState];
+}
+
 /* ---------------- APP SHELL ---------------- */
 
 const SESSION_TIMEOUT_MS = 15 * 60 * 1000; // 15 min de inatividade → logout automático
 
 function App(){
-  const [users, setUsers] = useState(USERS_SEED);
+  // Dados que o app gera ficam salvos no localStorage (ver usePersistedState
+  // acima) — sobrevivem a recarregar/fechar o navegador neste aparelho.
+  // Sessão de login (currentUserId) e navegação (view/flowState) continuam só
+  // em memória de propósito — cada recarregamento volta pra tela de login.
+  const [users, setUsers] = usePersistedState('users', USERS_SEED);
   const [currentUserId, setCurrentUserId] = useState(null);
   const [logoutNotice, setLogoutNotice] = useState('');
 
   const [view, setView] = useState('home');
   const [flowState, setFlowState] = useState(null); // params passed into a flow
 
-  const [inventories, setInventories] = useState([
+  const [inventories, setInventories] = usePersistedState('inventories', [
     {id:'INV-001', nome:'Inventário Cíclico Julho/2026', almoxarifado:'Almox 01', responsavel:'Carlos Mendes', data:'2026-07-14', tipo:'Contagem Aleatória', qtdItens:20, status:'em_andamento', contados: 6},
     {id:'INV-002', nome:'Inventário Curva A — Rolamentos', almoxarifado:'Almox 01', responsavel:'Fernanda Lima', data:'2026-07-15', tipo:'Contagem por Curva ABC', qtdItens:12, status:'pendente', contados: 0},
   ]);
 
-  const [counts, setCounts] = useState([]); // finalized counts
-  const [enderecosPropostos, setEnderecosPropostos] = useState([]); // endereços informados por operadores, aguardando validação do líder
-  const [passwordRequests, setPasswordRequests] = useState([]); // solicitações de "esqueci minha senha"
-  const [passwordHistory, setPasswordHistory] = useState([]); // histórico de alterações de senha
-  const [reportSendHistory, setReportSendHistory] = useState([]); // histórico de envios de relatório por e-mail
+  const [counts, setCounts] = usePersistedState('counts', []); // finalized counts
+  const [enderecosPropostos, setEnderecosPropostos] = usePersistedState('enderecosPropostos', []); // endereços informados por operadores, aguardando validação do líder
+  const [passwordRequests, setPasswordRequests] = usePersistedState('passwordRequests', []); // solicitações de "esqueci minha senha"
+  const [passwordHistory, setPasswordHistory] = usePersistedState('passwordHistory', []); // histórico de alterações de senha
+  const [reportSendHistory, setReportSendHistory] = usePersistedState('reportSendHistory', []); // histórico de envios de relatório por e-mail
 
   function logReportSend(entry){
     setReportSendHistory(prev=>[entry, ...prev]);

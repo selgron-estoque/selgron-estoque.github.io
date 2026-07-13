@@ -36,15 +36,47 @@ quebrar o `index.html` em componentes (`src/components/...`), mover os dados moc
 
 | Funcionalidade | Estado |
 |---|---|
-| Login, sessão, logout por inatividade | Real (mas senha em texto puro em memória — só protótipo, ver aviso no `README.md`) |
-| CRUD de usuários, recuperação de senha | Real na UI, mas tudo em memória (some ao recarregar) |
+| Login, sessão, logout por inatividade | Real (mas senha em texto puro — só protótipo, ver aviso no `README.md`). Sessão em si continua só em memória de propósito — recarregar a página sempre volta pro login |
+| CRUD de usuários, recuperação de senha | Real na UI, persistido no `localStorage` deste navegador (sobrevive a recarregar a página/fechar o navegador neste aparelho) |
 | 300 produtos carregados de uma exportação real da tabela SB2 do Protheus | Dados reais, mas cache estático embutido no JS (`RAW_SB2_PRODUCTS`) — não sincroniza |
 | Leitura de QR/código de barras pela câmera | Real (requer HTTPS/localhost + permissão) |
 | Geração de relatório Excel (.xlsx) | Real, roda no navegador via SheetJS |
 | Envio por e-mail | Parcial — baixa o Excel e abre um rascunho `mailto:` (não anexa automaticamente, é limitação de navegador, documentada no `README.md`) |
-| Fila de recontagem de itens divergentes, histórico de rodadas | Real na UI, em memória |
+| Fila de recontagem de itens divergentes, histórico de rodadas | Real na UI, persistido no `localStorage` (ver acima) |
 | Endereços físicos dos itens | Não existem ainda no Protheus — o app tem um fluxo de captura incremental (operador informa → líder confirma) |
-| Persistência real (banco de dados) | **Não existe ainda** — é o próximo passo grande |
+| Persistência local (localStorage) | **Implementada** (ver seção abaixo) — sobrevive a recarregar a página, mas só neste aparelho/navegador |
+| Persistência real sincronizada entre aparelhos (banco de dados) | **Não existe ainda** — é o próximo passo grande, schema já desenhado em `backend/` |
+
+## Persistência local via localStorage — primeiro passo antes do backend real
+
+O usuário pediu pra "começar a trabalhar em salvar os dados lançados no app". Sem um
+projeto Supabase real conectado ainda (precisa de credenciais que só o usuário pode
+gerar — ver seção "Backend desenhado" abaixo), o primeiro passo possível sem depender de
+infraestrutura externa foi persistir os dados no `localStorage` do próprio navegador.
+
+- `usePersistedState(key, initialValue)` (perto de `App()`) — hook genérico: lê do
+  `localStorage` na inicialização (`loadPersisted`, com fallback silencioso pro valor
+  padrão se não existir nada salvo ainda ou o JSON estiver corrompido) e grava a cada
+  mudança via `useEffect`. Chave prefixada com `stock360:v1:` — o `v1` existe pra, se o
+  formato dos dados mudar de um jeito incompatível no futuro, bastar subir pra `v2` e o
+  app ignora dados antigos em vez de quebrar tentando ler um formato que não bate mais.
+- O que passou a persistir: `users`, `inventories`, `counts`, `enderecosPropostos`,
+  `passwordRequests`, `passwordHistory`, `reportSendHistory` — tudo que o app hoje
+  guarda em `useState` no nível de `App()` e que representa dado "lançado" pelo usuário.
+- O que **não** persiste, de propósito: `currentUserId` (sessão de login) e
+  `view`/`flowState` (navegação). Recarregar a página sempre volta pra tela de login e
+  pra Home — não faz sentido reabrir no meio de um fluxo de contagem sem o contexto
+  todo, e manter sessão logada automaticamente teria implicação de segurança maior
+  (tablet compartilhado no chão de fábrica).
+- **Limitação importante, que o usuário já sabe**: isso é persistência POR APARELHO —
+  cada tablet/navegador tem sua própria cópia do `localStorage`, não sincroniza entre
+  operadores. Dois tablets contando o mesmo inventário não veem o progresso um do
+  outro. Resolver isso de verdade é exatamente o que o backend real (Supabase) faz —
+  esse passo aqui só evita perder os dados a cada recarregamento enquanto isso não vem.
+- **Nota de segurança**: as senhas de usuário (texto puro, já um limitação conhecida do
+  protótipo — ver `README.md`) agora ficam gravadas em disco via `localStorage`, não só
+  em memória RAM como antes. Ainda é aceitável só para demonstração/protótipo; reforça
+  ainda mais a necessidade do Supabase Auth real antes de qualquer uso em produção.
 
 ## Backend desenhado, ainda não aplicado
 
