@@ -559,6 +559,10 @@ function App(){
     setCounts(prev=>prev.map(c=>c.id===countId?{...c, statusAprovacao:'aprovado_lider', aprovadoPor:currentUser?currentUser.nome:'—', aprovadoEm:new Date().toLocaleString('pt-BR')}:c));
   }
 
+  function deleteInventory(id){
+    setInventories(prev=>prev.filter(i=>i.id!==id));
+  }
+
   function logHistory(usuarioAlvo, acao, administrador){
     setPasswordHistory(prev=>[{
       id:'HIST-'+Math.random().toString(36).slice(2,7).toUpperCase(),
@@ -682,7 +686,7 @@ function App(){
       {view!=='home' && <SubBar view={view} goto={goto} />}
       <div className="content">
         {view==='home' && <Home role={role} user={currentUser} inventories={inventories} counts={counts} goto={goto} />}
-        {view==='inventories' && <InventoryList inventories={inventories} goto={goto} role={role} />}
+        {view==='inventories' && <InventoryList inventories={inventories} goto={goto} role={role} counts={counts} onDelete={deleteInventory} />}
         {view==='newInventory' && (role==='lider'||role==='admin') && <NewInventory users={users} onCreate={(inv)=>{setInventories(prev=>[inv,...prev]); goto('inventories');}} />}
         {view==='pickCountType' && <PickCountType inv={flowState} goto={goto} />}
         {view==='randomCount' && <RandomCountFlow inv={flowState} user={currentUser} onFinish={(c)=>{setCounts(p=>[c,...p]); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} />}
@@ -958,10 +962,21 @@ function Home({role, user, inventories, counts, goto}){
 
 /* ---------------- MÓDULO 1: INVENTÁRIOS ---------------- */
 
-function InventoryList({inventories, goto, role}){
+function InventoryList({inventories, goto, role, counts, onDelete}){
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+
   if(inventories.length===0){
     return <div className="empty-state"><div className="ic"><Ic>📦</Ic></div>Nenhum inventário programado.</div>;
   }
+
+  function handleDownload(inv){
+    if(!window.XLSX) return;
+    const invCounts = (counts||[]).filter(c=>c.inventario===inv.id);
+    const wb = generateReportWorkbook(invCounts, [inv]);
+    const nomeArquivo = inv.nome.replace(/[^\w]+/g,'_');
+    window.XLSX.writeFile(wb, `Stock360_${inv.id}_${nomeArquivo}.xlsx`);
+  }
+
   return (
     <div>
       {(role==='lider'||role==='admin') && (
@@ -988,6 +1003,24 @@ function InventoryList({inventories, goto, role}){
               <div className="progress-bar"><div className="fill" style={{width:pct+'%'}}></div></div>
               <div style={{fontFamily:'var(--font-mono)',fontSize:11.5,color:'var(--ink-dim)',marginTop:6}}>{inv.contados}/{inv.qtdItens} itens contados ({pct}%)</div>
             </div>
+            {role==='admin' && (
+              confirmDeleteId===inv.id ? (
+                <div style={{padding:'0 18px 16px'}} onClick={e=>e.stopPropagation()}>
+                  <div className="divergence-alert" style={{marginBottom:10}}>
+                    <Ic>⚠</Ic><span>Excluir "{inv.nome}"? Essa ação não pode ser desfeita.</span>
+                  </div>
+                  <div className="btn-row">
+                    <button className="btn btn-secondary" onClick={()=>setConfirmDeleteId(null)}>Cancelar</button>
+                    <button className="btn btn-danger" onClick={()=>{onDelete(inv.id); setConfirmDeleteId(null);}}>Confirmar exclusão</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="btn-row" style={{padding:'0 18px 16px'}} onClick={e=>e.stopPropagation()}>
+                  <button className="btn btn-secondary" onClick={()=>handleDownload(inv)}><Ic>⬇</Ic> Baixar</button>
+                  <button className="btn btn-danger" onClick={()=>setConfirmDeleteId(inv.id)}><Ic>🗑</Ic> Excluir</button>
+                </div>
+              )
+            )}
           </div>
         );
       })}
