@@ -265,6 +265,13 @@ O fluxo de "Editar" usuário deixou de ser um formulário inline dentro do card 
   era assim), e a rota `userForm` em `App()` também está atrás de `role==='admin'` —
   redundância proposital, mesma dupla checagem (visibilidade do botão + guarda na rota)
   que o resto do app já faz em outros lugares (ex: `newInventory`).
+- **Excluir usuário** (`deleteUser` em `App()`): botão "Excluir" por linha, com
+  confirmação inline (mesmo padrão do `InventoryList`). Não aparece na própria linha do
+  admin logado (`u.id!==currentUser.id`) — evita se auto-excluir e ficar sem acesso.
+  Fica registrado em `logHistory` (mesmo log de bloqueio/desbloqueio), aparece na tabela
+  "Histórico de Alterações de Senha" mesmo não sendo uma ação de senha — reaproveita o
+  único mecanismo de auditoria que já existe, mesma decisão já tomada pro
+  bloqueio/desbloqueio antes disso.
 
 ## "Endereços Pendentes de Cadastro" saiu de Configurações, virou tela própria
 
