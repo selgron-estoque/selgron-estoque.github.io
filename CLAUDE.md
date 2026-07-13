@@ -1,4 +1,4 @@
-# Stock360 — Contexto do Projeto (para Claude Code)
+# Inventário 360 (repo/pasta: Stock360) — Contexto do Projeto (para Claude Code)
 
 Este arquivo existe para você (Claude Code) entender rápido onde este projeto parou,
 sem precisar reconstruir o histórico de decisões do zero.
@@ -86,7 +86,7 @@ aplicado/deployado ainda** — é um projeto Supabase que precisa ser criado do 
 - `backend/schema.sql` — schema completo (usuários, produtos, saldo em cache, endereços,
   inventários com snapshot de saldo congelado, contagens). Ler os comentários no topo do
   arquivo — explicam por que saldo e endereço têm tratamento diferente (saldo vem do
-  Protheus e é só cache; endereço é dado nativo do Stock360).
+  Protheus e é só cache; endereço é dado nativo do Inventário 360).
 - `backend/functions/sync-saldo-protheus/index.ts` — Edge Function (Deno) que puxa saldo
   do Protheus e atualiza o cache. Ainda não testada contra uma API real do Protheus (o
   cliente ainda não confirmou o endpoint exato).
@@ -206,7 +206,7 @@ O `manifest.json` sozinho não é suficiente pro Safari/iOS — ele ignora manif
 `index.html`: `apple-touch-icon` (várias resoluções), `apple-mobile-web-app-capable`
 (abre em tela cheia ao instalar, sem a UI do Safari), `apple-mobile-web-app-status-bar-style`
 (`default`, combina com a topbar clara do app) e `apple-mobile-web-app-title` (nome curto
-"Stock360" embaixo do ícone — sem isso o iOS usa o `<title>` inteiro, que trunca).
+"Inventário 360" embaixo do ícone — sem isso o iOS usa o `<title>` inteiro, que trunca).
 
 Os ícones (`apple-touch-icon.png` 180×180, variantes 152×152 e 167×167 pra
 iPhone/iPad, `icon-192.png` e `icon-512.png` pro `manifest.json`) foram gerados a partir
@@ -329,6 +329,61 @@ cadastro de usuário e pediu pra tirar dali.
   de role em `App()`, e replicar os mesmos 3 pontos de entrada (Home mobile+desktop,
   Sidebar nav, Sidebar atalhos) — não inventar um 4º lugar novo.
 
+## Rebrand: "Stock360" → "Inventário 360", e nova identidade visual da tela de login
+
+O usuário pediu pra reformular a identidade visual da tela de login e, ao esclarecer o
+escopo (`AskUserQuestion`), confirmou que o nome exibido no app inteiro deveria mudar de
+"Stock360" pra **"Inventário 360"** — não só o texto da tela de login. Decisão importante:
+isso é só o **nome de marca exibido dentro do app**. O repositório GitHub
+(`AlissonSilva-svg/Stock360`) e a pasta local (`/home/user/Stock360`) continuam se
+chamando `Stock360` — não foram renomeados (renomear repo/pasta não foi pedido e quebraria
+os links já existentes). Se o usuário pedir pra renomear o repo/pasta também no futuro,
+isso é uma ação separada e mais delicada — perguntar antes.
+
+**Onde "Inventário 360" passou a aparecer** (substituindo "Stock360"): `<title>` da página,
+`apple-mobile-web-app-title`, `manifest.json` (`name`/`short_name`), `TopBar` (brand-text
+mobile), `Sidebar` (product name desktop), título da tela de login, assunto padrão do
+e-mail de envio de relatório (`ReportSendPanel`). Nomes de arquivo gerados (relatório
+Excel, modelo de importação) passaram a usar `Inventario360_...` (sem acento/espaço,
+convenção de nome de arquivo). O tagline curto ao lado do nome no topbar/sidebar virou
+"Controle Cíclico" (era "Inventário Cíclico" — evita repetir "Inventário" duas vezes ao
+lado de "Inventário 360").
+
+**Tela de login — identidade nova, só para essa tela** (`LoginScreen`, `.login-*` no
+`<style>`): pedido explícito do cliente foi fugir de uma cara de "template Bootstrap
+genérico" e parecer software corporativo/ERP (referências dadas: SAP Fiori, Dynamics 365,
+Oracle Fusion, Power BI Service) — branco predominante, azul-marinho, laranja
+institucional, sem gradiente forte, sem glassmorphism, sem ilustração grande.
+
+- Paleta nova, escopada só pra tela de login (variáveis `--login-navy` `#0F172A`,
+  `--login-gray-50/100/200/400/500`) — não mexe nas variáveis `--bg`/`--panel`/`--ink`
+  usadas pelo resto do app (tablet do operador continua exatamente como estava).
+- Fonte **Inter** (`--font-login`), carregada junto das fontes já existentes no mesmo
+  `<link>` do Google Fonts — só usada dentro de `.login-*`; o resto do app continua
+  Oswald/IBM Plex Sans/JetBrains Mono.
+- `.login-card`: 500px de largura máxima, `border-radius:8px`, sombra bem suave (`0 1px 2px
+  + 0 10px 28px`, opacidade baixa), com uma borda superior de 3px em navy — único toque de
+  "software" mais forte, sem exagerar.
+- Ícones lineares (SVG inline, `stroke`, sem preenchimento) em vez de emoji: `LoginFieldIcon`
+  (usuário/cadeado dentro dos campos), `EyeIcon` (mostrar/ocultar senha, substituiu o botão
+  de texto "mostrar"/"ocultar" antigo), `ShieldIcon` (título do card de credenciais de
+  demonstração). Emoji (`Ic`) continua normalmente no resto do app (Home, Sidebar etc.) —
+  troca foi só nos ícones da tela de login, pra bater com a referência "software B2B".
+- `.demo-creds .dc-row` virou layout empilhado (credencial em cima, papel embaixo, com
+  divisor sutil entre linhas) em vez de `justify-content:space-between` — o formato antigo
+  quebrava feio em telas estreitas (linha "roberto.alves / lider123" + "Líder de Estoque"
+  não cabia lado a lado no mobile).
+- Rodapé fixo abaixo do card: "Acesso restrito • Uso exclusivo de colaboradores" — precisou
+  de `.login-screen{flex-direction:column}` (era só `align-items/justify-content:center`
+  sem direção definida, o que jogava o rodapé do lado do card em vez de embaixo).
+- `.login-card .role-note` tem override local (fonte Inter, cores navy/cinza) só dentro da
+  tela de login, pra o aviso da etapa "esqueci minha senha"/"nova senha" não destoar do
+  resto do card — `.role-note` em si (usado em várias outras telas do app) não mudou.
+- Testado via Playwright nos três estados (login, erro de senha, "esqueci minha senha" com
+  e sem sucesso, "nova senha") e em dois viewports (1280px e 390px) — sem regressão visual
+  no resto do app (Home/Sidebar/TopBar só mostram o texto novo "Inventário 360", nada de
+  layout mudou fora da tela de login).
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase
@@ -336,8 +391,10 @@ cadastro de usuário e pediu pra tirar dali.
   sob luz forte de almoxarifado. Não reverter para tema escuro.
 - Laranja Selgron (`--safety: #F6A200`) como cor de destaque/ação principal — cor oficial
   da marca do cliente (Pantone 137 / CMYK 0,42,100,0), não um amarelo genérico. O cliente
-  é a **Selgron**; "Stock360" é o nome do produto/app que roda dentro da marca dela. Cinza
-  institucional (`--ink-dim: #575756`, Pantone 432) também vem da identidade da Selgron.
+  é a **Selgron**; "Inventário 360" é o nome do produto/app que roda dentro da marca dela
+  (renomeado de "Stock360" — ver seção "Rebrand" abaixo; o repositório/pasta no disco
+  continua se chamando `Stock360`, só o nome exibido no app mudou). Cinza institucional
+  (`--ink-dim: #575756`, Pantone 432) também vem da identidade da Selgron.
   Fontes: `Logotipo_Selgron_Laranja_CMYK.pdf` e `Logotipo_Selgron_Cores_Promocionais.pdf`
   (enviados pelo cliente durante a conversa).
 - Logo oficial da Selgron embutida como base64 (`SELGRON_LOGO_URL`, no topo do

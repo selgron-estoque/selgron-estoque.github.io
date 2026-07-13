@@ -1,4 +1,7 @@
-# Stock360 — Inventário Cíclico Industrial
+# Inventário 360 — Inventário Cíclico Industrial
+
+> Nome do produto: **Inventário 360** (antes chamado "Stock360" — o repositório/pasta no
+> disco continua com o nome antigo `Stock360`, só a marca exibida dentro do app mudou).
 
 Protótipo funcional (front-end) do PWA descrito no briefing, cobrindo os 10 módulos
 especificados. Roda 100% no navegador — não há backend conectado ainda.
@@ -73,6 +76,20 @@ próxima abertura da página, **neste mesmo aparelho**.
   substituto.
 - A sessão de login continua **não** persistindo de propósito (ver nota de segurança
   acima) — só os dados operacionais.
+
+## Atualização: Nova identidade visual da tela de login (rebrand para "Inventário 360")
+
+O app foi renomeado de "Stock360" para **"Inventário 360"** em toda a interface (topbar,
+sidebar, título da aba, PWA, arquivos exportados) — o repositório/pasta no disco continua
+`Stock360` por conveniência, só o nome de marca dentro do produto mudou.
+
+A tela de login ganhou uma identidade visual própria, separada do resto do app: branco
+predominante, azul-marinho (`#0F172A`) e laranja institucional da Selgron, tipografia
+Inter, ícones lineares (sem emoji), cantos de 8px, sombra bem suave — visual inspirado em
+softwares corporativos/ERP (SAP Fiori, Dynamics 365) em vez do visual "genérico de
+template" que existia antes. Essa paleta/tipografia é exclusiva da tela de login — o
+restante do app (tablet do operador, dashboards, etc.) continua com o design system
+original documentado no `CLAUDE.md`.
 
 O protótipo agora carrega **300 itens reais** extraídos de uma exportação da tabela SB2
 (Saldo em Estoque) do Protheus — uma amostra dos 10.512 SKUs do Almox 01 (150 de maior

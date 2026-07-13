@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<title>Stock360 — Inventário Cíclico</title>
+<title>Inventário 360 — Controle de Inventário Cíclico</title>
 <link rel="manifest" href="manifest.json" />
 <meta name="theme-color" content="#EEF0F3" />
 <!-- iOS: Safari ignora o manifest.json pra ícone/instalação — precisa desses -->
@@ -13,9 +13,9 @@
 <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-<meta name="apple-mobile-web-app-title" content="Stock360" />
+<meta name="apple-mobile-web-app-title" content="Inventário 360" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
@@ -42,6 +42,14 @@
     --font-display: 'Oswald', sans-serif;
     --font-body: 'IBM Plex Sans', sans-serif;
     --font-mono: 'JetBrains Mono', monospace;
+    /* Identidade da tela de login — paleta corporativa/ERP separada do resto do app */
+    --font-login: 'Inter', sans-serif;
+    --login-navy: #0F172A;
+    --login-gray-50: #F8FAFC;
+    --login-gray-100: #F1F5F9;
+    --login-gray-200: #E2E8F0;
+    --login-gray-400: #94A3B8;
+    --login-gray-500: #64748B;
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);font-family:var(--font-body);height:100%;-webkit-tap-highlight-color:transparent;overscroll-behavior:none;}
@@ -207,27 +215,42 @@
 
   .role-note{font-family:var(--font-mono);font-size:11px;color:var(--ink-dim);background:var(--panel-raised);border-radius:8px;padding:10px 12px;margin-bottom:16px;border-left:3px solid var(--accent2);}
 
-  /* LOGIN SCREEN */
-  .login-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 30% 20%, #ffffff 0%, var(--bg) 65%);padding:24px;}
-  .login-card{width:100%;max-width:420px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:36px 32px;box-shadow:0 12px 40px rgba(20,22,26,0.12);}
-  .login-logo{display:flex;flex-direction:column;align-items:center;gap:14px;margin-bottom:8px;}
-  .login-logo img{width:100%;max-width:260px;height:auto;display:block;}
-  .login-title{font-family:var(--font-display);font-size:24px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;text-align:center;margin:0;}
-  .login-subtitle{font-family:var(--font-mono);font-size:11.5px;color:var(--ink-dim);text-align:center;letter-spacing:0.8px;text-transform:uppercase;margin:2px 0 28px 0;}
-  .login-field{margin-bottom:16px;position:relative;}
-  .login-field label{display:block;font-family:var(--font-mono);font-size:11px;text-transform:uppercase;letter-spacing:0.8px;color:var(--ink-dim);margin-bottom:7px;}
-  .login-field input{width:100%;background:var(--panel-raised);border:1px solid var(--line);color:var(--ink);padding:16px;border-radius:10px;font-size:17px;}
-  .login-field input:focus{outline:2px solid var(--safety);}
-  .pw-toggle{position:absolute;right:12px;top:38px;background:none;border:none;color:var(--ink-dim);font-size:13px;font-family:var(--font-mono);text-transform:uppercase;}
-  .login-error{background:var(--danger-bg);border:1px solid var(--danger);color:var(--danger);border-radius:8px;padding:12px 14px;font-size:13px;margin-bottom:16px;}
-  .login-success{background:var(--ok-bg);border:1px solid var(--ok);color:var(--ok);border-radius:8px;padding:12px 14px;font-size:13px;margin-bottom:16px;}
-  .login-notice{background:var(--warn-bg);border:1px solid var(--warn);color:var(--warn);border-radius:8px;padding:12px 14px;font-size:13px;margin-bottom:16px;}
-  .login-forgot{display:block;text-align:center;margin-top:18px;background:none;border:none;color:var(--ink-dim);font-size:13px;text-decoration:underline;text-underline-offset:3px;width:100%;padding:8px;}
-  .login-back{display:block;text-align:center;margin-top:14px;background:none;border:none;color:var(--ink-dim);font-size:13px;width:100%;padding:8px;}
-  .demo-creds{margin-top:26px;background:var(--panel-raised);border:1px dashed var(--line);border-radius:10px;padding:14px;}
-  .demo-creds .dc-title{font-family:var(--font-mono);font-size:10px;text-transform:uppercase;letter-spacing:0.6px;color:var(--ink-dim);margin-bottom:8px;}
-  .demo-creds .dc-row{display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:11.5px;padding:4px 0;color:var(--ink);}
-  .demo-creds .dc-row span:last-child{color:var(--ink-dim);}
+  /* LOGIN SCREEN — identidade corporativa/ERP (navy + branco + laranja Selgron) */
+  .login-screen{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--login-gray-100);padding:24px;font-family:var(--font-login);}
+  .login-card{width:100%;max-width:500px;background:#FFFFFF;border:1px solid var(--login-gray-200);border-top:3px solid var(--login-navy);border-radius:8px;padding:44px 40px 36px;box-shadow:0 1px 2px rgba(15,23,42,0.04), 0 10px 28px rgba(15,23,42,0.06);}
+  .login-logo{display:flex;flex-direction:column;align-items:center;gap:20px;margin-bottom:26px;}
+  .login-logo img{height:30px;width:auto;max-width:200px;display:block;}
+  .login-title{font-family:var(--font-login);font-size:21px;font-weight:700;letter-spacing:-0.2px;color:var(--login-navy);text-align:center;margin:0;}
+  .login-subtitle{font-family:var(--font-login);font-size:11px;font-weight:600;color:var(--login-gray-500);text-align:center;letter-spacing:1px;text-transform:uppercase;margin:6px 0 0 0;}
+  .login-divider{height:1px;background:var(--login-gray-200);margin:26px 0 24px;}
+  .login-field{margin-bottom:18px;position:relative;}
+  .login-field label{display:block;font-family:var(--font-login);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:var(--login-gray-500);margin-bottom:7px;}
+  .login-field .field-wrap{position:relative;display:flex;align-items:center;}
+  .login-field .field-icon{position:absolute;left:13px;top:50%;transform:translateY(-50%);display:flex;color:var(--login-gray-400);pointer-events:none;}
+  .login-field input{width:100%;background:var(--login-gray-50);border:1px solid var(--login-gray-200);color:var(--login-navy);padding:12px 14px 12px 40px;border-radius:8px;font-family:var(--font-login);font-size:14.5px;transition:border-color .12s, background .12s;}
+  .login-field input::placeholder{color:var(--login-gray-400);}
+  .login-field input:focus{outline:none;border-color:var(--login-navy);background:#fff;box-shadow:0 0 0 3px rgba(15,23,42,0.07);}
+  .login-field input[type="password"],
+  .login-field input.has-toggle{padding-right:40px;}
+  .pw-toggle{position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--login-gray-400);display:flex;align-items:center;padding:4px;border-radius:6px;}
+  .pw-toggle:hover{color:var(--login-navy);}
+  .login-error{display:flex;align-items:center;gap:8px;background:#FEF2F2;border:1px solid #FECACA;color:#B91C1C;border-radius:8px;padding:11px 13px;font-size:13px;font-family:var(--font-login);margin-bottom:16px;}
+  .login-success{display:flex;align-items:center;gap:8px;background:#F0FDF4;border:1px solid #BBF7D0;color:#15803D;border-radius:8px;padding:11px 13px;font-size:13px;font-family:var(--font-login);margin-bottom:16px;}
+  .login-notice{display:flex;align-items:center;gap:8px;background:#FFF7ED;border:1px solid #FED7AA;color:#9A5B13;border-radius:8px;padding:11px 13px;font-size:13px;font-family:var(--font-login);margin-bottom:16px;}
+  .login-btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;background:var(--safety);color:var(--safety-ink);border:none;border-radius:8px;padding:13px 20px;font-family:var(--font-login);font-size:14.5px;font-weight:600;letter-spacing:0.1px;margin-top:6px;transition:background .12s;}
+  .login-btn:hover{background:#e0940a;}
+  .login-btn:active{background:#d9a300;}
+  .login-forgot{display:block;text-align:center;margin-top:18px;background:none;border:none;color:var(--login-gray-500);font-family:var(--font-login);font-size:12.5px;font-weight:600;width:100%;padding:8px;}
+  .login-forgot:hover{color:var(--login-navy);}
+  .login-back{display:block;text-align:center;margin-top:14px;background:none;border:none;color:var(--login-gray-500);font-family:var(--font-login);font-size:12.5px;width:100%;padding:8px;}
+  .demo-creds{margin-top:28px;background:var(--login-gray-50);border:1px solid var(--login-gray-200);border-radius:8px;padding:14px 16px;}
+  .demo-creds .dc-title{display:flex;align-items:center;gap:6px;font-family:var(--font-login);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:var(--login-gray-500);margin-bottom:9px;}
+  .demo-creds .dc-row{display:flex;flex-direction:column;gap:2px;padding:7px 0;border-top:1px solid var(--login-gray-200);}
+  .demo-creds .dc-row:first-of-type{border-top:none;padding-top:0;}
+  .demo-creds .dc-row span:first-child{font-family:var(--font-mono);font-size:12px;color:var(--login-navy);}
+  .demo-creds .dc-row span:last-child{color:var(--login-gray-500);font-family:var(--font-login);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;}
+  .login-footer{text-align:center;font-family:var(--font-login);font-size:11.5px;color:var(--login-gray-500);margin-top:22px;letter-spacing:0.2px;}
+  .login-card .role-note{font-family:var(--font-login);font-size:12.5px;color:var(--login-gray-500);background:var(--login-gray-50);border-radius:8px;border-left:3px solid var(--login-navy);}
 
   /* ---------------- LAYOUT DESKTOP (sidebar) — só em telas largas ----------------
      O app continua mobile-first (tablet no chão de fábrica é o uso principal, ver
@@ -881,6 +904,49 @@ function App(){
 
 /* ---------------- LOGIN / AUTENTICAÇÃO ---------------- */
 
+function LoginFieldIcon({name}){
+  if(name==='lock'){
+    return (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <rect x="5" y="11" width="14" height="9" rx="2"/>
+        <path d="M8 11V7a4 4 0 0 1 8 0v4"/>
+      </svg>
+    );
+  }
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="8" r="3.4"/>
+      <path d="M4.5 20c1.2-3.6 4.2-5.6 7.5-5.6s6.3 2 7.5 5.6"/>
+    </svg>
+  );
+}
+
+function EyeIcon({off}){
+  if(off){
+    return (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M3 3l18 18"/>
+        <path d="M10.6 5.1A10.6 10.6 0 0 1 12 5c6 0 9.5 6.5 9.5 6.5a13.6 13.6 0 0 1-3.1 3.8M6.4 6.7A13.6 13.6 0 0 0 2.5 11.5S6 18 12 18a9.6 9.6 0 0 0 3.6-.7"/>
+        <path d="M9.9 10a3 3 0 0 0 4.1 4.1"/>
+      </svg>
+    );
+  }
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M2.5 12S6 5.5 12 5.5s9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12Z"/>
+      <circle cx="12" cy="12" r="3"/>
+    </svg>
+  );
+}
+
+function ShieldIcon(){
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 3.5l7 2.6v5.4c0 4.6-3 8.3-7 9-4-0.7-7-4.4-7-9V6.1l7-2.6Z"/>
+    </svg>
+  );
+}
+
 function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}){
   const [mode, setMode] = useState('login'); // login | forgot | newPassword
   const [identifier, setIdentifier] = useState('');
@@ -925,9 +991,13 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
       <div className="login-card">
         <div className="login-logo">
           <img src={SELGRON_LOGO_URL} alt="Selgron" />
+          <div>
+            <h1 className="login-title">Inventário 360</h1>
+            <div className="login-subtitle">Controle de Inventário Cíclico</div>
+          </div>
         </div>
-        <h1 className="login-title">Stock360</h1>
-        <div className="login-subtitle">Controle de Inventário Cíclico</div>
+
+        <div className="login-divider"></div>
 
         {notice && mode==='login' && (
           <div className="login-notice">{notice}</div>
@@ -937,19 +1007,25 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
           <form onSubmit={submitLogin}>
             {error && <div className="login-error">{error}</div>}
             <div className="login-field">
-              <label>Usuário ou e-mail</label>
-              <input type="text" value={identifier} onChange={e=>{setIdentifier(e.target.value); clearNotice&&clearNotice();}} placeholder="usuario.sobrenome" autoCapitalize="none" autoFocus />
+              <label>Usuário</label>
+              <div className="field-wrap">
+                <span className="field-icon"><LoginFieldIcon name="user" /></span>
+                <input type="text" value={identifier} onChange={e=>{setIdentifier(e.target.value); clearNotice&&clearNotice();}} placeholder="usuario.sobrenome" autoCapitalize="none" autoFocus />
+              </div>
             </div>
             <div className="login-field">
               <label>Senha</label>
-              <input type={showSenha?'text':'password'} value={senha} onChange={e=>setSenha(e.target.value)} placeholder="••••••••" />
-              <button type="button" className="pw-toggle" onClick={()=>setShowSenha(s=>!s)}>{showSenha?'ocultar':'mostrar'}</button>
+              <div className="field-wrap">
+                <span className="field-icon"><LoginFieldIcon name="lock" /></span>
+                <input className="has-toggle" type={showSenha?'text':'password'} value={senha} onChange={e=>setSenha(e.target.value)} placeholder="••••••••" />
+                <button type="button" className="pw-toggle" onClick={()=>setShowSenha(s=>!s)} title={showSenha?'Ocultar senha':'Mostrar senha'}><EyeIcon off={showSenha} /></button>
+              </div>
             </div>
-            <button className="btn btn-primary" type="submit">Entrar</button>
+            <button className="login-btn" type="submit">Entrar</button>
             <button type="button" className="login-forgot" onClick={()=>{setMode('forgot'); setError(''); setForgotMsg('');}}>Esqueci minha senha</button>
 
             <div className="demo-creds">
-              <div className="dc-title">Credenciais de demonstração (remover em produção)</div>
+              <div className="dc-title"><ShieldIcon /> Acesso de demonstração</div>
               <div className="dc-row"><span>alisson / admin123</span><span>Administrador</span></div>
               <div className="dc-row"><span>roberto.alves / lider123</span><span>Líder de Estoque</span></div>
               <div className="dc-row"><span>carlos.mendes / operador123</span><span>Operador</span></div>
@@ -964,9 +1040,12 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
                 <div className="role-note" style={{marginBottom:20}}>Informe seu usuário ou e-mail. Um administrador vai analisar e liberar o acesso.</div>
                 <div className="login-field">
                   <label>Usuário ou e-mail</label>
-                  <input type="text" value={identifier} onChange={e=>setIdentifier(e.target.value)} autoFocus />
+                  <div className="field-wrap">
+                    <span className="field-icon"><LoginFieldIcon name="user" /></span>
+                    <input type="text" value={identifier} onChange={e=>setIdentifier(e.target.value)} autoFocus />
+                  </div>
                 </div>
-                <button className="btn btn-primary" type="submit">Solicitar recuperação</button>
+                <button className="login-btn" type="submit">Solicitar recuperação</button>
               </div>
             ) : (
               <div className="login-success">{forgotMsg}</div>
@@ -981,16 +1060,23 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
             {error && <div className="login-error">{error}</div>}
             <div className="login-field">
               <label>Nova senha</label>
-              <input type="password" value={novaSenha} onChange={e=>setNovaSenha(e.target.value)} autoFocus />
+              <div className="field-wrap">
+                <span className="field-icon"><LoginFieldIcon name="lock" /></span>
+                <input type="password" value={novaSenha} onChange={e=>setNovaSenha(e.target.value)} autoFocus />
+              </div>
             </div>
             <div className="login-field">
               <label>Confirmar nova senha</label>
-              <input type="password" value={confirmaSenha} onChange={e=>setConfirmaSenha(e.target.value)} />
+              <div className="field-wrap">
+                <span className="field-icon"><LoginFieldIcon name="lock" /></span>
+                <input type="password" value={confirmaSenha} onChange={e=>setConfirmaSenha(e.target.value)} />
+              </div>
             </div>
-            <button className="btn btn-primary" type="submit">Definir senha e entrar</button>
+            <button className="login-btn" type="submit">Definir senha e entrar</button>
           </form>
         )}
       </div>
+      <div className="login-footer">Acesso restrito • Uso exclusivo de colaboradores</div>
     </div>
   );
 }
@@ -1002,7 +1088,7 @@ function TopBar({user, role, onHome, onLogout}){
     <div className="topbar mobile-topbar">
       <div className="brand" onClick={onHome} style={{cursor:'pointer'}}>
         <img src={SELGRON_LOGO_URL} alt="Selgron" className="brand-logo" />
-        <div className="brand-text">Stock360<small>Inventário Cíclico</small></div>
+        <div className="brand-text">Inventário 360<small>Controle Cíclico</small></div>
       </div>
       <div style={{display:'flex',alignItems:'center',gap:8}}>
         <div className="role-pill" style={{cursor:'default'}}>
@@ -1067,7 +1153,7 @@ function Sidebar({view, goto, role}){
     <div className="sidebar">
       <div className="sidebar-brand">
         <img src={SELGRON_LOGO_WHITE_URL} alt="Selgron" />
-        <div className="product">Stock360<small>Inventário Cíclico</small></div>
+        <div className="product">Inventário 360<small>Controle Cíclico</small></div>
       </div>
       <nav className="sidebar-nav">
         {items.map(it=>(
@@ -1336,7 +1422,7 @@ function InventoryList({inventories, goto, role, counts, onDelete}){
     const invCounts = (counts||[]).filter(c=>c.inventario===inv.id);
     const wb = generateReportWorkbook(invCounts, [inv]);
     const nomeArquivo = inv.nome.replace(/[^\w]+/g,'_');
-    window.XLSX.writeFile(wb, `Stock360_${inv.id}_${nomeArquivo}.xlsx`);
+    window.XLSX.writeFile(wb, `Inventario360_${inv.id}_${nomeArquivo}.xlsx`);
   }
 
   return (
@@ -1422,7 +1508,7 @@ function NewInventory({users, onCreate}){
   function handleDownloadTemplate(){
     if(!window.XLSX) return;
     const wb = buildImportTemplateWorkbook();
-    window.XLSX.writeFile(wb, 'Stock360_Modelo_Lista_Contagem.xlsx');
+    window.XLSX.writeFile(wb, 'Inventario360_Modelo_Lista_Contagem.xlsx');
   }
 
   function handleFileUpload(e){
@@ -2330,7 +2416,7 @@ function RecountsPanel({counts, role, currentUser, goto, onApprove}){
 
 function ReportsScreen({counts, inventories, currentUser, sendHistory, onLogSend}){
   const [email, setEmail] = useState('');
-  const [assunto, setAssunto] = useState('Stock360 — Relatório de Inventário Cíclico');
+  const [assunto, setAssunto] = useState('Inventário 360 — Relatório de Inventário Cíclico');
   const [mensagem, setMensagem] = useState('Segue relatório de contagens e divergências do inventário cíclico para análise e solicitação de ajuste de estoque.');
   const [feedback, setFeedback] = useState('');
 
@@ -2342,7 +2428,7 @@ function ReportsScreen({counts, inventories, currentUser, sendHistory, onLogSend
       return false;
     }
     const wb = generateReportWorkbook(counts, inventories);
-    const filename = `Stock360_Relatorio_${new Date().toISOString().slice(0,10)}.xlsx`;
+    const filename = `Inventario360_Relatorio_${new Date().toISOString().slice(0,10)}.xlsx`;
     window.XLSX.writeFile(wb, filename);
     return filename;
   }

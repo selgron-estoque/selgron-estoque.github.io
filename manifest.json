@@ -1,6 +1,6 @@
 {
-  "name": "Stock360 — Inventário Cíclico",
-  "short_name": "Stock360",
+  "name": "Inventário 360 — Controle de Inventário Cíclico",
+  "short_name": "Inventário 360",
   "description": "Controle de inventário cíclico para almoxarifado industrial",
   "start_url": "./index.html",
   "display": "standalone",
