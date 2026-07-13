@@ -131,7 +131,17 @@ Isso está implementado no `index.html`:
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase
   preto) — foi trocado de um tema escuro anterior porque ficava difícil de ler em tablet
   sob luz forte de almoxarifado. Não reverter para tema escuro.
-- Amarelo de segurança (`--safety: #F2B705`) como cor de destaque/ação principal.
+- Laranja Selgron (`--safety: #F6A200`) como cor de destaque/ação principal — cor oficial
+  da marca do cliente (Pantone 137 / CMYK 0,42,100,0), não um amarelo genérico. O cliente
+  é a **Selgron**; "Stock360" é o nome do produto/app que roda dentro da marca dela. Cinza
+  institucional (`--ink-dim: #575756`, Pantone 432) também vem da identidade da Selgron.
+  Fontes: `Logotipo_Selgron_Laranja_CMYK.pdf` e `Logotipo_Selgron_Cores_Promocionais.pdf`
+  (enviados pelo cliente durante a conversa).
+- Logo oficial da Selgron embutida como base64 (`SELGRON_LOGO_URL`, no topo do
+  `<script>`) — extraída do PDF vetorial com PyMuPDF, recortada e redimensionada para
+  ~1400×140px. Usada na tela de login (`.login-logo img`) e na topbar (`.brand-logo`).
+  Não trocar de volta para o mark de texto "S360" — isso foi um placeholder genérico do
+  protótipo antes de o cliente mandar a logo real.
 - Tipografia: Oswald (títulos/display), IBM Plex Sans (corpo), JetBrains Mono (códigos,
   labels técnicos).
 - Botões grandes, poucos campos por tela, pensado para uso com luvas — não adicionar
