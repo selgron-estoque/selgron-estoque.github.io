@@ -1,0 +1,18 @@
+{
+  "name": "Stock360 — Inventário Cíclico",
+  "short_name": "Stock360",
+  "description": "Controle de inventário cíclico para almoxarifado industrial",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#EEF0F3",
+  "theme_color": "#EEF0F3",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='36' fill='%2314161A'/%3E%3Crect x='16' y='16' width='160' height='160' rx='24' fill='%23F2B705'/%3E%3Ctext x='96' y='112' font-family='Arial,sans-serif' font-weight='700' font-size='54' fill='%2314161A' text-anchor='middle'%3ES360%3C/text%3E%3C/svg%3E",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

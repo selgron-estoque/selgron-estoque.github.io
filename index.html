@@ -1,0 +1,2053 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Stock360 — Inventário Cíclico</title>
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#EEF0F3" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --bg: #EEF0F3;
+    --panel: #FFFFFF;
+    --panel-raised: #F3F5F7;
+    --line: #D7DBE1;
+    --ink: #1A1C21;
+    --ink-dim: #565C66;
+    --safety: #F2B705;
+    --safety-ink: #14161A;
+    --ok: #1E8E4F;
+    --ok-bg: #E3F6EA;
+    --warn: #A35F00;
+    --warn-bg: #FFF1D6;
+    --danger: #C4291B;
+    --danger-bg: #FBE6E3;
+    --accent2: #1F6FA8;
+    --radius: 10px;
+    --font-display: 'Oswald', sans-serif;
+    --font-body: 'IBM Plex Sans', sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);font-family:var(--font-body);height:100%;-webkit-tap-highlight-color:transparent;overscroll-behavior:none;}
+  #root{min-height:100vh;display:flex;flex-direction:column;}
+  button{font-family:inherit;cursor:pointer;}
+  input,select,textarea{font-family:inherit;}
+  ::selection{background:var(--safety);color:var(--safety-ink);}
+
+  .app{display:flex;flex-direction:column;min-height:100vh;max-width:900px;margin:0 auto;width:100%;background:var(--bg);position:relative;}
+
+  /* TOPBAR */
+  .topbar{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:20;}
+  .brand{display:flex;align-items:center;gap:10px;}
+  .brand-mark{width:34px;height:34px;border-radius:8px;background:linear-gradient(135deg,var(--safety),#c78e02);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;color:var(--safety-ink);font-size:16px;flex-shrink:0;}
+  .brand-text{font-family:var(--font-display);font-weight:600;letter-spacing:0.5px;font-size:19px;text-transform:uppercase;}
+  .brand-text small{display:block;font-family:var(--font-mono);font-size:9px;color:var(--ink-dim);letter-spacing:1.5px;font-weight:500;text-transform:uppercase;margin-top:-2px;}
+  .role-switch{display:flex;align-items:center;gap:8px;}
+  .role-pill{font-family:var(--font-mono);font-size:10.5px;letter-spacing:0.5px;text-transform:uppercase;background:var(--panel-raised);border:1px solid var(--line);color:var(--ink-dim);padding:7px 10px;border-radius:20px;display:flex;align-items:center;gap:6px;}
+  .role-pill select{background:transparent;border:none;color:var(--ink);font-family:var(--font-mono);font-size:11px;text-transform:uppercase;outline:none;}
+  .role-pill select option{background:var(--panel-raised);color:var(--ink);}
+  .logout-btn{background:var(--panel-raised);border:1px solid var(--line);color:var(--ink-dim);width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;}
+  .logout-btn:active{background:var(--danger-bg);color:var(--danger);border-color:var(--danger);}
+
+  /* BACK BAR */
+  .subbar{display:flex;align-items:center;gap:10px;padding:12px 18px;border-bottom:1px solid var(--line);background:var(--bg);}
+  .back-btn{display:flex;align-items:center;gap:6px;background:none;border:none;color:var(--ink-dim);font-size:14px;padding:6px 8px 6px 0;border-radius:6px;}
+  .back-btn:active{background:var(--panel-raised);}
+  .subbar h1{font-family:var(--font-display);font-size:17px;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;margin:0;}
+
+  .content{flex:1;padding:18px;padding-bottom:100px;}
+
+  /* HOME CARDS */
+  .grid-cards{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  @media (min-width:640px){.grid-cards{grid-template-columns:1fr 1fr 1fr;}}
+  .home-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:20px 16px;display:flex;flex-direction:column;gap:12px;align-items:flex-start;min-height:120px;position:relative;overflow:hidden;transition:transform .1s;}
+  .home-card:active{transform:scale(0.97);background:var(--panel-raised);}
+  .home-card .icon{font-size:26px;}
+  .home-card .label{font-family:var(--font-display);font-size:15px;text-transform:uppercase;letter-spacing:0.3px;font-weight:600;line-height:1.25;}
+  .home-card .badge{position:absolute;top:12px;right:12px;background:var(--safety);color:var(--safety-ink);font-family:var(--font-mono);font-weight:700;font-size:11px;padding:2px 7px;border-radius:20px;}
+  .home-card.wide{grid-column:span 2;flex-direction:row;align-items:center;justify-content:space-between;}
+  @media (min-width:640px){.home-card.wide{grid-column:span 3;}}
+
+  .greet{font-family:var(--font-mono);font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:var(--safety);margin-bottom:4px;}
+  .greet-title{font-family:var(--font-display);font-size:24px;font-weight:600;margin:0 0 20px 0;text-transform:uppercase;}
+
+  /* BUTTONS */
+  .btn{display:flex;align-items:center;justify-content:center;gap:8px;padding:16px 20px;border-radius:var(--radius);font-family:var(--font-display);font-size:15px;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;border:none;width:100%;}
+  .btn-primary{background:var(--safety);color:var(--safety-ink);}
+  .btn-primary:active{background:#d9a300;}
+  .btn-secondary{background:var(--panel-raised);color:var(--ink);border:1px solid var(--line);}
+  .btn-secondary:active{background:#2b2f36;}
+  .btn-outline{background:transparent;color:var(--ink-dim);border:1px solid var(--line);}
+  .btn-danger{background:var(--danger);color:#fff;}
+  .btn-row{display:flex;gap:10px;}
+  .btn-row .btn{flex:1;}
+  .btn:disabled{opacity:0.4;}
+
+  /* PANELS/FORMS */
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin-bottom:14px;}
+  .field{margin-bottom:16px;}
+  .field label{display:block;font-family:var(--font-mono);font-size:11px;text-transform:uppercase;letter-spacing:0.8px;color:var(--ink-dim);margin-bottom:7px;}
+  .field input[type=text],.field input[type=number],.field input[type=date],.field select,.field textarea{width:100%;background:var(--panel-raised);border:1px solid var(--line);color:var(--ink);padding:14px;border-radius:8px;font-size:16px;}
+  .field input:focus,.field select:focus,.field textarea:focus{outline:2px solid var(--safety);outline-offset:0;}
+  .field textarea{resize:vertical;min-height:70px;}
+  .field .qty-input{font-family:var(--font-mono);font-size:28px;font-weight:700;text-align:center;padding:18px;}
+  .radio-group{display:flex;flex-direction:column;gap:10px;}
+  .radio-opt{display:flex;align-items:center;gap:12px;background:var(--panel-raised);border:1px solid var(--line);padding:14px;border-radius:8px;}
+  .radio-opt.active{border-color:var(--safety);background:#2a2410;}
+  .radio-opt input{width:20px;height:20px;accent-color:var(--safety);}
+  .radio-opt .opt-title{font-weight:600;font-size:14.5px;}
+  .radio-opt .opt-desc{font-size:12px;color:var(--ink-dim);margin-top:2px;}
+
+  /* STATUS */
+  .status-tag{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:11px;font-weight:700;text-transform:uppercase;padding:4px 9px;border-radius:20px;letter-spacing:0.3px;}
+  .status-ok{background:var(--ok-bg);color:var(--ok);}
+  .status-warn{background:var(--warn-bg);color:var(--warn);}
+  .status-danger{background:var(--danger-bg);color:var(--danger);}
+  .status-dot{width:7px;height:7px;border-radius:50%;background:currentColor;}
+
+  /* ITEM CARD (count item) */
+  .item-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;margin-bottom:14px;}
+  .item-card-head{padding:16px 18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
+  .item-code{font-family:var(--font-mono);font-size:13px;color:var(--safety);letter-spacing:0.5px;}
+  .item-desc{font-family:var(--font-display);font-size:18px;font-weight:600;margin:4px 0 0 0;text-transform:uppercase;}
+  .item-meta{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:16px 18px;}
+  .item-meta .m{background:var(--panel-raised);border-radius:8px;padding:10px 12px;}
+  .item-meta .m .k{font-family:var(--font-mono);font-size:9.5px;text-transform:uppercase;color:var(--ink-dim);letter-spacing:0.6px;}
+  .item-meta .m .v{font-size:14.5px;font-weight:600;margin-top:3px;}
+  .address-chip{font-family:var(--font-mono);font-size:20px;font-weight:700;letter-spacing:2px;background:var(--panel-raised);border:1px dashed var(--line);border-radius:8px;padding:14px;text-align:center;margin-bottom:14px;}
+
+  /* QR SCAN VISUAL */
+  .scan-box{position:relative;background:#0A0B0D;border:1px solid var(--line);border-radius:var(--radius);height:180px;display:flex;align-items:center;justify-content:center;overflow:hidden;margin-bottom:14px;}
+  .scan-frame{width:120px;height:120px;position:relative;}
+  .scan-frame::before,.scan-frame::after,.scan-corner-b1,.scan-corner-b2{content:'';position:absolute;width:26px;height:26px;border-color:var(--safety);}
+  .scan-frame::before{top:0;left:0;border-top:3px solid var(--safety);border-left:3px solid var(--safety);}
+  .scan-frame::after{top:0;right:0;border-top:3px solid var(--safety);border-right:3px solid var(--safety);}
+  .scan-corner-b1{bottom:0;left:0;border-bottom:3px solid var(--safety);border-left:3px solid var(--safety);}
+  .scan-corner-b2{bottom:0;right:0;border-bottom:3px solid var(--safety);border-right:3px solid var(--safety);}
+  .scan-laser{position:absolute;left:6px;right:6px;height:2px;background:var(--safety);box-shadow:0 0 8px var(--safety);animation:laser 1.8s ease-in-out infinite;}
+  @keyframes laser{0%{top:6px;}50%{top:110px;}100%{top:6px;}}
+
+  /* LIVE CAMERA SCANNER (html5-qrcode) */
+  .scanner-wrap{background:#0A0B0D;border-radius:var(--radius);overflow:hidden;margin-bottom:14px;border:1px solid var(--line);position:relative;}
+  .scanner-viewport{width:100%;min-height:240px;}
+  .scanner-viewport video{width:100% !important;display:block;}
+  .scanner-hint{text-align:center;color:var(--ink-dim);font-size:12.5px;margin:-6px 0 14px 0;}
+  .scan-toggle-row{display:flex;gap:10px;margin-bottom:14px;}
+  .manual-fallback{background:var(--panel-raised);border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:14px;}
+
+  /* RESULT BANNER */
+  .result-banner{border-radius:var(--radius);padding:20px;margin-bottom:16px;border:1px solid;}
+  .result-banner.ok{background:var(--ok-bg);border-color:var(--ok);}
+  .result-banner.warn{background:var(--warn-bg);border-color:var(--warn);}
+  .result-banner.danger{background:var(--danger-bg);border-color:var(--danger);}
+  .result-banner .rb-title{font-family:var(--font-display);font-size:18px;font-weight:700;text-transform:uppercase;margin:0 0 6px 0;}
+  .result-banner .rb-sub{font-size:13.5px;color:var(--ink-dim);}
+  .result-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px;}
+  .result-grid .rg{background:rgba(255,255,255,0.04);border-radius:8px;padding:10px 12px;}
+  .result-grid .rg .k{font-family:var(--font-mono);font-size:9.5px;text-transform:uppercase;color:var(--ink-dim);}
+  .result-grid .rg .v{font-family:var(--font-mono);font-size:17px;font-weight:700;margin-top:2px;}
+
+  /* LIST ROWS */
+  .list-row{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:15px 16px;margin-bottom:10px;}
+  .list-row:active{background:var(--panel-raised);}
+  .list-row .lr-title{font-weight:600;font-size:14.5px;}
+  .list-row .lr-sub{font-size:12px;color:var(--ink-dim);margin-top:3px;font-family:var(--font-mono);}
+  .chevron{color:var(--ink-dim);font-size:18px;}
+
+  .progress-bar{height:6px;background:var(--panel-raised);border-radius:4px;overflow:hidden;margin-top:8px;}
+  .progress-bar .fill{height:100%;background:var(--safety);border-radius:4px;}
+
+  /* DASHBOARD */
+  .kpi-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px;}
+  @media (min-width:640px){.kpi-grid{grid-template-columns:repeat(4,1fr);}}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;}
+  .kpi .kv{font-family:var(--font-mono);font-size:26px;font-weight:700;}
+  .kpi .kl{font-size:11px;color:var(--ink-dim);margin-top:4px;text-transform:uppercase;letter-spacing:0.4px;}
+  .section-title{font-family:var(--font-display);font-size:13px;text-transform:uppercase;letter-spacing:1px;color:var(--ink-dim);margin:24px 0 12px 0;display:flex;align-items:center;gap:8px;}
+  .section-title::after{content:'';flex:1;height:1px;background:var(--line);}
+  .bar-row{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
+  .bar-row .bl{width:110px;font-size:12px;color:var(--ink-dim);flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .bar-track{flex:1;height:20px;background:var(--panel-raised);border-radius:5px;overflow:hidden;}
+  .bar-fill{height:100%;background:var(--safety);border-radius:5px;display:flex;align-items:center;justify-content:flex-end;padding-right:6px;}
+  .bar-fill span{font-family:var(--font-mono);font-size:10px;font-weight:700;color:var(--safety-ink);}
+  .rank-table{width:100%;border-collapse:collapse;}
+  .rank-table th{text-align:left;font-family:var(--font-mono);font-size:10px;text-transform:uppercase;color:var(--ink-dim);padding:8px 6px;border-bottom:1px solid var(--line);}
+  .rank-table td{padding:10px 6px;border-bottom:1px solid var(--line);font-size:13px;}
+  .rank-table td.num{font-family:var(--font-mono);text-align:right;}
+
+  /* BOTTOM NAV */
+  .bottom-nav{position:fixed;bottom:0;left:0;right:0;background:var(--panel);border-top:1px solid var(--line);display:flex;max-width:900px;margin:0 auto;z-index:20;}
+  .nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 4px 12px;background:none;border:none;color:var(--ink-dim);font-size:9.5px;font-family:var(--font-mono);text-transform:uppercase;letter-spacing:0.3px;}
+  .nav-btn.active{color:var(--safety);}
+  .nav-btn .ic{font-size:19px;}
+
+  .empty-state{text-align:center;padding:50px 20px;color:var(--ink-dim);}
+  .empty-state .ic{font-size:40px;margin-bottom:12px;}
+
+  .divergence-alert{background:var(--warn-bg);border:1px solid var(--warn);border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:13px;display:flex;gap:10px;align-items:flex-start;}
+
+  .photo-preview{width:100%;height:140px;border-radius:8px;object-fit:cover;margin-top:10px;border:1px solid var(--line);}
+  .photo-btn{border:1px dashed var(--line);background:var(--panel-raised);border-radius:8px;padding:16px;text-align:center;color:var(--ink-dim);font-size:13px;}
+
+  .role-note{font-family:var(--font-mono);font-size:11px;color:var(--ink-dim);background:var(--panel-raised);border-radius:8px;padding:10px 12px;margin-bottom:16px;border-left:3px solid var(--accent2);}
+
+  /* LOGIN SCREEN */
+  .login-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 30% 20%, #ffffff 0%, var(--bg) 65%);padding:24px;}
+  .login-card{width:100%;max-width:420px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:36px 32px;box-shadow:0 12px 40px rgba(20,22,26,0.12);}
+  .login-logo{display:flex;flex-direction:column;align-items:center;gap:14px;margin-bottom:8px;}
+  .login-logo .mark{width:64px;height:64px;border-radius:16px;background:linear-gradient(135deg,var(--safety),#c78e02);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;color:var(--safety-ink);font-size:26px;}
+  .login-title{font-family:var(--font-display);font-size:24px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;text-align:center;margin:0;}
+  .login-subtitle{font-family:var(--font-mono);font-size:11.5px;color:var(--ink-dim);text-align:center;letter-spacing:0.8px;text-transform:uppercase;margin:2px 0 28px 0;}
+  .login-field{margin-bottom:16px;position:relative;}
+  .login-field label{display:block;font-family:var(--font-mono);font-size:11px;text-transform:uppercase;letter-spacing:0.8px;color:var(--ink-dim);margin-bottom:7px;}
+  .login-field input{width:100%;background:var(--panel-raised);border:1px solid var(--line);color:var(--ink);padding:16px;border-radius:10px;font-size:17px;}
+  .login-field input:focus{outline:2px solid var(--safety);}
+  .pw-toggle{position:absolute;right:12px;top:38px;background:none;border:none;color:var(--ink-dim);font-size:13px;font-family:var(--font-mono);text-transform:uppercase;}
+  .login-error{background:var(--danger-bg);border:1px solid var(--danger);color:var(--danger);border-radius:8px;padding:12px 14px;font-size:13px;margin-bottom:16px;}
+  .login-success{background:var(--ok-bg);border:1px solid var(--ok);color:var(--ok);border-radius:8px;padding:12px 14px;font-size:13px;margin-bottom:16px;}
+  .login-notice{background:var(--warn-bg);border:1px solid var(--warn);color:var(--warn);border-radius:8px;padding:12px 14px;font-size:13px;margin-bottom:16px;}
+  .login-forgot{display:block;text-align:center;margin-top:18px;background:none;border:none;color:var(--ink-dim);font-size:13px;text-decoration:underline;text-underline-offset:3px;width:100%;padding:8px;}
+  .login-back{display:block;text-align:center;margin-top:14px;background:none;border:none;color:var(--ink-dim);font-size:13px;width:100%;padding:8px;}
+  .demo-creds{margin-top:26px;background:var(--panel-raised);border:1px dashed var(--line);border-radius:10px;padding:14px;}
+  .demo-creds .dc-title{font-family:var(--font-mono);font-size:10px;text-transform:uppercase;letter-spacing:0.6px;color:var(--ink-dim);margin-bottom:8px;}
+  .demo-creds .dc-row{display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:11.5px;padding:4px 0;color:var(--ink);}
+  .demo-creds .dc-row span:last-child{color:var(--ink-dim);}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+
+const {useState, useMemo, useRef, useEffect} = React;
+
+/* ---------------- MOCK DATA ---------------- */
+
+// SEGURANÇA — NOTA IMPORTANTE: este protótipo roda 100% no navegador, sem
+// backend. As "senhas" abaixo ficam em texto puro em memória só para permitir
+// testar o fluxo de login. Isso NUNCA deve ir para produção: no sistema real,
+// a senha nunca trafega nem fica visível para o admin — o Supabase Auth cuida
+// do hash (bcrypt) e da comparação no servidor. O botão "gerar senha
+// temporária" aqui mostra o valor em texto só para o protótipo simular o
+// admin repassando a senha ao operador; em produção isso seria exibido uma
+// única vez e nunca fica gravado em log.
+const USERS_SEED = [
+  {id:'u1', nome:'Carlos Mendes', usuario:'carlos.mendes', email:'carlos.mendes@empresa.com', senha:'operador123', perfil:'operador', status:'ativo'},
+  {id:'u2', nome:'Fernanda Lima', usuario:'fernanda.lima', email:'fernanda.lima@empresa.com', senha:'operador123', perfil:'operador', status:'ativo'},
+  {id:'u3', nome:'Roberto Alves', usuario:'roberto.alves', email:'roberto.alves@empresa.com', senha:'lider123', perfil:'lider', status:'ativo'},
+  {id:'u4', nome:'Alisson', usuario:'alisson', email:'alisson@empresa.com', senha:'admin123', perfil:'admin', status:'ativo'},
+];
+
+function generateTempPassword(){
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let out = '';
+  for(let i=0;i<8;i++) out += chars[Math.floor(Math.random()*chars.length)];
+  return out;
+}
+
+const RAW_SB2_PRODUCTS = [{"codigo": "000.35310", "descricao": "MOD SMART CCD 4K V100  V100 V4.0.4", "grupo": 39, "almoxarifado": "Almox 01", "saldoSistema": 174.0, "valorFinanceiro": 220173.21, "custoUnit": 1265.3633, "empenhado": 67.0, "ultimaSaida": "2026-06-11", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.58626", "descricao": "MOD BAND ES BAIXA VALV Ø4MM", "grupo": 90, "almoxarifado": "Almox 01", "saldoSistema": 15.0, "valorFinanceiro": 185679.77, "custoUnit": 12378.6513, "empenhado": 28.0, "ultimaSaida": "2026-05-30", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.66924", "descricao": "MOD ELET - PERIFERICOS - PAINEL", "grupo": 90, "almoxarifado": "Almox 01", "saldoSistema": 1.0, "valorFinanceiro": 157792.59, "custoUnit": 157792.59, "empenhado": 1.0, "ultimaSaida": "/  /", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.18869", "descricao": "PC INDUSTRIAL", "grupo": 53, "almoxarifado": "Almox 01", "saldoSistema": 15.0, "valorFinanceiro": 126802.6, "custoUnit": 8453.5067, "empenhado": 0.0, "ultimaSaida": "2025-01-24", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.09710", "descricao": "PLACA CON ETHERCAT PIGGYBACK", "grupo": 53, "almoxarifado": "Almox 01", "saldoSistema": 240.0, "valorFinanceiro": 91721.52, "custoUnit": 382.173, "empenhado": 0.0, "ultimaSaida": "2025-09-17", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.05926", "descricao": "LENTE 12,5MM", "grupo": 53, "almoxarifado": "Almox 01", "saldoSistema": 178.0, "valorFinanceiro": 86754.09, "custoUnit": 487.3825, "empenhado": 0.0, "ultimaSaida": "2026-03-18", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.16630", "descricao": "ROLO TRANSP 76,2 X 1280", "grupo": 77, "almoxarifado": "Almox 01", "saldoSistema": 312.0, "valorFinanceiro": 82983.23, "custoUnit": 265.9719, "empenhado": 643.0, "ultimaSaida": "2026-06-12", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.24526", "descricao": "MOD CCD TNS", "grupo": 118, "almoxarifado": "Almox 01", "saldoSistema": 64.0, "valorFinanceiro": 82900.25, "custoUnit": 1295.3164, "empenhado": 0.0, "ultimaSaida": "2026-03-17", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.08595", "descricao": "LED SMD VM DEEP", "grupo": 53, "almoxarifado": "Almox 01", "saldoSistema": 16289.0, "valorFinanceiro": 75603.49, "custoUnit": 4.6414, "empenhado": 0.0, "ultimaSaida": "2020-04-21", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.60558", "descricao": "CJTO TIRANTE CCD TNSII LITE 2025", "grupo": 118, "almoxarifado": "Almox 01", "saldoSistema": 71.0, "valorFinanceiro": 72855.94, "custoUnit": 1026.14, "empenhado": 0.0, "ultimaSaida": "2026-02-25", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.33350", "descricao": "FILTRO OPT IR PB 710NM M52X0.75", "grupo": 53, "almoxarifado": "Almox 01", "saldoSistema": 328.0, "valorFinanceiro": 70975.97, "custoUnit": 216.3902, "empenhado": 22.0, "ultimaSaida": "2026-02-02", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.14801", "descricao": "FONTE CHAV", "grupo": 53, "almoxarifado": "Almox 01", "saldoSistema": 35.0, "valorFinanceiro": 70444.59, "custoUnit": 2012.7026, "empenhado": 6.0, "ultimaSaida": "2026-06-08", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.25075", "descricao": "CALHA ALINH TNS PM", "grupo": 118, "almoxarifado": "Almox 01", "saldoSistema": 67.0, "valorFinanceiro": 68312.54, "custoUnit": 1019.5901, "empenhado": 0.0, "ultimaSaida": "2026-03-03", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.10716", "descricao": "MOD DRV16EJ V110", "grupo": 87, "almoxarifado": "Almox 01", "saldoSistema": 88.0, "valorFinanceiro": 63374.22, "custoUnit": 720.1616, "empenhado": 0.0, "ultimaSaida": "2026-06-17", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.10643", "descricao": "CORPO VALV EJ VDE", "grupo": 54, "almoxarifado": "Almox 01", "saldoSistema": 4750.0, "valorFinanceiro": 62696.7, "custoUnit": 13.1993, "empenhado": 1600.0, "ultimaSaida": "2026-06-04", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.41026", "descricao": "CLP 1512SP FAILSAFE V3", "grupo": 4, "almoxarifado": "Almox 01", "saldoSistema": 7.0, "valorFinanceiro": 62108.75, "custoUnit": 8872.6786, "empenhado": 4.0, "ultimaSaida": "2026-04-17", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "12407000002", "descricao": "SERVOMOT SWA 56-3,8-20", "grupo": 7, "almoxarifado": "Almox 01", "saldoSistema": 25.0, "valorFinanceiro": 60395.69, "custoUnit": 2415.8276, "empenhado": 8.0, "ultimaSaida": "2026-05-15", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.11941", "descricao": "BR PINO MACHO DUPL SMD 52V", "grupo": 30, "almoxarifado": "Almox 01", "saldoSistema": 2283.0, "valorFinanceiro": 58025.19, "custoUnit": 25.4162, "empenhado": 292.0, "ultimaSaida": "2026-06-03", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.43681", "descricao": "CB DETECT METAIS 10\"X5\"", "grupo": 116, "almoxarifado": "Almox 01", "saldoSistema": 2.0, "valorFinanceiro": 57935.06, "custoUnit": 28967.53, "empenhado": 0.0, "ultimaSaida": "2026-04-23", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.04516", "descricao": "CI DSP TMS320F28335PGFA", "grupo": 34, "almoxarifado": "Almox 01", "saldoSistema": 475.0, "valorFinanceiro": 57841.09, "custoUnit": 121.7707, "empenhado": 153.0, "ultimaSaida": "2026-05-29", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.56798", "descricao": "MOD BASE ES 6", "grupo": 90, "almoxarifado": "Almox 01", "saldoSistema": 1.0, "valorFinanceiro": 57647.34, "custoUnit": 57647.34, "empenhado": 3.0, "ultimaSaida": "2026-05-26", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.04749", "descricao": "MOD MASTERJET_V2-0_V1.09", "grupo": 87, "almoxarifado": "Almox 01", "saldoSistema": 62.0, "valorFinanceiro": 55194.94, "custoUnit": 890.241, "empenhado": 0.0, "ultimaSaida": "2026-05-25", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.20547", "descricao": "MOD CE32EJ V122 N/T", "grupo": 39, "almoxarifado": "Almox 01", "saldoSistema": 73.0, "valorFinanceiro": 53439.25, "custoUnit": 732.0445, "empenhado": 0.0, "ultimaSaida": "2023-09-07", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.05766", "descricao": "SERVOMOT SWA", "grupo": 7, "almoxarifado": "Almox 01", "saldoSistema": 26.0, "valorFinanceiro": 53261.75, "custoUnit": 2048.5288, "empenhado": 10.0, "ultimaSaida": "2026-06-17", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.27071", "descricao": "CJTO RECEP TNS GM", "grupo": 118, "almoxarifado": "Almox 01", "saldoSistema": 26.0, "valorFinanceiro": 50958.44, "custoUnit": 1959.94, "empenhado": 0.0, "ultimaSaida": "2026-03-03", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.09946", "descricao": "CAMERA COLOR ACA2000-50GC", "grupo": 53, "almoxarifado": "Almox 01", "saldoSistema": 5.0, "valorFinanceiro": 49832.93, "custoUnit": 9966.586, "empenhado": 0.0, "ultimaSaida": "2026-02-13", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.33346", "descricao": "BAND ALINH RAIADA", "grupo": 53, "almoxarifado": "Almox 01", "saldoSistema": 97.0, "valorFinanceiro": 49091.11, "custoUnit": 506.0939, "empenhado": 6.0, "ultimaSaida": "2026-06-12", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.67040", "descricao": "MOD ADITIVO PROJETO", "grupo": 90, "almoxarifado": "Almox 01", "saldoSistema": 1.0, "valorFinanceiro": 48785.54, "custoUnit": 48785.54, "empenhado": 0.0, "ultimaSaida": "/  /", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.24584", "descricao": "MOD SELECAO FCS V2.4.4.0", "grupo": 87, "almoxarifado": "Almox 01", "saldoSistema": 5.0, "valorFinanceiro": 47224.32, "custoUnit": 9444.864, "empenhado": 0.0, "ultimaSaida": "2025-10-21", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.67378", "descricao": "MOD SD1000 MENOR", "grupo": 90, "almoxarifado": "Almox 01", "saldoSistema": 1.0, "valorFinanceiro": 46190.74, "custoUnit": 46190.74, "empenhado": 3.0, "ultimaSaida": "2026-05-11", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.37088", "descricao": "CJTO CCD TNS II IR", "grupo": 118, "almoxarifado": "Almox 01", "saldoSistema": 22.0, "valorFinanceiro": 45895.97, "custoUnit": 2086.1805, "empenhado": 0.0, "ultimaSaida": "2026-05-28", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.34297", "descricao": "MOD DRVJET_V201 V3.0.1", "grupo": 39, "almoxarifado": "Almox 01", "saldoSistema": 24.0, "valorFinanceiro": 45071.85, "custoUnit": 1877.9937, "empenhado": 28.0, "ultimaSaida": "2026-06-11", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.33872", "descricao": "DISJ DIFERENCIAL 25A C 30MA", "grupo": 23, "almoxarifado": "Almox 01", "saldoSistema": 36.0, "valorFinanceiro": 44373.24, "custoUnit": 1232.59, "empenhado": 0.0, "ultimaSaida": "2025-08-05", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.54272", "descricao": "FILTRO OPT IR LP 780NM M52X0.75", "grupo": 53, "almoxarifado": "Almox 01", "saldoSistema": 165.0, "valorFinanceiro": 43804.81, "custoUnit": 265.4837, "empenhado": 11.0, "ultimaSaida": "2026-02-02", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.04975", "descricao": "MOD PC THINCLIENT", "grupo": 37, "almoxarifado": "Almox 01", "saldoSistema": 13.0, "valorFinanceiro": 43468.63, "custoUnit": 3343.7408, "empenhado": 2.0, "ultimaSaida": "2026-06-16", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "2406600012", "descricao": "CI SMD TCMT4100 SOIC-16 LF", "grupo": 34, "almoxarifado": "Almox 01", "saldoSistema": 7948.0, "valorFinanceiro": 43320.56, "custoUnit": 5.4505, "empenhado": 0.0, "ultimaSaida": "2026-05-08", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.24287", "descricao": "CHAPA ACO 1020FQ 4,76MM1,5X3M", "grupo": 13, "almoxarifado": "Almox 01", "saldoSistema": 240.4557, "valorFinanceiro": 42711.51, "custoUnit": 177.6274, "empenhado": 44.2138, "ultimaSaida": "2026-06-17", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.05717", "descricao": "NUCLEO VALV MONTADO", "grupo": 80, "almoxarifado": "Almox 01", "saldoSistema": 2165.0, "valorFinanceiro": 42488.39, "custoUnit": 19.6251, "empenhado": 3250.0, "ultimaSaida": "2026-06-04", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.01798", "descricao": "MOD AMPCCD_AV106", "grupo": 87, "almoxarifado": "Almox 01", "saldoSistema": 23.0, "valorFinanceiro": 42353.64, "custoUnit": 1841.4626, "empenhado": 0.0, "ultimaSaida": "2025-12-15", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.05327", "descricao": "SERVOCONVERSOR SCA06", "grupo": 7, "almoxarifado": "Almox 01", "saldoSistema": 21.0, "valorFinanceiro": 40824.44, "custoUnit": 1944.0209, "empenhado": 11.0, "ultimaSaida": "2026-06-18", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.34498", "descricao": "PLACA TELA DE EXIBICAO 10.4\"", "grupo": 111, "almoxarifado": "Almox 01", "saldoSistema": 3.0, "valorFinanceiro": 40764.15, "custoUnit": 13588.05, "empenhado": 0.0, "ultimaSaida": "2024-03-06", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.15621", "descricao": "INTERFACE", "grupo": 4, "almoxarifado": "Almox 01", "saldoSistema": 18.0, "valorFinanceiro": 38662.24, "custoUnit": 2147.9022, "empenhado": 11.0, "ultimaSaida": "2026-06-18", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.21012", "descricao": "CARTAO 8 DI SAFETY ET200SP", "grupo": 4, "almoxarifado": "Almox 01", "saldoSistema": 24.0, "valorFinanceiro": 38221.54, "custoUnit": 1592.5642, "empenhado": 14.0, "ultimaSaida": "2026-04-17", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.60573", "descricao": "CJTO CCD TNSII LITE 2025", "grupo": 118, "almoxarifado": "Almox 01", "saldoSistema": 16.0, "valorFinanceiro": 37648.0, "custoUnit": 2353.0, "empenhado": 0.0, "ultimaSaida": "/  /", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.06499", "descricao": "LED SMD AZ", "grupo": 53, "almoxarifado": "Almox 01", "saldoSistema": 3450.0, "valorFinanceiro": 35806.42, "custoUnit": 10.3787, "empenhado": 0.0, "ultimaSaida": "2026-03-19", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.60655", "descricao": "MOD VALV EJ 64 TNSII LITE 2025", "grupo": 118, "almoxarifado": "Almox 01", "saldoSistema": 8.0, "valorFinanceiro": 35101.68, "custoUnit": 4387.71, "empenhado": 0.0, "ultimaSaida": "/  /", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.09713", "descricao": "MOD MASTERJET_V2-0_N/TE", "grupo": 39, "almoxarifado": "Almox 01", "saldoSistema": 41.0, "valorFinanceiro": 33483.02, "custoUnit": 816.659, "empenhado": 0.0, "ultimaSaida": "2014-03-28", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.66923", "descricao": "MOD ELET - CELULA 02 - CAMPO", "grupo": 90, "almoxarifado": "Almox 01", "saldoSistema": 1.0, "valorFinanceiro": 33419.25, "custoUnit": 33419.25, "empenhado": 1.0, "ultimaSaida": "/  /", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.66921", "descricao": "MOD ELET - CELULA 01 - CAMPO", "grupo": 90, "almoxarifado": "Almox 01", "saldoSistema": 1.0, "valorFinanceiro": 33042.84, "custoUnit": 33042.84, "empenhado": 1.0, "ultimaSaida": "/  /", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.33736", "descricao": "MOD BR LED AZ V201", "grupo": 39, "almoxarifado": "Almox 01", "saldoSistema": 488.0, "valorFinanceiro": 32971.4, "custoUnit": 67.5643, "empenhado": 116.0, "ultimaSaida": "2026-06-16", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.60554", "descricao": "VALV EJ TNSII LITE 2025", "grupo": 118, "almoxarifado": "Almox 01", "saldoSistema": 62.0, "valorFinanceiro": 31130.51, "custoUnit": 502.105, "empenhado": 5.0, "ultimaSaida": "2026-05-22", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.18725", "descricao": "MOD CE32EJE C/ PIGGYBACK", "grupo": 87, "almoxarifado": "Almox 01", "saldoSistema": 30.0, "valorFinanceiro": 30841.98, "custoUnit": 1028.066, "empenhado": 0.0, "ultimaSaida": "2026-03-10", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "2403300003", "descricao": "RELE CONV 12V 2 CONTATOS", "grupo": 32, "almoxarifado": "Almox 01", "saldoSistema": 5947.0, "valorFinanceiro": 30508.11, "custoUnit": 5.13, "empenhado": 0.0, "ultimaSaida": "2026-03-19", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.19866", "descricao": "CHAPA INOX 304 2B 3,0X1200X3000MM", "grupo": 15, "almoxarifado": "Almox 01", "saldoSistema": 74.5182, "valorFinanceiro": 29242.8, "custoUnit": 392.4249, "empenhado": 24.9705, "ultimaSaida": "2026-06-18", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.06809", "descricao": "MOD BLS 256 LADO A V1-0  AZ", "grupo": 39, "almoxarifado": "Almox 01", "saldoSistema": 116.0, "valorFinanceiro": 28996.29, "custoUnit": 249.968, "empenhado": 0.0, "ultimaSaida": "2024-03-20", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.54011", "descricao": "CB DETECT METAIS 250 X 125 MM", "grupo": 116, "almoxarifado": "Almox 01", "saldoSistema": 1.0, "valorFinanceiro": 28835.02, "custoUnit": 28835.02, "empenhado": 4.0, "ultimaSaida": "2026-06-11", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.35613", "descricao": "MOD INTERFACE BOARD", "grupo": 118, "almoxarifado": "Almox 01", "saldoSistema": 9.0, "valorFinanceiro": 28750.35, "custoUnit": 3194.4833, "empenhado": 0.0, "ultimaSaida": "2025-04-01", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.22276", "descricao": "INVERSOR 0,75CV 380V G120C PN", "grupo": 5, "almoxarifado": "Almox 01", "saldoSistema": 17.0, "valorFinanceiro": 28597.27, "custoUnit": 1682.1924, "empenhado": 12.0, "ultimaSaida": "2026-05-26", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.36883", "descricao": "FONTE CHAV 48V/21A", "grupo": 53, "almoxarifado": "Almox 01", "saldoSistema": 21.0, "valorFinanceiro": 28293.04, "custoUnit": 1347.2876, "empenhado": 6.0, "ultimaSaida": "2026-06-11", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.29018", "descricao": "ROLETE S3500 AZ50 EL1200 1Z14", "grupo": 71, "almoxarifado": "Almox 01", "saldoSistema": 228.0, "valorFinanceiro": 28254.41, "custoUnit": 123.9229, "empenhado": 255.0, "ultimaSaida": "2026-04-22", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.25052", "descricao": "VALV EJ TNS PM", "grupo": 118, "almoxarifado": "Almox 01", "saldoSistema": 64.0, "valorFinanceiro": 28234.48, "custoUnit": 441.1637, "empenhado": 0.0, "ultimaSaida": "2026-06-11", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.44240", "descricao": "INTERFACE HMI MTP1000 CONFORT UNIFIED", "grupo": 4, "almoxarifado": "Almox 01", "saldoSistema": 2.0, "valorFinanceiro": 27999.28, "custoUnit": 13999.64, "empenhado": 0.0, "ultimaSaida": "2024-05-15", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.31741", "descricao": "INVERSOR 3CV 380V G120C PN", "grupo": 5, "almoxarifado": "Almox 01", "saldoSistema": 12.0, "valorFinanceiro": 26987.79, "custoUnit": 2248.9825, "empenhado": 10.0, "ultimaSaida": "2026-05-28", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.23437", "descricao": "EIXO EXPANSIVEL FAGII", "grupo": 71, "almoxarifado": "Almox 01", "saldoSistema": 14.0, "valorFinanceiro": 26127.55, "custoUnit": 1866.2535, "empenhado": 4.0, "ultimaSaida": "2026-05-26", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.11646", "descricao": "CLP S7-1200", "grupo": 4, "almoxarifado": "Almox 01", "saldoSistema": 9.0, "valorFinanceiro": 25926.62, "custoUnit": 2880.7356, "empenhado": 9.0, "ultimaSaida": "2026-06-12", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "1001100020", "descricao": "CHAPA INOX 304 2B 1,5X1200X3000MM", "grupo": 15, "almoxarifado": "Almox 01", "saldoSistema": 126.9885, "valorFinanceiro": 25629.32, "custoUnit": 201.8239, "empenhado": 26.07, "ultimaSaida": "2026-06-17", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.43174", "descricao": "TRANSMISSOR PESAGEM 2712-T PROFINET", "grupo": 24, "almoxarifado": "Almox 01", "saldoSistema": 8.0, "valorFinanceiro": 25566.68, "custoUnit": 3195.835, "empenhado": 5.0, "ultimaSaida": "2026-06-12", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "2132000002", "descricao": "CALHA ALINH AS LISA", "grupo": 53, "almoxarifado": "Almox 01", "saldoSistema": 44.0, "valorFinanceiro": 25339.38, "custoUnit": 575.895, "empenhado": 0.0, "ultimaSaida": "2022-03-09", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.62797", "descricao": "PLT SEP NAC C=4900 L=2400 A=220", "grupo": 44, "almoxarifado": "Almox 01", "saldoSistema": 21.0, "valorFinanceiro": 24927.2, "custoUnit": 1187.0095, "empenhado": 0.0, "ultimaSaida": "2026-04-27", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.41486", "descricao": "BICO EJ Ø3 ES", "grupo": 77, "almoxarifado": "Almox 01", "saldoSistema": 98.0, "valorFinanceiro": 24260.52, "custoUnit": 247.5563, "empenhado": 0.0, "ultimaSaida": "2025-07-17", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.10509", "descricao": "CJTO REGUA ILUM AMBAR N/TE", "grupo": 39, "almoxarifado": "Almox 01", "saldoSistema": 24.0, "valorFinanceiro": 24191.99, "custoUnit": 1007.9996, "empenhado": 0.0, "ultimaSaida": "2026-01-23", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.15035", "descricao": "INTERFACE KTP700", "grupo": 4, "almoxarifado": "Almox 01", "saldoSistema": 5.0, "valorFinanceiro": 24181.96, "custoUnit": 4836.392, "empenhado": 6.0, "ultimaSaida": "2026-03-02", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.07529", "descricao": "LED SMD VD", "grupo": 53, "almoxarifado": "Almox 01", "saldoSistema": 3300.0, "valorFinanceiro": 23519.55, "custoUnit": 7.1271, "empenhado": 0.0, "ultimaSaida": "2018-03-22", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.67470", "descricao": "CJTO BASE FM5000 CZ", "grupo": 16, "almoxarifado": "Almox 01", "saldoSistema": 1.0, "valorFinanceiro": 23460.32, "custoUnit": 23460.32, "empenhado": 1.0, "ultimaSaida": "/  /", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.25592", "descricao": "LAMP LED VM 30VDC 1200MM", "grupo": 56, "almoxarifado": "Almox 01", "saldoSistema": 78.0, "valorFinanceiro": 23137.82, "custoUnit": 296.6387, "empenhado": 0.0, "ultimaSaida": "2026-03-04", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.67709", "descricao": "MOD DOS ROSCA", "grupo": 90, "almoxarifado": "Almox 01", "saldoSistema": 1.0, "valorFinanceiro": 23095.34, "custoUnit": 23095.34, "empenhado": 1.0, "ultimaSaida": "/  /", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.16999", "descricao": "MOD DRVRIV V120 VM DP 0,37A", "grupo": 39, "almoxarifado": "Almox 01", "saldoSistema": 204.0, "valorFinanceiro": 23059.34, "custoUnit": 113.036, "empenhado": 0.0, "ultimaSaida": "2019-05-31", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.10723", "descricao": "SERVOMOT SWA 714-13-30", "grupo": 7, "almoxarifado": "Almox 01", "saldoSistema": 6.0, "valorFinanceiro": 22987.08, "custoUnit": 3831.18, "empenhado": 1.0, "ultimaSaida": "2026-05-11", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.25590", "descricao": "LAMP LED AZ 30VDC 1200MM", "grupo": 56, "almoxarifado": "Almox 01", "saldoSistema": 58.0, "valorFinanceiro": 22670.11, "custoUnit": 390.864, "empenhado": 0.0, "ultimaSaida": "2025-06-10", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.05974", "descricao": "RED PLANETARIO 10:1", "grupo": 72, "almoxarifado": "Almox 01", "saldoSistema": 19.0, "valorFinanceiro": 22662.81, "custoUnit": 1192.7795, "empenhado": 14.0, "ultimaSaida": "2026-06-17", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.27689", "descricao": "CLP FX5UC 24VDC 16IN X 16OUT", "grupo": 4, "almoxarifado": "Almox 01", "saldoSistema": 9.0, "valorFinanceiro": 22603.24, "custoUnit": 2511.4711, "empenhado": 6.0, "ultimaSaida": "2026-06-16", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.35614", "descricao": "MOD CONTROL BOARD", "grupo": 118, "almoxarifado": "Almox 01", "saldoSistema": 8.0, "valorFinanceiro": 22058.73, "custoUnit": 2757.3412, "empenhado": 0.0, "ultimaSaida": "2025-12-01", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.00461", "descricao": "CONV DC-DC 5BE01", "grupo": 53, "almoxarifado": "Almox 01", "saldoSistema": 60.0, "valorFinanceiro": 22016.13, "custoUnit": 366.9355, "empenhado": 0.0, "ultimaSaida": "2024-03-15", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.35617", "descricao": "MOD VALV EJ 64VAL", "grupo": 118, "almoxarifado": "Almox 01", "saldoSistema": 9.0, "valorFinanceiro": 21954.86, "custoUnit": 2439.4289, "empenhado": 0.0, "ultimaSaida": "2026-03-30", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.13595", "descricao": "CABO 4G1,5MM2 500V", "grupo": 29, "almoxarifado": "Almox 01", "saldoSistema": 2270.0, "valorFinanceiro": 21950.3, "custoUnit": 9.6697, "empenhado": 700.0, "ultimaSaida": "2026-06-16", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.36810", "descricao": "MOD MORD FAG C1 CZ", "grupo": 90, "almoxarifado": "Almox 01", "saldoSistema": 2.0, "valorFinanceiro": 21363.85, "custoUnit": 10681.925, "empenhado": 3.0, "ultimaSaida": "2026-03-24", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.49002", "descricao": "ENGR PINH ACO 1045 DUPLA Z17-3/4", "grupo": 77, "almoxarifado": "Almox 01", "saldoSistema": 294.0, "valorFinanceiro": 21130.96, "custoUnit": 71.874, "empenhado": 294.0, "ultimaSaida": "2025-09-29", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.06070", "descricao": "LENTE OPT P/LED 26,5MM", "grupo": 53, "almoxarifado": "Almox 01", "saldoSistema": 3164.0, "valorFinanceiro": 21019.87, "custoUnit": 6.6434, "empenhado": 180.0, "ultimaSaida": "2026-05-13", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.24491", "descricao": "MONITOR C/ PC", "grupo": 118, "almoxarifado": "Almox 01", "saldoSistema": 2.0, "valorFinanceiro": 20812.16, "custoUnit": 10406.08, "empenhado": 0.0, "ultimaSaida": "2025-01-29", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.16165", "descricao": "NUCLEO ESTAMPADO / SOLDADO", "grupo": 81, "almoxarifado": "Almox 01", "saldoSistema": 5773.0, "valorFinanceiro": 20767.12, "custoUnit": 3.5973, "empenhado": 6600.0, "ultimaSaida": "2026-06-16", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.37095", "descricao": "CJTO CCD TNS II FILTRO 700NM", "grupo": 118, "almoxarifado": "Almox 01", "saldoSistema": 10.0, "valorFinanceiro": 20620.0, "custoUnit": 2062.0, "empenhado": 0.0, "ultimaSaida": "2025-04-25", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.10763", "descricao": "MOTORED 1:14,33", "grupo": 72, "almoxarifado": "Almox 01", "saldoSistema": 23.0, "valorFinanceiro": 20452.64, "custoUnit": 889.2452, "empenhado": 31.0, "ultimaSaida": "2026-06-18", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.53563", "descricao": "MOTORED 1:94", "grupo": 72, "almoxarifado": "Almox 01", "saldoSistema": 5.0, "valorFinanceiro": 20295.47, "custoUnit": 4059.094, "empenhado": 0.0, "ultimaSaida": "2024-09-11", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.06919", "descricao": "ROLO PUX AUX EMBORR 45 SH A", "grupo": 96, "almoxarifado": "Almox 01", "saldoSistema": 17.0, "valorFinanceiro": 20240.05, "custoUnit": 1190.5912, "empenhado": 4.0, "ultimaSaida": "2026-05-26", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.18407", "descricao": "EIXO EXPANSIVEL", "grupo": 71, "almoxarifado": "Almox 01", "saldoSistema": 13.0, "valorFinanceiro": 19914.92, "custoUnit": 1531.9169, "empenhado": 8.0, "ultimaSaida": "2026-06-16", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.17764", "descricao": "ROL DE GIRO TDP ROTATIVO", "grupo": 73, "almoxarifado": "Almox 01", "saldoSistema": 2.0, "valorFinanceiro": 19615.51, "custoUnit": 9807.755, "empenhado": 1.0, "ultimaSaida": "2026-04-14", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "2406700051", "descricao": "TRANS SMD MOSFET IRFS52N15DSMD", "grupo": 43, "almoxarifado": "Almox 01", "saldoSistema": 7356.0, "valorFinanceiro": 19529.45, "custoUnit": 2.6549, "empenhado": 0.0, "ultimaSaida": "2026-04-16", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.09747", "descricao": "IMA 22XM4", "grupo": 3, "almoxarifado": "Almox 01", "saldoSistema": 381.0, "valorFinanceiro": 19201.65, "custoUnit": 50.398, "empenhado": 257.0, "ultimaSaida": "2026-06-17", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.33385", "descricao": "MOD CHASSI EM/FAG C1 CZ", "grupo": 90, "almoxarifado": "Almox 01", "saldoSistema": 2.0, "valorFinanceiro": 19162.03, "custoUnit": 9581.015, "empenhado": 3.0, "ultimaSaida": "2026-03-24", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.02578", "descricao": "LAMP FLUOR BIPIN IR", "grupo": 53, "almoxarifado": "Almox 01", "saldoSistema": 53.0, "valorFinanceiro": 19160.63, "custoUnit": 361.5213, "empenhado": 0.0, "ultimaSaida": "2021-03-23", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.10775", "descricao": "MOTORED 1:6,57", "grupo": 72, "almoxarifado": "Almox 01", "saldoSistema": 22.0, "valorFinanceiro": 19084.21, "custoUnit": 867.4641, "empenhado": 26.0, "ultimaSaida": "2026-06-16", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.00027", "descricao": "POLIA SINCR T10-80", "grupo": 77, "almoxarifado": "Almox 01", "saldoSistema": 30.0, "valorFinanceiro": 18926.2, "custoUnit": 630.8733, "empenhado": 8.0, "ultimaSaida": "2026-05-14", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "2408000079", "descricao": "DISPLAY 320X240 C/TOUCH SCREEN", "grupo": 53, "almoxarifado": "Almox 01", "saldoSistema": 29.0, "valorFinanceiro": 18565.85, "custoUnit": 640.2017, "empenhado": 0.0, "ultimaSaida": "2025-11-17", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.07318", "descricao": "PINO BANANA S/ISOL ESTANHO", "grupo": 77, "almoxarifado": "Almox 01", "saldoSistema": 7536.0, "valorFinanceiro": 18487.35, "custoUnit": 2.4532, "empenhado": 0.0, "ultimaSaida": "2025-10-16", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "22104000010", "descricao": "CORR PU DOS", "grupo": 18, "almoxarifado": "Almox 01", "saldoSistema": 21.0, "valorFinanceiro": 18460.99, "custoUnit": 879.0948, "empenhado": 4.0, "ultimaSaida": "2026-06-09", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.33094", "descricao": "FM2 OP BASE CZ", "grupo": 16, "almoxarifado": "Almox 01", "saldoSistema": 1.0, "valorFinanceiro": 18401.9, "custoUnit": 18401.9, "empenhado": 2.0, "ultimaSaida": "2026-05-30", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.58411", "descricao": "MOD ELETR SCW E 1000", "grupo": 90, "almoxarifado": "Almox 01", "saldoSistema": 2.0, "valorFinanceiro": 18059.64, "custoUnit": 9029.82, "empenhado": 2.0, "ultimaSaida": "2026-05-30", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "12104000042", "descricao": "EIXO CARDA FEM", "grupo": 77, "almoxarifado": "Almox 01", "saldoSistema": 40.0, "valorFinanceiro": 17925.11, "custoUnit": 448.1277, "empenhado": 8.0, "ultimaSaida": "2026-06-12", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "12104000041", "descricao": "EIXO CARDA MACHO", "grupo": 77, "almoxarifado": "Almox 01", "saldoSistema": 40.0, "valorFinanceiro": 17925.09, "custoUnit": 448.1273, "empenhado": 8.0, "ultimaSaida": "2026-06-12", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.41780", "descricao": "CIL MAGN S/HASTE 32X1715", "grupo": 70, "almoxarifado": "Almox 01", "saldoSistema": 6.0, "valorFinanceiro": 17876.23, "custoUnit": 2979.3717, "empenhado": 1.0, "ultimaSaida": "2026-06-16", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.37998", "descricao": "MOD ELET DETECTOR DE METAIS", "grupo": 90, "almoxarifado": "Almox 01", "saldoSistema": 3.0, "valorFinanceiro": 17678.53, "custoUnit": 5892.8433, "empenhado": 8.0, "ultimaSaida": "2026-04-30", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.05829", "descricao": "PERFIL BAND ALINH LISA", "grupo": 66, "almoxarifado": "Almox 01", "saldoSistema": 144.0, "valorFinanceiro": 17283.6, "custoUnit": 120.025, "empenhado": 0.0, "ultimaSaida": "2024-03-20", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.54063", "descricao": "EST PRESS 350X2490 ENTR LAT RETA", "grupo": 88, "almoxarifado": "Almox 01", "saldoSistema": 2.0, "valorFinanceiro": 16947.17, "custoUnit": 8473.585, "empenhado": 3.0, "ultimaSaida": "2026-06-12", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.10762", "descricao": "MOTORED 1:6,57", "grupo": 72, "almoxarifado": "Almox 01", "saldoSistema": 19.0, "valorFinanceiro": 16876.62, "custoUnit": 888.2432, "empenhado": 16.0, "ultimaSaida": "2026-06-13", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.58644", "descricao": "CJTO ELETR BASE ES 4", "grupo": 16, "almoxarifado": "Almox 01", "saldoSistema": 1.0, "valorFinanceiro": 16770.33, "custoUnit": 16770.33, "empenhado": 2.0, "ultimaSaida": "/  /", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.00387", "descricao": "CI SMD TPS767D301PWP HTSSOP-28", "grupo": 34, "almoxarifado": "Almox 01", "saldoSistema": 746.0, "valorFinanceiro": 16605.89, "custoUnit": 22.2599, "empenhado": 25.0, "ultimaSaida": "2026-05-29", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.09275", "descricao": "EXPANSAO I/OS P/ INVERSOR", "grupo": 5, "almoxarifado": "Almox 01", "saldoSistema": 75.0, "valorFinanceiro": 16597.49, "custoUnit": 221.2998, "empenhado": 39.0, "ultimaSaida": "2026-06-18", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.24527", "descricao": "MOD INTERFACE SMALL", "grupo": 118, "almoxarifado": "Almox 01", "saldoSistema": 4.0, "valorFinanceiro": 16427.56, "custoUnit": 4106.89, "empenhado": 0.0, "ultimaSaida": "2025-02-12", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.17473", "descricao": "DISTRIBUIDOR REDE 16 DI/O", "grupo": 23, "almoxarifado": "Almox 01", "saldoSistema": 26.0, "valorFinanceiro": 16326.87, "custoUnit": 627.9565, "empenhado": 22.0, "ultimaSaida": "2026-05-28", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.36257", "descricao": "MINI VENT 80X80X38 24VDC", "grupo": 24, "almoxarifado": "Almox 01", "saldoSistema": 182.0, "valorFinanceiro": 16242.34, "custoUnit": 89.2436, "empenhado": 185.0, "ultimaSaida": "2026-06-16", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "2112000001", "descricao": "NUCLEO MG SOLDADO/FRESADO", "grupo": 76, "almoxarifado": "Almox 01", "saldoSistema": 1511.0, "valorFinanceiro": 16161.32, "custoUnit": 10.6958, "empenhado": 0.0, "ultimaSaida": "2025-10-07", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.10510", "descricao": "CJTO FR AMBAR N/TE", "grupo": 39, "almoxarifado": "Almox 01", "saldoSistema": 16.0, "valorFinanceiro": 16059.24, "custoUnit": 1003.7025, "empenhado": 0.0, "ultimaSaida": "2025-07-17", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "2409000065", "descricao": "MOD MSFA/FG01", "grupo": 39, "almoxarifado": "Almox 01", "saldoSistema": 71.0, "valorFinanceiro": 15982.53, "custoUnit": 225.1061, "empenhado": 0.0, "ultimaSaida": "2025-11-05", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.54378", "descricao": "MANTA TERMICA 250 X 1100 - 220V / 280W", "grupo": 60, "almoxarifado": "Almox 01", "saldoSistema": 8.0, "valorFinanceiro": 15951.45, "custoUnit": 1993.9313, "empenhado": 0.0, "ultimaSaida": "/  /", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.25664", "descricao": "CHASSI ALIMENTADOR DE PALETES", "grupo": 12, "almoxarifado": "Almox 01", "saldoSistema": 2.0, "valorFinanceiro": 15812.27, "custoUnit": 7906.135, "empenhado": 2.0, "ultimaSaida": "2026-04-13", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.24538", "descricao": "MOD LED NIR SMD", "grupo": 118, "almoxarifado": "Almox 01", "saldoSistema": 31.0, "valorFinanceiro": 15777.76, "custoUnit": 508.96, "empenhado": 0.0, "ultimaSaida": "2020-11-03", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.19084", "descricao": "LENTE 16MM", "grupo": 53, "almoxarifado": "Almox 01", "saldoSistema": 45.0, "valorFinanceiro": 15714.87, "custoUnit": 349.2193, "empenhado": 0.0, "ultimaSaida": "2022-04-19", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "2408000045", "descricao": "DISP LCD 128X240", "grupo": 36, "almoxarifado": "Almox 01", "saldoSistema": 38.0, "valorFinanceiro": 15574.3, "custoUnit": 409.85, "empenhado": 0.0, "ultimaSaida": "2026-02-16", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.25669", "descricao": "CARTAO 8 DO SAFETY ET200SP", "grupo": 4, "almoxarifado": "Almox 01", "saldoSistema": 8.0, "valorFinanceiro": 15521.73, "custoUnit": 1940.2162, "empenhado": 4.0, "ultimaSaida": "2026-04-17", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.06484", "descricao": "MANCAL FJUMT", "grupo": 113, "almoxarifado": "Almox 01", "saldoSistema": 118.0, "valorFinanceiro": 15496.33, "custoUnit": 131.3248, "empenhado": 100.0, "ultimaSaida": "2026-06-17", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.19165", "descricao": "CLP FX5U-80MT/ESS 40IN X 40OUT", "grupo": 4, "almoxarifado": "Almox 01", "saldoSistema": 4.0, "valorFinanceiro": 15495.67, "custoUnit": 3873.9175, "empenhado": 0.0, "ultimaSaida": "2026-06-18", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.19541", "descricao": "CONTAT TRIF", "grupo": 23, "almoxarifado": "Almox 01", "saldoSistema": 88.0, "valorFinanceiro": 15446.81, "custoUnit": 175.5319, "empenhado": 58.0, "ultimaSaida": "2026-06-18", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.06203", "descricao": "SENS INDUTIVO CC D18 PNP NA", "grupo": 6, "almoxarifado": "Almox 01", "saldoSistema": 174.0, "valorFinanceiro": 15198.73, "custoUnit": 87.349, "empenhado": 68.0, "ultimaSaida": "2026-06-18", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "2406000015", "descricao": "CI TMS 320 C 50 PQ80", "grupo": 34, "almoxarifado": "Almox 01", "saldoSistema": 33.0, "valorFinanceiro": 14957.74, "custoUnit": 453.2648, "empenhado": 3.0, "ultimaSaida": "2026-05-29", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.33267", "descricao": "MOD DRVLED10S_V104 V5.0.0", "grupo": 39, "almoxarifado": "Almox 01", "saldoSistema": 7.0, "valorFinanceiro": 14863.27, "custoUnit": 2123.3243, "empenhado": 5.0, "ultimaSaida": "2026-06-17", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.59475", "descricao": "FM2 C/NR12 OP09 220V", "grupo": 90, "almoxarifado": "Almox 01", "saldoSistema": 1.0, "valorFinanceiro": 14724.04, "custoUnit": 14724.04, "empenhado": 1.0, "ultimaSaida": "/  /", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.22030", "descricao": "LAT PE TDP DE ROLETES", "grupo": 12, "almoxarifado": "Almox 01", "saldoSistema": 142.0, "valorFinanceiro": 14700.35, "custoUnit": 103.5236, "empenhado": 156.0, "ultimaSaida": "2026-06-12", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.38292", "descricao": "VIBR DC", "grupo": 53, "almoxarifado": "Almox 01", "saldoSistema": 27.0, "valorFinanceiro": 14618.59, "custoUnit": 541.4293, "empenhado": 28.0, "ultimaSaida": "2026-06-12", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.27691", "descricao": "EXPANSAO FX5-C32 16IN X 16OUT", "grupo": 4, "almoxarifado": "Almox 01", "saldoSistema": 21.0, "valorFinanceiro": 14607.96, "custoUnit": 695.6171, "empenhado": 12.0, "ultimaSaida": "2026-06-16", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.15710", "descricao": "INTERFACE C/RELE EST SOL 24V 1NA MOLA", "grupo": 32, "almoxarifado": "Almox 01", "saldoSistema": 219.0, "valorFinanceiro": 14577.49, "custoUnit": 66.5638, "empenhado": 246.0, "ultimaSaida": "2026-06-18", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.60247", "descricao": "GRADE PROT PERIMETRAL SEP", "grupo": 94, "almoxarifado": "Almox 01", "saldoSistema": 27.0, "valorFinanceiro": 14426.71, "custoUnit": 534.3226, "empenhado": 0.0, "ultimaSaida": "2026-05-26", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.15581", "descricao": "SENS DIFUSO ZONECONTROL PNP", "grupo": 6, "almoxarifado": "Almox 01", "saldoSistema": 22.0, "valorFinanceiro": 14375.55, "custoUnit": 653.4341, "empenhado": 27.0, "ultimaSaida": "2026-06-09", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.09425", "descricao": "LED SMD BRN FRIO 100LM 6700K", "grupo": 53, "almoxarifado": "Almox 01", "saldoSistema": 2470.0, "valorFinanceiro": 14375.16, "custoUnit": 5.8199, "empenhado": 0.0, "ultimaSaida": "2026-05-13", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "2406000034", "descricao": "CI SMD SN65HVD230D SOIC-8 LF", "grupo": 34, "almoxarifado": "Almox 01", "saldoSistema": 1615.0, "valorFinanceiro": 14368.93, "custoUnit": 8.8972, "empenhado": 0.0, "ultimaSaida": "2026-05-08", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.09749", "descricao": "CONEC HR10A-7P-6S", "grupo": 30, "almoxarifado": "Almox 01", "saldoSistema": 312.0, "valorFinanceiro": 14215.54, "custoUnit": 45.5626, "empenhado": 0.0, "ultimaSaida": "2026-02-20", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.28795", "descricao": "MOD INTERFACE BIG", "grupo": 118, "almoxarifado": "Almox 01", "saldoSistema": 4.0, "valorFinanceiro": 13984.8, "custoUnit": 3496.2, "empenhado": 0.0, "ultimaSaida": "2025-05-01", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.05588", "descricao": "TORRE LUMIN VD/AM/VM C/BIP", "grupo": 24, "almoxarifado": "Almox 01", "saldoSistema": 52.0, "valorFinanceiro": 13887.0, "custoUnit": 267.0576, "empenhado": 21.0, "ultimaSaida": "2026-06-18", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.21011", "descricao": "CARTAO 16 DO STANDARD ET200SP", "grupo": 4, "almoxarifado": "Almox 01", "saldoSistema": 19.0, "valorFinanceiro": 13883.06, "custoUnit": 730.6874, "empenhado": 13.0, "ultimaSaida": "2026-06-10", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.35313", "descricao": "MOD INTERFACE V202 V4.0.3", "grupo": 39, "almoxarifado": "Almox 01", "saldoSistema": 14.0, "valorFinanceiro": 13813.02, "custoUnit": 986.6443, "empenhado": 5.0, "ultimaSaida": "2026-06-11", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.10708", "descricao": "SERVOCONVERSOR SCA06", "grupo": 7, "almoxarifado": "Almox 01", "saldoSistema": 4.0, "valorFinanceiro": 13812.5, "custoUnit": 3453.125, "empenhado": 0.0, "ultimaSaida": "2026-05-11", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.04657", "descricao": "SUPORTE GUIA FUNDO CH C1", "grupo": 108, "almoxarifado": "Almox 01", "saldoSistema": 6.0, "valorFinanceiro": 287.47, "custoUnit": 47.9117, "empenhado": 0.0, "ultimaSaida": "2026-05-22", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "80000588", "descricao": "FUSIVEL 11A 1000V (FLUKE)", "grupo": 25, "almoxarifado": "Almox 01", "saldoSistema": 2.0, "valorFinanceiro": 64.85, "custoUnit": 32.425, "empenhado": 0.0, "ultimaSaida": "2014-03-17", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.66462", "descricao": "ADAP EXASUT PO", "grupo": 122, "almoxarifado": "Almox 01", "saldoSistema": 5.0, "valorFinanceiro": 326.72, "custoUnit": 65.344, "empenhado": 3.0, "ultimaSaida": "2026-02-24", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "80001262", "descricao": "PROT CAB FIBRA LASER", "grupo": 58, "almoxarifado": "Almox 01", "saldoSistema": 1.0, "valorFinanceiro": 1804.61, "custoUnit": 1804.61, "empenhado": 0.0, "ultimaSaida": "/  /", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.05564", "descricao": "RES SMD CARB 5% 0R 1/8W 0805", "grupo": 41, "almoxarifado": "Almox 01", "saldoSistema": 6150.0, "valorFinanceiro": 72.86, "custoUnit": 0.0118, "empenhado": 0.0, "ultimaSaida": "2025-05-06", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.25722", "descricao": "CONECTOR INICIAL CINZA PUSH IN", "grupo": 22, "almoxarifado": "Almox 01", "saldoSistema": 18.0, "valorFinanceiro": 88.35, "custoUnit": 4.9083, "empenhado": 58.0, "ultimaSaida": "2026-05-27", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.37825", "descricao": "UNIAO CORPO EST SAIDA FARDO", "grupo": 94, "almoxarifado": "Almox 01", "saldoSistema": 2.0, "valorFinanceiro": 27.45, "custoUnit": 13.725, "empenhado": 10.0, "ultimaSaida": "2026-06-17", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.66778", "descricao": "EIXO TRAC ENGR", "grupo": 77, "almoxarifado": "Almox 01", "saldoSistema": 3.0, "valorFinanceiro": 1569.79, "custoUnit": 523.2633, "empenhado": 0.0, "ultimaSaida": "2026-05-14", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.25572", "descricao": "PORTA FRONT 466X1230X8MM", "grupo": 1, "almoxarifado": "Almox 01", "saldoSistema": 4.0, "valorFinanceiro": 840.12, "custoUnit": 210.03, "empenhado": 4.0, "ultimaSaida": "2026-05-19", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.56493", "descricao": "CJTO ESQ SUPORTE CORR PUX C1", "grupo": 16, "almoxarifado": "Almox 01", "saldoSistema": 1.0, "valorFinanceiro": 848.7, "custoUnit": 848.7, "empenhado": 0.0, "ultimaSaida": "2024-11-05", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.41784", "descricao": "FECH DIR BICOS", "grupo": 121, "almoxarifado": "Almox 01", "saldoSistema": 3.0, "valorFinanceiro": 36.4, "custoUnit": 12.1333, "empenhado": 5.0, "ultimaSaida": "2026-06-16", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.18220", "descricao": "BASE SUPORTE CAMERA", "grupo": 96, "almoxarifado": "Almox 01", "saldoSistema": 20.0, "valorFinanceiro": 234.05, "custoUnit": 11.7025, "empenhado": 0.0, "ultimaSaida": "2026-04-15", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "2405100002", "descricao": "RES SMD CARB 1% 330R 1/8W 0805", "grupo": 41, "almoxarifado": "Almox 01", "saldoSistema": 10100.0, "valorFinanceiro": 96.32, "custoUnit": 0.0095, "empenhado": 0.0, "ultimaSaida": "2026-05-08", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.67907", "descricao": "PENEIRA BAIXA VAZAO Ø48", "grupo": 121, "almoxarifado": "Almox 01", "saldoSistema": 2.0, "valorFinanceiro": 5.13, "custoUnit": 2.565, "empenhado": 2.0, "ultimaSaida": "2026-06-09", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.38711", "descricao": "MORD DIANT 380 ESTR", "grupo": 77, "almoxarifado": "Almox 01", "saldoSistema": 2.0, "valorFinanceiro": 941.27, "custoUnit": 470.635, "empenhado": 0.0, "ultimaSaida": "2026-03-09", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "12104000013", "descricao": "ROL ESF 6203-ZZ", "grupo": 73, "almoxarifado": "Almox 01", "saldoSistema": 317.0, "valorFinanceiro": 745.75, "custoUnit": 2.3525, "empenhado": 58.0, "ultimaSaida": "2026-06-16", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.27819", "descricao": "MOD LED RGB BG", "grupo": 118, "almoxarifado": "Almox 01", "saldoSistema": 74.0, "valorFinanceiro": 11758.99, "custoUnit": 158.9053, "empenhado": 0.0, "ultimaSaida": "2022-08-22", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.09336", "descricao": "PRENSA CABO PG11", "grupo": 24, "almoxarifado": "Almox 01", "saldoSistema": 714.0, "valorFinanceiro": 1035.77, "custoUnit": 1.4507, "empenhado": 0.0, "ultimaSaida": "2026-05-27", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.18712", "descricao": "FUSO M8X169MM C1", "grupo": 76, "almoxarifado": "Almox 01", "saldoSistema": 19.0, "valorFinanceiro": 134.93, "custoUnit": 7.1016, "empenhado": 26.0, "ultimaSaida": "2026-06-17", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.04404", "descricao": "EIXO BAND DOS EM C1", "grupo": 77, "almoxarifado": "Almox 01", "saldoSistema": 4.0, "valorFinanceiro": 370.02, "custoUnit": 92.505, "empenhado": 0.0, "ultimaSaida": "2026-02-25", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.16408", "descricao": "CJTO SUPORTE ENCODER", "grupo": 16, "almoxarifado": "Almox 01", "saldoSistema": 1.0, "valorFinanceiro": 332.35, "custoUnit": 332.35, "empenhado": 5.0, "ultimaSaida": "2026-06-10", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.12370", "descricao": "ADES HAB EST", "grupo": 2, "almoxarifado": "Almox 01", "saldoSistema": 24.0, "valorFinanceiro": 112.98, "custoUnit": 4.7075, "empenhado": 2.0, "ultimaSaida": "2026-06-03", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "80001253", "descricao": "BOCAL(PONTEIRA)UNICA CURTA SOLDA MAG", "grupo": 17, "almoxarifado": "Almox 01", "saldoSistema": 10.0, "valorFinanceiro": 483.61, "custoUnit": 48.361, "empenhado": 0.0, "ultimaSaida": "2025-12-04", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.30674", "descricao": "DISCO ACAB 4.1/2\" 115 VM 180GR", "grupo": 17, "almoxarifado": "Almox 01", "saldoSistema": 15.0, "valorFinanceiro": 544.85, "custoUnit": 36.3233, "empenhado": 0.0, "ultimaSaida": "2025-08-13", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.48515", "descricao": "FECH ESQ QUADRO CHASSI", "grupo": 94, "almoxarifado": "Almox 01", "saldoSistema": 1.0, "valorFinanceiro": 14.87, "custoUnit": 14.87, "empenhado": 5.0, "ultimaSaida": "2026-06-16", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.56999", "descricao": "DSBC-40-200-PPSA-N3", "grupo": 70, "almoxarifado": "Almox 01", "saldoSistema": 2.0, "valorFinanceiro": 546.96, "custoUnit": 273.48, "empenhado": 0.0, "ultimaSaida": "2025-01-13", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.25053", "descricao": "FILTRO OPT SP 700NM", "grupo": 118, "almoxarifado": "Almox 01", "saldoSistema": 77.0, "valorFinanceiro": 11855.79, "custoUnit": 153.9713, "empenhado": 0.0, "ultimaSaida": "2026-02-25", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "2402100039", "descricao": "TERM MACHO P/CONEC 20/14", "grupo": 30, "almoxarifado": "Almox 01", "saldoSistema": 2223.0, "valorFinanceiro": 2285.24, "custoUnit": 1.028, "empenhado": 12.0, "ultimaSaida": "2026-05-29", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.62752", "descricao": "SUPORTE PARA CORTINA KEYENCE", "grupo": 24, "almoxarifado": "Almox 01", "saldoSistema": 1.0, "valorFinanceiro": 180.01, "custoUnit": 180.01, "empenhado": 0.0, "ultimaSaida": "2026-05-22", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.39431", "descricao": "MANG VACUOFLEX 1.1/2 PVC TRANSP C/ARAM", "grupo": 70, "almoxarifado": "Almox 01", "saldoSistema": 17.0, "valorFinanceiro": 640.44, "custoUnit": 37.6729, "empenhado": 0.0, "ultimaSaida": "2023-05-17", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "2406300006", "descricao": "DIODO CONV ULTFAST RET MUR810G", "grupo": 35, "almoxarifado": "Almox 01", "saldoSistema": 581.0, "valorFinanceiro": 808.27, "custoUnit": 1.3912, "empenhado": 72.0, "ultimaSaida": "2026-06-12", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "21001100004", "descricao": "BR ACO QD 1020 TREF 1", "grupo": 65, "almoxarifado": "Almox 01", "saldoSistema": 22.4254, "valorFinanceiro": 1369.08, "custoUnit": 61.0504, "empenhado": 0.0, "ultimaSaida": "2026-06-10", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.16311", "descricao": "CONEC M12-4P-FEM AUTOCRIMP", "grupo": 30, "almoxarifado": "Almox 01", "saldoSistema": 23.0, "valorFinanceiro": 587.26, "custoUnit": 25.533, "empenhado": 13.0, "ultimaSaida": "2026-04-17", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.46119", "descricao": "MANCAL POLIA MOVIDA PUX TI5000", "grupo": 77, "almoxarifado": "Almox 01", "saldoSistema": 4.0, "valorFinanceiro": 483.49, "custoUnit": 120.8725, "empenhado": 4.0, "ultimaSaida": "2024-02-14", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.66572", "descricao": "BASE ISOL CB DETECT", "grupo": 77, "almoxarifado": "Almox 01", "saldoSistema": 6.0, "valorFinanceiro": 907.44, "custoUnit": 151.24, "empenhado": 0.0, "ultimaSaida": "2026-03-20", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "3002000067", "descricao": "CHAVE COMBINADA 10MM S/CATRACA", "grupo": 46, "almoxarifado": "Almox 01", "saldoSistema": 5.0, "valorFinanceiro": 41.24, "custoUnit": 8.248, "empenhado": 0.0, "ultimaSaida": "2026-01-29", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.51045", "descricao": "GUIA EST 1250MM DESLIZANTE", "grupo": 122, "almoxarifado": "Almox 01", "saldoSistema": 2.0, "valorFinanceiro": 251.56, "custoUnit": 125.78, "empenhado": 0.0, "ultimaSaida": "/  /", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.29051", "descricao": "GARFO EMPURR FARDO", "grupo": 12, "almoxarifado": "Almox 01", "saldoSistema": 43.0, "valorFinanceiro": 4092.88, "custoUnit": 95.1833, "empenhado": 40.0, "ultimaSaida": "2026-03-10", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.05297", "descricao": "PE ARTIC B100 M20X200C-1P-1AR", "grupo": 60, "almoxarifado": "Almox 01", "saldoSistema": 81.0, "valorFinanceiro": 2840.96, "custoUnit": 35.0736, "empenhado": 48.0, "ultimaSaida": "2026-06-17", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "80001545", "descricao": "SUPORTE TORNO 25X25 P/ CANAL EXTERNO", "grupo": 46, "almoxarifado": "Almox 01", "saldoSistema": 1.0, "valorFinanceiro": 234.49, "custoUnit": 234.49, "empenhado": 0.0, "ultimaSaida": "2025-12-17", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "2405000023", "descricao": "RES M/F 1/4W 1%MINI 330R 3,5MM", "grupo": 41, "almoxarifado": "Almox 01", "saldoSistema": 18353.0, "valorFinanceiro": 550.59, "custoUnit": 0.03, "empenhado": 0.0, "ultimaSaida": "2022-02-09", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.02750", "descricao": "PORTA DOCUMENTOS FORMATO A4", "grupo": 3, "almoxarifado": "Almox 01", "saldoSistema": 33.0, "valorFinanceiro": 1024.46, "custoUnit": 31.0442, "empenhado": 20.0, "ultimaSaida": "2026-06-16", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.09939", "descricao": "BUCHA P/ CODIFICAR CONEC", "grupo": 30, "almoxarifado": "Almox 01", "saldoSistema": 492.0, "valorFinanceiro": 900.69, "custoUnit": 1.8306, "empenhado": 132.0, "ultimaSaida": "2026-06-18", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.28094", "descricao": "FACA EUROLOCK", "grupo": 77, "almoxarifado": "Almox 01", "saldoSistema": 2.0, "valorFinanceiro": 1523.39, "custoUnit": 761.695, "empenhado": 0.0, "ultimaSaida": "2025-11-17", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "80000314", "descricao": "TINTEIRO P/MX 2316", "grupo": 61, "almoxarifado": "Almox 01", "saldoSistema": 9.0, "valorFinanceiro": 225.0, "custoUnit": 25.0, "empenhado": 0.0, "ultimaSaida": "2026-05-22", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "12407000051", "descricao": "EXPANSAO SAIDA AB 16 PTOS", "grupo": 4, "almoxarifado": "Almox 01", "saldoSistema": 4.0, "valorFinanceiro": 5031.12, "custoUnit": 1257.78, "empenhado": 0.0, "ultimaSaida": "2025-06-09", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.26358", "descricao": "BRACO DIR COLOCADOR PAPELAO", "grupo": 94, "almoxarifado": "Almox 01", "saldoSistema": 2.0, "valorFinanceiro": 76.73, "custoUnit": 38.365, "empenhado": 2.0, "ultimaSaida": "2026-04-13", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.08350", "descricao": "FECH FRON INF 1000 S E", "grupo": 12, "almoxarifado": "Almox 01", "saldoSistema": 1.0, "valorFinanceiro": 69.73, "custoUnit": 69.73, "empenhado": 0.0, "ultimaSaida": "2021-01-27", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.37867", "descricao": "DIODO SMD  1A 1000V RS1M", "grupo": 35, "almoxarifado": "Almox 01", "saldoSistema": 369.0, "valorFinanceiro": 270.01, "custoUnit": 0.7317, "empenhado": 72.0, "ultimaSaida": "2026-06-12", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.34409", "descricao": "COLAR Ø119", "grupo": 12, "almoxarifado": "Almox 01", "saldoSistema": 1.0, "valorFinanceiro": 900.35, "custoUnit": 900.35, "empenhado": 0.0, "ultimaSaida": "2023-12-12", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.41190", "descricao": "MEIA BAND", "grupo": 94, "almoxarifado": "Almox 01", "saldoSistema": 2.0, "valorFinanceiro": 88.63, "custoUnit": 44.315, "empenhado": 10.0, "ultimaSaida": "2026-06-16", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "2103400001", "descricao": "ABRAC NYLON T18R 100X2,5", "grupo": 24, "almoxarifado": "Almox 01", "saldoSistema": 2300.0, "valorFinanceiro": 52.33, "custoUnit": 0.0228, "empenhado": 0.0, "ultimaSaida": "2026-06-08", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.27674", "descricao": "FITA NIKROTHAL 80 4,00X0,3MM", "grupo": 17, "almoxarifado": "Almox 01", "saldoSistema": 425.0, "valorFinanceiro": 2159.42, "custoUnit": 5.081, "empenhado": 0.0, "ultimaSaida": "2022-05-23", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.53209", "descricao": "PORCA SEXT M30X3,5 BICR", "grupo": 47, "almoxarifado": "Almox 01", "saldoSistema": 96.0, "valorFinanceiro": 297.74, "custoUnit": 3.1015, "empenhado": 0.0, "ultimaSaida": "/  /", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.00173", "descricao": "CANECA RED 1000/100-200G", "grupo": 76, "almoxarifado": "Almox 01", "saldoSistema": 1.0, "valorFinanceiro": 189.61, "custoUnit": 189.61, "empenhado": 0.0, "ultimaSaida": "2025-10-10", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.37708", "descricao": "EIXO RED SERVO", "grupo": 77, "almoxarifado": "Almox 01", "saldoSistema": 10.0, "valorFinanceiro": 623.36, "custoUnit": 62.336, "empenhado": 0.0, "ultimaSaida": "2025-10-21", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.59665", "descricao": "PALH ALINH ES BAIXA ACR", "grupo": 1, "almoxarifado": "Almox 01", "saldoSistema": 2.0, "valorFinanceiro": 145.62, "custoUnit": 72.81, "empenhado": 0.0, "ultimaSaida": "2025-04-25", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.07782", "descricao": "RES CARB 1W 5% 8R2 9MM", "grupo": 41, "almoxarifado": "Almox 01", "saldoSistema": 450.0, "valorFinanceiro": 13.86, "custoUnit": 0.0308, "empenhado": 0.0, "ultimaSaida": "2024-08-09", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.36372", "descricao": "CORTE PTFE 31X21X8", "grupo": 71, "almoxarifado": "Almox 01", "saldoSistema": 1.0, "valorFinanceiro": 11.98, "custoUnit": 11.98, "empenhado": 0.0, "ultimaSaida": "2025-05-30", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.18129", "descricao": "BASE INF MARCA FILME C1", "grupo": 94, "almoxarifado": "Almox 01", "saldoSistema": 18.0, "valorFinanceiro": 92.19, "custoUnit": 5.1217, "empenhado": 24.0, "ultimaSaida": "2026-06-16", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.20522", "descricao": "CONEX TEE QST 12-10", "grupo": 70, "almoxarifado": "Almox 01", "saldoSistema": 17.0, "valorFinanceiro": 241.91, "custoUnit": 14.23, "empenhado": 0.0, "ultimaSaida": "2025-12-04", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.18481", "descricao": "INVERSOR 1HP 220V MONOF", "grupo": 5, "almoxarifado": "Almox 01", "saldoSistema": 4.0, "valorFinanceiro": 2409.94, "custoUnit": 602.485, "empenhado": 6.0, "ultimaSaida": "2026-06-12", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.28705", "descricao": "SUPORTE FIX GIRAT CIL 40", "grupo": 70, "almoxarifado": "Almox 01", "saldoSistema": 5.0, "valorFinanceiro": 630.55, "custoUnit": 126.11, "empenhado": 0.0, "ultimaSaida": "2026-02-13", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.30265", "descricao": "CIL 40X550", "grupo": 70, "almoxarifado": "Almox 01", "saldoSistema": 1.0, "valorFinanceiro": 247.72, "custoUnit": 247.72, "empenhado": 1.0, "ultimaSaida": "2026-03-11", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.01496", "descricao": "PORTA COLETOR", "grupo": 121, "almoxarifado": "Almox 01", "saldoSistema": 9.0, "valorFinanceiro": 72.06, "custoUnit": 8.0067, "empenhado": 0.0, "ultimaSaida": "2026-03-18", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.23197", "descricao": "PF ALLEN CB CIL M10X50 BICR", "grupo": 47, "almoxarifado": "Almox 01", "saldoSistema": 177.0, "valorFinanceiro": 86.41, "custoUnit": 0.4882, "empenhado": 2.0, "ultimaSaida": "2023-11-17", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.35909", "descricao": "CJTO S V LISA FM5000 C1 CZ", "grupo": 16, "almoxarifado": "Almox 01", "saldoSistema": 2.0, "valorFinanceiro": 2061.68, "custoUnit": 1030.84, "empenhado": 4.0, "ultimaSaida": "2026-05-28", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.55480", "descricao": "EXPANSAO PLC500 - MOD6.00-2SG", "grupo": 5, "almoxarifado": "Almox 01", "saldoSistema": 4.0, "valorFinanceiro": 3511.21, "custoUnit": 877.8025, "empenhado": 0.0, "ultimaSaida": "2025-06-09", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.67530", "descricao": "MOD TUB FORM Ø127 C1 CZ", "grupo": 90, "almoxarifado": "Almox 01", "saldoSistema": 1.0, "valorFinanceiro": 2099.44, "custoUnit": 2099.44, "empenhado": 1.0, "ultimaSaida": "/  /", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.42921", "descricao": "CIL 32X320", "grupo": 70, "almoxarifado": "Almox 01", "saldoSistema": 2.0, "valorFinanceiro": 357.58, "custoUnit": 178.79, "empenhado": 0.0, "ultimaSaida": "2026-02-16", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.36845", "descricao": "BOT EMERG RETENCAO", "grupo": 23, "almoxarifado": "Almox 01", "saldoSistema": 42.0, "valorFinanceiro": 953.94, "custoUnit": 22.7129, "empenhado": 0.0, "ultimaSaida": "2022-09-09", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.19348", "descricao": "CORPO MORD TRAS 5000 TEFL", "grupo": 96, "almoxarifado": "Almox 01", "saldoSistema": 10.0, "valorFinanceiro": 3319.34, "custoUnit": 331.934, "empenhado": 12.0, "ultimaSaida": "2026-05-09", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.04423", "descricao": "GUIA HASTE EST COMUM", "grupo": 77, "almoxarifado": "Almox 01", "saldoSistema": 51.0, "valorFinanceiro": 763.57, "custoUnit": 14.972, "empenhado": 52.0, "ultimaSaida": "2026-05-27", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "2408000070", "descricao": "LAMP FLUOR AQUA-GLO 30W T8", "grupo": 56, "almoxarifado": "Almox 01", "saldoSistema": 10.0, "valorFinanceiro": 919.36, "custoUnit": 91.936, "empenhado": 0.0, "ultimaSaida": "2024-06-14", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.44847", "descricao": "SUPORTE FIX POLICARBONATO SCWD5000", "grupo": 121, "almoxarifado": "Almox 01", "saldoSistema": 20.0, "valorFinanceiro": 76.88, "custoUnit": 3.844, "empenhado": 28.0, "ultimaSaida": "2026-06-15", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.37031", "descricao": "CONEC EXCON MAC 11VIAS SERIE 2517", "grupo": 27, "almoxarifado": "Almox 01", "saldoSistema": 156.0, "valorFinanceiro": 1035.51, "custoUnit": 6.6379, "empenhado": 94.0, "ultimaSaida": "2026-06-12", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.23074", "descricao": "CILINDRO DNCM", "grupo": 19, "almoxarifado": "Almox 01", "saldoSistema": 1.0, "valorFinanceiro": 333.98, "custoUnit": 333.98, "empenhado": 0.0, "ultimaSaida": "2020-03-13", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.06806", "descricao": "CIL COMPACTO", "grupo": 70, "almoxarifado": "Almox 01", "saldoSistema": 16.0, "valorFinanceiro": 3856.56, "custoUnit": 241.035, "empenhado": 10.0, "ultimaSaida": "2026-06-18", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.00465", "descricao": "ENGR 60 FR ASII", "grupo": 77, "almoxarifado": "Almox 01", "saldoSistema": 2.0, "valorFinanceiro": 239.58, "custoUnit": 119.79, "empenhado": 0.0, "ultimaSaida": "2024-10-14", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.35527", "descricao": "FREIO ALIM PALLETE", "grupo": 72, "almoxarifado": "Almox 01", "saldoSistema": 1.0, "valorFinanceiro": 763.14, "custoUnit": 763.14, "empenhado": 0.0, "ultimaSaida": "2022-06-06", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.53980", "descricao": "PERFIL C GUIA SUP", "grupo": 71, "almoxarifado": "Almox 01", "saldoSistema": 2.0, "valorFinanceiro": 99.98, "custoUnit": 49.99, "empenhado": 0.0, "ultimaSaida": "2024-07-25", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.16787", "descricao": "SUPORTE SENSOR E ESPELHO C=250", "grupo": 12, "almoxarifado": "Almox 01", "saldoSistema": 148.0, "valorFinanceiro": 3770.66, "custoUnit": 25.4774, "empenhado": 20.0, "ultimaSaida": "2026-05-07", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.67774", "descricao": "BUCHA APOIO BRACO", "grupo": 121, "almoxarifado": "Almox 01", "saldoSistema": 2.0, "valorFinanceiro": 7.53, "custoUnit": 3.765, "empenhado": 0.0, "ultimaSaida": "2026-04-13", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.06870", "descricao": "PLACA FRON MORD C1", "grupo": 108, "almoxarifado": "Almox 01", "saldoSistema": 7.0, "valorFinanceiro": 5648.92, "custoUnit": 806.9886, "empenhado": 4.0, "ultimaSaida": "2026-05-14", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.23906", "descricao": "REFORCO BASE DOS C1 CZ", "grupo": 96, "almoxarifado": "Almox 01", "saldoSistema": 12.0, "valorFinanceiro": 1107.03, "custoUnit": 92.2525, "empenhado": 13.0, "ultimaSaida": "2026-06-17", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.27211", "descricao": "PROT LAT MORD", "grupo": 121, "almoxarifado": "Almox 01", "saldoSistema": 4.0, "valorFinanceiro": 95.33, "custoUnit": 23.8325, "empenhado": 0.0, "ultimaSaida": "2025-11-27", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.00542", "descricao": "CHAVE COMUT 3POL 240VAC", "grupo": 23, "almoxarifado": "Almox 01", "saldoSistema": 59.0, "valorFinanceiro": 3905.87, "custoUnit": 66.2011, "empenhado": 24.0, "ultimaSaida": "2026-06-18", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.22187", "descricao": "CONDICIONADOR DE AR", "grupo": 24, "almoxarifado": "Almox 01", "saldoSistema": 1.0, "valorFinanceiro": 4928.0, "custoUnit": 4928.0, "empenhado": 0.0, "ultimaSaida": "2024-07-18", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "80001533", "descricao": "BROCA TMAXX 14MM", "grupo": 46, "almoxarifado": "Almox 01", "saldoSistema": 1.0, "valorFinanceiro": 793.81, "custoUnit": 793.81, "empenhado": 0.0, "ultimaSaida": "/  /", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.07996", "descricao": "ISOL MORD DIANT", "grupo": 76, "almoxarifado": "Almox 01", "saldoSistema": 4.0, "valorFinanceiro": 77.65, "custoUnit": 19.4125, "empenhado": 6.0, "ultimaSaida": "2026-06-11", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.24840", "descricao": "ROLO EMBORR MICROPERF", "grupo": 96, "almoxarifado": "Almox 01", "saldoSistema": 1.0, "valorFinanceiro": 396.38, "custoUnit": 396.38, "empenhado": 0.0, "ultimaSaida": "2026-03-13", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.67381", "descricao": "MOD EMBALAGEM TNS ELITE 64V 6B", "grupo": 90, "almoxarifado": "Almox 01", "saldoSistema": 1.0, "valorFinanceiro": 381.6, "custoUnit": 381.6, "empenhado": 8.0, "ultimaSaida": "2026-05-15", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.10139", "descricao": "MOD A6VPH V242", "grupo": 87, "almoxarifado": "Almox 01", "saldoSistema": 5.0, "valorFinanceiro": 4178.98, "custoUnit": 835.796, "empenhado": 0.0, "ultimaSaida": "2026-05-07", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.42547", "descricao": "PATCH CORD F/UTP CAT.6A 2.5M", "grupo": 29, "almoxarifado": "Almox 01", "saldoSistema": 6.0, "valorFinanceiro": 224.87, "custoUnit": 37.4783, "empenhado": 0.0, "ultimaSaida": "2025-07-18", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.53839", "descricao": "FECH BAND ES ALTA", "grupo": 94, "almoxarifado": "Almox 01", "saldoSistema": 8.0, "valorFinanceiro": 653.19, "custoUnit": 81.6488, "empenhado": 8.0, "ultimaSaida": "2025-04-08", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.07985", "descricao": "KIT EXTR AR TG1000", "grupo": 16, "almoxarifado": "Almox 01", "saldoSistema": 1.0, "valorFinanceiro": 528.74, "custoUnit": 528.74, "empenhado": 0.0, "ultimaSaida": "2025-09-18", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.02605", "descricao": "TINTA LACRE VM", "grupo": 17, "almoxarifado": "Almox 01", "saldoSistema": 9.0, "valorFinanceiro": 458.02, "custoUnit": 50.8911, "empenhado": 0.0, "ultimaSaida": "2026-02-13", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.00280", "descricao": "PF PH CB PAN M4X4 BICR EXCL", "grupo": 47, "almoxarifado": "Almox 01", "saldoSistema": 4500.0, "valorFinanceiro": 344.15, "custoUnit": 0.0765, "empenhado": 0.0, "ultimaSaida": "2026-04-15", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.00598", "descricao": "ENCOSTO GUIA SOLDA FMCMAXI", "grupo": 108, "almoxarifado": "Almox 01", "saldoSistema": 38.0, "valorFinanceiro": 210.61, "custoUnit": 5.5424, "empenhado": 10.0, "ultimaSaida": "2026-06-16", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "12104000009", "descricao": "ROL ESF 6004-ZZ", "grupo": 73, "almoxarifado": "Almox 01", "saldoSistema": 99.0, "valorFinanceiro": 220.52, "custoUnit": 2.2275, "empenhado": 52.0, "ultimaSaida": "2026-06-16", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.53927", "descricao": "BASE SUPORTE TRAFO", "grupo": 121, "almoxarifado": "Almox 01", "saldoSistema": 1.0, "valorFinanceiro": 78.54, "custoUnit": 78.54, "empenhado": 0.0, "ultimaSaida": "2025-01-22", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.06873", "descricao": "BRACO FIX ALAV", "grupo": 96, "almoxarifado": "Almox 01", "saldoSistema": 70.0, "valorFinanceiro": 907.32, "custoUnit": 12.9617, "empenhado": 32.0, "ultimaSaida": "2026-05-14", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.11716", "descricao": "FIX ARRAST 1000", "grupo": 76, "almoxarifado": "Almox 01", "saldoSistema": 9.0, "valorFinanceiro": 129.76, "custoUnit": 14.4178, "empenhado": 0.0, "ultimaSaida": "2024-10-23", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "2406300005", "descricao": "DIODO CONV RET MR851G / EGP30B", "grupo": 35, "almoxarifado": "Almox 01", "saldoSistema": 1920.0, "valorFinanceiro": 996.37, "custoUnit": 0.5189, "empenhado": 0.0, "ultimaSaida": "2026-04-16", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.01626", "descricao": "BOCAL P/TUB FORM Ø122", "grupo": 81, "almoxarifado": "Almox 01", "saldoSistema": 2.0, "valorFinanceiro": 46.99, "custoUnit": 23.495, "empenhado": 2.0, "ultimaSaida": "2021-05-31", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "12103000010", "descricao": "PF SEXT M8X30 8.8 BICR", "grupo": 47, "almoxarifado": "Almox 01", "saldoSistema": 1550.0, "valorFinanceiro": 269.85, "custoUnit": 0.1741, "empenhado": 0.0, "ultimaSaida": "2026-05-11", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.33538", "descricao": "ENGR MOTORA", "grupo": 77, "almoxarifado": "Almox 01", "saldoSistema": 2.0, "valorFinanceiro": 316.24, "custoUnit": 158.12, "empenhado": 2.0, "ultimaSaida": "2025-11-20", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "22104000011", "descricao": "CORR SINCR 225", "grupo": 18, "almoxarifado": "Almox 01", "saldoSistema": 45.0, "valorFinanceiro": 1176.8, "custoUnit": 26.1511, "empenhado": 14.0, "ultimaSaida": "2026-06-11", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.08554", "descricao": "INVERSOR 0,5 CV 220V MONOF", "grupo": 5, "almoxarifado": "Almox 01", "saldoSistema": 29.0, "valorFinanceiro": 11992.98, "custoUnit": 413.551, "empenhado": 25.0, "ultimaSaida": "2026-06-18", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.00698", "descricao": "ARRUELA INOX PRESSAO M8", "grupo": 93, "almoxarifado": "Almox 01", "saldoSistema": 3000.0, "valorFinanceiro": 118.51, "custoUnit": 0.0395, "empenhado": 0.0, "ultimaSaida": "2026-06-03", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.04604", "descricao": "JANELA SENS PROD", "grupo": 1, "almoxarifado": "Almox 01", "saldoSistema": 102.0, "valorFinanceiro": 183.63, "custoUnit": 1.8003, "empenhado": 28.0, "ultimaSaida": "2026-06-12", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.32472", "descricao": "FAGII OP S/NR12", "grupo": 90, "almoxarifado": "Almox 01", "saldoSistema": 1.0, "valorFinanceiro": 141.4, "custoUnit": 141.4, "empenhado": 2.0, "ultimaSaida": "2026-05-29", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.04522", "descricao": "TRANS SMD MOSFET IRF7380PBF", "grupo": 43, "almoxarifado": "Almox 01", "saldoSistema": 3755.0, "valorFinanceiro": 8152.7, "custoUnit": 2.1712, "empenhado": 0.0, "ultimaSaida": "2025-05-06", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "12103200021", "descricao": "ARRUELA PRESSAO M12 BICR", "grupo": 47, "almoxarifado": "Almox 01", "saldoSistema": 1500.0, "valorFinanceiro": 183.77, "custoUnit": 0.1225, "empenhado": 0.0, "ultimaSaida": "2026-04-17", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.06828", "descricao": "CAP EL RAD 1000UF/35V20%", "grupo": 33, "almoxarifado": "Almox 01", "saldoSistema": 94.0, "valorFinanceiro": 62.19, "custoUnit": 0.6616, "empenhado": 0.0, "ultimaSaida": "2026-05-08", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.08902", "descricao": "TINTA BRN SPRAY P/RETOQUE", "grupo": 75, "almoxarifado": "Almox 01", "saldoSistema": 7.0, "valorFinanceiro": 185.29, "custoUnit": 26.47, "empenhado": 0.0, "ultimaSaida": "2026-06-08", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.33783", "descricao": "PROT LAT", "grupo": 121, "almoxarifado": "Almox 01", "saldoSistema": 2.0, "valorFinanceiro": 32.09, "custoUnit": 16.045, "empenhado": 2.0, "ultimaSaida": "2025-11-11", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "80001313", "descricao": "LAMPADA LED 24V 15W E27", "grupo": 46, "almoxarifado": "Almox 01", "saldoSistema": 5.0, "valorFinanceiro": 155.6, "custoUnit": 31.12, "empenhado": 0.0, "ultimaSaida": "2025-01-28", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "2103000017", "descricao": "PF SEXT FLANG AA M4,8X13 BICR", "grupo": 47, "almoxarifado": "Almox 01", "saldoSistema": 1000.0, "valorFinanceiro": 81.67, "custoUnit": 0.0817, "empenhado": 0.0, "ultimaSaida": "2026-03-30", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.25142", "descricao": "CANT SUST MESA ROLETADA", "grupo": 96, "almoxarifado": "Almox 01", "saldoSistema": 8.0, "valorFinanceiro": 115.73, "custoUnit": 14.4663, "empenhado": 0.0, "ultimaSaida": "2020-05-27", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.14371", "descricao": "PINO TRAVA CJTO S V", "grupo": 77, "almoxarifado": "Almox 01", "saldoSistema": 30.0, "valorFinanceiro": 1316.83, "custoUnit": 43.8943, "empenhado": 4.0, "ultimaSaida": "2026-05-18", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.39244", "descricao": "ELETROC ARAMADA 100X50", "grupo": 24, "almoxarifado": "Almox 01", "saldoSistema": 25.0, "valorFinanceiro": 1133.76, "custoUnit": 45.3504, "empenhado": 24.0, "ultimaSaida": "2026-05-13", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.23813", "descricao": "DUTO ESQ INF PORTA RECUADA", "grupo": 1, "almoxarifado": "Almox 01", "saldoSistema": 4.0, "valorFinanceiro": 263.21, "custoUnit": 65.8025, "empenhado": 7.0, "ultimaSaida": "2026-06-16", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.27739", "descricao": "PERFIL LAT FIX PROT DM CZ", "grupo": 94, "almoxarifado": "Almox 01", "saldoSistema": 4.0, "valorFinanceiro": 67.39, "custoUnit": 16.8475, "empenhado": 4.0, "ultimaSaida": "2026-06-10", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.33504", "descricao": "BASE E FIX CIL", "grupo": 12, "almoxarifado": "Almox 01", "saldoSistema": 4.0, "valorFinanceiro": 607.66, "custoUnit": 151.915, "empenhado": 4.0, "ultimaSaida": "2025-11-12", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.35551", "descricao": "CIL SOLDA SUP", "grupo": 70, "almoxarifado": "Almox 01", "saldoSistema": 2.0, "valorFinanceiro": 978.38, "custoUnit": 489.19, "empenhado": 0.0, "ultimaSaida": "/  /", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.00055", "descricao": "BR ACO RD 1020 3", "grupo": 65, "almoxarifado": "Almox 01", "saldoSistema": 3.229, "valorFinanceiro": 657.2, "custoUnit": 203.5305, "empenhado": -0.083, "ultimaSaida": "2026-05-25", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.02359", "descricao": "FUSIVEL VIDRO FST 5X20 3,15A T", "grupo": 25, "almoxarifado": "Almox 01", "saldoSistema": 397.0, "valorFinanceiro": 278.47, "custoUnit": 0.7014, "empenhado": 0.0, "ultimaSaida": "2024-09-27", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.60031", "descricao": "FIX BR ILUM INF ES ALFA", "grupo": 121, "almoxarifado": "Almox 01", "saldoSistema": 4.0, "valorFinanceiro": 55.74, "custoUnit": 13.935, "empenhado": 0.0, "ultimaSaida": "/  /", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.04401", "descricao": "BRACO ACION DOS EM", "grupo": 77, "almoxarifado": "Almox 01", "saldoSistema": 13.0, "valorFinanceiro": 444.58, "custoUnit": 34.1985, "empenhado": 0.0, "ultimaSaida": "2026-05-29", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.67742", "descricao": "CJTO PERIFERICOS", "grupo": 16, "almoxarifado": "Almox 01", "saldoSistema": 1.0, "valorFinanceiro": 327.32, "custoUnit": 327.32, "empenhado": 1.0, "ultimaSaida": "/  /", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.22752", "descricao": "PF INOX ALLEN CB ABAUL M4X10", "grupo": 93, "almoxarifado": "Almox 01", "saldoSistema": 183.0, "valorFinanceiro": 10.72, "custoUnit": 0.0586, "empenhado": 0.0, "ultimaSaida": "2026-06-03", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.56761", "descricao": "CARTAO 8 DI POINT I/O", "grupo": 4, "almoxarifado": "Almox 01", "saldoSistema": 2.0, "valorFinanceiro": 887.19, "custoUnit": 443.595, "empenhado": 0.0, "ultimaSaida": "2026-01-28", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.33489", "descricao": "FIX BRACO TORCAO", "grupo": 76, "almoxarifado": "Almox 01", "saldoSistema": 8.0, "valorFinanceiro": 136.28, "custoUnit": 17.035, "empenhado": 4.0, "ultimaSaida": "2026-01-20", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.22031", "descricao": "BARRA CENTRAL PÉ TDP DE ROLETE", "grupo": 12, "almoxarifado": "Almox 01", "saldoSistema": 71.0, "valorFinanceiro": 8793.45, "custoUnit": 123.8514, "empenhado": 78.0, "ultimaSaida": "2026-06-12", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.27413", "descricao": "LIMP INOX", "grupo": 71, "almoxarifado": "Almox 01", "saldoSistema": 1.0, "valorFinanceiro": 413.6, "custoUnit": 413.6, "empenhado": 0.0, "ultimaSaida": "2020-10-20", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.33756", "descricao": "FUSO ESF", "grupo": 73, "almoxarifado": "Almox 01", "saldoSistema": 5.0, "valorFinanceiro": 5205.45, "custoUnit": 1041.09, "empenhado": 4.0, "ultimaSaida": "2025-11-11", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.04565", "descricao": "FECH ESQ BAND", "grupo": 81, "almoxarifado": "Almox 01", "saldoSistema": 1.0, "valorFinanceiro": 50.54, "custoUnit": 50.54, "empenhado": 0.0, "ultimaSaida": "2026-03-20", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.46940", "descricao": "CHAPA FECH VENT 8B", "grupo": 94, "almoxarifado": "Almox 01", "saldoSistema": 2.0, "valorFinanceiro": 50.83, "custoUnit": 25.415, "empenhado": 0.0, "ultimaSaida": "2024-05-14", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.29783", "descricao": "FIX", "grupo": 120, "almoxarifado": "Almox 01", "saldoSistema": 52.0, "valorFinanceiro": 1302.36, "custoUnit": 25.0454, "empenhado": 32.0, "ultimaSaida": "2025-11-12", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "22102300015", "descricao": "DIST BASE FUNDO CH FAG", "grupo": 76, "almoxarifado": "Almox 01", "saldoSistema": 10.0, "valorFinanceiro": 164.95, "custoUnit": 16.495, "empenhado": 0.0, "ultimaSaida": "2026-06-11", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.48355", "descricao": "MANIPULO MACHO MSM 3526 M6X25", "grupo": 60, "almoxarifado": "Almox 01", "saldoSistema": 6.0, "valorFinanceiro": 27.01, "custoUnit": 4.5017, "empenhado": 0.0, "ultimaSaida": "2026-03-19", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.19716", "descricao": "CABO USB 3.0", "grupo": 53, "almoxarifado": "Almox 01", "saldoSistema": 55.0, "valorFinanceiro": 5055.32, "custoUnit": 91.9149, "empenhado": 0.0, "ultimaSaida": "2026-05-04", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.26177", "descricao": "EMENDA REDUCAO 5/8\" 10B2 DIN", "grupo": 60, "almoxarifado": "Almox 01", "saldoSistema": 9.0, "valorFinanceiro": 67.05, "custoUnit": 7.45, "empenhado": 0.0, "ultimaSaida": "/  /", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "2402100013", "descricao": "TERM OLHAL AN2821", "grupo": 27, "almoxarifado": "Almox 01", "saldoSistema": 1.0, "valorFinanceiro": 0.42, "custoUnit": 0.42, "empenhado": 0.0, "ultimaSaida": "2026-02-16", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.22641", "descricao": "PERFIL F 21-30 UHMW", "grupo": 71, "almoxarifado": "Almox 01", "saldoSistema": 33.0, "valorFinanceiro": 977.33, "custoUnit": 29.6161, "empenhado": 0.0, "ultimaSaida": "2026-03-24", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.27962", "descricao": "LAT DIR CHASSI FMC1000MAXI CZ", "grupo": 94, "almoxarifado": "Almox 01", "saldoSistema": 1.0, "valorFinanceiro": 368.89, "custoUnit": 368.89, "empenhado": 2.0, "ultimaSaida": "2026-05-19", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.06019", "descricao": "METAL S H 5000", "grupo": 108, "almoxarifado": "Almox 01", "saldoSistema": 8.0, "valorFinanceiro": 1230.13, "custoUnit": 153.7663, "empenhado": 10.0, "ultimaSaida": "2026-05-26", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "2406500021", "descricao": "DIODO SMD ZENER 12V 3W DO214AC", "grupo": 35, "almoxarifado": "Almox 01", "saldoSistema": 4790.0, "valorFinanceiro": 1796.45, "custoUnit": 0.375, "empenhado": 0.0, "ultimaSaida": "2025-07-07", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}, {"codigo": "000.00038", "descricao": "SUPRESSOR TRANS SMCJ15CA", "grupo": 33, "almoxarifado": "Almox 01", "saldoSistema": 2336.0, "valorFinanceiro": 1142.53, "custoUnit": 0.4891, "empenhado": 0.0, "ultimaSaida": "2025-12-17", "semMovimentoRecente": false, "enderecoCadastrado": false, "endereco": null}];
+
+// PRODUCTS carregado a partir de uma exportação real da tabela SB2 (Saldo em
+// Estoque) do Protheus — 300 itens amostrados (150 de maior valor financeiro +
+// 150 aleatórios) sobre um universo de 10.512 SKUs no Almox 01.
+//
+// IMPORTANTE: a exportação SB2 não trouxe endereço físico nem unidade de
+// medida — esses cadastros ainda não existem no Protheus para este
+// almoxarifado (confirmado pelo cliente). Por isso todo item nasce com
+// enderecoCadastrado=false e unidade=null. O fluxo de contagem trata isso:
+// em vez de pedir para escanear o QR do endereço (Módulo 5), pede para o
+// operador INFORMAR onde encontrou o item — essa informação alimenta uma
+// fila de "Endereços a validar" que o líder confirma depois, populando aos
+// poucos o cadastro de endereços sem travar o inventário.
+// Nenhum item deste lote tem endereço cadastrado ainda — controla a
+// disponibilidade do Módulo 4 (Contagem por Rota) na tela de seleção.
+const ANY_ADDRESS_REGISTERED = RAW_SB2_PRODUCTS.some(p => p.enderecoCadastrado);
+
+const PRODUCTS = RAW_SB2_PRODUCTS.map(p => ({
+  codigo: p.codigo,
+  descricao: p.descricao,
+  unidade: null, // não informado no export SB2 padrão (viria do cadastro de produto SB1 / campo B1_UM)
+  familia: 'Grupo ' + p.grupo,
+  grupo: p.grupo,
+  endereco: p.endereco, // null até cadastro
+  enderecoCadastrado: p.enderecoCadastrado,
+  almoxarifado: p.almoxarifado,
+  corredor: null,
+  rua: null,
+  saldoSistema: p.saldoSistema,
+  custoUnit: p.custoUnit,
+  valorFinanceiro: p.valorFinanceiro,
+  semMovimentoRecente: p.semMovimentoRecente,
+  ultimaSaida: p.ultimaSaida,
+}));
+const MOTIVOS = [
+  'Material em endereço incorreto',
+  'Entrada não realizada',
+  'Saída não realizada',
+  'Devolução pendente',
+  'Material sem identificação',
+  'Perda/sucata',
+  'Erro operacional',
+  'Outros',
+];
+
+function classifyDivergence(pct){
+  const abs = Math.abs(pct);
+  if(abs === 0) return {level:'ok', label:'Sem divergência', rule:'Aprovado automaticamente'};
+  if(abs <= 5) return {level:'ok', label:'Dentro da tolerância', rule:'Aprovação automática'};
+  if(abs <= 15) return {level:'warn', label:'Divergência moderada', rule:'Segunda contagem solicitada'};
+  return {level:'danger', label:'Divergência crítica', rule:'Enviado para análise do líder'};
+}
+
+// MÓDULO 7 — regra de segunda contagem, aplicada sobre o resultado de CADA
+// contagem (a 1ª ou qualquer recontagem seguinte):
+//  ≤5%           → aprovado (automaticamente na 1ª, ou confirmado na recontagem)
+//  5–15% na 1ª   → aguarda segunda contagem, feita por outro operador
+//  >15% na 1ª, ou qualquer recontagem que ainda divirja acima de 5%
+//                → vai para análise do líder de estoque
+function computeStatus(numeroContagem, level){
+  if(level==='ok') return numeroContagem===1 ? 'aprovado_auto' : 'aprovado_segunda';
+  if(numeroContagem===1) return level==='warn' ? 'aguardando_segunda' : 'aguardando_analise_lider';
+  return 'aguardando_analise_lider';
+}
+
+const STATUS_INFO = {
+  aprovado_auto: {level:'ok', text:'Aprovado automaticamente'},
+  aprovado_segunda: {level:'ok', text:'Aprovado — a recontagem confirmou o saldo dentro da tolerância'},
+  aguardando_segunda: {level:'warn', text:'Segunda contagem solicitada — deve ser feita por outro operador'},
+  aguardando_analise_lider: {level:'danger', text:'Enviado para análise do líder de estoque'},
+  aprovado_lider: {level:'ok', text:'Divergência aprovada pelo líder de estoque'},
+};
+
+/* ---------------- RELATÓRIO EXCEL (SheetJS) ---------------- */
+
+function statusLabel(c){
+  return (STATUS_INFO[c.statusAprovacao] || {}).text || c.classificacao.rule;
+}
+
+function buildSummaryRows(counts, inventories){
+  const contados = counts.length;
+  const divergentes = counts.filter(c=>c.diferenca!==0);
+  const acuracidade = contados>0 ? (((contados-divergentes.length)/contados)*100).toFixed(1) : '100.0';
+  const valorDivergente = counts.reduce((s,c)=>s+Number(c.valorDivergente||0),0);
+  return [
+    {Indicador:'Data do relatório', Valor: new Date().toLocaleString('pt-BR')},
+    {Indicador:'Itens contados', Valor: contados},
+    {Indicador:'Divergências', Valor: divergentes.length},
+    {Indicador:'Acuracidade do estoque (%)', Valor: Number(acuracidade)},
+    {Indicador:'Valor total divergente (R$)', Valor: Number(valorDivergente.toFixed(2))},
+    {Indicador:'Inventários ativos', Valor: inventories.length},
+  ];
+}
+
+function buildCountRows(counts){
+  return counts.map(c=>({
+    'ID Contagem': c.id,
+    'Inventário': c.inventario,
+    'Código': c.productCode,
+    'Descrição': c.descricao,
+    'Endereço': c.endereco,
+    'Rodada': c.numeroContagem || 1,
+    'Usuário': c.usuario,
+    'Qtd. Contada': c.qtdContada,
+    'Saldo Sistema': c.saldoSistema,
+    'Diferença': c.diferenca,
+    'Divergência (%)': Number((c.percentual||0).toFixed(2)),
+    'Valor Divergente (R$)': Number(c.valorDivergente || 0),
+    'Classificação': c.classificacao.label,
+    'Status': statusLabel(c),
+    'Motivo': c.motivo || '',
+    'Endereço Pendente Validação': c.enderecoPendenteValidacao ? 'Sim' : 'Não',
+    'Data': c.data,
+    'Hora': c.hora || '',
+  }));
+}
+
+function buildAdjustmentRows(counts){
+  return counts.filter(c=>c.diferenca!==0).map(c=>({
+    'Código': c.productCode,
+    'Descrição': c.descricao,
+    'Endereço': c.endereco,
+    'Saldo Sistema (Protheus)': c.saldoSistema,
+    'Saldo Contado': c.qtdContada,
+    'Ajuste Necessário': c.diferenca,
+    'Valor do Ajuste (R$)': Number(c.valorDivergente || 0),
+    'Motivo': c.motivo || 'Não informado',
+    'Status': statusLabel(c),
+    'Aprovado por': c.aprovadoPor || '',
+    'Data Aprovação': c.aprovadoEm || '',
+  }));
+}
+
+function generateReportWorkbook(counts, inventories){
+  const XLSX = window.XLSX;
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(buildSummaryRows(counts, inventories)), 'Resumo');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(buildCountRows(counts)), 'Contagens');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(buildAdjustmentRows(counts)), 'Solicitação de Ajuste');
+  return wb;
+}
+
+/* ---------------- ICONS (inline, no external icon lib) ---------------- */
+const Ic = ({children}) => <span aria-hidden="true">{children}</span>;
+
+/* ---------------- APP SHELL ---------------- */
+
+const SESSION_TIMEOUT_MS = 15 * 60 * 1000; // 15 min de inatividade → logout automático
+
+function App(){
+  const [users, setUsers] = useState(USERS_SEED);
+  const [currentUserId, setCurrentUserId] = useState(null);
+  const [logoutNotice, setLogoutNotice] = useState('');
+
+  const [view, setView] = useState('home');
+  const [flowState, setFlowState] = useState(null); // params passed into a flow
+
+  const [inventories, setInventories] = useState([
+    {id:'INV-001', nome:'Inventário Cíclico Julho/2026', almoxarifado:'Almox 01', responsavel:'Carlos Mendes', data:'2026-07-14', tipo:'Contagem Aleatória', qtdItens:20, status:'em_andamento', contados: 6},
+    {id:'INV-002', nome:'Inventário Curva A — Rolamentos', almoxarifado:'Almox 01', responsavel:'Fernanda Lima', data:'2026-07-15', tipo:'Contagem por Curva ABC', qtdItens:12, status:'pendente', contados: 0},
+  ]);
+
+  const [counts, setCounts] = useState([]); // finalized counts
+  const [enderecosPropostos, setEnderecosPropostos] = useState([]); // endereços informados por operadores, aguardando validação do líder
+  const [passwordRequests, setPasswordRequests] = useState([]); // solicitações de "esqueci minha senha"
+  const [passwordHistory, setPasswordHistory] = useState([]); // histórico de alterações de senha
+  const [reportSendHistory, setReportSendHistory] = useState([]); // histórico de envios de relatório por e-mail
+
+  function logReportSend(entry){
+    setReportSendHistory(prev=>[entry, ...prev]);
+  }
+
+  const currentUser = users.find(u=>u.id===currentUserId) || null;
+  const role = currentUser ? currentUser.perfil : null;
+
+  function goto(v, params){ setFlowState(params||null); setView(v); window.scrollTo(0,0); }
+
+  function addAddressProposal(p){
+    setEnderecosPropostos(prev=>[{...p, id:'END-'+Math.random().toString(36).slice(2,7).toUpperCase(), status:'pendente'}, ...prev]);
+  }
+
+  function resolveAddressProposal(id, status){
+    setEnderecosPropostos(prev=>prev.map(e=>e.id===id?{...e, status}:e));
+  }
+
+  function approveDivergence(countId){
+    setCounts(prev=>prev.map(c=>c.id===countId?{...c, statusAprovacao:'aprovado_lider', aprovadoPor:currentUser?currentUser.nome:'—', aprovadoEm:new Date().toLocaleString('pt-BR')}:c));
+  }
+
+  function logHistory(usuarioAlvo, acao, administrador){
+    setPasswordHistory(prev=>[{
+      id:'HIST-'+Math.random().toString(36).slice(2,7).toUpperCase(),
+      usuario: usuarioAlvo,
+      acao,
+      administrador: administrador || '—',
+      data: new Date().toLocaleString('pt-BR'),
+    }, ...prev]);
+  }
+
+  // ---- Autenticação ----
+  function attemptLogin(identifier, senha){
+    const id = identifier.trim().toLowerCase();
+    const user = users.find(u => u.usuario.toLowerCase()===id || (u.email && u.email.toLowerCase()===id));
+    if(!user) return {ok:false, error:'Usuário ou senha inválidos.'};
+    if(user.status==='bloqueado') return {ok:false, error:'Usuário bloqueado. Contate o administrador.'};
+    if(user.status==='deve_definir_senha') return {ok:false, needsNewPassword:true, userId:user.id};
+    if(user.senha !== senha) return {ok:false, error:'Usuário ou senha inválidos.'};
+    setCurrentUserId(user.id);
+    setView('home');
+    return {ok:true};
+  }
+
+  function logout(notice){
+    setCurrentUserId(null);
+    setView('home');
+    setFlowState(null);
+    setLogoutNotice(notice || '');
+  }
+
+  function requestPasswordReset(identifier){
+    const id = identifier.trim().toLowerCase();
+    const user = users.find(u => u.usuario.toLowerCase()===id || (u.email && u.email.toLowerCase()===id));
+    if(user){
+      setPasswordRequests(prev=>[{
+        id:'REQ-'+Math.random().toString(36).slice(2,7).toUpperCase(),
+        userId:user.id, usuarioNome:user.nome, data:new Date().toLocaleString('pt-BR'), status:'pendente',
+      }, ...prev]);
+    }
+    // Mensagem genérica sempre — evita confirmar/negar se o usuário existe (boa prática de segurança)
+    return 'Se o usuário existir, uma solicitação foi enviada para aprovação do administrador.';
+  }
+
+  function resolvePasswordRequest(reqId, acao, novaSenhaDigitada){
+    const req = passwordRequests.find(r=>r.id===reqId);
+    if(!req) return;
+    applyAdminPasswordAction(req.userId, acao, novaSenhaDigitada);
+    setPasswordRequests(prev=>prev.map(r=>r.id===reqId?{...r, status:'resolvido'}:r));
+  }
+
+  function applyAdminPasswordAction(userId, acao, novaSenhaDigitada){
+    const target = users.find(u=>u.id===userId);
+    if(!target || !currentUser) return;
+    let acaoLabel = '';
+    if(acao==='temp'){
+      const temp = generateTempPassword();
+      setUsers(prev=>prev.map(u=>u.id===userId?{...u, senha:temp, status:'ativo'}:u));
+      acaoLabel = `Senha temporária gerada (${temp}) — repassar ao usuário`;
+    } else if(acao==='definir'){
+      setUsers(prev=>prev.map(u=>u.id===userId?{...u, senha:novaSenhaDigitada, status:'ativo'}:u));
+      acaoLabel = 'Nova senha definida pelo administrador';
+    } else if(acao==='liberar'){
+      setUsers(prev=>prev.map(u=>u.id===userId?{...u, senha:null, status:'deve_definir_senha'}:u));
+      acaoLabel = 'Usuário liberado para criar nova senha';
+    }
+    logHistory(target.nome, acaoLabel, currentUser.nome);
+  }
+
+  function selfSetNewPassword(userId, novaSenha){
+    const target = users.find(u=>u.id===userId);
+    setUsers(prev=>prev.map(u=>u.id===userId?{...u, senha:novaSenha, status:'ativo'}:u));
+    if(target) logHistory(target.nome, 'Senha definida pelo próprio usuário', '—');
+    setCurrentUserId(userId);
+    setView('home');
+  }
+
+  function createUser(data){
+    setUsers(prev=>[{...data, id:'u'+Math.random().toString(36).slice(2,7), status:'ativo'}, ...prev]);
+  }
+
+  function updateUser(userId, data){
+    setUsers(prev=>prev.map(u=>u.id===userId?{...u, ...data}:u));
+  }
+
+  function toggleUserStatus(userId){
+    const target = users.find(u=>u.id===userId);
+    if(!target) return;
+    const novoStatus = target.status==='bloqueado' ? 'ativo' : 'bloqueado';
+    setUsers(prev=>prev.map(u=>u.id===userId?{...u, status:novoStatus}:u));
+    logHistory(target.nome, novoStatus==='bloqueado' ? 'Usuário bloqueado' : 'Usuário desbloqueado', currentUser?currentUser.nome:'—');
+  }
+
+  // ---- Logout automático por inatividade ----
+  useEffect(()=>{
+    if(!currentUser) return;
+    let timer = setTimeout(()=>logout('Sessão encerrada por inatividade.'), SESSION_TIMEOUT_MS);
+    function resetTimer(){
+      clearTimeout(timer);
+      timer = setTimeout(()=>logout('Sessão encerrada por inatividade.'), SESSION_TIMEOUT_MS);
+    }
+    const events = ['click','keydown','touchstart','mousemove'];
+    events.forEach(ev=>window.addEventListener(ev, resetTimer));
+    return ()=>{ clearTimeout(timer); events.forEach(ev=>window.removeEventListener(ev, resetTimer)); };
+  }, [currentUser]);
+
+  if(!currentUser){
+    return (
+      <LoginScreen
+        onLogin={attemptLogin}
+        onForgot={requestPasswordReset}
+        onSelfSetPassword={selfSetNewPassword}
+        notice={logoutNotice}
+        clearNotice={()=>setLogoutNotice('')}
+      />
+    );
+  }
+
+  return (
+    <div className="app">
+      <TopBar user={currentUser} role={role} onHome={()=>goto('home')} onLogout={()=>logout('')} />
+      {view!=='home' && <SubBar view={view} goto={goto} />}
+      <div className="content">
+        {view==='home' && <Home role={role} user={currentUser} inventories={inventories} counts={counts} goto={goto} />}
+        {view==='inventories' && <InventoryList inventories={inventories} goto={goto} role={role} />}
+        {view==='newInventory' && (role==='lider'||role==='admin') && <NewInventory users={users} onCreate={(inv)=>{setInventories(prev=>[inv,...prev]); goto('inventories');}} />}
+        {view==='pickCountType' && <PickCountType inv={flowState} goto={goto} />}
+        {view==='randomCount' && <RandomCountFlow inv={flowState} user={currentUser} onFinish={(c)=>{setCounts(p=>[c,...p]); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} />}
+        {view==='manualCount' && <ManualCountFlow user={currentUser} onFinish={(c)=>{setCounts(p=>[c,...p]); goto('home');}} onAddressProposed={addAddressProposal} />}
+        {view==='routeCount' && <RouteCountFlow inv={flowState} user={currentUser} onFinish={(c)=>{setCounts(p=>[c,...p]); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} />}
+        {view==='myCounts' && <MyCounts counts={counts} user={currentUser} role={role} goto={goto} />}
+        {view==='recounts' && <RecountsPanel counts={counts} role={role} currentUser={currentUser} goto={goto} onApprove={approveDivergence} />}
+        {view==='recount' && flowState && <RecountFlow original={flowState} user={currentUser} onAddressProposed={addAddressProposal} onFinish={(c)=>{setCounts(p=>[c,...p]); goto('recounts');}} />}
+        {view==='dashboard' && <Dashboard counts={counts} inventories={inventories} />}
+        {view==='relatorios' && <ReportsScreen counts={counts} inventories={inventories} currentUser={currentUser} sendHistory={reportSendHistory} onLogSend={logReportSend} />}
+        {view==='settings' && (
+          <Settings
+            role={role}
+            enderecosPropostos={enderecosPropostos}
+            onResolve={resolveAddressProposal}
+            users={users}
+            currentUser={currentUser}
+            onCreateUser={createUser}
+            onUpdateUser={updateUser}
+            onToggleUserStatus={toggleUserStatus}
+            onAdminPasswordAction={applyAdminPasswordAction}
+            passwordRequests={passwordRequests}
+            onResolvePasswordRequest={resolvePasswordRequest}
+            passwordHistory={passwordHistory}
+          />
+        )}
+      </div>
+      <BottomNav view={view} goto={goto} role={role} />
+    </div>
+  );
+}
+
+/* ---------------- LOGIN / AUTENTICAÇÃO ---------------- */
+
+function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}){
+  const [mode, setMode] = useState('login'); // login | forgot | newPassword
+  const [identifier, setIdentifier] = useState('');
+  const [senha, setSenha] = useState('');
+  const [showSenha, setShowSenha] = useState(false);
+  const [error, setError] = useState('');
+  const [forgotMsg, setForgotMsg] = useState('');
+  const [pendingUserId, setPendingUserId] = useState(null);
+  const [novaSenha, setNovaSenha] = useState('');
+  const [confirmaSenha, setConfirmaSenha] = useState('');
+
+  function submitLogin(e){
+    e.preventDefault();
+    setError('');
+    const result = onLogin(identifier, senha);
+    if(!result.ok){
+      if(result.needsNewPassword){
+        setPendingUserId(result.userId);
+        setMode('newPassword');
+      } else {
+        setError(result.error);
+      }
+    }
+  }
+
+  function submitForgot(e){
+    e.preventDefault();
+    const msg = onForgot(identifier);
+    setForgotMsg(msg);
+  }
+
+  function submitNewPassword(e){
+    e.preventDefault();
+    setError('');
+    if(novaSenha.length < 6){ setError('A nova senha deve ter pelo menos 6 caracteres.'); return; }
+    if(novaSenha !== confirmaSenha){ setError('As senhas não coincidem.'); return; }
+    onSelfSetPassword(pendingUserId, novaSenha);
+  }
+
+  return (
+    <div className="login-screen">
+      <div className="login-card">
+        <div className="login-logo">
+          <div className="mark">S360</div>
+        </div>
+        <h1 className="login-title">Stock360</h1>
+        <div className="login-subtitle">Controle de Inventário Cíclico</div>
+
+        {notice && mode==='login' && (
+          <div className="login-notice">{notice}</div>
+        )}
+
+        {mode==='login' && (
+          <form onSubmit={submitLogin}>
+            {error && <div className="login-error">{error}</div>}
+            <div className="login-field">
+              <label>Usuário ou e-mail</label>
+              <input type="text" value={identifier} onChange={e=>{setIdentifier(e.target.value); clearNotice&&clearNotice();}} placeholder="usuario.sobrenome" autoCapitalize="none" autoFocus />
+            </div>
+            <div className="login-field">
+              <label>Senha</label>
+              <input type={showSenha?'text':'password'} value={senha} onChange={e=>setSenha(e.target.value)} placeholder="••••••••" />
+              <button type="button" className="pw-toggle" onClick={()=>setShowSenha(s=>!s)}>{showSenha?'ocultar':'mostrar'}</button>
+            </div>
+            <button className="btn btn-primary" type="submit">Entrar</button>
+            <button type="button" className="login-forgot" onClick={()=>{setMode('forgot'); setError(''); setForgotMsg('');}}>Esqueci minha senha</button>
+
+            <div className="demo-creds">
+              <div className="dc-title">Credenciais de demonstração (remover em produção)</div>
+              <div className="dc-row"><span>alisson / admin123</span><span>Administrador</span></div>
+              <div className="dc-row"><span>roberto.alves / lider123</span><span>Líder de Estoque</span></div>
+              <div className="dc-row"><span>carlos.mendes / operador123</span><span>Operador</span></div>
+            </div>
+          </form>
+        )}
+
+        {mode==='forgot' && (
+          <form onSubmit={submitForgot}>
+            {!forgotMsg ? (
+              <div>
+                <div className="role-note" style={{marginBottom:20}}>Informe seu usuário ou e-mail. Um administrador vai analisar e liberar o acesso.</div>
+                <div className="login-field">
+                  <label>Usuário ou e-mail</label>
+                  <input type="text" value={identifier} onChange={e=>setIdentifier(e.target.value)} autoFocus />
+                </div>
+                <button className="btn btn-primary" type="submit">Solicitar recuperação</button>
+              </div>
+            ) : (
+              <div className="login-success">{forgotMsg}</div>
+            )}
+            <button type="button" className="login-back" onClick={()=>{setMode('login'); setForgotMsg(''); setIdentifier('');}}>← Voltar ao login</button>
+          </form>
+        )}
+
+        {mode==='newPassword' && (
+          <form onSubmit={submitNewPassword}>
+            <div className="role-note" style={{marginBottom:20}}>O administrador liberou sua conta para você criar uma nova senha.</div>
+            {error && <div className="login-error">{error}</div>}
+            <div className="login-field">
+              <label>Nova senha</label>
+              <input type="password" value={novaSenha} onChange={e=>setNovaSenha(e.target.value)} autoFocus />
+            </div>
+            <div className="login-field">
+              <label>Confirmar nova senha</label>
+              <input type="password" value={confirmaSenha} onChange={e=>setConfirmaSenha(e.target.value)} />
+            </div>
+            <button className="btn btn-primary" type="submit">Definir senha e entrar</button>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const ROLE_LABELS = {operador:'Operador', lider:'Líder de Estoque', admin:'Administrador'};
+
+function TopBar({user, role, onHome, onLogout}){
+  return (
+    <div className="topbar">
+      <div className="brand" onClick={onHome} style={{cursor:'pointer'}}>
+        <div className="brand-mark">S360</div>
+        <div className="brand-text">Stock360<small>Inventário Cíclico</small></div>
+      </div>
+      <div style={{display:'flex',alignItems:'center',gap:8}}>
+        <div className="role-pill" style={{cursor:'default'}}>
+          <Ic>👤</Ic>
+          <span>{user.nome} · {ROLE_LABELS[role]}</span>
+        </div>
+        <button className="logout-btn" onClick={onLogout} title="Sair"><Ic>⏻</Ic></button>
+      </div>
+    </div>
+  );
+}
+
+const VIEW_TITLES = {
+  inventories:'Inventários Pendentes',
+  newInventory:'Novo Inventário',
+  pickCountType:'Nova Contagem',
+  randomCount:'Contagem Aleatória',
+  manualCount:'Contagem Manual',
+  routeCount:'Contagem por Rota',
+  myCounts:'Minhas Contagens',
+  recounts:'Recontagens Pendentes',
+  recount:'Recontar Item',
+  dashboard:'Dashboard',
+  relatorios:'Relatórios',
+  settings:'Configurações',
+};
+
+function SubBar({view, goto}){
+  return (
+    <div className="subbar">
+      <button className="back-btn" onClick={()=>goto('home')}><Ic>←</Ic> Voltar</button>
+      <h1>{VIEW_TITLES[view] || ''}</h1>
+    </div>
+  );
+}
+
+function BottomNav({view, goto, role}){
+  const items = [
+    {id:'home', ic:'⌂', label:'Início'},
+    {id:'inventories', ic:'📦', label:'Inventários'},
+    {id:'pickCountType', ic:'🔍', label:'Contar'},
+    {id:'myCounts', ic:'📋', label:'Minhas'},
+    {id:'dashboard', ic:'📊', label:'Dash'},
+  ];
+  return (
+    <div className="bottom-nav">
+      {items.map(it=>(
+        <button key={it.id} className={"nav-btn"+(view===it.id?' active':'')} onClick={()=>goto(it.id)}>
+          <span className="ic"><Ic>{it.ic}</Ic></span>
+          {it.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ---------------- HOME ---------------- */
+
+function Home({role, user, inventories, counts, goto}){
+  const pendentes = inventories.filter(i=>i.status!=='concluido').length;
+  const roleName = {operador:'Operador', lider:'Líder de Estoque', admin:'Administrador'}[role];
+  const byOriginal = {};
+  counts.forEach(c=>{ if(c.contagemAnteriorId) byOriginal[c.contagemAnteriorId]=true; });
+  const pendentesRecontagem = counts.filter(c=>(c.statusAprovacao==='aguardando_segunda' && !byOriginal[c.id]) || c.statusAprovacao==='aguardando_analise_lider').length;
+  return (
+    <div>
+      <div className="greet">Bem-vindo, {roleName}</div>
+      <h2 className="greet-title">{user.nome}</h2>
+
+      <div className="grid-cards">
+        <div className="home-card" onClick={()=>goto('inventories')}>
+          {pendentes>0 && <span className="badge">{pendentes}</span>}
+          <span className="icon"><Ic>📦</Ic></span>
+          <span className="label">Inventários Pendentes</span>
+        </div>
+        <div className="home-card" onClick={()=>goto('pickCountType')}>
+          <span className="icon"><Ic>🔍</Ic></span>
+          <span className="label">Nova Contagem</span>
+        </div>
+        <div className="home-card" onClick={()=>goto('myCounts')}>
+          {counts.length>0 && <span className="badge">{counts.length}</span>}
+          <span className="icon"><Ic>📋</Ic></span>
+          <span className="label">Minhas Contagens</span>
+        </div>
+        <div className="home-card" onClick={()=>goto('recounts')}>
+          {pendentesRecontagem>0 && <span className="badge">{pendentesRecontagem}</span>}
+          <span className="icon"><Ic>🔁</Ic></span>
+          <span className="label">Recontagens Pendentes</span>
+        </div>
+        <div className="home-card" onClick={()=>goto('dashboard')}>
+          <span className="icon"><Ic>📊</Ic></span>
+          <span className="label">Dashboard</span>
+        </div>
+        <div className="home-card" onClick={()=>goto('relatorios')}>
+          <span className="icon"><Ic>📄</Ic></span>
+          <span className="label">Relatórios</span>
+        </div>
+        {(role==='lider'||role==='admin') && (
+          <div className="home-card wide" onClick={()=>goto('newInventory')}>
+            <div style={{display:'flex',alignItems:'center',gap:12}}>
+              <span className="icon"><Ic>➕</Ic></span>
+              <span className="label">Criar Novo Inventário</span>
+            </div>
+            <span className="chevron"><Ic>›</Ic></span>
+          </div>
+        )}
+        <div className="home-card" onClick={()=>goto('settings')}>
+          <span className="icon"><Ic>⚙</Ic></span>
+          <span className="label">Configurações</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- MÓDULO 1: INVENTÁRIOS ---------------- */
+
+function InventoryList({inventories, goto, role}){
+  if(inventories.length===0){
+    return <div className="empty-state"><div className="ic"><Ic>📦</Ic></div>Nenhum inventário programado.</div>;
+  }
+  return (
+    <div>
+      {(role==='lider'||role==='admin') && (
+        <button className="btn btn-primary" style={{marginBottom:16}} onClick={()=>goto('newInventory')}>
+          <Ic>➕</Ic> Criar Inventário
+        </button>
+      )}
+      {inventories.map(inv=>{
+        const pct = inv.qtdItens ? Math.round((inv.contados/inv.qtdItens)*100) : 0;
+        return (
+          <div key={inv.id} className="item-card" style={{cursor:'pointer'}} onClick={()=>goto('pickCountType', inv)}>
+            <div className="item-card-head">
+              <div>
+                <div className="item-code">{inv.id} · {inv.almoxarifado}</div>
+                <div className="item-desc" style={{fontSize:16}}>{inv.nome}</div>
+              </div>
+              <StatusTag status={inv.status==='pendente' ? 'warn' : inv.status==='concluido' ? 'ok' : 'warn'} text={inv.status==='pendente'?'Pendente':inv.status==='concluido'?'Concluído':'Em andamento'} />
+            </div>
+            <div style={{padding:'14px 18px'}}>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:12.5,color:'var(--ink-dim)'}}>
+                <span>{inv.tipo} · Resp. {inv.responsavel}</span>
+                <span>{inv.data}</span>
+              </div>
+              <div className="progress-bar"><div className="fill" style={{width:pct+'%'}}></div></div>
+              <div style={{fontFamily:'var(--font-mono)',fontSize:11.5,color:'var(--ink-dim)',marginTop:6}}>{inv.contados}/{inv.qtdItens} itens contados ({pct}%)</div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function StatusTag({status, text}){
+  return <span className={"status-tag status-"+status}><span className="status-dot"></span>{text}</span>;
+}
+
+function NewInventory({users, onCreate}){
+  const [nome, setNome] = useState('Inventário Cíclico Julho/2026');
+  const [almox, setAlmox] = useState('Almox 01');
+  const [resp, setResp] = useState('Carlos Mendes');
+  const [data, setData] = useState('2026-07-20');
+  const [qtd, setQtd] = useState(20);
+  const [tipo, setTipo] = useState('Contagem Aleatória');
+
+  const tipos = [
+    {v:'Contagem Aleatória', d:'O sistema seleciona os itens automaticamente'},
+    {v:'Contagem por Curva ABC', d:'Prioriza itens de maior valor ou giro'},
+    {v:'Contagem Manual', d:'Operador escolhe os itens livremente'},
+    {v:'Contagem por Rota de Endereço', d:'Sequência otimizada por corredor/rua'},
+  ];
+
+  return (
+    <div>
+      <div className="panel">
+        <div className="field">
+          <label>Nome do inventário</label>
+          <input type="text" value={nome} onChange={e=>setNome(e.target.value)} />
+        </div>
+        <div className="field">
+          <label>Almoxarifado</label>
+          <select value={almox} onChange={e=>setAlmox(e.target.value)}>
+            <option>Almox 01</option>
+            <option>Almox 02</option>
+          </select>
+        </div>
+        <div className="field">
+          <label>Responsável</label>
+          <select value={resp} onChange={e=>setResp(e.target.value)}>
+            {users.filter(u=>u.perfil==='operador').map(u=><option key={u.id}>{u.nome}</option>)}
+          </select>
+        </div>
+        <div className="field">
+          <label>Data</label>
+          <input type="date" value={data} onChange={e=>setData(e.target.value)} />
+        </div>
+        <div className="field">
+          <label>Quantidade de itens</label>
+          <input type="number" value={qtd} onChange={e=>setQtd(Number(e.target.value))} />
+        </div>
+        <div className="field">
+          <label>Tipo de inventário</label>
+          <div className="radio-group">
+            {tipos.map(t=>(
+              <label key={t.v} className={"radio-opt"+(tipo===t.v?' active':'')}>
+                <input type="radio" name="tipo" checked={tipo===t.v} onChange={()=>setTipo(t.v)} />
+                <div>
+                  <div className="opt-title">{t.v}</div>
+                  <div className="opt-desc">{t.d}</div>
+                </div>
+              </label>
+            ))}
+          </div>
+        </div>
+      </div>
+      <button className="btn btn-primary" onClick={()=>onCreate({
+        id:'INV-'+Math.floor(Math.random()*900+100), nome, almoxarifado:almox, responsavel:resp, data, tipo, qtdItens:qtd, status:'pendente', contados:0
+      })}>Criar Inventário</button>
+    </div>
+  );
+}
+
+/* ---------------- MÓDULO ENTRY: ESCOLHA DO TIPO DE CONTAGEM ---------------- */
+
+function PickCountType({inv, goto}){
+  return (
+    <div>
+      {inv && (
+        <div className="role-note">Inventário selecionado: <strong>{inv.nome}</strong> ({inv.tipo})</div>
+      )}
+      <div className="radio-group">
+        <button className="item-card" style={{padding:18,textAlign:'left',border:'1px solid var(--line)',background:'var(--panel)'}} onClick={()=>goto('randomCount', inv)}>
+          <div className="opt-title" style={{fontSize:15}}><Ic>🎲</Ic>&nbsp; Contagem Aleatória / por Rota Gerada</div>
+          <div className="opt-desc">O sistema indica o próximo item e endereço a contar</div>
+        </button>
+        <button className="item-card" style={{padding:18,textAlign:'left',border:'1px solid var(--line)',background:'var(--panel)'}} onClick={()=>goto('manualCount')}>
+          <div className="opt-title" style={{fontSize:15}}><Ic>⌨</Ic>&nbsp; Contagem Manual</div>
+          <div className="opt-desc">Buscar item por código, descrição ou código de barras</div>
+        </button>
+        <button
+          className="item-card"
+          style={{padding:18,textAlign:'left',border:'1px solid var(--line)',background:'var(--panel)', opacity: ANY_ADDRESS_REGISTERED?1:0.5, cursor: ANY_ADDRESS_REGISTERED?'pointer':'not-allowed'}}
+          disabled={!ANY_ADDRESS_REGISTERED}
+          onClick={()=>{ if(ANY_ADDRESS_REGISTERED) goto('routeCount', inv); }}
+        >
+          <div className="opt-title" style={{fontSize:15}}><Ic>🗺</Ic>&nbsp; Contagem por Rota de Endereço</div>
+          <div className="opt-desc">{ANY_ADDRESS_REGISTERED ? 'Sequência otimizada por corredor e rua, menor deslocamento' : 'Indisponível — nenhum endereço cadastrado ainda neste almoxarifado'}</div>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- SHARED COUNT ENGINE ---------------- */
+
+/* ---------------- LEITOR DE CÂMERA (QR Code e Código de Barras) ---------------- */
+
+function CameraScanner({onDetected, onCancel}){
+  const containerId = useRef('scanner-'+Math.random().toString(36).slice(2,9)).current;
+  const [status, setStatus] = useState('starting'); // starting | scanning | error
+  const scannerRef = useRef(null);
+  const doneRef = useRef(false);
+
+  useEffect(()=>{
+    let cancelled = false;
+    async function start(){
+      if(!window.Html5Qrcode){
+        setStatus('error');
+        return;
+      }
+      try{
+        const formats = window.Html5QrcodeSupportedFormats ? [
+          window.Html5QrcodeSupportedFormats.QR_CODE,
+          window.Html5QrcodeSupportedFormats.CODE_128,
+          window.Html5QrcodeSupportedFormats.CODE_39,
+          window.Html5QrcodeSupportedFormats.EAN_13,
+          window.Html5QrcodeSupportedFormats.EAN_8,
+          window.Html5QrcodeSupportedFormats.UPC_A,
+          window.Html5QrcodeSupportedFormats.ITF,
+        ] : undefined;
+        const scanner = new window.Html5Qrcode(containerId, formats ? {formatsToSupport: formats} : undefined);
+        scannerRef.current = scanner;
+        await scanner.start(
+          {facingMode:'environment'},
+          {fps:10, qrbox:{width:260, height:160}},
+          (decodedText)=>{
+            if(doneRef.current || cancelled) return;
+            doneRef.current = true;
+            onDetected(decodedText.trim());
+          },
+          ()=>{ /* ignora falhas de leitura por frame — é o comportamento normal enquanto mira */ }
+        );
+        if(!cancelled) setStatus('scanning');
+      } catch(err){
+        if(!cancelled) setStatus('error');
+      }
+    }
+    start();
+    return ()=>{
+      cancelled = true;
+      if(scannerRef.current){
+        scannerRef.current.stop().then(()=>scannerRef.current.clear()).catch(()=>{});
+      }
+    };
+  }, []);
+
+  return (
+    <div>
+      <div className="scanner-wrap">
+        <div id={containerId} className="scanner-viewport"></div>
+      </div>
+      {status==='error' && (
+        <div className="login-error">Não foi possível acessar a câmera. Verifique a permissão do navegador ou use a digitação manual abaixo.</div>
+      )}
+      {status==='scanning' && <p className="scanner-hint">Aponte a câmera para o QR Code ou código de barras</p>}
+      <button className="btn btn-secondary" onClick={onCancel} style={{marginBottom:14}}>Cancelar leitura</button>
+    </div>
+  );
+}
+
+
+function useCountQueue(items){
+  const [idx, setIdx] = useState(0);
+  const current = items[idx];
+  const next = ()=> setIdx(i=>Math.min(i+1, items.length));
+  const done = idx >= items.length;
+  return {current, idx, total:items.length, next, done};
+}
+
+function CountStep({product, user, onComplete, onAddressProposed, inv, expectAddressCheck=true, numeroContagem=1, contagemAnteriorId=null}){
+  // Itens sem endereço cadastrado (comum enquanto o cadastro de endereços
+  // ainda não existe no Protheus) pulam o QR Code e vão direto para a etapa
+  // em que o operador INFORMA onde encontrou o item fisicamente.
+  const hasAddress = expectAddressCheck && !!product.enderecoCadastrado;
+  const needsAddressInput = expectAddressCheck && !product.enderecoCadastrado;
+  const [step, setStep] = useState(hasAddress ? 'scan' : (needsAddressInput ? 'enderecoManual' : 'count'));
+  const [scannedCode, setScannedCode] = useState('');
+  const [addressOk, setAddressOk] = useState(null);
+  const [enderecoInformado, setEnderecoInformado] = useState('');
+  const [qty, setQty] = useState('');
+  const [photo, setPhoto] = useState(null);
+  const [obs, setObs] = useState('');
+  const [motivo, setMotivo] = useState('');
+  const fileRef = useRef();
+
+  const [scanning, setScanning] = useState(false);
+
+  function simulateScan(match){
+    if(match){
+      setScannedCode(product.endereco);
+      setAddressOk(true);
+    } else {
+      // pick a plausible wrong neighboring address
+      setScannedCode(product.endereco.slice(0,-1) + (((parseInt(product.endereco.slice(-1))+1)%9)||1));
+      setAddressOk(false);
+    }
+  }
+
+  function handleAddressScanDetected(text){
+    setScanning(false);
+    const clean = text.trim();
+    const norm = clean.toUpperCase();
+    const expected = (product.endereco||'').toUpperCase();
+    setScannedCode(clean);
+    setAddressOk(norm === expected);
+    setStep('scanResult');
+  }
+
+  function handleEnderecoManualScanDetected(text){
+    setScanning(false);
+    setEnderecoInformado(text.trim().toUpperCase());
+  }
+
+  function confirmEnderecoManual(){
+    if(onAddressProposed && enderecoInformado.trim()){
+      onAddressProposed({
+        productCode: product.codigo,
+        descricao: product.descricao,
+        enderecoInformado: enderecoInformado.trim().toUpperCase(),
+        usuario: user.nome,
+        data: new Date().toISOString().slice(0,10),
+      });
+    }
+    setStep('count');
+  }
+
+  function handlePhoto(e){
+    const f = e.target.files[0];
+    if(f){ setPhoto(URL.createObjectURL(f)); }
+  }
+
+  const diffAbs = qty!=='' ? Number(qty) - product.saldoSistema : 0;
+  const diffPct = qty!=='' ? (product.saldoSistema===0 ? 100 : (diffAbs/product.saldoSistema)*100) : 0;
+  const classification = classifyDivergence(diffPct);
+  const statusAprovacao = computeStatus(numeroContagem, classification.level);
+
+  function finalize(){
+    onComplete({
+      id: 'CNT-'+Math.random().toString(36).slice(2,8).toUpperCase(),
+      productCode: product.codigo,
+      descricao: product.descricao,
+      endereco: product.endereco || enderecoInformado.toUpperCase() || '—',
+      enderecoPendenteValidacao: needsAddressInput,
+      usuario: user.nome,
+      qtdContada: Number(qty),
+      saldoSistema: product.saldoSistema,
+      diferenca: diffAbs,
+      percentual: diffPct,
+      valorDivergente: (Math.abs(diffAbs) * Number(product.custoUnit)).toFixed(2),
+      classificacao: classification,
+      statusAprovacao,
+      numeroContagem,
+      contagemAnteriorId,
+      motivo: diffAbs!==0 ? motivo : '',
+      foto: !!photo,
+      observacao: obs,
+      data: new Date().toISOString().slice(0,10),
+      hora: new Date().toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'}),
+      inventario: inv ? inv.id : '—',
+    });
+  }
+
+  return (
+    <div>
+      <div className="item-card">
+        <div className="item-card-head">
+          <div>
+            <div className="item-code">{product.codigo}</div>
+            <div className="item-desc">{product.descricao}</div>
+          </div>
+        </div>
+        <div className="item-meta">
+          <div className="m"><div className="k">Unidade</div><div className="v">{product.unidade || 'não informado'}</div></div>
+          <div className="m"><div className="k">Família</div><div className="v">{product.familia}</div></div>
+          <div className="m"><div className="k">Almoxarifado</div><div className="v">{product.almoxarifado}</div></div>
+          <div className="m"><div className="k">Endereço</div><div className="v">{product.enderecoCadastrado ? product.endereco : 'não cadastrado'}</div></div>
+        </div>
+        {typeof product.valorFinanceiro === 'number' && (
+          <div style={{padding:'0 18px 16px',display:'flex',gap:10,fontSize:11.5,color:'var(--ink-dim)',fontFamily:'var(--font-mono)',flexWrap:'wrap'}}>
+            <span>Valor em estoque: R$ {product.valorFinanceiro.toLocaleString('pt-BR',{minimumFractionDigits:2})}</span>
+            {product.semMovimentoRecente && <span style={{color:'var(--warn)'}}>· sem saída recente</span>}
+          </div>
+        )}
+      </div>
+
+      {needsAddressInput && step==='enderecoManual' && (
+        <div>
+          <div className="divergence-alert"><Ic>📍</Ic><span>Este item ainda não tem endereço cadastrado no sistema. Escaneie a etiqueta da prateleira ou informe onde você encontrou — essa informação será enviada para validação do líder.</span></div>
+          {scanning ? (
+            <CameraScanner onDetected={handleEnderecoManualScanDetected} onCancel={()=>setScanning(false)} />
+          ) : (
+            <button className="btn btn-primary" style={{marginBottom:14}} onClick={()=>setScanning(true)}><Ic>📷</Ic> Escanear código do endereço</button>
+          )}
+          <div className="field">
+            <label>Endereço onde o item foi encontrado</label>
+            <input type="text" value={enderecoInformado} onChange={e=>setEnderecoInformado(e.target.value)} placeholder="Ex: A-02-03-01" />
+          </div>
+          <div className="btn-row">
+            <button className="btn btn-secondary" onClick={()=>setStep('count')}>Pular por enquanto</button>
+            <button className="btn btn-primary" disabled={!enderecoInformado.trim()} onClick={confirmEnderecoManual}>Confirmar e continuar</button>
+          </div>
+        </div>
+      )}
+
+      {hasAddress && step==='scan' && (
+        <div>
+          <div className="address-chip">{product.endereco}</div>
+          {scanning ? (
+            <CameraScanner onDetected={handleAddressScanDetected} onCancel={()=>setScanning(false)} />
+          ) : (
+            <div>
+              <div className="scan-box">
+                <div className="scan-frame"><div className="scan-corner-b1"></div><div className="scan-corner-b2"></div><div className="scan-laser"></div></div>
+              </div>
+              <p className="scanner-hint">Toque em "Escanear" e aponte a câmera para o QR Code do endereço</p>
+              <button className="btn btn-primary" style={{marginBottom:10}} onClick={()=>setScanning(true)}><Ic>📷</Ic> Escanear com a câmera</button>
+              <div className="scan-toggle-row">
+                <button className="btn btn-outline" style={{fontSize:11.5}} onClick={()=>{simulateScan(false); setStep('scanResult');}}>Sem câmera: simular leitura errada</button>
+                <button className="btn btn-outline" style={{fontSize:11.5}} onClick={()=>{simulateScan(true); setStep('scanResult');}}>Sem câmera: simular leitura certa</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {hasAddress && step==='scanResult' && (
+        addressOk ? (
+          <div>
+            <div className="result-banner ok">
+              <div className="rb-title"><Ic>✅</Ic> Endereço confirmado</div>
+              <div className="rb-sub">Código lido: {scannedCode}</div>
+            </div>
+            <button className="btn btn-primary" onClick={()=>setStep('count')}>Continuar</button>
+          </div>
+        ) : (
+          <div>
+            <div className="result-banner warn">
+              <div className="rb-title"><Ic>⚠</Ic> Atenção</div>
+              <div className="rb-sub">Você está no endereço: <strong>{scannedCode}</strong><br/>O item está cadastrado no: <strong>{product.endereco}</strong></div>
+            </div>
+            <div className="btn-row">
+              <button className="btn btn-secondary" onClick={()=>setStep('scan')}>Escanear novamente</button>
+              <button className="btn btn-primary" onClick={()=>setStep('count')}>Contar mesmo assim</button>
+            </div>
+          </div>
+        )
+      )}
+
+      {step==='count' && (
+        <div>
+          <div className="divergence-alert"><Ic>👁‍🗨</Ic><span>Contagem cega — o saldo do sistema não é exibido. Informe apenas a quantidade física encontrada.</span></div>
+          <div className="field">
+            <label>Quantidade encontrada ({product.unidade || 'un. não informada'})</label>
+            <input className="qty-input" type="number" inputMode="decimal" value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" autoFocus />
+          </div>
+          <button className="btn btn-primary" disabled={qty===''} onClick={()=>setStep('photo')}>Confirmar quantidade</button>
+        </div>
+      )}
+
+      {step==='photo' && (
+        <div>
+          <div className="field">
+            <label>Foto (opcional)</label>
+            {photo ? <img src={photo} className="photo-preview" /> : (
+              <button className="photo-btn" style={{width:'100%'}} onClick={()=>fileRef.current.click()}><Ic>📷</Ic> Toque para anexar foto</button>
+            )}
+            <input ref={fileRef} type="file" accept="image/*" capture="environment" style={{display:'none'}} onChange={handlePhoto} />
+          </div>
+          <div className="field">
+            <label>Observação (opcional)</label>
+            <textarea value={obs} onChange={e=>setObs(e.target.value)} placeholder="Ex: material próximo ao endereço, embalagem danificada..." />
+          </div>
+          <button className="btn btn-primary" onClick={()=>setStep('result')}>Finalizar Contagem</button>
+        </div>
+      )}
+
+      {step==='result' && (
+        <div>
+          <div className={"result-banner "+classification.level}>
+            <div className="rb-title">
+              {classification.level==='ok' && <Ic>✅</Ic>}
+              {classification.level==='warn' && <Ic>⚠</Ic>}
+              {classification.level==='danger' && <Ic>⛔</Ic>}
+              &nbsp;{classification.label}{numeroContagem>1 && <span style={{fontWeight:400,fontSize:13}}> · {numeroContagem}ª contagem</span>}
+            </div>
+            <div className="rb-sub">{STATUS_INFO[statusAprovacao].text}</div>
+            <div className="result-grid">
+              <div className="rg"><div className="k">Saldo Sistema</div><div className="v">{product.saldoSistema}</div></div>
+              <div className="rg"><div className="k">Qtd. Contada</div><div className="v">{qty}</div></div>
+              <div className="rg"><div className="k">Diferença</div><div className="v">{diffAbs>0?'+':''}{diffAbs}</div></div>
+              <div className="rg"><div className="k">Divergência</div><div className="v">{diffPct.toFixed(1)}%</div></div>
+            </div>
+          </div>
+          {diffAbs!==0 && (
+            <div className="field">
+              <label>Motivo da divergência</label>
+              <select value={motivo} onChange={e=>setMotivo(e.target.value)}>
+                <option value="">Selecione um motivo</option>
+                {MOTIVOS.map(m=><option key={m}>{m}</option>)}
+              </select>
+            </div>
+          )}
+          <button className="btn btn-primary" disabled={diffAbs!==0 && !motivo} onClick={finalize}>Registrar e continuar</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------------- MÓDULO 2: CONTAGEM ALEATÓRIA ---------------- */
+
+function RandomCountFlow({inv, user, onFinish, onAddressProposed, setInventories}){
+  const items = useMemo(()=> {
+    // Critério aplicado: prioriza itens de maior valor financeiro (curva A) e
+    // itens sem saída recente — os dois critérios "futuros" já citados no
+    // briefing, aplicados aqui sobre os dados reais da SB2.
+    const scored = [...PRODUCTS].map(p=>({
+      p, score: (p.semMovimentoRecente ? 50000 : 0) + p.valorFinanceiro + Math.random()*500
+    })).sort((a,b)=>b.score-a.score);
+    return scored.slice(0, 25).sort(()=>Math.random()-0.5).slice(0,5).map(s=>s.p);
+  }, []);
+  const q = useCountQueue(items);
+
+  if(q.done){
+    return (
+      <div className="empty-state">
+        <div className="ic"><Ic>🎉</Ic></div>
+        Fila de contagem aleatória concluída.
+        <div style={{marginTop:16}}><button className="btn btn-primary" onClick={()=>onFinish(null)}>Voltar aos inventários</button></div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="role-note">Item {q.idx+1} de {q.total} · Fila priorizada por valor financeiro e itens sem saída recente</div>
+      <CountStep
+        product={q.current}
+        user={user}
+        inv={inv}
+        onAddressProposed={onAddressProposed}
+        onComplete={(c)=>{
+          if(inv) setInventories(prev=>prev.map(i=>i.id===inv.id?{...i, contados:i.contados+1}:i));
+          onFinish(c);
+          q.next();
+        }}
+      />
+    </div>
+  );
+}
+
+/* ---------------- MÓDULO 3: CONTAGEM MANUAL ---------------- */
+
+function ManualCountFlow({user, onFinish, onAddressProposed}){
+  const [query, setQuery] = useState('');
+  const [selected, setSelected] = useState(null);
+  const [scanning, setScanning] = useState(false);
+
+  const results = useMemo(()=>{
+    if(!query) return [];
+    const q = query.toLowerCase();
+    return PRODUCTS.filter(p=>p.codigo.toLowerCase().includes(q) || p.descricao.toLowerCase().includes(q)).slice(0,8);
+  }, [query]);
+
+  if(selected){
+    return <CountStep product={selected} user={user} onAddressProposed={onAddressProposed} onComplete={(c)=>onFinish(c)} expectAddressCheck={true} />;
+  }
+
+  function handleScanDetected(text){
+    setScanning(false);
+    setQuery(text.trim());
+  }
+
+  return (
+    <div>
+      {scanning ? (
+        <CameraScanner onDetected={handleScanDetected} onCancel={()=>setScanning(false)} />
+      ) : (
+        <button className="btn btn-primary" style={{marginBottom:14}} onClick={()=>setScanning(true)}><Ic>📷</Ic> Escanear código de barras / QR do item</button>
+      )}
+      <div className="field">
+        <label>Ou buscar por código, descrição ou código de barras</label>
+        <input type="text" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Ex: 000.35310 ou parafuso" />
+      </div>
+      {results.length===0 && query && <div className="empty-state" style={{padding:20}}>Nenhum item encontrado.</div>}
+      {results.map(p=>(
+        <div key={p.codigo} className="list-row" onClick={()=>setSelected(p)}>
+          <div>
+            <div className="lr-title">{p.descricao}</div>
+            <div className="lr-sub">{p.codigo} · {p.enderecoCadastrado ? p.endereco : 'sem endereço cadastrado'}</div>
+          </div>
+          <span className="chevron"><Ic>›</Ic></span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ---------------- MÓDULO 4: CONTAGEM POR ROTA ---------------- */
+
+function RouteCountFlow({inv, user, onFinish, onAddressProposed, setInventories}){
+  const grouped = useMemo(()=>{
+    const byCorredor = {};
+    PRODUCTS.forEach(p=>{
+      byCorredor[p.corredor] = byCorredor[p.corredor] || {};
+      byCorredor[p.corredor][p.rua] = byCorredor[p.corredor][p.rua] || [];
+      byCorredor[p.corredor][p.rua].push(p);
+    });
+    return byCorredor;
+  }, []);
+
+  const [active, setActive] = useState(null);
+
+  if(!ANY_ADDRESS_REGISTERED){
+    return (
+      <div className="empty-state">
+        <div className="ic"><Ic>🗺</Ic></div>
+        Nenhum endereço cadastrado ainda neste almoxarifado.<br/>
+        A contagem por rota é liberada assim que o líder validar os primeiros endereços informados pelos operadores (veja "Endereços Pendentes" em Configurações).
+      </div>
+    );
+  }
+
+  if(active){
+    return <CountStep product={active} user={user} inv={inv} onAddressProposed={onAddressProposed} onComplete={(c)=>{
+      if(inv) setInventories(prev=>prev.map(i=>i.id===inv.id?{...i, contados:i.contados+1}:i));
+      onFinish(c);
+      setActive(null);
+    }} />;
+  }
+
+  return (
+    <div>
+      <div className="role-note">Rota otimizada por menor deslocamento — Almox 01</div>
+      {Object.keys(grouped).sort().map(cor=>(
+        <div key={cor} style={{marginBottom:18}}>
+          <div className="section-title">Corredor {cor}</div>
+          {Object.keys(grouped[cor]).sort().map(rua=>(
+            <div key={rua} style={{marginBottom:10}}>
+              <div style={{fontFamily:'var(--font-mono)',fontSize:11,color:'var(--ink-dim)',marginBottom:6,textTransform:'uppercase'}}>Rua {rua}</div>
+              {grouped[cor][rua].map(p=>(
+                <div key={p.codigo} className="list-row" onClick={()=>setActive(p)}>
+                  <div>
+                    <div className="lr-title">{p.descricao}</div>
+                    <div className="lr-sub">{p.endereco}</div>
+                  </div>
+                  <span className="chevron"><Ic>›</Ic></span>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ---------------- MÓDULO: MINHAS CONTAGENS ---------------- */
+
+function MyCounts({counts, user, role, goto}){
+  const mine = role==='operador' ? counts.filter(c=>c.usuario===user.nome) : counts;
+  const byOriginal = {};
+  counts.forEach(c=>{ if(c.contagemAnteriorId) byOriginal[c.contagemAnteriorId]=c; });
+
+  if(mine.length===0){
+    return <div className="empty-state"><div className="ic"><Ic>📋</Ic></div>Nenhuma contagem registrada ainda.</div>;
+  }
+  return (
+    <div>
+      {mine.map(c=>{
+        const status = STATUS_INFO[c.statusAprovacao] || {level:c.classificacao.level, text:c.classificacao.rule};
+        const jaRecontado = !!byOriginal[c.id];
+        const anterior = c.contagemAnteriorId ? counts.find(x=>x.id===c.contagemAnteriorId) : null;
+        return (
+          <div key={c.id} className="item-card">
+            <div className="item-card-head">
+              <div>
+                <div className="item-code">{c.id} · {c.productCode} {c.numeroContagem>1 && <span style={{color:'var(--accent2)'}}>· {c.numeroContagem}ª contagem</span>}</div>
+                <div className="item-desc" style={{fontSize:15}}>{c.descricao}</div>
+              </div>
+              <StatusTag status={status.level} text={c.classificacao.label} />
+            </div>
+            <div style={{padding:'14px 18px',display:'flex',flexWrap:'wrap',gap:8,fontSize:12,color:'var(--ink-dim)',fontFamily:'var(--font-mono)'}}>
+              <span>Endereço {c.endereco}</span>·<span>Qtd {c.qtdContada}</span>·<span>Diferença {c.diferenca>0?'+':''}{c.diferenca}</span>·<span>{c.data} {c.hora||''}</span>·<span>{c.usuario}</span>
+            </div>
+            {anterior && (
+              <div style={{padding:'0 18px 10px',fontSize:12,color:'var(--ink-dim)'}}>
+                1ª contagem: {anterior.qtdContada} un. por {anterior.usuario} em {anterior.data} {anterior.hora||''}
+              </div>
+            )}
+            {c.motivo && <div style={{padding:'0 18px 14px',fontSize:12.5}}>Motivo: <strong>{c.motivo}</strong></div>}
+            {c.enderecoPendenteValidacao && <div style={{padding:'0 18px 14px'}}><StatusTag status="warn" text="Endereço aguardando validação" /></div>}
+            <div style={{padding:'0 18px 16px'}}>
+              <StatusTag status={status.level} text={status.text} />
+            </div>
+            {c.statusAprovacao==='aguardando_segunda' && !jaRecontado && (
+              <div style={{padding:'0 18px 16px'}}>
+                <button className="btn btn-secondary" onClick={()=>goto('recount', c)}><Ic>🔁</Ic> Recontar este item</button>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ---------------- MÓDULO 7: RECONTAGEM E ANÁLISE DE DIVERGÊNCIAS ---------------- */
+
+function RecountFlow({original, user, onFinish, onAddressProposed}){
+  const product = PRODUCTS.find(p=>p.codigo===original.productCode);
+  if(!product){
+    return <div className="empty-state"><div className="ic"><Ic>⚠</Ic></div>Item {original.productCode} não encontrado na base de produtos.</div>;
+  }
+  const sameUser = user.nome === original.usuario;
+  return (
+    <div>
+      <div className="role-note">
+        {original.numeroContagem}ª contagem: {original.qtdContada} un. por {original.usuario} em {original.data} {original.hora||''} · agora registrando a {original.numeroContagem+1}ª contagem
+      </div>
+      {sameUser && (
+        <div className="divergence-alert">
+          <Ic>⚠</Ic>
+          <span>Pelo Módulo 7 do processo, a segunda contagem deve ser feita por outro operador — você está logado como {user.nome}, o mesmo da contagem anterior. Pode continuar, mas o ideal é pedir para outro operador recontar.</span>
+        </div>
+      )}
+      <CountStep
+        product={product}
+        user={user}
+        onAddressProposed={onAddressProposed}
+        onComplete={onFinish}
+        numeroContagem={original.numeroContagem+1}
+        contagemAnteriorId={original.id}
+        expectAddressCheck={!!product.enderecoCadastrado}
+      />
+    </div>
+  );
+}
+
+function RecountsPanel({counts, role, currentUser, goto, onApprove}){
+  const byOriginal = {};
+  counts.forEach(c=>{ if(c.contagemAnteriorId) byOriginal[c.contagemAnteriorId]=c; });
+
+  const aguardandoSegunda = counts.filter(c=>c.statusAprovacao==='aguardando_segunda' && !byOriginal[c.id]);
+  const aguardandoAnalise = counts.filter(c=>c.statusAprovacao==='aguardando_analise_lider');
+  const canApprove = role==='lider' || role==='admin';
+
+  return (
+    <div>
+      <div className="section-title" style={{marginTop:0}}>
+        Aguardando Segunda Contagem
+        {aguardandoSegunda.length>0 && <span className="badge" style={{position:'static',marginLeft:8}}>{aguardandoSegunda.length}</span>}
+      </div>
+      {aguardandoSegunda.length===0 ? (
+        <div className="empty-state" style={{padding:20}}>Nenhum item aguardando recontagem no momento.</div>
+      ) : aguardandoSegunda.map(c=>(
+        <div key={c.id} className="item-card">
+          <div className="item-card-head">
+            <div>
+              <div className="item-code">{c.productCode}</div>
+              <div className="item-desc" style={{fontSize:15}}>{c.descricao}</div>
+            </div>
+            <StatusTag status="warn" text={c.classificacao.label} />
+          </div>
+          <div style={{padding:'14px 18px',display:'flex',flexWrap:'wrap',gap:8,fontSize:12,color:'var(--ink-dim)',fontFamily:'var(--font-mono)'}}>
+            <span>1ª contagem: {c.qtdContada} un.</span>·<span>Diferença {c.diferenca>0?'+':''}{c.diferenca} ({c.percentual.toFixed(1)}%)</span>·<span>{c.usuario}</span>·<span>{c.data} {c.hora||''}</span>
+          </div>
+          <div style={{padding:'0 18px 16px'}}>
+            <button className="btn btn-primary" onClick={()=>goto('recount', c)}><Ic>🔁</Ic> Recontar este item</button>
+          </div>
+        </div>
+      ))}
+
+      <div className="section-title">
+        Aguardando Análise do Líder
+        {aguardandoAnalise.length>0 && <span className="badge" style={{position:'static',marginLeft:8}}>{aguardandoAnalise.length}</span>}
+      </div>
+      {aguardandoAnalise.length===0 ? (
+        <div className="empty-state" style={{padding:20}}>Nenhuma divergência aguardando análise no momento.</div>
+      ) : aguardandoAnalise.map(c=>{
+        const anterior = c.contagemAnteriorId ? counts.find(x=>x.id===c.contagemAnteriorId) : null;
+        return (
+          <div key={c.id} className="item-card">
+            <div className="item-card-head">
+              <div>
+                <div className="item-code">{c.productCode} {c.numeroContagem>1 && <span style={{color:'var(--accent2)'}}>· {c.numeroContagem}ª contagem</span>}</div>
+                <div className="item-desc" style={{fontSize:15}}>{c.descricao}</div>
+              </div>
+              <StatusTag status="danger" text={c.classificacao.label} />
+            </div>
+            <div style={{padding:'14px 18px',display:'flex',flexWrap:'wrap',gap:8,fontSize:12,color:'var(--ink-dim)',fontFamily:'var(--font-mono)'}}>
+              <span>Qtd. contada: {c.qtdContada} un.</span>·<span>Diferença {c.diferenca>0?'+':''}{c.diferenca} ({c.percentual.toFixed(1)}%)</span>·<span>{c.usuario}</span>·<span>{c.data} {c.hora||''}</span>
+            </div>
+            {anterior && (
+              <div style={{padding:'0 18px 10px',fontSize:12,color:'var(--ink-dim)'}}>
+                1ª contagem: {anterior.qtdContada} un. por {anterior.usuario} em {anterior.data} {anterior.hora||''}
+              </div>
+            )}
+            {c.motivo && <div style={{padding:'0 18px 14px',fontSize:12.5}}>Motivo: <strong>{c.motivo}</strong></div>}
+            {canApprove ? (
+              <div className="btn-row" style={{padding:'0 18px 16px'}}>
+                <button className="btn btn-secondary" onClick={()=>goto('recount', c)}>Solicitar nova contagem</button>
+                <button className="btn btn-primary" onClick={()=>onApprove(c.id)}>Aprovar divergência</button>
+              </div>
+            ) : (
+              <div style={{padding:'0 18px 16px',fontSize:12,color:'var(--ink-dim)'}}>Aguardando decisão do líder de estoque.</div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+
+
+/* ---------------- RELATÓRIOS (Excel + e-mail) ---------------- */
+
+function ReportsScreen({counts, inventories, currentUser, sendHistory, onLogSend}){
+  const [email, setEmail] = useState('');
+  const [assunto, setAssunto] = useState('Stock360 — Relatório de Inventário Cíclico');
+  const [mensagem, setMensagem] = useState('Segue relatório de contagens e divergências do inventário cíclico para análise e solicitação de ajuste de estoque.');
+  const [feedback, setFeedback] = useState('');
+
+  const divergentesCount = counts.filter(c=>c.diferenca!==0).length;
+
+  function downloadWorkbook(){
+    if(!window.XLSX){
+      setFeedback('⚠ A biblioteca de exportação não carregou (verifique a conexão com a internet).');
+      return false;
+    }
+    const wb = generateReportWorkbook(counts, inventories);
+    const filename = `Stock360_Relatorio_${new Date().toISOString().slice(0,10)}.xlsx`;
+    window.XLSX.writeFile(wb, filename);
+    return filename;
+  }
+
+  function handleDownloadClick(){
+    const filename = downloadWorkbook();
+    if(filename) setFeedback('Relatório baixado: ' + filename);
+  }
+
+  function handleSendEmail(e){
+    e.preventDefault();
+    if(!email.trim()){ setFeedback('Informe o e-mail do destinatário.'); return; }
+    const filename = downloadWorkbook();
+    if(!filename) return;
+    const body = encodeURIComponent(mensagem + '\n\n(O arquivo ' + filename + ' foi baixado agora — anexe-o a este e-mail antes de enviar.)');
+    const subject = encodeURIComponent(assunto);
+    window.location.href = `mailto:${email.trim()}?subject=${subject}&body=${body}`;
+    onLogSend({
+      id:'ENV-'+Math.random().toString(36).slice(2,7).toUpperCase(),
+      destinatario:email.trim(), assunto, arquivo:filename,
+      enviadoPor:currentUser.nome, data:new Date().toLocaleString('pt-BR'),
+    });
+    setFeedback('E-mail preparado no seu programa de e-mail padrão — anexe o arquivo baixado antes de enviar.');
+  }
+
+  return (
+    <div>
+      <div className="role-note">{counts.length} contagens registradas · {divergentesCount} com divergência</div>
+      {feedback && <div className="login-success" style={{marginBottom:16}}>{feedback}</div>}
+
+      <div className="panel">
+        <div className="section-title" style={{marginTop:0}}>Baixar Relatório</div>
+        <div style={{fontSize:13,color:'var(--ink-dim)',marginBottom:14,lineHeight:1.6}}>
+          Gera uma planilha Excel (.xlsx) com 3 abas: <strong>Resumo</strong> (indicadores gerais),
+          <strong> Contagens</strong> (todas as contagens realizadas, com histórico completo de
+          rodadas) e <strong>Solicitação de Ajuste</strong> (só os itens com divergência —
+          pronta para enviar à equipe responsável por corrigir o saldo no Protheus).
+        </div>
+        <button className="btn btn-primary" onClick={handleDownloadClick} disabled={counts.length===0}>
+          <Ic>⬇</Ic> Baixar Excel (.xlsx)
+        </button>
+        {counts.length===0 && <div style={{fontSize:12,color:'var(--ink-dim)',marginTop:8}}>Nenhuma contagem registrada ainda.</div>}
+      </div>
+
+      <div className="panel">
+        <div className="section-title" style={{marginTop:0}}>Enviar por E-mail</div>
+        <div className="divergence-alert" style={{marginBottom:14}}>
+          <Ic>ℹ</Ic>
+          <span>Por limitação de segurança dos navegadores, não é possível anexar o arquivo
+          automaticamente a um e-mail. Ao enviar, o Excel é baixado e o seu programa de
+          e-mail abre com o texto pronto — só falta anexar o arquivo baixado antes de mandar.</span>
+        </div>
+        <form onSubmit={handleSendEmail}>
+          <div className="field">
+            <label>Destinatário</label>
+            <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="controladoria@empresa.com" />
+          </div>
+          <div className="field">
+            <label>Assunto</label>
+            <input type="text" value={assunto} onChange={e=>setAssunto(e.target.value)} />
+          </div>
+          <div className="field">
+            <label>Mensagem</label>
+            <textarea value={mensagem} onChange={e=>setMensagem(e.target.value)} />
+          </div>
+          <button className="btn btn-primary" type="submit" disabled={counts.length===0}>
+            <Ic>✉</Ic> Baixar e Preparar E-mail
+          </button>
+        </form>
+      </div>
+
+      {sendHistory.length>0 && (
+        <div className="panel">
+          <div className="section-title" style={{marginTop:0}}>Histórico de Envios</div>
+          <table className="rank-table">
+            <thead><tr><th>Destinatário</th><th>Assunto</th><th>Enviado por</th><th>Data</th></tr></thead>
+            <tbody>
+              {sendHistory.map(h=>(
+                <tr key={h.id}><td>{h.destinatario}</td><td>{h.assunto}</td><td>{h.enviadoPor}</td><td style={{fontFamily:'var(--font-mono)',fontSize:11.5}}>{h.data}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Dashboard({counts, inventories}){
+  const planejados = inventories.reduce((s,i)=>s+i.qtdItens,0);
+  const contados = counts.length;
+  const pendentes = Math.max(planejados-contados,0);
+  const divergentes = counts.filter(c=>c.diferenca!==0);
+  const acuracidade = contados>0 ? (((contados-divergentes.length)/contados)*100).toFixed(1) : '100.0';
+  const valorDivergente = counts.reduce((s,c)=>s+Number(c.valorDivergente||0),0);
+
+  const porOperador = {};
+  counts.forEach(c=>{ porOperador[c.usuario] = (porOperador[c.usuario]||0)+1; });
+  const maxOp = Math.max(1, ...Object.values(porOperador));
+
+  const porMotivo = {};
+  divergentes.forEach(c=>{ if(c.motivo) porMotivo[c.motivo] = (porMotivo[c.motivo]||0)+1; });
+  const maxMotivo = Math.max(1, ...Object.values(porMotivo));
+
+  const topDivergentes = [...counts].sort((a,b)=>Math.abs(b.diferenca)-Math.abs(a.diferenca)).slice(0,10);
+
+  return (
+    <div>
+      <div className="section-title">Operação</div>
+      <div className="kpi-grid">
+        <div className="kpi"><div className="kv">{planejados}</div><div className="kl">Itens Planejados</div></div>
+        <div className="kpi"><div className="kv">{contados}</div><div className="kl">Itens Contados</div></div>
+        <div className="kpi"><div className="kv">{pendentes}</div><div className="kl">Itens Pendentes</div></div>
+        <div className="kpi"><div className="kv">{counts.length ? '4.2min' : '—'}</div><div className="kl">Tempo Médio</div></div>
+      </div>
+
+      <div className="section-title">Qualidade</div>
+      <div className="kpi-grid">
+        <div className="kpi"><div className="kv" style={{color:'var(--ok)'}}>{acuracidade}%</div><div className="kl">Acuracidade do Estoque</div></div>
+        <div className="kpi"><div className="kv" style={{color:'var(--warn)'}}>{divergentes.length}</div><div className="kl">Divergências</div></div>
+        <div className="kpi"><div className="kv" style={{color:'var(--danger)'}}>R$ {valorDivergente.toFixed(0)}</div><div className="kl">Valor Divergente</div></div>
+        <div className="kpi"><div className="kv">{inventories.length}</div><div className="kl">Inventários Ativos</div></div>
+      </div>
+
+      {Object.keys(porOperador).length>0 && (
+        <div>
+          <div className="section-title">Produtividade por Operador</div>
+          <div className="panel">
+            {Object.entries(porOperador).map(([nome,n])=>(
+              <div key={nome} className="bar-row">
+                <div className="bl">{nome}</div>
+                <div className="bar-track"><div className="bar-fill" style={{width:(n/maxOp*100)+'%'}}><span>{n}</span></div></div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {Object.keys(porMotivo).length>0 && (
+        <div>
+          <div className="section-title">Principais Causas de Erro</div>
+          <div className="panel">
+            {Object.entries(porMotivo).map(([m,n])=>(
+              <div key={m} className="bar-row">
+                <div className="bl" style={{width:160}}>{m}</div>
+                <div className="bar-track"><div className="bar-fill" style={{width:(n/maxMotivo*100)+'%', background:'var(--danger)'}}><span style={{color:'#fff'}}>{n}</span></div></div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="section-title">Top Itens com Maior Divergência</div>
+      <div className="panel">
+        {topDivergentes.length===0 ? <div style={{color:'var(--ink-dim)',fontSize:13}}>Sem contagens registradas.</div> : (
+          <table className="rank-table">
+            <thead><tr><th>Item</th><th>Endereço</th><th>Diferença</th></tr></thead>
+            <tbody>
+              {topDivergentes.map(c=>(
+                <tr key={c.id}><td>{c.descricao}</td><td>{c.endereco}</td><td className="num" style={{color:c.diferenca===0?'var(--ok)':'var(--danger)'}}>{c.diferenca>0?'+':''}{c.diferenca}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- SETTINGS ---------------- */
+
+/* ---------------- CONTROLE DE USUÁRIOS (admin) ---------------- */
+
+const PERFIL_OPTIONS = [
+  {v:'operador', label:'Operador'},
+  {v:'lider', label:'Líder de Estoque'},
+  {v:'admin', label:'Administrador'},
+];
+
+function emptyUserForm(){
+  return {nome:'', usuario:'', email:'', senha:'', perfil:'operador'};
+}
+
+function UserManagementPanel({users, currentUser, onCreateUser, onUpdateUser, onToggleUserStatus, onAdminPasswordAction}){
+  const [formMode, setFormMode] = useState(null); // null | 'new' | userId
+  const [form, setForm] = useState(emptyUserForm());
+  const [pwAction, setPwAction] = useState(null); // userId currently doing a password action
+  const [pwValue, setPwValue] = useState('');
+  const [feedback, setFeedback] = useState('');
+
+  function startNew(){ setForm(emptyUserForm()); setFormMode('new'); setFeedback(''); }
+  function startEdit(u){ setForm({nome:u.nome, usuario:u.usuario, email:u.email||'', senha:'', perfil:u.perfil}); setFormMode(u.id); setFeedback(''); }
+  function cancelForm(){ setFormMode(null); setForm(emptyUserForm()); }
+
+  function submitForm(e){
+    e.preventDefault();
+    if(!form.nome.trim() || !form.usuario.trim()){ setFeedback('Nome e usuário de acesso são obrigatórios.'); return; }
+    if(formMode==='new'){
+      if(!form.senha || form.senha.length<6){ setFeedback('Defina uma senha inicial com pelo menos 6 caracteres.'); return; }
+      onCreateUser({nome:form.nome.trim(), usuario:form.usuario.trim(), email:form.email.trim(), senha:form.senha, perfil:form.perfil});
+    } else {
+      onUpdateUser(formMode, {nome:form.nome.trim(), usuario:form.usuario.trim(), email:form.email.trim(), perfil:form.perfil});
+    }
+    cancelForm();
+  }
+
+  return (
+    <div className="panel">
+      <div className="section-title" style={{marginTop:0}}>Usuários</div>
+
+      {!formMode && (
+        <button className="btn btn-secondary" style={{marginBottom:14}} onClick={startNew}>+ Novo Usuário</button>
+      )}
+
+      {formMode && (
+        <form onSubmit={submitForm} style={{marginBottom:16,background:'var(--panel-raised)',borderRadius:8,padding:14}}>
+          {feedback && <div className="login-error" style={{marginBottom:12}}>{feedback}</div>}
+          <div className="field">
+            <label>Nome completo</label>
+            <input type="text" value={form.nome} onChange={e=>setForm(f=>({...f,nome:e.target.value}))} />
+          </div>
+          <div className="field">
+            <label>Usuário de acesso</label>
+            <input type="text" value={form.usuario} onChange={e=>setForm(f=>({...f,usuario:e.target.value}))} placeholder="nome.sobrenome" />
+          </div>
+          <div className="field">
+            <label>E-mail (opcional)</label>
+            <input type="text" value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))} />
+          </div>
+          {formMode==='new' && (
+            <div className="field">
+              <label>Senha inicial</label>
+              <input type="text" value={form.senha} onChange={e=>setForm(f=>({...f,senha:e.target.value}))} placeholder="mínimo 6 caracteres" />
+            </div>
+          )}
+          <div className="field">
+            <label>Perfil de acesso</label>
+            <select value={form.perfil} onChange={e=>setForm(f=>({...f,perfil:e.target.value}))}>
+              {PERFIL_OPTIONS.map(p=><option key={p.v} value={p.v}>{p.label}</option>)}
+            </select>
+          </div>
+          <div className="btn-row">
+            <button type="button" className="btn btn-secondary" onClick={cancelForm}>Cancelar</button>
+            <button type="submit" className="btn btn-primary">{formMode==='new'?'Criar Usuário':'Salvar Alterações'}</button>
+          </div>
+        </form>
+      )}
+
+      {users.map(u=>(
+        <div key={u.id} className="list-row" style={{flexWrap:'wrap',alignItems:'flex-start'}}>
+          <div>
+            <div className="lr-title">{u.nome}{u.id===currentUser.id && <span style={{color:'var(--ink-dim)',fontWeight:400}}> (você)</span>}</div>
+            <div className="lr-sub">{u.usuario} · {PERFIL_OPTIONS.find(p=>p.v===u.perfil)?.label}</div>
+          </div>
+          <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:8}}>
+            <StatusTag status={u.status==='ativo'?'ok':u.status==='bloqueado'?'danger':'warn'} text={u.status==='ativo'?'Ativo':u.status==='bloqueado'?'Bloqueado':'Aguardando nova senha'} />
+            <div className="btn-row" style={{width:'auto'}}>
+              <button className="btn btn-outline" style={{padding:'7px 10px',fontSize:10.5}} onClick={()=>startEdit(u)}>Editar</button>
+              <button className="btn btn-outline" style={{padding:'7px 10px',fontSize:10.5}} onClick={()=>onToggleUserStatus(u.id)}>{u.status==='bloqueado'?'Desbloquear':'Bloquear'}</button>
+              <button className="btn btn-outline" style={{padding:'7px 10px',fontSize:10.5}} onClick={()=>{setPwAction(pwAction===u.id?null:u.id); setPwValue('');}}>Redefinir senha</button>
+            </div>
+            {pwAction===u.id && (
+              <div style={{background:'var(--panel-raised)',border:'1px solid var(--line)',borderRadius:8,padding:12,width:260}}>
+                <div className="btn-row" style={{marginBottom:8}}>
+                  <button className="btn btn-secondary" style={{padding:'8px',fontSize:10}} onClick={()=>{onAdminPasswordAction(u.id,'temp'); setPwAction(null);}}>Gerar temporária</button>
+                  <button className="btn btn-secondary" style={{padding:'8px',fontSize:10}} onClick={()=>{onAdminPasswordAction(u.id,'liberar'); setPwAction(null);}}>Liberar p/ criar</button>
+                </div>
+                <input type="text" placeholder="Definir senha manual" value={pwValue} onChange={e=>setPwValue(e.target.value)} style={{width:'100%',padding:8,marginBottom:8,background:'var(--panel)',border:'1px solid var(--line)',borderRadius:6,color:'var(--ink)',fontSize:12}} />
+                <button className="btn btn-primary" style={{padding:'8px',fontSize:10}} disabled={pwValue.length<6} onClick={()=>{onAdminPasswordAction(u.id,'definir',pwValue); setPwAction(null);}}>Confirmar senha definida</button>
+              </div>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PasswordRequestRow({req, onResolve}){
+  const [action, setAction] = useState(null);
+  const [pwValue, setPwValue] = useState('');
+
+  if(req.status!=='pendente'){
+    return (
+      <div className="list-row">
+        <div><div className="lr-title">{req.usuarioNome}</div><div className="lr-sub">solicitado em {req.data}</div></div>
+        <StatusTag status="ok" text="Resolvido" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="list-row" style={{flexWrap:'wrap',alignItems:'flex-start'}}>
+      <div>
+        <div className="lr-title">{req.usuarioNome}</div>
+        <div className="lr-sub">solicitado em {req.data}</div>
+      </div>
+      <div style={{width:'100%',marginTop:10}}>
+        <div className="btn-row" style={{marginBottom:8}}>
+          <button className="btn btn-secondary" style={{padding:'8px',fontSize:11}} onClick={()=>onResolve(req.id,'temp')}>Gerar senha temporária</button>
+          <button className="btn btn-secondary" style={{padding:'8px',fontSize:11}} onClick={()=>onResolve(req.id,'liberar')}>Liberar p/ criar nova senha</button>
+        </div>
+        <div style={{display:'flex',gap:8}}>
+          <input type="text" placeholder="Definir senha manualmente" value={pwValue} onChange={e=>setPwValue(e.target.value)} style={{flex:1,padding:10,background:'var(--panel-raised)',border:'1px solid var(--line)',borderRadius:6,color:'var(--ink)',fontSize:13}} />
+          <button className="btn btn-primary" style={{padding:'0 14px',fontSize:11,width:'auto'}} disabled={pwValue.length<6} onClick={()=>onResolve(req.id,'definir',pwValue)}>Definir</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+function Settings({role, enderecosPropostos=[], onResolve, users=[], currentUser, onCreateUser, onUpdateUser, onToggleUserStatus, onAdminPasswordAction, passwordRequests=[], onResolvePasswordRequest, passwordHistory=[]}){
+  const pendentes = enderecosPropostos.filter(e=>e.status==='pendente');
+  const canValidate = role==='lider' || role==='admin';
+  const isAdmin = role==='admin';
+  const pendentesSenha = passwordRequests.filter(r=>r.status==='pendente');
+
+  return (
+    <div>
+      <div className="role-note">Perfil atual: {ROLE_LABELS[role]} · {currentUser.nome}</div>
+
+      {canValidate && (
+        <div className="panel">
+          <div className="section-title" style={{marginTop:0}}>
+            Endereços Pendentes de Cadastro
+            {pendentes.length>0 && <span className="badge" style={{position:'static',marginLeft:8}}>{pendentes.length}</span>}
+          </div>
+          {enderecosPropostos.length===0 ? (
+            <div style={{fontSize:13,color:'var(--ink-dim)'}}>
+              Nenhum endereço informado ainda. Toda vez que um operador contar um item sem endereço
+              cadastrado, ele vai informar onde encontrou — e o endereço aparece aqui para validação.
+            </div>
+          ) : (
+            enderecosPropostos.map(e=>(
+              <div key={e.id} className="list-row" style={{flexWrap:'wrap'}}>
+                <div>
+                  <div className="lr-title">{e.descricao}</div>
+                  <div className="lr-sub">{e.productCode} · informado como <strong style={{color:'var(--ink)'}}>{e.enderecoInformado}</strong> por {e.usuario} em {e.data}</div>
+                </div>
+                {e.status==='pendente' ? (
+                  <div className="btn-row" style={{width:'auto'}}>
+                    <button className="btn btn-secondary" style={{padding:'8px 12px',fontSize:11}} onClick={()=>onResolve(e.id,'rejeitado')}>Rejeitar</button>
+                    <button className="btn btn-primary" style={{padding:'8px 12px',fontSize:11}} onClick={()=>onResolve(e.id,'confirmado')}>Confirmar</button>
+                  </div>
+                ) : (
+                  <StatusTag status={e.status==='confirmado'?'ok':'danger'} text={e.status==='confirmado'?'Confirmado':'Rejeitado'} />
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {isAdmin ? (
+        <UserManagementPanel
+          users={users}
+          currentUser={currentUser}
+          onCreateUser={onCreateUser}
+          onUpdateUser={onUpdateUser}
+          onToggleUserStatus={onToggleUserStatus}
+          onAdminPasswordAction={onAdminPasswordAction}
+        />
+      ) : (
+        <div className="panel">
+          <div className="section-title" style={{marginTop:0}}>Usuários</div>
+          <div style={{fontSize:13,color:'var(--ink-dim)'}}>Gerenciamento de usuários é restrito ao perfil Administrador.</div>
+        </div>
+      )}
+
+      {isAdmin && (
+        <div className="panel">
+          <div className="section-title" style={{marginTop:0}}>
+            Solicitações de Redefinição de Senha
+            {pendentesSenha.length>0 && <span className="badge" style={{position:'static',marginLeft:8}}>{pendentesSenha.length}</span>}
+          </div>
+          {passwordRequests.length===0 ? (
+            <div style={{fontSize:13,color:'var(--ink-dim)'}}>Nenhuma solicitação de "esqueci minha senha" recebida ainda.</div>
+          ) : (
+            passwordRequests.map(r=>(
+              <PasswordRequestRow key={r.id} req={r} onResolve={onResolvePasswordRequest} />
+            ))
+          )}
+        </div>
+      )}
+
+      {isAdmin && passwordHistory.length>0 && (
+        <div className="panel">
+          <div className="section-title" style={{marginTop:0}}>Histórico de Alterações de Senha</div>
+          <table className="rank-table">
+            <thead><tr><th>Usuário</th><th>Ação</th><th>Administrador</th><th>Data/Hora</th></tr></thead>
+            <tbody>
+              {passwordHistory.map(h=>(
+                <tr key={h.id}><td>{h.usuario}</td><td>{h.acao}</td><td>{h.administrador}</td><td style={{fontFamily:'var(--font-mono)',fontSize:11.5}}>{h.data}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div className="panel">
+        <div className="section-title" style={{marginTop:0}}>Regras de Divergência</div>
+        <div style={{fontSize:13,lineHeight:1.9,color:'var(--ink-dim)'}}>
+          <div>≤ 5% → <span style={{color:'var(--ok)'}}>Aprovação automática</span></div>
+          <div>5% – 15% → <span style={{color:'var(--warn)'}}>Segunda contagem obrigatória</span></div>
+          <div>&gt; 15% → <span style={{color:'var(--danger)'}}>Análise do líder de estoque</span></div>
+        </div>
+      </div>
+      <div className="panel">
+        <div className="section-title" style={{marginTop:0}}>Origem dos Dados</div>
+        <div style={{fontSize:13,color:'var(--ink-dim)',lineHeight:1.7}}>
+          300 itens carregados de uma exportação real da tabela SB2 (Protheus) — amostra de
+          10.512 SKUs do Almox 01. Nenhum endereço físico cadastrado ainda; cadastro de endereços
+          em construção via contagem (ver painel acima).
+        </div>
+      </div>
+      <div className="panel">
+        <div className="section-title" style={{marginTop:0}}>Integrações Futuras</div>
+        <div style={{fontSize:13,color:'var(--ink-dim)'}}>ERP TOTVS · Power BI · Preparado, ainda não conectado.</div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./service-worker.js').catch(()=>{});
+    });
+  }
+</script>
+</body>
+</html>
