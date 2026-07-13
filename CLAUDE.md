@@ -64,34 +64,39 @@ Se o usuário pedir para "conectar o banco de verdade" ou "sair do protótipo", 
 aplicar esse schema num projeto Supabase novo e trocar os `useState` do front-end por
 chamadas ao Supabase client, começando por `usuarios` (auth) e `estoque_saldo`.
 
-## Pendência em andamento quando a conversa foi encerrada
+## Importação de lista de contagem via Excel — implementada
 
 O usuário pediu a funcionalidade de **importar a lista de contagem via Excel** (upload de
 uma planilha padrão com a lista de itens a contar, ao invés de o sistema gerar a lista
-sozinho) — essa tarefa foi **iniciada mas não terminada**. O pedido exato foi:
+sozinho). Pedido original:
 
 > "eu quero poder subir lista para contagem via excel, a lista precisa sempre ser padrão.
 > ou seja, eu gero uma lista que precisa contar, subo para o app e ele conta a lista que
 > aparecer no tablet."
 
-Design pretendido (não implementado ainda):
-- Novo 5º tipo de inventário em "Módulo 1": "Lista Importada (Excel)".
-- Botão "Baixar modelo padrão (.xlsx)" — template fixo com colunas Código* (obrigatório),
-  Descrição, Endereço, Almoxarifado (opcionais) — gerado via SheetJS, mesma lib já usada
-  no relatório.
-- Upload + parse client-side (`XLSX.read` + `sheet_to_json`), validando a coluna Código
-  obrigatória, normalizando nomes de coluna (acentos/maiúsculas), mostrando um resumo antes
-  de confirmar (quantas linhas válidas, quantas com código não encontrado no cache local de
-  300 produtos, duplicatas removidas).
-- Um novo tipo de fluxo de contagem (`ImportedListCountFlow`, similar ao
-  `RandomCountFlow` que já existe) que usa exatamente a lista importada, na ordem em que
-  veio da planilha — sem embaralhar, sem filtrar.
-- Itens cujo código não está no cache local de 300 produtos devem funcionar mesmo assim
-  (usando os dados que a própria planilha trouxer como fallback), com um aviso visual de
-  que o saldo não está disponível localmente — isso é uma limitação do protótipo (só tem
-  300 dos 10.512 SKUs reais), não existiria em produção com o banco real sincronizado.
-
-Isso é a próxima coisa a implementar se o usuário continuar de onde parou.
+Isso está implementado no `index.html`:
+- 5º tipo de inventário em "Módulo 1" (`NewInventory`): "Lista Importada (Excel)".
+- Botão "Baixar modelo padrão (.xlsx)" (`buildImportTemplateWorkbook`) — template com
+  colunas Código* (obrigatório), Descrição, Endereço, Almoxarifado (opcionais), gerado via
+  SheetJS.
+- Upload + parse client-side (`parseImportedListRows`, usando `XLSX.read` +
+  `sheet_to_json`), com normalização de cabeçalho (acentos/maiúsculas via
+  `normalizeHeaderKey`), validação da coluna Código obrigatória, remoção de duplicatas
+  (mantendo a 1ª ocorrência) e um resumo antes de confirmar (linhas válidas, sem código,
+  duplicadas, não encontradas no cache local de 300 produtos).
+- `ImportedListCountFlow` (paralelo ao `RandomCountFlow`) percorre a lista importada na
+  ordem exata da planilha, sem embaralhar. Ao voltar para o inventário no meio da lista,
+  retoma a partir de `inv.contados` — não reinicia do item 1 (isso reaproveita o mesmo
+  padrão dos outros fluxos de contagem de item único, que também levam de volta para a
+  tela de inventários a cada item).
+- Itens cujo código não está no cache local de 300 produtos funcionam normalmente,
+  usando os dados que a própria planilha trouxer como fallback (`foraDoCacheLocal: true`
+  no objeto de produto sintético) — `CountStep` mostra um aviso visual e pula a
+  comparação de saldo (`hasSaldoLocal` controla isso), enviando sempre para análise do
+  líder. Essa limitação é do protótipo (só 300 dos 10.512 SKUs reais); em produção, com o
+  banco sincronizado, o saldo real apareceria normalmente.
+- `MyCounts` e `RecountsPanel` foram ajustados para exibir "—" em vez de quebrar quando
+  `diferenca`/`percentual` são `null` (caso dos itens fora do cache local).
 
 ## Convenções de design (não quebrar ao continuar)
 

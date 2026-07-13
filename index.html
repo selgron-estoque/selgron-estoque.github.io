@@ -395,6 +395,75 @@ function generateReportWorkbook(counts, inventories){
   return wb;
 }
 
+/* ---------------- IMPORTAÇÃO DE LISTA DE CONTAGEM (Excel) ---------------- */
+
+const IMPORT_TEMPLATE_COLUMNS = ['Código', 'Descrição', 'Endereço', 'Almoxarifado'];
+
+// Aceita variações de acentuação/maiúsculas no cabeçalho da planilha que o
+// usuário sobe (ex: "codigo", "CÓDIGO", "Codigo" caem todos em "codigo").
+function normalizeHeaderKey(h){
+  return String(h||'').normalize('NFD').replace(/[̀-ͯ]/g,'').trim().toLowerCase();
+}
+
+const IMPORT_HEADER_MAP = {
+  codigo:'codigo',
+  descricao:'descricao',
+  endereco:'endereco',
+  almoxarifado:'almoxarifado',
+};
+
+function buildImportTemplateWorkbook(){
+  const XLSX = window.XLSX;
+  const wb = XLSX.utils.book_new();
+  const exemplo = [{
+    'Código': PRODUCTS[0] ? PRODUCTS[0].codigo : '000.35310',
+    'Descrição': PRODUCTS[0] ? PRODUCTS[0].descricao : 'Exemplo de item',
+    'Endereço': '',
+    'Almoxarifado': 'Almox 01',
+  }];
+  const ws = XLSX.utils.json_to_sheet(exemplo, {header: IMPORT_TEMPLATE_COLUMNS});
+  XLSX.utils.book_append_sheet(wb, ws, 'Lista para Contagem');
+  return wb;
+}
+
+// Lê as linhas já convertidas pelo SheetJS (sheet_to_json) e devolve a lista
+// de itens válidos (código não vazio, duplicatas removidas mantendo a 1ª
+// ocorrência — preserva a ordem original da planilha) mais um resumo para
+// exibir antes de confirmar a criação do inventário.
+function parseImportedListRows(rawRows){
+  let totalLinhas = 0;
+  let semCodigo = 0;
+  let duplicadas = 0;
+  const vistos = new Set();
+  const itens = [];
+
+  rawRows.forEach(row=>{
+    totalLinhas++;
+    const norm = {};
+    Object.keys(row).forEach(k=>{
+      const canon = IMPORT_HEADER_MAP[normalizeHeaderKey(k)];
+      if(canon) norm[canon] = row[k];
+    });
+    const codigo = norm.codigo!=null ? String(norm.codigo).trim() : '';
+    if(!codigo){ semCodigo++; return; }
+    if(vistos.has(codigo)){ duplicadas++; return; }
+    vistos.add(codigo);
+    itens.push({
+      codigo,
+      descricao: norm.descricao!=null ? String(norm.descricao).trim() : '',
+      endereco: norm.endereco!=null ? String(norm.endereco).trim().toUpperCase() : '',
+      almoxarifado: norm.almoxarifado!=null ? String(norm.almoxarifado).trim() : '',
+    });
+  });
+
+  const naoEncontrados = itens.filter(it => !PRODUCTS.some(p=>p.codigo===it.codigo)).length;
+
+  return {
+    itens,
+    resumo: { totalLinhas, validas: itens.length, semCodigo, duplicadas, naoEncontrados },
+  };
+}
+
 /* ---------------- ICONS (inline, no external icon lib) ---------------- */
 const Ic = ({children}) => <span aria-hidden="true">{children}</span>;
 
@@ -571,6 +640,7 @@ function App(){
         {view==='randomCount' && <RandomCountFlow inv={flowState} user={currentUser} onFinish={(c)=>{setCounts(p=>[c,...p]); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} />}
         {view==='manualCount' && <ManualCountFlow user={currentUser} onFinish={(c)=>{setCounts(p=>[c,...p]); goto('home');}} onAddressProposed={addAddressProposal} />}
         {view==='routeCount' && <RouteCountFlow inv={flowState} user={currentUser} onFinish={(c)=>{setCounts(p=>[c,...p]); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} />}
+        {view==='importedListCount' && <ImportedListCountFlow inv={flowState} user={currentUser} onFinish={(c)=>{setCounts(p=>[c,...p]); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} />}
         {view==='myCounts' && <MyCounts counts={counts} user={currentUser} role={role} goto={goto} />}
         {view==='recounts' && <RecountsPanel counts={counts} role={role} currentUser={currentUser} goto={goto} onApprove={approveDivergence} />}
         {view==='recount' && flowState && <RecountFlow original={flowState} user={currentUser} onAddressProposed={addAddressProposal} onFinish={(c)=>{setCounts(p=>[c,...p]); goto('recounts');}} />}
@@ -741,6 +811,7 @@ const VIEW_TITLES = {
   randomCount:'Contagem Aleatória',
   manualCount:'Contagem Manual',
   routeCount:'Contagem por Rota',
+  importedListCount:'Lista Importada',
   myCounts:'Minhas Contagens',
   recounts:'Recontagens Pendentes',
   recount:'Recontar Item',
@@ -853,7 +924,7 @@ function InventoryList({inventories, goto, role}){
       {inventories.map(inv=>{
         const pct = inv.qtdItens ? Math.round((inv.contados/inv.qtdItens)*100) : 0;
         return (
-          <div key={inv.id} className="item-card" style={{cursor:'pointer'}} onClick={()=>goto('pickCountType', inv)}>
+          <div key={inv.id} className="item-card" style={{cursor:'pointer'}} onClick={()=>goto(inv.tipo==='Lista Importada (Excel)' ? 'importedListCount' : 'pickCountType', inv)}>
             <div className="item-card-head">
               <div>
                 <div className="item-code">{inv.id} · {inv.almoxarifado}</div>
@@ -888,12 +959,66 @@ function NewInventory({users, onCreate}){
   const [qtd, setQtd] = useState(20);
   const [tipo, setTipo] = useState('Contagem Aleatória');
 
+  const [arquivoNome, setArquivoNome] = useState('');
+  const [itensImportados, setItensImportados] = useState(null);
+  const [importResumo, setImportResumo] = useState(null);
+  const [importErro, setImportErro] = useState('');
+  const fileRef = useRef();
+
   const tipos = [
     {v:'Contagem Aleatória', d:'O sistema seleciona os itens automaticamente'},
     {v:'Contagem por Curva ABC', d:'Prioriza itens de maior valor ou giro'},
     {v:'Contagem Manual', d:'Operador escolhe os itens livremente'},
     {v:'Contagem por Rota de Endereço', d:'Sequência otimizada por corredor/rua'},
+    {v:'Lista Importada (Excel)', d:'Conta exatamente os itens de uma planilha importada, na ordem em que vieram'},
   ];
+
+  const isImportado = tipo==='Lista Importada (Excel)';
+  const canCreate = isImportado ? !!(itensImportados && itensImportados.length>0) : true;
+
+  function handleDownloadTemplate(){
+    if(!window.XLSX) return;
+    const wb = buildImportTemplateWorkbook();
+    window.XLSX.writeFile(wb, 'Stock360_Modelo_Lista_Contagem.xlsx');
+  }
+
+  function handleFileUpload(e){
+    const file = e.target.files[0];
+    if(!file) return;
+    setImportErro('');
+    setArquivoNome(file.name);
+    const reader = new FileReader();
+    reader.onload = (evt)=>{
+      try{
+        const data = new Uint8Array(evt.target.result);
+        const wb = window.XLSX.read(data, {type:'array'});
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const rows = window.XLSX.utils.sheet_to_json(sheet, {defval:''});
+        const {itens, resumo} = parseImportedListRows(rows);
+        if(itens.length===0){
+          setImportErro('Nenhuma linha válida encontrada — verifique se a coluna "Código" está preenchida.');
+          setItensImportados(null);
+          setImportResumo(null);
+          return;
+        }
+        setItensImportados(itens);
+        setImportResumo(resumo);
+      } catch(err){
+        setImportErro('Não foi possível ler o arquivo. Verifique se é um .xlsx válido.');
+        setItensImportados(null);
+        setImportResumo(null);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  function handleCreate(){
+    onCreate({
+      id:'INV-'+Math.floor(Math.random()*900+100), nome, almoxarifado:almox, responsavel:resp, data, tipo,
+      qtdItens: isImportado ? itensImportados.length : qtd, status:'pendente', contados:0,
+      ...(isImportado ? {itensImportados} : {}),
+    });
+  }
 
   return (
     <div>
@@ -919,10 +1044,12 @@ function NewInventory({users, onCreate}){
           <label>Data</label>
           <input type="date" value={data} onChange={e=>setData(e.target.value)} />
         </div>
-        <div className="field">
-          <label>Quantidade de itens</label>
-          <input type="number" value={qtd} onChange={e=>setQtd(Number(e.target.value))} />
-        </div>
+        {!isImportado && (
+          <div className="field">
+            <label>Quantidade de itens</label>
+            <input type="number" value={qtd} onChange={e=>setQtd(Number(e.target.value))} />
+          </div>
+        )}
         <div className="field">
           <label>Tipo de inventário</label>
           <div className="radio-group">
@@ -937,10 +1064,42 @@ function NewInventory({users, onCreate}){
             ))}
           </div>
         </div>
+
+        {isImportado && (
+          <div className="field">
+            <label>Lista de itens para contar</label>
+            <div style={{display:'flex',flexDirection:'column',gap:10}}>
+              <button type="button" className="btn btn-outline" onClick={handleDownloadTemplate}><Ic>⬇</Ic> Baixar modelo padrão (.xlsx)</button>
+              <button type="button" className="btn btn-secondary" onClick={()=>fileRef.current.click()}>
+                <Ic>📤</Ic> {arquivoNome ? 'Trocar arquivo (' + arquivoNome + ')' : 'Selecionar planilha preenchida (.xlsx)'}
+              </button>
+              <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{display:'none'}} onChange={handleFileUpload} />
+            </div>
+            {importErro && <div className="login-error" style={{marginTop:10}}>{importErro}</div>}
+          </div>
+        )}
       </div>
-      <button className="btn btn-primary" onClick={()=>onCreate({
-        id:'INV-'+Math.floor(Math.random()*900+100), nome, almoxarifado:almox, responsavel:resp, data, tipo, qtdItens:qtd, status:'pendente', contados:0
-      })}>Criar Inventário</button>
+
+      {isImportado && importResumo && (
+        <div className="panel">
+          <div className="section-title" style={{marginTop:0}}>Resumo da Importação</div>
+          <div style={{fontSize:13,lineHeight:1.9}}>
+            <div>Linhas na planilha: <strong>{importResumo.totalLinhas}</strong></div>
+            <div>Itens válidos para contagem: <strong>{importResumo.validas}</strong></div>
+            {importResumo.duplicadas>0 && <div>Códigos duplicados removidos: <strong>{importResumo.duplicadas}</strong></div>}
+            {importResumo.semCodigo>0 && <div>Linhas sem código (ignoradas): <strong>{importResumo.semCodigo}</strong></div>}
+            <div>Códigos não encontrados no cache local (300 SKUs): <strong>{importResumo.naoEncontrados}</strong></div>
+          </div>
+          {importResumo.naoEncontrados>0 && (
+            <div className="divergence-alert" style={{marginTop:12}}>
+              <Ic>ℹ</Ic>
+              <span>Itens fora do cache local ainda podem ser contados normalmente — os dados vêm da própria planilha, mas o saldo do sistema não estará disponível para comparação automática (limitação do protótipo, que só tem 300 dos 10.512 SKUs reais).</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      <button className="btn btn-primary" disabled={!canCreate} onClick={handleCreate}>Criar Inventário</button>
     </div>
   );
 }
@@ -1114,10 +1273,13 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
     if(f){ setPhoto(URL.createObjectURL(f)); }
   }
 
-  const diffAbs = qty!=='' ? Number(qty) - product.saldoSistema : 0;
-  const diffPct = qty!=='' ? (product.saldoSistema===0 ? 100 : (diffAbs/product.saldoSistema)*100) : 0;
-  const classification = classifyDivergence(diffPct);
-  const statusAprovacao = computeStatus(numeroContagem, classification.level);
+  const hasSaldoLocal = typeof product.saldoSistema === 'number';
+  const diffAbs = (qty!=='' && hasSaldoLocal) ? Number(qty) - product.saldoSistema : 0;
+  const diffPct = (qty!=='' && hasSaldoLocal) ? (product.saldoSistema===0 ? 100 : (diffAbs/product.saldoSistema)*100) : 0;
+  const classification = hasSaldoLocal
+    ? classifyDivergence(diffPct)
+    : {level:'warn', label:'Sem saldo local para comparar', rule:'Item fora do cache local do protótipo — revisão manual necessária'};
+  const statusAprovacao = hasSaldoLocal ? computeStatus(numeroContagem, classification.level) : 'aguardando_analise_lider';
 
   function finalize(){
     onComplete({
@@ -1128,10 +1290,11 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
       enderecoPendenteValidacao: needsAddressInput,
       usuario: user.nome,
       qtdContada: Number(qty),
-      saldoSistema: product.saldoSistema,
-      diferenca: diffAbs,
-      percentual: diffPct,
-      valorDivergente: (Math.abs(diffAbs) * Number(product.custoUnit)).toFixed(2),
+      saldoSistema: hasSaldoLocal ? product.saldoSistema : null,
+      diferenca: hasSaldoLocal ? diffAbs : null,
+      percentual: hasSaldoLocal ? diffPct : null,
+      valorDivergente: hasSaldoLocal ? (Math.abs(diffAbs) * Number(product.custoUnit)).toFixed(2) : '0.00',
+      foraDoCacheLocal: !!product.foraDoCacheLocal,
       classificacao: classification,
       statusAprovacao,
       numeroContagem,
@@ -1160,13 +1323,20 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
           <div className="m"><div className="k">Almoxarifado</div><div className="v">{product.almoxarifado}</div></div>
           <div className="m"><div className="k">Endereço</div><div className="v">{product.enderecoCadastrado ? product.endereco : 'não cadastrado'}</div></div>
         </div>
-        {typeof product.valorFinanceiro === 'number' && (
+        {typeof product.valorFinanceiro === 'number' && product.valorFinanceiro > 0 && (
           <div style={{padding:'0 18px 16px',display:'flex',gap:10,fontSize:11.5,color:'var(--ink-dim)',fontFamily:'var(--font-mono)',flexWrap:'wrap'}}>
             <span>Valor em estoque: R$ {product.valorFinanceiro.toLocaleString('pt-BR',{minimumFractionDigits:2})}</span>
             {product.semMovimentoRecente && <span style={{color:'var(--warn)'}}>· sem saída recente</span>}
           </div>
         )}
       </div>
+
+      {product.foraDoCacheLocal && (
+        <div className="divergence-alert">
+          <Ic>ℹ</Ic>
+          <span>Este código não está no cache local de 300 SKUs do protótipo — os dados vieram da planilha importada. O saldo do sistema não está disponível aqui para comparação automática; a contagem será registrada para revisão manual do líder. Em produção, com o banco sincronizado, o saldo real apareceria normalmente.</span>
+        </div>
+      )}
 
       {needsAddressInput && step==='enderecoManual' && (
         <div>
@@ -1270,22 +1440,22 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
             </div>
             <div className="rb-sub">{STATUS_INFO[statusAprovacao].text}</div>
             <div className="result-grid">
-              <div className="rg"><div className="k">Saldo Sistema</div><div className="v">{product.saldoSistema}</div></div>
+              <div className="rg"><div className="k">Saldo Sistema</div><div className="v">{hasSaldoLocal ? product.saldoSistema : '—'}</div></div>
               <div className="rg"><div className="k">Qtd. Contada</div><div className="v">{qty}</div></div>
-              <div className="rg"><div className="k">Diferença</div><div className="v">{diffAbs>0?'+':''}{diffAbs}</div></div>
-              <div className="rg"><div className="k">Divergência</div><div className="v">{diffPct.toFixed(1)}%</div></div>
+              <div className="rg"><div className="k">Diferença</div><div className="v">{hasSaldoLocal ? (diffAbs>0?'+':'')+diffAbs : '—'}</div></div>
+              <div className="rg"><div className="k">Divergência</div><div className="v">{hasSaldoLocal ? diffPct.toFixed(1)+'%' : '—'}</div></div>
             </div>
           </div>
-          {diffAbs!==0 && (
+          {(diffAbs!==0 || !hasSaldoLocal) && (
             <div className="field">
-              <label>Motivo da divergência</label>
+              <label>Motivo da divergência{!hasSaldoLocal && ' (opcional)'}</label>
               <select value={motivo} onChange={e=>setMotivo(e.target.value)}>
                 <option value="">Selecione um motivo</option>
                 {MOTIVOS.map(m=><option key={m}>{m}</option>)}
               </select>
             </div>
           )}
-          <button className="btn btn-primary" disabled={diffAbs!==0 && !motivo} onClick={finalize}>Registrar e continuar</button>
+          <button className="btn btn-primary" disabled={diffAbs!==0 && hasSaldoLocal && !motivo} onClick={finalize}>Registrar e continuar</button>
         </div>
       )}
     </div>
@@ -1440,6 +1610,82 @@ function RouteCountFlow({inv, user, onFinish, onAddressProposed, setInventories}
   );
 }
 
+/* ---------------- MÓDULO 1B: CONTAGEM POR LISTA IMPORTADA (Excel) ---------------- */
+
+function ImportedListCountFlow({inv, user, onFinish, onAddressProposed, setInventories}){
+  const allItems = useMemo(()=>{
+    const lista = (inv && inv.itensImportados) || [];
+    return lista.map(item=>{
+      const local = PRODUCTS.find(p=>p.codigo===item.codigo);
+      if(local){
+        // planilha trouxe um endereço e o cadastro local ainda não tem — usa o da planilha
+        return (item.endereco && !local.enderecoCadastrado)
+          ? {...local, endereco:item.endereco, enderecoCadastrado:true}
+          : local;
+      }
+      // código não está no cache local de 300 SKUs — monta o item a partir do
+      // que a própria planilha trouxe (fallback documentado no CLAUDE.md)
+      return {
+        codigo: item.codigo,
+        descricao: item.descricao || item.codigo,
+        unidade: null,
+        familia: '—',
+        endereco: item.endereco || null,
+        enderecoCadastrado: !!item.endereco,
+        almoxarifado: item.almoxarifado || (inv ? inv.almoxarifado : '—'),
+        corredor: null,
+        rua: null,
+        saldoSistema: null,
+        custoUnit: 0,
+        valorFinanceiro: 0,
+        semMovimentoRecente: false,
+        ultimaSaida: null,
+        foraDoCacheLocal: true,
+      };
+    });
+  }, [inv]);
+
+  // A lista é sempre percorrida na ordem original; ao voltar para este
+  // inventário depois de contar alguns itens, retoma exatamente de onde
+  // parou usando "contados" — sem isso, cada vez que a tela remonta a fila
+  // reiniciaria do item 1 (mesmo problema que a Contagem Aleatória já tem,
+  // mas aqui seria pior: o operador nunca chegaria ao 2º item da planilha).
+  const jaContados = inv ? (inv.contados || 0) : 0;
+  const pendentes = useMemo(()=> allItems.slice(jaContados), [allItems, jaContados]);
+  const q = useCountQueue(pendentes);
+
+  if(allItems.length===0){
+    return <div className="empty-state"><div className="ic"><Ic>📄</Ic></div>Esta lista importada não tem itens válidos.</div>;
+  }
+
+  if(q.done){
+    return (
+      <div className="empty-state">
+        <div className="ic"><Ic>🎉</Ic></div>
+        Lista importada concluída — todos os {allItems.length} itens foram contados.
+        <div style={{marginTop:16}}><button className="btn btn-primary" onClick={()=>onFinish(null)}>Voltar aos inventários</button></div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="role-note">Item {jaContados+q.idx+1} de {allItems.length} · Lista importada{inv?' de '+inv.nome:''} — ordem original da planilha</div>
+      <CountStep
+        product={q.current}
+        user={user}
+        inv={inv}
+        onAddressProposed={onAddressProposed}
+        onComplete={(c)=>{
+          if(inv) setInventories(prev=>prev.map(i=>i.id===inv.id?{...i, contados:i.contados+1}:i));
+          onFinish(c);
+          q.next();
+        }}
+      />
+    </div>
+  );
+}
+
 /* ---------------- MÓDULO: MINHAS CONTAGENS ---------------- */
 
 function MyCounts({counts, user, role, goto}){
@@ -1466,7 +1712,7 @@ function MyCounts({counts, user, role, goto}){
               <StatusTag status={status.level} text={c.classificacao.label} />
             </div>
             <div style={{padding:'14px 18px',display:'flex',flexWrap:'wrap',gap:8,fontSize:12,color:'var(--ink-dim)',fontFamily:'var(--font-mono)'}}>
-              <span>Endereço {c.endereco}</span>·<span>Qtd {c.qtdContada}</span>·<span>Diferença {c.diferenca>0?'+':''}{c.diferenca}</span>·<span>{c.data} {c.hora||''}</span>·<span>{c.usuario}</span>
+              <span>Endereço {c.endereco}</span>·<span>Qtd {c.qtdContada}</span>·<span>Diferença {c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</span>·<span>{c.data} {c.hora||''}</span>·<span>{c.usuario}</span>
             </div>
             {anterior && (
               <div style={{padding:'0 18px 10px',fontSize:12,color:'var(--ink-dim)'}}>
@@ -1574,7 +1820,7 @@ function RecountsPanel({counts, role, currentUser, goto, onApprove}){
               <StatusTag status="danger" text={c.classificacao.label} />
             </div>
             <div style={{padding:'14px 18px',display:'flex',flexWrap:'wrap',gap:8,fontSize:12,color:'var(--ink-dim)',fontFamily:'var(--font-mono)'}}>
-              <span>Qtd. contada: {c.qtdContada} un.</span>·<span>Diferença {c.diferenca>0?'+':''}{c.diferenca} ({c.percentual.toFixed(1)}%)</span>·<span>{c.usuario}</span>·<span>{c.data} {c.hora||''}</span>
+              <span>Qtd. contada: {c.qtdContada} un.</span>·<span>Diferença {c.diferenca==null ? '— (sem saldo local)' : (c.diferenca>0?'+':'')+c.diferenca+' ('+c.percentual.toFixed(1)+'%)'}</span>·<span>{c.usuario}</span>·<span>{c.data} {c.hora||''}</span>
             </div>
             {anterior && (
               <div style={{padding:'0 18px 10px',fontSize:12,color:'var(--ink-dim)'}}>

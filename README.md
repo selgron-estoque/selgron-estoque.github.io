@@ -99,7 +99,8 @@ No tablet Android, abra pelo Chrome → menu → "Adicionar à tela inicial" par
   já que não há autenticação real ainda.
 - Tela inicial com os 5 cards do briefing.
 - **Módulo 1** — Criação de inventário (líder): nome, almoxarifado, responsável, data,
-  quantidade de itens, 4 tipos de contagem.
+  quantidade de itens, 5 tipos de contagem (o 5º, Lista Importada via Excel, está descrito
+  na seção "Atualização: Importação de lista de contagem via Excel" abaixo).
 - **Módulo 2** — Contagem aleatória: fila gerada automaticamente a partir do mock de
   produtos.
 - **Módulo 3** — Contagem manual: busca por código ou descrição.
@@ -113,6 +114,27 @@ No tablet Android, abra pelo Chrome → menu → "Adicionar à tela inicial" par
 - **Módulo 7** — Regras de segunda contagem, agora com o fluxo completo: ≤5% aprovação
   automática; 5–15% na 1ª contagem fica "aguardando segunda contagem"; acima de 15% (em
   qualquer rodada) vai para "aguardando análise do líder". Veja a seção abaixo.
+
+## Atualização: Importação de lista de contagem via Excel
+
+5º tipo de inventário em "Módulo 1": **Lista Importada (Excel)**. Em vez do sistema
+gerar a lista de itens a contar, o líder sobe uma planilha padrão e o app conta exatamente
+os itens que vieram nela, na mesma ordem — sem embaralhar, sem filtrar.
+
+- **Baixar modelo padrão (.xlsx)** — template com as colunas Código* (obrigatório),
+  Descrição, Endereço, Almoxarifado (opcionais), gerado no navegador via SheetJS.
+- **Upload da planilha preenchida** — parse 100% client-side. Nomes de coluna são
+  normalizados (aceita acentos/maiúsculas variados), linhas sem código são ignoradas,
+  códigos duplicados são removidos mantendo a 1ª ocorrência. Antes de criar o inventário,
+  um resumo mostra quantas linhas são válidas, quantas foram ignoradas/duplicadas e quantos
+  códigos não constam no cache local de 300 produtos do protótipo.
+- **Contagem** — segue o fluxo padrão (contagem cega, QR/código de barras, foto, motivo de
+  divergência, regras de segunda contagem do Módulo 7). Itens cujo código não está no cache
+  local de 300 SKUs ainda são contados normalmente, usando os dados que a própria planilha
+  trouxer — só que sem saldo do sistema disponível para comparação automática (aviso visual
+  na tela, e a contagem vai direto para análise do líder). Essa é uma limitação só do
+  protótipo (que tem 300 dos 10.512 SKUs reais do Almox 01); em produção, com o banco
+  sincronizado, o saldo apareceria normalmente para qualquer código.
 
 ## Atualização: Relatório Excel (download e e-mail)
 
