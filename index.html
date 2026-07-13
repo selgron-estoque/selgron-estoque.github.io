@@ -224,15 +224,31 @@
 
   .role-note{font-family:var(--font-mono);font-size:11px;color:var(--ink-dim);background:var(--panel-raised);border-radius:8px;padding:10px 12px;margin-bottom:16px;border-left:3px solid var(--accent2);}
 
-  /* LOGIN SCREEN — identidade corporativa/ERP (navy + branco + laranja Selgron) */
+  /* LOGIN SCREEN — identidade corporativa/ERP (navy + branco + laranja Selgron),
+     card dividido em 2 colunas (ilustração + formulário), replicando o mockup de
+     referência do cliente. Ver CLAUDE.md "Tela de login vira o mockup de 2 colunas". */
   .login-screen{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--gray-100);padding:24px;font-family:var(--font-corp);}
-  .login-card{width:100%;max-width:500px;background:#FFFFFF;border:1px solid var(--gray-200);border-top:3px solid var(--navy);border-radius:8px;padding:44px 40px 36px;box-shadow:0 1px 2px rgba(15,23,42,0.04), 0 10px 28px rgba(15,23,42,0.06);}
-  .login-logo{display:flex;flex-direction:column;align-items:center;gap:20px;margin-bottom:26px;}
-  .login-logo img{height:30px;width:auto;max-width:200px;display:block;}
-  .login-title{font-family:var(--font-corp);font-size:21px;font-weight:700;letter-spacing:-0.2px;color:var(--navy);text-align:center;margin:0;}
-  .login-subtitle{font-family:var(--font-corp);font-size:11px;font-weight:600;color:var(--gray-500);text-align:center;letter-spacing:1px;text-transform:uppercase;margin:6px 0 0 0;}
-  .login-divider{height:1px;background:var(--gray-200);margin:26px 0 24px;}
-  .login-field{margin-bottom:18px;position:relative;}
+  .login-card{width:100%;max-width:900px;display:flex;align-items:stretch;background:#FFFFFF;border:1px solid var(--gray-200);border-radius:20px;overflow:hidden;box-shadow:0 1px 2px rgba(15,23,42,0.04), 0 16px 40px rgba(15,23,42,0.08);}
+
+  /* Coluna esquerda — ilustração (só aparece em telas ≥760px, ver media query) */
+  .login-illustration{display:none;flex-direction:column;justify-content:space-between;width:38%;flex-shrink:0;background:var(--gray-50);padding:36px 34px;position:relative;overflow:hidden;}
+  .login-illustration img{height:22px;width:auto;display:block;position:relative;z-index:2;}
+  .login-illust-mid{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:14px;position:relative;z-index:2;}
+  .login-illust-title{font-family:var(--font-corp);font-size:23px;font-weight:700;color:var(--navy);}
+  .login-illust-title span{color:var(--safety);}
+  .login-illust-tagline{font-family:var(--font-corp);font-size:13px;color:var(--gray-500);margin-top:-6px;}
+  .login-illust-decor{position:absolute;left:-10%;bottom:-8%;width:130%;height:46%;z-index:1;
+    background:repeating-linear-gradient(0deg, rgba(15,23,42,0.05) 0px, rgba(15,23,42,0.05) 2px, transparent 2px, transparent 20px);
+    clip-path:polygon(0 40%, 100% 0%, 100% 100%, 0 100%);}
+  .login-illust-decor::after{content:'';position:absolute;inset:0;background:linear-gradient(135deg, rgba(246,162,0,0.22), rgba(246,162,0,0) 65%);}
+
+  /* Coluna direita — formulário */
+  .login-form-panel{flex:1;min-width:0;padding:44px 48px;display:flex;flex-direction:column;justify-content:center;}
+  .login-title{font-family:var(--font-corp);font-size:26px;font-weight:700;letter-spacing:-0.2px;color:var(--navy);margin:0;}
+  .login-title span{color:var(--safety);}
+  .login-subtitle{font-family:var(--font-corp);font-size:11px;font-weight:600;color:var(--gray-500);letter-spacing:1.2px;text-transform:uppercase;margin:6px 0 0 0;}
+  .login-rule{width:44px;height:3px;background:var(--safety);border-radius:2px;margin:14px 0 24px;}
+  .login-field{margin-bottom:16px;position:relative;}
   .login-field label{display:block;font-family:var(--font-corp);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:var(--gray-500);margin-bottom:7px;}
   .login-field .field-wrap{position:relative;display:flex;align-items:center;}
   .login-field .field-icon{position:absolute;left:13px;top:50%;transform:translateY(-50%);display:flex;color:var(--gray-400);pointer-events:none;}
@@ -240,31 +256,55 @@
   .login-field input::placeholder{color:var(--gray-400);}
   .login-field input:focus{outline:none;border-color:var(--navy);background:#fff;box-shadow:0 0 0 3px rgba(15,23,42,0.07);}
   .login-field input[type="password"],
-  .login-field input.has-toggle{padding-right:40px;}
-  .pw-toggle{position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--gray-400);display:flex;align-items:center;padding:4px;border-radius:6px;}
+  .login-field input.has-toggle{padding-right:76px;}
+  .pw-toggle{position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--gray-500);display:flex;align-items:center;gap:5px;padding:4px;border-radius:6px;font-family:var(--font-corp);font-size:12px;font-weight:600;}
   .pw-toggle:hover{color:var(--navy);}
   .login-error{display:flex;align-items:center;gap:8px;background:#FEF2F2;border:1px solid #FECACA;color:#B91C1C;border-radius:8px;padding:11px 13px;font-size:13px;font-family:var(--font-corp);margin-bottom:16px;}
   .login-success{display:flex;align-items:center;gap:8px;background:#F0FDF4;border:1px solid #BBF7D0;color:#15803D;border-radius:8px;padding:11px 13px;font-size:13px;font-family:var(--font-corp);margin-bottom:16px;}
   .login-notice{display:flex;align-items:center;gap:8px;background:#FFF7ED;border:1px solid #FED7AA;color:#9A5B13;border-radius:8px;padding:11px 13px;font-size:13px;font-family:var(--font-corp);margin-bottom:16px;}
-  .login-btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;background:var(--safety);color:var(--safety-ink);border:none;border-radius:8px;padding:13px 20px;font-family:var(--font-corp);font-size:14.5px;font-weight:600;letter-spacing:0.1px;margin-top:6px;transition:background .12s;}
+  .login-btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;background:var(--safety);color:var(--safety-ink);border:none;border-radius:8px;padding:13px 20px;font-family:var(--font-corp);font-size:14.5px;font-weight:700;letter-spacing:0.3px;text-transform:uppercase;margin-top:8px;transition:background .12s;}
   .login-btn:hover{background:#e0940a;}
   .login-btn:active{background:#d9a300;}
-  .login-forgot{display:block;text-align:center;margin-top:18px;background:none;border:none;color:var(--gray-500);font-family:var(--font-corp);font-size:12.5px;font-weight:600;width:100%;padding:8px;}
-  .login-forgot:hover{color:var(--navy);}
+  .login-or{display:flex;align-items:center;gap:12px;margin:18px 0 4px;font-family:var(--font-corp);font-size:11.5px;color:var(--gray-400);text-transform:uppercase;letter-spacing:0.5px;}
+  .login-or::before, .login-or::after{content:'';flex:1;height:1px;background:var(--gray-200);}
+  .login-forgot{display:flex;align-items:center;justify-content:center;gap:6px;text-align:center;margin-top:6px;background:none;border:none;color:var(--accent2);font-family:var(--font-corp);font-size:13px;font-weight:600;width:100%;padding:8px;}
+  .login-forgot:hover{text-decoration:underline;}
   .login-back{display:block;text-align:center;margin-top:14px;background:none;border:none;color:var(--gray-500);font-family:var(--font-corp);font-size:12.5px;width:100%;padding:8px;}
-  .demo-creds{margin-top:28px;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:8px;padding:14px 16px;}
-  .demo-creds .dc-title{display:flex;align-items:center;gap:6px;font-family:var(--font-corp);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:var(--gray-500);margin-bottom:9px;}
-  .demo-creds .dc-row{display:flex;flex-direction:column;gap:2px;padding:7px 0;border-top:1px solid var(--gray-200);}
+  .demo-creds{margin-top:22px;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:10px;padding:14px 16px;}
+  .demo-creds .dc-title{display:flex;align-items:center;gap:6px;font-family:var(--font-corp);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--navy);}
+  .demo-creds .dc-sub{font-family:var(--font-corp);font-size:11px;color:var(--gray-500);margin:2px 0 10px 19px;}
+  .demo-creds .dc-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--gray-200);}
   .demo-creds .dc-row:first-of-type{border-top:none;padding-top:0;}
-  .demo-creds .dc-row span:first-child{font-family:var(--font-mono);font-size:12px;color:var(--navy);}
-  .demo-creds .dc-row span:last-child{color:var(--gray-500);font-family:var(--font-corp);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;}
-  .login-footer{text-align:center;font-family:var(--font-corp);font-size:11.5px;color:var(--gray-500);margin-top:22px;letter-spacing:0.2px;}
+  .demo-creds .dc-avatar{width:24px;height:24px;border-radius:50%;background:#fff;border:1px solid var(--gray-200);color:var(--gray-400);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .demo-creds .dc-cred{flex:1;font-family:var(--font-mono);font-size:12px;color:var(--navy);}
+  .dc-role-pill{font-family:var(--font-corp);font-size:10.5px;font-weight:700;padding:3px 10px;border-radius:20px;white-space:nowrap;}
+  .dc-role-pill.admin{background:#DBEAFE;color:#1D4ED8;}
+  .dc-role-pill.lider{background:#DCFCE7;color:#15803D;}
+  .dc-role-pill.operador{background:#FFEDD5;color:#C2410C;}
   .login-card .role-note{font-family:var(--font-corp);font-size:12.5px;color:var(--gray-500);background:var(--gray-50);border-radius:8px;border-left:3px solid var(--navy);}
+
+  /* Faixa de confiança + rodapé, abaixo do card */
+  .login-trust-row{display:flex;align-items:flex-start;justify-content:center;gap:0;width:100%;max-width:900px;margin-top:28px;}
+  .login-trust-item{flex:1;display:flex;align-items:flex-start;gap:10px;padding:0 20px;text-align:left;}
+  .login-trust-item + .login-trust-item{border-left:1px solid var(--gray-200);}
+  .login-trust-item .ti-icon{color:var(--gray-500);flex-shrink:0;margin-top:1px;}
+  .login-trust-item strong{display:block;font-family:var(--font-corp);font-size:13px;color:var(--navy);font-weight:700;}
+  .login-trust-item span{display:block;font-family:var(--font-corp);font-size:11.5px;color:var(--gray-500);margin-top:1px;}
+  .login-footer{text-align:center;font-family:var(--font-corp);font-size:11.5px;color:var(--gray-500);margin-top:26px;letter-spacing:0.2px;line-height:1.7;}
+  .login-footer .lf-restrict{display:flex;align-items:center;justify-content:center;gap:6px;}
+
+  @media (min-width:760px){
+    .login-illustration{display:flex;}
+  }
+  @media (max-width:759px){
+    .login-trust-row{flex-direction:column;gap:14px;max-width:420px;}
+    .login-trust-item + .login-trust-item{border-left:none;border-top:1px solid var(--gray-200);padding-top:14px;}
+  }
 
   /* ---------------- LAYOUT DESKTOP (sidebar) — só em telas largas ----------------
      O app continua mobile-first (tablet no chão de fábrica é o uso principal, ver
      CLAUDE.md); esse bloco só entra em telas ≥1024px e não altera nada abaixo disso. */
-  .desktop-topbar, .sidebar, .desktop-kpi-grid, .desktop-quick-grid, .desktop-cta-row{display:none;}
+  .desktop-topbar, .sidebar, .desktop-kpi-grid, .desktop-quick-grid, .desktop-cta-row, .pnl-wrap{display:none;}
 
   @media (min-width:1024px){
     .app{max-width:none;flex-direction:row;align-items:flex-start;}
@@ -344,7 +384,7 @@
 
     /* ---- Dashboard novo ("painel") — design system corporativo/ERP (Inter,
        navy, laranja Selgron, grid de 12 colunas, espaçamento em múltiplos de 8) ---- */
-    .pnl-wrap{font-family:var(--font-corp);color:var(--navy);}
+    .pnl-wrap{display:block;font-family:var(--font-corp);color:var(--navy);}
     .pnl-kpi-row{display:grid;grid-template-columns:repeat(5,1fr);gap:16px;margin-bottom:24px;}
     .pnl-kpi{display:block;width:100%;text-align:left;font:inherit;background:#fff;border:1px solid var(--gray-200);border-radius:10px;padding:18px;box-shadow:0 1px 2px rgba(15,23,42,.03);transition:box-shadow .15s, transform .15s;}
     .pnl-kpi:hover{box-shadow:0 6px 16px rgba(15,23,42,.08);transform:translateY(-1px);}
@@ -948,7 +988,7 @@ function App(){
         role={role}
         onLogout={()=>logout('')}
         subtitle={VIEW_SUBTITLES[view]}
-        rightExtra={view==='painel' ? (
+        rightExtra={view==='home' ? (
           <select className="pnl-period-select" value={dashboardPeriod} onChange={e=>setDashboardPeriod(e.target.value)}>
             <option value="7d">Últimos 7 dias</option>
             <option value="30d">Últimos 30 dias</option>
@@ -958,8 +998,7 @@ function App(){
       />
       {view!=='home' && <SubBar view={view} goto={goto} />}
       <div className="content">
-        {view==='home' && <Home role={role} user={currentUser} inventories={inventories} counts={counts} enderecosPropostos={enderecosPropostos} goto={goto} />}
-        {view==='painel' && <MainDashboard role={role} user={currentUser} inventories={inventories} counts={counts} goto={goto} period={dashboardPeriod} />}
+        {view==='home' && <Home role={role} user={currentUser} inventories={inventories} counts={counts} enderecosPropostos={enderecosPropostos} goto={goto} period={dashboardPeriod} />}
         {view==='inventories' && <InventoryList inventories={inventories} goto={goto} role={role} counts={counts} onDelete={deleteInventory} />}
         {view==='newInventory' && (role==='lider'||role==='admin') && <NewInventory users={users} onCreate={(inv)=>{setInventories(prev=>[inv,...prev]); goto('inventories');}} />}
         {view==='pickCountType' && <PickCountType inv={flowState} goto={goto} />}
@@ -1051,6 +1090,24 @@ function ShieldIcon(){
   );
 }
 
+// Ícone "hero" da coluna ilustrada do login: ciclo (duas setas em arco) em volta
+// de uma caixa — representa a contagem cíclica de inventário.
+function CycleIcon({size=104}){
+  return (
+    <svg width={size} height={size} viewBox="0 0 100 100" fill="none" aria-hidden="true">
+      <path d="M50 10 A40 40 0 0 1 88 46" stroke="var(--safety)" strokeWidth="5" strokeLinecap="round" fill="none"/>
+      <path d="M80 37 L90 47 L77 50" stroke="var(--safety)" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+      <path d="M50 90 A40 40 0 0 1 12 54" stroke="var(--safety)" strokeWidth="5" strokeLinecap="round" fill="none"/>
+      <path d="M20 63 L10 53 L23 50" stroke="var(--safety)" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+      <g transform="translate(50 50)" stroke="var(--navy)" strokeWidth="4" strokeLinejoin="round" strokeLinecap="round" fill="none">
+        <path d="M-15 -8.7 L0 -17.3 L15 -8.7 L15 8.7 L0 17.3 L-15 8.7 Z"/>
+        <path d="M-15 -8.7 L0 0 L15 -8.7"/>
+        <path d="M0 0 L0 17.3"/>
+      </g>
+    </svg>
+  );
+}
+
 /* ---------------- ÍCONES LINEARES (estilo Lucide) ----------------
    Projeto não tem build step (React/Babel via CDN, sem bundler) — em vez de
    importar o pacote lucide/lucide-react (mais uma dependência CDN + integração
@@ -1083,6 +1140,9 @@ const DICON_PATHS = {
   alertTriangle: <><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></>,
   percent: <><path d="m19 5-14 14"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></>,
   user: <><circle cx="12" cy="8" r="3.4"/><path d="M4.5 20c1.2-3.6 4.2-5.6 7.5-5.6s6.3 2 7.5 5.6"/></>,
+  lock: <><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></>,
+  clock: <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></>,
+  shieldCheck: <><path d="M12 3.5l7 2.6v5.4c0 4.6-3 8.3-7 9-4-0.7-7-4.4-7-9V6.1l7-2.6Z"/><path d="m9 12 2 2 4-4.2"/></>,
 };
 
 function DIcon({name, size=18, strokeWidth=1.8, style}){
@@ -1135,94 +1195,134 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
   return (
     <div className="login-screen">
       <div className="login-card">
-        <div className="login-logo">
+        <div className="login-illustration">
           <img src={SELGRON_LOGO_URL} alt="Selgron" />
-          <div>
-            <h1 className="login-title">Inventário 360</h1>
-            <div className="login-subtitle">Controle de Inventário Cíclico</div>
+          <div className="login-illust-mid">
+            <CycleIcon />
+            <div className="login-illust-title">Inventário <span>360</span></div>
+            <div className="login-illust-tagline">Visão completa. Controle eficiente.</div>
           </div>
+          <div className="login-illust-decor"></div>
         </div>
 
-        <div className="login-divider"></div>
+        <div className="login-form-panel">
+          <h1 className="login-title">Inventário <span>360°</span></h1>
+          <div className="login-subtitle">Controle de Inventário Cíclico</div>
+          <div className="login-rule"></div>
 
-        {notice && mode==='login' && (
-          <div className="login-notice">{notice}</div>
-        )}
+          {notice && mode==='login' && (
+            <div className="login-notice">{notice}</div>
+          )}
 
-        {mode==='login' && (
-          <form onSubmit={submitLogin}>
-            {error && <div className="login-error">{error}</div>}
-            <div className="login-field">
-              <label>Usuário</label>
-              <div className="field-wrap">
-                <span className="field-icon"><LoginFieldIcon name="user" /></span>
-                <input type="text" value={identifier} onChange={e=>{setIdentifier(e.target.value); clearNotice&&clearNotice();}} placeholder="usuario.sobrenome" autoCapitalize="none" autoFocus />
-              </div>
-            </div>
-            <div className="login-field">
-              <label>Senha</label>
-              <div className="field-wrap">
-                <span className="field-icon"><LoginFieldIcon name="lock" /></span>
-                <input className="has-toggle" type={showSenha?'text':'password'} value={senha} onChange={e=>setSenha(e.target.value)} placeholder="••••••••" />
-                <button type="button" className="pw-toggle" onClick={()=>setShowSenha(s=>!s)} title={showSenha?'Ocultar senha':'Mostrar senha'}><EyeIcon off={showSenha} /></button>
-              </div>
-            </div>
-            <button className="login-btn" type="submit">Entrar</button>
-            <button type="button" className="login-forgot" onClick={()=>{setMode('forgot'); setError(''); setForgotMsg('');}}>Esqueci minha senha</button>
-
-            <div className="demo-creds">
-              <div className="dc-title"><ShieldIcon /> Acesso de demonstração</div>
-              <div className="dc-row"><span>alisson / admin123</span><span>Administrador</span></div>
-              <div className="dc-row"><span>roberto.alves / lider123</span><span>Líder de Estoque</span></div>
-              <div className="dc-row"><span>carlos.mendes / operador123</span><span>Operador</span></div>
-            </div>
-          </form>
-        )}
-
-        {mode==='forgot' && (
-          <form onSubmit={submitForgot}>
-            {!forgotMsg ? (
-              <div>
-                <div className="role-note" style={{marginBottom:20}}>Informe seu usuário ou e-mail. Um administrador vai analisar e liberar o acesso.</div>
-                <div className="login-field">
-                  <label>Usuário ou e-mail</label>
-                  <div className="field-wrap">
-                    <span className="field-icon"><LoginFieldIcon name="user" /></span>
-                    <input type="text" value={identifier} onChange={e=>setIdentifier(e.target.value)} autoFocus />
-                  </div>
+          {mode==='login' && (
+            <form onSubmit={submitLogin}>
+              {error && <div className="login-error">{error}</div>}
+              <div className="login-field">
+                <label>Usuário ou e-mail</label>
+                <div className="field-wrap">
+                  <span className="field-icon"><LoginFieldIcon name="user" /></span>
+                  <input type="text" value={identifier} onChange={e=>{setIdentifier(e.target.value); clearNotice&&clearNotice();}} placeholder="Digite seu usuário ou e-mail" autoCapitalize="none" autoFocus />
                 </div>
-                <button className="login-btn" type="submit">Solicitar recuperação</button>
               </div>
-            ) : (
-              <div className="login-success">{forgotMsg}</div>
-            )}
-            <button type="button" className="login-back" onClick={()=>{setMode('login'); setForgotMsg(''); setIdentifier('');}}>← Voltar ao login</button>
-          </form>
-        )}
+              <div className="login-field">
+                <label>Senha</label>
+                <div className="field-wrap">
+                  <span className="field-icon"><LoginFieldIcon name="lock" /></span>
+                  <input className="has-toggle" type={showSenha?'text':'password'} value={senha} onChange={e=>setSenha(e.target.value)} placeholder="••••••••" />
+                  <button type="button" className="pw-toggle" onClick={()=>setShowSenha(s=>!s)} title={showSenha?'Ocultar senha':'Mostrar senha'}><EyeIcon off={showSenha} />{showSenha?'Ocultar':'Mostrar'}</button>
+                </div>
+              </div>
+              <button className="login-btn" type="submit">Entrar</button>
 
-        {mode==='newPassword' && (
-          <form onSubmit={submitNewPassword}>
-            <div className="role-note" style={{marginBottom:20}}>O administrador liberou sua conta para você criar uma nova senha.</div>
-            {error && <div className="login-error">{error}</div>}
-            <div className="login-field">
-              <label>Nova senha</label>
-              <div className="field-wrap">
-                <span className="field-icon"><LoginFieldIcon name="lock" /></span>
-                <input type="password" value={novaSenha} onChange={e=>setNovaSenha(e.target.value)} autoFocus />
+              <div className="login-or">ou</div>
+              <button type="button" className="login-forgot" onClick={()=>{setMode('forgot'); setError(''); setForgotMsg('');}}><DIcon name="lock" size={13} /> Esqueci minha senha</button>
+
+              <div className="demo-creds">
+                <div className="dc-title"><ShieldIcon /> Acesso de demonstração</div>
+                <div className="dc-sub">Ambiente de demonstração (remover em produção)</div>
+                <div className="dc-row">
+                  <span className="dc-avatar"><DIcon name="user" size={13} /></span>
+                  <span className="dc-cred">alisson / admin123</span>
+                  <span className="dc-role-pill admin">Administrador</span>
+                </div>
+                <div className="dc-row">
+                  <span className="dc-avatar"><DIcon name="user" size={13} /></span>
+                  <span className="dc-cred">roberto.alves / lider123</span>
+                  <span className="dc-role-pill lider">Líder de Estoque</span>
+                </div>
+                <div className="dc-row">
+                  <span className="dc-avatar"><DIcon name="user" size={13} /></span>
+                  <span className="dc-cred">carlos.mendes / operador123</span>
+                  <span className="dc-role-pill operador">Operador</span>
+                </div>
               </div>
-            </div>
-            <div className="login-field">
-              <label>Confirmar nova senha</label>
-              <div className="field-wrap">
-                <span className="field-icon"><LoginFieldIcon name="lock" /></span>
-                <input type="password" value={confirmaSenha} onChange={e=>setConfirmaSenha(e.target.value)} />
+            </form>
+          )}
+
+          {mode==='forgot' && (
+            <form onSubmit={submitForgot}>
+              {!forgotMsg ? (
+                <div>
+                  <div className="role-note" style={{marginBottom:20}}>Informe seu usuário ou e-mail. Um administrador vai analisar e liberar o acesso.</div>
+                  <div className="login-field">
+                    <label>Usuário ou e-mail</label>
+                    <div className="field-wrap">
+                      <span className="field-icon"><LoginFieldIcon name="user" /></span>
+                      <input type="text" value={identifier} onChange={e=>setIdentifier(e.target.value)} autoFocus />
+                    </div>
+                  </div>
+                  <button className="login-btn" type="submit">Solicitar recuperação</button>
+                </div>
+              ) : (
+                <div className="login-success">{forgotMsg}</div>
+              )}
+              <button type="button" className="login-back" onClick={()=>{setMode('login'); setForgotMsg(''); setIdentifier('');}}>← Voltar ao login</button>
+            </form>
+          )}
+
+          {mode==='newPassword' && (
+            <form onSubmit={submitNewPassword}>
+              <div className="role-note" style={{marginBottom:20}}>O administrador liberou sua conta para você criar uma nova senha.</div>
+              {error && <div className="login-error">{error}</div>}
+              <div className="login-field">
+                <label>Nova senha</label>
+                <div className="field-wrap">
+                  <span className="field-icon"><LoginFieldIcon name="lock" /></span>
+                  <input type="password" value={novaSenha} onChange={e=>setNovaSenha(e.target.value)} autoFocus />
+                </div>
               </div>
-            </div>
-            <button className="login-btn" type="submit">Definir senha e entrar</button>
-          </form>
-        )}
+              <div className="login-field">
+                <label>Confirmar nova senha</label>
+                <div className="field-wrap">
+                  <span className="field-icon"><LoginFieldIcon name="lock" /></span>
+                  <input type="password" value={confirmaSenha} onChange={e=>setConfirmaSenha(e.target.value)} />
+                </div>
+              </div>
+              <button className="login-btn" type="submit">Definir senha e entrar</button>
+            </form>
+          )}
+        </div>
       </div>
-      <div className="login-footer">Acesso restrito • Uso exclusivo de colaboradores</div>
+
+      <div className="login-trust-row">
+        <div className="login-trust-item">
+          <span className="ti-icon"><DIcon name="shieldCheck" size={20} /></span>
+          <div><strong>Seguro</strong><span>Acesso protegido</span></div>
+        </div>
+        <div className="login-trust-item">
+          <span className="ti-icon"><DIcon name="barChart" size={20} /></span>
+          <div><strong>Confiável</strong><span>Dados sempre íntegros</span></div>
+        </div>
+        <div className="login-trust-item">
+          <span className="ti-icon"><DIcon name="clock" size={20} /></span>
+          <div><strong>Eficiente</strong><span>Processos otimizados</span></div>
+        </div>
+      </div>
+
+      <div className="login-footer">
+        <div className="lf-restrict"><DIcon name="lock" size={12} /> Acesso restrito. Uso exclusivo para usuários autorizados.</div>
+        <div>© {new Date().getFullYear()} Selgron. Todos os direitos reservados.</div>
+      </div>
     </div>
   );
 }
@@ -1248,7 +1348,7 @@ function TopBar({user, role, onHome, onLogout}){
 }
 
 const VIEW_TITLES = {
-  home:'Início',
+  home:'Dashboard',
   inventories:'Inventários Pendentes',
   newInventory:'Novo Inventário',
   pickCountType:'Nova Contagem',
@@ -1261,7 +1361,6 @@ const VIEW_TITLES = {
   enderecos:'Endereços Pendentes',
   recount:'Recontar Item',
   dashboard:'Indicadores',
-  painel:'Dashboard',
   relatorios:'Relatórios',
   settings:'Configurações',
   userForm:'Cadastro de Usuário',
@@ -1270,7 +1369,7 @@ const VIEW_TITLES = {
 // Descrição curta mostrada abaixo do título no header desktop (só quando existe
 // uma entrada aqui — a maioria das telas não precisa, o título já basta).
 const VIEW_SUBTITLES = {
-  painel: 'Resumo operacional do inventário',
+  home: 'Resumo operacional do inventário',
 };
 
 function SubBar({view, goto}){
@@ -1285,8 +1384,7 @@ function SubBar({view, goto}){
 function Sidebar({view, goto, role, user}){
   const podeValidarEnderecos = role==='lider'||role==='admin';
   const items = [
-    {id:'painel', ic:'layoutDashboard', label:'Dashboard'},
-    {id:'home', ic:'home', label:'Início'},
+    {id:'home', ic:'layoutDashboard', label:'Dashboard'},
     {id:'inventories', ic:'box', label:'Inventários'},
     {id:'pickCountType', ic:'search', label:'Contagens'},
     {id:'recounts', ic:'repeat', label:'Recontagens'},
@@ -1338,7 +1436,7 @@ function DesktopTopbar({view, user, role, onLogout, subtitle, rightExtra}){
   return (
     <div className="desktop-topbar">
       <div className="desktop-topbar-titlewrap">
-        <div className="desktop-topbar-title">{VIEW_TITLES[view] || 'Início'}</div>
+        <div className="desktop-topbar-title">{VIEW_TITLES[view] || 'Dashboard'}</div>
         {subtitle && <div className="desktop-topbar-subtitle">{subtitle}</div>}
       </div>
       <div className="desktop-topbar-right">
@@ -1389,145 +1487,204 @@ function BottomNav({view, goto, role}){
 
 /* ---------------- HOME ---------------- */
 
-function Home({role, user, inventories, counts, enderecosPropostos=[], goto}){
+function Home({role, user, inventories, counts, enderecosPropostos=[], goto, period}){
   const pendentes = inventories.filter(i=>i.status!=='concluido').length;
   const roleName = {operador:'Operador', lider:'Líder de Estoque', admin:'Administrador'}[role];
   const byOriginal = {};
   counts.forEach(c=>{ if(c.contagemAnteriorId) byOriginal[c.contagemAnteriorId]=true; });
   const pendentesRecontagem = counts.filter(c=>(c.statusAprovacao==='aguardando_segunda' && !byOriginal[c.id]) || c.statusAprovacao==='aguardando_analise_lider').length;
-  const minhasContagens = role==='operador' ? counts.filter(c=>c.usuario===user.nome).length : counts.length;
   const podeGerir = role==='lider'||role==='admin';
   const pendentesEnderecos = enderecosPropostos.filter(e=>e.status==='pendente').length;
+
+  // ---- Dashboard desktop: KPIs, atividades, ações rápidas, situação dos inventários ----
+  // (view "home" virou o Dashboard — ver CLAUDE.md "Dashboard vira a tela inicial")
+  const emAndamento = inventories.filter(i=>i.contados>0 && i.contados<i.qtdItens).length;
+  const pendentesInicio = inventories.filter(i=>i.contados===0).length;
+
+  const hojeStr = new Date().toISOString().slice(0,10);
+  const ontemStr = new Date(Date.now()-86400000).toISOString().slice(0,10);
+
+  function acumuladoAte(dataLimite){
+    const relevantes = counts.filter(c=>c.data<=dataLimite);
+    const divergentes = relevantes.filter(c=>c.diferenca!==0 && c.diferenca!==null);
+    const acuracidade = relevantes.length ? ((relevantes.length-divergentes.length)/relevantes.length*100) : 100;
+    return {total:relevantes.length, divergentes:divergentes.length, acuracidade};
+  }
+  const hoje = acumuladoAte(hojeStr);
+  const ontem = acumuladoAte(ontemStr);
+  const concluidasHoje = counts.filter(c=>c.data===hojeStr).length;
+  const concluidasOntem = counts.filter(c=>c.data===ontemStr).length;
+
+  const divergentesTrendPct = pnlTrendPct(hoje.divergentes, ontem.divergentes);
+  const concluidasTrendPct = pnlTrendPct(concluidasHoje, concluidasOntem);
+  const acuracidadePontos = ontem.total>0 ? (hoje.acuracidade-ontem.acuracidade) : null;
+
+  const kpis = [
+    {
+      key:'andamento', icon:'box', bg:'#E3EEFC', color:'#2A6FD6',
+      label:'Inventários em Andamento', value:emAndamento,
+      trend:<span className="pnl-kpi-trend flat">{pendentesInicio} aguardando início</span>,
+      onClick:()=>goto('inventories'),
+    },
+    {
+      key:'recontagens', icon:'repeat', bg:'#FFF1D6', color:'#A35F00',
+      label:'Recontagens Pendentes', value:pendentesRecontagem,
+      trend:<span className={"pnl-kpi-trend "+(pendentesRecontagem>0?'bad':'good')}>{pendentesRecontagem>0?'Requer atenção':'Nenhuma pendência'}</span>,
+      onClick:()=>goto('recounts'),
+    },
+    {
+      key:'divergentes', icon:'alertTriangle', bg:'#FBE6E3', color:'#C4291B',
+      label:'Itens Divergentes', value:hoje.divergentes,
+      trend:<KpiTrend pct={divergentesTrendPct} invert />,
+      onClick:()=>goto('myCounts'),
+    },
+    {
+      key:'concluidas', icon:'checkCircle', bg:'#E3F6EA', color:'#1E8E4F',
+      label:'Contagens Concluídas Hoje', value:concluidasHoje,
+      trend:<KpiTrend pct={concluidasTrendPct} />,
+      onClick:()=>goto('myCounts'),
+    },
+    {
+      key:'acuracidade', icon:'percent', bg:'#F1E9FB', color:'#7B3FC4',
+      label:'Acuracidade do Estoque', value:hoje.acuracidade.toFixed(1)+'%',
+      trend:<KpiTrend pct={acuracidadePontos} suffix=" pts" />,
+      onClick:()=>goto('dashboard'),
+    },
+  ];
+
+  const cutoff = pnlPeriodCutoff(period);
+  const atividades = [...counts]
+    .filter(c=>c.data>=cutoff)
+    .sort((a,b)=> (b.data+b.hora).localeCompare(a.data+a.hora))
+    .slice(0,7);
+
+  const acoes = [
+    ...(podeGerir ? [{icon:'plus', label:'Novo Inventário', onClick:()=>goto('newInventory')}] : []),
+    {icon:'search', label:'Nova Contagem', onClick:()=>goto('pickCountType')},
+    {icon:'clipboardList', label:'Minhas Contagens', onClick:()=>goto('myCounts')},
+    {icon:'repeat', label:'Recontagens', onClick:()=>goto('recounts')},
+    {icon:'fileText', label:'Relatórios', onClick:()=>goto('relatorios')},
+  ];
+
+  const planejados = inventories.filter(i=>i.contados===0 && i.status!=='cancelado').length;
+  const concluidosInv = inventories.filter(i=>i.qtdItens>0 && i.contados>=i.qtdItens).length;
+  const canceladosInv = inventories.filter(i=>i.status==='cancelado').length;
+  const totalInv = planejados+emAndamento+concluidosInv+canceladosInv;
+
+  const statusRows = [
+    {label:'Planejados', value:planejados, color:'#94A3B8'},
+    {label:'Em andamento', value:emAndamento, color:'#F6A200'},
+    {label:'Concluídos', value:concluidosInv, color:'#1E8E4F'},
+    {label:'Cancelados', value:canceladosInv, color:'#C4291B'},
+  ];
+  const maxRow = Math.max(1, ...statusRows.map(r=>r.value));
 
   return (
     <div>
       <div className="greet">Bem-vindo, {roleName}</div>
       <h2 className="greet-title">{user.nome}</h2>
 
-      {/* Telas largas: KPIs + acesso rápido (mesmos dados/rotas do grid abaixo,
-          só reorganizados — ver CLAUDE.md "Layout desktop com sidebar") */}
-      <div className="desktop-kpi-grid">
-        <div className="desktop-kpi">
-          <div className="kpi-head">
-            <span className="kpi-icon" style={{background:'#E3EEFC',color:'#2A6FD6'}}><Ic>📦</Ic></span>
-            <span className="kpi-label">Inventários Pendentes</span>
-          </div>
-          <div className="kpi-value">{pendentes}</div>
-          <button className="kpi-link" onClick={()=>goto('inventories')}>Ver detalhes <Ic>›</Ic></button>
+      {/* Telas largas: Dashboard novo (design corporativo/ERP) — ver CLAUDE.md
+          "Dashboard vira a tela inicial". Tablet/celular continua com o grid
+          de atalhos simples logo abaixo, sem alteração. */}
+      <div className="pnl-wrap">
+        <div className="pnl-kpi-row">
+          {kpis.map(k=>(
+            <button key={k.key} className="pnl-kpi" onClick={k.onClick} style={{cursor:'pointer'}}>
+              <div className="pnl-kpi-top">
+                <span className="pnl-kpi-icon" style={{background:k.bg, color:k.color}}><DIcon name={k.icon} size={17} /></span>
+              </div>
+              <div className="pnl-kpi-value">{k.value}</div>
+              <div className="pnl-kpi-label">{k.label}</div>
+              {k.trend}
+            </button>
+          ))}
         </div>
-        <div className="desktop-kpi">
-          <div className="kpi-head">
-            <span className="kpi-icon" style={{background:'var(--ok-bg)',color:'var(--ok)'}}><Ic>📋</Ic></span>
-            <span className="kpi-label">Minhas Contagens</span>
-          </div>
-          <div className="kpi-value">{minhasContagens}</div>
-          <button className="kpi-link" onClick={()=>goto('myCounts')}>Ver detalhes <Ic>›</Ic></button>
-        </div>
-        <div className="desktop-kpi">
-          <div className="kpi-head">
-            <span className="kpi-icon" style={{background:'var(--warn-bg)',color:'var(--warn)'}}><Ic>🔁</Ic></span>
-            <span className="kpi-label">Recontagens Pendentes</span>
-          </div>
-          <div className="kpi-value">{pendentesRecontagem}</div>
-          <button className="kpi-link" onClick={()=>goto('recounts')}>Ver detalhes <Ic>›</Ic></button>
-        </div>
-        {podeGerir && (
-          <div className="desktop-kpi">
-            <div className="kpi-head">
-              <span className="kpi-icon" style={{background:'#FDE6E1',color:'#C4491B'}}><Ic>📍</Ic></span>
-              <span className="kpi-label">Endereços Pendentes</span>
-            </div>
-            <div className="kpi-value">{pendentesEnderecos}</div>
-            <button className="kpi-link" onClick={()=>goto('enderecos')}>Ver detalhes <Ic>›</Ic></button>
-          </div>
-        )}
-        <div className="desktop-kpi">
-          <div className="kpi-head">
-            <span className="kpi-icon" style={{background:'#F1E9FB',color:'#7B3FC4'}}><Ic>📊</Ic></span>
-            <span className="kpi-label">Total de Contagens</span>
-          </div>
-          <div className="kpi-value">{counts.length}</div>
-          <button className="kpi-link" onClick={()=>goto('dashboard')}>Ver indicadores <Ic>›</Ic></button>
-        </div>
-      </div>
 
-      <div className="desktop-quick-grid">
-        <button className="desktop-quick-card" onClick={()=>goto('inventories')}>
-          <span className="qc-icon" style={{background:'#E3EEFC',color:'#2A6FD6'}}><Ic>📦</Ic></span>
-          <span className="qc-body">
-            <span className="qc-title">Inventários Pendentes</span>
-            <span className="qc-desc">Visualize e gerencie os inventários pendentes.</span>
-          </span>
-          <span className="qc-arrow"><Ic>›</Ic></span>
-        </button>
-        <button className="desktop-quick-card" onClick={()=>goto('pickCountType')}>
-          <span className="qc-icon" style={{background:'var(--ok-bg)',color:'var(--ok)'}}><Ic>🔍</Ic></span>
-          <span className="qc-body">
-            <span className="qc-title">Nova Contagem</span>
-            <span className="qc-desc">Inicie uma nova contagem de inventário.</span>
-          </span>
-          <span className="qc-arrow"><Ic>›</Ic></span>
-        </button>
-        <button className="desktop-quick-card" onClick={()=>goto('myCounts')}>
-          <span className="qc-icon" style={{background:'#FFF1D6',color:'var(--warn)'}}><Ic>📋</Ic></span>
-          <span className="qc-body">
-            <span className="qc-title">Minhas Contagens</span>
-            <span className="qc-desc">Acompanhe as contagens atribuídas a você.</span>
-          </span>
-          <span className="qc-arrow"><Ic>›</Ic></span>
-        </button>
-        <button className="desktop-quick-card" onClick={()=>goto('recounts')}>
-          <span className="qc-icon" style={{background:'var(--warn-bg)',color:'var(--warn)'}}><Ic>🔁</Ic></span>
-          <span className="qc-body">
-            <span className="qc-title">Recontagens Pendentes</span>
-            <span className="qc-desc">Verifique e execute recontagens pendentes.</span>
-          </span>
-          <span className="qc-arrow"><Ic>›</Ic></span>
-        </button>
-        {podeGerir && (
-          <button className="desktop-quick-card" onClick={()=>goto('enderecos')}>
-            <span className="qc-icon" style={{background:'#FDE6E1',color:'#C4491B'}}><Ic>📍</Ic></span>
-            <span className="qc-body">
-              <span className="qc-title">Endereços Pendentes</span>
-              <span className="qc-desc">Confirme os endereços informados pelos operadores.</span>
-            </span>
-            <span className="qc-arrow"><Ic>›</Ic></span>
-          </button>
-        )}
-        <button className="desktop-quick-card" onClick={()=>goto('dashboard')}>
-          <span className="qc-icon" style={{background:'#F1E9FB',color:'#7B3FC4'}}><Ic>📊</Ic></span>
-          <span className="qc-body">
-            <span className="qc-title">Indicadores</span>
-            <span className="qc-desc">Acesse indicadores e visualize o desempenho.</span>
-          </span>
-          <span className="qc-arrow"><Ic>›</Ic></span>
-        </button>
-        <button className="desktop-quick-card" onClick={()=>goto('relatorios')}>
-          <span className="qc-icon" style={{background:'var(--ok-bg)',color:'var(--ok)'}}><Ic>📄</Ic></span>
-          <span className="qc-body">
-            <span className="qc-title">Relatórios</span>
-            <span className="qc-desc">Gere e consulte relatórios detalhados.</span>
-          </span>
-          <span className="qc-arrow"><Ic>›</Ic></span>
-        </button>
-      </div>
-
-      <div className="desktop-cta-row" style={!podeGerir ? {gridTemplateColumns:'1fr'} : undefined}>
-        {podeGerir && (
-          <div className="desktop-cta">
-            <div className="cta-left">
-              <span className="cta-icon"><Ic>➕</Ic></span>
-              <div><div className="cta-title">Criar novo inventário</div><div className="cta-desc">Crie e configure um novo inventário para execução.</div></div>
+        <div className="pnl-row">
+          <div className="pnl-col-8 pnl-card">
+            <div className="pnl-section-head">
+              <div className="pnl-section-title">Últimas Atividades</div>
+              <button className="pnl-section-link" onClick={()=>goto('myCounts')}>Ver todas <DIcon name="chevronRight" size={13} /></button>
             </div>
-            <button className="btn btn-primary" style={{width:'auto',padding:'12px 22px'}} onClick={()=>goto('newInventory')}>Criar inventário</button>
+            {atividades.length===0 ? (
+              <div style={{color:'var(--gray-500)', fontSize:13, padding:'12px 4px'}}>Nenhuma atividade registrada neste período.</div>
+            ) : (
+              <table className="pnl-table">
+                <thead><tr><th>Status</th><th>Descrição</th><th>Usuário</th><th>Data</th><th>Hora</th></tr></thead>
+                <tbody>
+                  {atividades.map(c=>{
+                    const st = STATUS_INFO[c.statusAprovacao] || {level:c.classificacao.level, text:c.classificacao.rule};
+                    return (
+                      <tr key={c.id}>
+                        <td><span className={"pnl-status "+st.level}><span className="dot"></span>{st.level==='ok'?'Conforme':st.level==='warn'?'Em análise':'Divergente'}</span></td>
+                        <td>{c.descricao}</td>
+                        <td>{c.usuario}</td>
+                        <td>{c.data}</td>
+                        <td>{c.hora}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
           </div>
-        )}
-        <div className="desktop-cta">
-          <div className="cta-left">
-            <span className="cta-icon"><Ic>⚙</Ic></span>
-            <div><div className="cta-title">Configurações</div><div className="cta-desc">Gerencie parâmetros e preferências.</div></div>
+
+          <div className="pnl-col-4 pnl-card">
+            <div className="pnl-section-head">
+              <div className="pnl-section-title">Ações Rápidas</div>
+            </div>
+            <div className="pnl-quick-list">
+              {acoes.map(a=>(
+                <button key={a.label} className="pnl-quick-item" onClick={a.onClick}>
+                  <span className="pnl-quick-icon"><DIcon name={a.icon} size={15} /></span>
+                  <span className="pnl-quick-text">{a.label}</span>
+                  <span className="pnl-quick-arrow"><DIcon name="chevronRight" size={15} /></span>
+                </button>
+              ))}
+            </div>
           </div>
-          <button className="btn btn-secondary" style={{width:'auto',padding:'12px 22px'}} onClick={()=>goto('settings')}>Acessar</button>
+        </div>
+
+        <div className="pnl-row">
+          <div className="pnl-col-5 pnl-card">
+            <div className="pnl-section-head">
+              <div className="pnl-section-title">Situação Geral dos Inventários</div>
+            </div>
+            <div className="pnl-donut-wrap">
+              <PnlDonut segments={statusRows} />
+              <div className="pnl-donut-legend">
+                {statusRows.map(r=>(
+                  <div key={r.label} className="pnl-legend-row">
+                    <span className="pnl-legend-dot" style={{background:r.color}}></span>
+                    {r.label}
+                    <span className="n">{r.value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="pnl-col-7 pnl-card">
+            <div className="pnl-section-head">
+              <div className="pnl-section-title">Status dos Inventários</div>
+            </div>
+            {statusRows.map(r=>(
+              <div key={r.label} className="pnl-bar-row">
+                <div className="pnl-bar-label">{r.label}</div>
+                <div className="pnl-bar-track"><div className="pnl-bar-fill" style={{width:(r.value/maxRow*100)+'%', background:r.color}}></div></div>
+                <div className="pnl-bar-num">{r.value} · {totalInv?Math.round(r.value/totalInv*100):0}%</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="pnl-footer">
+          <span>© {new Date().getFullYear()} Selgron</span>
+          <div className="pnl-footer-links">
+            <span>Política de Privacidade</span>
+            <span>Termos de Uso</span>
+          </div>
         </div>
       </div>
 
@@ -1585,10 +1742,11 @@ function Home({role, user, inventories, counts, enderecosPropostos=[], goto}){
   );
 }
 
-/* ---------------- DASHBOARD NOVO ("painel") ----------------
-   Tela desktop-only (design corporativo/ERP — ver CLAUDE.md "Dashboard novo").
-   Toda métrica vem de `counts`/`inventories` reais já existentes no app — nada
-   fabricado. Tendência dia-a-dia (vs. ontem) só é mostrada onde a comparação é
+/* ---------------- DASHBOARD (agora é a tela "home") ----------------
+   Helpers usados pelo bloco desktop de `Home` (design corporativo/ERP — ver
+   CLAUDE.md "Dashboard vira a tela inicial"). Toda métrica vem de
+   `counts`/`inventories` reais já existentes no app — nada fabricado.
+   Tendência dia-a-dia (vs. ontem) só é mostrada onde a comparação é
    genuinamente derivável do campo `data` de cada contagem (cumulativo até uma
    data); para KPIs que são puro estado atual (sem histórico registrado —
    inventários em andamento, recontagens pendentes) mostra uma nota contextual
@@ -1646,203 +1804,6 @@ function PnlDonut({segments, size=168, strokeWidth=22}){
       <text x="50%" y="47%" textAnchor="middle" fontSize="24" fontWeight="700" fill="var(--navy)" fontFamily="Inter, sans-serif">{total}</text>
       <text x="50%" y="63%" textAnchor="middle" fontSize="10.5" fill="var(--gray-500)" fontFamily="Inter, sans-serif">inventários</text>
     </svg>
-  );
-}
-
-function MainDashboard({role, user, inventories, counts, goto, period}){
-  const podeGerir = role==='lider'||role==='admin';
-
-  // ---- KPIs ----
-  const emAndamento = inventories.filter(i=>i.contados>0 && i.contados<i.qtdItens).length;
-  const pendentesInicio = inventories.filter(i=>i.contados===0).length;
-
-  const byOriginal = {};
-  counts.forEach(c=>{ if(c.contagemAnteriorId) byOriginal[c.contagemAnteriorId]=true; });
-  const recontagensPendentes = counts.filter(c=>(c.statusAprovacao==='aguardando_segunda' && !byOriginal[c.id]) || c.statusAprovacao==='aguardando_analise_lider').length;
-
-  const hojeStr = new Date().toISOString().slice(0,10);
-  const ontemStr = new Date(Date.now()-86400000).toISOString().slice(0,10);
-
-  function acumuladoAte(dataLimite){
-    const relevantes = counts.filter(c=>c.data<=dataLimite);
-    const divergentes = relevantes.filter(c=>c.diferenca!==0 && c.diferenca!==null);
-    const acuracidade = relevantes.length ? ((relevantes.length-divergentes.length)/relevantes.length*100) : 100;
-    return {total:relevantes.length, divergentes:divergentes.length, acuracidade};
-  }
-  const hoje = acumuladoAte(hojeStr);
-  const ontem = acumuladoAte(ontemStr);
-  const concluidasHoje = counts.filter(c=>c.data===hojeStr).length;
-  const concluidasOntem = counts.filter(c=>c.data===ontemStr).length;
-
-  const divergentesTrendPct = pnlTrendPct(hoje.divergentes, ontem.divergentes);
-  const concluidasTrendPct = pnlTrendPct(concluidasHoje, concluidasOntem);
-  const acuracidadePontos = ontem.total>0 ? (hoje.acuracidade-ontem.acuracidade) : null;
-
-  const kpis = [
-    {
-      key:'andamento', icon:'box', bg:'#E3EEFC', color:'#2A6FD6',
-      label:'Inventários em Andamento', value:emAndamento,
-      trend:<span className="pnl-kpi-trend flat">{pendentesInicio} aguardando início</span>,
-      onClick:()=>goto('inventories'),
-    },
-    {
-      key:'recontagens', icon:'repeat', bg:'#FFF1D6', color:'#A35F00',
-      label:'Recontagens Pendentes', value:recontagensPendentes,
-      trend:<span className={"pnl-kpi-trend "+(recontagensPendentes>0?'bad':'good')}>{recontagensPendentes>0?'Requer atenção':'Nenhuma pendência'}</span>,
-      onClick:()=>goto('recounts'),
-    },
-    {
-      key:'divergentes', icon:'alertTriangle', bg:'#FBE6E3', color:'#C4291B',
-      label:'Itens Divergentes', value:hoje.divergentes,
-      trend:<KpiTrend pct={divergentesTrendPct} invert />,
-      onClick:()=>goto('myCounts'),
-    },
-    {
-      key:'concluidas', icon:'checkCircle', bg:'#E3F6EA', color:'#1E8E4F',
-      label:'Contagens Concluídas Hoje', value:concluidasHoje,
-      trend:<KpiTrend pct={concluidasTrendPct} />,
-      onClick:()=>goto('myCounts'),
-    },
-    {
-      key:'acuracidade', icon:'percent', bg:'#F1E9FB', color:'#7B3FC4',
-      label:'Acuracidade do Estoque', value:hoje.acuracidade.toFixed(1)+'%',
-      trend:<KpiTrend pct={acuracidadePontos} suffix=" pts" />,
-      onClick:()=>goto('dashboard'),
-    },
-  ];
-
-  // ---- Atividades recentes (filtradas pelo período do header) ----
-  const cutoff = pnlPeriodCutoff(period);
-  const atividades = [...counts]
-    .filter(c=>c.data>=cutoff)
-    .sort((a,b)=> (b.data+b.hora).localeCompare(a.data+a.hora))
-    .slice(0,7);
-
-  // ---- Ações rápidas ----
-  const acoes = [
-    ...(podeGerir ? [{icon:'plus', label:'Novo Inventário', onClick:()=>goto('newInventory')}] : []),
-    {icon:'search', label:'Nova Contagem', onClick:()=>goto('pickCountType')},
-    {icon:'clipboardList', label:'Minhas Contagens', onClick:()=>goto('myCounts')},
-    {icon:'repeat', label:'Recontagens', onClick:()=>goto('recounts')},
-    {icon:'fileText', label:'Relatórios', onClick:()=>goto('relatorios')},
-  ];
-
-  // ---- Situação geral dos inventários (donut + tabela) ----
-  const planejados = inventories.filter(i=>i.contados===0 && i.status!=='cancelado').length;
-  const andamentoInv = emAndamento;
-  const concluidosInv = inventories.filter(i=>i.qtdItens>0 && i.contados>=i.qtdItens).length;
-  const canceladosInv = inventories.filter(i=>i.status==='cancelado').length;
-  const totalInv = planejados+andamentoInv+concluidosInv+canceladosInv;
-
-  const statusRows = [
-    {label:'Planejados', value:planejados, color:'#94A3B8'},
-    {label:'Em andamento', value:andamentoInv, color:'#F6A200'},
-    {label:'Concluídos', value:concluidosInv, color:'#1E8E4F'},
-    {label:'Cancelados', value:canceladosInv, color:'#C4291B'},
-  ];
-  const maxRow = Math.max(1, ...statusRows.map(r=>r.value));
-
-  return (
-    <div className="pnl-wrap">
-      <div className="pnl-kpi-row">
-        {kpis.map(k=>(
-          <button key={k.key} className="pnl-kpi" onClick={k.onClick} style={{cursor:'pointer'}}>
-            <div className="pnl-kpi-top">
-              <span className="pnl-kpi-icon" style={{background:k.bg, color:k.color}}><DIcon name={k.icon} size={17} /></span>
-            </div>
-            <div className="pnl-kpi-value">{k.value}</div>
-            <div className="pnl-kpi-label">{k.label}</div>
-            {k.trend}
-          </button>
-        ))}
-      </div>
-
-      <div className="pnl-row">
-        <div className="pnl-col-8 pnl-card">
-          <div className="pnl-section-head">
-            <div className="pnl-section-title">Últimas Atividades</div>
-            <button className="pnl-section-link" onClick={()=>goto('myCounts')}>Ver todas <DIcon name="chevronRight" size={13} /></button>
-          </div>
-          {atividades.length===0 ? (
-            <div style={{color:'var(--gray-500)', fontSize:13, padding:'12px 4px'}}>Nenhuma atividade registrada neste período.</div>
-          ) : (
-            <table className="pnl-table">
-              <thead><tr><th>Status</th><th>Descrição</th><th>Usuário</th><th>Data</th><th>Hora</th></tr></thead>
-              <tbody>
-                {atividades.map(c=>{
-                  const st = STATUS_INFO[c.statusAprovacao] || {level:c.classificacao.level, text:c.classificacao.rule};
-                  return (
-                    <tr key={c.id}>
-                      <td><span className={"pnl-status "+st.level}><span className="dot"></span>{st.level==='ok'?'Conforme':st.level==='warn'?'Em análise':'Divergente'}</span></td>
-                      <td>{c.descricao}</td>
-                      <td>{c.usuario}</td>
-                      <td>{c.data}</td>
-                      <td>{c.hora}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
-        </div>
-
-        <div className="pnl-col-4 pnl-card">
-          <div className="pnl-section-head">
-            <div className="pnl-section-title">Ações Rápidas</div>
-          </div>
-          <div className="pnl-quick-list">
-            {acoes.map(a=>(
-              <button key={a.label} className="pnl-quick-item" onClick={a.onClick}>
-                <span className="pnl-quick-icon"><DIcon name={a.icon} size={15} /></span>
-                <span className="pnl-quick-text">{a.label}</span>
-                <span className="pnl-quick-arrow"><DIcon name="chevronRight" size={15} /></span>
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="pnl-row">
-        <div className="pnl-col-5 pnl-card">
-          <div className="pnl-section-head">
-            <div className="pnl-section-title">Situação Geral dos Inventários</div>
-          </div>
-          <div className="pnl-donut-wrap">
-            <PnlDonut segments={statusRows} />
-            <div className="pnl-donut-legend">
-              {statusRows.map(r=>(
-                <div key={r.label} className="pnl-legend-row">
-                  <span className="pnl-legend-dot" style={{background:r.color}}></span>
-                  {r.label}
-                  <span className="n">{r.value}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="pnl-col-7 pnl-card">
-          <div className="pnl-section-head">
-            <div className="pnl-section-title">Status dos Inventários</div>
-          </div>
-          {statusRows.map(r=>(
-            <div key={r.label} className="pnl-bar-row">
-              <div className="pnl-bar-label">{r.label}</div>
-              <div className="pnl-bar-track"><div className="pnl-bar-fill" style={{width:(r.value/maxRow*100)+'%', background:r.color}}></div></div>
-              <div className="pnl-bar-num">{r.value} · {totalInv?Math.round(r.value/totalInv*100):0}%</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="pnl-footer">
-        <span>© {new Date().getFullYear()} Selgron</span>
-        <div className="pnl-footer-links">
-          <span>Política de Privacidade</span>
-          <span>Termos de Uso</span>
-        </div>
-      </div>
-    </div>
   );
 }
 

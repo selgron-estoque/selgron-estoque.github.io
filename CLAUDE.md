@@ -392,21 +392,21 @@ Cloud, Monday Enterprise, Teamcenter, FactoryTalk) — grid de 12 colunas, espa�
 múltiplos de 8, paleta navy/branco/laranja, tipografia Inter, ícones lineares (Lucide),
 cards com raio de 10px e sombra discreta.
 
-**Decisão de escopo (perguntada ao usuário via `AskUserQuestion`)**: o app já tinha DUAS
-telas diferentes — "Início" (`view==='home'`, o que abre depois do login, com KPIs e
-atalhos) e "Dashboard" (`view==='dashboard'`, uma tela de analytics à parte só com
-gráficos simples). O pedido novo não mencionava "Início" na lista de menu, só
-"Dashboard" — o cliente escolheu explicitamente manter as duas telas antigas E criar a
-nova como um terceiro destino separado. Resultado:
+**Decisão de escopo original (perguntada ao usuário via `AskUserQuestion`)** — **SUPERADA
+logo em seguida, ver seção "Dashboard vira a tela inicial" mais abaixo, não usar esta
+parte como referência do estado atual**: o app já tinha DUAS telas diferentes — "Início"
+(`view==='home'`, o que abre depois do login, com KPIs e atalhos) e "Dashboard"
+(`view==='dashboard'`, uma tela de analytics à parte só com gráficos simples). O pedido
+novo não mencionava "Início" na lista de menu, só "Dashboard" — o cliente escolheu de
+início manter as duas telas antigas E criar a nova como um terceiro destino separado
+(view `painel`, só na `Sidebar` desktop). Ao ver o resultado, o cliente pediu pra
+simplificar: excluir "Início" e a `Dashboard` nova passar a ser a própria tela inicial —
+é isso que está implementado hoje, não o esquema de 3 telas descrito no parágrafo acima.
 
-- **`painel`** (view nova) — o Dashboard novo, descrito abaixo. Rota exclusiva desktop
-  (não tem entrada no `BottomNav` nem no `Home` mobile — só alcançável pela `Sidebar`
-  em telas ≥1024px, já que o pedido era especificamente pelo "sistema web").
-- **`home`** ("Início") — não mudou em nada, continua exatamente como estava.
 - **`dashboard`** (a tela de analytics antiga) — não mudou de conteúdo, só de **nome**:
   virou "Indicadores" (label na `Sidebar`, em `VIEW_TITLES['dashboard']`, e nos 3 lugares
   do `Home` que apontavam pra ela — KPI card, quick-access card, home-card mobile) pra
-  não colidir com o novo item "Dashboard" no menu. O `goto('dashboard')` continua indo
+  não colidir com o item "Dashboard" no menu. O `goto('dashboard')` continua indo
   pro mesmo componente `Dashboard` de sempre, só o texto visível mudou.
 
 **Paleta/tipografia compartilhada com o login**: as variáveis CSS que a tela de login já
@@ -422,8 +422,9 @@ ter uma sidebar "nova" só na tela Dashboard sem afetar as outras — a atualiza
 cor/fonte/ícone da moldura desktop (fundo `var(--navy)` em vez do `#12151C` antigo,
 ícones lineares em vez de emoji, header de 72px) vale pra Inventários, Configurações etc.
 também. O CONTEÚDO interno de cada tela (o que tem dentro de `.content`) continua com o
-design antigo — só a moldura (sidebar + header) e a tela `painel` em si usam a paleta
-nova. Mobile (tablet do chão de fábrica) não foi tocado em nada.
+design antigo — só a moldura (sidebar + header) e o Dashboard em si (hoje é a própria
+tela `home`, ver seção abaixo) usam a paleta nova. Mobile (tablet do chão de fábrica) não
+foi tocado em nada.
 
 **Ícones "Lucide"**: o projeto não tem build step (React/Babel via CDN, sem bundler), e
 não faz sentido puxar mais uma dependência CDN pra um pacote de ícones sem componentes
@@ -485,6 +486,95 @@ em 3 linhas em telas estreitas (~390px) porque "Inventário 360" é mais longo q
 "Stock360" (nome anterior). Corrigido com uma media query `max-width:400px` que reduz o
 `.brand-text` e esconde o texto do `.role-pill` (fica só o ícone), mantendo o topbar numa
 linha só. Ver comentário no CSS perto de `.logout-btn`.
+
+## Dashboard vira a tela inicial (fundiu com "Início")
+
+Depois de ver o Dashboard novo funcionando ao lado de "Início" na sidebar, o cliente
+simplificou o pedido: **"pode excluir a Início e tornar a Dashboard como Início"**. Ou
+seja, o esquema de 3 telas (Início / Dashboard / Indicadores) descrito na seção anterior
+durou pouco — virou 2: **Dashboard** (agora É a tela que abre depois do login) e
+**Indicadores** (a tela de analytics antiga, sem mudança).
+
+O que foi feito, tecnicamente — a view `painel` (que tinha sido criada como destino
+separado) foi **removida**, e o conteúdo dela (KPIs, atividades, ações rápidas, donut)
+foi **movido pra dentro do bloco desktop do componente `Home`** (`view==='home'`),
+substituindo o antigo `desktop-kpi-grid`/`desktop-quick-grid`/`desktop-cta-row`. Os
+helpers ficaram onde estavam (`pnlPeriodCutoff`, `pnlTrendPct`, `KpiTrend`, `PnlDonut`,
+perto do comentário "DASHBOARD (agora é a tela home)") — só o componente `MainDashboard`
+em si foi apagado, sua lógica interna virou parte do corpo de `Home`.
+
+- **`Sidebar`**: os dois itens antigos ("Dashboard" apontando pra `painel`, "Início"
+  apontando pra `home`) viraram **um único item** — `{id:'home', ic:'layoutDashboard',
+  label:'Dashboard'}`, primeiro da lista.
+- **`VIEW_TITLES.home`**: era `'Início'`, agora é `'Dashboard'` (usado pelo header
+  desktop e como fallback; a tela `home` não passa pelo `SubBar`, então essa mudança não
+  afeta a barra de "← Voltar" em lugar nenhum).
+- **`VIEW_SUBTITLES`**: chave trocou de `painel` pra `home` (mesmo valor, "Resumo
+  operacional do inventário").
+- **Filtro de período** (`rightExtra` do `DesktopTopbar`) trocou a condição de
+  `view==='painel'` pra `view==='home'`.
+- **Mobile — decisão deliberada de NÃO renomear**: o `BottomNav` (barra inferior do
+  tablet) continua com o item `{id:'home', label:'Início'}` — não virou "Dashboard" no
+  mobile. Motivo: o conteúdo que `Home` renderiza pro mobile (o `grid-cards` simples de
+  atalhos) não mudou em nada — só o bloco desktop ganhou o Dashboard novo. Como o mobile
+  continua sendo literalmente a tela "Início" de sempre (não o dashboard com KPIs/donut,
+  que é desktop-only), manter o rótulo "Início" lá é mais honesto do que chamar de
+  "Dashboard" algo que visualmente não é um. Se um dia o Dashboard novo ganhar uma versão
+  mobile de verdade, aí sim faz sentido renomear o `BottomNav` também.
+- **Bug que essa mudança quase reintroduziu**: as classes `.pnl-*` (KPIs, tabela de
+  atividades, donut etc.) só tinham regra CSS dentro do `@media (min-width:1024px)` — ao
+  virarem parte do `Home` (que renderiza em qualquer largura de tela), sem uma regra
+  `display:none` por padrão elas apareciam SEM ESTILO ALGUM no mobile, empilhadas em cima
+  do `grid-cards` de sempre. Corrigido adicionando `.pnl-wrap` à lista de seletores com
+  `display:none` por padrão (perto de `.desktop-kpi-grid` etc.) e `display:block` de volta
+  dentro do media query. Se algum dia mover mais conteúdo `.pnl-*`/`desktop-*` pra dentro
+  de um componente que também renderiza no mobile, checar sempre esse padrão.
+
+## Tela de login vira o mockup de 2 colunas (referência exata do cliente)
+
+A primeira versão da tela de login (card único centralizado, ver seção "Rebrand" acima)
+seguia o *texto* do pedido original ("card centralizado 460-520px", "não utilizar
+ilustrações grandes") — mas o cliente tinha mandado uma imagem de referência desde o
+início que era, na real, um mockup de **duas colunas** (ilustração à esquerda + formulário
+à direita). Quando o cliente viu o resultado e pediu explicitamente **"quero que deixe a
+tela de login igual esta segunda imagem"**, a instrução concreta (a imagem) passou a
+valer mais que a descrição textual anterior — reconstruí a tela pra bater com o mockup.
+
+- **`.login-card` virou `display:flex`**, largura máxima 900px (era 500px, card único),
+  `border-radius:20px`, dividido em duas colunas-filhas com `align-items:stretch` (as
+  duas colunas ficam sempre com a mesma altura, a da direita — que tem mais conteúdo —
+  dita a altura da esquerda).
+- **`.login-illustration`** (coluna esquerda, ~38% da largura, fundo `var(--gray-50)`):
+  logo Selgron no topo, `CycleIcon` (ícone novo — duas setas em arco formando um ciclo em
+  volta de uma caixa isométrica, desenhado à mão em SVG pra representar "contagem
+  cíclica", mesmo raciocínio dos ícones estilo Lucide) + "Inventário 360" + tagline "Visão
+  completa. Controle eficiente." centralizados, e um recorte diagonal decorativo
+  (`.login-illust-decor`, `clip-path` + `repeating-linear-gradient` pra sugerir linhas de
+  prateleira + gradiente laranja) no canto inferior — like a imagem de referência, mas
+  **sem foto real de estoque** (o app não tem esse asset; a textura foi desenhada só com
+  CSS, mantendo o espírito "sem foto de estoque" do pedido original enquanto imita a
+  composição visual pedida agora).
+- **Coluna esquerda só aparece em telas ≥760px** (`@media (min-width:760px)`) — abaixo
+  disso (celular na vertical) ela fica `display:none` e o formulário ocupa a largura
+  toda, senão o card ficaria espremido demais pra caber as duas colunas num tablet
+  estreito ou celular. Isso não está na imagem de referência (que é só desktop), mas é
+  necessário pro login continuar usável no mesmo tablet que o resto do app atende.
+- **Coluna direita** (`.login-form-panel`): título "Inventário **360°**" (o `°` faz parte
+  do texto, como na imagem), barrinha laranja decorativa (`.login-rule`) embaixo do
+  subtítulo, campos com ícone à esquerda, e o toggle de senha virou ícone + texto
+  "Mostrar"/"Ocultar" lado a lado (`.pw-toggle` ganhou `gap`+texto, antes era só ícone) —
+  bate com a imagem, que mostra "👁 Mostrar" por extenso.
+- **Divisor "ou"** (`.login-or`, linha horizontal dos dois lados) entre o botão Entrar e
+  "Esqueci minha senha" — elemento novo que não existia na v1.
+- **Credenciais de demonstração**: veio com avatar circular (ícone de pessoa) por linha e
+  um **pill colorido por papel** (`dc-role-pill.admin` azul, `.lider` verde, `.operador`
+  laranja/pêssego) em vez do texto cinza uppercase simples de antes — bate com os pills
+  coloridos da imagem.
+- **Faixa de confiança** (Seguro/Confiável/Eficiente, `.login-trust-row`) e **rodapé**
+  ("Acesso restrito..." + "© Selgron") ficaram FORA do card, abaixo dele, exatamente como
+  na imagem — não são parte do formulário.
+- Paleta/tipografia continuam as mesmas variáveis `--navy`/`--gray-*`/`--font-corp`
+  compartilhadas com o Dashboard (ver seção acima) — só a composição/layout mudou.
 
 ## Convenções de design (não quebrar ao continuar)
 

@@ -89,24 +89,28 @@ Inter, ícones lineares (sem emoji), cantos de 8px, sombra bem suave — visual 
 softwares corporativos/ERP (SAP Fiori, Dynamics 365) em vez do visual "genérico de
 template" que existia antes. Essa paleta/tipografia é exclusiva da tela de login — o
 restante do app (tablet do operador, dashboards, etc.) continua com o design system
-original documentado no `CLAUDE.md`.
+original documentado no `CLAUDE.md`. O layout final é um card de 2 colunas (ilustração à
+esquerda com o mark "ciclo + caixa" da Selgron, formulário à direita), replicando à risca
+o mockup de referência enviado pelo cliente — a coluna de ilustração só aparece em telas
+≥760px, em telas estreitas (celular) fica só o formulário.
 
-## Atualização: Dashboard novo (menu "Dashboard", desktop)
+## Atualização: Dashboard novo (agora é a própria tela inicial)
 
-Nova tela desktop-only, acessível pelo primeiro item da sidebar ("Dashboard"), com o
-mesmo visual corporativo/ERP da tela de login (navy, branco, laranja, Inter, ícones
-lineares) — agora também aplicado à moldura da sidebar/header em todas as telas desktop
-(o conteúdo interno de cada tela continua com o design original). Mostra 5 indicadores
-operacionais, últimas atividades, ações rápidas, e a situação geral dos inventários
-(gráfico donut + tabela de status) — tudo calculado a partir dos dados reais que o app já
-tem (`counts`/`inventories`), sem número inventado.
+Depois do primeiro rascunho (Dashboard como uma tela nova, separada de "Início"), o
+cliente pediu pra simplificar: **"Início" foi removido, e "Dashboard" passou a ser a
+própria tela que abre depois do login** — no desktop. Mostra 5 indicadores operacionais,
+últimas atividades, ações rápidas, e a situação geral dos inventários (gráfico donut +
+tabela de status), com o mesmo visual corporativo/ERP da tela de login (navy, branco,
+laranja, Inter, ícones lineares) — esse visual também foi aplicado à moldura da
+sidebar/header em todas as telas desktop (o conteúdo interno de cada tela continua com o
+design original). Tudo calculado a partir dos dados reais que o app já tem
+(`counts`/`inventories`), sem número inventado.
 
-A tela "Início" e a tela de indicadores/gráficos que já existia (agora renomeada para
-"Indicadores" no menu, pra não ter duas coisas chamadas "Dashboard") continuam existindo
-normalmente — o app ficou com três telas de visão geral, cada uma com um propósito:
-Início (ponto de entrada com atalhos), Dashboard (o resumo operacional novo) e
-Indicadores (análise mais detalhada de produtividade/causas de erro). Ver `CLAUDE.md`
-para os detalhes de cada decisão de escopo.
+No tablet/celular do operador, a tela "Início" continua exatamente como sempre foi (grid
+de atalhos simples) — só ganhou o rótulo "Dashboard" no menu lateral do desktop, o
+conteúdo mobile em si não mudou. A tela de indicadores/gráficos que já existia continua
+existindo à parte, renomeada para "Indicadores" no menu (pra não ter duas coisas chamadas
+"Dashboard"). Ver `CLAUDE.md` para os detalhes da decisão.
 
 O protótipo agora carrega **300 itens reais** extraídos de uma exportação da tabela SB2
 (Saldo em Estoque) do Protheus — uma amostra dos 10.512 SKUs do Almox 01 (150 de maior
