@@ -42,14 +42,15 @@
     --font-display: 'Oswald', sans-serif;
     --font-body: 'IBM Plex Sans', sans-serif;
     --font-mono: 'JetBrains Mono', monospace;
-    /* Identidade da tela de login — paleta corporativa/ERP separada do resto do app */
-    --font-login: 'Inter', sans-serif;
-    --login-navy: #0F172A;
-    --login-gray-50: #F8FAFC;
-    --login-gray-100: #F1F5F9;
-    --login-gray-200: #E2E8F0;
-    --login-gray-400: #94A3B8;
-    --login-gray-500: #64748B;
+    /* Paleta corporativa/ERP (Inter + navy + cinzas) — login e dashboard novo usam,
+       resto do app (tablet do operador) continua no design system original acima */
+    --font-corp: 'Inter', sans-serif;
+    --navy: #0F172A;
+    --gray-50: #F8FAFC;
+    --gray-100: #F1F5F9;
+    --gray-200: #E2E8F0;
+    --gray-400: #94A3B8;
+    --gray-500: #64748B;
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);font-family:var(--font-body);height:100%;-webkit-tap-highlight-color:transparent;overscroll-behavior:none;}
@@ -72,6 +73,14 @@
   .role-pill select option{background:var(--panel-raised);color:var(--ink);}
   .logout-btn{background:var(--panel-raised);border:1px solid var(--line);color:var(--ink-dim);width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;}
   .logout-btn:active{background:var(--danger-bg);color:var(--danger);border-color:var(--danger);}
+
+  /* "Inventário 360" é mais longo que "Stock360" (nome anterior) — em telas
+     estreitas precisa encolher/colapsar pra não quebrar o topbar em 3 linhas. */
+  @media (max-width:400px){
+    .brand-text{font-size:15px;white-space:nowrap;}
+    .role-pill span{display:none;}
+    .role-pill{padding:7px 9px;}
+  }
 
   /* BACK BAR */
   .subbar{display:flex;align-items:center;gap:10px;padding:12px 18px;border-bottom:1px solid var(--line);background:var(--bg);}
@@ -216,41 +225,41 @@
   .role-note{font-family:var(--font-mono);font-size:11px;color:var(--ink-dim);background:var(--panel-raised);border-radius:8px;padding:10px 12px;margin-bottom:16px;border-left:3px solid var(--accent2);}
 
   /* LOGIN SCREEN — identidade corporativa/ERP (navy + branco + laranja Selgron) */
-  .login-screen{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--login-gray-100);padding:24px;font-family:var(--font-login);}
-  .login-card{width:100%;max-width:500px;background:#FFFFFF;border:1px solid var(--login-gray-200);border-top:3px solid var(--login-navy);border-radius:8px;padding:44px 40px 36px;box-shadow:0 1px 2px rgba(15,23,42,0.04), 0 10px 28px rgba(15,23,42,0.06);}
+  .login-screen{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--gray-100);padding:24px;font-family:var(--font-corp);}
+  .login-card{width:100%;max-width:500px;background:#FFFFFF;border:1px solid var(--gray-200);border-top:3px solid var(--navy);border-radius:8px;padding:44px 40px 36px;box-shadow:0 1px 2px rgba(15,23,42,0.04), 0 10px 28px rgba(15,23,42,0.06);}
   .login-logo{display:flex;flex-direction:column;align-items:center;gap:20px;margin-bottom:26px;}
   .login-logo img{height:30px;width:auto;max-width:200px;display:block;}
-  .login-title{font-family:var(--font-login);font-size:21px;font-weight:700;letter-spacing:-0.2px;color:var(--login-navy);text-align:center;margin:0;}
-  .login-subtitle{font-family:var(--font-login);font-size:11px;font-weight:600;color:var(--login-gray-500);text-align:center;letter-spacing:1px;text-transform:uppercase;margin:6px 0 0 0;}
-  .login-divider{height:1px;background:var(--login-gray-200);margin:26px 0 24px;}
+  .login-title{font-family:var(--font-corp);font-size:21px;font-weight:700;letter-spacing:-0.2px;color:var(--navy);text-align:center;margin:0;}
+  .login-subtitle{font-family:var(--font-corp);font-size:11px;font-weight:600;color:var(--gray-500);text-align:center;letter-spacing:1px;text-transform:uppercase;margin:6px 0 0 0;}
+  .login-divider{height:1px;background:var(--gray-200);margin:26px 0 24px;}
   .login-field{margin-bottom:18px;position:relative;}
-  .login-field label{display:block;font-family:var(--font-login);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:var(--login-gray-500);margin-bottom:7px;}
+  .login-field label{display:block;font-family:var(--font-corp);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:var(--gray-500);margin-bottom:7px;}
   .login-field .field-wrap{position:relative;display:flex;align-items:center;}
-  .login-field .field-icon{position:absolute;left:13px;top:50%;transform:translateY(-50%);display:flex;color:var(--login-gray-400);pointer-events:none;}
-  .login-field input{width:100%;background:var(--login-gray-50);border:1px solid var(--login-gray-200);color:var(--login-navy);padding:12px 14px 12px 40px;border-radius:8px;font-family:var(--font-login);font-size:14.5px;transition:border-color .12s, background .12s;}
-  .login-field input::placeholder{color:var(--login-gray-400);}
-  .login-field input:focus{outline:none;border-color:var(--login-navy);background:#fff;box-shadow:0 0 0 3px rgba(15,23,42,0.07);}
+  .login-field .field-icon{position:absolute;left:13px;top:50%;transform:translateY(-50%);display:flex;color:var(--gray-400);pointer-events:none;}
+  .login-field input{width:100%;background:var(--gray-50);border:1px solid var(--gray-200);color:var(--navy);padding:12px 14px 12px 40px;border-radius:8px;font-family:var(--font-corp);font-size:14.5px;transition:border-color .12s, background .12s;}
+  .login-field input::placeholder{color:var(--gray-400);}
+  .login-field input:focus{outline:none;border-color:var(--navy);background:#fff;box-shadow:0 0 0 3px rgba(15,23,42,0.07);}
   .login-field input[type="password"],
   .login-field input.has-toggle{padding-right:40px;}
-  .pw-toggle{position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--login-gray-400);display:flex;align-items:center;padding:4px;border-radius:6px;}
-  .pw-toggle:hover{color:var(--login-navy);}
-  .login-error{display:flex;align-items:center;gap:8px;background:#FEF2F2;border:1px solid #FECACA;color:#B91C1C;border-radius:8px;padding:11px 13px;font-size:13px;font-family:var(--font-login);margin-bottom:16px;}
-  .login-success{display:flex;align-items:center;gap:8px;background:#F0FDF4;border:1px solid #BBF7D0;color:#15803D;border-radius:8px;padding:11px 13px;font-size:13px;font-family:var(--font-login);margin-bottom:16px;}
-  .login-notice{display:flex;align-items:center;gap:8px;background:#FFF7ED;border:1px solid #FED7AA;color:#9A5B13;border-radius:8px;padding:11px 13px;font-size:13px;font-family:var(--font-login);margin-bottom:16px;}
-  .login-btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;background:var(--safety);color:var(--safety-ink);border:none;border-radius:8px;padding:13px 20px;font-family:var(--font-login);font-size:14.5px;font-weight:600;letter-spacing:0.1px;margin-top:6px;transition:background .12s;}
+  .pw-toggle{position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--gray-400);display:flex;align-items:center;padding:4px;border-radius:6px;}
+  .pw-toggle:hover{color:var(--navy);}
+  .login-error{display:flex;align-items:center;gap:8px;background:#FEF2F2;border:1px solid #FECACA;color:#B91C1C;border-radius:8px;padding:11px 13px;font-size:13px;font-family:var(--font-corp);margin-bottom:16px;}
+  .login-success{display:flex;align-items:center;gap:8px;background:#F0FDF4;border:1px solid #BBF7D0;color:#15803D;border-radius:8px;padding:11px 13px;font-size:13px;font-family:var(--font-corp);margin-bottom:16px;}
+  .login-notice{display:flex;align-items:center;gap:8px;background:#FFF7ED;border:1px solid #FED7AA;color:#9A5B13;border-radius:8px;padding:11px 13px;font-size:13px;font-family:var(--font-corp);margin-bottom:16px;}
+  .login-btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;background:var(--safety);color:var(--safety-ink);border:none;border-radius:8px;padding:13px 20px;font-family:var(--font-corp);font-size:14.5px;font-weight:600;letter-spacing:0.1px;margin-top:6px;transition:background .12s;}
   .login-btn:hover{background:#e0940a;}
   .login-btn:active{background:#d9a300;}
-  .login-forgot{display:block;text-align:center;margin-top:18px;background:none;border:none;color:var(--login-gray-500);font-family:var(--font-login);font-size:12.5px;font-weight:600;width:100%;padding:8px;}
-  .login-forgot:hover{color:var(--login-navy);}
-  .login-back{display:block;text-align:center;margin-top:14px;background:none;border:none;color:var(--login-gray-500);font-family:var(--font-login);font-size:12.5px;width:100%;padding:8px;}
-  .demo-creds{margin-top:28px;background:var(--login-gray-50);border:1px solid var(--login-gray-200);border-radius:8px;padding:14px 16px;}
-  .demo-creds .dc-title{display:flex;align-items:center;gap:6px;font-family:var(--font-login);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:var(--login-gray-500);margin-bottom:9px;}
-  .demo-creds .dc-row{display:flex;flex-direction:column;gap:2px;padding:7px 0;border-top:1px solid var(--login-gray-200);}
+  .login-forgot{display:block;text-align:center;margin-top:18px;background:none;border:none;color:var(--gray-500);font-family:var(--font-corp);font-size:12.5px;font-weight:600;width:100%;padding:8px;}
+  .login-forgot:hover{color:var(--navy);}
+  .login-back{display:block;text-align:center;margin-top:14px;background:none;border:none;color:var(--gray-500);font-family:var(--font-corp);font-size:12.5px;width:100%;padding:8px;}
+  .demo-creds{margin-top:28px;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:8px;padding:14px 16px;}
+  .demo-creds .dc-title{display:flex;align-items:center;gap:6px;font-family:var(--font-corp);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:var(--gray-500);margin-bottom:9px;}
+  .demo-creds .dc-row{display:flex;flex-direction:column;gap:2px;padding:7px 0;border-top:1px solid var(--gray-200);}
   .demo-creds .dc-row:first-of-type{border-top:none;padding-top:0;}
-  .demo-creds .dc-row span:first-child{font-family:var(--font-mono);font-size:12px;color:var(--login-navy);}
-  .demo-creds .dc-row span:last-child{color:var(--login-gray-500);font-family:var(--font-login);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;}
-  .login-footer{text-align:center;font-family:var(--font-login);font-size:11.5px;color:var(--login-gray-500);margin-top:22px;letter-spacing:0.2px;}
-  .login-card .role-note{font-family:var(--font-login);font-size:12.5px;color:var(--login-gray-500);background:var(--login-gray-50);border-radius:8px;border-left:3px solid var(--login-navy);}
+  .demo-creds .dc-row span:first-child{font-family:var(--font-mono);font-size:12px;color:var(--navy);}
+  .demo-creds .dc-row span:last-child{color:var(--gray-500);font-family:var(--font-corp);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;}
+  .login-footer{text-align:center;font-family:var(--font-corp);font-size:11.5px;color:var(--gray-500);margin-top:22px;letter-spacing:0.2px;}
+  .login-card .role-note{font-family:var(--font-corp);font-size:12.5px;color:var(--gray-500);background:var(--gray-50);border-radius:8px;border-left:3px solid var(--navy);}
 
   /* ---------------- LAYOUT DESKTOP (sidebar) — só em telas largas ----------------
      O app continua mobile-first (tablet no chão de fábrica é o uso principal, ver
@@ -263,7 +272,7 @@
     .app-main{flex:1;display:flex;flex-direction:column;min-width:0;}
     .content{padding:32px 40px 48px;max-width:1400px;margin:0 auto;width:100%;}
 
-    .sidebar{display:flex;flex-direction:column;width:264px;flex-shrink:0;background:#12151C;min-height:100vh;position:sticky;top:0;}
+    .sidebar{display:flex;flex-direction:column;width:264px;flex-shrink:0;background:var(--navy);min-height:100vh;position:sticky;top:0;}
     .sidebar-brand{padding:22px 22px 18px;border-bottom:1px solid rgba(255,255,255,0.08);}
     .sidebar-brand img{width:100%;max-width:170px;height:auto;display:block;margin-bottom:10px;}
     .sidebar-brand .product{font-family:var(--font-display);font-size:15px;font-weight:600;letter-spacing:0.4px;text-transform:uppercase;color:#fff;}
@@ -272,23 +281,40 @@
     .sidebar-nav-item{display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:8px;background:none;border:none;color:rgba(255,255,255,0.72);font-size:13.5px;font-weight:500;text-align:left;width:100%;}
     .sidebar-nav-item:hover{background:rgba(255,255,255,0.07);}
     .sidebar-nav-item.active{background:var(--safety);color:var(--safety-ink);font-weight:600;}
-    .sidebar-nav-item .ic{font-size:16px;width:18px;text-align:center;flex-shrink:0;}
+    .sidebar-nav-item .ic{width:18px;height:18px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
     .sidebar-shortcuts{padding:16px 20px 18px;border-top:1px solid rgba(255,255,255,0.08);margin-top:auto;}
     .sidebar-section-title{font-family:var(--font-mono);font-size:10px;text-transform:uppercase;letter-spacing:1px;color:rgba(255,255,255,0.45);margin-bottom:10px;}
     .sidebar-shortcut{display:flex;align-items:center;justify-content:space-between;width:100%;background:none;border:none;color:rgba(255,255,255,0.75);font-size:12.5px;padding:8px 2px;text-align:left;}
     .sidebar-shortcut:hover{color:#fff;}
     .sidebar-shortcut span{color:var(--safety);font-weight:700;}
-    .sidebar-footer{padding:14px 20px 20px;border-top:1px solid rgba(255,255,255,0.08);font-family:var(--font-mono);font-size:10.5px;color:rgba(255,255,255,0.45);}
-    .sidebar-footer .status{display:flex;align-items:center;gap:6px;margin-top:4px;color:rgba(255,255,255,0.6);}
+    .sidebar-footer{padding:14px 20px 20px;border-top:1px solid rgba(255,255,255,0.08);font-family:var(--font-corp);font-size:11px;color:rgba(255,255,255,0.45);display:flex;flex-direction:column;gap:6px;}
+    .sidebar-footer .status{display:flex;align-items:center;gap:6px;color:rgba(255,255,255,0.6);}
     .sidebar-footer .status .dot{width:6px;height:6px;border-radius:50%;background:var(--ok);flex-shrink:0;}
+    .sidebar-footer .sf-user{display:flex;align-items:center;gap:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.08);color:rgba(255,255,255,0.72);font-weight:600;}
 
-    .desktop-topbar{display:flex;align-items:center;justify-content:space-between;padding:16px 40px;background:var(--panel);border-bottom:1px solid var(--line);}
-    .desktop-topbar-title{font-family:var(--font-display);font-size:19px;font-weight:600;text-transform:uppercase;letter-spacing:0.3px;}
-    .desktop-user{display:flex;align-items:center;gap:12px;}
-    .desktop-user .avatar{width:38px;height:38px;border-radius:50%;background:var(--safety);color:var(--safety-ink);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;font-size:14px;flex-shrink:0;}
-    .desktop-user .info{display:flex;flex-direction:column;line-height:1.3;}
-    .desktop-user .info strong{font-size:13px;}
-    .desktop-user .info span{font-size:11px;color:var(--ink-dim);}
+    .desktop-topbar{position:relative;height:72px;display:flex;align-items:center;justify-content:space-between;padding:0 32px;background:var(--panel);border-bottom:1px solid var(--line);}
+    .desktop-topbar-titlewrap{display:flex;flex-direction:column;justify-content:center;gap:2px;}
+    .desktop-topbar-title{font-family:var(--font-corp);font-size:20px;font-weight:700;color:var(--navy);letter-spacing:-0.1px;}
+    .desktop-topbar-subtitle{font-family:var(--font-corp);font-size:12.5px;color:var(--gray-500);}
+    .desktop-topbar-right{display:flex;align-items:center;gap:14px;}
+    .pnl-period-select{font-family:var(--font-corp);font-size:12.5px;font-weight:500;color:var(--navy);background:#fff;border:1px solid var(--gray-200);border-radius:8px;padding:8px 12px;}
+    .desktop-bell{width:36px;height:36px;border-radius:8px;border:1px solid var(--gray-200);background:#fff;display:flex;align-items:center;justify-content:center;color:var(--gray-500);flex-shrink:0;}
+    .desktop-bell:hover{background:var(--gray-50);color:var(--navy);}
+    .desktop-notif-menu{position:absolute;top:60px;right:32px;background:#fff;border:1px solid var(--gray-200);border-radius:10px;box-shadow:0 8px 24px rgba(15,23,42,.12);width:240px;padding:16px;z-index:50;font-family:var(--font-corp);font-size:12.5px;color:var(--gray-500);text-align:center;}
+    .desktop-user-wrap{position:relative;}
+    .desktop-user{display:flex;align-items:center;gap:10px;background:none;border:none;padding:4px 6px 4px 4px;border-radius:8px;cursor:pointer;font-family:var(--font-corp);}
+    .desktop-user:hover{background:var(--gray-50);}
+    .desktop-user .avatar{width:36px;height:36px;border-radius:50%;background:var(--safety);color:var(--safety-ink);display:flex;align-items:center;justify-content:center;font-family:var(--font-corp);font-weight:700;font-size:13px;flex-shrink:0;}
+    .desktop-user .info{display:flex;flex-direction:column;line-height:1.3;text-align:left;}
+    .desktop-user .info strong{font-size:13px;color:var(--navy);}
+    .desktop-user .info span{font-size:11px;color:var(--gray-500);}
+    .desktop-user-menu{position:absolute;top:56px;right:0;background:#fff;border:1px solid var(--gray-200);border-radius:10px;box-shadow:0 8px 24px rgba(15,23,42,.12);min-width:210px;padding:8px;z-index:50;font-family:var(--font-corp);}
+    .desktop-user-menu .um-head{padding:9px 11px 11px;border-bottom:1px solid var(--gray-100);margin-bottom:6px;}
+    .desktop-user-menu .um-head strong{display:block;font-size:13.5px;color:var(--navy);}
+    .desktop-user-menu .um-head span{font-size:11.5px;color:var(--gray-500);}
+    .desktop-user-menu button{display:flex;align-items:center;gap:10px;width:100%;background:none;border:none;padding:9px 11px;border-radius:6px;font-size:13px;color:var(--navy);text-align:left;}
+    .desktop-user-menu button:hover{background:var(--gray-50);}
+    .desktop-user-menu button.danger{color:var(--danger);}
 
     .desktop-kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px;}
     .desktop-kpi{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;}
@@ -315,6 +341,69 @@
     .desktop-cta .cta-desc{font-size:12px;color:var(--ink-dim);margin-top:2px;}
 
     .grid-cards{display:none;}
+
+    /* ---- Dashboard novo ("painel") — design system corporativo/ERP (Inter,
+       navy, laranja Selgron, grid de 12 colunas, espaçamento em múltiplos de 8) ---- */
+    .pnl-wrap{font-family:var(--font-corp);color:var(--navy);}
+    .pnl-kpi-row{display:grid;grid-template-columns:repeat(5,1fr);gap:16px;margin-bottom:24px;}
+    .pnl-kpi{display:block;width:100%;text-align:left;font:inherit;background:#fff;border:1px solid var(--gray-200);border-radius:10px;padding:18px;box-shadow:0 1px 2px rgba(15,23,42,.03);transition:box-shadow .15s, transform .15s;}
+    .pnl-kpi:hover{box-shadow:0 6px 16px rgba(15,23,42,.08);transform:translateY(-1px);}
+    .pnl-kpi-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;}
+    .pnl-kpi-icon{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+    .pnl-kpi-value{font-family:var(--font-corp);font-size:28px;font-weight:700;color:var(--navy);line-height:1;margin-bottom:6px;}
+    .pnl-kpi-label{font-size:12.5px;color:var(--gray-500);font-weight:500;margin-bottom:12px;line-height:1.35;}
+    .pnl-kpi-trend{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:600;padding:3px 8px;border-radius:20px;}
+    .pnl-kpi-trend.good{background:#ECFDF5;color:#15803D;}
+    .pnl-kpi-trend.bad{background:#FEF2F2;color:#B91C1C;}
+    .pnl-kpi-trend.flat{background:var(--gray-100);color:var(--gray-500);}
+
+    .pnl-section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
+    .pnl-section-title{font-size:16px;font-weight:700;color:var(--navy);}
+    .pnl-section-link{font-size:12.5px;font-weight:600;color:var(--accent2);background:none;border:none;display:flex;align-items:center;gap:4px;}
+
+    .pnl-row{display:grid;grid-template-columns:repeat(12,1fr);gap:24px;margin-bottom:24px;}
+    .pnl-col-8{grid-column:span 8;}
+    .pnl-col-4{grid-column:span 4;}
+    .pnl-col-5{grid-column:span 5;}
+    .pnl-col-7{grid-column:span 7;}
+    .pnl-card{background:#fff;border:1px solid var(--gray-200);border-radius:10px;padding:20px;box-shadow:0 1px 2px rgba(15,23,42,.03);}
+
+    .pnl-table{width:100%;border-collapse:collapse;font-size:13px;}
+    .pnl-table th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:0.4px;color:var(--gray-500);font-weight:600;padding:0 10px 10px;border-bottom:1px solid var(--gray-200);}
+    .pnl-table td{padding:12px 10px;border-bottom:1px solid var(--gray-100);color:var(--navy);vertical-align:middle;}
+    .pnl-table tr:last-child td{border-bottom:none;}
+    .pnl-status{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;white-space:nowrap;}
+    .pnl-status .dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex-shrink:0;}
+    .pnl-status.ok{background:#ECFDF5;color:#15803D;}
+    .pnl-status.warn{background:#FFF7ED;color:#9A5B13;}
+    .pnl-status.danger{background:#FEF2F2;color:#B91C1C;}
+
+    .pnl-quick-list{display:flex;flex-direction:column;gap:4px;}
+    .pnl-quick-item{display:flex;align-items:center;gap:12px;padding:11px 8px;border-radius:8px;background:none;border:none;text-align:left;width:100%;color:var(--navy);}
+    .pnl-quick-item:hover{background:var(--gray-50);}
+    .pnl-quick-icon{width:32px;height:32px;border-radius:8px;background:var(--gray-100);color:var(--gray-500);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+    .pnl-quick-text{flex:1;font-size:13px;font-weight:500;}
+    .pnl-quick-arrow{color:var(--gray-400);flex-shrink:0;}
+
+    .pnl-donut-wrap{display:flex;flex-direction:column;align-items:center;gap:20px;padding-top:4px;}
+    .pnl-donut-legend{display:flex;flex-direction:column;gap:9px;width:100%;}
+    .pnl-legend-row{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--navy);}
+    .pnl-legend-dot{width:9px;height:9px;border-radius:2px;flex-shrink:0;}
+    .pnl-legend-row .n{margin-left:auto;font-weight:600;}
+
+    .pnl-bar-row{display:flex;align-items:center;gap:12px;padding:10px 0;}
+    .pnl-bar-label{width:104px;font-size:12.5px;color:var(--gray-500);flex-shrink:0;}
+    .pnl-bar-track{flex:1;height:8px;background:var(--gray-100);border-radius:20px;overflow:hidden;}
+    .pnl-bar-fill{height:100%;border-radius:20px;}
+    .pnl-bar-num{width:76px;text-align:right;font-size:12.5px;font-weight:600;color:var(--navy);flex-shrink:0;}
+
+    .pnl-footer{display:flex;align-items:center;justify-content:space-between;padding:20px 4px 4px;margin-top:8px;border-top:1px solid var(--gray-200);font-size:12px;color:var(--gray-500);}
+    .pnl-footer-links{display:flex;gap:18px;color:var(--gray-500);}
+
+    @media (max-width:1360px){
+      .pnl-kpi-row{grid-template-columns:repeat(3,1fr);}
+      .pnl-col-8,.pnl-col-4,.pnl-col-5,.pnl-col-7{grid-column:span 12;}
+    }
   }
 </style>
 </head>
@@ -686,6 +775,7 @@ function App(){
 
   const [view, setView] = useState('home');
   const [flowState, setFlowState] = useState(null); // params passed into a flow
+  const [dashboardPeriod, setDashboardPeriod] = useState('7d'); // filtro de período do Dashboard novo
 
   const [inventories, setInventories] = usePersistedState('inventories', [
     {id:'INV-001', nome:'Inventário Cíclico Julho/2026', almoxarifado:'Almox 01', responsavel:'Carlos Mendes', data:'2026-07-14', tipo:'Contagem Aleatória', qtdItens:20, status:'em_andamento', contados: 6},
@@ -849,13 +939,27 @@ function App(){
 
   return (
     <div className="app">
-      <Sidebar view={view} goto={goto} role={role} />
+      <Sidebar view={view} goto={goto} role={role} user={currentUser} />
       <div className="app-main">
       <TopBar user={currentUser} role={role} onHome={()=>goto('home')} onLogout={()=>logout('')} />
-      <DesktopTopbar view={view} user={currentUser} role={role} onLogout={()=>logout('')} />
+      <DesktopTopbar
+        view={view}
+        user={currentUser}
+        role={role}
+        onLogout={()=>logout('')}
+        subtitle={VIEW_SUBTITLES[view]}
+        rightExtra={view==='painel' ? (
+          <select className="pnl-period-select" value={dashboardPeriod} onChange={e=>setDashboardPeriod(e.target.value)}>
+            <option value="7d">Últimos 7 dias</option>
+            <option value="30d">Últimos 30 dias</option>
+            <option value="all">Todo o período</option>
+          </select>
+        ) : null}
+      />
       {view!=='home' && <SubBar view={view} goto={goto} />}
       <div className="content">
         {view==='home' && <Home role={role} user={currentUser} inventories={inventories} counts={counts} enderecosPropostos={enderecosPropostos} goto={goto} />}
+        {view==='painel' && <MainDashboard role={role} user={currentUser} inventories={inventories} counts={counts} goto={goto} period={dashboardPeriod} />}
         {view==='inventories' && <InventoryList inventories={inventories} goto={goto} role={role} counts={counts} onDelete={deleteInventory} />}
         {view==='newInventory' && (role==='lider'||role==='admin') && <NewInventory users={users} onCreate={(inv)=>{setInventories(prev=>[inv,...prev]); goto('inventories');}} />}
         {view==='pickCountType' && <PickCountType inv={flowState} goto={goto} />}
@@ -943,6 +1047,48 @@ function ShieldIcon(){
   return (
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M12 3.5l7 2.6v5.4c0 4.6-3 8.3-7 9-4-0.7-7-4.4-7-9V6.1l7-2.6Z"/>
+    </svg>
+  );
+}
+
+/* ---------------- ÍCONES LINEARES (estilo Lucide) ----------------
+   Projeto não tem build step (React/Babel via CDN, sem bundler) — em vez de
+   importar o pacote lucide/lucide-react (mais uma dependência CDN + integração
+   sem componentes React prontos), os ícones foram desenhados à mão no mesmo
+   estilo visual (stroke 1.8-2, viewBox 24x24, cantos arredondados). Usado na
+   sidebar/header desktop e no Dashboard novo — o resto do app continua com
+   emoji (componente `Ic`), não foi trocado (fora do escopo pedido). */
+const DICON_PATHS = {
+  layoutDashboard: <><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></>,
+  home: <><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5"/></>,
+  box: <><path d="M21 8.2a1.8 1.8 0 0 0-.9-1.55l-7.2-4.1a1.8 1.8 0 0 0-1.8 0l-7.2 4.1A1.8 1.8 0 0 0 3 8.2v7.6c0 .64.35 1.23.9 1.55l7.2 4.1c.56.32 1.24.32 1.8 0l7.2-4.1c.55-.32.9-.9.9-1.55Z"/><path d="M3.5 7.3 12 12l8.5-4.7"/><path d="M12 22V12"/></>,
+  search: <><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></>,
+  repeat: <><path d="m17 2 4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></>,
+  clipboardList: <><rect x="6" y="3" width="12" height="18" rx="2"/><path d="M9 3V2a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/><path d="M9 10h6"/><path d="M9 14h6"/><path d="M9 18h3"/></>,
+  mapPin: <><path d="M12 22s7-6.5 7-12a7 7 0 1 0-14 0c0 5.5 7 12 7 12Z"/><circle cx="12" cy="10" r="2.5"/></>,
+  barChart: <><path d="M4 20V10"/><path d="M12 20V4"/><path d="M20 20v-6"/></>,
+  fileText: <><path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M9 13h6"/><path d="M9 17h6"/></>,
+  settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.04 1.56V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.96 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.04H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 8.96a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9a1.7 1.7 0 0 0 1.04-1.56V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.04 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V9c0 .69.4 1.32 1.04 1.6.2.08.4.13.6.15H21a2 2 0 1 1 0 4h-.09c-.69 0-1.32.4-1.6 1.04Z"/></>,
+  bell: <><path d="M6 8a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></>,
+  chevronDown: <path d="m6 9 6 6 6-6"/>,
+  chevronRight: <path d="m9 18 6-6-6-6"/>,
+  logOut: <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></>,
+  trendingUp: <><path d="M22 7 13.5 15.5 8.5 10.5 2 17"/><path d="M16 7h6v6"/></>,
+  trendingDown: <><path d="M22 17 13.5 8.5 8.5 13.5 2 7"/><path d="M16 17h6v-6"/></>,
+  minus: <path d="M5 12h14"/>,
+  arrowRight: <><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></>,
+  plus: <><path d="M12 5v14"/><path d="M5 12h14"/></>,
+  activity: <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>,
+  checkCircle: <><path d="M21.8 10.5A10 10 0 1 1 17 3.3"/><path d="m9 11 3 3L22 4"/></>,
+  alertTriangle: <><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></>,
+  percent: <><path d="m19 5-14 14"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></>,
+  user: <><circle cx="12" cy="8" r="3.4"/><path d="M4.5 20c1.2-3.6 4.2-5.6 7.5-5.6s6.3 2 7.5 5.6"/></>,
+};
+
+function DIcon({name, size=18, strokeWidth=1.8, style}){
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={style}>
+      {DICON_PATHS[name]}
     </svg>
   );
 }
@@ -1114,10 +1260,17 @@ const VIEW_TITLES = {
   recounts:'Recontagens Pendentes',
   enderecos:'Endereços Pendentes',
   recount:'Recontar Item',
-  dashboard:'Dashboard',
+  dashboard:'Indicadores',
+  painel:'Dashboard',
   relatorios:'Relatórios',
   settings:'Configurações',
   userForm:'Cadastro de Usuário',
+};
+
+// Descrição curta mostrada abaixo do título no header desktop (só quando existe
+// uma entrada aqui — a maioria das telas não precisa, o título já basta).
+const VIEW_SUBTITLES = {
+  painel: 'Resumo operacional do inventário',
 };
 
 function SubBar({view, goto}){
@@ -1129,18 +1282,19 @@ function SubBar({view, goto}){
   );
 }
 
-function Sidebar({view, goto, role}){
+function Sidebar({view, goto, role, user}){
   const podeValidarEnderecos = role==='lider'||role==='admin';
   const items = [
-    {id:'home', ic:'⌂', label:'Início'},
-    {id:'inventories', ic:'📦', label:'Inventários'},
-    {id:'pickCountType', ic:'🔍', label:'Contagens'},
-    {id:'myCounts', ic:'📋', label:'Minhas Contagens'},
-    {id:'recounts', ic:'🔁', label:'Recontagens'},
-    ...(podeValidarEnderecos ? [{id:'enderecos', ic:'📍', label:'Endereços'}] : []),
-    {id:'dashboard', ic:'📊', label:'Dashboard'},
-    {id:'relatorios', ic:'📄', label:'Relatórios'},
-    {id:'settings', ic:'⚙', label:'Configurações'},
+    {id:'painel', ic:'layoutDashboard', label:'Dashboard'},
+    {id:'home', ic:'home', label:'Início'},
+    {id:'inventories', ic:'box', label:'Inventários'},
+    {id:'pickCountType', ic:'search', label:'Contagens'},
+    {id:'recounts', ic:'repeat', label:'Recontagens'},
+    {id:'myCounts', ic:'clipboardList', label:'Minhas Contagens'},
+    ...(podeValidarEnderecos ? [{id:'enderecos', ic:'mapPin', label:'Endereços'}] : []),
+    {id:'dashboard', ic:'barChart', label:'Indicadores'},
+    {id:'relatorios', ic:'fileText', label:'Relatórios'},
+    {id:'settings', ic:'settings', label:'Configurações'},
   ];
   const shortcuts = [
     ...(podeValidarEnderecos ? [{id:'newInventory', label:'Criar novo inventário'}] : []),
@@ -1158,7 +1312,7 @@ function Sidebar({view, goto, role}){
       <nav className="sidebar-nav">
         {items.map(it=>(
           <button key={it.id} className={"sidebar-nav-item"+(view===it.id?' active':'')} onClick={()=>goto(it.id)}>
-            <span className="ic"><Ic>{it.ic}</Ic></span>{it.label}
+            <span className="ic"><DIcon name={it.ic} size={16} /></span>{it.label}
           </button>
         ))}
       </nav>
@@ -1169,22 +1323,45 @@ function Sidebar({view, goto, role}){
         ))}
       </div>
       <div className="sidebar-footer">
-        <div>Versão 1.0.0</div>
         <div className="status"><span className="dot"></span>Sistema operacional</div>
+        <div>Versão 1.0.0</div>
+        <div className="sf-user"><DIcon name="user" size={12} />{user.nome} · {ROLE_LABELS[role]}</div>
       </div>
     </div>
   );
 }
 
-function DesktopTopbar({view, user, role, onLogout}){
+function DesktopTopbar({view, user, role, onLogout, subtitle, rightExtra}){
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
   const initials = user.nome.split(' ').filter(Boolean).slice(0,2).map(p=>p[0]).join('').toUpperCase();
   return (
     <div className="desktop-topbar">
-      <div className="desktop-topbar-title">{VIEW_TITLES[view] || 'Início'}</div>
-      <div className="desktop-user">
-        <div className="avatar">{initials}</div>
-        <div className="info"><strong>{user.nome}</strong><span>{ROLE_LABELS[role]}</span></div>
-        <button className="logout-btn" onClick={onLogout} title="Sair"><Ic>⏻</Ic></button>
+      <div className="desktop-topbar-titlewrap">
+        <div className="desktop-topbar-title">{VIEW_TITLES[view] || 'Início'}</div>
+        {subtitle && <div className="desktop-topbar-subtitle">{subtitle}</div>}
+      </div>
+      <div className="desktop-topbar-right">
+        {rightExtra}
+        <div style={{position:'relative'}}>
+          <button className="desktop-bell" onClick={()=>{setNotifOpen(o=>!o); setMenuOpen(false);}} title="Notificações"><DIcon name="bell" size={17} /></button>
+          {notifOpen && (
+            <div className="desktop-notif-menu" onMouseLeave={()=>setNotifOpen(false)}>Nenhuma notificação por enquanto.</div>
+          )}
+        </div>
+        <div className="desktop-user-wrap">
+          <button className="desktop-user" onClick={()=>{setMenuOpen(o=>!o); setNotifOpen(false);}}>
+            <div className="avatar">{initials}</div>
+            <div className="info"><strong>{user.nome}</strong><span>{ROLE_LABELS[role]}</span></div>
+            <DIcon name="chevronDown" size={14} style={{color:'var(--gray-400)'}} />
+          </button>
+          {menuOpen && (
+            <div className="desktop-user-menu" onMouseLeave={()=>setMenuOpen(false)}>
+              <div className="um-head"><strong>{user.nome}</strong><span>{ROLE_LABELS[role]}</span></div>
+              <button className="danger" onClick={onLogout}><DIcon name="logOut" size={15} /> Sair</button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -1270,7 +1447,7 @@ function Home({role, user, inventories, counts, enderecosPropostos=[], goto}){
             <span className="kpi-label">Total de Contagens</span>
           </div>
           <div className="kpi-value">{counts.length}</div>
-          <button className="kpi-link" onClick={()=>goto('dashboard')}>Ver dashboard <Ic>›</Ic></button>
+          <button className="kpi-link" onClick={()=>goto('dashboard')}>Ver indicadores <Ic>›</Ic></button>
         </div>
       </div>
 
@@ -1320,7 +1497,7 @@ function Home({role, user, inventories, counts, enderecosPropostos=[], goto}){
         <button className="desktop-quick-card" onClick={()=>goto('dashboard')}>
           <span className="qc-icon" style={{background:'#F1E9FB',color:'#7B3FC4'}}><Ic>📊</Ic></span>
           <span className="qc-body">
-            <span className="qc-title">Dashboard</span>
+            <span className="qc-title">Indicadores</span>
             <span className="qc-desc">Acesse indicadores e visualize o desempenho.</span>
           </span>
           <span className="qc-arrow"><Ic>›</Ic></span>
@@ -1384,7 +1561,7 @@ function Home({role, user, inventories, counts, enderecosPropostos=[], goto}){
         )}
         <div className="home-card" onClick={()=>goto('dashboard')}>
           <span className="icon"><Ic>📊</Ic></span>
-          <span className="label">Dashboard</span>
+          <span className="label">Indicadores</span>
         </div>
         <div className="home-card" onClick={()=>goto('relatorios')}>
           <span className="icon"><Ic>📄</Ic></span>
@@ -1402,6 +1579,267 @@ function Home({role, user, inventories, counts, enderecosPropostos=[], goto}){
         <div className="home-card" onClick={()=>goto('settings')}>
           <span className="icon"><Ic>⚙</Ic></span>
           <span className="label">Configurações</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- DASHBOARD NOVO ("painel") ----------------
+   Tela desktop-only (design corporativo/ERP — ver CLAUDE.md "Dashboard novo").
+   Toda métrica vem de `counts`/`inventories` reais já existentes no app — nada
+   fabricado. Tendência dia-a-dia (vs. ontem) só é mostrada onde a comparação é
+   genuinamente derivável do campo `data` de cada contagem (cumulativo até uma
+   data); para KPIs que são puro estado atual (sem histórico registrado —
+   inventários em andamento, recontagens pendentes) mostra uma nota contextual
+   real em vez de inventar uma variação percentual sem base de dados. */
+
+function pnlPeriodCutoff(period){
+  const now = new Date();
+  if(period==='7d') return new Date(now.getTime()-6*86400000).toISOString().slice(0,10);
+  if(period==='30d') return new Date(now.getTime()-29*86400000).toISOString().slice(0,10);
+  return '0000-00-00';
+}
+
+function pnlTrendPct(atual, anterior){
+  if(anterior===0) return atual===0 ? 0 : null;
+  return ((atual-anterior)/anterior)*100;
+}
+
+function KpiTrend({pct, invert, suffix, compareLabel}){
+  if(pct===null || pct===undefined){
+    return null;
+  }
+  const flat = Math.abs(pct) < 0.05;
+  const rising = pct > 0;
+  const good = flat ? null : (invert ? !rising : rising);
+  const cls = flat ? 'flat' : (good ? 'good' : 'bad');
+  const icon = flat ? 'minus' : (rising ? 'trendingUp' : 'trendingDown');
+  const sign = pct > 0 ? '+' : '';
+  return (
+    <span className={"pnl-kpi-trend "+cls}>
+      <DIcon name={icon} size={11} />
+      {sign}{pct.toFixed(1)}{suffix || '%'} {compareLabel || 'vs. ontem'}
+    </span>
+  );
+}
+
+function PnlDonut({segments, size=168, strokeWidth=22}){
+  const r = (size - strokeWidth) / 2;
+  const c = 2 * Math.PI * r;
+  const total = segments.reduce((s, x) => s + x.value, 0);
+  let offset = 0;
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="var(--gray-100)" strokeWidth={strokeWidth} />
+      {total > 0 && segments.map((seg, i) => {
+        if (seg.value <= 0) return null;
+        const len = (seg.value / total) * c;
+        const dashoffset = -offset;
+        offset += len;
+        return (
+          <circle key={i} cx={size/2} cy={size/2} r={r} fill="none" stroke={seg.color} strokeWidth={strokeWidth}
+            strokeDasharray={`${len} ${c - len}`} strokeDashoffset={dashoffset}
+            transform={`rotate(-90 ${size/2} ${size/2})`} />
+        );
+      })}
+      <text x="50%" y="47%" textAnchor="middle" fontSize="24" fontWeight="700" fill="var(--navy)" fontFamily="Inter, sans-serif">{total}</text>
+      <text x="50%" y="63%" textAnchor="middle" fontSize="10.5" fill="var(--gray-500)" fontFamily="Inter, sans-serif">inventários</text>
+    </svg>
+  );
+}
+
+function MainDashboard({role, user, inventories, counts, goto, period}){
+  const podeGerir = role==='lider'||role==='admin';
+
+  // ---- KPIs ----
+  const emAndamento = inventories.filter(i=>i.contados>0 && i.contados<i.qtdItens).length;
+  const pendentesInicio = inventories.filter(i=>i.contados===0).length;
+
+  const byOriginal = {};
+  counts.forEach(c=>{ if(c.contagemAnteriorId) byOriginal[c.contagemAnteriorId]=true; });
+  const recontagensPendentes = counts.filter(c=>(c.statusAprovacao==='aguardando_segunda' && !byOriginal[c.id]) || c.statusAprovacao==='aguardando_analise_lider').length;
+
+  const hojeStr = new Date().toISOString().slice(0,10);
+  const ontemStr = new Date(Date.now()-86400000).toISOString().slice(0,10);
+
+  function acumuladoAte(dataLimite){
+    const relevantes = counts.filter(c=>c.data<=dataLimite);
+    const divergentes = relevantes.filter(c=>c.diferenca!==0 && c.diferenca!==null);
+    const acuracidade = relevantes.length ? ((relevantes.length-divergentes.length)/relevantes.length*100) : 100;
+    return {total:relevantes.length, divergentes:divergentes.length, acuracidade};
+  }
+  const hoje = acumuladoAte(hojeStr);
+  const ontem = acumuladoAte(ontemStr);
+  const concluidasHoje = counts.filter(c=>c.data===hojeStr).length;
+  const concluidasOntem = counts.filter(c=>c.data===ontemStr).length;
+
+  const divergentesTrendPct = pnlTrendPct(hoje.divergentes, ontem.divergentes);
+  const concluidasTrendPct = pnlTrendPct(concluidasHoje, concluidasOntem);
+  const acuracidadePontos = ontem.total>0 ? (hoje.acuracidade-ontem.acuracidade) : null;
+
+  const kpis = [
+    {
+      key:'andamento', icon:'box', bg:'#E3EEFC', color:'#2A6FD6',
+      label:'Inventários em Andamento', value:emAndamento,
+      trend:<span className="pnl-kpi-trend flat">{pendentesInicio} aguardando início</span>,
+      onClick:()=>goto('inventories'),
+    },
+    {
+      key:'recontagens', icon:'repeat', bg:'#FFF1D6', color:'#A35F00',
+      label:'Recontagens Pendentes', value:recontagensPendentes,
+      trend:<span className={"pnl-kpi-trend "+(recontagensPendentes>0?'bad':'good')}>{recontagensPendentes>0?'Requer atenção':'Nenhuma pendência'}</span>,
+      onClick:()=>goto('recounts'),
+    },
+    {
+      key:'divergentes', icon:'alertTriangle', bg:'#FBE6E3', color:'#C4291B',
+      label:'Itens Divergentes', value:hoje.divergentes,
+      trend:<KpiTrend pct={divergentesTrendPct} invert />,
+      onClick:()=>goto('myCounts'),
+    },
+    {
+      key:'concluidas', icon:'checkCircle', bg:'#E3F6EA', color:'#1E8E4F',
+      label:'Contagens Concluídas Hoje', value:concluidasHoje,
+      trend:<KpiTrend pct={concluidasTrendPct} />,
+      onClick:()=>goto('myCounts'),
+    },
+    {
+      key:'acuracidade', icon:'percent', bg:'#F1E9FB', color:'#7B3FC4',
+      label:'Acuracidade do Estoque', value:hoje.acuracidade.toFixed(1)+'%',
+      trend:<KpiTrend pct={acuracidadePontos} suffix=" pts" />,
+      onClick:()=>goto('dashboard'),
+    },
+  ];
+
+  // ---- Atividades recentes (filtradas pelo período do header) ----
+  const cutoff = pnlPeriodCutoff(period);
+  const atividades = [...counts]
+    .filter(c=>c.data>=cutoff)
+    .sort((a,b)=> (b.data+b.hora).localeCompare(a.data+a.hora))
+    .slice(0,7);
+
+  // ---- Ações rápidas ----
+  const acoes = [
+    ...(podeGerir ? [{icon:'plus', label:'Novo Inventário', onClick:()=>goto('newInventory')}] : []),
+    {icon:'search', label:'Nova Contagem', onClick:()=>goto('pickCountType')},
+    {icon:'clipboardList', label:'Minhas Contagens', onClick:()=>goto('myCounts')},
+    {icon:'repeat', label:'Recontagens', onClick:()=>goto('recounts')},
+    {icon:'fileText', label:'Relatórios', onClick:()=>goto('relatorios')},
+  ];
+
+  // ---- Situação geral dos inventários (donut + tabela) ----
+  const planejados = inventories.filter(i=>i.contados===0 && i.status!=='cancelado').length;
+  const andamentoInv = emAndamento;
+  const concluidosInv = inventories.filter(i=>i.qtdItens>0 && i.contados>=i.qtdItens).length;
+  const canceladosInv = inventories.filter(i=>i.status==='cancelado').length;
+  const totalInv = planejados+andamentoInv+concluidosInv+canceladosInv;
+
+  const statusRows = [
+    {label:'Planejados', value:planejados, color:'#94A3B8'},
+    {label:'Em andamento', value:andamentoInv, color:'#F6A200'},
+    {label:'Concluídos', value:concluidosInv, color:'#1E8E4F'},
+    {label:'Cancelados', value:canceladosInv, color:'#C4291B'},
+  ];
+  const maxRow = Math.max(1, ...statusRows.map(r=>r.value));
+
+  return (
+    <div className="pnl-wrap">
+      <div className="pnl-kpi-row">
+        {kpis.map(k=>(
+          <button key={k.key} className="pnl-kpi" onClick={k.onClick} style={{cursor:'pointer'}}>
+            <div className="pnl-kpi-top">
+              <span className="pnl-kpi-icon" style={{background:k.bg, color:k.color}}><DIcon name={k.icon} size={17} /></span>
+            </div>
+            <div className="pnl-kpi-value">{k.value}</div>
+            <div className="pnl-kpi-label">{k.label}</div>
+            {k.trend}
+          </button>
+        ))}
+      </div>
+
+      <div className="pnl-row">
+        <div className="pnl-col-8 pnl-card">
+          <div className="pnl-section-head">
+            <div className="pnl-section-title">Últimas Atividades</div>
+            <button className="pnl-section-link" onClick={()=>goto('myCounts')}>Ver todas <DIcon name="chevronRight" size={13} /></button>
+          </div>
+          {atividades.length===0 ? (
+            <div style={{color:'var(--gray-500)', fontSize:13, padding:'12px 4px'}}>Nenhuma atividade registrada neste período.</div>
+          ) : (
+            <table className="pnl-table">
+              <thead><tr><th>Status</th><th>Descrição</th><th>Usuário</th><th>Data</th><th>Hora</th></tr></thead>
+              <tbody>
+                {atividades.map(c=>{
+                  const st = STATUS_INFO[c.statusAprovacao] || {level:c.classificacao.level, text:c.classificacao.rule};
+                  return (
+                    <tr key={c.id}>
+                      <td><span className={"pnl-status "+st.level}><span className="dot"></span>{st.level==='ok'?'Conforme':st.level==='warn'?'Em análise':'Divergente'}</span></td>
+                      <td>{c.descricao}</td>
+                      <td>{c.usuario}</td>
+                      <td>{c.data}</td>
+                      <td>{c.hora}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        <div className="pnl-col-4 pnl-card">
+          <div className="pnl-section-head">
+            <div className="pnl-section-title">Ações Rápidas</div>
+          </div>
+          <div className="pnl-quick-list">
+            {acoes.map(a=>(
+              <button key={a.label} className="pnl-quick-item" onClick={a.onClick}>
+                <span className="pnl-quick-icon"><DIcon name={a.icon} size={15} /></span>
+                <span className="pnl-quick-text">{a.label}</span>
+                <span className="pnl-quick-arrow"><DIcon name="chevronRight" size={15} /></span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="pnl-row">
+        <div className="pnl-col-5 pnl-card">
+          <div className="pnl-section-head">
+            <div className="pnl-section-title">Situação Geral dos Inventários</div>
+          </div>
+          <div className="pnl-donut-wrap">
+            <PnlDonut segments={statusRows} />
+            <div className="pnl-donut-legend">
+              {statusRows.map(r=>(
+                <div key={r.label} className="pnl-legend-row">
+                  <span className="pnl-legend-dot" style={{background:r.color}}></span>
+                  {r.label}
+                  <span className="n">{r.value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="pnl-col-7 pnl-card">
+          <div className="pnl-section-head">
+            <div className="pnl-section-title">Status dos Inventários</div>
+          </div>
+          {statusRows.map(r=>(
+            <div key={r.label} className="pnl-bar-row">
+              <div className="pnl-bar-label">{r.label}</div>
+              <div className="pnl-bar-track"><div className="pnl-bar-fill" style={{width:(r.value/maxRow*100)+'%', background:r.color}}></div></div>
+              <div className="pnl-bar-num">{r.value} · {totalInv?Math.round(r.value/totalInv*100):0}%</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="pnl-footer">
+        <span>© {new Date().getFullYear()} Selgron</span>
+        <div className="pnl-footer-links">
+          <span>Política de Privacidade</span>
+          <span>Termos de Uso</span>
         </div>
       </div>
     </div>

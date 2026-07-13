@@ -91,6 +91,23 @@ template" que existia antes. Essa paleta/tipografia é exclusiva da tela de logi
 restante do app (tablet do operador, dashboards, etc.) continua com o design system
 original documentado no `CLAUDE.md`.
 
+## Atualização: Dashboard novo (menu "Dashboard", desktop)
+
+Nova tela desktop-only, acessível pelo primeiro item da sidebar ("Dashboard"), com o
+mesmo visual corporativo/ERP da tela de login (navy, branco, laranja, Inter, ícones
+lineares) — agora também aplicado à moldura da sidebar/header em todas as telas desktop
+(o conteúdo interno de cada tela continua com o design original). Mostra 5 indicadores
+operacionais, últimas atividades, ações rápidas, e a situação geral dos inventários
+(gráfico donut + tabela de status) — tudo calculado a partir dos dados reais que o app já
+tem (`counts`/`inventories`), sem número inventado.
+
+A tela "Início" e a tela de indicadores/gráficos que já existia (agora renomeada para
+"Indicadores" no menu, pra não ter duas coisas chamadas "Dashboard") continuam existindo
+normalmente — o app ficou com três telas de visão geral, cada uma com um propósito:
+Início (ponto de entrada com atalhos), Dashboard (o resumo operacional novo) e
+Indicadores (análise mais detalhada de produtividade/causas de erro). Ver `CLAUDE.md`
+para os detalhes de cada decisão de escopo.
+
 O protótipo agora carrega **300 itens reais** extraídos de uma exportação da tabela SB2
 (Saldo em Estoque) do Protheus — uma amostra dos 10.512 SKUs do Almox 01 (150 de maior
 valor financeiro + 150 aleatórios, para representar bem tanto a Curva A quanto o volume

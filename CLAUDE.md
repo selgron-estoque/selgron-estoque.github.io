@@ -384,6 +384,108 @@ institucional, sem gradiente forte, sem glassmorphism, sem ilustração grande.
   no resto do app (Home/Sidebar/TopBar só mostram o texto novo "Inventário 360", nada de
   layout mudou fora da tela de login).
 
+## Dashboard novo ("painel") — segundo pedido de redesign, estilo SaaS B2B/ERP
+
+Depois do rebrand e da tela de login, o cliente pediu pra redesenhar "o dashboard
+principal" com o mesmo tipo de referência (SAP Fiori, Dynamics 365, Oracle Fusion, Jira
+Cloud, Monday Enterprise, Teamcenter, FactoryTalk) — grid de 12 colunas, espaçamento em
+múltiplos de 8, paleta navy/branco/laranja, tipografia Inter, ícones lineares (Lucide),
+cards com raio de 10px e sombra discreta.
+
+**Decisão de escopo (perguntada ao usuário via `AskUserQuestion`)**: o app já tinha DUAS
+telas diferentes — "Início" (`view==='home'`, o que abre depois do login, com KPIs e
+atalhos) e "Dashboard" (`view==='dashboard'`, uma tela de analytics à parte só com
+gráficos simples). O pedido novo não mencionava "Início" na lista de menu, só
+"Dashboard" — o cliente escolheu explicitamente manter as duas telas antigas E criar a
+nova como um terceiro destino separado. Resultado:
+
+- **`painel`** (view nova) — o Dashboard novo, descrito abaixo. Rota exclusiva desktop
+  (não tem entrada no `BottomNav` nem no `Home` mobile — só alcançável pela `Sidebar`
+  em telas ≥1024px, já que o pedido era especificamente pelo "sistema web").
+- **`home`** ("Início") — não mudou em nada, continua exatamente como estava.
+- **`dashboard`** (a tela de analytics antiga) — não mudou de conteúdo, só de **nome**:
+  virou "Indicadores" (label na `Sidebar`, em `VIEW_TITLES['dashboard']`, e nos 3 lugares
+  do `Home` que apontavam pra ela — KPI card, quick-access card, home-card mobile) pra
+  não colidir com o novo item "Dashboard" no menu. O `goto('dashboard')` continua indo
+  pro mesmo componente `Dashboard` de sempre, só o texto visível mudou.
+
+**Paleta/tipografia compartilhada com o login**: as variáveis CSS que a tela de login já
+tinha (`--login-navy`, `--login-gray-*`, `--font-login`) foram renomeadas pra
+`--navy`/`--gray-*`/`--font-corp` (sem o prefixo "login") porque agora servem os dois —
+login e dashboard novo. Resto do app (tablet do operador, Início, Inventários por
+dentro, etc.) continua no design system original (`--bg`/`--ink`/Oswald/IBM Plex/mono).
+
+**Sidebar e header viraram compartilhados entre TODAS as telas desktop** (diferente da
+tela de login, que tinha uma paleta 100% isolada): como `Sidebar`/`DesktopTopbar` são
+componentes únicos renderizados pelo `App()` ao redor de qualquer `view`, não dava pra
+ter uma sidebar "nova" só na tela Dashboard sem afetar as outras — a atualização de
+cor/fonte/ícone da moldura desktop (fundo `var(--navy)` em vez do `#12151C` antigo,
+ícones lineares em vez de emoji, header de 72px) vale pra Inventários, Configurações etc.
+também. O CONTEÚDO interno de cada tela (o que tem dentro de `.content`) continua com o
+design antigo — só a moldura (sidebar + header) e a tela `painel` em si usam a paleta
+nova. Mobile (tablet do chão de fábrica) não foi tocado em nada.
+
+**Ícones "Lucide"**: o projeto não tem build step (React/Babel via CDN, sem bundler), e
+não faz sentido puxar mais uma dependência CDN pra um pacote de ícones sem componentes
+React prontos pra uso direto. Em vez disso, os ícones foram desenhados à mão no mesmo
+estilo visual do Lucide (`DICON_PATHS`/`DIcon`, perto dos ícones da tela de login) —
+stroke 1.8-2px, viewBox 24×24, cantos arredondados. Usado só na sidebar/header desktop e
+no Dashboard novo; o resto do app continua com emoji (`Ic`), não foi trocado.
+
+**KPIs — só dado real, nada fabricado**: os 5 KPIs (Inventários em Andamento,
+Recontagens Pendentes, Itens Divergentes, Contagens Concluídas Hoje, Acuracidade do
+Estoque) vêm todos de `counts`/`inventories` já existentes. O pedido queria "indicador de
+tendência + comparação com período anterior" em todos, mas o app não guarda snapshot
+histórico de estado (não dá pra saber quantos "inventários em andamento" existiam ontem
+sem um log de eventos que não existe). Solução: onde dá pra calcular uma comparação real
+(Itens Divergentes, Contagens Concluídas Hoje, Acuracidade — todos cumulativos a partir
+do campo `data` de cada `count`, comparando "até hoje" vs. "até ontem", ver
+`acumuladoAte()`/`pnlTrendPct()` em `MainDashboard`), mostra a variação de verdade. Onde
+não dá (Inventários em Andamento, Recontagens Pendentes — puro estado atual, sem
+histórico), mostra uma nota contextual real (ex: "1 aguardando início", "Nenhuma
+pendência") em vez de inventar uma porcentagem sem base. Se o backend real (Supabase)
+um dia guardar histórico de verdade, essas duas notas podem virar tendência real também.
+
+**Situação Geral dos Inventários (donut) e Status dos Inventários (tabela de barras)**:
+o pedido queria 4 categorias (Planejados/Em andamento/Concluídos/Cancelados), mas hoje só
+existem 2 status reais no campo `inventories[].status` (`pendente`, `em_andamento`) — não
+existe fluxo de "cancelar inventário" no app. Em vez de fabricar dado, as 4 categorias são
+DERIVADAS de campos que já existem e são 100% reais: Planejados = `contados===0`, Em
+andamento = `0<contados<qtdItens`, Concluídos = `contados>=qtdItens`, Cancelados =
+`status==='cancelado'` (sempre 0 hoje, honestamente — zero real, não fabricado — porque
+não existe essa ação ainda; se um dia o app ganhar "cancelar inventário", essa categoria
+passa a preencher sozinha).
+
+**Filtro de período** (canto direito do header, só aparece na tela `painel` via prop
+`rightExtra` do `DesktopTopbar`): "Últimos 7 dias" / "Últimos 30 dias" / "Todo o período".
+Afeta só a tabela "Últimas Atividades" (filtra quais `counts` aparecem, por `data`) — os
+5 KPIs têm semântica fixa própria (“hoje”, cumulativo) e não mudam com o filtro, pra não
+ficar ambíguo o que cada número significa. Estado (`dashboardPeriod`) mora em `App()`,
+não persiste (é navegação/UI, mesmo critério já usado pra `view`/`flowState`).
+
+**Notificações e "últimas atividades"**: uma decisão ANTERIOR (na época do primeiro
+layout desktop com sidebar, ver seção mais acima) tinha tirado sino de notificação,
+filtro de período e feed de atividades do escopo. Esse pedido novo trouxe os três de
+volta explicitamente — decisão atual substitui a anterior. O sino (`.desktop-bell`) é
+decorativo/honesto: abre um dropdown fixo dizendo "Nenhuma notificação por enquanto" (não
+existe sistema de notificações no app, então não finge que existe uma lista real).
+
+**Menu do usuário**: o botão de logout solto ao lado do avatar (como era antes) virou um
+dropdown (`.desktop-user-menu`) com nome+perfil e o botão "Sair" dentro — só no
+`DesktopTopbar`. O `TopBar` mobile não mudou (continua com o botão de logout solto de
+sempre).
+
+**Rodapé** ("© Selgron" / "Política de Privacidade" / "Termos de Uso"): não existem
+páginas reais de política/termos no protótipo, então os dois últimos são `<span>` inertes
+(sem `href`), não `<a>` — evita fingir um link funcional que não leva a lugar nenhum.
+
+**Bug encontrado e corrigido durante o teste desta feature (não é parte do pedido, mas
+era regressão do rebrand anterior)**: o topbar mobile (`.topbar`/`.brand-text`) quebrava
+em 3 linhas em telas estreitas (~390px) porque "Inventário 360" é mais longo que
+"Stock360" (nome anterior). Corrigido com uma media query `max-width:400px` que reduz o
+`.brand-text` e esconde o texto do `.role-pill` (fica só o ícone), mantendo o topbar numa
+linha só. Ver comentário no CSS perto de `.logout-btn`.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase
