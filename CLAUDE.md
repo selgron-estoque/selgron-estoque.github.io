@@ -230,6 +230,42 @@ padrão é esse: adicionar classes `desktop-*` com `display:none` por padrão e 
 dentro do mesmo bloco `@media (min-width:1024px)` no `<style>`, nunca introduzir lógica
 de JS pra decidir layout por tamanho de tela.
 
+## Tela de gerenciamento de usuários — edição em tela cheia, busca, sem login duplicado
+
+O fluxo de "Editar" usuário deixou de ser um formulário inline dentro do card (o mesmo
+`<form>` que também servia pra "+ Novo Usuário") e virou uma tela cheia dedicada:
+
+- `UserForm` (novo componente) — mesmo formulário de sempre (nome, usuário/login,
+  e-mail, senha inicial só na criação, perfil), agora renderizado como uma view própria
+  (`view==='userForm'`) em vez de dentro do `UserManagementPanel`. `App()` decide se é
+  criação ou edição pelo `flowState.mode` (`'new'` ou o `id` do usuário) — mesmo padrão
+  já usado por `RecountFlow`/`ImportedListCountFlow` (`flowState` carrega o contexto da
+  navegação). `goto('userForm', {mode:'new'})` pro botão "+ Novo Usuário",
+  `goto('userForm', {mode:u.id, initialData:u})` pro "Editar" de cada linha. Salvar ou
+  cancelar sempre volta pra `goto('settings')` (isso é feito em `App()`, não dentro do
+  `UserForm` — mesmo padrão do `onCreate` do `NewInventory`).
+- **Login duplicado**: `isLoginDuplicado(users, usuario, excludeId)` (perto de
+  `emptyUserForm`) compara case-insensitive contra todos os usuários, excluindo o
+  próprio `id` no modo edição — assim o usuário pode salvar mantendo o login que já
+  tinha, só é bloqueado se tentar mudar pra um login que já existe em OUTRO cadastro.
+  Mensagem exata pedida pelo cliente: "Este login já está sendo utilizado por outro
+  usuário." Validação roda no `submitForm` do `UserForm`, antes de chamar
+  `onCreateUser`/`onUpdateUser` — o backend/estado (`createUser`/`updateUser` em
+  `App()`) não faz essa checagem de novo, só quem chama o formulário.
+- **Busca**: campo "Buscar usuário" no topo do `UserManagementPanel`, filtra por nome,
+  login ou e-mail (case-insensitive, `includes`) — mesmo padrão simples de busca já
+  usado em `ManualCountFlow`, sem normalização de acento.
+- **Paginação**: `USERS_PAGE_SIZE = 8` por página, com "‹ Anterior" / "Próxima ›" e
+  contador "Página X de Y · N usuários" — só aparece quando há mais de 1 página. Busca
+  reseta a página pra 1 (senão dá pra ficar numa página vazia depois de filtrar).
+  Client-side puro (não tem paginação de verdade no backend ainda, é tudo array em
+  memória) — se/quando migrar pra Supabase, trocar por `range()`/`limit()` do
+  PostgREST, mas a UI (botões + contador) pode continuar igual.
+- Permissões não mudaram: `UserManagementPanel` só é renderizado quando `isAdmin` (já
+  era assim), e a rota `userForm` em `App()` também está atrás de `role==='admin'` —
+  redundância proposital, mesma dupla checagem (visibilidade do botão + guarda na rota)
+  que o resto do app já faz em outros lugares (ex: `newInventory`).
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase

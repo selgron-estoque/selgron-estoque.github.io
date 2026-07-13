@@ -806,13 +806,22 @@ function App(){
             onResolve={resolveAddressProposal}
             users={users}
             currentUser={currentUser}
-            onCreateUser={createUser}
-            onUpdateUser={updateUser}
+            goto={goto}
             onToggleUserStatus={toggleUserStatus}
             onAdminPasswordAction={applyAdminPasswordAction}
             passwordRequests={passwordRequests}
             onResolvePasswordRequest={resolvePasswordRequest}
             passwordHistory={passwordHistory}
+          />
+        )}
+        {view==='userForm' && role==='admin' && flowState && (
+          <UserForm
+            mode={flowState.mode}
+            initialData={flowState.initialData}
+            users={users}
+            onCreateUser={(data)=>{ createUser(data); goto('settings'); }}
+            onUpdateUser={(id,data)=>{ updateUser(id,data); goto('settings'); }}
+            onCancel={()=>goto('settings')}
           />
         )}
       </div>
@@ -973,6 +982,7 @@ const VIEW_TITLES = {
   dashboard:'Dashboard',
   relatorios:'Relatórios',
   settings:'Configurações',
+  userForm:'Cadastro de Usuário',
 };
 
 function SubBar({view, goto}){
@@ -2439,97 +2449,151 @@ function emptyUserForm(){
   return {nome:'', usuario:'', email:'', senha:'', perfil:'operador'};
 }
 
-function UserManagementPanel({users, currentUser, onCreateUser, onUpdateUser, onToggleUserStatus, onAdminPasswordAction}){
-  const [formMode, setFormMode] = useState(null); // null | 'new' | userId
-  const [form, setForm] = useState(emptyUserForm());
+// Verifica se o login já está em uso por OUTRO usuário (case-insensitive,
+// mesma normalização usada no login real). Na edição, exclui o próprio
+// usuário da checagem — ele pode manter o login que já tinha.
+function isLoginDuplicado(users, usuario, excludeId){
+  const norm = usuario.trim().toLowerCase();
+  return users.some(u => u.id!==excludeId && u.usuario.trim().toLowerCase()===norm);
+}
+
+const USERS_PAGE_SIZE = 8;
+
+function UserManagementPanel({users, currentUser, goto, onToggleUserStatus, onAdminPasswordAction}){
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
   const [pwAction, setPwAction] = useState(null); // userId currently doing a password action
   const [pwValue, setPwValue] = useState('');
-  const [feedback, setFeedback] = useState('');
 
-  function startNew(){ setForm(emptyUserForm()); setFormMode('new'); setFeedback(''); }
-  function startEdit(u){ setForm({nome:u.nome, usuario:u.usuario, email:u.email||'', senha:'', perfil:u.perfil}); setFormMode(u.id); setFeedback(''); }
-  function cancelForm(){ setFormMode(null); setForm(emptyUserForm()); }
+  const filtered = useMemo(()=>{
+    const q = search.trim().toLowerCase();
+    if(!q) return users;
+    return users.filter(u=>
+      u.nome.toLowerCase().includes(q) ||
+      u.usuario.toLowerCase().includes(q) ||
+      (u.email||'').toLowerCase().includes(q)
+    );
+  }, [users, search]);
 
-  function submitForm(e){
-    e.preventDefault();
-    if(!form.nome.trim() || !form.usuario.trim()){ setFeedback('Nome e usuário de acesso são obrigatórios.'); return; }
-    if(formMode==='new'){
-      if(!form.senha || form.senha.length<6){ setFeedback('Defina uma senha inicial com pelo menos 6 caracteres.'); return; }
-      onCreateUser({nome:form.nome.trim(), usuario:form.usuario.trim(), email:form.email.trim(), senha:form.senha, perfil:form.perfil});
-    } else {
-      onUpdateUser(formMode, {nome:form.nome.trim(), usuario:form.usuario.trim(), email:form.email.trim(), perfil:form.perfil});
-    }
-    cancelForm();
+  const totalPages = Math.max(1, Math.ceil(filtered.length / USERS_PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const paged = filtered.slice((currentPage-1)*USERS_PAGE_SIZE, currentPage*USERS_PAGE_SIZE);
+
+  function handleSearchChange(v){
+    setSearch(v);
+    setPage(1);
   }
 
   return (
     <div className="panel">
       <div className="section-title" style={{marginTop:0}}>Usuários</div>
 
-      {!formMode && (
-        <button className="btn btn-secondary" style={{marginBottom:14}} onClick={startNew}>+ Novo Usuário</button>
-      )}
+      <div className="field">
+        <label>Buscar usuário</label>
+        <input type="text" value={search} onChange={e=>handleSearchChange(e.target.value)} placeholder="Nome completo, login ou e-mail" />
+      </div>
 
-      {formMode && (
-        <form onSubmit={submitForm} style={{marginBottom:16,background:'var(--panel-raised)',borderRadius:8,padding:14}}>
-          {feedback && <div className="login-error" style={{marginBottom:12}}>{feedback}</div>}
-          <div className="field">
-            <label>Nome completo</label>
-            <input type="text" value={form.nome} onChange={e=>setForm(f=>({...f,nome:e.target.value}))} />
-          </div>
-          <div className="field">
-            <label>Usuário de acesso</label>
-            <input type="text" value={form.usuario} onChange={e=>setForm(f=>({...f,usuario:e.target.value}))} placeholder="nome.sobrenome" />
-          </div>
-          <div className="field">
-            <label>E-mail (opcional)</label>
-            <input type="text" value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))} />
-          </div>
-          {formMode==='new' && (
-            <div className="field">
-              <label>Senha inicial</label>
-              <input type="text" value={form.senha} onChange={e=>setForm(f=>({...f,senha:e.target.value}))} placeholder="mínimo 6 caracteres" />
+      <button className="btn btn-secondary" style={{marginBottom:14}} onClick={()=>goto('userForm', {mode:'new'})}>+ Novo Usuário</button>
+
+      {filtered.length===0 ? (
+        <div style={{fontSize:13,color:'var(--ink-dim)',padding:'12px 0'}}>Nenhum usuário encontrado{search?` para "${search}"`:''}.</div>
+      ) : (
+        <React.Fragment>
+          {paged.map(u=>(
+            <div key={u.id} className="list-row" style={{flexWrap:'wrap',alignItems:'flex-start'}}>
+              <div>
+                <div className="lr-title">{u.nome}{u.id===currentUser.id && <span style={{color:'var(--ink-dim)',fontWeight:400}}> (você)</span>}</div>
+                <div className="lr-sub">{u.usuario} · {PERFIL_OPTIONS.find(p=>p.v===u.perfil)?.label}</div>
+              </div>
+              <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:8}}>
+                <StatusTag status={u.status==='ativo'?'ok':u.status==='bloqueado'?'danger':'warn'} text={u.status==='ativo'?'Ativo':u.status==='bloqueado'?'Bloqueado':'Aguardando nova senha'} />
+                <div className="btn-row" style={{width:'auto'}}>
+                  <button className="btn btn-outline" style={{padding:'7px 10px',fontSize:10.5}} onClick={()=>goto('userForm', {mode:u.id, initialData:u})}>Editar</button>
+                  <button className="btn btn-outline" style={{padding:'7px 10px',fontSize:10.5}} onClick={()=>onToggleUserStatus(u.id)}>{u.status==='bloqueado'?'Desbloquear':'Bloquear'}</button>
+                  <button className="btn btn-outline" style={{padding:'7px 10px',fontSize:10.5}} onClick={()=>{setPwAction(pwAction===u.id?null:u.id); setPwValue('');}}>Redefinir senha</button>
+                </div>
+                {pwAction===u.id && (
+                  <div style={{background:'var(--panel-raised)',border:'1px solid var(--line)',borderRadius:8,padding:12,width:260}}>
+                    <div className="btn-row" style={{marginBottom:8}}>
+                      <button className="btn btn-secondary" style={{padding:'8px',fontSize:10}} onClick={()=>{onAdminPasswordAction(u.id,'temp'); setPwAction(null);}}>Gerar temporária</button>
+                      <button className="btn btn-secondary" style={{padding:'8px',fontSize:10}} onClick={()=>{onAdminPasswordAction(u.id,'liberar'); setPwAction(null);}}>Liberar p/ criar</button>
+                    </div>
+                    <input type="text" placeholder="Definir senha manual" value={pwValue} onChange={e=>setPwValue(e.target.value)} style={{width:'100%',padding:8,marginBottom:8,background:'var(--panel)',border:'1px solid var(--line)',borderRadius:6,color:'var(--ink)',fontSize:12}} />
+                    <button className="btn btn-primary" style={{padding:'8px',fontSize:10}} disabled={pwValue.length<6} onClick={()=>{onAdminPasswordAction(u.id,'definir',pwValue); setPwAction(null);}}>Confirmar senha definida</button>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+          {totalPages>1 && (
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:10,paddingTop:14,borderTop:'1px solid var(--line)'}}>
+              <button className="btn btn-outline" style={{width:'auto',padding:'8px 14px'}} disabled={currentPage<=1} onClick={()=>setPage(p=>p-1)}>‹ Anterior</button>
+              <span style={{fontFamily:'var(--font-mono)',fontSize:11.5,color:'var(--ink-dim)'}}>Página {currentPage} de {totalPages} · {filtered.length} usuário{filtered.length===1?'':'s'}</span>
+              <button className="btn btn-outline" style={{width:'auto',padding:'8px 14px'}} disabled={currentPage>=totalPages} onClick={()=>setPage(p=>p+1)}>Próxima ›</button>
             </div>
           )}
-          <div className="field">
-            <label>Perfil de acesso</label>
-            <select value={form.perfil} onChange={e=>setForm(f=>({...f,perfil:e.target.value}))}>
-              {PERFIL_OPTIONS.map(p=><option key={p.v} value={p.v}>{p.label}</option>)}
-            </select>
-          </div>
-          <div className="btn-row">
-            <button type="button" className="btn btn-secondary" onClick={cancelForm}>Cancelar</button>
-            <button type="submit" className="btn btn-primary">{formMode==='new'?'Criar Usuário':'Salvar Alterações'}</button>
-          </div>
-        </form>
+        </React.Fragment>
       )}
+    </div>
+  );
+}
 
-      {users.map(u=>(
-        <div key={u.id} className="list-row" style={{flexWrap:'wrap',alignItems:'flex-start'}}>
-          <div>
-            <div className="lr-title">{u.nome}{u.id===currentUser.id && <span style={{color:'var(--ink-dim)',fontWeight:400}}> (você)</span>}</div>
-            <div className="lr-sub">{u.usuario} · {PERFIL_OPTIONS.find(p=>p.v===u.perfil)?.label}</div>
-          </div>
-          <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:8}}>
-            <StatusTag status={u.status==='ativo'?'ok':u.status==='bloqueado'?'danger':'warn'} text={u.status==='ativo'?'Ativo':u.status==='bloqueado'?'Bloqueado':'Aguardando nova senha'} />
-            <div className="btn-row" style={{width:'auto'}}>
-              <button className="btn btn-outline" style={{padding:'7px 10px',fontSize:10.5}} onClick={()=>startEdit(u)}>Editar</button>
-              <button className="btn btn-outline" style={{padding:'7px 10px',fontSize:10.5}} onClick={()=>onToggleUserStatus(u.id)}>{u.status==='bloqueado'?'Desbloquear':'Bloquear'}</button>
-              <button className="btn btn-outline" style={{padding:'7px 10px',fontSize:10.5}} onClick={()=>{setPwAction(pwAction===u.id?null:u.id); setPwValue('');}}>Redefinir senha</button>
-            </div>
-            {pwAction===u.id && (
-              <div style={{background:'var(--panel-raised)',border:'1px solid var(--line)',borderRadius:8,padding:12,width:260}}>
-                <div className="btn-row" style={{marginBottom:8}}>
-                  <button className="btn btn-secondary" style={{padding:'8px',fontSize:10}} onClick={()=>{onAdminPasswordAction(u.id,'temp'); setPwAction(null);}}>Gerar temporária</button>
-                  <button className="btn btn-secondary" style={{padding:'8px',fontSize:10}} onClick={()=>{onAdminPasswordAction(u.id,'liberar'); setPwAction(null);}}>Liberar p/ criar</button>
-                </div>
-                <input type="text" placeholder="Definir senha manual" value={pwValue} onChange={e=>setPwValue(e.target.value)} style={{width:'100%',padding:8,marginBottom:8,background:'var(--panel)',border:'1px solid var(--line)',borderRadius:6,color:'var(--ink)',fontSize:12}} />
-                <button className="btn btn-primary" style={{padding:'8px',fontSize:10}} disabled={pwValue.length<6} onClick={()=>{onAdminPasswordAction(u.id,'definir',pwValue); setPwAction(null);}}>Confirmar senha definida</button>
-              </div>
-            )}
-          </div>
+function UserForm({mode, initialData, users, onCreateUser, onUpdateUser, onCancel}){
+  const isEdit = mode!=='new';
+  const [form, setForm] = useState(isEdit && initialData
+    ? {nome:initialData.nome, usuario:initialData.usuario, email:initialData.email||'', senha:'', perfil:initialData.perfil}
+    : emptyUserForm());
+  const [feedback, setFeedback] = useState('');
+
+  function submitForm(e){
+    e.preventDefault();
+    if(!form.nome.trim() || !form.usuario.trim()){ setFeedback('Nome e usuário de acesso são obrigatórios.'); return; }
+    if(isLoginDuplicado(users, form.usuario, isEdit ? mode : null)){
+      setFeedback('Este login já está sendo utilizado por outro usuário.');
+      return;
+    }
+    if(!isEdit){
+      if(!form.senha || form.senha.length<6){ setFeedback('Defina uma senha inicial com pelo menos 6 caracteres.'); return; }
+      onCreateUser({nome:form.nome.trim(), usuario:form.usuario.trim(), email:form.email.trim(), senha:form.senha, perfil:form.perfil});
+    } else {
+      onUpdateUser(mode, {nome:form.nome.trim(), usuario:form.usuario.trim(), email:form.email.trim(), perfil:form.perfil});
+    }
+  }
+
+  return (
+    <div className="panel">
+      <div className="section-title" style={{marginTop:0}}>{isEdit ? 'Editar Usuário' : 'Novo Usuário'}</div>
+      <form onSubmit={submitForm}>
+        {feedback && <div className="login-error" style={{marginBottom:12}}>{feedback}</div>}
+        <div className="field">
+          <label>Nome completo</label>
+          <input type="text" value={form.nome} onChange={e=>setForm(f=>({...f,nome:e.target.value}))} autoFocus />
         </div>
-      ))}
+        <div className="field">
+          <label>Usuário de acesso (login)</label>
+          <input type="text" value={form.usuario} onChange={e=>setForm(f=>({...f,usuario:e.target.value}))} placeholder="nome.sobrenome" autoCapitalize="none" />
+        </div>
+        <div className="field">
+          <label>E-mail (opcional)</label>
+          <input type="text" value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))} />
+        </div>
+        {!isEdit && (
+          <div className="field">
+            <label>Senha inicial</label>
+            <input type="text" value={form.senha} onChange={e=>setForm(f=>({...f,senha:e.target.value}))} placeholder="mínimo 6 caracteres" />
+          </div>
+        )}
+        <div className="field">
+          <label>Perfil de acesso</label>
+          <select value={form.perfil} onChange={e=>setForm(f=>({...f,perfil:e.target.value}))}>
+            {PERFIL_OPTIONS.map(p=><option key={p.v} value={p.v}>{p.label}</option>)}
+          </select>
+        </div>
+        <div className="btn-row">
+          <button type="button" className="btn btn-secondary" onClick={onCancel}>Cancelar</button>
+          <button type="submit" className="btn btn-primary">{isEdit ? 'Salvar Alterações' : 'Criar Usuário'}</button>
+        </div>
+      </form>
     </div>
   );
 }
@@ -2568,7 +2632,7 @@ function PasswordRequestRow({req, onResolve}){
 }
 
 
-function Settings({role, enderecosPropostos=[], onResolve, users=[], currentUser, onCreateUser, onUpdateUser, onToggleUserStatus, onAdminPasswordAction, passwordRequests=[], onResolvePasswordRequest, passwordHistory=[]}){
+function Settings({role, enderecosPropostos=[], onResolve, users=[], currentUser, goto, onToggleUserStatus, onAdminPasswordAction, passwordRequests=[], onResolvePasswordRequest, passwordHistory=[]}){
   const pendentes = enderecosPropostos.filter(e=>e.status==='pendente');
   const canValidate = role==='lider' || role==='admin';
   const isAdmin = role==='admin';
@@ -2614,8 +2678,7 @@ function Settings({role, enderecosPropostos=[], onResolve, users=[], currentUser
         <UserManagementPanel
           users={users}
           currentUser={currentUser}
-          onCreateUser={onCreateUser}
-          onUpdateUser={onUpdateUser}
+          goto={goto}
           onToggleUserStatus={onToggleUserStatus}
           onAdminPasswordAction={onAdminPasswordAction}
         />
