@@ -167,6 +167,27 @@ Três ajustes no `CountStep` (motor de contagem compartilhado por todos os fluxo
   "Registrar e continuar". Ideia: o operador só conta e informa o endereço certo —
   classificar a divergência e documentar com foto é tarefa de quem vai analisar depois.
 
+## PWA instalável no iOS
+
+O `manifest.json` sozinho não é suficiente pro Safari/iOS — ele ignora manifest pra
+ícone e modo de instalação, precisa das tags específicas da Apple no `<head>` do
+`index.html`: `apple-touch-icon` (várias resoluções), `apple-mobile-web-app-capable`
+(abre em tela cheia ao instalar, sem a UI do Safari), `apple-mobile-web-app-status-bar-style`
+(`default`, combina com a topbar clara do app) e `apple-mobile-web-app-title` (nome curto
+"Stock360" embaixo do ícone — sem isso o iOS usa o `<title>` inteiro, que trunca).
+
+Os ícones (`apple-touch-icon.png` 180×180, variantes 152×152 e 167×167 pra
+iPhone/iPad, `icon-192.png` e `icon-512.png` pro `manifest.json`) foram gerados a partir
+do próprio mark da Selgron (o "S" estilizado, sem o texto "SELGRON" — recortado do mesmo
+PDF vetorial da logo) centralizado num fundo escuro (`#14161A`), com `PIL`. São arquivos
+PNG reais na raiz do projeto, não base64 embutido — ao contrário da logo completa
+(`SELGRON_LOGO_URL`) usada dentro do app, esses precisam ser arquivos referenciáveis por
+`<link>`/`manifest.json` pro iOS e Android encontrarem.
+
+Câmera (leitura de QR/código de barras via `html5-qrcode`) e service worker já funcionam
+no Safari/iOS sem ajuste adicional (iOS 11.3+) — só exigem HTTPS ou `localhost`, mesma
+regra do Android.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase
