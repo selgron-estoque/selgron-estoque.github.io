@@ -303,6 +303,30 @@ const MOTIVOS = [
   'Outros',
 ];
 
+// Padrão fixo de endereço da Selgron: 3 números, traço, 1 letra, traço,
+// 1 número (ex: 035-A-1). Aplica a máscara enquanto o operador digita —
+// insere os traços automaticamente e só aceita dígito/letra na posição
+// certa — pra evitar erro de digitação num campo que hoje é obrigatório.
+const ENDERECO_REGEX = /^\d{3}-[A-Z]-\d$/;
+
+function formatEnderecoInput(value){
+  const raw = String(value||'').toUpperCase().replace(/[^0-9A-Z]/g, '');
+  let numPart = '', letterPart = '', lastPart = '';
+  for(const ch of raw){
+    if(numPart.length < 3){
+      if(/[0-9]/.test(ch)) numPart += ch;
+    } else if(!letterPart){
+      if(/[A-Z]/.test(ch)) letterPart = ch;
+    } else if(lastPart.length < 1){
+      if(/[0-9]/.test(ch)) lastPart += ch;
+    }
+  }
+  let out = numPart;
+  if(letterPart) out += '-' + letterPart;
+  if(lastPart) out += '-' + lastPart;
+  return out;
+}
+
 function classifyDivergence(pct){
   const abs = Math.abs(pct);
   if(abs === 0) return {level:'ok', label:'Sem divergência', rule:'Aprovado automaticamente'};
@@ -1296,6 +1320,9 @@ function useCountQueue(items){
 }
 
 function CountStep({product, user, onComplete, onAddressProposed, inv, expectAddressCheck=true, numeroContagem=1, contagemAnteriorId=null}){
+  // Foto e motivo da divergência são tarefas de análise do líder/admin —
+  // o operador só precisa contar e informar o endereço corretamente.
+  const isOperador = user.perfil === 'operador';
   // Itens sem endereço cadastrado (comum enquanto o cadastro de endereços
   // ainda não existe no Protheus) pulam o QR Code e vão direto para a etapa
   // em que o operador INFORMA onde encontrou o item fisicamente.
@@ -1336,15 +1363,15 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
 
   function handleEnderecoManualScanDetected(text){
     setScanning(false);
-    setEnderecoInformado(text.trim().toUpperCase());
+    setEnderecoInformado(formatEnderecoInput(text));
   }
 
   function confirmEnderecoManual(){
-    if(onAddressProposed && enderecoInformado.trim()){
+    if(onAddressProposed && ENDERECO_REGEX.test(enderecoInformado)){
       onAddressProposed({
         productCode: product.codigo,
         descricao: product.descricao,
-        enderecoInformado: enderecoInformado.trim().toUpperCase(),
+        enderecoInformado,
         usuario: user.nome,
         data: new Date().toISOString().slice(0,10),
       });
@@ -1433,20 +1460,17 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
 
       {needsAddressInput && step==='enderecoManual' && (
         <div>
-          <div className="divergence-alert"><Ic>📍</Ic><span>Este item ainda não tem endereço cadastrado no sistema. Escaneie a etiqueta da prateleira ou informe onde você encontrou — essa informação será enviada para validação do líder.</span></div>
+          <div className="divergence-alert"><Ic>📍</Ic><span>Este item ainda não tem endereço cadastrado no sistema. Escaneie a etiqueta da prateleira ou informe onde você encontrou — o endereço é obrigatório para contar, e essa informação será enviada para validação do líder.</span></div>
           {scanning ? (
             <CameraScanner onDetected={handleEnderecoManualScanDetected} onCancel={()=>setScanning(false)} />
           ) : (
             <button className="btn btn-primary" style={{marginBottom:14}} onClick={()=>setScanning(true)}><Ic>📷</Ic> Escanear código do endereço</button>
           )}
           <div className="field">
-            <label>Endereço onde o item foi encontrado</label>
-            <input type="text" value={enderecoInformado} onChange={e=>setEnderecoInformado(e.target.value)} placeholder="Ex: A-02-03-01" />
+            <label>Endereço onde o item foi encontrado (formato NNN-L-N)</label>
+            <input type="text" value={enderecoInformado} onChange={e=>setEnderecoInformado(formatEnderecoInput(e.target.value))} placeholder="Ex: 035-A-1" maxLength={7} />
           </div>
-          <div className="btn-row">
-            <button className="btn btn-secondary" onClick={()=>setStep('count')}>Pular por enquanto</button>
-            <button className="btn btn-primary" disabled={!enderecoInformado.trim()} onClick={confirmEnderecoManual}>Confirmar e continuar</button>
-          </div>
+          <button className="btn btn-primary" disabled={!ENDERECO_REGEX.test(enderecoInformado)} onClick={confirmEnderecoManual}>Confirmar e continuar</button>
         </div>
       )}
 
@@ -1501,7 +1525,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
             <label>Quantidade encontrada ({product.unidade || 'un. não informada'})</label>
             <input className="qty-input" type="number" inputMode="decimal" value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" autoFocus />
           </div>
-          <button className="btn btn-primary" disabled={qty===''} onClick={()=>setStep('photo')}>Confirmar quantidade</button>
+          <button className="btn btn-primary" disabled={qty===''} onClick={()=>setStep(isOperador ? 'result' : 'photo')}>Confirmar quantidade</button>
         </div>
       )}
 
@@ -1539,7 +1563,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
               <div className="rg"><div className="k">Divergência</div><div className="v">{hasSaldoLocal ? diffPct.toFixed(1)+'%' : '—'}</div></div>
             </div>
           </div>
-          {(diffAbs!==0 || !hasSaldoLocal) && (
+          {!isOperador && (diffAbs!==0 || !hasSaldoLocal) && (
             <div className="field">
               <label>Motivo da divergência{!hasSaldoLocal && ' (opcional)'}</label>
               <select value={motivo} onChange={e=>setMotivo(e.target.value)}>
@@ -1548,7 +1572,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
               </select>
             </div>
           )}
-          <button className="btn btn-primary" disabled={diffAbs!==0 && hasSaldoLocal && !motivo} onClick={finalize}>Registrar e continuar</button>
+          <button className="btn btn-primary" disabled={!isOperador && diffAbs!==0 && hasSaldoLocal && !motivo} onClick={finalize}>Registrar e continuar</button>
         </div>
       )}
     </div>

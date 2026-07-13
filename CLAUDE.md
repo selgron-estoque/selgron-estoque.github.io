@@ -146,6 +146,27 @@ mantendo a priorização por valor/movimento de antes. Como retoma a partir de
 `inv.contados` (mesmo padrão do `ImportedListCountFlow`), reentrar no inventário continua
 de onde parou em vez de reiniciar do item 1.
 
+## Endereço obrigatório, formato fixo, e etapas restritas por perfil
+
+Três ajustes no `CountStep` (motor de contagem compartilhado por todos os fluxos):
+
+- **Formato fixo de endereço da Selgron**: sempre 3 números, traço, 1 letra, traço, 1
+  número (ex: `035-A-1`). `formatEnderecoInput` (perto de `MOTIVOS`) aplica essa máscara
+  enquanto o operador digita no campo "Endereço onde o item foi encontrado" — insere os
+  traços automaticamente e só aceita caractere válido na posição certa. `ENDERECO_REGEX`
+  valida o formato completo antes de liberar o botão. Também usado ao normalizar leitura
+  de câmera nesse campo (`handleEnderecoManualScanDetected`).
+- **Endereço agora é obrigatório**: removido o botão "Pular por enquanto" que existia na
+  etapa `enderecoManual` — todo item precisa ter um endereço informado (que bate o
+  `ENDERECO_REGEX`) antes de avançar pra contagem. Antes dava pra pular e contar sem
+  informar onde o item estava.
+- **Foto e motivo da divergência só para líder/admin**: `isOperador` (checa
+  `user.perfil==='operador'`) controla dois pontos — ao confirmar a quantidade, o
+  operador pula a etapa `photo` (foto + observação) direto pro `result`; e no `result`, o
+  select de "Motivo da divergência" fica oculto e deixa de ser exigido pra habilitar
+  "Registrar e continuar". Ideia: o operador só conta e informa o endereço certo —
+  classificar a divergência e documentar com foto é tarefa de quem vai analisar depois.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase
