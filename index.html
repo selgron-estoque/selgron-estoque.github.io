@@ -786,7 +786,7 @@ function App(){
       <DesktopTopbar view={view} user={currentUser} role={role} onLogout={()=>logout('')} />
       {view!=='home' && <SubBar view={view} goto={goto} />}
       <div className="content">
-        {view==='home' && <Home role={role} user={currentUser} inventories={inventories} counts={counts} goto={goto} />}
+        {view==='home' && <Home role={role} user={currentUser} inventories={inventories} counts={counts} enderecosPropostos={enderecosPropostos} goto={goto} />}
         {view==='inventories' && <InventoryList inventories={inventories} goto={goto} role={role} counts={counts} onDelete={deleteInventory} />}
         {view==='newInventory' && (role==='lider'||role==='admin') && <NewInventory users={users} onCreate={(inv)=>{setInventories(prev=>[inv,...prev]); goto('inventories');}} />}
         {view==='pickCountType' && <PickCountType inv={flowState} goto={goto} />}
@@ -802,8 +802,6 @@ function App(){
         {view==='settings' && (
           <Settings
             role={role}
-            enderecosPropostos={enderecosPropostos}
-            onResolve={resolveAddressProposal}
             users={users}
             currentUser={currentUser}
             goto={goto}
@@ -813,6 +811,9 @@ function App(){
             onResolvePasswordRequest={resolvePasswordRequest}
             passwordHistory={passwordHistory}
           />
+        )}
+        {view==='enderecos' && (role==='lider'||role==='admin') && (
+          <AddressValidationPanel enderecosPropostos={enderecosPropostos} onResolve={resolveAddressProposal} />
         )}
         {view==='userForm' && role==='admin' && flowState && (
           <UserForm
@@ -978,6 +979,7 @@ const VIEW_TITLES = {
   importedListCount:'Lista Importada',
   myCounts:'Minhas Contagens',
   recounts:'Recontagens Pendentes',
+  enderecos:'Endereços Pendentes',
   recount:'Recontar Item',
   dashboard:'Dashboard',
   relatorios:'Relatórios',
@@ -995,21 +997,24 @@ function SubBar({view, goto}){
 }
 
 function Sidebar({view, goto, role}){
+  const podeValidarEnderecos = role==='lider'||role==='admin';
   const items = [
     {id:'home', ic:'⌂', label:'Início'},
     {id:'inventories', ic:'📦', label:'Inventários'},
     {id:'pickCountType', ic:'🔍', label:'Contagens'},
     {id:'myCounts', ic:'📋', label:'Minhas Contagens'},
     {id:'recounts', ic:'🔁', label:'Recontagens'},
+    ...(podeValidarEnderecos ? [{id:'enderecos', ic:'📍', label:'Endereços'}] : []),
     {id:'dashboard', ic:'📊', label:'Dashboard'},
     {id:'relatorios', ic:'📄', label:'Relatórios'},
     {id:'settings', ic:'⚙', label:'Configurações'},
   ];
   const shortcuts = [
-    ...(role==='lider'||role==='admin' ? [{id:'newInventory', label:'Criar novo inventário'}] : []),
+    ...(podeValidarEnderecos ? [{id:'newInventory', label:'Criar novo inventário'}] : []),
     {id:'pickCountType', label:'Nova contagem'},
     {id:'myCounts', label:'Minhas contagens'},
     {id:'recounts', label:'Recontagens pendentes'},
+    ...(podeValidarEnderecos ? [{id:'enderecos', label:'Endereços pendentes'}] : []),
   ];
   return (
     <div className="sidebar">
@@ -1074,7 +1079,7 @@ function BottomNav({view, goto, role}){
 
 /* ---------------- HOME ---------------- */
 
-function Home({role, user, inventories, counts, goto}){
+function Home({role, user, inventories, counts, enderecosPropostos=[], goto}){
   const pendentes = inventories.filter(i=>i.status!=='concluido').length;
   const roleName = {operador:'Operador', lider:'Líder de Estoque', admin:'Administrador'}[role];
   const byOriginal = {};
@@ -1082,6 +1087,7 @@ function Home({role, user, inventories, counts, goto}){
   const pendentesRecontagem = counts.filter(c=>(c.statusAprovacao==='aguardando_segunda' && !byOriginal[c.id]) || c.statusAprovacao==='aguardando_analise_lider').length;
   const minhasContagens = role==='operador' ? counts.filter(c=>c.usuario===user.nome).length : counts.length;
   const podeGerir = role==='lider'||role==='admin';
+  const pendentesEnderecos = enderecosPropostos.filter(e=>e.status==='pendente').length;
 
   return (
     <div>
@@ -1115,6 +1121,16 @@ function Home({role, user, inventories, counts, goto}){
           <div className="kpi-value">{pendentesRecontagem}</div>
           <button className="kpi-link" onClick={()=>goto('recounts')}>Ver detalhes <Ic>›</Ic></button>
         </div>
+        {podeGerir && (
+          <div className="desktop-kpi">
+            <div className="kpi-head">
+              <span className="kpi-icon" style={{background:'#FDE6E1',color:'#C4491B'}}><Ic>📍</Ic></span>
+              <span className="kpi-label">Endereços Pendentes</span>
+            </div>
+            <div className="kpi-value">{pendentesEnderecos}</div>
+            <button className="kpi-link" onClick={()=>goto('enderecos')}>Ver detalhes <Ic>›</Ic></button>
+          </div>
+        )}
         <div className="desktop-kpi">
           <div className="kpi-head">
             <span className="kpi-icon" style={{background:'#F1E9FB',color:'#7B3FC4'}}><Ic>📊</Ic></span>
@@ -1158,6 +1174,16 @@ function Home({role, user, inventories, counts, goto}){
           </span>
           <span className="qc-arrow"><Ic>›</Ic></span>
         </button>
+        {podeGerir && (
+          <button className="desktop-quick-card" onClick={()=>goto('enderecos')}>
+            <span className="qc-icon" style={{background:'#FDE6E1',color:'#C4491B'}}><Ic>📍</Ic></span>
+            <span className="qc-body">
+              <span className="qc-title">Endereços Pendentes</span>
+              <span className="qc-desc">Confirme os endereços informados pelos operadores.</span>
+            </span>
+            <span className="qc-arrow"><Ic>›</Ic></span>
+          </button>
+        )}
         <button className="desktop-quick-card" onClick={()=>goto('dashboard')}>
           <span className="qc-icon" style={{background:'#F1E9FB',color:'#7B3FC4'}}><Ic>📊</Ic></span>
           <span className="qc-body">
@@ -1216,6 +1242,13 @@ function Home({role, user, inventories, counts, goto}){
           <span className="icon"><Ic>🔁</Ic></span>
           <span className="label">Recontagens Pendentes</span>
         </div>
+        {podeGerir && (
+          <div className="home-card" onClick={()=>goto('enderecos')}>
+            {pendentesEnderecos>0 && <span className="badge">{pendentesEnderecos}</span>}
+            <span className="icon"><Ic>📍</Ic></span>
+            <span className="label">Endereços Pendentes</span>
+          </div>
+        )}
         <div className="home-card" onClick={()=>goto('dashboard')}>
           <span className="icon"><Ic>📊</Ic></span>
           <span className="label">Dashboard</span>
@@ -2631,48 +2664,53 @@ function PasswordRequestRow({req, onResolve}){
   );
 }
 
-
-function Settings({role, enderecosPropostos=[], onResolve, users=[], currentUser, goto, onToggleUserStatus, onAdminPasswordAction, passwordRequests=[], onResolvePasswordRequest, passwordHistory=[]}){
+/* ---------------- MÓDULO 5/6: VALIDAÇÃO DE ENDEREÇOS ---------------- */
+// Antes vivia empilhado dentro de Configurações, logo acima de Usuários — foi
+// destacado pra tela própria (goto('enderecos')) porque estava se misturando
+// visualmente com o cadastro de usuário. Mesmo componente/lógica de antes, só
+// a navegação até ele que mudou (ver Home, Sidebar).
+function AddressValidationPanel({enderecosPropostos=[], onResolve}){
   const pendentes = enderecosPropostos.filter(e=>e.status==='pendente');
-  const canValidate = role==='lider' || role==='admin';
+  return (
+    <div className="panel">
+      <div className="section-title" style={{marginTop:0}}>
+        Endereços Pendentes de Cadastro
+        {pendentes.length>0 && <span className="badge" style={{position:'static',marginLeft:8}}>{pendentes.length}</span>}
+      </div>
+      {enderecosPropostos.length===0 ? (
+        <div style={{fontSize:13,color:'var(--ink-dim)'}}>
+          Nenhum endereço informado ainda. Toda vez que um operador contar um item sem endereço
+          cadastrado, ele vai informar onde encontrou — e o endereço aparece aqui para validação.
+        </div>
+      ) : (
+        enderecosPropostos.map(e=>(
+          <div key={e.id} className="list-row" style={{flexWrap:'wrap'}}>
+            <div>
+              <div className="lr-title">{e.descricao}</div>
+              <div className="lr-sub">{e.productCode} · informado como <strong style={{color:'var(--ink)'}}>{e.enderecoInformado}</strong> por {e.usuario} em {e.data}</div>
+            </div>
+            {e.status==='pendente' ? (
+              <div className="btn-row" style={{width:'auto'}}>
+                <button className="btn btn-secondary" style={{padding:'8px 12px',fontSize:11}} onClick={()=>onResolve(e.id,'rejeitado')}>Rejeitar</button>
+                <button className="btn btn-primary" style={{padding:'8px 12px',fontSize:11}} onClick={()=>onResolve(e.id,'confirmado')}>Confirmar</button>
+              </div>
+            ) : (
+              <StatusTag status={e.status==='confirmado'?'ok':'danger'} text={e.status==='confirmado'?'Confirmado':'Rejeitado'} />
+            )}
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+function Settings({role, users=[], currentUser, goto, onToggleUserStatus, onAdminPasswordAction, passwordRequests=[], onResolvePasswordRequest, passwordHistory=[]}){
   const isAdmin = role==='admin';
   const pendentesSenha = passwordRequests.filter(r=>r.status==='pendente');
 
   return (
     <div>
       <div className="role-note">Perfil atual: {ROLE_LABELS[role]} · {currentUser.nome}</div>
-
-      {canValidate && (
-        <div className="panel">
-          <div className="section-title" style={{marginTop:0}}>
-            Endereços Pendentes de Cadastro
-            {pendentes.length>0 && <span className="badge" style={{position:'static',marginLeft:8}}>{pendentes.length}</span>}
-          </div>
-          {enderecosPropostos.length===0 ? (
-            <div style={{fontSize:13,color:'var(--ink-dim)'}}>
-              Nenhum endereço informado ainda. Toda vez que um operador contar um item sem endereço
-              cadastrado, ele vai informar onde encontrou — e o endereço aparece aqui para validação.
-            </div>
-          ) : (
-            enderecosPropostos.map(e=>(
-              <div key={e.id} className="list-row" style={{flexWrap:'wrap'}}>
-                <div>
-                  <div className="lr-title">{e.descricao}</div>
-                  <div className="lr-sub">{e.productCode} · informado como <strong style={{color:'var(--ink)'}}>{e.enderecoInformado}</strong> por {e.usuario} em {e.data}</div>
-                </div>
-                {e.status==='pendente' ? (
-                  <div className="btn-row" style={{width:'auto'}}>
-                    <button className="btn btn-secondary" style={{padding:'8px 12px',fontSize:11}} onClick={()=>onResolve(e.id,'rejeitado')}>Rejeitar</button>
-                    <button className="btn btn-primary" style={{padding:'8px 12px',fontSize:11}} onClick={()=>onResolve(e.id,'confirmado')}>Confirmar</button>
-                  </div>
-                ) : (
-                  <StatusTag status={e.status==='confirmado'?'ok':'danger'} text={e.status==='confirmado'?'Confirmado':'Rejeitado'} />
-                )}
-              </div>
-            ))
-          )}
-        </div>
-      )}
 
       {isAdmin ? (
         <UserManagementPanel
@@ -2732,7 +2770,7 @@ function Settings({role, enderecosPropostos=[], onResolve, users=[], currentUser
         <div style={{fontSize:13,color:'var(--ink-dim)',lineHeight:1.7}}>
           300 itens carregados de uma exportação real da tabela SB2 (Protheus) — amostra de
           10.512 SKUs do Almox 01. Nenhum endereço físico cadastrado ainda; cadastro de endereços
-          em construção via contagem (ver painel acima).
+          em construção via contagem (ver "Endereços Pendentes" na tela inicial).
         </div>
       </div>
       <div className="panel">

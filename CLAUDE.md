@@ -266,6 +266,30 @@ O fluxo de "Editar" usuário deixou de ser um formulário inline dentro do card 
   redundância proposital, mesma dupla checagem (visibilidade do botão + guarda na rota)
   que o resto do app já faz em outros lugares (ex: `newInventory`).
 
+## "Endereços Pendentes de Cadastro" saiu de Configurações, virou tela própria
+
+O painel de validação de endereço (líder/admin confirma onde o operador disse que
+encontrou um item sem endereço cadastrado — Módulo 5/6) ficava empilhado dentro de
+Configurações, logo acima de Usuários. O cliente achou que parecia fazer parte do
+cadastro de usuário e pediu pra tirar dali.
+
+- Virou `AddressValidationPanel` (componente extraído, mesma lógica/JSX de antes, sem
+  mudança visual interna) numa view própria: `goto('enderecos')`. Guard de acesso em
+  `App()`: `role==='lider'||role==='admin'` (mesmo grupo que já tinha acesso ao painel
+  antes, só mudou onde mora).
+- Pontos de entrada, espelhando exatamente o padrão já usado por "Recontagens
+  Pendentes" (mesmo card, mesmo lugar): card na Home (mobile e o KPI/quick-access
+  correspondente em desktop) com badge mostrando `enderecosPropostos` com
+  `status==='pendente'`, item no nav da `Sidebar` e no "Atalhos rápidos" — todos só
+  para líder/admin (`podeGerir` no `Home`, `podeValidarEnderecos` na `Sidebar`).
+- `Settings` não recebe mais `enderecosPropostos`/`onResolve` como prop (não usa mais).
+  O texto de "Origem dos Dados" que dizia "(ver painel acima)" foi corrigido pra
+  apontar pro lugar novo, já que o painel não está mais ali do lado.
+- Se pedir pra mover mais alguma coisa de dentro de Configurações pra tela própria, o
+  padrão é esse: extrair o componente tal como está, criar a `view`, adicionar o guard
+  de role em `App()`, e replicar os mesmos 3 pontos de entrada (Home mobile+desktop,
+  Sidebar nav, Sidebar atalhos) — não inventar um 4º lugar novo.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase
