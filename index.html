@@ -354,6 +354,7 @@ function buildCountRows(counts){
     'Código': c.productCode,
     'Descrição': c.descricao,
     'Endereço': c.endereco,
+    'Endereço Contado': c.enderecoContado || '',
     'Rodada': c.numeroContagem || 1,
     'Usuário': c.usuario,
     'Qtd. Contada': c.qtdContada,
@@ -367,6 +368,22 @@ function buildCountRows(counts){
     'Endereço Pendente Validação': c.enderecoPendenteValidacao ? 'Sim' : 'Não',
     'Data': c.data,
     'Hora': c.hora || '',
+  }));
+}
+
+// Espelha o formato da planilha que o cliente sobe pra gerar a lista de
+// contagem (Produto/Descrição/End/Sistema/Fisico, ver
+// buildImportTemplateWorkbook) com o resultado já preenchido — "Fisico" traz
+// a quantidade contada no app, e "Endereço Contado" traz onde o item foi
+// fisicamente encontrado (pode diferir do "End" cadastrado).
+function buildPlanilhaPadraoRows(counts){
+  return counts.map(c=>({
+    'Produto': c.productCode,
+    'Descrição': c.descricao,
+    'End': c.endereco,
+    'Sistema': c.saldoSistema==null ? '' : c.saldoSistema,
+    'Fisico': c.qtdContada,
+    'Endereço Contado': c.enderecoContado || c.endereco || '',
   }));
 }
 
@@ -391,6 +408,7 @@ function generateReportWorkbook(counts, inventories){
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(buildSummaryRows(counts, inventories)), 'Resumo');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(buildCountRows(counts)), 'Contagens');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(buildPlanilhaPadraoRows(counts)), 'Contar');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(buildAdjustmentRows(counts)), 'Solicitação de Ajuste');
   return wb;
 }
@@ -1315,6 +1333,11 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
       productCode: product.codigo,
       descricao: product.descricao,
       endereco: product.endereco || enderecoInformado.toUpperCase() || '—',
+      // Endereço onde o item foi FISICAMENTE contado — pode ser diferente do
+      // cadastro acima quando o operador escaneia um endereço divergente e
+      // opta por "Contar mesmo assim" (scannedCode), ou quando o item não
+      // tinha cadastro e o operador informa onde encontrou (enderecoInformado).
+      enderecoContado: scannedCode || (enderecoInformado ? enderecoInformado.toUpperCase() : '') || '',
       enderecoPendenteValidacao: needsAddressInput,
       usuario: user.nome,
       qtdContada: Number(qty),
@@ -1933,10 +1956,13 @@ function ReportsScreen({counts, inventories, currentUser, sendHistory, onLogSend
       <div className="panel">
         <div className="section-title" style={{marginTop:0}}>Baixar Relatório</div>
         <div style={{fontSize:13,color:'var(--ink-dim)',marginBottom:14,lineHeight:1.6}}>
-          Gera uma planilha Excel (.xlsx) com 3 abas: <strong>Resumo</strong> (indicadores gerais),
+          Gera uma planilha Excel (.xlsx) com 4 abas: <strong>Resumo</strong> (indicadores gerais),
           <strong> Contagens</strong> (todas as contagens realizadas, com histórico completo de
-          rodadas) e <strong>Solicitação de Ajuste</strong> (só os itens com divergência —
-          pronta para enviar à equipe responsável por corrigir o saldo no Protheus).
+          rodadas e o endereço onde cada item foi fisicamente contado), <strong>Contar</strong>{' '}
+          (mesmo formato da planilha de importação — Produto, Descrição, End, Sistema, Fisico —
+          já com a quantidade contada e o endereço contado preenchidos) e
+          <strong> Solicitação de Ajuste</strong> (só os itens com divergência — pronta para
+          enviar à equipe responsável por corrigir o saldo no Protheus).
         </div>
         <button className="btn btn-primary" onClick={handleDownloadClick} disabled={counts.length===0}>
           <Ic>⬇</Ic> Baixar Excel (.xlsx)

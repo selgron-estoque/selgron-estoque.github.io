@@ -114,6 +114,17 @@ Isso está implementado no `index.html`:
 - `MyCounts` e `RecountsPanel` foram ajustados para exibir "—" em vez de quebrar quando
   `diferenca`/`percentual` são `null` (caso dos itens fora do cache local sem "Sistema" na
   planilha).
+- O relatório Excel (`generateReportWorkbook`) ganhou uma 4ª aba, **"Contar"**
+  (`buildPlanilhaPadraoRows`), no mesmo formato da planilha de importação (Produto,
+  Descrição, End, Sistema, Fisico) — "Fisico" sai preenchido com a quantidade contada no
+  app. Isso fecha o ciclo: o líder sobe a planilha pra gerar a lista, o app conta, e o
+  relatório devolve a mesma planilha com o resultado, no formato que o cliente já usa.
+  Também foi adicionado o campo `enderecoContado` na contagem (`CountStep.finalize`) —
+  distinto do `endereco` cadastrado: é o endereço que o operador de fato leu/informou na
+  hora de contar (`scannedCode` quando há QR, `enderecoInformado` quando não há cadastro).
+  Os dois podem divergir quando o operador escaneia um endereço diferente do cadastrado e
+  escolhe "Contar mesmo assim". Aparece como coluna extra tanto na aba "Contagens" quanto
+  na aba "Contar".
 
 ## Convenções de design (não quebrar ao continuar)
 

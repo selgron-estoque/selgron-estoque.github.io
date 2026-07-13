@@ -147,12 +147,18 @@ os itens que vieram nela, na mesma ordem — sem embaralhar, sem filtrar.
 Novo card "Relatórios" na tela inicial, com duas ações:
 
 **Baixar Excel (.xlsx)** — geração 100% no navegador usando SheetJS, sem precisar de
-backend. O arquivo sai com 3 abas:
+backend. O arquivo sai com 4 abas:
 - **Resumo** — indicadores gerais (itens contados, divergências, acuracidade, valor
   divergente).
 - **Contagens** — todas as contagens registradas, com histórico completo de rodadas
-  (1ª, 2ª contagem…), endereço, usuário, quantidade, saldo do sistema, diferença, % de
+  (1ª, 2ª contagem…), endereço cadastrado, **endereço onde o item foi fisicamente
+  contado** (pode divergir do cadastrado — ex: operador escaneia um endereço diferente e
+  opta por "Contar mesmo assim"), usuário, quantidade, saldo do sistema, diferença, % de
   divergência, valor, status e motivo.
+- **Contar** — mesmo formato da planilha de importação (Produto, Descrição, End, Sistema,
+  Fisico), já com "Fisico" preenchido com a quantidade contada no app e uma coluna extra
+  "Endereço Contado" — pensada pra fechar o ciclo: a mesma planilha que o líder sobe pra
+  gerar a lista volta preenchida com o resultado, no formato que o cliente já reconhece.
 - **Solicitação de Ajuste** — só os itens com divergência, já no formato pensado para
   mandar à equipe que corrige o saldo no Protheus (código, saldo sistema, saldo contado,
   ajuste necessário, valor, motivo, quem aprovou).
