@@ -228,16 +228,21 @@
      card dividido em 2 colunas (ilustração + formulário), replicando o mockup de
      referência do cliente. Ver CLAUDE.md "Tela de login vira o mockup de 2 colunas". */
   .login-screen{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--gray-100);padding:24px;font-family:var(--font-corp);}
-  .login-card{width:100%;max-width:900px;display:flex;align-items:stretch;background:#FFFFFF;border:1px solid var(--gray-200);border-radius:20px;overflow:hidden;box-shadow:0 1px 2px rgba(15,23,42,0.04), 0 16px 40px rgba(15,23,42,0.08);}
+  .login-card{width:100%;max-width:900px;display:flex;flex-direction:column;align-items:stretch;background:#FFFFFF;border:1px solid var(--gray-200);border-radius:20px;overflow:hidden;box-shadow:0 1px 2px rgba(15,23,42,0.04), 0 16px 40px rgba(15,23,42,0.08);}
 
-  /* Coluna esquerda — ilustração (só aparece em telas ≥760px, ver media query) */
-  .login-illustration{display:none;flex-direction:column;justify-content:space-between;width:38%;flex-shrink:0;background:var(--gray-50);padding:36px 34px;position:relative;overflow:hidden;}
-  .login-illustration img{height:22px;width:auto;display:block;position:relative;z-index:2;}
-  .login-illust-mid{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:14px;position:relative;z-index:2;}
-  .login-illust-title{font-family:var(--font-corp);font-size:23px;font-weight:700;color:var(--navy);}
+  /* Coluna/faixa esquerda — ilustração. SEMPRE visível (mobile-first): em telas
+     estreitas vira uma faixa horizontal compacta no topo do card (logo + ícone +
+     nome, sem tagline nem o recorte decorativo, pra não gastar espaço vertical
+     precioso); a partir de 760px vira a coluna alta e centralizada do mockup de
+     referência, com tagline e o recorte diagonal decorativo. */
+  .login-illustration{display:flex;flex-direction:row;align-items:center;gap:14px;width:100%;flex-shrink:0;background:var(--gray-50);padding:20px 24px;position:relative;overflow:hidden;}
+  .login-illustration img{height:20px;width:auto;display:block;position:relative;z-index:2;flex-shrink:0;}
+  .login-illust-mid{flex:1;display:flex;flex-direction:row;align-items:center;justify-content:flex-start;text-align:left;gap:10px;position:relative;z-index:2;}
+  .login-cycle-icon{width:36px;height:36px;flex-shrink:0;}
+  .login-illust-title{display:none;font-family:var(--font-corp);font-size:23px;font-weight:700;color:var(--navy);white-space:nowrap;}
   .login-illust-title span{color:var(--safety);}
-  .login-illust-tagline{font-family:var(--font-corp);font-size:13px;color:var(--gray-500);margin-top:-6px;}
-  .login-illust-decor{position:absolute;left:-10%;bottom:-8%;width:130%;height:46%;z-index:1;
+  .login-illust-tagline{display:none;font-family:var(--font-corp);font-size:13px;color:var(--gray-500);margin-top:-6px;}
+  .login-illust-decor{display:none;position:absolute;left:-10%;bottom:-8%;width:130%;height:46%;z-index:1;
     background:repeating-linear-gradient(0deg, rgba(15,23,42,0.05) 0px, rgba(15,23,42,0.05) 2px, transparent 2px, transparent 20px);
     clip-path:polygon(0 40%, 100% 0%, 100% 100%, 0 100%);}
   .login-illust-decor::after{content:'';position:absolute;inset:0;background:linear-gradient(135deg, rgba(246,162,0,0.22), rgba(246,162,0,0) 65%);}
@@ -294,7 +299,14 @@
   .login-footer .lf-restrict{display:flex;align-items:center;justify-content:center;gap:6px;}
 
   @media (min-width:760px){
-    .login-illustration{display:flex;}
+    .login-card{flex-direction:row;}
+    .login-illustration{flex-direction:column;justify-content:space-between;width:38%;padding:36px 34px;}
+    .login-illustration img{height:22px;}
+    .login-illust-mid{flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:14px;}
+    .login-cycle-icon{width:104px;height:104px;}
+    .login-illust-title{display:block;font-size:23px;}
+    .login-illust-tagline{display:block;}
+    .login-illust-decor{display:block;}
   }
   @media (max-width:759px){
     .login-trust-row{flex-direction:column;gap:14px;max-width:420px;}
@@ -1092,9 +1104,9 @@ function ShieldIcon(){
 
 // Ícone "hero" da coluna ilustrada do login: ciclo (duas setas em arco) em volta
 // de uma caixa — representa a contagem cíclica de inventário.
-function CycleIcon({size=104}){
+function CycleIcon({className}){
   return (
-    <svg width={size} height={size} viewBox="0 0 100 100" fill="none" aria-hidden="true">
+    <svg className={className} viewBox="0 0 100 100" fill="none" aria-hidden="true">
       <path d="M50 10 A40 40 0 0 1 88 46" stroke="var(--safety)" strokeWidth="5" strokeLinecap="round" fill="none"/>
       <path d="M80 37 L90 47 L77 50" stroke="var(--safety)" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
       <path d="M50 90 A40 40 0 0 1 12 54" stroke="var(--safety)" strokeWidth="5" strokeLinecap="round" fill="none"/>
@@ -1198,7 +1210,7 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
         <div className="login-illustration">
           <img src={SELGRON_LOGO_URL} alt="Selgron" />
           <div className="login-illust-mid">
-            <CycleIcon />
+            <CycleIcon className="login-cycle-icon" />
             <div className="login-illust-title">Inventário <span>360</span></div>
             <div className="login-illust-tagline">Visão completa. Controle eficiente.</div>
           </div>

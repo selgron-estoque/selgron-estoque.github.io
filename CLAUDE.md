@@ -563,11 +563,19 @@ valer mais que a descrição textual anterior — reconstruí a tela pra bater c
   **sem foto real de estoque** (o app não tem esse asset; a textura foi desenhada só com
   CSS, mantendo o espírito "sem foto de estoque" do pedido original enquanto imita a
   composição visual pedida agora).
-- **Coluna esquerda só aparece em telas ≥760px** (`@media (min-width:760px)`) — abaixo
-  disso (celular na vertical) ela fica `display:none` e o formulário ocupa a largura
-  toda, senão o card ficaria espremido demais pra caber as duas colunas num tablet
-  estreito ou celular. Isso não está na imagem de referência (que é só desktop), mas é
-  necessário pro login continuar usável no mesmo tablet que o resto do app atende.
+- **Coluna esquerda: nunca `display:none` — vira uma faixa compacta em telas
+  estreitas, em vez de sumir**. Primeira versão escondia a ilustração inteira abaixo de
+  760px (`display:none`), mas o cliente testou num tablet mais estreito que isso e viu só
+  o formulário puro, sem nenhuma identidade visual — pediu pra aparecer "aquele padrão"
+  em qualquer tamanho de tela. Virou mobile-first de verdade: por padrão (telas
+  estreitas) é uma faixa horizontal só com logo + `CycleIcon` pequeno (36px, tamanho via
+  classe `.login-cycle-icon`, não mais via prop `size` do componente — o SVG não tem
+  `width`/`height` fixo, só `className`, pra CSS conseguir redimensionar por breakpoint),
+  sem título nem tagline nem o recorte diagonal (`display:none` nesses elementos por
+  padrão) — não cabe tudo numa faixa baixa sem atrapalhar o formulário abaixo. A partir de
+  `@media (min-width:760px)` vira a coluna alta e centralizada de antes (título 23px,
+  tagline, ícone 104px, recorte diagonal) — `.login-card` também troca de
+  `flex-direction:column` (empilhado) pra `row` (lado a lado) nesse breakpoint.
 - **Coluna direita** (`.login-form-panel`): título "Inventário **360°**" (o `°` faz parte
   do texto, como na imagem), barrinha laranja decorativa (`.login-rule`) embaixo do
   subtítulo, campos com ícone à esquerda, e o toggle de senha virou ícone + texto
