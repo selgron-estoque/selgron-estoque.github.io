@@ -126,6 +126,26 @@ Isso está implementado no `index.html`:
   escolhe "Contar mesmo assim". Aparece como coluna extra tanto na aba "Contagens" quanto
   na aba "Contar".
 
+## Clique no card de inventário vai direto pro 1º item (sem tela de escolha)
+
+Antes, clicar num card em "Inventários Pendentes" levava pra `PickCountType` (escolher
+Aleatória/Manual/Rota) antes de começar a contar — redundante, já que o tipo já foi
+escolhido na criação do inventário. Agora `InventoryList` manda direto pro fluxo de
+contagem: `Lista Importada (Excel)` → `importedListCount`; qualquer outro tipo →
+`randomCount`, que passou a ser o fluxo genérico de contagem em fila para todos os tipos
+não-importados (Aleatória, Curva ABC, Manual, Rota de Endereço — o protótipo nunca teve
+listas de itens distintas por tipo, então unificar não muda o comportamento real, só evita
+o clique a mais). `PickCountType` continua existindo só para o card "Nova Contagem" da
+Home (contagem avulsa, sem inventário associado).
+
+`RandomCountFlow` também mudou: a seleção de itens deixou de usar `Math.random()` (era
+re-sorteada a cada vez que a tela remontava, o que fazia a fila "pular" ao voltar e
+reentrar no mesmo inventário) e passou a ordenar por **sequência de endereço** — itens com
+`enderecoCadastrado` primeiro (por corredor → rua → endereço), os sem endereço ainda depois
+mantendo a priorização por valor/movimento de antes. Como retoma a partir de
+`inv.contados` (mesmo padrão do `ImportedListCountFlow`), reentrar no inventário continua
+de onde parou em vez de reiniciar do item 1.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase

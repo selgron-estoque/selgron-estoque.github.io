@@ -860,7 +860,7 @@ const VIEW_TITLES = {
   inventories:'Inventários Pendentes',
   newInventory:'Novo Inventário',
   pickCountType:'Nova Contagem',
-  randomCount:'Contagem Aleatória',
+  randomCount:'Contagem',
   manualCount:'Contagem Manual',
   routeCount:'Contagem por Rota',
   importedListCount:'Lista Importada',
@@ -987,7 +987,7 @@ function InventoryList({inventories, goto, role, counts, onDelete}){
       {inventories.map(inv=>{
         const pct = inv.qtdItens ? Math.round((inv.contados/inv.qtdItens)*100) : 0;
         return (
-          <div key={inv.id} className="item-card" style={{cursor:'pointer'}} onClick={()=>goto(inv.tipo==='Lista Importada (Excel)' ? 'importedListCount' : 'pickCountType', inv)}>
+          <div key={inv.id} className="item-card" style={{cursor:'pointer'}} onClick={()=>goto(inv.tipo==='Lista Importada (Excel)' ? 'importedListCount' : 'randomCount', inv)}>
             <div className="item-card-head">
               <div>
                 <div className="item-code">{inv.id} · {inv.almoxarifado}</div>
@@ -1558,22 +1558,42 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
 /* ---------------- MÓDULO 2: CONTAGEM ALEATÓRIA ---------------- */
 
 function RandomCountFlow({inv, user, onFinish, onAddressProposed, setInventories}){
-  const items = useMemo(()=> {
+  const allItems = useMemo(()=> {
     // Critério aplicado: prioriza itens de maior valor financeiro (curva A) e
     // itens sem saída recente — os dois critérios "futuros" já citados no
-    // briefing, aplicados aqui sobre os dados reais da SB2.
+    // briefing, aplicados aqui sobre os dados reais da SB2. Seleção
+    // determinística (sem Math.random) pra fila ser estável entre
+    // re-entradas no mesmo inventário — necessário pra retomar de onde parou
+    // em vez de sortear itens novos a cada vez.
     const scored = [...PRODUCTS].map(p=>({
-      p, score: (p.semMovimentoRecente ? 50000 : 0) + p.valorFinanceiro + Math.random()*500
+      p, score: (p.semMovimentoRecente ? 50000 : 0) + p.valorFinanceiro
     })).sort((a,b)=>b.score-a.score);
-    return scored.slice(0, 25).sort(()=>Math.random()-0.5).slice(0,5).map(s=>s.p);
-  }, []);
-  const q = useCountQueue(items);
+    const qtd = (inv && inv.qtdItens) || 5;
+    const pool = scored.slice(0, Math.max(qtd, 25)).map(s=>s.p);
+    // Sequência de endereço: itens com endereço cadastrado vêm primeiro,
+    // ordenados por corredor → rua → endereço (deslocamento físico menor);
+    // itens sem endereço cadastrado ainda ficam depois, na ordem por valor.
+    const comEndereco = pool.filter(p=>p.enderecoCadastrado).sort((a,b)=>
+      (a.corredor||'').localeCompare(b.corredor||'') ||
+      (a.rua||'').localeCompare(b.rua||'') ||
+      (a.endereco||'').localeCompare(b.endereco||'')
+    );
+    const semEndereco = pool.filter(p=>!p.enderecoCadastrado);
+    return [...comEndereco, ...semEndereco].slice(0, qtd);
+  }, [inv]);
+
+  // Ao voltar para este inventário no meio da fila, retoma a partir de
+  // "contados" — mesmo padrão usado em ImportedListCountFlow — em vez de
+  // recomeçar do item 1 a cada re-entrada.
+  const jaContados = inv ? (inv.contados || 0) : 0;
+  const pendentes = useMemo(()=> allItems.slice(jaContados), [allItems, jaContados]);
+  const q = useCountQueue(pendentes);
 
   if(q.done){
     return (
       <div className="empty-state">
         <div className="ic"><Ic>🎉</Ic></div>
-        Fila de contagem aleatória concluída.
+        Fila de contagem concluída.
         <div style={{marginTop:16}}><button className="btn btn-primary" onClick={()=>onFinish(null)}>Voltar aos inventários</button></div>
       </div>
     );
@@ -1581,7 +1601,7 @@ function RandomCountFlow({inv, user, onFinish, onAddressProposed, setInventories
 
   return (
     <div>
-      <div className="role-note">Item {q.idx+1} de {q.total} · Fila priorizada por valor financeiro e itens sem saída recente</div>
+      <div className="role-note">Item {jaContados+q.idx+1} de {allItems.length} · Sequência por endereço (itens sem endereço cadastrado entram por último)</div>
       <CountStep
         product={q.current}
         user={user}
