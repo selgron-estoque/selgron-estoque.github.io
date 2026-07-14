@@ -812,6 +812,66 @@ sem erro visível, só resultado vazio.
   — se vier `true` e a tabela precisa ser lida pelo app hoje (sem Supabase Auth), criar a
   policy de leitura pública na hora, não depois.
 
+## Segundo pedaço do backend real: contagens gravam no Supabase (só isso, por enquanto)
+
+Depois do catálogo, o cliente pediu **"começar a trabalhar em salvar os dados lançados no
+app"**, especificamente as contagens ("precisamos trabalhar para começar a salvar as
+contagens feitas"). Perguntei o escopo (via `AskUserQuestion`, que falhou e caiu pra texto
+puro) entre duas opções — migração completa (Supabase Auth + inventários reais + FK de
+verdade) vs. uma versão leve só das contagens, sem mexer em login/inventários — e o cliente
+escolheu a opção leve ("1").
+
+- **Login, usuários e inventários continuam 100% locais** (`localStorage`, ver seção
+  "Persistência local" acima) — nada mudou aí. Só a contagem individual (o que já vira um
+  objeto `count` dentro de `CountStep.finalize()`) passou a ser gravada TAMBÉM no Supabase,
+  além de continuar indo pro `localStorage` como sempre (`localStorage` continua sendo a
+  fonte de verdade do app hoje — o Supabase aqui é só um espelho/histórico, o app não lê de
+  lá ainda).
+- **`contagens` no Supabase é denormalizada de propósito**: sem FK pra `usuarios` nem pra
+  `inventarios` (essas tabelas não têm dado real nenhuma, já que login/inventário são só
+  locais) — `usuario` grava o nome em texto puro (`user.nome`), `inventario_id` grava o id
+  local do inventário (`inv.id`, tipo `"INV-XXXXXX"`, ou `"—"` pra contagem avulsa sem
+  inventário). `produto_codigo` também não tem FK pra `produtos` — contagem de item fora do
+  catálogo/cache local (`fora_do_cache_local`) precisa gravar do mesmo jeito, travar com FK
+  quebraria exatamente esse caso. `backend/schema.sql` foi reescrito (a versão antiga da
+  tabela, com UUID + FKs pra `usuarios`/`inventarios`/`produtos`, nunca tinha sido usada de
+  verdade — só existia como CREATE TABLE vazio desde a aplicação inicial do schema).
+- **`foto_url text` virou `tem_foto boolean`**: conferido no código (`CountStep`, variável
+  `photo`) que a "foto" hoje é só um `blob:` local via `URL.createObjectURL` — nunca é
+  enviada pra lugar nenhum, não existe upload real. Guardar uma "URL" que não existe seria
+  fingir um dado que não tem. Se um dia entrar upload de verdade (Supabase Storage), aí sim
+  a coluna vira `foto_url` de novo.
+- **`classificacao`** grava só o `label` (texto) do objeto `classification` que o app já
+  calcula (`classifyDivergence`), não o objeto inteiro — a coluna é `text`, não `jsonb`.
+- **`saveContagemToSupabase(count)`** (perto de `searchSupabaseCatalog`, no `index.html`) —
+  função `async`, chamada uma única vez dentro de `CountStep.finalize()` (o motor de
+  contagem compartilhado por TODOS os fluxos: aleatória, manual, rota, lista importada e
+  recontagem — um único ponto de gravação cobre todos eles, não precisou duplicar em cada
+  `Flow`). **"Fire and forget"**: não usa `await` no ponto de chamada, não bloqueia
+  `onComplete(count)` nem a navegação, e qualquer erro (offline, RLS, o que for) só vira um
+  `console.warn` — o app continua funcionando 100% normal via `localStorage` mesmo se a
+  gravação no Supabase falhar. Isso é proposital: a persistência local continua sendo a
+  única coisa de que o fluxo de contagem depende para funcionar.
+- **RLS**: `contagens` recebeu policy de INSERT liberada pra `anon`
+  (`create policy "inserção pública" on contagens for insert with check (true);`) — mesma
+  razão já documentada acima pra `produtos`/`enderecos`: sem Supabase Auth, toda chamada sai
+  como `anon`, então `auth.role()='authenticated'` (a policy original do schema) bloquearia
+  a própria gravação. Aceitável pro protótipo (qualquer um com a publishable key pode
+  inserir), não pra produção — revisar junto com a migração pro Supabase Auth.
+- **Testado via Playwright com o insert do Supabase mockado** (`page.route`, sandbox sem
+  saída de rede — mesma limitação/técnica já usada pro catálogo): completei uma contagem
+  manual ponta a ponta (endereço manual → quantidade → foto/observação → motivo de
+  divergência, perfil admin) e confirmei que o payload de `POST .../rest/v1/contagens`
+  bate exatamente com as colunas da tabela nova, incluindo `fora_do_cache_local: false`,
+  `classificacao: "Divergência moderada"` (string, não objeto) e `tem_foto: false`. Não
+  testei contra o Supabase de verdade (mesma restrição de rede do sandbox) — falta o
+  usuário aplicar o `backend/schema.sql` atualizado (recriar a tabela `contagens`) no
+  projeto real e confirmar ao vivo, mesmo padrão de handoff já usado pro catálogo.
+- **Se pedir pra migrar mais alguma coisa pro Supabase** (endereços, inventários, usuários):
+  o padrão agora é: perguntar se é versão leve (denormalizada, sem FK, sem Auth) ou
+  migração completa antes de desenhar o schema — a resposta muda a modelagem inteira, como
+  ficou claro aqui.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase

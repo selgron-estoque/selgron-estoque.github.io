@@ -163,24 +163,48 @@ $$ language plpgsql;
 -- ---------------------------------------------------------------------------
 -- CONTAGENS — histórico completo, nunca sobrescrito. Cada rodada (1ª, 2ª...)
 -- é uma linha nova, encadeada por contagem_anterior_id.
+--
+-- VERSÃO DENORMALIZADA (decisão do cliente: "só as contagens por enquanto").
+-- Login, usuários e inventários continuam 100% locais (localStorage) — o app
+-- ainda não usa Supabase Auth nem tem inventários no Supabase. Por isso esta
+-- tabela NÃO tem FK pra usuarios/inventarios: `usuario` e `inventario_id`
+-- gravam o texto que o app já tem localmente (nome do usuário logado, id do
+-- inventário tipo "INV-XXXXXX"), sem exigir que essas linhas existam em
+-- nenhuma outra tabela. `produto_codigo` também não tem FK pra `produtos`,
+-- porque a contagem pode ser de um item fora do catálogo/cache local
+-- (`fora_do_cache_local`) — travar com FK bloquearia exatamente o caso mais
+-- comum hoje (catálogo com 85 mil códigos, cache local só com 300).
+--
+-- Colunas espelham 1:1 o objeto `count` montado em `CountStep.finalize()` no
+-- index.html — ver ali antes de alterar este schema, pra não desalinhar.
+-- `foto_url` (que assumia upload real) virou `tem_foto boolean`: o app hoje
+-- só gera um `blob:` local via URL.createObjectURL, nunca envia a foto pra
+-- lugar nenhum — não existe URL real pra guardar ainda.
 -- ---------------------------------------------------------------------------
 create table contagens (
-  id uuid primary key default gen_random_uuid(),
-  inventario_id uuid references inventarios(id),
-  produto_codigo text not null references produtos(codigo),
-  endereco_texto text,                    -- endereço confirmado por QR OU informado manualmente
-  usuario_id uuid not null references usuarios(id),
+  id text primary key,                     -- 'CNT-XXXXXX', gerado no app
+  inventario_id text,                      -- id do inventário local, ou '—' pra contagem avulsa
+  produto_codigo text not null,
+  descricao text,
+  endereco text,                           -- endereço cadastrado (ou informado, se ainda não tinha)
+  endereco_contado text,                   -- endereço que o operador de fato leu/informou na hora
+  endereco_pendente_validacao boolean not null default false,
+  usuario text not null,                   -- nome do usuário logado, texto puro (sem FK)
   numero_contagem int not null default 1,
-  contagem_anterior_id uuid references contagens(id),
-  quantidade numeric(14,3) not null,
-  saldo_sistema numeric(14,3) not null,   -- vem de inventario_itens.saldo_congelado, NUNCA de estoque_saldo direto
-  diferenca numeric(14,3) generated always as (quantidade - saldo_sistema) stored,
-  status_aprovacao text not null,          -- aprovado_auto | aguardando_segunda | aguardando_analise_lider | aprovado_lider
+  contagem_anterior_id text references contagens(id),
+  qtd_contada numeric(14,3) not null,
+  saldo_sistema numeric(14,3),             -- null quando o item está fora do cache local e sem saldo na planilha
+  diferenca numeric(14,3),
+  percentual numeric(10,2),
+  valor_divergente numeric(14,2),
+  fora_do_cache_local boolean not null default false,
+  classificacao text,                      -- label da classificação de divergência (ex: "Dentro da tolerância")
+  status_aprovacao text,                   -- aprovado_auto | aguardando_segunda | aguardando_analise_lider | aprovado_lider
   motivo text,
-  foto_url text,
+  tem_foto boolean not null default false,
   observacao text,
-  aprovado_por uuid references usuarios(id),
-  aprovado_em timestamptz,
+  data date not null,
+  hora text,
   criado_em timestamptz not null default now()
 );
 create index idx_contagens_inventario on contagens(inventario_id);
@@ -210,11 +234,16 @@ create policy "leitura pública" on enderecos for select using (true);
 create policy "leitura pública" on estoque_enderecos for select using (true);
 create policy "leitura pública" on estoque_saldo for select using (true);
 
--- Contagens têm nome de usuário/observações — mantém restrito a
--- "authenticated" já pensando na migração futura pro Supabase Auth (hoje,
--- sem essa migração, a tela de contagens ainda não lê daqui, então não
--- quebra nada em produção deixar assim por enquanto).
-create policy "leitura autenticada" on contagens for select using (auth.role() = 'authenticated');
+-- Contagens: o app grava direto daqui sem Supabase Auth (ver comentário na
+-- definição da tabela acima), então a policy de INSERT precisa aceitar a
+-- publishable key "anon" — `auth.role()='authenticated'` bloquearia a
+-- própria gravação, mesmo erro que já aconteceu com `produtos`. Leitura
+-- também liberada por ora (nenhuma tela do app lê daqui ainda, mas quando
+-- ler, vai ser sem Auth do mesmo jeito). Reavaliar quando o Supabase Auth
+-- entrar de verdade — hoje qualquer um com a publishable key pode inserir,
+-- aceitável pro protótipo, não pra produção.
+create policy "leitura pública" on contagens for select using (true);
+create policy "inserção pública" on contagens for insert with check (true);
 
 -- Escrita em estoque_saldo SÓ pela service role (usada pela Edge Function de
 -- sincronização) — nenhum usuário do app escreve aqui diretamente.

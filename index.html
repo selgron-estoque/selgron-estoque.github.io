@@ -549,6 +549,45 @@ async function searchSupabaseCatalog(query){
   });
 }
 
+// Grava a contagem também no Supabase (além do localStorage, que continua
+// sendo a fonte de verdade do app hoje). Sem Supabase Auth ainda — usuário e
+// inventário vão como texto puro, sem FK pra usuarios/inventarios (esses
+// continuam só locais). "Fire and forget": se falhar (offline, RLS, etc.) não
+// bloqueia nem afeta o fluxo de contagem no app — só loga no console.
+async function saveContagemToSupabase(count){
+  if(!supabaseClient) return;
+  try{
+    const { error } = await supabaseClient.from('contagens').insert({
+      id: count.id,
+      inventario_id: count.inventario,
+      produto_codigo: count.productCode,
+      descricao: count.descricao,
+      endereco: count.endereco,
+      endereco_contado: count.enderecoContado,
+      endereco_pendente_validacao: count.enderecoPendenteValidacao,
+      usuario: count.usuario,
+      numero_contagem: count.numeroContagem,
+      contagem_anterior_id: count.contagemAnteriorId,
+      qtd_contada: count.qtdContada,
+      saldo_sistema: count.saldoSistema,
+      diferenca: count.diferenca,
+      percentual: count.percentual,
+      valor_divergente: count.valorDivergente,
+      fora_do_cache_local: count.foraDoCacheLocal,
+      classificacao: count.classificacao ? count.classificacao.label : null,
+      status_aprovacao: count.statusAprovacao,
+      motivo: count.motivo,
+      tem_foto: count.foto,
+      observacao: count.observacao,
+      data: count.data,
+      hora: count.hora,
+    });
+    if(error) console.warn('Falha ao salvar contagem no Supabase (mantida no localStorage):', error.message);
+  }catch(err){
+    console.warn('Falha ao salvar contagem no Supabase (mantida no localStorage):', err);
+  }
+}
+
 /* ---------------- LOGO OFICIAL (SELGRON) ---------------- */
 // Extraído do PDF vetorial enviado pelo cliente (Logotipo_Selgron_Laranja_CMYK.pdf).
 // Embutido como base64 para manter o app em um único arquivo, sem dependência externa.
@@ -2332,7 +2371,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   const statusAprovacao = hasSaldoLocal ? computeStatus(numeroContagem, classification.level) : 'aguardando_analise_lider';
 
   function finalize(){
-    onComplete({
+    const count = {
       id: 'CNT-'+Math.random().toString(36).slice(2,8).toUpperCase(),
       productCode: product.codigo,
       descricao: product.descricao,
@@ -2360,7 +2399,9 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
       data: new Date().toISOString().slice(0,10),
       hora: new Date().toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'}),
       inventario: inv ? inv.id : '—',
-    });
+    };
+    saveContagemToSupabase(count);
+    onComplete(count);
   }
 
   return (
