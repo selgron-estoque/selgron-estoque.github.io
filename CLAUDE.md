@@ -1025,6 +1025,59 @@ um item que tinha sido contado via busca no catálogo Supabase (fora do cache lo
   erro de "não encontrado") e que "Solicitar nova contagem" move o item pra
   "Aguardando Segunda Contagem" sem navegar e sem quebrar a tela.
 
+## Bloqueio de contagem duplicada + diferenciar card de recontagem rejeitada
+
+Dois pedidos do cliente na sequência do ajuste anterior: (1) "não permitir lançar
+contagem de item que já está com documento de contagem aberto" — o mesmo código de
+produto podia ser contado de novo em outro lugar do app (ex: "Nova Contagem" avulsa)
+enquanto já tinha uma contagem aguardando análise do líder ou aguardando recontagem em
+algum inventário, gerando dois documentos conflitantes pro mesmo item; (2) diferenciar
+visualmente, na fila "Aguardando Segunda Contagem", o card de um item que foi pra lá
+porque o **líder rejeitou a divergência** (via "Solicitar nova contagem") do card de um
+item que caiu lá sozinho pela regra automática da 1ª contagem (divergência leve).
+
+- **`getOpenCountForProduct(counts, productCode)`** (perto de `STATUS_INFO`) — acha o
+  registro de contagem mais recente (a PONTA da corrente de recontagem, sem uma rodada
+  seguinte ainda) pra um código, se o `statusAprovacao` dele estiver em
+  `OPEN_STATUSES` (`aguardando_segunda` ou `aguardando_analise_lider`). Mesma lógica de
+  "ponta da corrente" que o `RecountsPanel` já usava (`byOriginal`), só que extraída
+  como função reutilizável.
+- **Bloqueio central em `CountStep`**: recebe `counts` como prop agora (threaded a
+  partir de `App()` por `RandomCountFlow`/`ManualCountFlow`/`RouteCountFlow`/
+  `ImportedListCountFlow` — só `RecountFlow` não precisa, ver abaixo). Logo no topo do
+  componente, se `numeroContagem===1` (ou seja, é uma contagem NOVA, não uma
+  recontagem) e `getOpenCountForProduct` encontra um documento aberto pro código, o
+  componente retorna uma tela de bloqueio (🔒 "já tem uma contagem em aberto", com
+  quem contou, quando e o status atual) em vez da UI normal de contagem — nenhum campo
+  de quantidade aparece, não dá pra prosseguir. Como TODOS os fluxos de contagem
+  passam por `CountStep`, um único ponto de checagem cobre todos eles (mesmo padrão já
+  usado pra `saveContagemToSupabase`). `RecountFlow` passa `numeroContagem =
+  original.numeroContagem+1` (sempre ≥2), então nunca é bloqueado — é exatamente o
+  fluxo que resolve o documento aberto, não pode travar nele mesmo.
+- **Escopo consciente**: o bloqueio acontece quando o item é SELECIONADO pra contar
+  (ex: ao clicar num resultado de busca ou entrar no `CountStep` dentro de uma fila de
+  inventário) — não filtra o item de antemão das listas geradas automaticamente
+  (`RandomCountFlow`/`RouteCountFlow`/`ImportedListCountFlow` continuam incluindo o
+  item na fila/rota; ele só fica bloqueado quando chega a vez dele). Suficiente pro
+  pedido original (impedir o LANÇAMENTO duplicado), mas se o cliente notar que um item
+  bloqueado ainda aparece "na vez" dentro de um inventário e achar confuso, o próximo
+  passo seria filtrar esses itens da lista antes de montar a fila.
+- **Card diferenciado em "Aguardando Segunda Contagem"**: `requestRecountFromOperator`
+  (em `App()`) agora também grava `recontagemSolicitadaPeloLider:true`,
+  `recontagemSolicitadaPor` (nome de quem clicou) e `recontagemSolicitadaEm` (data/hora)
+  na contagem, além de mudar o `statusAprovacao`. `RecountsPanel` usa esses campos pra
+  trocar a `StatusTag` do card de "warn"/label da classificação pra "danger"/"Divergência
+  rejeitada", acrescentar uma faixa de aviso (`divergence-alert`) explicando quem
+  rejeitou e quando, e uma borda esquerda vermelha (`var(--danger)`) no card inteiro —
+  itens que caíram ali sozinhos pela regra automática (sem essa flag) continuam com a
+  aparência de antes (tag "warn" com o label da classificação, sem borda/aviso extra).
+- Testado via Playwright (sandbox sem rede): contei um item até virar divergência,
+  tentei contar o MESMO código de novo via "Nova Contagem" avulsa e confirmei a tela de
+  bloqueio (sem campo de quantidade); depois, a partir do mesmo item em "Aguardando
+  Análise do Líder", cliquei "Solicitar nova contagem" e confirmei que o card em
+  "Aguardando Segunda Contagem" mostra a tag "Divergência rejeitada", o aviso com nome
+  de quem solicitou, e a borda vermelha (`rgb(196, 41, 27)`, confere com `--danger`).
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase

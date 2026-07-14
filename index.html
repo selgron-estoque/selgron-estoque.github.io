@@ -1099,6 +1099,22 @@ const STATUS_INFO = {
   aprovado_lider: {level:'ok', text:'Divergência aprovada pelo líder de estoque'},
 };
 
+// Status que ainda não foram resolvidos — enquanto um item estiver num
+// desses, existe um "documento de contagem em aberto" pra ele.
+const OPEN_STATUSES = ['aguardando_segunda', 'aguardando_analise_lider'];
+
+// Encontra o documento de contagem em aberto (se houver) mais recente pra um
+// código de produto — usado pra bloquear lançar uma contagem NOVA (1ª
+// rodada) de um item que já está em análise/aguardando recontagem em outro
+// lugar do app. Só olha a PONTA de cada corrente de recontagem (o registro
+// que ainda não tem uma rodada seguinte), mesma lógica já usada em
+// RecountsPanel pra montar as filas de recontagem.
+function getOpenCountForProduct(counts, productCode){
+  const hasFollowUp = new Set();
+  counts.forEach(c=>{ if(c.contagemAnteriorId) hasFollowUp.add(c.contagemAnteriorId); });
+  return counts.find(c=>c.productCode===productCode && !hasFollowUp.has(c.id) && OPEN_STATUSES.includes(c.statusAprovacao)) || null;
+}
+
 /* ---------------- RELATÓRIO EXCEL (SheetJS) ---------------- */
 
 function statusLabel(c){
@@ -1383,7 +1399,17 @@ function App(){
   // (mesma fila que já existe, ver RecountsPanel). Diferente do botão
   // "Recontar" (RecountFlow), que é o próprio líder/admin recontando na hora.
   function requestRecountFromOperator(countId){
-    setCounts(prev=>prev.map(c=>c.id===countId?{...c, statusAprovacao:'aguardando_segunda'}:c));
+    setCounts(prev=>prev.map(c=>c.id===countId?{
+      ...c,
+      statusAprovacao:'aguardando_segunda',
+      // Marca que essa 2ª contagem existe porque o líder REJEITOU a
+      // divergência (não aceitou o resultado) — diferente de um item que
+      // caiu em "aguardando_segunda" sozinho pela regra automática da 1ª
+      // contagem. RecountsPanel usa isso pra diferenciar o card.
+      recontagemSolicitadaPeloLider:true,
+      recontagemSolicitadaPor: currentUser?currentUser.nome:'—',
+      recontagemSolicitadaEm: new Date().toLocaleString('pt-BR'),
+    }:c));
   }
 
   function deleteInventory(id){
@@ -1587,10 +1613,10 @@ function App(){
         {view==='inventories' && <InventoryList inventories={inventories} goto={goto} role={role} counts={counts} onDelete={deleteInventory} />}
         {view==='newInventory' && (role==='lider'||role==='admin') && <NewInventory users={users} onCreate={(inv)=>{setInventories(prev=>[inv,...prev]); saveInventarioToSupabase(inv); goto('inventories');}} />}
         {view==='pickCountType' && <PickCountType inv={flowState} goto={goto} />}
-        {view==='randomCount' && <RandomCountFlow inv={flowState} user={currentUser} onFinish={(c)=>{setCounts(p=>[c,...p]); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} />}
-        {view==='manualCount' && <ManualCountFlow user={currentUser} onFinish={(c)=>{setCounts(p=>[c,...p]); goto('home');}} onAddressProposed={addAddressProposal} />}
-        {view==='routeCount' && <RouteCountFlow inv={flowState} user={currentUser} onFinish={(c)=>{setCounts(p=>[c,...p]); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} />}
-        {view==='importedListCount' && <ImportedListCountFlow inv={flowState} user={currentUser} onFinish={(c)=>{setCounts(p=>[c,...p]); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} />}
+        {view==='randomCount' && <RandomCountFlow inv={flowState} user={currentUser} counts={counts} onFinish={(c)=>{setCounts(p=>[c,...p]); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} />}
+        {view==='manualCount' && <ManualCountFlow user={currentUser} counts={counts} onFinish={(c)=>{setCounts(p=>[c,...p]); goto('home');}} onAddressProposed={addAddressProposal} />}
+        {view==='routeCount' && <RouteCountFlow inv={flowState} user={currentUser} counts={counts} onFinish={(c)=>{setCounts(p=>[c,...p]); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} />}
+        {view==='importedListCount' && <ImportedListCountFlow inv={flowState} user={currentUser} counts={counts} onFinish={(c)=>{setCounts(p=>[c,...p]); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} />}
         {view==='myCounts' && <MyCounts counts={counts} user={currentUser} role={role} goto={goto} />}
         {view==='recounts' && <RecountsPanel counts={counts} role={role} currentUser={currentUser} goto={goto} onApprove={approveDivergence} onRequestRecount={requestRecountFromOperator} />}
         {view==='recount' && flowState && <RecountFlow original={flowState} user={currentUser} onAddressProposed={addAddressProposal} onFinish={(c)=>{setCounts(p=>[c,...p]); goto('recounts');}} />}
@@ -2728,7 +2754,33 @@ function useCountQueue(items){
   return {current, idx, total:items.length, next, done};
 }
 
-function CountStep({product, user, onComplete, onAddressProposed, inv, expectAddressCheck=true, numeroContagem=1, contagemAnteriorId=null}){
+function CountStep({product, user, onComplete, onAddressProposed, inv, expectAddressCheck=true, numeroContagem=1, contagemAnteriorId=null, counts=[]}){
+  // Bloqueia lançar uma contagem NOVA (1ª rodada) de um item que já tem um
+  // documento em aberto em outro lugar do app (ex: contado numa lista de
+  // inventário e ainda aguardando análise do líder, e alguém tenta contar o
+  // mesmo código de novo via "Nova Contagem" avulsa). Recontagem legítima
+  // (numeroContagem>1, vinda do RecountFlow) nunca é bloqueada — é
+  // exatamente o fluxo que resolve o documento em aberto.
+  const openDoc = numeroContagem===1 ? getOpenCountForProduct(counts, product.codigo) : null;
+  if(openDoc){
+    const info = STATUS_INFO[openDoc.statusAprovacao] || {};
+    return (
+      <div className="empty-state">
+        <div className="ic"><Ic>🔒</Ic></div>
+        <div style={{fontWeight:700,marginBottom:6}}>{product.codigo} já tem uma contagem em aberto</div>
+        <div style={{maxWidth:420,margin:'0 auto'}}>
+          {openDoc.recontagemSolicitadaPeloLider
+            ? <>A divergência anterior não foi aceita — {openDoc.recontagemSolicitadaPor || 'o líder'} solicitou recontagem em {openDoc.recontagemSolicitadaEm||''}.</>
+            : <>{info.text || 'Aguardando resolução.'}</>
+          } Contado por {openDoc.usuario} em {openDoc.data} {openDoc.hora||''} · {openDoc.qtdContada} un.
+        </div>
+        <div style={{maxWidth:420,margin:'10px auto 0',fontSize:12.5,color:'var(--ink-dim)'}}>
+          Não é possível lançar uma nova contagem deste item enquanto esse documento não for
+          resolvido (aprovado ou recontado) — veja em "Recontagens".
+        </div>
+      </div>
+    );
+  }
   // Foto e motivo da divergência são tarefas de análise do líder/admin —
   // o operador só precisa contar e informar o endereço corretamente.
   const isOperador = user.perfil === 'operador';
@@ -2992,7 +3044,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
 
 /* ---------------- MÓDULO 2: CONTAGEM ALEATÓRIA ---------------- */
 
-function RandomCountFlow({inv, user, onFinish, onAddressProposed, setInventories}){
+function RandomCountFlow({inv, user, onFinish, onAddressProposed, setInventories, counts}){
   const allItems = useMemo(()=> {
     // Critério aplicado: prioriza itens de maior valor financeiro (curva A) e
     // itens sem saída recente — os dois critérios "futuros" já citados no
@@ -3041,6 +3093,7 @@ function RandomCountFlow({inv, user, onFinish, onAddressProposed, setInventories
         product={q.current}
         user={user}
         inv={inv}
+        counts={counts}
         onAddressProposed={onAddressProposed}
         onComplete={(c)=>{
           if(inv){ setInventories(prev=>prev.map(i=>i.id===inv.id?{...i, contados:i.contados+1}:i)); incrementContadosSupabase(inv.id); }
@@ -3054,7 +3107,7 @@ function RandomCountFlow({inv, user, onFinish, onAddressProposed, setInventories
 
 /* ---------------- MÓDULO 3: CONTAGEM MANUAL ---------------- */
 
-function ManualCountFlow({user, onFinish, onAddressProposed}){
+function ManualCountFlow({user, onFinish, onAddressProposed, counts}){
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState(null);
   const [scanning, setScanning] = useState(false);
@@ -3085,7 +3138,7 @@ function ManualCountFlow({user, onFinish, onAddressProposed}){
   const results = localResults.length>0 ? localResults : remoteResults;
 
   if(selected){
-    return <CountStep product={selected} user={user} onAddressProposed={onAddressProposed} onComplete={(c)=>onFinish(c)} expectAddressCheck={true} />;
+    return <CountStep product={selected} user={user} counts={counts} onAddressProposed={onAddressProposed} onComplete={(c)=>onFinish(c)} expectAddressCheck={true} />;
   }
 
   function handleScanDetected(text){
@@ -3121,7 +3174,7 @@ function ManualCountFlow({user, onFinish, onAddressProposed}){
 
 /* ---------------- MÓDULO 4: CONTAGEM POR ROTA ---------------- */
 
-function RouteCountFlow({inv, user, onFinish, onAddressProposed, setInventories}){
+function RouteCountFlow({inv, user, onFinish, onAddressProposed, setInventories, counts}){
   const grouped = useMemo(()=>{
     const byCorredor = {};
     PRODUCTS.forEach(p=>{
@@ -3145,7 +3198,7 @@ function RouteCountFlow({inv, user, onFinish, onAddressProposed, setInventories}
   }
 
   if(active){
-    return <CountStep product={active} user={user} inv={inv} onAddressProposed={onAddressProposed} onComplete={(c)=>{
+    return <CountStep product={active} user={user} inv={inv} counts={counts} onAddressProposed={onAddressProposed} onComplete={(c)=>{
       if(inv){ setInventories(prev=>prev.map(i=>i.id===inv.id?{...i, contados:i.contados+1}:i)); incrementContadosSupabase(inv.id); }
       onFinish(c);
       setActive(null);
@@ -3180,7 +3233,7 @@ function RouteCountFlow({inv, user, onFinish, onAddressProposed, setInventories}
 
 /* ---------------- MÓDULO 1B: CONTAGEM POR LISTA IMPORTADA (Excel) ---------------- */
 
-function ImportedListCountFlow({inv, user, onFinish, onAddressProposed, setInventories}){
+function ImportedListCountFlow({inv, user, onFinish, onAddressProposed, setInventories, counts}){
   const allItems = useMemo(()=>{
     const lista = (inv && inv.itensImportados) || [];
     return lista.map(item=>{
@@ -3249,6 +3302,7 @@ function ImportedListCountFlow({inv, user, onFinish, onAddressProposed, setInven
         product={q.current}
         user={user}
         inv={inv}
+        counts={counts}
         onAddressProposed={onAddressProposed}
         onComplete={(c)=>{
           if(inv){ setInventories(prev=>prev.map(i=>i.id===inv.id?{...i, contados:i.contados+1}:i)); incrementContadosSupabase(inv.id); }
@@ -3378,14 +3432,22 @@ function RecountsPanel({counts, role, currentUser, goto, onApprove, onRequestRec
       {aguardandoSegunda.length===0 ? (
         <div className="empty-state" style={{padding:20}}>Nenhum item aguardando recontagem no momento.</div>
       ) : aguardandoSegunda.map(c=>(
-        <div key={c.id} className="item-card">
+        <div key={c.id} className="item-card" style={c.recontagemSolicitadaPeloLider ? {borderLeft:'3px solid var(--danger)'} : undefined}>
           <div className="item-card-head">
             <div>
               <div className="item-code">{c.productCode}</div>
               <div className="item-desc" style={{fontSize:15}}>{c.descricao}</div>
             </div>
-            <StatusTag status="warn" text={c.classificacao.label} />
+            {c.recontagemSolicitadaPeloLider
+              ? <StatusTag status="danger" text="Divergência rejeitada" />
+              : <StatusTag status="warn" text={c.classificacao.label} />}
           </div>
+          {c.recontagemSolicitadaPeloLider && (
+            <div className="divergence-alert" style={{margin:'0 18px 10px'}}>
+              <Ic>⚠</Ic>
+              <span>{c.recontagemSolicitadaPor || 'O líder'} não aceitou a divergência da 1ª contagem e solicitou uma nova contagem em {c.recontagemSolicitadaEm}.</span>
+            </div>
+          )}
           <div style={{padding:'14px 18px',display:'flex',flexWrap:'wrap',gap:8,fontSize:12,color:'var(--ink-dim)',fontFamily:'var(--font-mono)'}}>
             <span>1ª contagem: {c.qtdContada} un.</span>·<span>Diferença {c.diferenca==null ? '— (sem saldo local)' : (c.diferenca>0?'+':'')+c.diferenca+' ('+c.percentual.toFixed(1)+'%)'}</span>·<span>{c.usuario}</span>·<span>{c.data} {c.hora||''}</span>
           </div>
