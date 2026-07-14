@@ -588,6 +588,126 @@ async function saveContagemToSupabase(count){
   }
 }
 
+// Reconstrói o objeto `count` no mesmo formato que CountStep.finalize() já usa
+// localmente, a partir de uma linha da tabela `contagens` — usado ao ler
+// contagens feitas em OUTROS aparelhos (ver fetchContagensFromSupabase).
+// `classificacao` no banco é só o label (texto) — reconstrói um objeto
+// mínimo compatível com os lugares que leem c.classificacao.label/.level/.rule.
+function contagemRowToLocal(row){
+  return {
+    id: row.id,
+    productCode: row.produto_codigo,
+    descricao: row.descricao,
+    endereco: row.endereco,
+    enderecoContado: row.endereco_contado,
+    enderecoPendenteValidacao: row.endereco_pendente_validacao,
+    usuario: row.usuario,
+    qtdContada: row.qtd_contada,
+    saldoSistema: row.saldo_sistema,
+    diferenca: row.diferenca,
+    percentual: row.percentual,
+    valorDivergente: row.valor_divergente,
+    foraDoCacheLocal: row.fora_do_cache_local,
+    classificacao: {label: row.classificacao, level: undefined, rule: ''},
+    statusAprovacao: row.status_aprovacao,
+    numeroContagem: row.numero_contagem,
+    contagemAnteriorId: row.contagem_anterior_id,
+    motivo: row.motivo,
+    foto: row.tem_foto,
+    observacao: row.observacao,
+    data: row.data,
+    hora: row.hora,
+    inventario: row.inventario_id,
+  };
+}
+
+// Busca contagens gravadas em QUALQUER aparelho (ver saveContagemToSupabase) —
+// usada só pra completar o histórico local com o que aconteceu em outros
+// aparelhos, nunca substitui o que já existe localmente. Limite de 500 linhas
+// mais recentes: suficiente pro protótipo, sem paginação por ora.
+async function fetchContagensFromSupabase(){
+  if(!supabaseClient) return [];
+  try{
+    const { data, error } = await supabaseClient
+      .from('contagens')
+      .select('*')
+      .order('criado_em', {ascending:false})
+      .limit(500);
+    if(error || !data) return [];
+    return data.map(contagemRowToLocal);
+  }catch(err){
+    console.warn('Falha ao buscar contagens do Supabase:', err);
+    return [];
+  }
+}
+
+// Grava o inventário também no Supabase, no momento da criação — mesmo
+// padrão fire-and-forget de saveContagemToSupabase. Login/usuários continuam
+// locais, então `responsavel` vai como texto puro, sem FK.
+async function saveInventarioToSupabase(inv){
+  if(!supabaseClient) return;
+  try{
+    const { error } = await supabaseClient.from('inventarios').insert({
+      id: inv.id,
+      nome: inv.nome,
+      almoxarifado: inv.almoxarifado,
+      responsavel: inv.responsavel,
+      data: inv.data,
+      tipo: inv.tipo,
+      qtd_itens: inv.qtdItens,
+      status: inv.status,
+      contados: inv.contados,
+      itens_importados: inv.itensImportados || null,
+    });
+    if(error) console.warn('Falha ao salvar inventário no Supabase (mantido no localStorage):', error.message);
+  }catch(err){
+    console.warn('Falha ao salvar inventário no Supabase (mantido no localStorage):', err);
+  }
+}
+
+// Incrementa `contados` no Supabase via função de banco (increment_contados,
+// ver backend/schema.sql) em vez de ler+somar+gravar no client — evita perder
+// incremento se dois aparelhos completarem uma contagem quase ao mesmo tempo.
+async function incrementContadosSupabase(invId){
+  if(!supabaseClient) return;
+  try{
+    const { error } = await supabaseClient.rpc('increment_contados', {p_id: invId});
+    if(error) console.warn('Falha ao sincronizar progresso do inventário no Supabase:', error.message);
+  }catch(err){
+    console.warn('Falha ao sincronizar progresso do inventário no Supabase:', err);
+  }
+}
+
+// Busca inventários gravados em QUALQUER aparelho — mesma lógica de
+// fetchContagensFromSupabase, usada pra mesclar progresso feito em outros
+// aparelhos no mesmo inventário.
+async function fetchInventoriesFromSupabase(){
+  if(!supabaseClient) return [];
+  try{
+    const { data, error } = await supabaseClient
+      .from('inventarios')
+      .select('*')
+      .order('criado_em', {ascending:false})
+      .limit(200);
+    if(error || !data) return [];
+    return data.map(row=>({
+      id: row.id,
+      nome: row.nome,
+      almoxarifado: row.almoxarifado,
+      responsavel: row.responsavel,
+      data: row.data,
+      tipo: row.tipo,
+      qtdItens: row.qtd_itens,
+      status: row.status,
+      contados: row.contados,
+      ...(row.itens_importados ? {itensImportados: row.itens_importados} : {}),
+    }));
+  }catch(err){
+    console.warn('Falha ao buscar inventários do Supabase:', err);
+    return [];
+  }
+}
+
 /* ---------------- LOGO OFICIAL (SELGRON) ---------------- */
 // Extraído do PDF vetorial enviado pelo cliente (Logotipo_Selgron_Laranja_CMYK.pdf).
 // Embutido como base64 para manter o app em um único arquivo, sem dependência externa.
@@ -1111,6 +1231,46 @@ function App(){
     return ()=>{ clearTimeout(timer); events.forEach(ev=>window.removeEventListener(ev, resetTimer)); };
   }, [currentUser]);
 
+  // ---- Sincronização de inventários/contagens com o Supabase ----
+  // localStorage continua sendo a fonte imediata (funciona offline, mostra na
+  // hora o que o próprio aparelho fez); isso só busca o que outros aparelhos
+  // gravaram desde o último poll (a cada 30s) e mescla. Nunca some com dado
+  // local: contagens só são ADICIONADAS (por id, o que já existe fica como
+  // está); inventários só são sobrescritos quando o `contados` remoto está
+  // igual ou mais avançado que o local (evita "voltar" o progresso se o poll
+  // chegar antes do próprio incremento local processar).
+  useEffect(()=>{
+    if(!currentUser || !supabaseClient) return;
+    let cancelled = false;
+    async function sync(){
+      const [remoteInv, remoteCounts] = await Promise.all([
+        fetchInventoriesFromSupabase(),
+        fetchContagensFromSupabase(),
+      ]);
+      if(cancelled) return;
+      if(remoteInv.length){
+        setInventories(prev=>{
+          const byId = new Map(prev.map(i=>[i.id, i]));
+          remoteInv.forEach(ri=>{
+            const local = byId.get(ri.id);
+            if(!local || ri.contados >= local.contados) byId.set(ri.id, {...local, ...ri});
+          });
+          return Array.from(byId.values());
+        });
+      }
+      if(remoteCounts.length){
+        setCounts(prev=>{
+          const knownIds = new Set(prev.map(c=>c.id));
+          const novas = remoteCounts.filter(c=>!knownIds.has(c.id));
+          return novas.length ? [...novas, ...prev] : prev;
+        });
+      }
+    }
+    sync();
+    const interval = setInterval(sync, 30000);
+    return ()=>{ cancelled = true; clearInterval(interval); };
+  }, [currentUser]);
+
   if(!currentUser){
     return (
       <LoginScreen
@@ -1154,7 +1314,7 @@ function App(){
       <div className="content">
         {view==='home' && <Home role={role} user={currentUser} inventories={inventories} counts={counts} enderecosPropostos={enderecosPropostos} goto={goto} period={dashboardPeriod} />}
         {view==='inventories' && <InventoryList inventories={inventories} goto={goto} role={role} counts={counts} onDelete={deleteInventory} />}
-        {view==='newInventory' && (role==='lider'||role==='admin') && <NewInventory users={users} onCreate={(inv)=>{setInventories(prev=>[inv,...prev]); goto('inventories');}} />}
+        {view==='newInventory' && (role==='lider'||role==='admin') && <NewInventory users={users} onCreate={(inv)=>{setInventories(prev=>[inv,...prev]); saveInventarioToSupabase(inv); goto('inventories');}} />}
         {view==='pickCountType' && <PickCountType inv={flowState} goto={goto} />}
         {view==='randomCount' && <RandomCountFlow inv={flowState} user={currentUser} onFinish={(c)=>{setCounts(p=>[c,...p]); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} />}
         {view==='manualCount' && <ManualCountFlow user={currentUser} onFinish={(c)=>{setCounts(p=>[c,...p]); goto('home');}} onAddressProposed={addAddressProposal} />}
@@ -2612,7 +2772,7 @@ function RandomCountFlow({inv, user, onFinish, onAddressProposed, setInventories
         inv={inv}
         onAddressProposed={onAddressProposed}
         onComplete={(c)=>{
-          if(inv) setInventories(prev=>prev.map(i=>i.id===inv.id?{...i, contados:i.contados+1}:i));
+          if(inv){ setInventories(prev=>prev.map(i=>i.id===inv.id?{...i, contados:i.contados+1}:i)); incrementContadosSupabase(inv.id); }
           onFinish(c);
           q.next();
         }}
@@ -2715,7 +2875,7 @@ function RouteCountFlow({inv, user, onFinish, onAddressProposed, setInventories}
 
   if(active){
     return <CountStep product={active} user={user} inv={inv} onAddressProposed={onAddressProposed} onComplete={(c)=>{
-      if(inv) setInventories(prev=>prev.map(i=>i.id===inv.id?{...i, contados:i.contados+1}:i));
+      if(inv){ setInventories(prev=>prev.map(i=>i.id===inv.id?{...i, contados:i.contados+1}:i)); incrementContadosSupabase(inv.id); }
       onFinish(c);
       setActive(null);
     }} />;
@@ -2820,7 +2980,7 @@ function ImportedListCountFlow({inv, user, onFinish, onAddressProposed, setInven
         inv={inv}
         onAddressProposed={onAddressProposed}
         onComplete={(c)=>{
-          if(inv) setInventories(prev=>prev.map(i=>i.id===inv.id?{...i, contados:i.contados+1}:i));
+          if(inv){ setInventories(prev=>prev.map(i=>i.id===inv.id?{...i, contados:i.contados+1}:i)); incrementContadosSupabase(inv.id); }
           onFinish(c);
           q.next();
         }}

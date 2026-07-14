@@ -872,6 +872,83 @@ escolheu a opção leve ("1").
   migração completa antes de desenhar o schema — a resposta muda a modelagem inteira, como
   ficou claro aqui.
 
+## Terceiro pedaço do backend real: inventários e contagens sincronizam entre aparelhos
+
+O cliente testou o passo anterior (contagens gravando no Supabase) de dois aparelhos
+diferentes e viu que o Dashboard do computador não mostrava a contagem feita pelo celular
+— esperado, já que só a GRAVAÇÃO existia (write-only), ninguém lia do Supabase ainda.
+Perguntei o escopo (via `AskUserQuestion`) em duas rodadas: primeiro se quer só
+sincronizar o histórico de contagens ou também os inventários (progresso compartilhado
+entre tablets contando o mesmo inventário) — escolheu inventários também. Depois, ao
+saber que resetar senha de OUTRO usuário via Supabase Auth exigiria a service role key
+(não pode ficar no navegador — abriria uma falha grave) e uma Edge Function extra pra
+publicar via CLI, decidiu **adiar a migração do login** e focar só em inventários e
+contagens. Ou seja: **login/usuários continuam 100% locais** (`localStorage`,
+`attemptLogin` em `index.html`) — nada mudou lá, só a camada de dados de
+inventários/contagens passou a ser compartilhada.
+
+- **`inventarios` no Supabase, denormalizada** (mesmo espírito de `contagens`): sem FK pra
+  `usuarios` (`responsavel` é texto puro) — `backend/schema.sql` foi reescrito, a versão
+  anterior (com `inventario_itens` congelando saldo por item) nunca tinha sido usada e não
+  batia com a realidade: o app não guarda lista de itens por inventário, exceto quando
+  `tipo==='Lista Importada (Excel)'` — nesse caso a lista vai como `itens_importados jsonb`
+  na própria linha, mais simples que uma tabela filha pra um dado que só é lido, nunca
+  consultado item a item. Pros outros tipos (Aleatória/Curva ABC/Manual/Rota), a lista de
+  itens é recalculada a partir do catálogo a cada vez que o fluxo de contagem monta (ver
+  `RandomCountFlow`) — só o contador `contados` (quantos itens já foram contados, usado como
+  offset pra saber por onde retomar) precisa persistir e sincronizar.
+- **`increment_contados(p_id)`**: função SQL que faz `update inventarios set contados =
+  contados + 1` dentro do banco, em vez do client ler o valor, somar e gravar de volta — evita
+  perder um incremento se dois aparelhos completarem uma contagem do mesmo inventário quase
+  ao mesmo tempo (a versão "lê e soma no navegador" teria essa corrida; a função no banco
+  não).
+- **Funções novas no `index.html`** (perto de `saveContagemToSupabase`):
+  `saveInventarioToSupabase(inv)` (insert fire-and-forget, chamado no `onCreate` de
+  `NewInventory`), `incrementContadosSupabase(invId)` (chama a RPC acima, fire-and-forget,
+  chamado nos 3 lugares que já incrementavam `contados` localmente —
+  `RandomCountFlow`/`RouteCountFlow`/`ImportedListCountFlow`), `fetchInventoriesFromSupabase()`
+  e `fetchContagensFromSupabase()` (leitura, mapeando snake_case→camelCase de volta pro
+  formato que o app já usa — `contagemRowToLocal` reconstrói `classificacao` como
+  `{label, level:undefined, rule:''}` já que o banco só guarda o label em texto).
+- **Sincronização por polling, não realtime**: um `useEffect` em `App()` (logo depois do
+  efeito de logout por inatividade) roda `sync()` assim que loga e depois a cada 30s
+  (`setInterval`), enquanto a sessão está ativa. Escolhido em vez de Supabase Realtime
+  (WebSocket) pra não introduzir uma peça de infraestrutura nova — o app não tem nenhum
+  canal realtime hoje, e polling a cada 30s é suficiente pro ritmo de uma contagem manual
+  (não precisa aparecer em menos de 1 segundo). Pode virar realtime depois se o cliente
+  achar o atraso perceptível.
+- **Merge nunca perde dado local**: `counts` só recebe registros com `id` que ainda não
+  existem localmente (aditivo puro — nunca sobrescreve). `inventories` só aceita o registro
+  remoto quando `contados` remoto ≥ local (evita "voltar" o progresso se o poll chegar
+  antes do próprio incremento do aparelho ainda não ter sido gravado no Supabase — testado
+  via Playwright simulando essa corrida, contados local não regride). Se a rede cair, o
+  `sync()` simplesmente não traz nada nesse ciclo e o app segue 100% funcional com o que já
+  tinha — mesma tolerância a falha já usada em `saveContagemToSupabase`.
+- **Limitação conhecida, documentada e não resolvida agora**: o "próximo item" de um
+  inventário Aleatório/Curva ABC/Rota é `allItems[contados]` — um índice, não uma reserva
+  por item. Se dois aparelhos contarem o MESMO inventário ao mesmo tempo de verdade (não só
+  um olhando o progresso do outro depois de pronto), os dois podem pegar o item de mesmo
+  índice antes do incremento propagar pelo polling de 30s, gerando uma contagem duplicada
+  do mesmo item. Resolver isso de verdade (reservar item por aparelho) é escopo maior, fica
+  como limitação conhecida — mesmo padrão de transparência já usado em outras partes do
+  projeto.
+- **Testado via Playwright com `inventarios`/`contagens` mockados simulando dois
+  "aparelhos"** (sandbox sem saída de rede, mesma técnica de sempre): confirmei que um
+  inventário e uma contagem criados só no mock (simulando outro tablet) aparecem no
+  `localStorage` do aparelho de teste depois do sync inicial, sem apagar os dados locais
+  que já existiam; e que um `contados` remoto desatualizado (menor que o local) NÃO
+  sobrescreve o progresso local mais avançado. Não testei contra o Supabase de verdade —
+  falta o usuário rodar o SQL atualizado (recriar `inventarios`, criar
+  `increment_contados`) no projeto real e testar em dois aparelhos de verdade.
+- **Login continua igual**: nenhuma mudança em `LoginScreen`, `Settings`,
+  `UserManagementPanel`, ou nas funções de auth em `App()` (`attemptLogin`,
+  `requestPasswordReset`, `applyAdminPasswordAction`, etc.) — senha em texto puro,
+  aprovação de reset pelo admin, tudo como estava. Se o cliente pedir pra migrar login
+  pro Supabase Auth no futuro, isso é um projeto à parte — precisa decidir antes como fica
+  o reset de senha de outro usuário sem expor a service role key no navegador (opções já
+  discutidas com o cliente: e-mail real do Supabase Auth, ou uma Edge Function publicada
+  via CLI mantendo o admin no controle).
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase

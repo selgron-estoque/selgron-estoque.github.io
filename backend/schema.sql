@@ -111,52 +111,39 @@ create table endereco_propostas (
 );
 
 -- ---------------------------------------------------------------------------
--- INVENTÁRIOS + SNAPSHOT DE SALDO
---
--- Ao criar um inventário, o saldo de cada item do almoxarifado é COPIADO
--- (congelado) para inventario_itens. A contagem cega compara contra essa
--- foto, nunca contra estoque_saldo "ao vivo" — assim uma movimentação no
--- Protheus no meio da janela de contagem não muda o alvo debaixo do
--- operador.
+-- INVENTÁRIOS — VERSÃO DENORMALIZADA (mesma decisão já tomada pra `contagens`:
+-- login continua 100% local, sem Supabase Auth, então nada de FK pra
+-- `usuarios`). Existia uma versão anterior aqui pensada pra congelar saldo por
+-- item numa tabela `inventario_itens` — nunca foi usada de verdade, porque o
+-- app não guarda a lista de itens de um inventário: pra Aleatória/Curva
+-- ABC/Manual/Rota, a lista é recalculada a partir do catálogo a cada vez
+-- (determinística, ordenada, ver RandomCountFlow no index.html), e só o
+-- CONTADOR `contados` precisa persistir pra saber por onde retomar. Só o tipo
+-- "Lista Importada (Excel)" tem uma lista de itens real — guardada como jsonb
+-- aqui mesmo, mais simples que uma tabela filha pra um dado que é só lido, não
+-- consultado por item.
 -- ---------------------------------------------------------------------------
 create table inventarios (
-  id uuid primary key default gen_random_uuid(),
+  id text primary key,              -- 'INV-XXX', gerado no app
   nome text not null,
-  almoxarifado text not null,
-  responsavel_id uuid references usuarios(id),
-  data date not null,
-  tipo text not null check (tipo in ('aleatoria','curva_abc','manual','rota_endereco')),
-  status text not null default 'pendente' check (status in ('pendente','em_andamento','concluido')),
+  almoxarifado text,
+  responsavel text,                 -- nome em texto puro, sem FK (login continua local)
+  data date,
+  tipo text not null,               -- string livre igual ao NewInventory, não é enum
+  qtd_itens int not null default 0,
+  status text not null default 'pendente',
+  contados int not null default 0,
+  itens_importados jsonb,           -- só preenchido quando tipo = 'Lista Importada (Excel)'
   criado_em timestamptz not null default now()
 );
 
-create table inventario_itens (
-  id uuid primary key default gen_random_uuid(),
-  inventario_id uuid not null references inventarios(id),
-  produto_codigo text not null references produtos(codigo),
-  endereco_id uuid references enderecos(id),   -- null se o item ainda não tem endereço cadastrado
-  saldo_congelado numeric(14,3) not null,       -- cópia de estoque_saldo.saldo no momento da criação
-  congelado_em timestamptz not null default now()
-);
-create index idx_inventario_itens_inv on inventario_itens(inventario_id);
-
--- Função que congela o saldo ao criar um inventário — chame isso logo depois
--- de inserir a linha em `inventarios`.
-create or replace function congelar_saldo_inventario(p_inventario_id uuid)
-returns int as $$
-declare
-  v_almoxarifado text;
-  v_qtd int;
+-- Increment atômico de `contados` — evita perder incremento se dois
+-- aparelhos completarem uma contagem quase ao mesmo tempo (um update comum de
+-- "lê o valor, soma 1, grava" tem essa corrida; rodando dentro do banco não).
+create or replace function increment_contados(p_id text)
+returns void as $$
 begin
-  select almoxarifado into v_almoxarifado from inventarios where id = p_inventario_id;
-
-  insert into inventario_itens (inventario_id, produto_codigo, saldo_congelado)
-  select p_inventario_id, es.produto_codigo, es.saldo
-  from estoque_saldo es
-  where es.almoxarifado = v_almoxarifado;
-
-  get diagnostics v_qtd = row_count;
-  return v_qtd; -- quantidade de itens congelados
+  update inventarios set contados = contados + 1 where id = p_id;
 end;
 $$ language plpgsql;
 
@@ -244,6 +231,14 @@ create policy "leitura pública" on estoque_saldo for select using (true);
 -- aceitável pro protótipo, não pra produção.
 create policy "leitura pública" on contagens for select using (true);
 create policy "inserção pública" on contagens for insert with check (true);
+
+-- Inventários: mesma razão de contagens acima, mas aqui também precisa de
+-- UPDATE público — é como o app incrementa `contados` (via increment_contados)
+-- e atualiza `status` conforme o progresso avança em qualquer aparelho.
+alter table inventarios enable row level security;
+create policy "leitura pública" on inventarios for select using (true);
+create policy "inserção pública" on inventarios for insert with check (true);
+create policy "atualização pública" on inventarios for update using (true) with check (true);
 
 -- Escrita em estoque_saldo SÓ pela service role (usada pela Edge Function de
 -- sincronização) — nenhum usuário do app escreve aqui diretamente.
