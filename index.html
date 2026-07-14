@@ -2253,9 +2253,18 @@ function BottomNav({view, goto, role}){
 
 /* ---------------- HOME ---------------- */
 
+// "Bom dia"/"Boa tarde"/"Boa noite" conforme o horário do aparelho — troca o
+// "Bem-vindo, {perfil}" antigo na saudação da Home (cliente achou repetitivo
+// já que o perfil já aparece no avatar do topbar).
+function saudacaoPorHorario(){
+  const h = new Date().getHours();
+  if(h < 12) return 'Bom dia';
+  if(h < 18) return 'Boa tarde';
+  return 'Boa noite';
+}
+
 function Home({role, user, inventories, counts, enderecosPropostos=[], goto, period}){
   const pendentes = inventories.filter(i=>i.status!=='concluido').length;
-  const roleName = {operador:'Operador', lider:'Líder de Estoque', admin:'Administrador'}[role];
   const byOriginal = {};
   counts.forEach(c=>{ if(c.contagemAnteriorId) byOriginal[c.contagemAnteriorId]=true; });
   const pendentesRecontagem = counts.filter(c=>(c.statusAprovacao==='aguardando_segunda' && !byOriginal[c.id]) || c.statusAprovacao==='aguardando_analise_lider').length;
@@ -2347,7 +2356,7 @@ function Home({role, user, inventories, counts, enderecosPropostos=[], goto, per
 
   return (
     <div>
-      <div className="greet">Bem-vindo, {roleName}</div>
+      <div className="greet">{saudacaoPorHorario()}</div>
       <h2 className="greet-title">{user.nome}</h2>
 
       {/* Telas largas: Dashboard novo (design corporativo/ERP) — ver CLAUDE.md

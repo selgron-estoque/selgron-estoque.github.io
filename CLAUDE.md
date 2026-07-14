@@ -1318,6 +1318,19 @@ armazém + mini-cards de resumo + toggle Valor/%. A imagem também tinha uma ten
   `estoque_resumo_geral`) e screenshot comparado visualmente com a imagem de
   referência do cliente — layout, badges coloridos, mini-cards e toggle batem.
 
+## Saudação da Home por horário (trocou "Bem-vindo, {perfil}")
+
+Cliente achou repetitivo mostrar o perfil ("Bem-vindo, Administrador") logo acima do
+nome na Home, já que o perfil já aparece no avatar do topbar/sidebar ao lado. Pediu uma
+saudação por horário do dia em vez disso.
+
+- `saudacaoPorHorario()` (perto de `Home`) — "Bom dia" (antes das 12h), "Boa tarde"
+  (12h–18h), "Boa noite" (depois das 18h), usando `new Date().getHours()` do próprio
+  aparelho (sem fuso horário fixo — cada tablet mostra conforme o horário local dele).
+  `roleName` (que só existia pra essa linha) foi removido, já não tem mais uso.
+- Testado via Playwright confirmando que a saudação bate com a hora do navegador no
+  momento do teste ("Boa noite" às 19h).
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase
