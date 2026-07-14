@@ -289,12 +289,15 @@
   .login-card .role-note{font-family:var(--font-corp);font-size:12.5px;color:var(--gray-500);background:var(--gray-50);border-radius:8px;border-left:3px solid var(--navy);}
 
   /* Faixa de confiança + rodapé, abaixo do card */
-  .login-trust-row{display:flex;align-items:flex-start;justify-content:center;gap:0;width:100%;max-width:900px;margin-top:28px;}
-  .login-trust-item{flex:1;display:flex;align-items:flex-start;gap:10px;padding:0 20px;text-align:left;}
+  /* Faixa de confiança: sempre lado a lado (mesmo em telas estreitas), os itens
+     encolhem — ícone em cima do texto, fontes menores — em vez de empilhar
+     verticalmente. A partir de 760px vira o layout largo (ícone ao lado do texto). */
+  .login-trust-row{display:flex;align-items:stretch;justify-content:center;gap:0;width:100%;max-width:900px;margin-top:28px;}
+  .login-trust-item{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:4px;padding:0 6px;text-align:center;}
   .login-trust-item + .login-trust-item{border-left:1px solid var(--gray-200);}
-  .login-trust-item .ti-icon{color:var(--gray-500);flex-shrink:0;margin-top:1px;}
-  .login-trust-item strong{display:block;font-family:var(--font-corp);font-size:13px;color:var(--navy);font-weight:700;}
-  .login-trust-item span{display:block;font-family:var(--font-corp);font-size:11.5px;color:var(--gray-500);margin-top:1px;}
+  .login-trust-item .ti-icon{color:var(--gray-500);flex-shrink:0;}
+  .login-trust-item strong{display:block;font-family:var(--font-corp);font-size:11px;color:var(--navy);font-weight:700;white-space:nowrap;}
+  .login-trust-item span{display:block;font-family:var(--font-corp);font-size:9.5px;color:var(--gray-500);margin-top:1px;line-height:1.25;}
   .login-footer{text-align:center;font-family:var(--font-corp);font-size:11.5px;color:var(--gray-500);margin-top:26px;letter-spacing:0.2px;line-height:1.7;}
   .login-footer .lf-restrict{display:flex;align-items:center;justify-content:center;gap:6px;}
 
@@ -307,10 +310,9 @@
     .login-illust-title{display:block;font-size:23px;}
     .login-illust-tagline{display:block;}
     .login-illust-decor{display:block;}
-  }
-  @media (max-width:759px){
-    .login-trust-row{flex-direction:column;gap:14px;max-width:420px;}
-    .login-trust-item + .login-trust-item{border-left:none;border-top:1px solid var(--gray-200);padding-top:14px;}
+    .login-trust-item{flex-direction:row;align-items:flex-start;gap:10px;padding:0 20px;text-align:left;}
+    .login-trust-item strong{font-size:13px;white-space:normal;}
+    .login-trust-item span{font-size:11.5px;}
   }
 
   /* ---------------- LAYOUT DESKTOP (sidebar) — só em telas largas ----------------
