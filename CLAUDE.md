@@ -949,6 +949,39 @@ inventários/contagens passou a ser compartilhada.
   discutidas com o cliente: e-mail real do Supabase Auth, ou uma Edge Function publicada
   via CLI mantendo o admin no controle).
 
+## Descrição dos grupos de produto (antes só mostrava o código numérico cru)
+
+O cliente mandou a planilha original (`SB2`) só com o código numérico do grupo
+(`grupo`, ex: `61`), então o app sempre mostrou "Grupo 61" cru no campo "Família" —
+tanto pro cache local de 300 itens quanto pro resultado da busca no catálogo real do
+Supabase (`searchSupabaseCatalog`). Depois ele conseguiu uma segunda planilha
+(`Grupo_de_Produtos.xlsx`, código → descrição, 248 grupos, sem duplicado nem lacuna)
+e pediu pra incluir.
+
+- **`GRUPO_DESCRICOES`** (perto de `USERS_SEED`/`RAW_SB2_PRODUCTS` no `index.html`) —
+  objeto estático `{"1":"ACRILICOS", "2":"ADESIVOS", ...}` com os 248 grupos embutido
+  direto no JS, mesmo raciocínio já usado pro cache de 300 produtos: essa taxonomia
+  muda raramente, não precisa de tabela nova no Supabase nem de round-trip de rede pra
+  resolver um dado que é essencialmente fixo. **Decisão consciente de não criar uma
+  tabela `grupos` no Supabase** — menos infraestrutura pra manter, e o cache local de
+  300 itens já é embutido do mesmo jeito (ficaria inconsistente ter só a parte da
+  descrição do grupo puxando de rede enquanto o produto em si é estático).
+- **`describeGrupo(grupo)`** — helper logo depois do objeto, faz o lookup e cai de
+  volta pro rótulo antigo `'Grupo ' + grupo` se algum código não estiver no mapa
+  (protege contra grupo novo que apareça no catálogo antes de o cliente atualizar essa
+  lista).
+- Usado nos dois lugares que antes montavam o rótulo cru: `PRODUCTS` (mapeamento do
+  cache local de 300 itens) e `searchSupabaseCatalog` (resultado da busca no catálogo
+  de 85 mil produtos do Supabase) — os dois agora chamam `describeGrupo(...)` em vez de
+  concatenar `'Grupo ' + código` na mão.
+- **Se o cliente mandar uma atualização dessa planilha no futuro** (grupo novo, nome
+  corrigido): o padrão é regenerar o objeto `GRUPO_DESCRICOES` inteiro a partir da
+  planilha nova e substituir no `index.html` — mesmo tratamento que já é dado a
+  atualizações do `RAW_SB2_PRODUCTS`.
+- Testado via Playwright (sandbox sem rede, produtos/inventários/contagens mockados
+  vazios): busquei um item do cache local com `grupo:61` e confirmei que o campo
+  "Família" mostra "MAT EXPEDIENTE (NÃO ENTRA MRP)" em vez de "Grupo 61".
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase
