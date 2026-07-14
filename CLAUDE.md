@@ -1206,6 +1206,30 @@ repetidamente, sem depender de mim rodando SQL a cada vez.
   atualizado (`estoque_saldo` sem FK, policy nova, função `estoque_valor_por_
   almoxarifado`) no projeto real e fazer o primeiro upload de verdade pelo painel.
 
+## Data/hora da última atualização do saldo (facilita saber se está desatualizado)
+
+Pedido rápido do cliente logo depois do upload da SB2: um campo mostrando quando foi a
+última atualização, pra facilitar saber se o saldo em tela está em dia (já que a
+atualização é manual/diária, não automática).
+
+- **`fetchUltimaAtualizacaoEstoque()`** (perto de `fetchEstoqueValorPorAlmoxarifado`) —
+  não precisou de coluna nova nem de função SQL: `estoque_saldo.sincronizado_em` já é
+  preenchido automaticamente (`default now()`) em cada linha inserida por
+  `replaceEstoqueSaldoInSupabase`. A função só busca a linha com o `sincronizado_em`
+  mais recente (`order by ... desc limit 1`) — como todas as linhas de um mesmo upload
+  são inseridas dentro do mesmo replace, esse valor é essencialmente "hora do último
+  upload confirmado".
+- Aparece em dois lugares: **`StockSyncPanel`** (Configurações) — logo acima do botão
+  de upload, atualiza sozinho depois de um upload bem-sucedido (sem precisar recarregar
+  a página); e **`Dashboard`** (seção "Estoque") — ao lado do título, só quando já
+  existe saldo real (`usandoSaldoReal`), no formato "(atualizado em 14/07/2026,
+  18:30:00)". Quando ainda está no cache local de demonstração, continua mostrando o
+  aviso de fallback no lugar (os dois avisos são mutuamente exclusivos, nunca aparecem
+  juntos).
+- Testado via Playwright (sandbox sem rede, `estoque_saldo`/RPC mockados): confirmei
+  que os dois lugares mostram a data/hora formatada em pt-BR a partir do mesmo dado
+  mockado, sem erros de console.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase

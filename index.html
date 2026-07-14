@@ -809,6 +809,26 @@ async function fetchEstoqueValorPorAlmoxarifado(){
   }
 }
 
+// Data/hora do upload mais recente da planilha SB2 — usa `sincronizado_em`
+// (já preenchido automaticamente em cada linha por `default now()`, sem
+// precisar de coluna nova). Basta pegar a linha mais recente; não precisa de
+// RPC/agregação pra isso. Retorna null se a tabela ainda estiver vazia.
+async function fetchUltimaAtualizacaoEstoque(){
+  if(!supabaseClient) return null;
+  try{
+    const { data, error } = await supabaseClient
+      .from('estoque_saldo')
+      .select('sincronizado_em')
+      .order('sincronizado_em', {ascending:false})
+      .limit(1);
+    if(error || !data || data.length===0) return null;
+    return data[0].sincronizado_em;
+  }catch(err){
+    console.warn('Falha ao buscar última atualização do estoque:', err);
+    return null;
+  }
+}
+
 /* ---------------- LOGO OFICIAL (SELGRON) ---------------- */
 // Extraído do PDF vetorial enviado pelo cliente (Logotipo_Selgron_Laranja_CMYK.pdf).
 // Embutido como base64 para manter o app em um único arquivo, sem dependência externa.
@@ -3740,9 +3760,11 @@ function Dashboard({counts, inventories}){
   // (RAW_SB2_PRODUCTS/PRODUCTS) se a tabela ainda estiver vazia ou a rede
   // falhar — mesmo padrão de fallback já usado em outros pontos do app.
   const [estoqueRemoto, setEstoqueRemoto] = useState(null); // null = ainda carregando/não tentado
+  const [ultimaAtualizacaoEstoque, setUltimaAtualizacaoEstoque] = useState(undefined);
   useEffect(()=>{
     let cancelado = false;
     fetchEstoqueValorPorAlmoxarifado().then(rows=>{ if(!cancelado) setEstoqueRemoto(rows); });
+    fetchUltimaAtualizacaoEstoque().then(v=>{ if(!cancelado) setUltimaAtualizacaoEstoque(v); });
     return ()=>{ cancelado = true; };
   }, []);
 
@@ -3783,6 +3805,7 @@ function Dashboard({counts, inventories}){
       <div className="section-title">
         Estoque
         {!usandoSaldoReal && <span style={{fontSize:11,color:'var(--ink-dim)',textTransform:'none',letterSpacing:'normal',marginLeft:8}}>(cache local de demonstração — atualize a planilha SB2 em Configurações)</span>}
+        {usandoSaldoReal && ultimaAtualizacaoEstoque && <span style={{fontSize:11,color:'var(--ink-dim)',textTransform:'none',letterSpacing:'normal',marginLeft:8}}>(atualizado em {new Date(ultimaAtualizacaoEstoque).toLocaleString('pt-BR')})</span>}
       </div>
       <div className="kpi-grid">
         {armazens.map(a=>(
@@ -4100,7 +4123,14 @@ function StockSyncPanel(){
   const [status, setStatus] = useState('idle'); // idle | uploading | done | error
   const [progresso, setProgresso] = useState(null);
   const [resultado, setResultado] = useState(null);
+  const [ultimaAtualizacao, setUltimaAtualizacao] = useState(undefined); // undefined = carregando, null = nunca atualizado
   const fileRef = useRef();
+
+  useEffect(()=>{
+    let cancelado = false;
+    fetchUltimaAtualizacaoEstoque().then(v=>{ if(!cancelado) setUltimaAtualizacao(v); });
+    return ()=>{ cancelado = true; };
+  }, []);
 
   function handleFile(e){
     const file = e.target.files[0];
@@ -4134,6 +4164,7 @@ function StockSyncPanel(){
     const res = await replaceEstoqueSaldoInSupabase(parseResult.linhas, (inseridas,total)=>setProgresso({inseridas,total}));
     setResultado(res);
     setStatus(res.ok ? 'done' : 'error');
+    if(res.ok) fetchUltimaAtualizacaoEstoque().then(setUltimaAtualizacao);
   }
 
   return (
@@ -4145,6 +4176,13 @@ function StockSyncPanel(){
         Atual, Sld.Atu.) sempre que precisar atualizar o saldo — normalmente todo dia.
         Cada upload <strong>substitui</strong> todo o saldo anterior pelo snapshot da
         planilha nova. Requer conexão com a internet.
+      </div>
+      <div style={{fontSize:12.5,fontFamily:'var(--font-mono)',color:'var(--ink-dim)',marginBottom:14}}>
+        {ultimaAtualizacao===undefined
+          ? 'Verificando última atualização…'
+          : ultimaAtualizacao
+            ? <>Última atualização: {new Date(ultimaAtualizacao).toLocaleString('pt-BR')}</>
+            : 'Ainda sem saldo carregado no Supabase.'}
       </div>
       <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{display:'none'}} onChange={handleFile} />
       <button className="btn btn-secondary" onClick={()=>fileRef.current.click()}>
