@@ -320,12 +320,13 @@
     .login-trust-item span{font-size:11.5px;}
   }
 
-  /* ---------------- LAYOUT DESKTOP (sidebar) — só em telas largas ----------------
-     O app continua mobile-first (tablet no chão de fábrica é o uso principal, ver
-     CLAUDE.md); esse bloco só entra em telas ≥1024px e não altera nada abaixo disso. */
+  /* ---------------- LAYOUT DESKTOP (sidebar) — telas de tablet/monitor ----------------
+     Esse bloco entra a partir de 768px (tablet em pé já entra, não só monitor/desktop —
+     ver CLAUDE.md "Breakpoint do layout desktop baixou pra 768px"); abaixo disso o app
+     usa o layout mobile compacto (celular estreito) sem alteração. */
   .desktop-topbar, .sidebar, .sidebar-toggle, .desktop-kpi-grid, .desktop-quick-grid, .desktop-cta-row, .pnl-wrap{display:none;}
 
-  @media (min-width:1024px){
+  @media (min-width:768px){
     .app{max-width:none;flex-direction:row;align-items:flex-start;position:relative;}
     .mobile-topbar, .bottom-nav{display:none;}
     .app-main{flex:1;display:flex;flex-direction:column;min-width:0;}

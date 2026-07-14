@@ -598,6 +598,32 @@ valer mais que a descrição textual anterior — reconstruí a tela pra bater c
   `transparent` a ~40-42%). Mantém a mesma paleta corporativa da marca sem virar
   "gradiente exagerado" nem glassmorphism — só profundidade discreta atrás do card.
 
+## Breakpoint do layout desktop baixou de 1024px pra 768px
+
+O cliente testou no tablet real dele e viu a tela `home` ainda no formato mobile antigo
+(grid de atalhos simples) em vez do Dashboard novo (sidebar + KPIs + donut). A causa: o
+bloco de layout desktop inteiro (`Sidebar`, `DesktopTopbar`, o Dashboard novo) só entrava
+a partir de `@media (min-width:1024px)` — e a largura CSS real do tablet dele (pelo
+print, ~800px de largura, formato retrato) fica ABAIXO desse limiar, então caía no layout
+mobile mesmo sendo um tablet de verdade, não um celular.
+
+- Breakpoint baixado pra `768px` (um tablet 10" comum em retrato já bate isso; um celular
+  em pé, mesmo grande, normalmente fica entre 360-430px — segue caindo no layout mobile
+  como antes). Testado nos dois limites: 800px (o caso real do cliente) já mostra
+  sidebar/Dashboard; 390px continua mostrando `BottomNav`/grid de atalhos sem alteração.
+- É **um único número pra trocar** — só existe um `@media (min-width:1024px)` no arquivo
+  (linha do comentário "LAYOUT DESKTOP (sidebar)"), todo o resto do CSS desktop
+  (`.sidebar`, `.desktop-topbar`, `.pnl-*`, etc.) já estava aninhado dentro desse mesmo
+  bloco, então baixar o número move o breakpoint inteiro de uma vez.
+- Em larguras~768-900px (tablet retrato, sidebar de 264px fixos comendo proporcionalmente
+  mais espaço) o cabeçalho (`DesktopTopbar`) pode quebrar título/subtítulo em 2 linhas —
+  é esperado e não quebra o layout, só fica menos folgado que num monitor. O grid de KPIs
+  já cai pra 3 colunas nessa faixa (regra existente `@media (max-width:1360px)`).
+- Se o cliente reportar de novo que "não mudou" depois de substituir o arquivo, antes de
+  mexer em breakpoint de novo, perguntar a largura real da tela (em pixels CSS, não
+  polegadas) — ele não sabe de cabeça, então uma forma prática é pedir pra abrir
+  `chrome://version` ou simplesmente testar visualmente com o breakpoint atual primeiro.
+
 ## Sidebar com botão de esconder/mostrar (telas menores que um monitor de mesa)
 
 Cliente testando num tablet notou que a sidebar de 264px ocupa proporcionalmente mais
