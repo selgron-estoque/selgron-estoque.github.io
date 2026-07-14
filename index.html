@@ -527,6 +527,29 @@ async function searchSupabaseCatalog(query){
     .or(`codigo.ilike.%${q}%,descricao.ilike.%${q}%`)
     .limit(8);
   if(error || !data) return [];
+
+  // Busca o saldo REAL (coluna "Saldo Atual" da planilha SB2, gravada em
+  // estoque_saldo.saldo pelo upload manual — ver StockSyncPanel/
+  // parseSB2Rows) pros códigos encontrados, somando entre armazéns quando o
+  // item existe em mais de um (a busca aqui não é presa a um almoxarifado
+  // específico). Sem isso, TODO item fora do cache local de 300 SKUs ficava
+  // sem saldo pra comparar e ia direto pra análise do líder — na prática
+  // quase toda contagem via "Nova Contagem" virava recontagem, mesmo
+  // quando batia certinho com o saldo real. `estoque_saldo` não tem FK pra
+  // `produtos` (ver backend/schema.sql), então é uma consulta separada, não
+  // um join automático do PostgREST.
+  const codigos = data.map(row=>row.codigo);
+  const saldoPorCodigo = {};
+  if(codigos.length>0){
+    const { data: saldoRows } = await supabaseClient
+      .from('estoque_saldo')
+      .select('produto_codigo, saldo')
+      .in('produto_codigo', codigos);
+    (saldoRows||[]).forEach(r=>{
+      saldoPorCodigo[r.produto_codigo] = (saldoPorCodigo[r.produto_codigo]||0) + Number(r.saldo||0);
+    });
+  }
+
   return data.map(row=>{
     const enderecoRow = (row.estoque_enderecos && row.estoque_enderecos[0] && row.estoque_enderecos[0].enderecos) || null;
     return {
@@ -539,7 +562,7 @@ async function searchSupabaseCatalog(query){
       almoxarifado: '—',
       corredor: null,
       rua: null,
-      saldoSistema: null,
+      saldoSistema: Object.prototype.hasOwnProperty.call(saldoPorCodigo, row.codigo) ? saldoPorCodigo[row.codigo] : null,
       custoUnit: 0,
       valorFinanceiro: 0,
       semMovimentoRecente: false,
@@ -2874,7 +2897,18 @@ function CameraScanner({onDetected, onCancel}){
           window.Html5QrcodeSupportedFormats.UPC_A,
           window.Html5QrcodeSupportedFormats.ITF,
         ] : undefined;
-        const scanner = new window.Html5Qrcode(containerId, formats ? {formatsToSupport: formats} : undefined);
+        // useBarCodeDetectorIfSupported: usa a API nativa BarcodeDetector do
+        // navegador (Chrome/Android — a plataforma alvo do app, ver
+        // README.md "tablets Android") em vez do decodificador em JS puro
+        // (ZXing) que a lib usa por padrão. O ZXing lê QR Code bem, mas é
+        // bem menos confiável pra código de barras 1D (EAN-13, CODE-128) —
+        // a API nativa é mais rápida e mais precisa pra esse caso quando o
+        // navegador suporta (cai pro ZXing sozinho quando não suporta, ex:
+        // Safari/iOS, sem quebrar nada lá).
+        const scanner = new window.Html5Qrcode(containerId, {
+          ...(formats ? {formatsToSupport: formats} : {}),
+          useBarCodeDetectorIfSupported: true,
+        });
         scannerRef.current = scanner;
         await scanner.start(
           {facingMode:'environment'},
@@ -3056,34 +3090,45 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
     onComplete(count);
   }
 
+  // Cabeçalho compacto (código + descrição) fica em cima só pra confirmar
+  // qual item é — o resto da ficha (unidade/família/almoxarifado/endereço
+  // cadastrado/valor em estoque) virou um card de referência DEPOIS dos
+  // campos de ação (endereço/quantidade), que agora são a primeira coisa
+  // interativa que a pessoa vê, sem precisar rolar a tela passando pela
+  // ficha inteira do produto primeiro.
+  const infoComplementar = (
+    <div className="item-card">
+      <div className="item-meta">
+        <div className="m"><div className="k">Unidade</div><div className="v">{product.unidade || 'não informado'}</div></div>
+        <div className="m"><div className="k">Família</div><div className="v">{product.familia}</div></div>
+        <div className="m"><div className="k">Almoxarifado</div><div className="v">{product.almoxarifado}</div></div>
+        <div className="m"><div className="k">Endereço</div><div className="v">{product.endereco || 'não cadastrado'}</div></div>
+      </div>
+      {typeof product.valorFinanceiro === 'number' && product.valorFinanceiro > 0 && (
+        <div style={{padding:'0 18px 16px',display:'flex',gap:10,fontSize:11.5,color:'var(--ink-dim)',fontFamily:'var(--font-mono)',flexWrap:'wrap'}}>
+          <span>Valor em estoque: R$ {product.valorFinanceiro.toLocaleString('pt-BR',{minimumFractionDigits:2})}</span>
+          {product.semMovimentoRecente && <span style={{color:'var(--warn)'}}>· sem saída recente</span>}
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div>
-      <div className="item-card">
-        <div className="item-card-head">
+      <div className="item-card" style={{marginBottom:14}}>
+        <div className="item-card-head" style={{borderBottom:'none'}}>
           <div>
             <div className="item-code">{product.codigo}</div>
             <div className="item-desc">{product.descricao}</div>
           </div>
         </div>
-        <div className="item-meta">
-          <div className="m"><div className="k">Unidade</div><div className="v">{product.unidade || 'não informado'}</div></div>
-          <div className="m"><div className="k">Família</div><div className="v">{product.familia}</div></div>
-          <div className="m"><div className="k">Almoxarifado</div><div className="v">{product.almoxarifado}</div></div>
-          <div className="m"><div className="k">Endereço</div><div className="v">{product.endereco || 'não cadastrado'}</div></div>
-        </div>
-        {typeof product.valorFinanceiro === 'number' && product.valorFinanceiro > 0 && (
-          <div style={{padding:'0 18px 16px',display:'flex',gap:10,fontSize:11.5,color:'var(--ink-dim)',fontFamily:'var(--font-mono)',flexWrap:'wrap'}}>
-            <span>Valor em estoque: R$ {product.valorFinanceiro.toLocaleString('pt-BR',{minimumFractionDigits:2})}</span>
-            {product.semMovimentoRecente && <span style={{color:'var(--warn)'}}>· sem saída recente</span>}
-          </div>
-        )}
       </div>
 
       {product.foraDoCacheLocal && (
         <div className="divergence-alert">
           <Ic>ℹ</Ic>
           {hasSaldoLocal ? (
-            <span>Este código não está no cache local de 300 SKUs do protótipo, mas o saldo do sistema veio da própria planilha importada (coluna "Sistema") — a comparação funciona normalmente. Só dados complementares (unidade, família, valor em estoque) não estão disponíveis aqui.</span>
+            <span>Este código não está no cache local de 300 SKUs do protótipo, mas o saldo do sistema foi encontrado (planilha importada ou saldo real do catálogo) — a comparação funciona normalmente. Só dados complementares (unidade, família, valor em estoque) não estão disponíveis aqui.</span>
           ) : (
             <span>Este código não está no cache local de 300 SKUs do protótipo e a planilha não trouxe o saldo do sistema para este item. O saldo não está disponível aqui para comparação automática; a contagem será registrada para revisão manual do líder. Em produção, com o banco sincronizado, o saldo real apareceria normalmente.</span>
           )}
@@ -3207,6 +3252,8 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
           <button className="btn btn-primary" disabled={!isOperador && diffAbs!==0 && hasSaldoLocal && !motivo} onClick={finalize}>Registrar e continuar</button>
         </div>
       )}
+
+      {infoComplementar}
     </div>
   );
 }

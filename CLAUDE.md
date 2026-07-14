@@ -1378,6 +1378,65 @@ Quem recontava não tinha pista nenhuma de onde ir.
   recontagem mostra "035-A-1" em vez de "não cadastrado", e que o campo de quantidade
   continua aparecendo direto (sem forçar leitura de QR Code).
 
+## Três correções: saldo real no catálogo Supabase, leitor de código de barras, campos de ação no topo
+
+Pedido do cliente com 3 pontos:
+
+**1. "A quantidade considerada como saldo é a coluna de Empenho, não Saldo Atual"** —
+investiguei a fundo (comparei o cache local de 300 itens e o `parseSB2Rows` contra a
+planilha SB2 real, cruzando 263 códigos que existem nos dois: 134 batiam exatamente com
+"Saldo Atual", só 5 com "Empenhado" — coincidência de valores baixos, não confusão de
+coluna) e **não encontrei nenhum lugar do código lendo "Empenhado" como saldo** — nem no
+cache local, nem em `parseSB2Rows`. A causa real do sintoma ("muita recontagem") era
+outra: `searchSupabaseCatalog` (usado pela "Contagem Manual" pra buscar no catálogo de
+85 mil+ produtos) sempre devolvia `saldoSistema: null`, mesmo depois do cliente subir a
+planilha SB2 real — o saldo carregado em `estoque_saldo` nunca tinha sido conectado à
+busca de contagem, só aos cards do Dashboard. Resultado: qualquer item fora do cache
+local de 300 SKUs (ou seja, quase tudo) ia direto pra "análise do líder" por falta de
+saldo pra comparar, nunca por erro de coluna — mas o efeito prático (muita recontagem
+desnecessária) era o mesmo que o cliente descreveu.
+  - **Corrigido**: `searchSupabaseCatalog` agora busca também em `estoque_saldo`
+    (coluna `saldo`, que é exatamente "Saldo Atual" da SB2 — `estoque_saldo` não tem
+    coluna de empenho nenhuma) pros códigos encontrados, somando entre armazéns
+    quando o item existe em mais de um (a busca não é presa a um almoxarifado
+    específico). Consulta separada, não join automático do PostgREST, porque
+    `estoque_saldo` não tem FK pra `produtos` (decisão já tomada antes, ver seção do
+    upload da SB2).
+  - Texto do aviso "fora do cache local" ajustado — antes dizia "veio da própria
+    planilha importada (coluna Sistema)" mesmo quando o saldo agora pode vir do
+    catálogo Supabase via `estoque_saldo`; ficou genérico ("planilha importada ou
+    saldo real do catálogo").
+
+**2. "Corrigir leitor para começar a ler código de barras"** — o `CameraScanner`
+(`html5-qrcode`) já pedia `formatsToSupport` incluindo formatos de barra 1D
+(CODE_128, CODE_39, EAN_13, EAN_8, UPC_A, ITF), então a configuração de formatos já
+estava certa. O problema real (confirmado via documentação oficial da lib, pesquisada
+porque o sandbox não tem câmera pra testar ao vivo): o decodificador padrão da
+`html5-qrcode` é uma implementação em JS puro (ZXing-js) — funciona bem pra QR Code,
+mas é conhecida por ser bem menos confiável pra código de barras 1D. A lib tem uma opção
+`useBarCodeDetectorIfSupported: true` que usa a API nativa `BarcodeDetector` do
+navegador (bem mais rápida e precisa pra 1D) em vez do ZXing, quando o navegador
+suporta — e Chrome/Android (a plataforma alvo do app, tablets Android) suporta. Ativado
+esse flag no construtor do `Html5Qrcode`; cai pro ZXing sozinho em navegadores sem
+suporte (ex: Safari/iOS), sem quebrar nada lá. **Não testado ao vivo** (sandbox sem
+câmera) — precisa o cliente confirmar no tablet real.
+
+**3. "Campos de endereço/quantidade no topo, primeira coisa que a pessoa vê"** —
+`CountStep` mostrava a ficha inteira do produto (unidade, família, almoxarifado,
+endereço cadastrado, valor em estoque) ANTES de qualquer campo de ação, obrigando
+rolar a tela pra chegar no que realmente importa contando. Reestruturado: agora só um
+cabeçalho compacto (código + descrição, pra confirmar qual item é) aparece no topo,
+seguido IMEDIATAMENTE pelo campo de ação da etapa atual (endereço manual, scan de QR,
+ou quantidade) — a ficha completa do produto (`infoComplementar`, mesmo conteúdo de
+antes) virou um card de referência que aparece DEPOIS, sempre visível mas fora do
+caminho principal. Nenhuma mudança na lógica de estados/etapas, só na ordem visual.
+- Testado via Playwright: confirmei por posição no HTML que tanto o campo "Endereço
+  onde o item foi encontrado" quanto "Quantidade encontrada" aparecem antes do card
+  `item-meta` (unidade/família/almoxarifado/endereço) no DOM, e por screenshot que o
+  layout fica limpo — cabeçalho compacto, campo de ação em destaque, ficha do produto
+  embaixo. Confirmei também (ponto 1) que buscar um item fora do cache local com saldo
+  mockado em `estoque_saldo` já não cai mais no aviso de "sem saldo disponível".
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase
