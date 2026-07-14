@@ -3633,6 +3633,22 @@ function Dashboard({counts, inventories}){
   const acuracidade = contados>0 ? (((contados-divergentes.length)/contados)*100).toFixed(1) : '100.0';
   const valorDivergente = counts.reduce((s,c)=>s+Number(c.valorDivergente||0),0);
 
+  // Valor em estoque por armazém — soma o valorFinanceiro de cada item do
+  // cache local (RAW_SB2_PRODUCTS/PRODUCTS, 300 SKUs por enquanto). Ainda não
+  // vem do Supabase (estoque_saldo, na tabela, nunca foi populada) — quando o
+  // cliente enviar a planilha SB2 atualizada com o saldo real, isso troca de
+  // fonte, mas a conta em si (agrupar por almoxarifado + total geral) não
+  // muda, só passa a refletir os 85 mil+ produtos reais em vez do cache de
+  // demonstração.
+  const porArmazem = {};
+  PRODUCTS.forEach(p=>{
+    const key = p.almoxarifado || '—';
+    porArmazem[key] = (porArmazem[key]||0) + (p.valorFinanceiro||0);
+  });
+  const armazens = Object.keys(porArmazem).sort();
+  const valorTotalEstoque = armazens.reduce((s,k)=>s+porArmazem[k],0);
+  const fmtReais = v => 'R$ ' + Number(v).toLocaleString('pt-BR',{maximumFractionDigits:0});
+
   const porOperador = {};
   counts.forEach(c=>{ porOperador[c.usuario] = (porOperador[c.usuario]||0)+1; });
   const maxOp = Math.max(1, ...Object.values(porOperador));
@@ -3651,6 +3667,14 @@ function Dashboard({counts, inventories}){
         <div className="kpi"><div className="kv">{contados}</div><div className="kl">Itens Contados</div></div>
         <div className="kpi"><div className="kv">{pendentes}</div><div className="kl">Itens Pendentes</div></div>
         <div className="kpi"><div className="kv">{counts.length ? '4.2min' : '—'}</div><div className="kl">Tempo Médio</div></div>
+      </div>
+
+      <div className="section-title">Estoque</div>
+      <div className="kpi-grid">
+        {armazens.map(a=>(
+          <div className="kpi" key={a}><div className="kv">{fmtReais(porArmazem[a])}</div><div className="kl">Valor em Estoque — {a}</div></div>
+        ))}
+        <div className="kpi"><div className="kv" style={{color:'var(--accent2)'}}>{fmtReais(valorTotalEstoque)}</div><div className="kl">Valor Total em Estoque</div></div>
       </div>
 
       <div className="section-title">Qualidade</div>

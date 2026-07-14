@@ -1113,6 +1113,38 @@ de um dia específico, pra análise.
   ("1 contagens em 2026-07-14") e que um dia sem nenhuma contagem desabilita o botão de
   baixar com a mensagem "Nenhuma contagem registrada nesse dia."
 
+## Cards de valor em estoque (por armazém + total) em "Indicadores"
+
+O cliente pediu, junto com o aviso de que vai mandar a planilha SB2 pra atualizar os
+saldos: "nesses cards somar tudo que temos em estoque, separar um card por valor por
+armazém e card de total em estoque" — referindo-se à tela `Dashboard` (renomeada pra
+"Indicadores", ver seção acima).
+
+- Nova seção **"Estoque"** entre "Operação" e "Qualidade": um card por `almoxarifado`
+  presente em `PRODUCTS` (soma de `valorFinanceiro` dos itens daquele armazém) +
+  um card fixo "Valor Total em Estoque" (soma de todos os armazéns). Os cards por
+  armazém são gerados dinamicamente (`Object.keys(porArmazem).sort()`), não hardcoded
+  — se amanhã existir mais de um armazém no cache, aparece um card por armazém
+  automaticamente, sem precisar mexer no código de novo.
+- **Fonte do dado, hoje**: `PRODUCTS` (que vem do cache local de 300 SKUs,
+  `RAW_SB2_PRODUCTS`) — por isso hoje só aparece "Almox 01" (único armazém que existe
+  nesse cache) e o valor total bate com a soma de só 300 itens (~R$ 5,3 milhões), não
+  o estoque real da empresa inteira. Isso é esperado e será resolvido quando o cliente
+  mandar a planilha SB2 atualizada — a intenção dele é justamente atualizar os saldos
+  antes de confiar nesse número. Quando isso migrar pra fonte real (provavelmente a
+  tabela `estoque_saldo` do Supabase, hoje desenhada no `backend/schema.sql` mas nunca
+  populada — mesma pendência documentada na seção "Backend desenhado, ainda não
+  aplicado"), a conta em si (agrupar por armazém + somar total) não muda, só troca de
+  onde os dados vêm.
+- `fmtReais(v)` — helper local no `Dashboard`, formata com separador de milhar
+  (`toLocaleString('pt-BR')`) por causa da escala dos valores (esses cards somam
+  milhões, diferente do "Valor Divergente" já existente ali do lado, que soma só
+  divergências pontuais e por isso nunca precisou de separador).
+- Testado via Playwright (sandbox sem rede, cache local de 300 itens): confirmei que
+  aparece 1 card "Valor em Estoque — Almox 01" e 1 card "Valor Total em Estoque",
+  ambos mostrando "R$ 5.296.875" (batem entre si porque só existe 1 armazém no cache
+  hoje), sem erros de console.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase
