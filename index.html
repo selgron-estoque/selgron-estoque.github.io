@@ -826,6 +826,22 @@ async function fetchEstoqueValorPorAlmoxarifado(){
   }
 }
 
+// Armazéns ativos, itens distintos e % do catálogo com saldo carregado —
+// pros mini-cards do Dashboard. Retorna null se a RPC falhar/tabela vazia
+// (quem chama cai pro fallback local, mesmo padrão dos outros dados de
+// estoque).
+async function fetchEstoqueResumoGeral(){
+  if(!supabaseClient) return null;
+  try{
+    const { data, error } = await supabaseClient.rpc('estoque_resumo_geral');
+    if(error || !data || data.length===0) return null;
+    return data[0];
+  }catch(err){
+    console.warn('Falha ao buscar resumo geral do estoque:', err);
+    return null;
+  }
+}
+
 // Data/hora do upload mais recente da planilha SB2 — usa `sincronizado_em`
 // (já preenchido automaticamente em cada linha por `default now()`, sem
 // precisar de coluna nova). Basta pegar a linha mais recente; não precisa de
@@ -3778,10 +3794,13 @@ function Dashboard({counts, inventories}){
   // falhar — mesmo padrão de fallback já usado em outros pontos do app.
   const [estoqueRemoto, setEstoqueRemoto] = useState(null); // null = ainda carregando/não tentado
   const [ultimaAtualizacaoEstoque, setUltimaAtualizacaoEstoque] = useState(undefined);
+  const [resumoGeral, setResumoGeral] = useState(null);
+  const [modoValor, setModoValor] = useState('valor'); // 'valor' | 'percentual' — toggle do painel "Valor por Armazém"
   useEffect(()=>{
     let cancelado = false;
     fetchEstoqueValorPorAlmoxarifado().then(rows=>{ if(!cancelado) setEstoqueRemoto(rows); });
     fetchUltimaAtualizacaoEstoque().then(v=>{ if(!cancelado) setUltimaAtualizacaoEstoque(v); });
+    fetchEstoqueResumoGeral().then(v=>{ if(!cancelado) setResumoGeral(v); });
     return ()=>{ cancelado = true; };
   }, []);
 
@@ -3799,6 +3818,15 @@ function Dashboard({counts, inventories}){
   const valorTotalEstoque = armazens.reduce((s,k)=>s+porArmazem[k],0);
   const maxArmazemValor = Math.max(1, ...armazens.map(a=>porArmazem[a]));
   const fmtReais = v => 'R$ ' + Number(v).toLocaleString('pt-BR',{maximumFractionDigits:0});
+  // Itens distintos/cobertura só fazem sentido com dado real do Supabase — no
+  // fallback do cache local (300 SKUs de demonstração) mostra o que dá pra
+  // saber honestamente (armazéns e itens distintos do cache) e deixa a
+  // cobertura como "—" (não existe uma contagem local do catálogo de 85 mil
+  // produtos pra comparar).
+  const armazensAtivos = usandoSaldoReal ? Number(resumoGeral?.armazens_ativos||armazens.length) : armazens.length;
+  const itensDistintos = usandoSaldoReal ? Number(resumoGeral?.itens_distintos||0) : new Set(PRODUCTS.map(p=>p.codigo)).size;
+  const coberturaPct = usandoSaldoReal && resumoGeral?.cobertura_pct!=null ? Number(resumoGeral.cobertura_pct) : null;
+  const ARMAZEM_COLORS = ['#F6A200','#2563EB','#16A34A','#DB2777','#7C3AED','#0D9488','#64748B','#EA580C'];
 
   const porOperador = {};
   counts.forEach(c=>{ porOperador[c.usuario] = (porOperador[c.usuario]||0)+1; });
@@ -3825,19 +3853,59 @@ function Dashboard({counts, inventories}){
         {!usandoSaldoReal && <span style={{fontSize:11,color:'var(--ink-dim)',textTransform:'none',letterSpacing:'normal',marginLeft:8}}>(cache local de demonstração — atualize a planilha SB2 em Configurações)</span>}
         {usandoSaldoReal && ultimaAtualizacaoEstoque && <span style={{fontSize:11,color:'var(--ink-dim)',textTransform:'none',letterSpacing:'normal',marginLeft:8}}>(atualizado em {new Date(ultimaAtualizacaoEstoque).toLocaleString('pt-BR')})</span>}
       </div>
-      <div className="kpi-grid">
-        <div className="kpi"><div className="kv" style={{color:'var(--accent2)'}}>{fmtReais(valorTotalEstoque)}</div><div className="kl">Valor Total em Estoque</div></div>
-      </div>
-      {armazens.length>0 && (
-        <div className="panel">
-          <div className="section-title" style={{marginTop:0}}>Valor por Armazém</div>
-          {armazens.map(a=>(
-            <div key={a} className="bar-row">
-              <div className="bl">{formatArmazemLabel(a)}</div>
-              <div className="bar-track"><div className="bar-fill" style={{width:(porArmazem[a]/maxArmazemValor*100)+'%'}}></div></div>
-              <div style={{width:110,flexShrink:0,textAlign:'right',fontFamily:'var(--font-mono)',fontSize:11.5,color:'var(--ink-dim)'}}>{fmtReais(porArmazem[a])}</div>
+
+      <div style={{display:'grid',gridTemplateColumns:'minmax(220px,340px) 1fr',gap:14,marginBottom:14}}>
+        <div className="panel" style={{display:'flex',alignItems:'center',gap:14,margin:0}}>
+          <div style={{width:44,height:44,borderRadius:12,background:'rgba(246,162,0,0.12)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>📦</div>
+          <div>
+            <div style={{fontSize:11,color:'var(--ink-dim)',textTransform:'uppercase',letterSpacing:'0.6px',fontFamily:'var(--font-mono)'}}>Valor Total em Estoque</div>
+            <div style={{fontSize:24,fontWeight:800,fontFamily:'var(--font-mono)'}}>{fmtReais(valorTotalEstoque)}</div>
+          </div>
+        </div>
+        <div className="panel" style={{display:'flex',flexWrap:'wrap',gap:18,alignItems:'center',margin:0}}>
+          {[
+            {ic:'🏢', label:'Armazéns ativos', value:armazensAtivos},
+            {ic:'📦', label:'Itens distintos', value:itensDistintos.toLocaleString('pt-BR')},
+            {ic:'📊', label:'Cobertura do catálogo', value: coberturaPct!=null ? coberturaPct.toFixed(1)+'%' : '—'},
+          ].map(t=>(
+            <div key={t.label} style={{display:'flex',alignItems:'center',gap:10,minWidth:150}}>
+              <div style={{width:34,height:34,borderRadius:9,background:'var(--panel-raised)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:15,flexShrink:0}}>{t.ic}</div>
+              <div>
+                <div style={{fontSize:16,fontWeight:700,fontFamily:'var(--font-mono)'}}>{t.value}</div>
+                <div style={{fontSize:10.5,color:'var(--ink-dim)'}}>{t.label}</div>
+              </div>
             </div>
           ))}
+        </div>
+      </div>
+
+      {armazens.length>0 && (
+        <div className="panel">
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'wrap',gap:10,marginBottom:14}}>
+            <div>
+              <div className="section-title" style={{marginTop:0,marginBottom:4}}>Valor por Armazém</div>
+              <div style={{fontSize:12,color:'var(--ink-dim)'}}>Distribuição do valor total em estoque por armazém.</div>
+            </div>
+            <div style={{display:'flex',border:'1px solid var(--line)',borderRadius:8,overflow:'hidden',flexShrink:0}}>
+              <button onClick={()=>setModoValor('valor')} style={{border:'none',padding:'6px 12px',fontSize:11.5,cursor:'pointer',background:modoValor==='valor'?'var(--ink)':'transparent',color:modoValor==='valor'?'#fff':'var(--ink-dim)'}}>Valor (R$)</button>
+              <button onClick={()=>setModoValor('percentual')} style={{border:'none',padding:'6px 12px',fontSize:11.5,cursor:'pointer',background:modoValor==='percentual'?'var(--ink)':'transparent',color:modoValor==='percentual'?'#fff':'var(--ink-dim)'}}>% do Total</button>
+            </div>
+          </div>
+          {armazens.map((a,i)=>(
+            <div key={a} className="bar-row">
+              <div style={{display:'flex',alignItems:'center',gap:8,width:130,flexShrink:0}}>
+                <div style={{width:24,height:24,borderRadius:7,background:ARMAZEM_COLORS[i%ARMAZEM_COLORS.length],display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,flexShrink:0}}>🏭</div>
+                <div style={{fontSize:12,color:'var(--ink-dim)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{formatArmazemLabel(a)}</div>
+              </div>
+              <div className="bar-track"><div className="bar-fill" style={{width:(porArmazem[a]/maxArmazemValor*100)+'%', background:ARMAZEM_COLORS[i%ARMAZEM_COLORS.length]}}></div></div>
+              <div style={{width:100,flexShrink:0,textAlign:'right',fontFamily:'var(--font-mono)',fontSize:11.5,color:'var(--ink-dim)'}}>
+                {modoValor==='valor' ? fmtReais(porArmazem[a]) : (valorTotalEstoque>0 ? (porArmazem[a]/valorTotalEstoque*100).toFixed(1)+'%' : '—')}
+              </div>
+            </div>
+          ))}
+          <div style={{marginTop:12,paddingTop:10,borderTop:'1px solid var(--line)',fontSize:11.5,color:'var(--ink-dim)'}}>
+            <Ic>ℹ</Ic> Os valores consideram o custo médio dos itens em estoque, conforme o último upload da planilha SB2.
+          </div>
         </div>
       )}
 

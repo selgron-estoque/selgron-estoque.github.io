@@ -85,6 +85,21 @@ returns table(almoxarifado text, valor_total numeric, saldo_total numeric, itens
   order by almoxarifado;
 $$ language sql stable;
 
+-- Resumo geral pros mini-cards do Dashboard (armazéns ativos, itens
+-- distintos, % do catálogo com saldo carregado). "Cobertura" compara contra
+-- o total de `produtos` (catálogo, 85 mil+ códigos) — mostra honestamente
+-- que só uma fração do catálogo tem saldo importado até agora, não inventa
+-- um número. Não inclui tendência/comparação com período anterior: cada
+-- upload da SB2 SUBSTITUI o snapshot anterior (ver replaceEstoqueSaldoInSupabase),
+-- não existe histórico guardado pra calcular "vs. mês passado" de verdade.
+create or replace function estoque_resumo_geral()
+returns table(armazens_ativos bigint, itens_distintos bigint, cobertura_pct numeric) as $$
+  select
+    (select count(distinct almoxarifado) from estoque_saldo),
+    (select count(distinct produto_codigo) from estoque_saldo),
+    (select round(100.0 * count(distinct produto_codigo) / nullif((select count(*) from produtos), 0), 1) from estoque_saldo);
+$$ language sql stable;
+
 -- Log de cada rodada de sincronização — auditoria e depuração.
 create table sync_log (
   id uuid primary key default gen_random_uuid(),

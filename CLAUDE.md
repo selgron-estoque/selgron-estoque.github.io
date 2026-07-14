@@ -1274,6 +1274,50 @@ grandes (8 armazéns + total) muito "poluído" visualmente e pediu pra rotular c
   screenshot que os valores de todos os armazéns — incluindo os bem menores que
   Armazém 01 — ficam legíveis fora da barra.
 
+## Cards de estoque no modelo de referência (SaaS B2B, sem inventar métrica)
+
+Cliente mandou uma imagem de referência (dashboard estilo SAP/Fiori) e pediu pra deixar
+os cards de estoque "neste modelo" — card grande de total + badges coloridos por
+armazém + mini-cards de resumo + toggle Valor/%. A imagem também tinha uma tendência
+("+8,6% vs. mês anterior") e um sparkline no card de total.
+
+- **Tendência/sparkline NÃO foram implementados** — decisão deliberada, mesmo critério
+  já usado nos KPIs do Dashboard novo ("KPIs — só dado real, nada fabricado"): cada
+  upload da SB2 faz um REPLACE completo de `estoque_saldo` (apaga e insere de novo, ver
+  `replaceEstoqueSaldoInSupabase`), não existe nenhum histórico de snapshots anteriores
+  guardado — não tem como calcular "vs. mês passado" de verdade. Se um dia existir uma
+  tabela de histórico de saldo, essa tendência pode ser adicionada honestamente; até lá,
+  o card de total não mostra nenhuma variação.
+- **3 mini-cards de resumo, todos com dado real**: "Armazéns ativos" (contagem de
+  armazéns distintos), "Itens distintos" (códigos distintos com saldo carregado) e
+  "Cobertura do catálogo" — esse último é **novo conceito, mas real**: % dos 85 mil+
+  códigos da tabela `produtos` que têm ALGUM saldo carregado em `estoque_saldo`
+  (`count(distinct produto_codigo) / count(*) de produtos`). Só ~12% no teste real do
+  cliente — mostra honestamente que a maior parte do catálogo ainda não tem saldo
+  importado, em vez de esconder isso ou inventar um número mais bonito.
+- **`estoque_resumo_geral()`** — nova função SQL (`backend/schema.sql`) que calcula os
+  3 números acima direto no Postgres (evita trazer as ~12 mil linhas de
+  `estoque_saldo` OU as 85 mil de `produtos` pro navegador). `fetchEstoqueResumoGeral()`
+  no `index.html` chama essa RPC; cai pra `null` (mini-cards mostram dado do cache
+  local ou "—" pra cobertura, que não faz sentido sem o total do catálogo real) se
+  falhar ou a tabela estiver vazia — mesmo padrão de fallback já usado no resto do
+  Dashboard.
+- **Badges coloridos por armazém**: array fixo `ARMAZEM_COLORS` (8 cores, cicla por
+  índice — `laranja Selgron, azul, verde, rosa, roxo, teal, cinza, laranja escuro`),
+  não pega cor aleatória nem depende de mapeamento fixo por código de armazém (novo
+  armazém que apareça no futuro só pega a próxima cor do ciclo automaticamente).
+  Ícone dentro do badge continua emoji (🏭), mesmo critério já documentado antes:
+  conteúdo de `Indicadores` usa o sistema de ícone antigo (`Ic`/emoji), não o
+  `DIcon`/Lucide-style reservado pra sidebar/header/Dashboard novo (Início).
+- **Toggle "Valor (R$)" / "% do Total"**: estado `modoValor` em `Dashboard`, controla só
+  qual número aparece na coluna à direita de cada barra (o comprimento da barra em si
+  já é proporcional ao valor nos dois modos — o toggle não muda o gráfico, só o texto).
+  Funcional de verdade (não é só estético): testado clicando e conferindo que os
+  números viram porcentagem (somando ~100% entre os armazéns).
+- Testado via Playwright com as duas RPCs mockadas (`estoque_valor_por_almoxarifado` e
+  `estoque_resumo_geral`) e screenshot comparado visualmente com a imagem de
+  referência do cliente — layout, badges coloridos, mini-cards e toggle batem.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase
