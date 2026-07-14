@@ -708,6 +708,107 @@ async function fetchInventoriesFromSupabase(){
   }
 }
 
+// ---- Atualização diária do saldo em estoque (planilha SB2) ----
+// O cliente ainda não tem a sincronização automática com o Protheus (a Edge
+// Function sync-saldo-protheus continua só desenhada) — enquanto isso, ele
+// mesmo sobe a planilha SB2 pelo painel "Atualizar Saldo em Estoque" em
+// Configurações, tipicamente todo dia.
+
+// Mesma regra de reconstrução já usada pro catálogo de produtos (85 mil+
+// linhas importadas) e pro cache local de 300 SKUs: o Excel guarda código
+// 100% numérico como número, perdendo o zero à esquerda e os pontos. Formatos
+// válidos: 8 dígitos → XXX.XXXXX; 9 → XXX.XXXXX.X; 11 → XXX.XXX.XXXXX; 10 →
+// sempre um 11-dígitos que perdeu o zero à esquerda (repõe e formata igual).
+function reconstructNumericCode(raw){
+  let d = String(raw).trim();
+  if(!/^[0-9]+$/.test(d)) return d;
+  if(d.length===10) d = '0'+d;
+  if(d.length===11) return d.slice(0,3)+'.'+d.slice(3,6)+'.'+d.slice(6,11);
+  if(d.length===9) return d.slice(0,3)+'.'+d.slice(3,8)+'.'+d.slice(8,9);
+  if(d.length===8) return d.slice(0,3)+'.'+d.slice(3,8);
+  return d; // tamanho fora dos formatos conhecidos — mantém cru
+}
+
+// Lê as linhas já convertidas pelo SheetJS (sheet_to_json, com cellDates:true
+// pra "DT.Ult.Saida" vir como Date em vez de número serial) e devolve as
+// linhas normalizadas pra gravar em estoque_saldo, mais um resumo pra exibir
+// antes de confirmar. Colunas esperadas (export padrão SB2 do Protheus):
+// Produto, Almoxarifado, DT.Ult.Saida, Saldo Atual, Sld.Atu. (valor
+// financeiro do saldo).
+function parseSB2Rows(rawRows){
+  let totalLinhas = 0, semCodigo = 0, invalidas = 0;
+  const linhas = [];
+  rawRows.forEach(row=>{
+    totalLinhas++;
+    const codigoRaw = row['Produto'];
+    if(codigoRaw==null || String(codigoRaw).trim()===''){ semCodigo++; return; }
+    const codigo = reconstructNumericCode(codigoRaw);
+    const almoxarifado = row['Almoxarifado']!=null ? String(row['Almoxarifado']).trim() : '';
+    const saldo = Number(row['Saldo Atual']);
+    const valorFinanceiro = Number(row['Sld.Atu.']);
+    if(!almoxarifado || Number.isNaN(saldo)){ invalidas++; return; }
+    let dataUltimaSaida = null;
+    const rawData = row['DT.Ult.Saida'];
+    if(rawData instanceof Date && !Number.isNaN(rawData.getTime())){
+      dataUltimaSaida = rawData.toISOString().slice(0,10);
+    }
+    linhas.push({
+      produto_codigo: codigo,
+      almoxarifado,
+      saldo,
+      valor_financeiro: Number.isNaN(valorFinanceiro) ? 0 : valorFinanceiro,
+      data_ultima_saida: dataUltimaSaida,
+    });
+  });
+  const armazens = new Set(linhas.map(l=>l.almoxarifado)).size;
+  return { linhas, resumo: { totalLinhas, validas: linhas.length, semCodigo, invalidas, armazens } };
+}
+
+// Substitui TODO o conteúdo de estoque_saldo pelo snapshot da planilha —
+// apaga tudo e insere de novo, em lotes (não é upsert incremental). Isso
+// evita linha órfã de item que saiu do armazém/zerou de um dia pro outro, e
+// é mais simples que casar upsert por (produto_codigo, almoxarifado) entre
+// exportações que podem ter formatação de código levemente diferente.
+// Retorna {ok, inseridas, erro}. Não é fire-and-forget como as outras escritas
+// — quem chama precisa aguardar e mostrar o resultado, já que é uma ação
+// explícita do admin, não um efeito colateral de outro fluxo.
+async function replaceEstoqueSaldoInSupabase(linhas, onProgress){
+  if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
+  try{
+    const { error: delError } = await supabaseClient.from('estoque_saldo').delete().not('produto_codigo','is',null);
+    if(delError) return {ok:false, erro:'Falha ao limpar saldo anterior: '+delError.message};
+
+    const TAMANHO_LOTE = 500;
+    let inseridas = 0;
+    for(let i=0; i<linhas.length; i+=TAMANHO_LOTE){
+      const lote = linhas.slice(i, i+TAMANHO_LOTE);
+      const { error: insError } = await supabaseClient.from('estoque_saldo').insert(lote);
+      if(insError) return {ok:false, erro:'Falha ao inserir lote (linha '+i+'): '+insError.message, inseridas};
+      inseridas += lote.length;
+      if(onProgress) onProgress(inseridas, linhas.length);
+    }
+    return {ok:true, inseridas};
+  }catch(err){
+    return {ok:false, erro:String(err && err.message || err)};
+  }
+}
+
+// Soma de valor/saldo por armazém, via função de banco (evita trazer 12 mil+
+// linhas pro navegador só pra somar) — usado pelos cards "Valor em Estoque"
+// do Dashboard. Retorna [] se a tabela ainda não foi populada ou a rede
+// falhar; quem chama cai de volta pro cálculo a partir do cache local.
+async function fetchEstoqueValorPorAlmoxarifado(){
+  if(!supabaseClient) return [];
+  try{
+    const { data, error } = await supabaseClient.rpc('estoque_valor_por_almoxarifado');
+    if(error || !data) return [];
+    return data;
+  }catch(err){
+    console.warn('Falha ao buscar valor em estoque do Supabase:', err);
+    return [];
+  }
+}
+
 /* ---------------- LOGO OFICIAL (SELGRON) ---------------- */
 // Extraído do PDF vetorial enviado pelo cliente (Logotipo_Selgron_Laranja_CMYK.pdf).
 // Embutido como base64 para manter o app em um único arquivo, sem dependência externa.
@@ -3633,18 +3734,28 @@ function Dashboard({counts, inventories}){
   const acuracidade = contados>0 ? (((contados-divergentes.length)/contados)*100).toFixed(1) : '100.0';
   const valorDivergente = counts.reduce((s,c)=>s+Number(c.valorDivergente||0),0);
 
-  // Valor em estoque por armazém — soma o valorFinanceiro de cada item do
-  // cache local (RAW_SB2_PRODUCTS/PRODUCTS, 300 SKUs por enquanto). Ainda não
-  // vem do Supabase (estoque_saldo, na tabela, nunca foi populada) — quando o
-  // cliente enviar a planilha SB2 atualizada com o saldo real, isso troca de
-  // fonte, mas a conta em si (agrupar por almoxarifado + total geral) não
-  // muda, só passa a refletir os 85 mil+ produtos reais em vez do cache de
-  // demonstração.
+  // Valor em estoque por armazém — prioriza o saldo real do Supabase
+  // (estoque_saldo, atualizado via upload manual da planilha SB2 em
+  // Configurações, ver StockSyncPanel) e só cai pro cache local de 300 SKUs
+  // (RAW_SB2_PRODUCTS/PRODUCTS) se a tabela ainda estiver vazia ou a rede
+  // falhar — mesmo padrão de fallback já usado em outros pontos do app.
+  const [estoqueRemoto, setEstoqueRemoto] = useState(null); // null = ainda carregando/não tentado
+  useEffect(()=>{
+    let cancelado = false;
+    fetchEstoqueValorPorAlmoxarifado().then(rows=>{ if(!cancelado) setEstoqueRemoto(rows); });
+    return ()=>{ cancelado = true; };
+  }, []);
+
   const porArmazem = {};
-  PRODUCTS.forEach(p=>{
-    const key = p.almoxarifado || '—';
-    porArmazem[key] = (porArmazem[key]||0) + (p.valorFinanceiro||0);
-  });
+  if(estoqueRemoto && estoqueRemoto.length>0){
+    estoqueRemoto.forEach(r=>{ porArmazem[r.almoxarifado || '—'] = Number(r.valor_total||0); });
+  } else {
+    PRODUCTS.forEach(p=>{
+      const key = p.almoxarifado || '—';
+      porArmazem[key] = (porArmazem[key]||0) + (p.valorFinanceiro||0);
+    });
+  }
+  const usandoSaldoReal = !!(estoqueRemoto && estoqueRemoto.length>0);
   const armazens = Object.keys(porArmazem).sort();
   const valorTotalEstoque = armazens.reduce((s,k)=>s+porArmazem[k],0);
   const fmtReais = v => 'R$ ' + Number(v).toLocaleString('pt-BR',{maximumFractionDigits:0});
@@ -3669,7 +3780,10 @@ function Dashboard({counts, inventories}){
         <div className="kpi"><div className="kv">{counts.length ? '4.2min' : '—'}</div><div className="kl">Tempo Médio</div></div>
       </div>
 
-      <div className="section-title">Estoque</div>
+      <div className="section-title">
+        Estoque
+        {!usandoSaldoReal && <span style={{fontSize:11,color:'var(--ink-dim)',textTransform:'none',letterSpacing:'normal',marginLeft:8}}>(cache local de demonstração — atualize a planilha SB2 em Configurações)</span>}
+      </div>
       <div className="kpi-grid">
         {armazens.map(a=>(
           <div className="kpi" key={a}><div className="kv">{fmtReais(porArmazem[a])}</div><div className="kl">Valor em Estoque — {a}</div></div>
@@ -3979,6 +4093,97 @@ function AddressValidationPanel({enderecosPropostos=[], onResolve}){
   );
 }
 
+function StockSyncPanel(){
+  const [arquivoNome, setArquivoNome] = useState('');
+  const [parseResult, setParseResult] = useState(null);
+  const [erro, setErro] = useState('');
+  const [status, setStatus] = useState('idle'); // idle | uploading | done | error
+  const [progresso, setProgresso] = useState(null);
+  const [resultado, setResultado] = useState(null);
+  const fileRef = useRef();
+
+  function handleFile(e){
+    const file = e.target.files[0];
+    if(!file) return;
+    setErro(''); setResultado(null); setParseResult(null); setStatus('idle');
+    setArquivoNome(file.name);
+    const reader = new FileReader();
+    reader.onload = (evt)=>{
+      try{
+        const data = new Uint8Array(evt.target.result);
+        const wb = window.XLSX.read(data, {type:'array', cellDates:true});
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const rows = window.XLSX.utils.sheet_to_json(sheet, {defval:''});
+        const parsed = parseSB2Rows(rows);
+        if(parsed.linhas.length===0){
+          setErro('Nenhuma linha válida encontrada — verifique se é o export padrão da SB2 (colunas Produto, Almoxarifado, Saldo Atual, Sld.Atu.).');
+          return;
+        }
+        setParseResult(parsed);
+      }catch(err){
+        setErro('Não foi possível ler o arquivo. Verifique se é um .xlsx válido.');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  async function handleConfirmar(){
+    if(!parseResult) return;
+    setStatus('uploading');
+    setProgresso({inseridas:0, total:parseResult.linhas.length});
+    const res = await replaceEstoqueSaldoInSupabase(parseResult.linhas, (inseridas,total)=>setProgresso({inseridas,total}));
+    setResultado(res);
+    setStatus(res.ok ? 'done' : 'error');
+  }
+
+  return (
+    <div className="panel">
+      <div className="section-title" style={{marginTop:0}}>Atualizar Saldo em Estoque (SB2)</div>
+      <div style={{fontSize:13,color:'var(--ink-dim)',marginBottom:14,lineHeight:1.6}}>
+        Enquanto a sincronização automática com o Protheus não está pronta, suba aqui a
+        planilha SB2 (export padrão: colunas Produto, Almoxarifado, DT.Ult.Saida, Saldo
+        Atual, Sld.Atu.) sempre que precisar atualizar o saldo — normalmente todo dia.
+        Cada upload <strong>substitui</strong> todo o saldo anterior pelo snapshot da
+        planilha nova. Requer conexão com a internet.
+      </div>
+      <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{display:'none'}} onChange={handleFile} />
+      <button className="btn btn-secondary" onClick={()=>fileRef.current.click()}>
+        <Ic>📄</Ic> {arquivoNome || 'Selecionar planilha SB2 (.xlsx)'}
+      </button>
+
+      {erro && <div className="divergence-alert" style={{marginTop:14}}><Ic>⚠</Ic><span>{erro}</span></div>}
+
+      {parseResult && status!=='done' && (
+        <div style={{marginTop:14}}>
+          <div style={{fontSize:13,color:'var(--ink-dim)',lineHeight:1.8}}>
+            {parseResult.resumo.totalLinhas} linhas na planilha · {parseResult.resumo.validas} válidas ·{' '}
+            {parseResult.resumo.armazens} armazéns
+            {parseResult.resumo.semCodigo>0 && <> · {parseResult.resumo.semCodigo} sem código</>}
+            {parseResult.resumo.invalidas>0 && <> · {parseResult.resumo.invalidas} com dado inválido</>}
+          </div>
+          <button className="btn btn-primary" style={{marginTop:10}} onClick={handleConfirmar} disabled={status==='uploading'}>
+            <Ic>⬆</Ic> {status==='uploading' ? 'Atualizando…' : 'Confirmar atualização'}
+          </button>
+          {status==='uploading' && progresso && (
+            <div style={{fontSize:12,color:'var(--ink-dim)',marginTop:8}}>
+              {progresso.inseridas} de {progresso.total} linhas enviadas…
+            </div>
+          )}
+        </div>
+      )}
+
+      {resultado && resultado.ok && (
+        <div className="login-success" style={{marginTop:14}}>
+          Saldo atualizado: {resultado.inseridas} linhas gravadas no Supabase.
+        </div>
+      )}
+      {resultado && !resultado.ok && (
+        <div className="divergence-alert" style={{marginTop:14}}><Ic>⚠</Ic><span>{resultado.erro}</span></div>
+      )}
+    </div>
+  );
+}
+
 function Settings({role, users=[], currentUser, goto, onToggleUserStatus, onDeleteUser, onAdminPasswordAction, passwordRequests=[], onResolvePasswordRequest, passwordHistory=[]}){
   const isAdmin = role==='admin';
   const pendentesSenha = passwordRequests.filter(r=>r.status==='pendente');
@@ -4032,6 +4237,8 @@ function Settings({role, users=[], currentUser, goto, onToggleUserStatus, onDele
           </table>
         </div>
       )}
+
+      {isAdmin && <StockSyncPanel />}
 
       <div className="panel">
         <div className="section-title" style={{marginTop:0}}>Regras de Divergência</div>

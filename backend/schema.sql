@@ -49,9 +49,23 @@ create table produtos (
 -- Muda o tempo todo (toda entrada/saída de estoque). É um CACHE por design:
 -- o Stock360 nunca é a fonte de verdade da quantidade, só reflete o Protheus.
 -- [CACHE — não editar manualmente]
+--
+-- Sem sync automática com o Protheus ainda (a Edge Function
+-- sync-saldo-protheus continua só desenhada, não aplicada — ver
+-- backend/README.md). Enquanto isso, o admin sobe a planilha SB2 manualmente
+-- pelo app (painel "Atualizar Saldo em Estoque" em Configurações) sempre que
+-- precisar atualizar — tipicamente todo dia. Cada upload faz um REPLACE
+-- completo da tabela (apaga tudo, insere de novo com o snapshot da planilha),
+-- não um upsert incremental — mais simples e evita linha órfã de produto que
+-- saiu do almoxarifado ou zerou.
+--
+-- Sem FK pra produtos(codigo) de propósito: a planilha SB2 de saldo é um
+-- export separado do catálogo (produtos), e um código com formatação
+-- ligeiramente diferente entre os dois exports não pode travar o upload
+-- inteiro — mesma razão já documentada pra contagens/inventarios.
 -- ---------------------------------------------------------------------------
 create table estoque_saldo (
-  produto_codigo text not null references produtos(codigo),
+  produto_codigo text not null,
   almoxarifado text not null,
   saldo numeric(14,3) not null,
   valor_financeiro numeric(14,2),
@@ -60,6 +74,16 @@ create table estoque_saldo (
   primary key (produto_codigo, almoxarifado)
 );
 create index idx_estoque_saldo_almox on estoque_saldo(almoxarifado);
+
+-- Soma valor/saldo por armazém — usado pelos cards de "Valor em Estoque" no
+-- Dashboard, evita trazer as 12 mil+ linhas pro navegador só pra somar.
+create or replace function estoque_valor_por_almoxarifado()
+returns table(almoxarifado text, valor_total numeric, saldo_total numeric, itens bigint) as $$
+  select almoxarifado, sum(valor_financeiro), sum(saldo), count(*)
+  from estoque_saldo
+  group by almoxarifado
+  order by almoxarifado;
+$$ language sql stable;
 
 -- Log de cada rodada de sincronização — auditoria e depuração.
 create table sync_log (
@@ -240,7 +264,11 @@ create policy "leitura pública" on inventarios for select using (true);
 create policy "inserção pública" on inventarios for insert with check (true);
 create policy "atualização pública" on inventarios for update using (true) with check (true);
 
--- Escrita em estoque_saldo SÓ pela service role (usada pela Edge Function de
--- sincronização) — nenhum usuário do app escreve aqui diretamente.
-create policy "escrita só service role" on estoque_saldo for all
-  using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+-- Escrita em estoque_saldo: originalmente pensada só pra service role (via
+-- Edge Function de sincronização automática), mas essa sync nunca foi
+-- aplicada — o upload manual da planilha SB2 acontece direto do navegador
+-- (painel "Atualizar Saldo em Estoque", sem Supabase Auth ainda), então
+-- precisa aceitar a publishable key "anon" como qualquer outra tabela de
+-- escrita do app hoje. Mesma ressalva de sempre: aceitável pro protótipo,
+-- reavaliar (restringir a admin de verdade) junto da migração pro Supabase Auth.
+create policy "escrita pública" on estoque_saldo for all using (true) with check (true);

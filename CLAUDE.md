@@ -1145,6 +1145,67 @@ armazém e card de total em estoque" — referindo-se à tela `Dashboard` (renom
   ambos mostrando "R$ 5.296.875" (batem entre si porque só existe 1 armazém no cache
   hoje), sem erros de console.
 
+## Saldo real em estoque: upload manual e diário da planilha SB2
+
+O cliente mandou a planilha SB2 de saldo de verdade (12.577 linhas, 8 armazéns) e
+avisou algo importante: **"enquanto não puxamos do banco de dados preciso carregar
+essa planilha diariamente"** — ou seja, isso não é um import único (como foi o
+catálogo de 85 mil produtos): precisa ser um botão que o próprio cliente usa
+repetidamente, sem depender de mim rodando SQL a cada vez.
+
+- **`StockSyncPanel`** (componente novo, renderizado dentro de `Settings`, só pra
+  `isAdmin`) — botão de upload (.xlsx), mostra um resumo depois de ler o arquivo
+  (linhas totais, válidas, quantos armazéns) e só grava no Supabase depois de
+  "Confirmar atualização" (nunca automático ao selecionar o arquivo, dá chance de
+  cancelar se for o arquivo errado). Mesmo padrão visual/fluxo já usado no upload da
+  "Lista Importada (Excel)" (`NewInventory`/`parseImportedListRows`), mas escrevendo
+  direto no Supabase em vez de virar um inventário local.
+- **`parseSB2Rows(rawRows)`** (perto de `saveInventarioToSupabase`) — lê as colunas do
+  export padrão SB2 do Protheus (`Produto`, `Almoxarifado`, `DT.Ult.Saida`,
+  `Saldo Atual`, `Sld.Atu.` — essa última é o valor financeiro do saldo, não precisa
+  calcular saldo×custo na mão). `reconstructNumericCode` reaplica a MESMA regra já
+  usada pro catálogo de 85 mil produtos e pro cache local de 300 SKUs (código 100%
+  numérico no Excel perde zero à esquerda/pontos — reconstrói por tamanho: 8→
+  `XXX.XXXXX`, 9→`XXX.XXXXX.X`, 10→repõe zero e vira 11, 11→`XXX.XXX.XXXXX`). Datas
+  vêm via `cellDates:true` no `XLSX.read` (sem isso viriam como número serial do
+  Excel); linhas com "DT.Ult.Saida" vazia (texto placeholder tipo "  /  /    ", não
+  uma data de verdade — 845 das 12.577 linhas reais do cliente) viram `null`.
+- **`replaceEstoqueSaldoInSupabase(linhas, onProgress)`** — **REPLACE completo, não
+  upsert**: apaga toda a tabela `estoque_saldo` primeiro, depois insere a planilha
+  nova em lotes de 500 (12.577 linhas → 26 requisições). Decisão deliberada: a
+  planilha é sempre um retrato do saldo "agora" vindo do Protheus — um upsert por
+  chave incremental deixaria lixo (item que saiu do armazém ou zerou continuaria
+  aparecendo com o valor antigo). `onProgress(inseridas, total)` alimenta o texto
+  "X de Y linhas enviadas…" no painel durante o upload.
+- **`backend/schema.sql` — `estoque_saldo` perdeu a FK pra `produtos(codigo)`**: a
+  SB2 de saldo é um export separado do catálogo, testado e confirmado que os dois não
+  precisam bater 100% em formatação — travar o upload inteiro por causa de um código
+  desalinhado seria pior que aceitar sem FK (mesma razão já documentada pra
+  `contagens`/`inventarios`). RLS trocou de "só service role" (pensada pra uma Edge
+  Function que nunca foi aplicada) pra `using(true)` — mesmo trade-off já aceito nas
+  outras tabelas de escrita client-side sem Supabase Auth.
+- **`estoque_valor_por_almoxarifado()`** — função SQL nova (`sum`/`group by` direto no
+  Postgres) que soma valor e saldo por armazém sem precisar trazer 12 mil+ linhas pro
+  navegador. `fetchEstoqueValorPorAlmoxarifado()` no `index.html` chama essa RPC.
+- **`Dashboard` agora busca o saldo real primeiro**: `useEffect` no mount chama
+  `fetchEstoqueValorPorAlmoxarifado()`; se vier vazio (tabela ainda não populada) ou a
+  rede falhar, cai de volta pro cálculo a partir do `PRODUCTS` local (cache de 300
+  itens) — mesmo espírito de fallback já usado em outros pontos. Um aviso pequeno
+  ("cache local de demonstração — atualize a planilha SB2 em Configurações") aparece
+  ao lado do título "Estoque" só quando está no fallback, some sozinho assim que
+  existir saldo real gravado.
+- Testado via Playwright ponta a ponta com a planilha SB2 real de 12.577 linhas que o
+  cliente enviou (sandbox sem rede, `DELETE`/`POST .../rest/v1/estoque_saldo`
+  mockados): confirmei o resumo pós-parse ("12577 linhas · 12577 válidas · 8
+  armazéns"), 1 chamada de DELETE, 26 lotes de INSERT totalizando as 12.577 linhas, e
+  o formato exato de uma linha gravada (`produto_codigo`, `almoxarifado` como texto,
+  `saldo`, `valor_financeiro`, `data_ultima_saida`). Testei também os dois caminhos do
+  Dashboard: com a RPC mockada retornando dado real (sem aviso de fallback, valores
+  batendo) e retornando vazio (aviso de fallback aparece, valores do cache local de
+  sempre). Não testei contra o Supabase de verdade — falta o cliente rodar o SQL
+  atualizado (`estoque_saldo` sem FK, policy nova, função `estoque_valor_por_
+  almoxarifado`) no projeto real e fazer o primeiro upload de verdade pelo painel.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase
