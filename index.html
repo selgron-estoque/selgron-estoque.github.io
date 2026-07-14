@@ -227,7 +227,12 @@
   /* LOGIN SCREEN — identidade corporativa/ERP (navy + branco + laranja Selgron),
      card dividido em 2 colunas (ilustração + formulário), replicando o mockup de
      referência do cliente. Ver CLAUDE.md "Tela de login vira o mockup de 2 colunas". */
-  .login-screen{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--gray-100);padding:24px;font-family:var(--font-corp);}
+  .login-screen{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    background:
+      radial-gradient(circle at 12% 8%, rgba(15,23,42,0.07), transparent 40%),
+      radial-gradient(circle at 88% 92%, rgba(246,162,0,0.09), transparent 42%),
+      var(--gray-100);
+    padding:24px;font-family:var(--font-corp);}
   .login-card{width:100%;max-width:900px;display:flex;flex-direction:column;align-items:stretch;background:#FFFFFF;border:1px solid var(--gray-200);border-radius:20px;overflow:hidden;box-shadow:0 1px 2px rgba(15,23,42,0.04), 0 16px 40px rgba(15,23,42,0.08);}
 
   /* Coluna/faixa esquerda — ilustração. SEMPRE visível (mobile-first): em telas
@@ -318,30 +323,34 @@
   /* ---------------- LAYOUT DESKTOP (sidebar) — só em telas largas ----------------
      O app continua mobile-first (tablet no chão de fábrica é o uso principal, ver
      CLAUDE.md); esse bloco só entra em telas ≥1024px e não altera nada abaixo disso. */
-  .desktop-topbar, .sidebar, .desktop-kpi-grid, .desktop-quick-grid, .desktop-cta-row, .pnl-wrap{display:none;}
+  .desktop-topbar, .sidebar, .sidebar-toggle, .desktop-kpi-grid, .desktop-quick-grid, .desktop-cta-row, .pnl-wrap{display:none;}
 
   @media (min-width:1024px){
-    .app{max-width:none;flex-direction:row;align-items:flex-start;}
+    .app{max-width:none;flex-direction:row;align-items:flex-start;position:relative;}
     .mobile-topbar, .bottom-nav{display:none;}
     .app-main{flex:1;display:flex;flex-direction:column;min-width:0;}
     .content{padding:32px 40px 48px;max-width:1400px;margin:0 auto;width:100%;}
 
-    .sidebar{display:flex;flex-direction:column;width:264px;flex-shrink:0;background:var(--navy);min-height:100vh;position:sticky;top:0;}
-    .sidebar-brand{padding:22px 22px 18px;border-bottom:1px solid rgba(255,255,255,0.08);}
+    .sidebar{display:flex;flex-direction:column;width:264px;flex-shrink:0;background:var(--navy);min-height:100vh;position:sticky;top:0;overflow:hidden;transition:width .18s ease;}
+    .sidebar.collapsed{width:0;}
+    .sidebar-toggle{display:flex;align-items:center;justify-content:center;position:absolute;top:24px;left:250px;width:28px;height:28px;border-radius:50%;background:var(--accent2);color:#fff;border:2px solid var(--bg);box-shadow:0 2px 6px rgba(0,0,0,0.18);z-index:30;transition:left .18s ease;}
+    .sidebar-toggle:hover{background:#195a89;}
+    .sidebar-toggle.collapsed{left:8px;}
+    .sidebar-brand{padding:22px 22px 18px;border-bottom:1px solid rgba(255,255,255,0.08);width:264px;flex-shrink:0;box-sizing:border-box;}
     .sidebar-brand img{width:100%;max-width:170px;height:auto;display:block;margin-bottom:10px;}
     .sidebar-brand .product{font-family:var(--font-display);font-size:15px;font-weight:600;letter-spacing:0.4px;text-transform:uppercase;color:#fff;}
     .sidebar-brand .product small{display:block;font-family:var(--font-mono);font-size:9px;color:rgba(255,255,255,0.5);letter-spacing:1.2px;text-transform:uppercase;margin-top:2px;}
-    .sidebar-nav{padding:14px 12px;display:flex;flex-direction:column;gap:2px;}
+    .sidebar-nav{padding:14px 12px;display:flex;flex-direction:column;gap:2px;width:264px;flex-shrink:0;box-sizing:border-box;}
     .sidebar-nav-item{display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:8px;background:none;border:none;color:rgba(255,255,255,0.72);font-size:13.5px;font-weight:500;text-align:left;width:100%;}
     .sidebar-nav-item:hover{background:rgba(255,255,255,0.07);}
     .sidebar-nav-item.active{background:var(--safety);color:var(--safety-ink);font-weight:600;}
     .sidebar-nav-item .ic{width:18px;height:18px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
-    .sidebar-shortcuts{padding:16px 20px 18px;border-top:1px solid rgba(255,255,255,0.08);margin-top:auto;}
+    .sidebar-shortcuts{padding:16px 20px 18px;border-top:1px solid rgba(255,255,255,0.08);margin-top:auto;width:264px;flex-shrink:0;box-sizing:border-box;}
     .sidebar-section-title{font-family:var(--font-mono);font-size:10px;text-transform:uppercase;letter-spacing:1px;color:rgba(255,255,255,0.45);margin-bottom:10px;}
     .sidebar-shortcut{display:flex;align-items:center;justify-content:space-between;width:100%;background:none;border:none;color:rgba(255,255,255,0.75);font-size:12.5px;padding:8px 2px;text-align:left;}
     .sidebar-shortcut:hover{color:#fff;}
     .sidebar-shortcut span{color:var(--safety);font-weight:700;}
-    .sidebar-footer{padding:14px 20px 20px;border-top:1px solid rgba(255,255,255,0.08);font-family:var(--font-corp);font-size:11px;color:rgba(255,255,255,0.45);display:flex;flex-direction:column;gap:6px;}
+    .sidebar-footer{padding:14px 20px 20px;border-top:1px solid rgba(255,255,255,0.08);font-family:var(--font-corp);font-size:11px;color:rgba(255,255,255,0.45);display:flex;flex-direction:column;gap:6px;width:264px;flex-shrink:0;box-sizing:border-box;}
     .sidebar-footer .status{display:flex;align-items:center;gap:6px;color:rgba(255,255,255,0.6);}
     .sidebar-footer .status .dot{width:6px;height:6px;border-radius:50%;background:var(--ok);flex-shrink:0;}
     .sidebar-footer .sf-user{display:flex;align-items:center;gap:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.08);color:rgba(255,255,255,0.72);font-weight:600;}
@@ -830,6 +839,7 @@ function App(){
   const [view, setView] = useState('home');
   const [flowState, setFlowState] = useState(null); // params passed into a flow
   const [dashboardPeriod, setDashboardPeriod] = useState('7d'); // filtro de período do Dashboard novo
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false); // esconder sidebar desktop (tablet)
 
   const [inventories, setInventories] = usePersistedState('inventories', [
     {id:'INV-001', nome:'Inventário Cíclico Julho/2026', almoxarifado:'Almox 01', responsavel:'Carlos Mendes', data:'2026-07-14', tipo:'Contagem Aleatória', qtdItens:20, status:'em_andamento', contados: 6},
@@ -993,7 +1003,14 @@ function App(){
 
   return (
     <div className="app">
-      <Sidebar view={view} goto={goto} role={role} user={currentUser} />
+      <Sidebar view={view} goto={goto} role={role} user={currentUser} collapsed={sidebarCollapsed} />
+      <button
+        className={"sidebar-toggle"+(sidebarCollapsed?' collapsed':'')}
+        onClick={()=>setSidebarCollapsed(c=>!c)}
+        title={sidebarCollapsed?'Mostrar menu':'Esconder menu'}
+      >
+        <DIcon name={sidebarCollapsed?'chevronRight':'chevronLeft'} size={14} />
+      </button>
       <div className="app-main">
       <TopBar user={currentUser} role={role} onHome={()=>goto('home')} onLogout={()=>logout('')} />
       <DesktopTopbar
@@ -1143,6 +1160,7 @@ const DICON_PATHS = {
   bell: <><path d="M6 8a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></>,
   chevronDown: <path d="m6 9 6 6 6-6"/>,
   chevronRight: <path d="m9 18 6-6-6-6"/>,
+  chevronLeft: <path d="m15 18-6-6 6-6"/>,
   logOut: <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></>,
   trendingUp: <><path d="M22 7 13.5 15.5 8.5 10.5 2 17"/><path d="M16 7h6v6"/></>,
   trendingDown: <><path d="M22 17 13.5 8.5 8.5 13.5 2 7"/><path d="M16 17h6v-6"/></>,
@@ -1395,7 +1413,7 @@ function SubBar({view, goto}){
   );
 }
 
-function Sidebar({view, goto, role, user}){
+function Sidebar({view, goto, role, user, collapsed}){
   const podeValidarEnderecos = role==='lider'||role==='admin';
   const items = [
     {id:'home', ic:'home', label:'Início'},
@@ -1416,7 +1434,7 @@ function Sidebar({view, goto, role, user}){
     ...(podeValidarEnderecos ? [{id:'enderecos', label:'Endereços pendentes'}] : []),
   ];
   return (
-    <div className="sidebar">
+    <div className={"sidebar"+(collapsed?' collapsed':'')}>
       <div className="sidebar-brand">
         <img src={SELGRON_LOGO_WHITE_URL} alt="Selgron" />
         <div className="product">Inventário 360<small>Controle Cíclico</small></div>

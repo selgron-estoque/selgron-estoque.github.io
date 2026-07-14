@@ -592,6 +592,37 @@ valer mais que a descrição textual anterior — reconstruí a tela pra bater c
   na imagem — não são parte do formulário.
 - Paleta/tipografia continuam as mesmas variáveis `--navy`/`--gray-*`/`--font-corp`
   compartilhadas com o Dashboard (ver seção acima) — só a composição/layout mudou.
+- **Fundo da `.login-screen`**: era `var(--gray-100)` sólido, virou esse mesmo cinza com
+  dois gradientes radiais bem sutis por cima — navy no canto superior esquerdo, laranja
+  no canto inferior direito (`rgba(15,23,42,0.07)` / `rgba(246,162,0,0.09)`, ambos com
+  `transparent` a ~40-42%). Mantém a mesma paleta corporativa da marca sem virar
+  "gradiente exagerado" nem glassmorphism — só profundidade discreta atrás do card.
+
+## Sidebar com botão de esconder/mostrar (telas menores que um monitor de mesa)
+
+Cliente testando num tablet notou que a sidebar de 264px ocupa proporcionalmente mais
+espaço numa tela menor que um monitor — pediu um botão pra esconder o menu lateral.
+
+- Estado `sidebarCollapsed` mora em `App()` (`useState(false)`, não persiste — mesmo
+  critério de `view`/`flowState`, é navegação/UI, não dado).
+- Botão `.sidebar-toggle`: círculo azul (`var(--accent2)`, a mesma cor de link usada no
+  resto do app), 28px, ícone `chevronLeft`/`chevronRight` (`DIcon`), renderizado como
+  **irmão** de `<Sidebar>` dentro de `.app` (não como filho) — `position:absolute` grudado
+  na borda direita da sidebar (`left:250px` expandido, `left:8px` colapsado, com
+  `transition:left`). Fica fora da `Sidebar` de propósito: se estivesse dentro, o
+  `overflow:hidden` que colapsa a sidebar escondia o botão junto, e o usuário perdia o
+  jeito de reabrir o menu.
+- `.sidebar{width:264px→0, overflow:hidden, transition:width}` quando `.collapsed` — as
+  4 seções internas (`sidebar-brand`, `sidebar-nav`, `sidebar-shortcuts`,
+  `sidebar-footer`) ganharam `width:264px;flex-shrink:0` fixo cada uma, pra não
+  espremer/quebrar texto durante a transição — em vez disso elas deslizam pra fora de
+  vista junto com o container pai, cortadas pelo `overflow:hidden`.
+- Com a sidebar em 0px, `.app-main{flex:1}` ocupa o espaço todo automaticamente (flexbox
+  já resolve isso sozinho, sem CSS extra) — é isso que dá a sensação de "mais espaço" no
+  tablet.
+- Só existe no bloco desktop (`@media (min-width:1024px)`) — no mobile a sidebar nem
+  existe, então o botão também fica `display:none` por padrão (mesma lista de seletores
+  escondidos de `.sidebar`/`.desktop-topbar`).
 
 ## Convenções de design (não quebrar ao continuar)
 
