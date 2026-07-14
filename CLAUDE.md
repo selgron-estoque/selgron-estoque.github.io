@@ -982,6 +982,49 @@ e pediu pra incluir.
   vazios): busquei um item do cache local com `grupo:61` e confirmei que o campo
   "Família" mostra "MAT EXPEDIENTE (NÃO ENTRA MRP)" em vez de "Grupo 61".
 
+## Recontagem: "Solicitar nova contagem" vs. "Recontar" (bug + mudança de fluxo)
+
+O cliente reportou dois problemas ligados ao painel "Aguardando Análise do Líder"
+(`RecountsPanel`): (1) clicar em "Solicitar nova contagem" levava direto pra tela de
+recontagem com o PRÓPRIO usuário logado (líder/admin) — não fazia sentido, porque
+"solicitar" deveria só encaminhar o item pra fila, não fazer o líder contar na hora;
+(2) ao clicar, a tela quebrava com "Item ... não encontrado na base de produtos" pra
+um item que tinha sido contado via busca no catálogo Supabase (fora do cache local de
+300 SKUs).
+
+- **Bug real corrigido em `RecountFlow`**: `PRODUCTS.find(p=>p.codigo===...)` só
+  procura no cache local de 300 itens — qualquer contagem original vinda da busca no
+  catálogo Supabase (`ManualCountFlow`) ou de lista importada tinha o código ausente
+  dali, e a recontagem quebrava. Corrigido com o mesmo padrão de fallback já usado no
+  `ImportedListCountFlow`: se não achar no `PRODUCTS`, monta um produto sintético a
+  partir do que a própria contagem anterior (`original`) já registrou (descrição,
+  endereço, saldo do sistema) — `foraDoCacheLocal:true`, sem precisar de nova consulta
+  ao Supabase, já que os dados relevantes já estavam salvos na contagem.
+- **Dois botões agora, dois comportamentos diferentes** (só no bloco `canApprove` de
+  "Aguardando Análise do Líder"):
+  - **"Solicitar nova contagem"** → `requestRecountFromOperator(countId)` (novo, em
+    `App()`), só muda `statusAprovacao` do item pra `'aguardando_segunda'` — não
+    navega pra lugar nenhum. Isso move o item pra fila "Aguardando Segunda Contagem"
+    (mesma seção que já existia, sempre visível pra qualquer perfil incluindo
+    operador — ver `RecountsPanel`), de onde QUALQUER operador pode pegar depois.
+  - **"Recontar"** (novo botão, ícone 🔁) → mesmo comportamento que "Solicitar nova
+    contagem" tinha antes: `goto('recount', c)`, abre `RecountFlow` com o usuário
+    atualmente logado fazendo a recontagem ali mesmo, na hora.
+- **Segundo bug encontrado durante o teste, também corrigido**: a seção "Aguardando
+  Segunda Contagem" nunca tinha sido alcançável por um item sem saldo local
+  (`percentual: null`) antes dessa mudança — só chegava lá via `computeStatus` na 1ª
+  contagem com divergência leve (`level==='warn'`), que sempre tem saldo. Como agora o
+  líder pode empurrar QUALQUER item (inclusive sem saldo) pra essa fila via "Solicitar
+  nova contagem", a linha `c.percentual.toFixed(1)` (sem checar null) quebrava a tela
+  com `Cannot read properties of null (reading 'toFixed')`. Corrigido com o mesmo
+  guard já usado na seção "Aguardando Análise do Líder"
+  (`c.diferenca==null ? '— (sem saldo local)' : ...`).
+- Testado via Playwright ponta a ponta (sandbox sem rede, catálogo Supabase mockado):
+  contei um item fora do cache local até virar divergência sem saldo (mesmo cenário do
+  print do cliente), confirmei que "Recontar" abre `RecountFlow` normalmente (sem o
+  erro de "não encontrado") e que "Solicitar nova contagem" move o item pra
+  "Aguardando Segunda Contagem" sem navegar e sem quebrar a tela.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase

@@ -1378,6 +1378,14 @@ function App(){
     setCounts(prev=>prev.map(c=>c.id===countId?{...c, statusAprovacao:'aprovado_lider', aprovadoPor:currentUser?currentUser.nome:'—', aprovadoEm:new Date().toLocaleString('pt-BR')}:c));
   }
 
+  // Encaminha o item pra fila de "Aguardando Segunda Contagem" — não faz a
+  // recontagem agora, só libera o item pra qualquer operador pegar depois
+  // (mesma fila que já existe, ver RecountsPanel). Diferente do botão
+  // "Recontar" (RecountFlow), que é o próprio líder/admin recontando na hora.
+  function requestRecountFromOperator(countId){
+    setCounts(prev=>prev.map(c=>c.id===countId?{...c, statusAprovacao:'aguardando_segunda'}:c));
+  }
+
   function deleteInventory(id){
     setInventories(prev=>prev.filter(i=>i.id!==id));
   }
@@ -1584,7 +1592,7 @@ function App(){
         {view==='routeCount' && <RouteCountFlow inv={flowState} user={currentUser} onFinish={(c)=>{setCounts(p=>[c,...p]); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} />}
         {view==='importedListCount' && <ImportedListCountFlow inv={flowState} user={currentUser} onFinish={(c)=>{setCounts(p=>[c,...p]); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} />}
         {view==='myCounts' && <MyCounts counts={counts} user={currentUser} role={role} goto={goto} />}
-        {view==='recounts' && <RecountsPanel counts={counts} role={role} currentUser={currentUser} goto={goto} onApprove={approveDivergence} />}
+        {view==='recounts' && <RecountsPanel counts={counts} role={role} currentUser={currentUser} goto={goto} onApprove={approveDivergence} onRequestRecount={requestRecountFromOperator} />}
         {view==='recount' && flowState && <RecountFlow original={flowState} user={currentUser} onAddressProposed={addAddressProposal} onFinish={(c)=>{setCounts(p=>[c,...p]); goto('recounts');}} />}
         {view==='dashboard' && <Dashboard counts={counts} inventories={inventories} />}
         {view==='relatorios' && <ReportsScreen counts={counts} inventories={inventories} currentUser={currentUser} sendHistory={reportSendHistory} onLogSend={logReportSend} />}
@@ -3305,10 +3313,29 @@ function MyCounts({counts, user, role, goto}){
 /* ---------------- MÓDULO 7: RECONTAGEM E ANÁLISE DE DIVERGÊNCIAS ---------------- */
 
 function RecountFlow({original, user, onFinish, onAddressProposed}){
-  const product = PRODUCTS.find(p=>p.codigo===original.productCode);
-  if(!product){
-    return <div className="empty-state"><div className="ic"><Ic>⚠</Ic></div>Item {original.productCode} não encontrado na base de produtos.</div>;
-  }
+  // Item pode não estar no cache local de 300 SKUs (ex: contado via busca no
+  // catálogo Supabase ou lista importada) — nesse caso monta um produto
+  // sintético a partir do que a própria contagem anterior já registrou, mesmo
+  // padrão já usado no fallback do ImportedListCountFlow. Sem isso a
+  // recontagem quebrava com "item não encontrado" pra qualquer contagem
+  // originada fora do cache local.
+  const product = PRODUCTS.find(p=>p.codigo===original.productCode) || {
+    codigo: original.productCode,
+    descricao: original.descricao,
+    unidade: null,
+    familia: '—',
+    endereco: original.endereco && original.endereco!=='—' ? original.endereco : null,
+    enderecoCadastrado: !!(original.endereco && original.endereco!=='—'),
+    almoxarifado: '—',
+    corredor: null,
+    rua: null,
+    saldoSistema: original.saldoSistema,
+    custoUnit: 0,
+    valorFinanceiro: 0,
+    semMovimentoRecente: false,
+    ultimaSaida: null,
+    foraDoCacheLocal: true,
+  };
   const sameUser = user.nome === original.usuario;
   return (
     <div>
@@ -3334,7 +3361,7 @@ function RecountFlow({original, user, onFinish, onAddressProposed}){
   );
 }
 
-function RecountsPanel({counts, role, currentUser, goto, onApprove}){
+function RecountsPanel({counts, role, currentUser, goto, onApprove, onRequestRecount}){
   const byOriginal = {};
   counts.forEach(c=>{ if(c.contagemAnteriorId) byOriginal[c.contagemAnteriorId]=c; });
 
@@ -3360,7 +3387,7 @@ function RecountsPanel({counts, role, currentUser, goto, onApprove}){
             <StatusTag status="warn" text={c.classificacao.label} />
           </div>
           <div style={{padding:'14px 18px',display:'flex',flexWrap:'wrap',gap:8,fontSize:12,color:'var(--ink-dim)',fontFamily:'var(--font-mono)'}}>
-            <span>1ª contagem: {c.qtdContada} un.</span>·<span>Diferença {c.diferenca>0?'+':''}{c.diferenca} ({c.percentual.toFixed(1)}%)</span>·<span>{c.usuario}</span>·<span>{c.data} {c.hora||''}</span>
+            <span>1ª contagem: {c.qtdContada} un.</span>·<span>Diferença {c.diferenca==null ? '— (sem saldo local)' : (c.diferenca>0?'+':'')+c.diferenca+' ('+c.percentual.toFixed(1)+'%)'}</span>·<span>{c.usuario}</span>·<span>{c.data} {c.hora||''}</span>
           </div>
           <div style={{padding:'0 18px 16px'}}>
             <button className="btn btn-primary" onClick={()=>goto('recount', c)}><Ic>🔁</Ic> Recontar este item</button>
@@ -3396,7 +3423,8 @@ function RecountsPanel({counts, role, currentUser, goto, onApprove}){
             {c.motivo && <div style={{padding:'0 18px 14px',fontSize:12.5}}>Motivo: <strong>{c.motivo}</strong></div>}
             {canApprove ? (
               <div className="btn-row" style={{padding:'0 18px 16px'}}>
-                <button className="btn btn-secondary" onClick={()=>goto('recount', c)}>Solicitar nova contagem</button>
+                <button className="btn btn-secondary" onClick={()=>onRequestRecount(c.id)}>Solicitar nova contagem</button>
+                <button className="btn btn-secondary" onClick={()=>goto('recount', c)}><Ic>🔁</Ic> Recontar</button>
                 <button className="btn btn-primary" onClick={()=>onApprove(c.id)}>Aprovar divergência</button>
               </div>
             ) : (
