@@ -188,14 +188,32 @@ create index idx_contagens_produto on contagens(produto_codigo);
 
 -- ---------------------------------------------------------------------------
 -- RLS (Row Level Security) — esboço. Ajuste conforme o modelo de auth real.
+--
+-- IMPORTANTE: o Inventário 360 ainda NÃO usa Supabase Auth (login próprio,
+-- ver App() no index.html) — toda chamada ao Supabase hoje sai com a
+-- publishable key "anon", nunca "authenticated". Por isso políticas do tipo
+-- `auth.role() = 'authenticated'` bloqueiam o próprio app (foi exatamente o
+-- que aconteceu com `produtos`: criado sem policy nenhuma, RLS bloqueou
+-- geral até adicionar "leitura pública"). Enquanto não migrar pro Supabase
+-- Auth de verdade, use `using (true)` pra leitura de tabelas sem dado
+-- sigiloso — não `auth.role()='authenticated'`, que nunca bate hoje.
 -- ---------------------------------------------------------------------------
+alter table produtos enable row level security;
 alter table estoque_saldo enable row level security;
 alter table enderecos enable row level security;
+alter table estoque_enderecos enable row level security;
 alter table contagens enable row level security;
 
--- Leitura liberada para qualquer usuário autenticado do Stock360:
-create policy "leitura autenticada" on estoque_saldo for select using (auth.role() = 'authenticated');
-create policy "leitura autenticada" on enderecos for select using (auth.role() = 'authenticated');
+-- Catálogo e endereços: sem dado sigiloso, leitura pública liberada.
+create policy "leitura pública" on produtos for select using (true);
+create policy "leitura pública" on enderecos for select using (true);
+create policy "leitura pública" on estoque_enderecos for select using (true);
+create policy "leitura pública" on estoque_saldo for select using (true);
+
+-- Contagens têm nome de usuário/observações — mantém restrito a
+-- "authenticated" já pensando na migração futura pro Supabase Auth (hoje,
+-- sem essa migração, a tela de contagens ainda não lê daqui, então não
+-- quebra nada em produção deixar assim por enquanto).
 create policy "leitura autenticada" on contagens for select using (auth.role() = 'authenticated');
 
 -- Escrita em estoque_saldo SÓ pela service role (usada pela Edge Function de

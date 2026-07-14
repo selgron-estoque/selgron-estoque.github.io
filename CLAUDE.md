@@ -774,6 +774,43 @@ Excel é obrigado a guardá-los como texto.
   depois insere os pontos conforme o tamanho final (8→`XXX.XXXXX`, 9→`XXX.XXXXX.X`,
   11→`XXX.XXX.XXXXX`). Códigos que já vierem com letra/ponto na planilha não precisam de
   nenhum tratamento.
+- **O mesmo bug de formatação também existia no cache local de 300 SKUs** embutido no
+  `index.html` (`RAW_SB2_PRODUCTS`) — 41 dos 300 códigos estavam sem pontuação, herdado
+  de uma exportação Excel anterior com o mesmo problema. Corrigido com a mesma regra,
+  direto no array embutido (não é mais um arquivo externo, então o conserto foi um
+  find/replace no próprio `index.html`). Isso também corrigiu um efeito colateral: esses
+  códigos crus colidiam com buscas parciais (ex: buscar "021" batia em vários códigos sem
+  ponto por acidente) e "escondiam" o fato de que o item de verdade só existia no catálogo
+  Supabase — a busca local "encontrava" algo (errado) e nunca deixava a busca remota
+  disparar. Ver `hasSaldoLocal`/`localResults.length>0` em `ManualCountFlow`.
+
+**Bug de permissão encontrado e corrigido: RLS bloqueava a tabela `produtos` por
+padrão**. Depois de importar os 85 mil produtos, a busca no app não trazia nada — nem um
+teste direto na REST API (`.../rest/v1/produtos?...`) trazia resultado, mesmo os dados
+existindo (confirmado via `select count(*) from produtos` no SQL Editor, que roda como
+superusuário e ignora RLS). Causa: `create table produtos (...)` no painel do Supabase
+**vem com RLS ativado por padrão** hoje em dia — o `schema.sql` original não previa isso
+(só ativava RLS explicitamente em `estoque_saldo`/`enderecos`/`contagens`, achando que
+`produtos` ficaria sem RLS = acesso liberado por padrão). Com RLS ativo e **nenhuma
+policy**, a regra do Postgres é bloquear tudo, até leitura pública — silenciosamente,
+sem erro visível, só resultado vazio.
+
+- Corrigido ao vivo com `create policy "leitura pública" on produtos for select using
+  (true);` (mesma coisa depois aplicada em `enderecos` e `estoque_enderecos`,
+  preventivamente, antes de essas tabelas serem realmente usadas).
+- `backend/schema.sql` foi atualizado pra refletir isso e documentar um problema
+  relacionado, mais sutil: como o app **ainda não usa Supabase Auth** (login próprio, ver
+  `App()`), toda chamada sai como `anon`, nunca `authenticated` — então qualquer policy
+  escrita como `using (auth.role() = 'authenticated')` (como as 3 originais do schema)
+  bloqueia o próprio app do mesmo jeito, só que ainda não apareceu porque
+  `estoque_saldo`/`contagens` não são lidas do Supabase ainda. Deixado documentado no
+  comentário do schema pra não repetir o mesmo susto quando essas tabelas entrarem em
+  uso — usar `using (true)` pra leitura de tabela sem dado sigiloso até a migração real
+  pro Supabase Auth acontecer.
+- **Se criar uma tabela nova no Supabase a partir de agora**: sempre checar
+  `select relrowsecurity from pg_class where relname = '<tabela>';` logo depois de criar
+  — se vier `true` e a tabela precisa ser lida pelo app hoje (sem Supabase Auth), criar a
+  policy de leitura pública na hora, não depois.
 
 ## Convenções de design (não quebrar ao continuar)
 
