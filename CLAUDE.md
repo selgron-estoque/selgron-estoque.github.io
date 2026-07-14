@@ -700,6 +700,54 @@ antigo (`TopBar`/`BottomNav`/`grid-cards`) deixou de ser o destino para telas es
   partir de 360px agora, era 768px/1024px antes). Só telas menores que 360px (praticamente
   inexistentes hoje) ainda cairiam nesse layout antigo.
 
+## Primeiro pedaço do backend real aplicado: catálogo de produtos via Supabase
+
+O cliente pediu pra "criar o banco de dados" e mandou uma planilha (`SB2`, 85.357 códigos
+únicos de produto/descrição/grupo — bem mais que os 300 do cache estático embutido no
+JS). Em vez de fazer a migração inteira de uma vez (login, usuários, inventários,
+contagens — tudo isso continua 100% `localStorage`, sem mudança nenhuma), esse primeiro
+passo ficou escopado só no catálogo, que é a dor imediata do cliente: item sem saldo no
+cache de 300 SKUs não achava descrição/endereço nenhum durante a contagem manual.
+
+- **Projeto Supabase real criado** (não é mais só `backend/schema.sql` sem aplicar) —
+  `https://geeqfpzamexmeketcecu.supabase.co`, região São Paulo. Passei o cliente pelo
+  fluxo todo no chat (criar projeto → SQL Editor pra aplicar o schema → Table Editor pra
+  importar CSV) porque eu não tenho like nenhuma ferramenta que crie projeto Supabase ou
+  rode SQL nele à distância — só ele tem acesso ao painel.
+- **`produtos_import.csv`** (gerado a partir da planilha `SB2` do cliente, 85.357 linhas
+  únicas por código, duplicatas descartadas) foi importado direto pela função "Import
+  data from CSV" do Table Editor — mais simples que gerar INSERT gigante em SQL pra esse
+  volume.
+- **`SUPABASE_URL`/`SUPABASE_PUBLISHABLE_KEY`** ficam como constantes no topo do
+  `<script>` do `index.html` (perto de `RAW_SB2_PRODUCTS`) — a "publishable key" (nome
+  novo do Supabase pra o que antes chamava "anon key") é segura de expor no client-side
+  por design, protegida por RLS nas tabelas sensíveis. `produtos` hoje não tem RLS
+  habilitado (só leitura pública de um catálogo código→descrição, sem dado sigiloso) —
+  revisar isso quando o Supabase Auth entrar de verdade.
+- **`searchSupabaseCatalog(query)`** — função nova, perto da inicialização do client.
+  Busca por código OU descrição (`ilike`) com join aninhado em `estoque_enderecos` →
+  `enderecos` pra trazer o endereço também, se já tiver cadastrado (hoje essas duas
+  tabelas estão vazias — só o catálogo foi importado — então na prática sempre volta sem
+  endereço por enquanto; a função já está pronta pra quando o cadastro de endereço migrar
+  pro Supabase também). Monta um produto sintético com `saldoSistema: null` — mesmo
+  padrão já usado pelo fallback de item fora do cache local na importação de lista
+  (`foraDoCacheLocal: true`), então `CountStep` já sabe tratar como "sem saldo pra
+  comparar" sem nenhuma mudança lá.
+- **Só `ManualCountFlow` (Nova Contagem avulsa) foi conectado por enquanto** — é onde o
+  operador digita um código à mão e mais sentia falta disso (buscar item aleatório fora
+  da lista de um inventário). A busca local (300 SKUs) continua instantânea e roda
+  primeiro; a busca no Supabase (85 mil+) só dispara com debounce de 350ms **e só quando
+  a busca local não achou nada** — evita gastar request à toa pro caso mais comum (item
+  já no cache). `ImportedListCountFlow` não precisou de mudança — já tinha seu próprio
+  fallback usando os dados que a própria planilha de importação traz.
+- **Testado com resposta mockada** (`page.route` no Playwright), não contra o Supabase de
+  verdade — o sandbox onde rodo os testes não tem saída de rede pra domínios externos
+  (mesma restrição que bloqueou testar o link do GitHub Pages direto por `curl`). Validei
+  a URL da query REST gerada (sintaxe do `select`/`or`/`limit` do PostgREST), a
+  renderização do resultado, e que buscas com hit local não disparam request nenhum ao
+  Supabase — mas a leitura ao vivo do banco de produção só o próprio app, rodando no
+  navegador do cliente (sem essa restrição de rede), consegue confirmar de fato.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase

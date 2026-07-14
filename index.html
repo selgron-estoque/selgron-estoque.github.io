@@ -21,6 +21,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
   :root{
     --bg: #EEF0F3;
@@ -497,6 +498,56 @@
 <script type="text/babel" data-presets="react">
 
 const {useState, useMemo, useRef, useEffect} = React;
+
+/* ---------------- SUPABASE (catálogo real de produtos) ----------------
+   Primeiro pedaço do backend real aplicado (ver backend/schema.sql e
+   CLAUDE.md "Catálogo real de produtos via Supabase"). A "publishable key"
+   é segura de expor no navegador (mesmo papel da antiga "anon key") — as
+   tabelas sensíveis (contagens, saldo) têm RLS; `produtos` hoje só tem
+   leitura pública porque é só um catálogo de código→descrição, sem dado
+   sigiloso. Login/usuários/inventários/contagens continuam 100% no
+   localStorage por enquanto — essa migração é a próxima etapa, não esta. */
+const SUPABASE_URL = 'https://geeqfpzamexmeketcecu.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_Wx-oyRE86XWz4bTSPWBe5A_8tXRpHJr';
+const supabaseClient = window.supabase
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY)
+  : null;
+
+// Busca no catálogo real (85 mil+ produtos) por código ou descrição — usado
+// quando o item não está no cache local de 300 SKUs (RAW_SB2_PRODUCTS). Sem
+// saldo/endereço vivo ainda (só o catálogo foi importado até agora), então o
+// produto sintético monta com saldoSistema:null — CountStep já sabe tratar
+// isso como "sem saldo pra comparar" (ver hasSaldoLocal).
+async function searchSupabaseCatalog(query){
+  if(!supabaseClient || !query || query.trim().length < 2) return [];
+  const q = query.trim();
+  const { data, error } = await supabaseClient
+    .from('produtos')
+    .select('codigo, descricao, grupo, estoque_enderecos(saldo_no_endereco, enderecos(codigo))')
+    .or(`codigo.ilike.%${q}%,descricao.ilike.%${q}%`)
+    .limit(8);
+  if(error || !data) return [];
+  return data.map(row=>{
+    const enderecoRow = (row.estoque_enderecos && row.estoque_enderecos[0] && row.estoque_enderecos[0].enderecos) || null;
+    return {
+      codigo: row.codigo,
+      descricao: row.descricao,
+      unidade: null,
+      familia: row.grupo!=null ? String(row.grupo) : '—',
+      endereco: enderecoRow ? enderecoRow.codigo : null,
+      enderecoCadastrado: !!enderecoRow,
+      almoxarifado: '—',
+      corredor: null,
+      rua: null,
+      saldoSistema: null,
+      custoUnit: 0,
+      valorFinanceiro: 0,
+      semMovimentoRecente: false,
+      ultimaSaida: null,
+      foraDoCacheLocal: true,
+    };
+  });
+}
 
 /* ---------------- LOGO OFICIAL (SELGRON) ---------------- */
 // Extraído do PDF vetorial enviado pelo cliente (Logotipo_Selgron_Laranja_CMYK.pdf).
@@ -2535,12 +2586,31 @@ function ManualCountFlow({user, onFinish, onAddressProposed}){
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState(null);
   const [scanning, setScanning] = useState(false);
+  const [remoteResults, setRemoteResults] = useState([]);
+  const [remoteLoading, setRemoteLoading] = useState(false);
 
-  const results = useMemo(()=>{
+  const localResults = useMemo(()=>{
     if(!query) return [];
     const q = query.toLowerCase();
     return PRODUCTS.filter(p=>p.codigo.toLowerCase().includes(q) || p.descricao.toLowerCase().includes(q)).slice(0,8);
   }, [query]);
+
+  // Item não encontrado no cache local de 300 SKUs — busca no catálogo real
+  // (85 mil+ produtos via Supabase, ver CLAUDE.md "Catálogo real de
+  // produtos"). Só dispara quando a busca local já não deu resultado, pra
+  // não gastar requisição à toa enquanto o item mais comum já aparece local.
+  useEffect(()=>{
+    if(!query || localResults.length>0){ setRemoteResults([]); setRemoteLoading(false); return; }
+    let cancelado = false;
+    setRemoteLoading(true);
+    const timer = setTimeout(async ()=>{
+      const found = await searchSupabaseCatalog(query);
+      if(!cancelado){ setRemoteResults(found); setRemoteLoading(false); }
+    }, 350);
+    return ()=>{ cancelado = true; clearTimeout(timer); };
+  }, [query, localResults.length]);
+
+  const results = localResults.length>0 ? localResults : remoteResults;
 
   if(selected){
     return <CountStep product={selected} user={user} onAddressProposed={onAddressProposed} onComplete={(c)=>onFinish(c)} expectAddressCheck={true} />;
@@ -2562,12 +2632,13 @@ function ManualCountFlow({user, onFinish, onAddressProposed}){
         <label>Ou buscar por código, descrição ou código de barras</label>
         <input type="text" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Ex: 000.35310 ou parafuso" />
       </div>
-      {results.length===0 && query && <div className="empty-state" style={{padding:20}}>Nenhum item encontrado.</div>}
+      {remoteLoading && <div className="empty-state" style={{padding:20}}>Buscando no catálogo…</div>}
+      {!remoteLoading && results.length===0 && query && <div className="empty-state" style={{padding:20}}>Nenhum item encontrado.</div>}
       {results.map(p=>(
         <div key={p.codigo} className="list-row" onClick={()=>setSelected(p)}>
           <div>
             <div className="lr-title">{p.descricao}</div>
-            <div className="lr-sub">{p.codigo} · {p.enderecoCadastrado ? p.endereco : 'sem endereço cadastrado'}</div>
+            <div className="lr-sub">{p.codigo} · {p.enderecoCadastrado ? p.endereco : 'sem endereço cadastrado'}{p.foraDoCacheLocal ? ' · fora do cache local' : ''}</div>
           </div>
           <span className="chevron"><Ic>›</Ic></span>
         </div>

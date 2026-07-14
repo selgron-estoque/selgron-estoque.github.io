@@ -287,6 +287,21 @@ página). Para virar o sistema real descrito no briefing, falta:
    contagens pendentes salvas localmente (IndexedDB) e sincronizadas quando a conexão
    voltar.
 
+## Atualização: catálogo real de produtos (primeiro pedaço do backend aplicado)
+
+O projeto Supabase descrito abaixo deixou de ser só um modelo sugerido — foi criado de
+verdade (`https://geeqfpzamexmeketcecu.supabase.co`) e o schema completo (`backend/schema.sql`)
+já está aplicado. Por enquanto só a tabela `produtos` está populada, com **85.357 itens**
+importados de uma planilha real do cliente (código, descrição, grupo) — bem mais completo
+que os 300 SKUs do cache estático embutido no `index.html`.
+
+Na tela de **Nova Contagem** (contagem manual avulsa), quando o item buscado não está no
+cache local de 300 SKUs, o app agora consulta esse catálogo real automaticamente e traz a
+descrição (e o endereço, se já estiver cadastrado) — em vez de simplesmente não encontrar
+o item. Login, usuários, inventários e contagens continuam no `localStorage` por
+enquanto — essa é só a primeira fatia migrada pro banco de verdade. Ver `CLAUDE.md` para
+os detalhes técnicos.
+
 ## Modelo de dados sugerido (Supabase / PostgreSQL)
 
 ```sql
