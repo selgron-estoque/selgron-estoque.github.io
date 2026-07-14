@@ -1078,6 +1078,41 @@ item que caiu lá sozinho pela regra automática da 1ª contagem (divergência l
   "Aguardando Segunda Contagem" mostra a tag "Divergência rejeitada", o aviso com nome
   de quem solicitou, e a borda vermelha (`rgb(196, 41, 27)`, confere com `--danger`).
 
+## "Minhas Contagens" não reabre contagem concluída + relatório filtrável por dia
+
+Dois pedidos do cliente: (1) tirar o botão "Recontar este item" de "Minhas Contagens"
+(`MyCounts`) — ele aparecia pra qualquer contagem com `statusAprovacao==='aguardando_segunda'`,
+mas o cliente notou que uma contagem já concluída não devia poder ser reaberta por ali;
+(2) um campo de calendário na tela de Relatórios pra tirar um relatório só das contagens
+de um dia específico, pra análise.
+
+- **`MyCounts`**: removido o bloco condicional que renderizava "Recontar este item"
+  (e a variável `byOriginal`/`jaRecontado` que só existia pra calcular isso). O botão
+  continua existindo — e é o lugar certo pra essa ação — em `RecountsPanel` (seção
+  "Aguardando Segunda Contagem"), que é a tela dedicada a gerenciar recontagem
+  pendente. "Minhas Contagens" agora é histórico puro, só leitura, sem ação de reabrir
+  nada.
+- **Filtro de data em `ReportsScreen`**: campo `<input type="date">` (estado
+  `filtroData`, formato `YYYY-MM-DD` — já bate direto com o campo `data` de cada
+  `count`, sem precisar converter) no painel "Baixar Relatório". Vazio = sem filtro,
+  comportamento de antes (relatório com todas as contagens). Preenchido, `downloadWorkbook`
+  passa `countsFiltrados` (em vez de `counts`) pra `generateReportWorkbook` — afeta as 4
+  abas do Excel (Resumo, Contagens, Contar, Solicitação de Ajuste), já que todas recebem
+  o array de contagens como parâmetro em vez de ler estado global. `buildSummaryRows`
+  não precisou mudar — a única linha que usa `inventories` (contagem de "Inventários
+  ativos") continua com a lista cheia de propósito, não faz sentido filtrar isso por dia.
+  Nome do arquivo baixado passa a usar a data filtrada em vez de "hoje"
+  (`Inventario360_Relatorio_2026-07-14.xlsx`) quando há filtro.
+  Envio por e-mail (`handleSendEmail`) usa a mesma `downloadWorkbook`, então também
+  respeita o filtro automaticamente — não precisou de mudança separada ali.
+- Testado via Playwright (sandbox sem rede, `counts` semeado direto no `localStorage`
+  antes de carregar a página pra simular duas contagens em dias diferentes): confirmei
+  que "Minhas Contagens" não mostra mais "Recontar este item" em nenhum card (inclusive
+  o que estava com `aguardando_segunda`), que o mesmo botão continua funcionando
+  normalmente em "Recontagens", que selecionar uma data no relatório atualiza o resumo
+  ("1 contagens em 2026-07-14") e que um dia sem nenhuma contagem desabilita o botão de
+  baixar com a mensagem "Nenhuma contagem registrada nesse dia."
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase

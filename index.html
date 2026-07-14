@@ -3318,8 +3318,6 @@ function ImportedListCountFlow({inv, user, onFinish, onAddressProposed, setInven
 
 function MyCounts({counts, user, role, goto}){
   const mine = role==='operador' ? counts.filter(c=>c.usuario===user.nome) : counts;
-  const byOriginal = {};
-  counts.forEach(c=>{ if(c.contagemAnteriorId) byOriginal[c.contagemAnteriorId]=c; });
 
   if(mine.length===0){
     return <div className="empty-state"><div className="ic"><Ic>📋</Ic></div>Nenhuma contagem registrada ainda.</div>;
@@ -3328,7 +3326,6 @@ function MyCounts({counts, user, role, goto}){
     <div>
       {mine.map(c=>{
         const status = STATUS_INFO[c.statusAprovacao] || {level:c.classificacao.level, text:c.classificacao.rule};
-        const jaRecontado = !!byOriginal[c.id];
         const anterior = c.contagemAnteriorId ? counts.find(x=>x.id===c.contagemAnteriorId) : null;
         return (
           <div key={c.id} className="item-card">
@@ -3352,11 +3349,6 @@ function MyCounts({counts, user, role, goto}){
             <div style={{padding:'0 18px 16px'}}>
               <StatusTag status={status.level} text={status.text} />
             </div>
-            {c.statusAprovacao==='aguardando_segunda' && !jaRecontado && (
-              <div style={{padding:'0 18px 16px'}}>
-                <button className="btn btn-secondary" onClick={()=>goto('recount', c)}><Ic>🔁</Ic> Recontar este item</button>
-              </div>
-            )}
           </div>
         );
       })}
@@ -3508,16 +3500,22 @@ function ReportsScreen({counts, inventories, currentUser, sendHistory, onLogSend
   const [assunto, setAssunto] = useState('Inventário 360 — Relatório de Inventário Cíclico');
   const [mensagem, setMensagem] = useState('Segue relatório de contagens e divergências do inventário cíclico para análise e solicitação de ajuste de estoque.');
   const [feedback, setFeedback] = useState('');
+  // Filtro opcional por dia (formato YYYY-MM-DD, igual ao que já sai de
+  // <input type="date"> e ao campo `data` de cada contagem) — vazio significa
+  // "todas as contagens", sem filtro nenhum (comportamento de antes).
+  const [filtroData, setFiltroData] = useState('');
 
-  const divergentesCount = counts.filter(c=>c.diferenca!==0).length;
+  const countsFiltrados = filtroData ? counts.filter(c=>c.data===filtroData) : counts;
+  const divergentesCount = countsFiltrados.filter(c=>c.diferenca!==0).length;
 
   function downloadWorkbook(){
     if(!window.XLSX){
       setFeedback('⚠ A biblioteca de exportação não carregou (verifique a conexão com a internet).');
       return false;
     }
-    const wb = generateReportWorkbook(counts, inventories);
-    const filename = `Inventario360_Relatorio_${new Date().toISOString().slice(0,10)}.xlsx`;
+    const wb = generateReportWorkbook(countsFiltrados, inventories);
+    const sufixo = filtroData || new Date().toISOString().slice(0,10);
+    const filename = `Inventario360_Relatorio_${sufixo}.xlsx`;
     window.XLSX.writeFile(wb, filename);
     return filename;
   }
@@ -3545,7 +3543,11 @@ function ReportsScreen({counts, inventories, currentUser, sendHistory, onLogSend
 
   return (
     <div>
-      <div className="role-note">{counts.length} contagens registradas · {divergentesCount} com divergência</div>
+      <div className="role-note">
+        {filtroData
+          ? <>{countsFiltrados.length} contagens em {filtroData} · {divergentesCount} com divergência</>
+          : <>{counts.length} contagens registradas · {divergentesCount} com divergência</>}
+      </div>
       {feedback && <div className="login-success" style={{marginBottom:16}}>{feedback}</div>}
 
       <div className="panel">
@@ -3559,10 +3561,24 @@ function ReportsScreen({counts, inventories, currentUser, sendHistory, onLogSend
           <strong> Solicitação de Ajuste</strong> (só os itens com divergência — pronta para
           enviar à equipe responsável por corrigir o saldo no Protheus).
         </div>
-        <button className="btn btn-primary" onClick={handleDownloadClick} disabled={counts.length===0}>
+        <div className="field" style={{maxWidth:220}}>
+          <label>Filtrar por dia (opcional)</label>
+          <input type="date" value={filtroData} onChange={e=>setFiltroData(e.target.value)} />
+        </div>
+        {filtroData && (
+          <div style={{fontSize:12,color:'var(--ink-dim)',marginBottom:14}}>
+            Relatório vai sair só com as {countsFiltrados.length} contagens de {filtroData}.{' '}
+            <a href="#" onClick={e=>{e.preventDefault(); setFiltroData('');}}>Limpar filtro</a>
+          </div>
+        )}
+        <button className="btn btn-primary" onClick={handleDownloadClick} disabled={countsFiltrados.length===0}>
           <Ic>⬇</Ic> Baixar Excel (.xlsx)
         </button>
-        {counts.length===0 && <div style={{fontSize:12,color:'var(--ink-dim)',marginTop:8}}>Nenhuma contagem registrada ainda.</div>}
+        {countsFiltrados.length===0 && (
+          <div style={{fontSize:12,color:'var(--ink-dim)',marginTop:8}}>
+            {filtroData ? 'Nenhuma contagem registrada nesse dia.' : 'Nenhuma contagem registrada ainda.'}
+          </div>
+        )}
       </div>
 
       <div className="panel">
@@ -3586,7 +3602,7 @@ function ReportsScreen({counts, inventories, currentUser, sendHistory, onLogSend
             <label>Mensagem</label>
             <textarea value={mensagem} onChange={e=>setMensagem(e.target.value)} />
           </div>
-          <button className="btn btn-primary" type="submit" disabled={counts.length===0}>
+          <button className="btn btn-primary" type="submit" disabled={countsFiltrados.length===0}>
             <Ic>✉</Ic> Baixar e Preparar E-mail
           </button>
         </form>
