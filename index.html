@@ -1857,17 +1857,23 @@ function ShieldIcon(){
 
 // Ícone "hero" da coluna ilustrada do login: ciclo (duas setas em arco) em volta
 // de uma caixa — representa a contagem cíclica de inventário.
+// Setas com ponta triangular preenchida (em vez de um chevron só com stroke)
+// — a versão anterior usava um "L L" de 2 segmentos como ponta de seta, que
+// ficava ilegível/"bugado" no tamanho pequeno (36px, faixa mobile do login):
+// com stroke-width proporcional ao viewBox, o chevron virava um risco torto
+// em vez de uma seta reconhecível. Triângulo preenchido, com o vértice exato
+// na tangente do arco, continua nítido em qualquer tamanho.
 function CycleIcon({className}){
   return (
     <svg className={className} viewBox="0 0 100 100" fill="none" aria-hidden="true">
-      <path d="M50 10 A40 40 0 0 1 88 46" stroke="var(--safety)" strokeWidth="5" strokeLinecap="round" fill="none"/>
-      <path d="M80 37 L90 47 L77 50" stroke="var(--safety)" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
-      <path d="M50 90 A40 40 0 0 1 12 54" stroke="var(--safety)" strokeWidth="5" strokeLinecap="round" fill="none"/>
-      <path d="M20 63 L10 53 L23 50" stroke="var(--safety)" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+      <path d="M42.72 15.76 A35 35 0 0 1 84.24 42.72" stroke="var(--safety)" strokeWidth="6" strokeLinecap="round" fill="none"/>
+      <polygon points="84.44,43.70 75.87,32.23 87.61,29.74" fill="var(--safety)"/>
+      <path d="M57.28 84.24 A35 35 0 0 1 15.76 57.28" stroke="var(--safety)" strokeWidth="6" strokeLinecap="round" fill="none"/>
+      <polygon points="15.56,56.30 24.13,67.77 12.39,70.26" fill="var(--safety)"/>
       <g transform="translate(50 50)" stroke="var(--navy)" strokeWidth="4" strokeLinejoin="round" strokeLinecap="round" fill="none">
-        <path d="M-15 -8.7 L0 -17.3 L15 -8.7 L15 8.7 L0 17.3 L-15 8.7 Z"/>
-        <path d="M-15 -8.7 L0 0 L15 -8.7"/>
-        <path d="M0 0 L0 17.3"/>
+        <path d="M-14 -8 L0 -16 L14 -8 L14 8 L0 16 L-14 8 Z"/>
+        <path d="M-14 -8 L0 0 L14 -8"/>
+        <path d="M0 0 L0 16"/>
       </g>
     </svg>
   );

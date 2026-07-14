@@ -1331,6 +1331,24 @@ saudação por horário do dia em vez disso.
 - Testado via Playwright confirmando que a saudação bate com a hora do navegador no
   momento do teste ("Boa noite" às 19h).
 
+## Correção do `CycleIcon` (setas "bugadas" na tela de login)
+
+Cliente reportou que as setas do ícone de ciclo (`CycleIcon`, tela de login) pareciam
+"bugadas". Causa: a ponta de seta era desenhada com um path de 2 segmentos só com
+`stroke` (`M80 37 L90 47 L77 50`) — sem preenchimento, um "V" aberto. Em `stroke-width`
+proporcional ao viewBox 100×100, isso já ficava fino de mais pra parecer uma seta de
+verdade; no tamanho pequeno usado na faixa mobile do login (36px, `.login-cycle-icon`),
+ficava ilegível — mais um risco torto do que uma ponta de seta.
+
+- Recalculei a geometria com Python (arco + tangente no ponto final) e troquei os
+  chevrons por **triângulos preenchidos** (`<polygon fill="var(--safety)">`) com o
+  vértice exatamente na direção tangente do arco — path e cálculo completo documentados
+  no commit. Preenchido continua nítido em qualquer tamanho, ao contrário de um stroke
+  fino.
+- Testado via Playwright com screenshot da tela de login inteira nos dois tamanhos reais
+  usados no app (390px mobile → ícone 36px; 1280px desktop → ícone 104px) — as duas
+  setas ficam claramente legíveis nos dois casos, sem erros de console.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase
