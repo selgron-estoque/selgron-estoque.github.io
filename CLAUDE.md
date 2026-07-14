@@ -1230,6 +1230,50 @@ atualização é manual/diária, não automática).
   que os dois lugares mostram a data/hora formatada em pt-BR a partir do mesmo dado
   mockado, sem erros de console.
 
+## Bug real no upload da SB2: valor sempre zerado + reformulação dos cards de estoque
+
+Depois do primeiro upload de verdade (planilha SB2 real do cliente, 12.577 linhas, 8
+armazéns), os cards mostraram **R$ 0 em todos os armazéns** — só os nomes dos armazéns
+(1, 11, 3, 4, 5, 6, 99, EX) vieram certos, o valor não. Cliente também achou os 9 cards
+grandes (8 armazéns + total) muito "poluído" visualmente e pediu pra rotular como
+"Armazém 01" em vez do código cru "1".
+
+- **Causa raiz do valor zerado**: a coluna "Sld.Atu." (valor financeiro) na planilha
+  real do cliente tem **formato contábil do Excel** (moeda, `numFmtId 44`) aplicado na
+  célula do CABEÇALHO — e esse número format tem uma seção de texto (`_-@_-`) que
+  adiciona espaço de preenchimento nas pontas quando o conteúdo da célula é texto (não
+  número). O SheetJS respeita isso ao montar as chaves do `sheet_to_json`: a chave real
+  virou `" Sld.Atu. "` (com espaço) em vez de `"Sld.Atu."` — meu código lia
+  `row['Sld.Atu.']` (sem espaço), sempre batia `undefined`, e o fallback
+  `Number.isNaN(...) ? 0 : ...` silenciosamente virava `0` sem nenhum aviso. Confirmado
+  reproduzindo com o SheetJS vendorizado direto em Node contra o arquivo real do
+  cliente (`XLSX.read` + `sheet_to_json` + inspecionar `Object.keys(rows[0])`) — foi
+  assim que apareceu a chave com espaço.
+- **Correção em `parseSB2Rows`**: em vez de acessar colunas pelo nome cru, agora
+  normaliza TODAS as chaves da linha (`Object.keys(row).forEach(k=>{ norm[k.trim()] =
+  row[k]; })`) antes de qualquer leitura — resolve o problema pra "Sld.Atu." e protege
+  contra o mesmo formato pintar outra coluna numa exportação futura (ex: "C Unitario",
+  que tinha o mesmo padding no arquivo real, mesmo sem ser usada hoje).
+- **Cards redesenhados** (pedido do cliente: "diminuir... ficou muito poluído, ou outra
+  sugestão"): trocado 1 card grande por armazém (9 cards ao todo) por **1 card grande
+  só pro total** + uma lista compacta em barras (`bar-row`/`bar-track`/`bar-fill`,
+  mesmo componente visual já usado em "Produtividade por Operador" nesta mesma tela) —
+  bem mais compacto e escala melhor conforme mais armazéns aparecerem. Como o valor de
+  cada armazém varia MUITO (ex: Armazém 01 tinha R$13,8 milhões contra R$1.356 do
+  Armazém 11 no teste real), o valor formatado (`fmtReais`) foi colocado **fora** da
+  barra colorida (coluna de texto à direita, largura fixa) em vez de dentro dela — a
+  primeira versão colocava o texto dentro da barra (`<span>` no `.bar-fill`, mesmo
+  padrão do "Produtividade por Operador") e cortava/sobrepunha o texto em barras muito
+  finas, confirmado visualmente via screenshot do Playwright antes de trocar.
+- **`formatArmazemLabel(codigo)`** (perto de `parseSB2Rows`) — "1"→"Armazém 01"
+  (2 dígitos, mesmo padrão de nomenclatura já usado no cache local "Almox 01"), mantém
+  como veio se não for só dígito (ex: "EX", código real visto na planilha do cliente).
+- Testado via Playwright ponta a ponta com a planilha real do cliente de novo: soma de
+  `valor_financeiro` das 12.577 linhas gravadas confere (~R$ 16,9 milhões, não mais
+  zero), rótulos "Armazém 01"/"Armazém EX"/etc. corretos, e conferi visualmente via
+  screenshot que os valores de todos os armazéns — incluindo os bem menores que
+  Armazém 01 — ficam legíveis fora da barra.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase

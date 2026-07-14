@@ -740,15 +740,24 @@ function parseSB2Rows(rawRows){
   const linhas = [];
   rawRows.forEach(row=>{
     totalLinhas++;
-    const codigoRaw = row['Produto'];
+    // Colunas com formato contábil (moeda) no Excel — ex: "Sld.Atu." — fazem
+    // o SheetJS devolver a CHAVE do cabeçalho com espaço de preenchimento nas
+    // pontas (" Sld.Atu. " em vez de "Sld.Atu."), herdado da parte "texto" do
+    // format code contábil (`_-@_-`). Sem isso o valor sempre lia undefined e
+    // virava 0 silenciosamente. Normaliza tirando espaço de toda chave antes
+    // de comparar, robusto a qualquer coluna que receba esse mesmo formato.
+    const norm = {};
+    Object.keys(row).forEach(k=>{ norm[k.trim()] = row[k]; });
+
+    const codigoRaw = norm['Produto'];
     if(codigoRaw==null || String(codigoRaw).trim()===''){ semCodigo++; return; }
     const codigo = reconstructNumericCode(codigoRaw);
-    const almoxarifado = row['Almoxarifado']!=null ? String(row['Almoxarifado']).trim() : '';
-    const saldo = Number(row['Saldo Atual']);
-    const valorFinanceiro = Number(row['Sld.Atu.']);
+    const almoxarifado = norm['Almoxarifado']!=null ? String(norm['Almoxarifado']).trim() : '';
+    const saldo = Number(norm['Saldo Atual']);
+    const valorFinanceiro = Number(norm['Sld.Atu.']);
     if(!almoxarifado || Number.isNaN(saldo)){ invalidas++; return; }
     let dataUltimaSaida = null;
-    const rawData = row['DT.Ult.Saida'];
+    const rawData = norm['DT.Ult.Saida'];
     if(rawData instanceof Date && !Number.isNaN(rawData.getTime())){
       dataUltimaSaida = rawData.toISOString().slice(0,10);
     }
@@ -762,6 +771,14 @@ function parseSB2Rows(rawRows){
   });
   const armazens = new Set(linhas.map(l=>l.almoxarifado)).size;
   return { linhas, resumo: { totalLinhas, validas: linhas.length, semCodigo, invalidas, armazens } };
+}
+
+// "1" → "Armazém 01" (2 dígitos, mesmo padrão de nomenclatura já usado no
+// resto do app — ex: "Almox 01" no cache local). Código não-numérico (ex:
+// "EX", visto na planilha real do cliente) mantém como veio, sem inventar
+// um nome.
+function formatArmazemLabel(codigo){
+  return /^[0-9]+$/.test(codigo) ? 'Armazém ' + codigo.padStart(2,'0') : 'Armazém ' + codigo;
 }
 
 // Substitui TODO o conteúdo de estoque_saldo pelo snapshot da planilha —
@@ -3780,6 +3797,7 @@ function Dashboard({counts, inventories}){
   const usandoSaldoReal = !!(estoqueRemoto && estoqueRemoto.length>0);
   const armazens = Object.keys(porArmazem).sort();
   const valorTotalEstoque = armazens.reduce((s,k)=>s+porArmazem[k],0);
+  const maxArmazemValor = Math.max(1, ...armazens.map(a=>porArmazem[a]));
   const fmtReais = v => 'R$ ' + Number(v).toLocaleString('pt-BR',{maximumFractionDigits:0});
 
   const porOperador = {};
@@ -3808,11 +3826,20 @@ function Dashboard({counts, inventories}){
         {usandoSaldoReal && ultimaAtualizacaoEstoque && <span style={{fontSize:11,color:'var(--ink-dim)',textTransform:'none',letterSpacing:'normal',marginLeft:8}}>(atualizado em {new Date(ultimaAtualizacaoEstoque).toLocaleString('pt-BR')})</span>}
       </div>
       <div className="kpi-grid">
-        {armazens.map(a=>(
-          <div className="kpi" key={a}><div className="kv">{fmtReais(porArmazem[a])}</div><div className="kl">Valor em Estoque — {a}</div></div>
-        ))}
         <div className="kpi"><div className="kv" style={{color:'var(--accent2)'}}>{fmtReais(valorTotalEstoque)}</div><div className="kl">Valor Total em Estoque</div></div>
       </div>
+      {armazens.length>0 && (
+        <div className="panel">
+          <div className="section-title" style={{marginTop:0}}>Valor por Armazém</div>
+          {armazens.map(a=>(
+            <div key={a} className="bar-row">
+              <div className="bl">{formatArmazemLabel(a)}</div>
+              <div className="bar-track"><div className="bar-fill" style={{width:(porArmazem[a]/maxArmazemValor*100)+'%'}}></div></div>
+              <div style={{width:110,flexShrink:0,textAlign:'right',fontFamily:'var(--font-mono)',fontSize:11.5,color:'var(--ink-dim)'}}>{fmtReais(porArmazem[a])}</div>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="section-title">Qualidade</div>
       <div className="kpi-grid">
