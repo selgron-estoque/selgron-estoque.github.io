@@ -748,6 +748,33 @@ cache de 300 SKUs não achava descrição/endereço nenhum durante a contagem ma
   Supabase — mas a leitura ao vivo do banco de produção só o próprio app, rodando no
   navegador do cliente (sem essa restrição de rede), consegue confirmar de fato.
 
+**Bug de dado encontrado e corrigido na importação — códigos numéricos perderam
+formatação**: a planilha `SB2` que o cliente mandou guarda a coluna "Código do Produto"
+como **número** em vez de texto no Excel, sempre que o código só tem dígitos (ex:
+`2108000206`). Isso é uma perda de dado real e definitiva causada pelo próprio Excel no
+momento em que o arquivo foi salvo — o valor original com zero à esquerda e pontos
+(`021.080.00206`) não existe mais dentro do `.xlsx`, só o número puro sobrevive. Códigos
+que já tinham letra ou mais de um ponto (ex: `000.09610.1`) não sofrem isso, porque o
+Excel é obrigado a guardá-los como texto.
+
+- O cliente confirmou as 3 formatações válidas de código: `XXX.XXXXX` (8 dígitos),
+  `XXX.XXXXX.X` (9 dígitos) e `XXX.XXX.XXXXX` (11 dígitos). Cruzando com a distribuição
+  real de tamanho dos códigos 100% numéricos na planilha (só apareceram tamanhos 8, 9, 10
+  e 11 — nenhum caso de 7), a reconstrução ficou sem ambiguidade: tamanho 10 é sempre um
+  código de 11 dígitos que perdeu exatamente o zero à esquerda (recoloca o zero e formata
+  `XXX.XXX.XXXXX`); tamanhos 8, 9 e 11 já estão completos, só formata direto.
+  8.680 dos 85.357 códigos (≈10%) precisaram dessa correção.
+- Reimportado: `truncate table produtos cascade;` (precisa `cascade` porque
+  `estoque_saldo`/`estoque_enderecos`/etc. têm FK pra `produtos`, mesmo vazias — Postgres
+  não deixa truncar uma tabela referenciada sem isso) seguido de reimportar o CSV
+  corrigido via Table Editor.
+- Se um dia vier uma planilha nova do Protheus com o mesmo problema, o script de conserto
+  (não faz parte do repo, foi rodado uma vez no scratchpad da sessão) reaplica a mesma
+  regra: para código 100% numérico, se tiver 10 dígitos acrescenta um zero à esquerda,
+  depois insere os pontos conforme o tamanho final (8→`XXX.XXXXX`, 9→`XXX.XXXXX.X`,
+  11→`XXX.XXX.XXXXX`). Códigos que já vierem com letra/ponto na planilha não precisam de
+  nenhum tratamento.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase
