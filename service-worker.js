@@ -1,4 +1,4 @@
-const CACHE_NAME = 'stock360-v2';
+const CACHE_NAME = 'stock360-v3';
 const CORE_ASSETS = ['./', './index.html', './manifest.json'];
 
 self.addEventListener('install', (event) => {
@@ -17,21 +17,21 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Network-first for navigation/API-like requests, cache-first for static assets.
+// Network-first, sempre — o app está em desenvolvimento ativo (mudanças
+// frequentes) e a versão antiga em cache já causou confusão real mais de
+// uma vez. Só cai pro cache se a rede falhar de verdade (offline no
+// almoxarifado), não como atalho de velocidade.
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   if (request.method !== 'GET') return;
 
   event.respondWith(
-    caches.match(request).then((cached) => {
-      const fetchPromise = fetch(request)
-        .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
-          return response;
-        })
-        .catch(() => cached);
-      return cached || fetchPromise;
-    })
+    fetch(request)
+      .then((response) => {
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+        return response;
+      })
+      .catch(() => caches.match(request))
   );
 });
