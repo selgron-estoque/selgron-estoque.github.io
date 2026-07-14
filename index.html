@@ -3069,7 +3069,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
           <div className="m"><div className="k">Unidade</div><div className="v">{product.unidade || 'não informado'}</div></div>
           <div className="m"><div className="k">Família</div><div className="v">{product.familia}</div></div>
           <div className="m"><div className="k">Almoxarifado</div><div className="v">{product.almoxarifado}</div></div>
-          <div className="m"><div className="k">Endereço</div><div className="v">{product.enderecoCadastrado ? product.endereco : 'não cadastrado'}</div></div>
+          <div className="m"><div className="k">Endereço</div><div className="v">{product.endereco || 'não cadastrado'}</div></div>
         </div>
         {typeof product.valorFinanceiro === 'number' && product.valorFinanceiro > 0 && (
           <div style={{padding:'0 18px 16px',display:'flex',gap:10,fontSize:11.5,color:'var(--ink-dim)',fontFamily:'var(--font-mono)',flexWrap:'wrap'}}>
@@ -3534,13 +3534,13 @@ function RecountFlow({original, user, onFinish, onAddressProposed}){
   // padrão já usado no fallback do ImportedListCountFlow. Sem isso a
   // recontagem quebrava com "item não encontrado" pra qualquer contagem
   // originada fora do cache local.
-  const product = PRODUCTS.find(p=>p.codigo===original.productCode) || {
+  const produtoBase = PRODUCTS.find(p=>p.codigo===original.productCode) || {
     codigo: original.productCode,
     descricao: original.descricao,
     unidade: null,
     familia: '—',
-    endereco: original.endereco && original.endereco!=='—' ? original.endereco : null,
-    enderecoCadastrado: !!(original.endereco && original.endereco!=='—'),
+    endereco: null,
+    enderecoCadastrado: false,
     almoxarifado: '—',
     corredor: null,
     rua: null,
@@ -3551,6 +3551,22 @@ function RecountFlow({original, user, onFinish, onAddressProposed}){
     ultimaSaida: null,
     foraDoCacheLocal: true,
   };
+
+  // Item sem cadastro de endereço (comum — o Protheus ainda não tem esse
+  // dado) — na recontagem, reaproveita o endereço que o operador da 1ª
+  // contagem informou/confirmou, em vez de pedir de novo pra quem está
+  // recontando (ele não teria como adivinhar onde o item foi encontrado da
+  // primeira vez). Só preenche `endereco` pra exibição — mantém
+  // `enderecoCadastrado:false` de propósito, pra não forçar uma etapa de
+  // leitura de QR Code num endereço que nunca foi formalmente cadastrado.
+  const enderecoContagemAnterior =
+    (original.enderecoContado && original.enderecoContado!=='—' && original.enderecoContado) ||
+    (original.endereco && original.endereco!=='—' && original.endereco) ||
+    null;
+  const product = (!produtoBase.enderecoCadastrado && !produtoBase.endereco && enderecoContagemAnterior)
+    ? {...produtoBase, endereco: enderecoContagemAnterior}
+    : produtoBase;
+
   const sameUser = user.nome === original.usuario;
   return (
     <div>

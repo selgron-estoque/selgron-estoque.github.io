@@ -1349,6 +1349,35 @@ ficava ilegível — mais um risco torto do que uma ponta de seta.
   usados no app (390px mobile → ícone 36px; 1280px desktop → ícone 104px) — as duas
   setas ficam claramente legíveis nos dois casos, sem erros de console.
 
+## Recontagem de item sem cadastro reaproveita o endereço da 1ª contagem
+
+Cliente reportou (com print) que recontar um item sem endereço cadastrado (comum —
+Protheus ainda não tem esse dado) mostrava "ENDEREÇO: não cadastrado" na tela de
+recontagem, mesmo o operador da 1ª contagem já tendo informado onde encontrou o item.
+Quem recontava não tinha pista nenhuma de onde ir.
+
+- **`RecountFlow`**: depois de montar o produto (do cache local `PRODUCTS` ou o
+  fallback sintético, ver seção "Solicitar nova contagem..." acima), se o item não tem
+  `enderecoCadastrado` e não tem `endereco` próprio, o código agora preenche
+  `product.endereco` com `original.enderecoContado` (endereço que o operador da 1ª
+  contagem de fato leu/informou) ou `original.endereco` como segunda opção.
+- **De propósito, `enderecoCadastrado` continua `false`**: só o campo `endereco` é
+  preenchido, pra exibição. Isso evita forçar uma etapa de leitura de QR Code
+  (`expectAddressCheck`/`hasAddress` em `CountStep`) pra um endereço que nunca foi
+  formalmente cadastrado/validado pelo líder — a recontagem continua indo direto pra
+  quantidade, só que agora mostrando onde o item foi encontrado da primeira vez.
+- **`CountStep`**: a linha do card que mostra o endereço trocou de
+  `product.enderecoCadastrado ? product.endereco : 'não cadastrado'` pra
+  `product.endereco || 'não cadastrado'` — mesmo resultado em todos os casos já
+  existentes (nos dois lugares que constroem produto, `endereco` só é preenchido
+  quando `enderecoCadastrado` também é `true`), mas agora também mostra o endereço
+  reaproveitado da recontagem, que fica com `enderecoCadastrado:false` de propósito.
+- Testado via Playwright (sandbox sem rede, contagem semeada no `localStorage`
+  simulando o cenário exato do print do cliente — item `000.35310`, sem cadastro no
+  cache local, 1ª contagem com `enderecoContado:'035-A-1'`): confirmei que a tela de
+  recontagem mostra "035-A-1" em vez de "não cadastrado", e que o campo de quantidade
+  continua aparecendo direto (sem forçar leitura de QR Code).
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase
