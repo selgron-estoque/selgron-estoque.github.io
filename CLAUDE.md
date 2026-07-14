@@ -646,9 +646,59 @@ espaço numa tela menor que um monitor — pediu um botão pra esconder o menu l
 - Com a sidebar em 0px, `.app-main{flex:1}` ocupa o espaço todo automaticamente (flexbox
   já resolve isso sozinho, sem CSS extra) — é isso que dá a sensação de "mais espaço" no
   tablet.
-- Só existe no bloco desktop (`@media (min-width:1024px)`) — no mobile a sidebar nem
-  existe, então o botão também fica `display:none` por padrão (mesma lista de seletores
-  escondidos de `.sidebar`/`.desktop-topbar`).
+- Só existe no bloco desktop (originalmente `@media (min-width:1024px)`, depois baixado
+  pra 768px e depois virou uma faixa própria — ver seção seguinte, "Dashboard novo
+  funciona em qualquer largura de tela", que já superou esses dois números) — abaixo do
+  limiar mínimo a sidebar nem existe, então o botão também fica `display:none` por padrão
+  (mesma lista de seletores escondidos de `.sidebar`/`.desktop-topbar`).
+
+## Dashboard novo funciona em qualquer largura de tela (celular incluso)
+
+O cliente reportou repetidamente que o tablet dele "ainda tá no modelo antigo" mesmo após
+baixar o breakpoint pra 768px — e explicitamente pediu suporte pra "tela de iPhone 13 e
+superior" (390px). Ficou claro que o aparelho de teste dele é um celular/tablet mais
+estreito que 768px, e que a expectativa mudou: o Dashboard novo (sidebar + KPIs + donut)
+deveria funcionar em QUALQUER tela, não só telas de tablet/monitor — o layout mobile
+antigo (`TopBar`/`BottomNav`/`grid-cards`) deixou de ser o destino para telas estreitas.
+
+**O problema técnico de simplesmente baixar o breakpoint pra ~390px**: a sidebar tem
+264px fixos — nesse modelo antigo (`width:264px→0` "empurrando" o conteúdo), numa tela de
+390px sobrariam só 126px pro conteúdo. Preciso virar a sidebar num **painel flutuante
+(overlay)** nas telas estreitas, em vez de continuar empurrando o conteúdo.
+
+- **Breakpoint principal do bloco desktop baixou pra 360px** (cobre qualquer celular
+  moderno, iPhone 13 mini incluso a 375px) — dentro dele, uma sub-media-query
+  `@media (max-width:767px)` (aninhada, mesma técnica já usada pra `.pnl-kpi-row` em
+  1360px) muda o comportamento da sidebar:
+  - `.sidebar` vira `position:fixed` (sai do fluxo do flexbox), com
+    `transform:translateX(0)`/`translateX(-100%)` pra abrir/fechar (em vez de
+    `width:264px→0` como no modo "empurra" de telas largas) — desliza por cima do
+    conteúdo, não empurra.
+  - `.sidebar-backdrop` (novo elemento, `<div>` escuro semi-transparente cobrindo a tela
+    toda) aparece atrás da sidebar aberta — clicar nele fecha a sidebar. Só existe/aparece
+    nessa faixa estreita; em telas largas fica sempre `display:none`.
+  - `.sidebar-toggle` também vira `position:fixed` nessa faixa (em vez de `position:
+    absolute` relativo à `.app`), grudado na borda da sidebar mesmo com ela flutuando por
+    cima do resto.
+  - `.desktop-topbar` ganha `height:auto` + `flex-wrap:wrap` nessa faixa — em telas
+    muito estreitas o título e os controles da direita (filtro de período, sino, avatar)
+    podem quebrar em duas linhas em vez de ficar cortados numa altura fixa de 72px.
+  - `.pnl-kpi-row` cai pra 2 colunas (era 3 na faixa 768-1360px, 5 acima disso).
+- **Estado inicial esperto**: `sidebarCollapsed` em `App()` agora começa como
+  `window.innerWidth < 768` (calculado uma vez, no mount, via `useState(() => ...)`) — não
+  é branching de layout contínuo (isso continua 100% CSS via media query), só a decisão
+  de abrir com a sidebar visível (telas de tablet/monitor, como já era) ou escondida
+  (celular, senão o painel cobriria a tela toda ao abrir o app pela primeira vez).
+- **Fecha sozinha ao navegar em tela estreita**: `gotoAndCloseSidebar` (em `App()`) chama
+  `goto()` normal e, se `window.innerWidth<768`, também fecha a sidebar — passada como
+  prop `goto` pro componente `<Sidebar>` (só pra ele; o resto do app continua usando o
+  `goto` puro). Sem isso, a sidebar ficaria aberta por cima da tela nova depois de trocar
+  de página no celular. Em telas largas (empurra, não sobrepõe) não faz sentido fechar
+  sozinha, então essa função não faz nada acima de 768px.
+- `TopBar`/`BottomNav`/`grid-cards` (o layout mobile antigo) continuam no código e no DOM
+  — só não aparecem mais em NENHUMA largura de tela normal (o CSS que os esconde entra a
+  partir de 360px agora, era 768px/1024px antes). Só telas menores que 360px (praticamente
+  inexistentes hoje) ainda cairiam nesse layout antigo.
 
 ## Convenções de design (não quebrar ao continuar)
 

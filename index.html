@@ -320,13 +320,15 @@
     .login-trust-item span{font-size:11.5px;}
   }
 
-  /* ---------------- LAYOUT DESKTOP (sidebar) — telas de tablet/monitor ----------------
-     Esse bloco entra a partir de 768px (tablet em pé já entra, não só monitor/desktop —
-     ver CLAUDE.md "Breakpoint do layout desktop baixou pra 768px"); abaixo disso o app
-     usa o layout mobile compacto (celular estreito) sem alteração. */
-  .desktop-topbar, .sidebar, .sidebar-toggle, .desktop-kpi-grid, .desktop-quick-grid, .desktop-cta-row, .pnl-wrap{display:none;}
+  /* ---------------- LAYOUT DESKTOP (sidebar) — a partir de celular médio ----------------
+     Esse bloco entra a partir de 360px (cobre praticamente qualquer celular moderno,
+     incluindo iPhone 13 e maiores, além de tablet/monitor — ver CLAUDE.md "Dashboard
+     novo funciona em qualquer largura de tela"). Abaixo de 768px a sidebar vira um
+     painel sobreposto (overlay) que desliza por cima do conteúdo em vez de empurrá-lo,
+     já que não cabe um menu fixo de 264px numa tela de celular. */
+  .desktop-topbar, .sidebar, .sidebar-toggle, .sidebar-backdrop, .desktop-kpi-grid, .desktop-quick-grid, .desktop-cta-row, .pnl-wrap{display:none;}
 
-  @media (min-width:768px){
+  @media (min-width:360px){
     .app{max-width:none;flex-direction:row;align-items:flex-start;position:relative;}
     .mobile-topbar, .bottom-nav{display:none;}
     .app-main{flex:1;display:flex;flex-direction:column;min-width:0;}
@@ -467,6 +469,25 @@
     @media (max-width:1360px){
       .pnl-kpi-row{grid-template-columns:repeat(3,1fr);}
       .pnl-col-8,.pnl-col-4,.pnl-col-5,.pnl-col-7{grid-column:span 12;}
+    }
+
+    /* Celular (360-767px): sidebar vira painel flutuante (overlay) sobre o
+       conteúdo, começa fechada, e some sozinha ao navegar — ver Sidebar.jsx
+       (prop collapsed + goto que fecha ao clicar) e CLAUDE.md. */
+    @media (max-width:767px){
+      .sidebar{position:fixed;top:0;left:0;width:264px;height:100vh;transform:translateX(0);transition:transform .2s ease;box-shadow:4px 0 24px rgba(0,0,0,.25);z-index:100;}
+      .sidebar.collapsed{width:264px;transform:translateX(-100%);}
+      .sidebar-backdrop{display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:90;}
+      .sidebar-backdrop.visible{display:block;}
+      .sidebar-toggle{position:fixed;top:16px;left:236px;z-index:110;}
+      .sidebar-toggle.collapsed{left:16px;}
+      .app-main{width:100%;}
+      .desktop-topbar{height:auto;min-height:64px;flex-wrap:wrap;row-gap:8px;padding:12px 16px 12px 58px;}
+      .desktop-topbar-subtitle{display:none;}
+      .content{padding:18px 14px 32px;}
+      .pnl-kpi-row{grid-template-columns:repeat(2,1fr);gap:12px;}
+      .pnl-row{gap:14px;}
+      .pnl-card{padding:14px;overflow-x:auto;}
     }
   }
 </style>
@@ -840,7 +861,17 @@ function App(){
   const [view, setView] = useState('home');
   const [flowState, setFlowState] = useState(null); // params passed into a flow
   const [dashboardPeriod, setDashboardPeriod] = useState('7d'); // filtro de período do Dashboard novo
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false); // esconder sidebar desktop (tablet)
+  // Esconder sidebar (desktop/tablet: começa aberta e empurra o conteúdo; celular
+  // <768px: começa fechada, vira painel flutuante — ver CSS ".sidebar" no <style>).
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => typeof window!=='undefined' && window.innerWidth < 768);
+
+  // Em telas de celular a sidebar é um painel flutuante — fecha sozinha ao navegar,
+  // senão ficaria coberta por cima da tela nova. Em telas largas (empurra o conteúdo)
+  // não faz sentido fechar sozinha, então só age abaixo de 768px.
+  function gotoAndCloseSidebar(id, data){
+    goto(id, data);
+    if(window.innerWidth < 768) setSidebarCollapsed(true);
+  }
 
   const [inventories, setInventories] = usePersistedState('inventories', [
     {id:'INV-001', nome:'Inventário Cíclico Julho/2026', almoxarifado:'Almox 01', responsavel:'Carlos Mendes', data:'2026-07-14', tipo:'Contagem Aleatória', qtdItens:20, status:'em_andamento', contados: 6},
@@ -1004,7 +1035,8 @@ function App(){
 
   return (
     <div className="app">
-      <Sidebar view={view} goto={goto} role={role} user={currentUser} collapsed={sidebarCollapsed} />
+      <Sidebar view={view} goto={gotoAndCloseSidebar} role={role} user={currentUser} collapsed={sidebarCollapsed} />
+      <div className={"sidebar-backdrop"+(sidebarCollapsed?'':' visible')} onClick={()=>setSidebarCollapsed(true)}></div>
       <button
         className={"sidebar-toggle"+(sidebarCollapsed?' collapsed':'')}
         onClick={()=>setSidebarCollapsed(c=>!c)}
