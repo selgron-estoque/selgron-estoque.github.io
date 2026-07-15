@@ -1128,6 +1128,35 @@ async function fetchUltimaImportacaoHistorico(){
   }
 }
 
+// Cliente reportou que "Contagens Concluídas" e os indicadores não
+// refletiam o histórico importado — causa raiz: `contagens_historico` era
+// só uma tabela de consulta/relatório, nenhuma tela do app lia dela (só os
+// itens "Recontar" eram replicados pra `contagens`, ver
+// buildRecontarSeedsFromHistorico logo abaixo). Essa busca traz só os
+// status já CONCLUÍDOS na planilha antiga — "OK"/"Sem Ajuste"/"Ajustado"/
+// "Ajustar" — pra alimentar o painel de auditoria e a Acuracidade do
+// Estoque (ver ConcludedCountsPanel/Home). Exclui de propósito "Recontar"
+// (já vem pela rota separada acima, incluir aqui duplicaria) e "Pendente"
+// (fora de escopo por enquanto — decisão consciente, ver CLAUDE.md).
+// Sem paginação de verdade ainda — mesmo tipo de limitação já aceita em
+// outras buscas do app (ver fetchContagensFromSupabase).
+async function fetchContagensHistoricoConcluidas(){
+  if(!supabaseClient) return [];
+  try{
+    const { data, error } = await supabaseClient
+      .from('contagens_historico')
+      .select('*')
+      .in('status', ['OK', 'Sem Ajuste', 'Ajustado', 'Ajustar'])
+      .order('data', {ascending:false})
+      .limit(10000);
+    if(error || !data) return [];
+    return data;
+  }catch(err){
+    console.warn('Falha ao buscar histórico concluído do Supabase:', err);
+    return [];
+  }
+}
+
 // Itens da planilha com Status="Recontar" não estão resolvidos de verdade —
 // o cliente confirmou que ainda precisam ser recontados. Diferente do resto
 // do histórico (que só vai pra `contagens_historico`, sem tocar no app ao
@@ -2115,6 +2144,21 @@ function App(){
   // a fila em si mora no localStorage, não em estado React.
   const [pendingIncrementsCount, setPendingIncrementsCount] = useState(0);
 
+  // Itens já CONCLUÍDOS na planilha antiga (contagens_historico) — alimenta
+  // "Contagens Concluídas" e a Acuracidade do Estoque (Home), ver
+  // fetchContagensHistoricoConcluidas. Buscado uma vez por login (não entra
+  // no ciclo de sync de 30s — o histórico só muda quando alguém reimporta a
+  // planilha em Configurações, não em tempo real) e re-buscado manualmente
+  // via `refreshHistoricoConcluidas` logo após uma importação bem-sucedida,
+  // pra quem já está logado ver o resultado sem precisar recarregar a página.
+  const [historicoConcluidas, setHistoricoConcluidas] = useState([]);
+  function refreshHistoricoConcluidas(){
+    fetchContagensHistoricoConcluidas().then(setHistoricoConcluidas);
+  }
+  useEffect(()=>{
+    if(currentUser) refreshHistoricoConcluidas();
+  }, [currentUser]);
+
   // Ponto único onde toda contagem finalizada entra no estado local E tenta
   // gravar no Supabase — os 5 `onFinish` dos fluxos de contagem (Aleatória,
   // Manual, Rota, Lista Importada, Recontagem) chamam esta função em vez de
@@ -2442,7 +2486,7 @@ function App(){
       />
       {view!=='home' && <SubBar view={view} goto={goto} />}
       <div className="content">
-        {view==='home' && <Home role={role} user={currentUser} inventories={inventories} counts={counts} enderecosPropostos={enderecosPropostos} goto={goto} period={dashboardPeriod} />}
+        {view==='home' && <Home role={role} user={currentUser} inventories={inventories} counts={counts} historicoConcluidas={historicoConcluidas} enderecosPropostos={enderecosPropostos} goto={goto} period={dashboardPeriod} />}
         {view==='inventories' && <InventoryList inventories={inventories} goto={goto} role={role} counts={counts} onDelete={deleteInventory} />}
         {view==='newInventory' && (role==='lider'||role==='admin') && <NewInventory users={users} onCreate={async(inv)=>{
           const res = await saveInventarioToSupabase(inv);
@@ -2457,7 +2501,7 @@ function App(){
         {view==='myCounts' && <MyCounts counts={counts} user={currentUser} role={role} goto={goto} />}
         {view==='recounts' && <RecountsPanel counts={counts} goto={goto} />}
         {view==='divergentes' && <DivergentItemsPanel counts={counts} role={role} goto={goto} onApprove={approveDivergence} onRequestRecount={requestRecountFromOperator} />}
-        {view==='concluidas' && <ConcludedCountsPanel counts={counts} />}
+        {view==='concluidas' && <ConcludedCountsPanel counts={counts} historicoConcluidas={historicoConcluidas} />}
         {view==='recount' && flowState && <RecountFlow original={flowState} user={currentUser} onAddressProposed={addAddressProposal} onFinish={(c)=>{registerFinishedCount(c); goto('recounts');}} />}
         {view==='dashboard' && <Dashboard counts={counts} inventories={inventories} />}
         {view==='relatorios' && <ReportsScreen counts={counts} inventories={inventories} currentUser={currentUser} sendHistory={reportSendHistory} onLogSend={logReportSend} />}
@@ -2473,6 +2517,7 @@ function App(){
             passwordRequests={passwordRequests}
             onResolvePasswordRequest={resolvePasswordRequest}
             passwordHistory={passwordHistory}
+            onHistoricoImportado={refreshHistoricoConcluidas}
           />
         )}
         {view==='enderecos' && (role==='lider'||role==='admin') && (
@@ -2964,7 +3009,7 @@ function saudacaoPorHorario(){
   return 'Boa noite';
 }
 
-function Home({role, user, inventories, counts, enderecosPropostos=[], goto, period}){
+function Home({role, user, inventories, counts, historicoConcluidas=[], enderecosPropostos=[], goto, period}){
   const pendentes = inventories.filter(i=>i.status!=='concluido').length;
   const byOriginal = {};
   counts.forEach(c=>{ if(c.contagemAnteriorId) byOriginal[c.contagemAnteriorId]=true; });
@@ -2984,8 +3029,15 @@ function Home({role, user, inventories, counts, enderecosPropostos=[], goto, per
   const hojeStr = new Date().toISOString().slice(0,10);
   const ontemStr = new Date(Date.now()-86400000).toISOString().slice(0,10);
 
+  // Acuracidade cumulativa inclui o histórico importado (contagens_historico,
+  // status já concluídos) além das contagens ao vivo do app — sem isso, a
+  // Acuracidade do Estoque ficava artificialmente alta/vazia logo depois de
+  // um reset, ignorando os milhares de contagens já resolvidas na planilha
+  // antiga da Selgron. `historicoConcluidas` já tem os campos `data`/
+  // `diferenca` com o mesmo nome/formato usado em `counts`, então dá pra
+  // juntar os dois arrays direto no filtro, sem conversão.
   function acumuladoAte(dataLimite){
-    const relevantes = counts.filter(c=>c.data<=dataLimite);
+    const relevantes = [...counts, ...historicoConcluidas].filter(c=>c.data<=dataLimite);
     const divergentes = relevantes.filter(c=>c.diferenca!==0 && c.diferenca!==null);
     const acuracidade = relevantes.length ? ((relevantes.length-divergentes.length)/relevantes.length*100) : 100;
     return {total:relevantes.length, divergentes:divergentes.length, acuracidade};
@@ -4591,11 +4643,66 @@ function buildConcludedChains(counts){
   }).sort((a,b) => (b.tip.data+(b.tip.hora||'')).localeCompare(a.tip.data+(a.tip.hora||'')));
 }
 
-function ConcludedCountsPanel({counts}){
+// Converte uma linha de `contagens_historico` (já filtrada pros status
+// concluídos — ver fetchContagensHistoricoConcluidas) numa "cadeia" no
+// mesmo formato de `buildConcludedChains`, pra aparecer lado a lado com as
+// contagens feitas ao vivo no app. A planilha antiga não guarda a
+// sequência de rodadas (1ª contagem → recontagem → …) que o app registra
+// hoje — cada linha do histórico vira uma cadeia de 1 rodada só, com o
+// resultado final que a planilha já trazia.
+const HISTORICO_STATUS_DISPLAY = {
+  'OK': {level:'ok', text:'Aprovado (histórico importado)'},
+  'Sem Ajuste': {level:'ok', text:'Aprovado — sem ajuste necessário (histórico importado)'},
+  'Ajustado': {level:'ok', text:'Ajuste já aplicado no Protheus (histórico importado)'},
+  'Ajustar': {level:'warn', text:'Ajuste necessário no Protheus (histórico importado)'},
+};
+function historicoRowToConcludedChain(h){
+  const display = HISTORICO_STATUS_DISPLAY[h.status];
+  if(!display || !h.produto_codigo) return null;
+  const percentual = (h.saldo_sistema!=null && h.saldo_sistema!==0 && h.diferenca!=null)
+    ? (h.diferenca / h.saldo_sistema) * 100
+    : null;
+  const tip = {
+    id: 'HIST-CONCL-' + String(h.produto_codigo).replace(/[^A-Za-z0-9]/g,'') + '-' + (h.data||'sem-data') + '-' + (h.endereco||'sem-endereco'),
+    productCode: h.produto_codigo,
+    descricao: h.descricao || '',
+    usuario: 'Importação Histórica',
+    numeroContagem: 1,
+    contagemAnteriorId: null,
+    qtdContada: h.qtd_contada,
+    saldoSistema: h.saldo_sistema,
+    diferenca: h.diferenca,
+    percentual,
+    valorDivergente: h.valor_divergente!=null ? Math.abs(h.valor_divergente) : 0,
+    classificacao: {label: display.text, level: display.level, rule: ''},
+    statusAprovacao: null, // sem equivalente 1:1 no vocabulário do app — usa _statusDisplay
+    motivo: h.causa,
+    data: h.data,
+    hora: null,
+    _statusDisplay: display,
+    _fromHistorico: true,
+  };
+  // Diferente das cadeias ao vivo do app (onde `houveAjuste` precisa ser
+  // inferido da diferença, por falta de um campo explícito — ver
+  // buildConcludedChains), a planilha antiga JÁ diz isso diretamente pelo
+  // próprio status: "Ajustado"/"Ajustar" = precisou de ajuste; "OK"/"Sem
+  // Ajuste" = não precisou, MESMO que tenha sobrado uma diferença pequena
+  // dentro da tolerância (é exatamente o que "Sem Ajuste" quer dizer) — não
+  // usar o fallback de diferença!=0 aqui, ele contradiria o status da
+  // própria planilha.
+  const houveAjuste = h.status==='Ajustado' || h.status==='Ajustar';
+  return { chaveId: tip.id, tip, rodadas: [tip], houveAjuste };
+}
+
+function ConcludedCountsPanel({counts, historicoConcluidas=[]}){
   const [busca, setBusca] = useState('');
   const [selecionado, setSelecionado] = useState(null); // chaveId da cadeia aberta em detalhe
 
-  const cadeias = useMemo(()=>buildConcludedChains(counts), [counts]);
+  const cadeias = useMemo(()=>{
+    const doApp = buildConcludedChains(counts);
+    const doHistorico = historicoConcluidas.map(historicoRowToConcludedChain).filter(Boolean);
+    return [...doApp, ...doHistorico].sort((a,b) => (b.tip.data+(b.tip.hora||'')).localeCompare(a.tip.data+(a.tip.hora||'')));
+  }, [counts, historicoConcluidas]);
 
   const buscaNorm = busca.trim().toLowerCase();
   const cadeiasFiltradas = buscaNorm
@@ -4606,7 +4713,7 @@ function ConcludedCountsPanel({counts}){
 
   if(aberta){
     const tip = aberta.tip;
-    const statusInfo = STATUS_INFO[tip.statusAprovacao] || {};
+    const statusInfo = tip._statusDisplay || STATUS_INFO[tip.statusAprovacao] || {};
     return (
       <div>
         <button className="back-btn" style={{marginBottom:14}} onClick={()=>setSelecionado(null)}><Ic>←</Ic> Voltar para a lista</button>
@@ -4630,7 +4737,7 @@ function ConcludedCountsPanel({counts}){
 
         <div className="section-title" style={{marginTop:0}}>Histórico de Contagens ({aberta.rodadas.length})</div>
         {aberta.rodadas.map((r,idx)=>{
-          const info = STATUS_INFO[r.statusAprovacao] || {};
+          const info = r._statusDisplay || STATUS_INFO[r.statusAprovacao] || {};
           return (
             <div key={r.id} className="item-card">
               <div className="item-card-head">
@@ -4671,12 +4778,12 @@ function ConcludedCountsPanel({counts}){
         </div>
       ) : cadeiasFiltradas.map(cd=>{
         const tip = cd.tip;
-        const info = STATUS_INFO[tip.statusAprovacao] || {};
+        const info = tip._statusDisplay || STATUS_INFO[tip.statusAprovacao] || {};
         return (
           <div key={cd.chaveId} className="item-card" style={{cursor:'pointer'}} onClick={()=>setSelecionado(cd.chaveId)}>
             <div className="item-card-head">
               <div>
-                <div className="item-code">{tip.productCode}</div>
+                <div className="item-code">{tip.productCode}{tip._fromHistorico && <span style={{color:'var(--ink-dim)',fontWeight:400,fontSize:12}}> · histórico importado</span>}</div>
                 <div className="item-desc" style={{fontSize:15}}>{tip.descricao}</div>
               </div>
               <StatusTag status={info.level||'ok'} text={info.text||'—'} />
@@ -5504,7 +5611,7 @@ function StockSyncPanel(){
   );
 }
 
-function HistoricoImportPanel(){
+function HistoricoImportPanel({onImported}){
   const [arquivoNome, setArquivoNome] = useState('');
   const [parseResult, setParseResult] = useState(null);
   const [erro, setErro] = useState('');
@@ -5579,6 +5686,10 @@ function HistoricoImportPanel(){
       : {...res, erroFilaRecontagem: seedRes.erro};
     setResultado(resFinal);
     setStatus('done');
+    // Reavisa App() pra rebuscar os itens concluídos do histórico — sem
+    // isso, quem já está logado só veria o resultado atualizado em
+    // "Contagens Concluídas"/Indicadores depois de um reload.
+    if(onImported) onImported();
     fetchUltimaImportacaoHistorico().then(setUltimaImportacao);
   }
 
@@ -5648,7 +5759,7 @@ function HistoricoImportPanel(){
   );
 }
 
-function Settings({role, users=[], currentUser, goto, onToggleUserStatus, onDeleteUser, onAdminPasswordAction, passwordRequests=[], onResolvePasswordRequest, passwordHistory=[]}){
+function Settings({role, users=[], currentUser, goto, onToggleUserStatus, onDeleteUser, onAdminPasswordAction, passwordRequests=[], onResolvePasswordRequest, passwordHistory=[], onHistoricoImportado}){
   const isAdmin = role==='admin';
   const pendentesSenha = passwordRequests.filter(r=>r.status==='pendente');
 
@@ -5703,7 +5814,7 @@ function Settings({role, users=[], currentUser, goto, onToggleUserStatus, onDele
       )}
 
       {isAdmin && <StockSyncPanel />}
-      {isAdmin && <HistoricoImportPanel />}
+      {isAdmin && <HistoricoImportPanel onImported={onHistoricoImportado} />}
 
       <div className="panel">
         <div className="section-title" style={{marginTop:0}}>Regras de Divergência</div>

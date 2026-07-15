@@ -2096,6 +2096,77 @@ deixa "Indicadores"/"Relatórios"/"Configurações" fora dos atalhos hoje.
   antigos que navegavam pra "Recontagens" esperando encontrar o que agora mora em "Itens
   Divergentes" (mudança esperada da extração, não regressão).
 
+## Histórico importado passa a alimentar "Contagens Concluídas" e a Acuracidade do Estoque
+
+Depois da reestruturação acima, o cliente reportou que "não estou encontrando os itens já
+concluídos" e "os indicadores também não estão atualizando" — não era bug de
+sincronização: `contagens_historico` (onde a planilha de análise antiga é importada, ver
+seção "Padrão de planilha do cliente") sempre foi só uma tabela de consulta/relatório —
+só os itens marcados "Recontar" (116 de 3.659 no arquivo real) eram replicados pra
+`contagens`, a tabela viva que alimenta o resto do app. Os outros ~3.543 itens já
+resolvidos na planilha antiga ("OK"/"Sem Ajuste"/"Ajustado"/"Ajustar") nunca tinham sido
+gravados na tabela viva — ficavam invisíveis pra "Contagens Concluídas" e pros
+indicadores, que só liam `contagens`. Confirmado com o cliente via `AskUserQuestion`: ele
+escolheu incluir o histórico tanto no painel de auditoria quanto nos indicadores gerais
+(a opção recomendada, entre "manter só como consulta separada" e "só nos indicadores").
+
+- **`fetchContagensHistoricoConcluidas()`** (perto de `fetchUltimaImportacaoHistorico`)
+  — busca só os status já CONCLUÍDOS na planilha (`status in ('OK','Sem Ajuste',
+  'Ajustado','Ajustar')`), excluindo de propósito "Recontar" (já vem pela rota separada
+  de sempre, incluir aqui duplicaria) e "Pendente" (fora de escopo por enquanto — decisão
+  consciente, não foi pedido explicitamente e mistura com a semântica de "Itens
+  Divergentes" mereceria pensar com mais calma antes). Sem paginação de verdade
+  (`.limit(10000)`), mesmo tipo de limitação já aceita em `fetchContagensFromSupabase`.
+  RLS já permitia leitura pública nessa tabela desde que foi criada — nenhuma mudança de
+  schema/policy foi necessária, só front-end.
+- **`historicoRowToConcludedChain(h)`** (perto de `buildConcludedChains`) — converte uma
+  linha crua de `contagens_historico` no MESMO formato `{chaveId, tip, rodadas,
+  houveAjuste}` que `buildConcludedChains` já produz pras cadeias ao vivo, pra aparecerem
+  lado a lado em `ConcludedCountsPanel`. Como a planilha antiga não guarda a sequência de
+  rodadas (1ª contagem → recontagem → …), cada linha vira uma cadeia de 1 rodada só, com
+  `usuario:'Importação Histórica'` (mesma convenção já usada em
+  `buildRecontarSeedsFromHistorico`, já que a planilha não registra quem contou) e
+  `statusAprovacao: null` — sem equivalente 1:1 no vocabulário do app (5 estados) pro da
+  planilha (6 estados via `status`), então o rótulo/cor de cada card vem de um campo novo,
+  `_statusDisplay` (`{level, text}`), com `ConcludedCountsPanel` preferindo
+  `tip._statusDisplay || STATUS_INFO[tip.statusAprovacao]` nos 3 pontos que mostravam
+  status (lista, cabeçalho do detalhe, cada rodada do detalhe).
+  - **Bug pego no teste antes de subir**: a primeira versão calculava `houveAjuste` pro
+    histórico com o MESMO fallback já usado nas cadeias ao vivo (`diferenca!==0`) quando
+    o status não era "Ajustado"/"Ajustar" — mas "Sem Ajuste" pode genuinamente ter uma
+    diferença pequena registrada (dentro da tolerância, por isso não precisou ajustar) e
+    esse fallback sobrescrevia errado pra "Ajuste necessário", contradizendo o que a
+    própria planilha já afirmava. Corrigido pra usar só o `status` da planilha
+    (`'Ajustado'||'Ajustar'`) sem nenhum fallback — a fonte já é explícita, diferente do
+    caso das cadeias ao vivo (que precisam inferir por falta de um campo assim).
+  - Cards de item vindo do histórico ganham uma tag discreta "· histórico importado" no
+    cabeçalho (`tip._fromHistorico`), pra não parecer uma contagem feita ao vivo no app.
+- **Acuracidade do Estoque (Home)**: `acumuladoAte(dataLimite)` passou a somar
+  `[...counts, ...historicoConcluidas]` antes de filtrar por data — os dois arrays já
+  usam os mesmos nomes de campo (`data`/`diferenca`), sem precisar de conversão. Sem essa
+  mudança, o KPI ficava artificialmente 100%/vazio logo depois de um reset, ignorando os
+  milhares de contagens já resolvidas na Selgron antes do Inventário 360 existir.
+  **"Contagens Concluídas Hoje" e "Itens Divergentes" continuam só com dado ao vivo**,
+  de propósito — misturar datas antigas da planilha (fev-jul/2026) num KPI rotulado
+  "Hoje" distorceria o que ele significa, e "Pendente" do histórico ficou fora de escopo
+  (ver acima).
+- **Busca única por login, não no ciclo de 30s**: `historicoConcluidas` é buscado uma vez
+  em `App()` quando `currentUser` muda (login), não entra no `sync()` recorrente — o
+  histórico só muda quando alguém reimporta a planilha manualmente em Configurações, não
+  em tempo real, e o payload (milhares de linhas) é grande de mais pra repetir a cada
+  30s. **`HistoricoImportPanel` ganhou a prop `onImported`** (passada de `App()` via
+  `Settings`), chamada no fim de `handleConfirmar` — assim quem já está logado vê o
+  resultado atualizado em "Contagens Concluídas"/Indicadores na hora, sem precisar
+  recarregar a página.
+- Testado via Playwright (sandbox sem rede, `contagens_historico` mockada com uma linha
+  de cada status concluído): confirmei a query filtra só os 4 status certos (`status=in.
+  (...)`), que os 4 status aparecem com o rótulo/cor certos na lista e no detalhe
+  (inclusive o bug do "Sem Ajuste" com diferença não-zero corrigido), que a Acuracidade
+  do Estoque deixa de mostrar 100% quando há divergência no histórico, e — ponta a ponta
+  — que subir uma planilha nova em Configurações atualiza "Contagens Concluídas" na
+  mesma sessão, sem reload. Rodei de novo toda a suíte de regressão do scratchpad, sem
+  quebrar nada.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase
