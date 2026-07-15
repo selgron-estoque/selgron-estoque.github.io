@@ -3210,11 +3210,12 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   }
 
   // Cabeçalho compacto (código + descrição) fica em cima só pra confirmar
-  // qual item é — o resto da ficha (unidade/família/almoxarifado/endereço
-  // cadastrado/valor em estoque) virou um card de referência DEPOIS dos
-  // campos de ação (endereço/quantidade), que agora são a primeira coisa
-  // interativa que a pessoa vê, sem precisar rolar a tela passando pela
-  // ficha inteira do produto primeiro.
+  // qual item é. O resto da ficha (unidade/família/almoxarifado/endereço
+  // cadastrado/valor em estoque) é um card de referência — cada etapa
+  // renderiza esse mesmo bloco (`infoComplementar`) logo antes do seu botão
+  // de ação final, seguindo sempre a mesma ordem: campo(s) de entrada →
+  // leitor de câmera (quando existe) → aviso (quando existe) → dados de
+  // referência → botão de confirmar/continuar.
   const infoComplementar = (
     <div className="item-card">
       <div className="item-meta">
@@ -3245,17 +3246,18 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
 
       {needsAddressInput && step==='enderecoManual' && (
         <div>
+          <div className="field">
+            <label>Endereço onde o item foi encontrado (formato NNN-L-N)</label>
+            <input type="text" value={enderecoInformado} onChange={e=>setEnderecoInformado(formatEnderecoInput(e.target.value))} placeholder="Ex: 035-A-1" maxLength={7} />
+          </div>
           {scanning ? (
             <CameraScanner onDetected={handleEnderecoManualScanDetected} onCancel={()=>setScanning(false)} />
           ) : (
             <button className="btn btn-primary" style={{marginBottom:14}} onClick={()=>setScanning(true)}><Ic>📷</Ic> Escanear código do endereço</button>
           )}
-          <div className="field">
-            <label>Endereço onde o item foi encontrado (formato NNN-L-N)</label>
-            <input type="text" value={enderecoInformado} onChange={e=>setEnderecoInformado(formatEnderecoInput(e.target.value))} placeholder="Ex: 035-A-1" maxLength={7} />
-          </div>
+          <div className="divergence-alert" style={{marginBottom:14}}><Ic>📍</Ic><span>Este item ainda não tem endereço cadastrado no sistema. Escaneie a etiqueta da prateleira ou informe onde você encontrou — o endereço é obrigatório para contar, e essa informação será enviada para validação do líder.</span></div>
+          {infoComplementar}
           <button className="btn btn-primary" disabled={!ENDERECO_REGEX.test(enderecoInformado)} onClick={confirmEnderecoManual}>Confirmar e continuar</button>
-          <div className="divergence-alert" style={{marginTop:14}}><Ic>📍</Ic><span>Este item ainda não tem endereço cadastrado no sistema. Escaneie a etiqueta da prateleira ou informe onde você encontrou — o endereço é obrigatório para contar, e essa informação será enviada para validação do líder.</span></div>
         </div>
       )}
 
@@ -3271,6 +3273,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
               </div>
               <p className="scanner-hint">Toque em "Escanear" e aponte a câmera para o QR Code do endereço</p>
               <button className="btn btn-primary" style={{marginBottom:10}} onClick={()=>setScanning(true)}><Ic>📷</Ic> Escanear com a câmera</button>
+              {infoComplementar}
               <div className="scan-toggle-row">
                 <button className="btn btn-outline" style={{fontSize:11.5}} onClick={()=>{simulateScan(false); setStep('scanResult');}}>Sem câmera: simular leitura errada</button>
                 <button className="btn btn-outline" style={{fontSize:11.5}} onClick={()=>{simulateScan(true); setStep('scanResult');}}>Sem câmera: simular leitura certa</button>
@@ -3287,6 +3290,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
               <div className="rb-title"><Ic>✅</Ic> Endereço confirmado</div>
               <div className="rb-sub">Código lido: {scannedCode}</div>
             </div>
+            {infoComplementar}
             <button className="btn btn-primary" onClick={()=>setStep('count')}>Continuar</button>
           </div>
         ) : (
@@ -3295,6 +3299,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
               <div className="rb-title"><Ic>⚠</Ic> Atenção</div>
               <div className="rb-sub">Você está no endereço: <strong>{scannedCode}</strong><br/>O item está cadastrado no: <strong>{product.endereco}</strong></div>
             </div>
+            {infoComplementar}
             <div className="btn-row">
               <button className="btn btn-secondary" onClick={()=>setStep('scan')}>Escanear novamente</button>
               <button className="btn btn-primary" onClick={()=>setStep('count')}>Contar mesmo assim</button>
@@ -3309,6 +3314,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
             <label>Quantidade encontrada ({product.unidade || 'un. não informada'})</label>
             <input className="qty-input" type="number" inputMode="decimal" value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" autoFocus />
           </div>
+          {infoComplementar}
           <button className="btn btn-primary" disabled={qty===''} onClick={()=>setStep(isOperador ? 'result' : 'photo')}>Confirmar quantidade</button>
         </div>
       )}
@@ -3326,6 +3332,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
             <label>Observação (opcional)</label>
             <textarea value={obs} onChange={e=>setObs(e.target.value)} placeholder="Ex: material próximo ao endereço, embalagem danificada..." />
           </div>
+          {infoComplementar}
           <button className="btn btn-primary" onClick={()=>setStep('result')}>Finalizar Contagem</button>
         </div>
       )}
@@ -3356,11 +3363,10 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
               </select>
             </div>
           )}
+          {infoComplementar}
           <button className="btn btn-primary" disabled={!isOperador && diffAbs!==0 && hasSaldoLocal && !motivo} onClick={finalize}>Registrar e continuar</button>
         </div>
       )}
-
-      {infoComplementar}
     </div>
   );
 }
