@@ -2241,6 +2241,50 @@ solicitação de ajuste no Protheus)**, **documento**, **dias sem movimento**.
   importado, com a Acuracidade do Estoque deixando de aparecer 100% artificial. Rodei de
   novo toda a suíte de regressão do scratchpad, sem quebrar nada.
 
+## Bug real na Acuracidade Semanal + janela fixa das últimas 10 semanas
+
+Cliente mandou print de "Tendência Semanal" (em Indicadores): só 3 semanas apareciam no
+eixo, e a Acuracidade Semanal mostrava **0% nas três**, mesmo com 24/91/1 contagens
+registradas — claramente errado (contagens acontecendo, mas "acuracidade zero" em toda
+semana). Pediu pra sempre mostrar as últimas 10 semanas nos dois gráficos.
+
+- **Causa do 0%**: `computeWeeklyStats` calculava divergência com
+  `if(c.diferenca !== 0) buckets[key].divergentes += 1` — sem excluir `diferenca===null`
+  (item sem saldo local pra comparar, ver `hasSaldoLocal`/`CountStep`). Como `null !== 0`
+  é `true` em JS, TODO item sem saldo contava como "divergente", e como boa parte das
+  contagens reais do cliente vem de itens fora do catálogo local ou sem saldo carregado
+  ainda, praticamente qualquer semana com um desses itens despencava pra acuracidade
+  perto de zero — mesmo tipo de bug (`diferenca!==0` sem checar `null`) já corrigido
+  antes em outros lugares (`Home.acumuladoAte`), mas que continuava presente aqui, sem
+  ninguém ter notado até esse gráfico específico.
+- **Causa das só-3-semanas**: `computeWeeklyStats` só criava um "bucket" pra semana que
+  já tinha pelo menos 1 contagem (`Object.values(buckets)...slice(-maxWeeks)`) — com
+  atividade recente/esparsa, aparecem só as semanas que tiveram contagem de verdade, não
+  uma janela fixa de tempo.
+- **Correção**: `computeWeeklyStats(counts, maxWeeks)` agora gera as `maxWeeks` semanas
+  civis terminando HOJE de antemão (zero-preenchidas), e só depois soma as contagens reais
+  em cima disso — sempre retorna exatamente `maxWeeks` semanas, mesmo sem nenhuma
+  contagem. Chamada trocada de `computeWeeklyStats(counts, 8)` pra
+  `computeWeeklyStats(counts, 10)` (pedido do cliente). O guard
+  `{weeklyStats.length>0 && (...)}` que escondia a seção inteira virou sempre-visível
+  (a função nunca mais retorna array vazio).
+- **Semana sem contagem nenhuma vira `acuracidade:null`, não `0`** — 0% seria enganoso
+  (pareceria "semana péssima" em vez de "sem dado nenhum"). `WeeklyLineChart` trata isso
+  como um buraco de verdade: quebra a linha/área em segmentos contínuos de semanas COM
+  dado (em vez de um `<polyline>` só cobrindo tudo), desenha um pontinho apagado
+  (`opacity:0.5`, sem % nem inclui na média) nas semanas vazias, e a média tracejada
+  (`avg`) considera só as semanas com dado real. `WeeklyCountChart` (o de barras) não
+  precisou de mudança — barra de altura 0 pra semana vazia já é o comportamento certo,
+  sem ambiguidade.
+- Testado via Playwright (sandbox sem rede, 3 contagens seedadas: 2 na semana atual —
+  uma com saldo batendo, outra `diferenca:null` por estar fora do cache — e 1 divergente
+  de verdade 5 semanas atrás): confirmei que o eixo sempre mostra exatamente 10 rótulos
+  "Sem NN" nos dois gráficos; que a semana atual mostra 100.0% (o item sem saldo não
+  conta mais como divergência); que a semana com divergência real mostra 0.0% (única
+  contagem daquela semana, e ela erra); e que as 8 semanas sem nenhuma contagem aparecem
+  como "sem contagens" no gráfico, não como um 0% escondido no meio da linha. Rodei de
+  novo toda a suíte de regressão do scratchpad, sem quebrar nada.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase

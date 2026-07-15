@@ -5015,23 +5015,47 @@ function getWeekInfo(dataStr){
   };
 }
 
-// Últimas `maxWeeks` semanas que tiveram pelo menos 1 contagem — evita eixo
-// cheio de semanas vazias quando o inventário cíclico começou há pouco
-// tempo. Acuracidade por semana usa a mesma fórmula do KPI geral
-// (`acuracidade` em Dashboard), só que particionada por semana.
+// Janela FIXA das últimas `maxWeeks` semanas civis terminando na semana
+// atual — sempre as mesmas `maxWeeks` posições no eixo, mesmo as sem
+// nenhuma contagem (zero-preenchidas). Antes só listava semanas que
+// tiveram pelo menos 1 contagem, o que fazia o gráfico mostrar só 2-3
+// semanas quando a atividade era recente/esparsa, sem dar noção de quanto
+// tempo cada intervalo realmente representava — cliente pediu que sempre
+// apareçam as últimas 10 semanas nos dois gráficos.
+// Acuracidade por semana usa a mesma fórmula do KPI geral (`acuracidade`
+// em Dashboard), particionada por semana — precisa excluir
+// `diferenca==null` (item sem saldo local pra comparar) da contagem de
+// divergência, senão todo item sem saldo contava como "divergente" e a
+// acuracidade de qualquer semana com itens assim despencava artificialmente
+// pra perto de 0%, mesmo com as contagens corretas (bug real reportado
+// pelo cliente: 24/91/1 contagens nas últimas 3 semanas, 0% em todas).
+// Semana sem NENHUMA contagem vira `acuracidade:null` (não `0`) — 0% seria
+// enganoso, pareceria "semana péssima" em vez de "sem dado nenhum"; quem
+// desenha o gráfico decide como representar esse buraco (ver WeeklyLineChart).
 function computeWeeklyStats(counts, maxWeeks){
   const buckets = {};
+  const ordem = [];
+  const hoje = new Date();
+  for(let i=maxWeeks-1; i>=0; i--){
+    const d = new Date(hoje);
+    d.setDate(d.getDate() - i*7);
+    const info = getWeekInfo(d.toISOString().slice(0,10));
+    if(!buckets[info.key]){
+      buckets[info.key] = {key:info.key, label:info.label, sublabel:info.sublabel, total:0, divergentes:0};
+      ordem.push(info.key);
+    }
+  }
   counts.forEach(c=>{
     if(!c.data) return;
-    const {key, label, sublabel} = getWeekInfo(c.data);
-    if(!buckets[key]) buckets[key] = {key, label, sublabel, total:0, divergentes:0};
+    const {key} = getWeekInfo(c.data);
+    if(!buckets[key]) return; // fora da janela das últimas `maxWeeks` semanas
     buckets[key].total += 1;
-    if(c.diferenca !== 0) buckets[key].divergentes += 1;
+    if(c.diferenca !== 0 && c.diferenca !== null) buckets[key].divergentes += 1;
   });
-  return Object.values(buckets)
-    .sort((a,b)=>a.key.localeCompare(b.key))
-    .slice(-maxWeeks)
-    .map(w=>({...w, acuracidade: w.total>0 ? ((w.total-w.divergentes)/w.total)*100 : 0}));
+  return ordem.map(key=>{
+    const w = buckets[key];
+    return {...w, acuracidade: w.total>0 ? ((w.total-w.divergentes)/w.total)*100 : null};
+  });
 }
 
 // Gera ticks "redondos" (passo de 1/2/5 × potência de 10) pro eixo Y —
@@ -5057,9 +5081,20 @@ function WeeklyLineChart({weeks}){
   const n = weeks.length;
   const x = i => padL + (n>1 ? (i/(n-1))*chartW : chartW/2);
   const y = v => padT + chartH - (v/100)*chartH;
-  const avg = weeks.reduce((s,w)=>s+w.acuracidade,0) / n;
-  const points = weeks.map((w,i)=>`${x(i)},${y(w.acuracidade)}`).join(' ');
-  const areaPoints = `${x(0)},${y(0)} ${points} ${x(n-1)},${y(0)}`;
+  // Semanas sem contagem nenhuma têm `acuracidade:null` (ver
+  // computeWeeklyStats) — entram no eixo X (pra manter a janela fixa de
+  // `maxWeeks` semanas), mas NÃO na média nem na linha, que vira um "buraco"
+  // em vez de mergulhar pra 0% (0% enganaria, pareceria uma semana ruim em
+  // vez de uma semana sem dado nenhum).
+  const comDado = weeks.filter(w=>w.acuracidade!=null);
+  const avg = comDado.length ? comDado.reduce((s,w)=>s+w.acuracidade,0) / comDado.length : null;
+  const segmentos = [];
+  let atual = [];
+  weeks.forEach((w,i)=>{
+    if(w.acuracidade!=null) atual.push(i);
+    else if(atual.length){ segmentos.push(atual); atual = []; }
+  });
+  if(atual.length) segmentos.push(atual);
   return (
     <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'auto',display:'block'}} role="img" aria-label="Gráfico de acuracidade semanal">
       {[0,25,50,75,100].map(t=>(
@@ -5068,15 +5103,31 @@ function WeeklyLineChart({weeks}){
           <text x={padL-8} y={y(t)+3.5} textAnchor="end" fontSize={10} fill="var(--ink-dim)" fontFamily="var(--font-mono)">{t}%</text>
         </g>
       ))}
-      <line x1={padL} x2={W-padR} y1={y(avg)} y2={y(avg)} stroke={WEEKLY_CHART_COLOR} strokeWidth={1.5} strokeDasharray="5,4" opacity={0.55} />
-      <polygon points={areaPoints} fill={WEEKLY_CHART_COLOR} opacity={0.12} />
-      <polyline points={points} fill="none" stroke={WEEKLY_CHART_COLOR} strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
+      {avg!=null && <line x1={padL} x2={W-padR} y1={y(avg)} y2={y(avg)} stroke={WEEKLY_CHART_COLOR} strokeWidth={1.5} strokeDasharray="5,4" opacity={0.55} />}
+      {segmentos.map((seg,si)=>{
+        const pts = seg.map(i=>`${x(i)},${y(weeks[i].acuracidade)}`).join(' ');
+        const area = `${x(seg[0])},${y(0)} ${pts} ${x(seg[seg.length-1])},${y(0)}`;
+        return (
+          <g key={si}>
+            <polygon points={area} fill={WEEKLY_CHART_COLOR} opacity={0.12} />
+            <polyline points={pts} fill="none" stroke={WEEKLY_CHART_COLOR} strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
+          </g>
+        );
+      })}
       {weeks.map((w,i)=>(
         <g key={w.key}>
-          <circle cx={x(i)} cy={y(w.acuracidade)} r={4} fill={WEEKLY_CHART_COLOR} stroke="var(--panel)" strokeWidth={2}>
-            <title>{w.label} ({w.sublabel}): {w.acuracidade.toFixed(1)}% · {w.total} contagem(ns)</title>
-          </circle>
-          <text x={x(i)} y={y(w.acuracidade)-11} textAnchor="middle" fontSize={11} fontWeight={700} fill="var(--ink)" fontFamily="var(--font-mono)">{Math.round(w.acuracidade)}%</text>
+          {w.acuracidade!=null ? (
+            <>
+              <circle cx={x(i)} cy={y(w.acuracidade)} r={4} fill={WEEKLY_CHART_COLOR} stroke="var(--panel)" strokeWidth={2}>
+                <title>{w.label} ({w.sublabel}): {w.acuracidade.toFixed(1)}% · {w.total} contagem(ns)</title>
+              </circle>
+              <text x={x(i)} y={y(w.acuracidade)-11} textAnchor="middle" fontSize={11} fontWeight={700} fill="var(--ink)" fontFamily="var(--font-mono)">{Math.round(w.acuracidade)}%</text>
+            </>
+          ) : (
+            <circle cx={x(i)} cy={y(0)} r={2.5} fill="var(--ink-dim)" opacity={0.5}>
+              <title>{w.label} ({w.sublabel}): sem contagens</title>
+            </circle>
+          )}
           <text x={x(i)} y={H-24} textAnchor="middle" fontSize={10} fill="var(--ink-dim)" fontFamily="var(--font-mono)">{w.label}</text>
           <text x={x(i)} y={H-11} textAnchor="middle" fontSize={10} fill="var(--ink-dim)" fontFamily="var(--font-mono)">{w.sublabel}</text>
         </g>
@@ -5178,7 +5229,7 @@ function Dashboard({counts, inventories, historicoConcluidas=[]}){
   const maxMotivo = Math.max(1, ...Object.values(porMotivo));
 
   const topDivergentes = [...todasParaQualidade].sort((a,b)=>Math.abs(b.diferenca||0)-Math.abs(a.diferenca||0)).slice(0,10);
-  const weeklyStats = computeWeeklyStats(counts, 8);
+  const weeklyStats = computeWeeklyStats(counts, 10);
 
   return (
     <div>
@@ -5266,21 +5317,22 @@ function Dashboard({counts, inventories, historicoConcluidas=[]}){
         <div className="kpi"><div className="kv">{inventories.length}</div><div className="kl">Inventários Ativos</div></div>
       </div>
 
-      {weeklyStats.length>0 && (
-        <div>
-          <div className="section-title">Tendência Semanal</div>
-          <div className="weekly-charts-grid">
-            <div className="panel" style={{margin:0}}>
-              <div style={{fontSize:13,fontWeight:700,marginBottom:10}}>Acuracidade Semanal (%)</div>
-              <WeeklyLineChart weeks={weeklyStats} />
-            </div>
-            <div className="panel" style={{margin:0}}>
-              <div style={{fontSize:13,fontWeight:700,marginBottom:10}}>Contagens na Semana</div>
-              <WeeklyCountChart weeks={weeklyStats} />
-            </div>
+      {/* Janela fixa das últimas 10 semanas (ver computeWeeklyStats) — sempre
+          aparece, mesmo sem nenhuma contagem ainda, então não precisa mais
+          de guard condicional aqui. */}
+      <div>
+        <div className="section-title">Tendência Semanal</div>
+        <div className="weekly-charts-grid">
+          <div className="panel" style={{margin:0}}>
+            <div style={{fontSize:13,fontWeight:700,marginBottom:10}}>Acuracidade Semanal (%)</div>
+            <WeeklyLineChart weeks={weeklyStats} />
+          </div>
+          <div className="panel" style={{margin:0}}>
+            <div style={{fontSize:13,fontWeight:700,marginBottom:10}}>Contagens na Semana</div>
+            <WeeklyCountChart weeks={weeklyStats} />
           </div>
         </div>
-      )}
+      </div>
 
       {Object.keys(porOperador).length>0 && (
         <div>
