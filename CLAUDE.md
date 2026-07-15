@@ -1721,6 +1721,128 @@ dos dados mudar... basta subir a versão pra ignorar dados antigos").
   mostra as telas vazias; e aparelho sem nenhum dado — confirma que os 2 inventários
   fake não aparecem mais.
 
+## Histórico de contagens/inventários único e centralizado entre aparelhos
+
+O cliente zerou contagens/inventários de teste (ver seção anterior) pra ter um ponto de
+partida limpo antes de importar o histórico real, e isso expôs um problema maior: ele
+perguntou se dava pra garantir que **todo aparelho veja o mesmo histórico**, e a resposta
+honesta na hora era não — o app não garantia isso. Investigando o código, a causa raiz
+tinha um gap concreto: as ações do líder de **aprovar ou rejeitar uma divergência**
+(`approveDivergence`/`requestRecountFromOperator`) só mudavam o estado local do aparelho
+dele, nunca eram gravadas no Supabase (a tabela `contagens` nem tinha policy de UPDATE) —
+um líder aprovando num tablet nunca aparecia em nenhum outro. `deleteInventory` tinha o
+mesmo problema. E toda gravação (`saveContagemToSupabase`, `saveInventarioToSupabase`,
+`incrementContadosSupabase`) era fire-and-forget sem retry — se falhasse (aparelho sem
+sinal naquele instante), o dado ficava só ali pra sempre.
+
+Confirmado com o cliente (`AskUserQuestion`, duas rodadas — a 2ª depois dele perguntar
+explicitamente "não terei problema de alguma informação aparecer só num tablet
+específico?"): a contagem em si continua rápida/local (chão de fábrica não pode travar
+esperando internet), mas as ações do líder passam a aguardar confirmação do Supabase, E
+o app ganhou uma fila de reenvio automático pra contagem/incremento — fechando
+exatamente a lacuna que a pergunta dele expôs.
+
+### `backend/schema.sql` — colunas e policies novas
+
+`contagens` ganhou `aprovado_por`, `aprovado_em`, `recontagem_solicitada_pelo_lider`,
+`recontagem_solicitada_por`, `recontagem_solicitada_em` (persistem o que
+`approveDivergence`/`requestRecountFromOperator` já setavam localmente, mas nunca
+gravavam) e `atualizado_em timestamptz default now()` (usada pela sincronização pra saber
+qual lado — local ou remoto — é mais recente ao reconciliar, mesmo papel que `contados`
+já cumpre pra `inventarios`). Policy de UPDATE nova em `contagens` (só tinha SELECT/
+INSERT) e policy de DELETE nova em `inventarios` (só tinha SELECT/INSERT/UPDATE) — sem
+essas duas, aprovar/rejeitar/excluir continuariam batendo na parede do RLS mesmo depois
+do código já tentar gravar. Bloco de `alter table` separado no fim do arquivo pra rodar
+no projeto real (que já tinha as tabelas criadas antes desta mudança).
+
+### `index.html` — funções Supabase novas/alteradas
+
+- **`updateContagemStatusToSupabase(id, patch)`** — nova, `await`ada (diferente do
+  padrão fire-and-forget de sempre), sempre inclui `atualizado_em: new Date().
+  toISOString()`. `deleteInventarioFromSupabase(id)` — nova, também `await`ada.
+  `saveInventarioToSupabase` mudou de não retornar nada pra retornar `{ok, erro}` também.
+- **`fetchInventoriesFromSupabase`** passou a retornar `null` (não `[]`) quando a busca
+  FALHA, distinto de `[]` (busca funcionou, lista genuinamente vazia) — essencial pra
+  sincronização poder remover um inventário local ausente do Supabase com segurança, sem
+  confundir "sem inventário nenhum" com "a rede caiu bem na hora de checar".
+- **`contagemRowToLocal`** mapeia as 5 colunas novas de decisão do líder + `atualizadoEm`.
+
+### Ações do líder/admin agora aguardam confirmação, com erro visível
+
+`approveDivergence`, `requestRecountFromOperator` e `deleteInventory` (em `App()`) viram
+`async`: chamam a função Supabase primeiro, só atualizam o estado local se `res.ok` —
+`RecountsPanel` ganhou `busyId`/`erros` (desabilita só o botão clicado, mostra erro
+inline naquele card específico, sem travar a tela toda) e `InventoryList` ganhou
+`excluindo`/`erroExclusao` no mesmo bloco de confirmação inline que já existia. Criação de
+inventário (`onCreate` em `App()`, chamado por `NewInventory`) também virou aguardada —
+`NewInventory` ganhou `salvando`/`erroCriacao`, com o botão "Criar Inventário" desabilitado
+durante o envio e o formulário preenchido continuando visível se falhar (nada se perde).
+
+### Fila de reenvio automático pra contagem/incremento — sem tela nova
+
+A contagem em si (`CountStep.finalize`) continua **instantânea e local** — só ganhou um
+campo `_syncPendente:true`, sem mudança de UX pro operador. O que muda: os 5 pontos que
+antes faziam `setCounts(p=>[c,...p])` direto (`RandomCountFlow`/`ManualCountFlow`/
+`RouteCountFlow`/`ImportedListCountFlow`/`RecountFlow`, todos via prop `onFinish` em
+`App()`) agora chamam **`registerFinishedCount`**, um ponto único que adiciona local
+E tenta `saveContagemToSupabase` — se der certo (caso comum), o flag vira `false` na
+hora; se falhar, continua `true`.
+
+O ciclo de sync de 30s (que já existia) virou **também o mecanismo de retry**: no início
+de cada `sync()`, reenvia qualquer `counts` com `_syncPendente===true` (lidos via
+`countsRef`, não direto do state, pra não pegar um closure desatualizado dentro do
+`setInterval`) e qualquer id em **`getPendingIncrements()`** (fila de incrementos de
+inventário que falharam, guardada direto no `localStorage`, fora do estado React de
+propósito — assim os 3 pontos que chamam `incrementContadosSupabase`
+(`RandomCountFlow`/`RouteCountFlow`/`ImportedListCountFlow`) continuam chamando exatamente
+como antes, sem precisar receber um callback novo de `App()`). Resultado: um tablet que
+ficou sem sinal no meio de uma contagem sincroniza sozinho assim que a internet voltar —
+não precisa ninguém abrir aquele aparelho especificamente, só que o app continue
+aberto (ou seja reaberto em algum momento) com conexão de novo.
+
+**Indicador visual mínimo**: rodapé da `Sidebar` (mesmo lugar de "Sistema operacional ·
+Versão 1.0.0") mostra "N contagens aguardando conexão" quando há algo pendente (conta
+`_syncPendente` de `counts` + `pendingIncrementsCount`, atualizado a cada ciclo de sync),
+some sozinho quando tudo sincroniza. Não é tela nova, só uma linha condicional.
+
+### Sincronização — de "só soma" pra "reconcilia de verdade"
+
+- **Contagens**: continua aditivo pra id novo, mas agora TAMBÉM atualiza uma já
+  conhecida localmente quando `remoto.atualizadoEm >= local.atualizadoEm` — é isso que
+  faz a aprovação/rejeição do líder aparecer nos outros aparelhos.
+- **Inventários**: mantém "só sobrescreve se `contados` remoto ≥ local", e agora TAMBÉM
+  remove localmente um inventário ausente da busca remota (a exclusão em outro aparelho
+  se propaga). Só é seguro porque criação de inventário virou uma ação aguardada (não
+  tem mais risco de remover um inventário recém-criado que ainda não tinha propagado) e
+  porque `fetchInventoriesFromSupabase` agora distingue "busca falhou" de "lista vazia
+  de verdade" (ver acima).
+
+### Fora de escopo (decisão consciente)
+
+- Não migra login/usuários pro Supabase — decisão já tomada antes, continua 100% local.
+- Não elimina a janela de até 30s entre um aparelho gravar e outro ver — duas pessoas
+  contando o mesmo item ao mesmo tempo em aparelhos diferentes ainda podem colidir
+  dentro dessa janela (limitação já documentada antes). Isso resolve consistência ao
+  longo do tempo, não elimina a corrida em tempo real (precisaria de Realtime/WebSocket).
+- RLS continua `using(true)`/`with check(true)` em tudo — sem Supabase Auth ainda, mesma
+  ressalva de sempre.
+
+Testado via Playwright (sandbox sem rede, Supabase mockado incluindo simulação de dois
+"aparelhos" compartilhando um mesmo objeto de banco em memória): aprovar/rejeitar
+divergência com sucesso e com falha simulada (card mantém estado + mostra erro na
+falha); excluir e criar inventário nos dois cenários; uma contagem cujo 1º save falha
+(mock 500) — confirma o indicador "aguardando conexão" aparecendo e, depois do próximo
+ciclo de 30s (esperado de verdade no teste, sem mock de relógio), o reenvio automático
+funcionando e o indicador sumindo; e o cenário completo de dois aparelhos — um líder
+aprova uma divergência no aparelho A, o aparelho B (que via o item pendente antes) deixa
+de mostrá-lo como pendente depois de reabrir. Toda a suíte de regressão já existente no
+scratchpad também rodou de novo sem quebrar (algumas precisaram só de um ajuste pontual:
+duas ainda seedavam a chave antiga `stock360:v1:counts` em vez de `counts_v2`, um teste
+navegava pro botão "Criar Inventário" que só existe quando a lista já tem pelo menos 1
+item — trocado pelo atalho "Criar novo inventário" da Sidebar, que sempre existe).
+Não testei contra o Supabase de verdade — falta o cliente rodar o SQL novo (`alter
+table`/policies, seção no `backend/schema.sql`) no projeto real.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase

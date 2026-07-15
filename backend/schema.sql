@@ -247,6 +247,16 @@ $$ language plpgsql;
 -- `foto_url` (que assumia upload real) virou `tem_foto boolean`: o app hoje
 -- só gera um `blob:` local via URL.createObjectURL, nunca envia a foto pra
 -- lugar nenhum — não existe URL real pra guardar ainda.
+--
+-- `aprovado_por`/`aprovado_em`/`recontagem_solicitada_*` e `atualizado_em`
+-- foram adicionadas depois (ver seção "Histórico único e centralizado" no
+-- CLAUDE.md) — as ações do líder de aprovar/rejeitar uma divergência
+-- (`approveDivergence`/`requestRecountFromOperator` no index.html) só
+-- mudavam o estado local até então, nunca eram gravadas aqui; por isso um
+-- líder aprovando num tablet nunca aparecia nos outros. `atualizado_em`
+-- existe especificamente pra sincronização saber qual lado (local vs.
+-- remoto) é mais recente ao reconciliar — mesmo papel que `contados` já
+-- cumpre pra `inventarios`, só que por timestamp em vez de contador.
 -- ---------------------------------------------------------------------------
 create table contagens (
   id text primary key,                     -- 'CNT-XXXXXX', gerado no app
@@ -272,7 +282,13 @@ create table contagens (
   observacao text,
   data date not null,
   hora text,
-  criado_em timestamptz not null default now()
+  aprovado_por text,                       -- nome de quem aprovou a divergência (líder/admin), se houver
+  aprovado_em text,
+  recontagem_solicitada_pelo_lider boolean not null default false, -- true quando o líder REJEITOU a divergência (ver requestRecountFromOperator)
+  recontagem_solicitada_por text,
+  recontagem_solicitada_em text,
+  criado_em timestamptz not null default now(),
+  atualizado_em timestamptz not null default now()
 );
 create index idx_contagens_inventario on contagens(inventario_id);
 create index idx_contagens_produto on contagens(produto_codigo);
@@ -311,6 +327,11 @@ create policy "leitura pública" on estoque_saldo for select using (true);
 -- aceitável pro protótipo, não pra produção.
 create policy "leitura pública" on contagens for select using (true);
 create policy "inserção pública" on contagens for insert with check (true);
+-- UPDATE: necessária pra `approveDivergence`/`requestRecountFromOperator`
+-- (aprovar/rejeitar divergência) gravarem a decisão do líder aqui — sem
+-- essa policy, essas ações continuam só locais e nunca aparecem em outro
+-- aparelho (era exatamente esse o buraco antes desta policy existir).
+create policy "atualização pública" on contagens for update using (true) with check (true);
 
 -- Inventários: mesma razão de contagens acima, mas aqui também precisa de
 -- UPDATE público — é como o app incrementa `contados` (via increment_contados)
@@ -319,6 +340,10 @@ alter table inventarios enable row level security;
 create policy "leitura pública" on inventarios for select using (true);
 create policy "inserção pública" on inventarios for insert with check (true);
 create policy "atualização pública" on inventarios for update using (true) with check (true);
+-- DELETE: necessária pra excluir um inventário (InventoryList, só admin)
+-- propagar de verdade — sem isso a exclusão era só local e a sincronização
+-- aditiva podia "ressuscitar" o inventário excluído em outro aparelho.
+create policy "exclusão pública" on inventarios for delete using (true);
 
 -- Escrita em estoque_saldo: originalmente pensada só pra service role (via
 -- Edge Function de sincronização automática), mas essa sync nunca foi
@@ -392,3 +417,19 @@ create index idx_contagens_historico_data on contagens_historico(data);
 alter table contagens_historico enable row level security;
 create policy "leitura pública" on contagens_historico for select using (true);
 create policy "escrita pública" on contagens_historico for all using (true) with check (true);
+
+-- ---------------------------------------------------------------------------
+-- MIGRAÇÃO — rodar isto no projeto Supabase REAL já existente (as tabelas
+-- `contagens`/`inventarios` acima já foram criadas antes desta mudança; use
+-- este bloco em vez de re-rodar os `create table`, que falhariam por já
+-- existir). Ver seção "Histórico único e centralizado" no CLAUDE.md.
+-- ---------------------------------------------------------------------------
+alter table contagens add column if not exists aprovado_por text;
+alter table contagens add column if not exists aprovado_em text;
+alter table contagens add column if not exists recontagem_solicitada_pelo_lider boolean not null default false;
+alter table contagens add column if not exists recontagem_solicitada_por text;
+alter table contagens add column if not exists recontagem_solicitada_em text;
+alter table contagens add column if not exists atualizado_em timestamptz not null default now();
+
+create policy "atualização pública" on contagens for update using (true) with check (true);
+create policy "exclusão pública" on inventarios for delete using (true);

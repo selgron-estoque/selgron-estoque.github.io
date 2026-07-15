@@ -579,10 +579,13 @@ async function searchSupabaseCatalog(query){
 // Grava a contagem também no Supabase (além do localStorage, que continua
 // sendo a fonte de verdade do app hoje). Sem Supabase Auth ainda — usuário e
 // inventário vão como texto puro, sem FK pra usuarios/inventarios (esses
-// continuam só locais). "Fire and forget": se falhar (offline, RLS, etc.) não
-// bloqueia nem afeta o fluxo de contagem no app — só loga no console.
+// continuam só locais). Continua "fire and forget" NO PONTO DE CHAMADA — quem
+// chama (CountStep.finalize) não usa `await`, então uma contagem nunca trava
+// esperando rede — mas agora a função RETORNA `{ok, erro}` em vez de nada,
+// pra quem quiser reagir ao resultado via `.then()` sem bloquear (ver
+// `marcarContagemSincronizada`/fila de retry em App()).
 async function saveContagemToSupabase(count){
-  if(!supabaseClient) return;
+  if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
   try{
     const { error } = await supabaseClient.from('contagens').insert({
       id: count.id,
@@ -609,9 +612,36 @@ async function saveContagemToSupabase(count){
       data: count.data,
       hora: count.hora,
     });
-    if(error) console.warn('Falha ao salvar contagem no Supabase (mantida no localStorage):', error.message);
+    if(error){
+      console.warn('Falha ao salvar contagem no Supabase (mantida no localStorage):', error.message);
+      return {ok:false, erro:error.message};
+    }
+    return {ok:true};
   }catch(err){
     console.warn('Falha ao salvar contagem no Supabase (mantida no localStorage):', err);
+    return {ok:false, erro:String(err && err.message || err)};
+  }
+}
+
+// Atualiza status/decisão do líder numa contagem já existente — usada por
+// `approveDivergence`/`requestRecountFromOperator` em App(). Diferente de
+// `saveContagemToSupabase`, esta é sempre `await`ada por quem chama: decisão
+// do líder precisa de confirmação visível (se falhar, o líder fica sabendo
+// na hora, em vez de achar que aprovou e essa decisão nunca aparecer em
+// outro aparelho). `patch` é um objeto parcial já em snake_case (colunas da
+// tabela `contagens`); sempre inclui `atualizado_em`, usado pela
+// sincronização pra saber qual lado é mais recente ao reconciliar.
+async function updateContagemStatusToSupabase(id, patch){
+  if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
+  try{
+    const { error } = await supabaseClient
+      .from('contagens')
+      .update({...patch, atualizado_em: new Date().toISOString()})
+      .eq('id', id);
+    if(error) return {ok:false, erro:error.message};
+    return {ok:true};
+  }catch(err){
+    return {ok:false, erro:String(err && err.message || err)};
   }
 }
 
@@ -620,6 +650,10 @@ async function saveContagemToSupabase(count){
 // contagens feitas em OUTROS aparelhos (ver fetchContagensFromSupabase).
 // `classificacao` no banco é só o label (texto) — reconstrói um objeto
 // mínimo compatível com os lugares que leem c.classificacao.label/.level/.rule.
+// `aprovadoPor`/`aprovadoEm`/`recontagemSolicitada*`/`atualizadoEm` vêm das
+// colunas adicionadas pra decisão do líder se propagar entre aparelhos (ver
+// updateContagemStatusToSupabase) — `atualizadoEm` também é usado pela
+// sincronização pra reconciliar (ver sync() em App()).
 function contagemRowToLocal(row){
   return {
     id: row.id,
@@ -645,6 +679,12 @@ function contagemRowToLocal(row){
     data: row.data,
     hora: row.hora,
     inventario: row.inventario_id,
+    aprovadoPor: row.aprovado_por,
+    aprovadoEm: row.aprovado_em,
+    recontagemSolicitadaPeloLider: row.recontagem_solicitada_pelo_lider,
+    recontagemSolicitadaPor: row.recontagem_solicitada_por,
+    recontagemSolicitadaEm: row.recontagem_solicitada_em,
+    atualizadoEm: row.atualizado_em,
   };
 }
 
@@ -676,11 +716,15 @@ async function fetchContagensFromSupabase(){
   }
 }
 
-// Grava o inventário também no Supabase, no momento da criação — mesmo
-// padrão fire-and-forget de saveContagemToSupabase. Login/usuários continuam
-// locais, então `responsavel` vai como texto puro, sem FK.
+// Grava o inventário também no Supabase, no momento da criação. Diferente de
+// `saveContagemToSupabase`, esta é `await`ada por quem chama (criar
+// inventário é uma ação do líder/admin, não do operador contando no chão de
+// fábrica — pode esperar meio segundo de confirmação): o estado local só é
+// atualizado depois de confirmar que gravou, pra sincronização (`sync()` em
+// App()) poder remover localmente um inventário ausente no Supabase sem
+// risco de apagar um que acabou de ser criado e ainda não propagou.
 async function saveInventarioToSupabase(inv){
-  if(!supabaseClient) return;
+  if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
   try{
     const { error } = await supabaseClient.from('inventarios').insert({
       id: inv.id,
@@ -694,37 +738,93 @@ async function saveInventarioToSupabase(inv){
       contados: inv.contados,
       itens_importados: inv.itensImportados || null,
     });
-    if(error) console.warn('Falha ao salvar inventário no Supabase (mantido no localStorage):', error.message);
+    if(error) return {ok:false, erro:error.message};
+    return {ok:true};
   }catch(err){
-    console.warn('Falha ao salvar inventário no Supabase (mantido no localStorage):', err);
+    return {ok:false, erro:String(err && err.message || err)};
+  }
+}
+
+// Exclui um inventário no Supabase — usada por `deleteInventory` em App()
+// (líder/admin, ação inline em InventoryList). `await`ada: se falhar, o
+// inventário continua aparecendo na lista (não é removido do estado local),
+// evitando a exclusão parecer bem-sucedida num aparelho e o inventário
+// "ressuscitar" depois via sincronização (que agora remove localmente
+// qualquer inventário ausente da busca remota — ver sync() em App()).
+async function deleteInventarioFromSupabase(id){
+  if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
+  try{
+    const { error } = await supabaseClient.from('inventarios').delete().eq('id', id);
+    if(error) return {ok:false, erro:error.message};
+    return {ok:true};
+  }catch(err){
+    return {ok:false, erro:String(err && err.message || err)};
   }
 }
 
 // Incrementa `contados` no Supabase via função de banco (increment_contados,
 // ver backend/schema.sql) em vez de ler+somar+gravar no client — evita perder
 // incremento se dois aparelhos completarem uma contagem quase ao mesmo tempo.
+// Fila de incrementos que falharam, guardada direto no localStorage (fora do
+// estado React de propósito — os 3 pontos que chamam
+// `incrementContadosSupabase` (RandomCountFlow/RouteCountFlow/
+// ImportedListCountFlow) continuam chamando exatamente como antes, sem
+// precisar receber um callback novo de App() só pra registrar falha). O
+// ciclo de sync de 30s em App() lê essa fila direto daqui pra reenviar —
+// ver PENDING_INCREMENTS_KEY.
+const PENDING_INCREMENTS_KEY = 'stock360:v1:pendingIncrements';
+function getPendingIncrements(){
+  try{ return JSON.parse(window.localStorage.getItem(PENDING_INCREMENTS_KEY)) || []; }
+  catch(err){ return []; }
+}
+function addPendingIncrement(invId){
+  try{
+    const atual = getPendingIncrements();
+    if(!atual.includes(invId)) window.localStorage.setItem(PENDING_INCREMENTS_KEY, JSON.stringify([...atual, invId]));
+  }catch(err){ /* localStorage indisponível — ignora */ }
+}
+function removePendingIncrement(invId){
+  try{
+    window.localStorage.setItem(PENDING_INCREMENTS_KEY, JSON.stringify(getPendingIncrements().filter(id=>id!==invId)));
+  }catch(err){ /* localStorage indisponível — ignora */ }
+}
+
 async function incrementContadosSupabase(invId){
-  if(!supabaseClient) return;
+  if(!supabaseClient) { addPendingIncrement(invId); return {ok:false, erro:'Supabase não configurado.'}; }
   try{
     const { error } = await supabaseClient.rpc('increment_contados', {p_id: invId});
-    if(error) console.warn('Falha ao sincronizar progresso do inventário no Supabase:', error.message);
+    if(error){
+      console.warn('Falha ao sincronizar progresso do inventário no Supabase:', error.message);
+      addPendingIncrement(invId);
+      return {ok:false, erro:error.message};
+    }
+    removePendingIncrement(invId);
+    return {ok:true};
   }catch(err){
     console.warn('Falha ao sincronizar progresso do inventário no Supabase:', err);
+    addPendingIncrement(invId);
+    return {ok:false, erro:String(err && err.message || err)};
   }
 }
 
 // Busca inventários gravados em QUALQUER aparelho — mesma lógica de
 // fetchContagensFromSupabase, usada pra mesclar progresso feito em outros
 // aparelhos no mesmo inventário.
+// Retorna `null` (não `[]`) quando a busca FALHA (sem client, erro, exceção)
+// — distinto de `[]`, que significa "busquei com sucesso e não tem nenhum
+// inventário mesmo". Essa distinção importa pra sincronização (`sync()` em
+// App()) poder remover localmente um inventário ausente no Supabase com
+// segurança: se tratasse falha de rede como "lista vazia", uma queda de
+// conexão apagaria todos os inventários locais por engano.
 async function fetchInventoriesFromSupabase(){
-  if(!supabaseClient) return [];
+  if(!supabaseClient) return null;
   try{
     const { data, error } = await supabaseClient
       .from('inventarios')
       .select('*')
       .order('criado_em', {ascending:false})
       .limit(200);
-    if(error || !data) return [];
+    if(error || !data) return null;
     return data.map(row=>({
       id: row.id,
       nome: row.nome,
@@ -739,7 +839,7 @@ async function fetchInventoriesFromSupabase(){
     }));
   }catch(err){
     console.warn('Falha ao buscar inventários do Supabase:', err);
-    return [];
+    return null;
   }
 }
 
@@ -1929,34 +2029,100 @@ function App(){
     setEnderecosPropostos(prev=>[{...p, id:'END-'+Math.random().toString(36).slice(2,7).toUpperCase(), status:'pendente'}, ...prev]);
   }
 
+  // `counts` muda o tempo todo (cada contagem finalizada), mas o efeito de
+  // sincronização (mais abaixo) só quer re-executar quando `currentUser`
+  // muda — sem essa ref, o `sync()` capturaria uma versão desatualizada de
+  // `counts` presa no closure do momento do login (stale closure clássico
+  // de useEffect+setInterval). O ref é só pra LEITURA da fila de retry; toda
+  // escrita continua via `setCounts` normal (sempre pega o estado mais
+  // recente, independente do closure).
+  const countsRef = useRef(counts);
+  useEffect(()=>{ countsRef.current = counts; }, [counts]);
+
+  // Reflete `getPendingIncrements().length` (ver index.html perto de
+  // incrementContadosSupabase) de forma reativa, só pro indicador visual —
+  // a fila em si mora no localStorage, não em estado React.
+  const [pendingIncrementsCount, setPendingIncrementsCount] = useState(0);
+
+  // Ponto único onde toda contagem finalizada entra no estado local E tenta
+  // gravar no Supabase — os 5 `onFinish` dos fluxos de contagem (Aleatória,
+  // Manual, Rota, Lista Importada, Recontagem) chamam esta função em vez de
+  // cada um gravar por conta própria. A contagem aparece na tela IMEDIATAMENTE
+  // (sem esperar rede — chão de fábrica não pode travar) com
+  // `_syncPendente:true`; quando `saveContagemToSupabase` resolve (rápido, na
+  // maioria das vezes), o flag vira `false`. Se falhar (offline etc.), o
+  // flag continua `true` e o ciclo de sync de 30s tenta de novo sozinho —
+  // ver `sync()` mais abaixo.
+  function registerFinishedCount(count){
+    setCounts(prev=>[count, ...prev]);
+    saveContagemToSupabase(count).then(res=>{
+      if(res.ok) setCounts(prev=>prev.map(c=>c.id===count.id ? {...c, _syncPendente:false} : c));
+    });
+  }
+
   function resolveAddressProposal(id, status){
     setEnderecosPropostos(prev=>prev.map(e=>e.id===id?{...e, status}:e));
   }
 
-  function approveDivergence(countId){
-    setCounts(prev=>prev.map(c=>c.id===countId?{...c, statusAprovacao:'aprovado_lider', aprovadoPor:currentUser?currentUser.nome:'—', aprovadoEm:new Date().toLocaleString('pt-BR')}:c));
+  // Decisão do líder — precisa confirmar no Supabase ANTES de mudar a tela
+  // (diferente da contagem em si, que continua instantânea/local): é
+  // exatamente essa gravação que faz "todo aparelho vê o mesmo histórico"
+  // valer de verdade pra aprovação de divergência. Retorna {ok,erro} pra
+  // RecountsPanel poder mostrar o erro inline se falhar, sem mudar o card.
+  async function approveDivergence(countId){
+    const aprovadoPor = currentUser ? currentUser.nome : '—';
+    const aprovadoEm = new Date().toLocaleString('pt-BR');
+    const res = await updateContagemStatusToSupabase(countId, {
+      status_aprovacao: 'aprovado_lider',
+      aprovado_por: aprovadoPor,
+      aprovado_em: aprovadoEm,
+    });
+    if(res.ok){
+      setCounts(prev=>prev.map(c=>c.id===countId?{...c, statusAprovacao:'aprovado_lider', aprovadoPor, aprovadoEm}:c));
+    }
+    return res;
   }
 
   // Encaminha o item pra fila de "Aguardando Segunda Contagem" — não faz a
   // recontagem agora, só libera o item pra qualquer operador pegar depois
   // (mesma fila que já existe, ver RecountsPanel). Diferente do botão
   // "Recontar" (RecountFlow), que é o próprio líder/admin recontando na hora.
-  function requestRecountFromOperator(countId){
-    setCounts(prev=>prev.map(c=>c.id===countId?{
-      ...c,
-      statusAprovacao:'aguardando_segunda',
+  // Mesmo padrão de `approveDivergence`: aguarda confirmação do Supabase
+  // antes de mudar o estado local.
+  async function requestRecountFromOperator(countId){
+    const recontagemSolicitadaPor = currentUser ? currentUser.nome : '—';
+    const recontagemSolicitadaEm = new Date().toLocaleString('pt-BR');
+    const res = await updateContagemStatusToSupabase(countId, {
+      status_aprovacao: 'aguardando_segunda',
       // Marca que essa 2ª contagem existe porque o líder REJEITOU a
       // divergência (não aceitou o resultado) — diferente de um item que
       // caiu em "aguardando_segunda" sozinho pela regra automática da 1ª
       // contagem. RecountsPanel usa isso pra diferenciar o card.
-      recontagemSolicitadaPeloLider:true,
-      recontagemSolicitadaPor: currentUser?currentUser.nome:'—',
-      recontagemSolicitadaEm: new Date().toLocaleString('pt-BR'),
-    }:c));
+      recontagem_solicitada_pelo_lider: true,
+      recontagem_solicitada_por: recontagemSolicitadaPor,
+      recontagem_solicitada_em: recontagemSolicitadaEm,
+    });
+    if(res.ok){
+      setCounts(prev=>prev.map(c=>c.id===countId?{
+        ...c,
+        statusAprovacao:'aguardando_segunda',
+        recontagemSolicitadaPeloLider:true,
+        recontagemSolicitadaPor,
+        recontagemSolicitadaEm,
+      }:c));
+    }
+    return res;
   }
 
-  function deleteInventory(id){
-    setInventories(prev=>prev.filter(i=>i.id!==id));
+  // Exclusão de inventário — mesmo padrão: aguarda confirmação do Supabase
+  // antes de remover da tela, pra não sumir localmente e "ressuscitar"
+  // depois via sincronização se a exclusão remota tiver falhado.
+  async function deleteInventory(id){
+    const res = await deleteInventarioFromSupabase(id);
+    if(res.ok){
+      setInventories(prev=>prev.filter(i=>i.id!==id));
+    }
+    return res;
   }
 
   function logHistory(usuarioAlvo, acao, administrador){
@@ -2073,36 +2239,77 @@ function App(){
 
   // ---- Sincronização de inventários/contagens com o Supabase ----
   // localStorage continua sendo a fonte imediata (funciona offline, mostra na
-  // hora o que o próprio aparelho fez); isso só busca o que outros aparelhos
-  // gravaram desde o último poll (a cada 30s) e mescla. Nunca some com dado
-  // local: contagens só são ADICIONADAS (por id, o que já existe fica como
-  // está); inventários só são sobrescritos quando o `contados` remoto está
-  // igual ou mais avançado que o local (evita "voltar" o progresso se o poll
-  // chegar antes do próprio incremento local processar).
+  // hora o que o próprio aparelho fez); a cada 30s este ciclo faz DUAS coisas:
+  //
+  // 1) RETRY: reenvia qualquer contagem ainda marcada `_syncPendente` (ver
+  //    registerFinishedCount) e qualquer incremento de inventário que tenha
+  //    falhado antes (ver getPendingIncrements/incrementContadosSupabase) —
+  //    é o que garante que um aparelho que ficou offline no meio de uma
+  //    contagem sinconiza sozinho assim que a rede voltar, sem precisar
+  //    ninguém abrir aquele tablet especificamente.
+  // 2) RECONCILIA com o que veio do Supabase:
+  //    - Contagens: além de ADICIONAR as que não existem localmente ainda,
+  //      agora também ATUALIZA uma já conhecida quando o `atualizadoEm`
+  //      remoto for igual ou mais novo que o local — é o que faz a decisão
+  //      do líder (aprovar/rejeitar divergência) aparecer nos outros
+  //      aparelhos, já que essas ações agora gravam no Supabase de verdade
+  //      (ver approveDivergence/requestRecountFromOperator).
+  //    - Inventários: mantém a lógica de "só sobrescreve se `contados`
+  //      remoto for >= local" (evita voltar atrás um progresso que acabou
+  //      de ser incrementado localmente), e AGORA TAMBÉM remove localmente
+  //      um inventário ausente da busca remota — a exclusão feita em outro
+  //      aparelho se propaga. Só é seguro remover porque `fetchInventories
+  //      FromSupabase` retorna `null` (não `[]`) quando a busca FALHA, então
+  //      uma queda de rede nunca é confundida com "lista vazia de verdade".
   useEffect(()=>{
     if(!currentUser || !supabaseClient) return;
     let cancelled = false;
     async function sync(){
+      // --- 1) retry de gravações pendentes ---
+      const contagensPendentes = countsRef.current.filter(c=>c._syncPendente);
+      for(const c of contagensPendentes){
+        if(cancelled) return;
+        const res = await saveContagemToSupabase(c);
+        if(res.ok) setCounts(prev=>prev.map(x=>x.id===c.id ? {...x, _syncPendente:false} : x));
+      }
+      const incrementosPendentes = getPendingIncrements();
+      for(const invId of incrementosPendentes){
+        if(cancelled) return;
+        await incrementContadosSupabase(invId); // já cuida de add/remove da fila sozinho
+      }
+      if(!cancelled) setPendingIncrementsCount(getPendingIncrements().length);
+
+      // --- 2) reconciliação com o Supabase ---
       const [remoteInv, remoteCounts] = await Promise.all([
         fetchInventoriesFromSupabase(),
         fetchContagensFromSupabase(),
       ]);
       if(cancelled) return;
-      if(remoteInv.length){
+      if(remoteInv !== null){
         setInventories(prev=>{
+          const remoteIds = new Set(remoteInv.map(i=>i.id));
           const byId = new Map(prev.map(i=>[i.id, i]));
           remoteInv.forEach(ri=>{
             const local = byId.get(ri.id);
             if(!local || ri.contados >= local.contados) byId.set(ri.id, {...local, ...ri});
           });
-          return Array.from(byId.values());
+          return Array.from(byId.values()).filter(i=>remoteIds.has(i.id));
         });
       }
       if(remoteCounts.length){
         setCounts(prev=>{
-          const knownIds = new Set(prev.map(c=>c.id));
-          const novas = remoteCounts.filter(c=>!knownIds.has(c.id));
-          return novas.length ? [...novas, ...prev] : prev;
+          const byId = new Map(prev.map(c=>[c.id, c]));
+          remoteCounts.forEach(rc=>{
+            const local = byId.get(rc.id);
+            if(!local){
+              byId.set(rc.id, rc);
+            } else {
+              const remoteTs = rc.atualizadoEm ? new Date(rc.atualizadoEm).getTime() : 0;
+              const localTs = local.atualizadoEm ? new Date(local.atualizadoEm).getTime() : 0;
+              if(remoteTs >= localTs) byId.set(rc.id, {...local, ...rc});
+            }
+          });
+          return Array.from(byId.values());
         });
       }
     }
@@ -2125,7 +2332,7 @@ function App(){
 
   return (
     <div className="app">
-      <Sidebar view={view} goto={gotoAndCloseSidebar} role={role} user={currentUser} collapsed={sidebarCollapsed} />
+      <Sidebar view={view} goto={gotoAndCloseSidebar} role={role} user={currentUser} collapsed={sidebarCollapsed} pendingSync={counts.filter(c=>c._syncPendente).length + pendingIncrementsCount} />
       <div className={"sidebar-backdrop"+(sidebarCollapsed?'':' visible')} onClick={()=>setSidebarCollapsed(true)}></div>
       <button
         className={"sidebar-toggle"+(sidebarCollapsed?' collapsed':'')}
@@ -2154,15 +2361,19 @@ function App(){
       <div className="content">
         {view==='home' && <Home role={role} user={currentUser} inventories={inventories} counts={counts} enderecosPropostos={enderecosPropostos} goto={goto} period={dashboardPeriod} />}
         {view==='inventories' && <InventoryList inventories={inventories} goto={goto} role={role} counts={counts} onDelete={deleteInventory} />}
-        {view==='newInventory' && (role==='lider'||role==='admin') && <NewInventory users={users} onCreate={(inv)=>{setInventories(prev=>[inv,...prev]); saveInventarioToSupabase(inv); goto('inventories');}} />}
+        {view==='newInventory' && (role==='lider'||role==='admin') && <NewInventory users={users} onCreate={async(inv)=>{
+          const res = await saveInventarioToSupabase(inv);
+          if(res.ok){ setInventories(prev=>[inv,...prev]); goto('inventories'); }
+          return res;
+        }} />}
         {view==='pickCountType' && <PickCountType inv={flowState} goto={goto} />}
-        {view==='randomCount' && <RandomCountFlow inv={flowState} user={currentUser} counts={counts} onFinish={(c)=>{setCounts(p=>[c,...p]); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} />}
-        {view==='manualCount' && <ManualCountFlow user={currentUser} counts={counts} onFinish={(c)=>{setCounts(p=>[c,...p]); goto('home');}} onAddressProposed={addAddressProposal} />}
-        {view==='routeCount' && <RouteCountFlow inv={flowState} user={currentUser} counts={counts} onFinish={(c)=>{setCounts(p=>[c,...p]); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} />}
-        {view==='importedListCount' && <ImportedListCountFlow inv={flowState} user={currentUser} counts={counts} onFinish={(c)=>{setCounts(p=>[c,...p]); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} />}
+        {view==='randomCount' && <RandomCountFlow inv={flowState} user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} />}
+        {view==='manualCount' && <ManualCountFlow user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('home');}} onAddressProposed={addAddressProposal} />}
+        {view==='routeCount' && <RouteCountFlow inv={flowState} user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} />}
+        {view==='importedListCount' && <ImportedListCountFlow inv={flowState} user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} />}
         {view==='myCounts' && <MyCounts counts={counts} user={currentUser} role={role} goto={goto} />}
         {view==='recounts' && <RecountsPanel counts={counts} role={role} currentUser={currentUser} goto={goto} onApprove={approveDivergence} onRequestRecount={requestRecountFromOperator} />}
-        {view==='recount' && flowState && <RecountFlow original={flowState} user={currentUser} onAddressProposed={addAddressProposal} onFinish={(c)=>{setCounts(p=>[c,...p]); goto('recounts');}} />}
+        {view==='recount' && flowState && <RecountFlow original={flowState} user={currentUser} onAddressProposed={addAddressProposal} onFinish={(c)=>{registerFinishedCount(c); goto('recounts');}} />}
         {view==='dashboard' && <Dashboard counts={counts} inventories={inventories} />}
         {view==='relatorios' && <ReportsScreen counts={counts} inventories={inventories} currentUser={currentUser} sendHistory={reportSendHistory} onLogSend={logReportSend} />}
         {view==='settings' && (
@@ -2542,7 +2753,7 @@ function SubBar({view, goto}){
   );
 }
 
-function Sidebar({view, goto, role, user, collapsed}){
+function Sidebar({view, goto, role, user, collapsed, pendingSync=0}){
   const podeValidarEnderecos = role==='lider'||role==='admin';
   const items = [
     {id:'home', ic:'home', label:'Início'},
@@ -2584,6 +2795,11 @@ function Sidebar({view, goto, role, user, collapsed}){
       <div className="sidebar-footer">
         <div className="status"><span className="dot"></span>Sistema operacional</div>
         <div>Versão 1.0.0</div>
+        {pendingSync>0 && (
+          <div style={{color:'var(--warn)'}}>
+            <Ic>⏳</Ic> {pendingSync} {pendingSync===1?'contagem':'contagens'} aguardando conexão
+          </div>
+        )}
         <div className="sf-user"><DIcon name="user" size={12} />{user.nome} · {ROLE_LABELS[role]}</div>
       </div>
     </div>
@@ -2981,6 +3197,11 @@ function PnlDonut({segments, size=168, strokeWidth=22}){
 
 function InventoryList({inventories, goto, role, counts, onDelete}){
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  // `onDelete` agora aguarda confirmação do Supabase antes de sumir com o
+  // card (ver App()) — `excluindo` desabilita os botões durante o envio,
+  // `erroExclusao` mostra o motivo se falhar, mantendo o card visível.
+  const [excluindo, setExcluindo] = useState(false);
+  const [erroExclusao, setErroExclusao] = useState('');
 
   if(inventories.length===0){
     return <div className="empty-state"><div className="ic"><Ic>📦</Ic></div>Nenhum inventário programado.</div>;
@@ -2992,6 +3213,18 @@ function InventoryList({inventories, goto, role, counts, onDelete}){
     const wb = generateReportWorkbook(invCounts, [inv]);
     const nomeArquivo = inv.nome.replace(/[^\w]+/g,'_');
     window.XLSX.writeFile(wb, `Inventario360_${inv.id}_${nomeArquivo}.xlsx`);
+  }
+
+  async function handleConfirmDelete(id){
+    setExcluindo(true);
+    setErroExclusao('');
+    const res = await onDelete(id);
+    setExcluindo(false);
+    if(res && res.ok){
+      setConfirmDeleteId(null);
+    } else {
+      setErroExclusao((res && res.erro) || 'Não foi possível excluir — tente novamente.');
+    }
   }
 
   return (
@@ -3026,9 +3259,10 @@ function InventoryList({inventories, goto, role, counts, onDelete}){
                   <div className="divergence-alert" style={{marginBottom:10}}>
                     <Ic>⚠</Ic><span>Excluir "{inv.nome}"? Essa ação não pode ser desfeita.</span>
                   </div>
+                  {erroExclusao && <div className="divergence-alert" style={{marginBottom:10}}><Ic>⚠</Ic><span>{erroExclusao}</span></div>}
                   <div className="btn-row">
-                    <button className="btn btn-secondary" onClick={()=>setConfirmDeleteId(null)}>Cancelar</button>
-                    <button className="btn btn-danger" onClick={()=>{onDelete(inv.id); setConfirmDeleteId(null);}}>Confirmar exclusão</button>
+                    <button className="btn btn-secondary" disabled={excluindo} onClick={()=>{setConfirmDeleteId(null); setErroExclusao('');}}>Cancelar</button>
+                    <button className="btn btn-danger" disabled={excluindo} onClick={()=>handleConfirmDelete(inv.id)}>{excluindo ? 'Excluindo…' : 'Confirmar exclusão'}</button>
                   </div>
                 </div>
               ) : (
@@ -3061,6 +3295,8 @@ function NewInventory({users, onCreate}){
   const [itensImportados, setItensImportados] = useState(null);
   const [importResumo, setImportResumo] = useState(null);
   const [importErro, setImportErro] = useState('');
+  const [salvando, setSalvando] = useState(false);
+  const [erroCriacao, setErroCriacao] = useState('');
   const fileRef = useRef();
 
   const tipos = [
@@ -3114,12 +3350,20 @@ function NewInventory({users, onCreate}){
     reader.readAsArrayBuffer(file);
   }
 
-  function handleCreate(){
-    onCreate({
+  // Criar inventário é ação do líder/admin — aguarda a confirmação do
+  // Supabase (`onCreate` só navega/atualiza a lista depois de gravar lá,
+  // ver App()) antes de sair da tela, mostrando erro em vez de fingir que
+  // deu certo se a gravação falhar.
+  async function handleCreate(){
+    setSalvando(true);
+    setErroCriacao('');
+    const res = await onCreate({
       id:'INV-'+Math.floor(Math.random()*900+100), nome, almoxarifado:almox, responsavel:resp, data, tipo,
       qtdItens: isImportado ? itensImportados.length : qtd, status:'pendente', contados:0,
       ...(isImportado ? {itensImportados} : {}),
     });
+    setSalvando(false);
+    if(res && !res.ok) setErroCriacao(res.erro || 'Não foi possível criar o inventário — tente novamente.');
   }
 
   return (
@@ -3204,7 +3448,10 @@ function NewInventory({users, onCreate}){
         </div>
       )}
 
-      <button className="btn btn-primary" disabled={!canCreate} onClick={handleCreate}>Criar Inventário</button>
+      {erroCriacao && <div className="divergence-alert" style={{marginBottom:14}}><Ic>⚠</Ic><span>{erroCriacao}</span></div>}
+      <button className="btn btn-primary" disabled={!canCreate || salvando} onClick={handleCreate}>
+        {salvando ? 'Criando…' : 'Criar Inventário'}
+      </button>
     </div>
   );
 }
@@ -3466,8 +3713,12 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
       data: new Date().toISOString().slice(0,10),
       hora: new Date().toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'}),
       inventario: inv ? inv.id : '—',
+      // Marca como "ainda não confirmado no Supabase" — App() (via
+      // registerFinishedCount) tenta gravar assim que a contagem chega lá, e
+      // o ciclo de sync de 30s reenvia sozinho enquanto continuar true (ver
+      // CLAUDE.md "Histórico único e centralizado").
+      _syncPendente: true,
     };
-    saveContagemToSupabase(count);
     onComplete(count);
   }
 
@@ -4076,6 +4327,29 @@ function RecountsPanel({counts, role, currentUser, goto, onApprove, onRequestRec
   // vê só os itens que ele mesmo pode pegar e recontar.
   const isOperador = role==='operador';
 
+  // `onApprove`/`onRequestRecount` agora aguardam confirmação do Supabase
+  // (ver App()) — `busyId` desabilita só o card em ação (não a tela
+  // inteira), `erros` guarda uma mensagem por id de contagem se a chamada
+  // falhar, sem mexer no card dos outros itens da fila.
+  const [busyId, setBusyId] = useState(null);
+  const [erros, setErros] = useState({});
+
+  async function handleApprove(countId){
+    setBusyId(countId);
+    setErros(prev=>({...prev, [countId]: null}));
+    const res = await onApprove(countId);
+    setBusyId(null);
+    if(!res || !res.ok) setErros(prev=>({...prev, [countId]: (res && res.erro) || 'Não foi possível aprovar — tente novamente.'}));
+  }
+
+  async function handleRequestRecount(countId){
+    setBusyId(countId);
+    setErros(prev=>({...prev, [countId]: null}));
+    const res = await onRequestRecount(countId);
+    setBusyId(null);
+    if(!res || !res.ok) setErros(prev=>({...prev, [countId]: (res && res.erro) || 'Não foi possível solicitar a recontagem — tente novamente.'}));
+  }
+
   return (
     <div>
       <div className="section-title" style={{marginTop:0}}>
@@ -4138,11 +4412,14 @@ function RecountsPanel({counts, role, currentUser, goto, onApprove, onRequestRec
               </div>
             )}
             {c.motivo && <div style={{padding:'0 18px 14px',fontSize:12.5}}>Motivo: <strong>{c.motivo}</strong></div>}
+            {erros[c.id] && (
+              <div className="divergence-alert" style={{margin:'0 18px 10px'}}><Ic>⚠</Ic><span>{erros[c.id]}</span></div>
+            )}
             {canApprove ? (
               <div className="btn-row" style={{padding:'0 18px 16px'}}>
-                <button className="btn btn-secondary" onClick={()=>onRequestRecount(c.id)}>Solicitar nova contagem</button>
-                <button className="btn btn-secondary" onClick={()=>goto('recount', c)}><Ic>🔁</Ic> Recontar</button>
-                <button className="btn btn-primary" onClick={()=>onApprove(c.id)}>Aprovar divergência</button>
+                <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>handleRequestRecount(c.id)}>{busyId===c.id ? 'Enviando…' : 'Solicitar nova contagem'}</button>
+                <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>goto('recount', c)}><Ic>🔁</Ic> Recontar</button>
+                <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>handleApprove(c.id)}>{busyId===c.id ? 'Enviando…' : 'Aprovar divergência'}</button>
               </div>
             ) : (
               <div style={{padding:'0 18px 16px',fontSize:12,color:'var(--ink-dim)'}}>Aguardando decisão do líder de estoque.</div>
