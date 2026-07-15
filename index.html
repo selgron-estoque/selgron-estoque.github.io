@@ -655,11 +655,19 @@ function contagemRowToLocal(row){
 async function fetchContagensFromSupabase(){
   if(!supabaseClient) return [];
   try{
+    // Limite subiu de 500 pra 2000 depois que a importação do histórico
+    // passou a semear itens "Recontar" direto em `contagens` (ver
+    // buildRecontarSeedsFromHistorico/seedRecontarQueueFromHistorico) — são
+    // gravados com `criado_em=now()`, então ficam no topo da ordenação e
+    // podiam empurrar contagens reais mais antigas pra fora da página de
+    // 500 num aparelho que ainda não tinha sincronizado. Ainda sem
+    // paginação de verdade (ver CLAUDE.md "cache local removido" sobre o
+    // mesmo tipo de limitação em outras buscas) — suficiente por ora.
     const { data, error } = await supabaseClient
       .from('contagens')
       .select('*')
       .order('criado_em', {ascending:false})
-      .limit(500);
+      .limit(2000);
     if(error || !data) return [];
     return data.map(contagemRowToLocal);
   }catch(err){
@@ -992,6 +1000,83 @@ async function fetchUltimaImportacaoHistorico(){
   }catch(err){
     console.warn('Falha ao buscar última importação do histórico:', err);
     return null;
+  }
+}
+
+// Itens da planilha com Status="Recontar" não estão resolvidos de verdade —
+// o cliente confirmou que ainda precisam ser recontados. Diferente do resto
+// do histórico (que só vai pra `contagens_historico`, sem tocar no app ao
+// vivo), esses viram uma contagem "semente" na tabela `contagens` de
+// verdade, com `status_aprovacao='aguardando_segunda'` — mesmo estado que
+// qualquer outro item que caiu na fila de recontagem dentro do próprio app.
+// Isso faz o item aparecer normalmente em "Aguardando Segunda Contagem"
+// (RecountsPanel), pronto pra qualquer operador pegar e recontar via
+// RecountFlow — não precisou de nenhuma tela nova, só alimentar a mesma
+// fila que já existe.
+//
+// `id` determinístico (`CNT-HIST-<código>-<data>`) em vez de aleatório —
+// upsert com `ignoreDuplicates:true` faz re-subir o mesmo arquivo não criar
+// entradas duplicadas na fila (a policy de UPDATE não existe em `contagens`
+// de propósito, então usa ON CONFLICT DO NOTHING em vez de sobrescrever).
+// Linhas sem `data` (parte das que a planilha não preenche) são puladas
+// aqui — sem data não dá pra montar um id estável nem exibir a "1ª
+// contagem" com sentido no RecountFlow, mas continuam gravadas normalmente
+// em `contagens_historico`.
+function buildRecontarSeedsFromHistorico(linhas){
+  return linhas
+    .filter(l => l.status==='Recontar' && l.produto_codigo && l.data)
+    .map(l => {
+      const percentual = (l.saldo_sistema!=null && l.saldo_sistema!==0 && l.diferenca!=null)
+        ? (l.diferenca / l.saldo_sistema) * 100
+        : null;
+      const classificacao = percentual!=null ? classifyDivergence(percentual).label : 'Divergência (importada do histórico)';
+      const idSeguro = 'CNT-HIST-' + String(l.produto_codigo).replace(/[^A-Za-z0-9]/g,'') + '-' + l.data.replace(/-/g,'');
+      return {
+        id: idSeguro,
+        inventario_id: '—',
+        produto_codigo: l.produto_codigo,
+        descricao: l.descricao,
+        endereco: l.endereco,
+        endereco_contado: l.endereco,
+        endereco_pendente_validacao: false,
+        usuario: 'Importação Histórica',
+        numero_contagem: 1,
+        contagem_anterior_id: null,
+        qtd_contada: l.qtd_contada,
+        saldo_sistema: l.saldo_sistema,
+        diferenca: l.diferenca,
+        percentual,
+        valor_divergente: l.valor_divergente!=null ? Math.abs(l.valor_divergente) : 0,
+        fora_do_cache_local: true,
+        classificacao,
+        status_aprovacao: 'aguardando_segunda',
+        motivo: l.causa,
+        tem_foto: false,
+        observacao: (l.observacao ? l.observacao + ' — ' : '') + 'Importado do histórico da planilha de análise (ainda precisa de recontagem).',
+        data: l.data,
+        hora: null,
+      };
+    });
+}
+
+async function seedRecontarQueueFromHistorico(seeds, onProgress){
+  if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
+  if(seeds.length===0) return {ok:true, inseridas:0};
+  try{
+    const TAMANHO_LOTE = 500;
+    let inseridas = 0;
+    for(let i=0; i<seeds.length; i+=TAMANHO_LOTE){
+      const lote = seeds.slice(i, i+TAMANHO_LOTE);
+      const { error } = await supabaseClient
+        .from('contagens')
+        .upsert(lote, {onConflict: 'id', ignoreDuplicates: true});
+      if(error) return {ok:false, erro:'Falha ao gravar lote na fila de recontagem (linha '+i+'): '+error.message, inseridas};
+      inseridas += lote.length;
+      if(onProgress) onProgress(inseridas, seeds.length);
+    }
+    return {ok:true, inseridas};
+  }catch(err){
+    return {ok:false, erro:String(err && err.message || err)};
   }
 }
 
@@ -4931,9 +5016,23 @@ function HistoricoImportPanel(){
     setStatus('uploading');
     setProgresso({inseridas:0, total:parseResult.linhas.length});
     const res = await importHistoricoContagensToSupabase(parseResult.linhas, (inseridas,total)=>setProgresso({inseridas,total}));
-    setResultado(res);
-    setStatus(res.ok ? 'done' : 'error');
-    if(res.ok) fetchUltimaImportacaoHistorico().then(setUltimaImportacao);
+    if(!res.ok){
+      setResultado(res);
+      setStatus('error');
+      return;
+    }
+    // Itens com Status="Recontar" não estão resolvidos de verdade — além de
+    // ir pro histórico, também alimentam a fila real de "Aguardando Segunda
+    // Contagem" (ver buildRecontarSeedsFromHistorico), pra aparecerem pra
+    // recontar dentro do app normalmente.
+    const seeds = buildRecontarSeedsFromHistorico(parseResult.linhas);
+    const seedRes = await seedRecontarQueueFromHistorico(seeds);
+    const resFinal = seedRes.ok
+      ? {...res, recontarEnfileiradas: seedRes.inseridas}
+      : {...res, erroFilaRecontagem: seedRes.erro};
+    setResultado(resFinal);
+    setStatus('done');
+    fetchUltimaImportacaoHistorico().then(setUltimaImportacao);
   }
 
   return (
@@ -4967,6 +5066,10 @@ function HistoricoImportPanel(){
             {parseResult.resumo.semCodigo>0 && <> · {parseResult.resumo.semCodigo} sem código</>}
             {parseResult.resumo.semData>0 && <> · {parseResult.resumo.semData} sem data</>}
           </div>
+          <div style={{fontSize:13,color:'var(--ink-dim)',marginTop:4}}>
+            <Ic>🔁</Ic> {buildRecontarSeedsFromHistorico(parseResult.linhas).length} itens marcados "Recontar" vão entrar na fila de
+            recontagem do app (tela "Recontagens" → Aguardando Segunda Contagem).
+          </div>
           <button className="btn btn-primary" style={{marginTop:10}} onClick={handleConfirmar} disabled={status==='uploading'}>
             <Ic>⬆</Ic> {status==='uploading' ? 'Importando…' : 'Confirmar importação'}
           </button>
@@ -4981,6 +5084,8 @@ function HistoricoImportPanel(){
       {resultado && resultado.ok && (
         <div className="login-success" style={{marginTop:14}}>
           Histórico importado: {resultado.inseridas} linhas gravadas (ou atualizadas) no Supabase.
+          {resultado.recontarEnfileiradas!=null && <> {resultado.recontarEnfileiradas} itens entraram na fila de recontagem.</>}
+          {resultado.erroFilaRecontagem && <><br/><Ic>⚠</Ic> Histórico salvo, mas falhou ao enfileirar recontagens: {resultado.erroFilaRecontagem}</>}
         </div>
       )}
       {resultado && !resultado.ok && (

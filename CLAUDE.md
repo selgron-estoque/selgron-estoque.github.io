@@ -1645,6 +1645,55 @@ distingue "ajuste já aplicado no Protheus" de "aprovado, sem ajuste necessário
   Custo/Acc/Sem./Doc batem com os valores reais da planilha original do cliente pra esse
   código.
 
+## Itens "Recontar" do histórico entram de verdade na fila de recontagem
+
+Depois de ver o histórico importado, o cliente esclareceu que os itens com Status=
+"Recontar" na planilha **não estão resolvidos** — precisam mesmo aparecer pra recontar
+dentro do app, não só ficar arquivados em `contagens_historico` pra consulta. Ajustado o
+`HistoricoImportPanel` pra, além de gravar tudo no histórico, também **semear esses itens
+na fila real de recontagem**.
+
+- **`buildRecontarSeedsFromHistorico(linhas)`** filtra só `status==='Recontar' &&
+  produto_codigo && data` (linhas sem `data` — 460 das 3.659 no arquivo real — são
+  puladas aqui, mas continuam indo pro histórico normalmente) e monta uma linha no MESMO
+  formato que `saveContagemToSupabase` grava em `contagens` — `status_aprovacao:
+  'aguardando_segunda'`, `numero_contagem: 1`, `usuario: 'Importação Histórica'` (não
+  inventa nome de operador, já que a planilha não guarda quem contou), `classificacao`
+  calculada com o mesmo `classifyDivergence(percentual)` que o resto do app usa.
+- **`id` determinístico** (`CNT-HIST-<código sem pontuação>-<data sem traço>`) em vez de
+  aleatório — junto com `seedRecontarQueueFromHistorico` usando `.upsert(lote,
+  {onConflict:'id', ignoreDuplicates:true})`, isso faz o re-upload do mesmo arquivo (o
+  master do cliente só cresce) não duplicar entradas na fila. `ignoreDuplicates:true` vira
+  `ON CONFLICT DO NOTHING` no Postgres — **não precisa de policy de UPDATE em
+  `contagens`** (que não existe de propósito, só INSERT — ver schema), diferente de um
+  upsert comum que exigiria permissão de update também.
+- **Nenhuma tela nova**: como o item semeado tem exatamente o mesmo formato que qualquer
+  outro `aguardando_segunda` gerado ao vivo pelo app, ele aparece sozinho em
+  "Recontagens" → "Aguardando Segunda Contagem" assim que o `sync()` de 30s (ou o login)
+  buscar a tabela `contagens` do Supabase — reaproveita 100% o mecanismo de merge aditivo
+  que já existia (`fetchContagensFromSupabase`, nunca sobrescreve local, só adiciona por
+  `id` novo). Qualquer operador pode clicar "Recontar este item" e cai no `RecountFlow`
+  normal.
+- **`fetchContagensFromSupabase`: limite subiu de 500 pra 2000** — os itens semeados
+  gravam `criado_em=now()` no momento da importação, então ficam no topo da ordenação
+  (mais recentes primeiro) e podiam empurrar contagens reais mais antigas pra fora da
+  página de 500 num aparelho que ainda não tinha sincronizado tudo. Ainda sem paginação de
+  verdade, só um limite maior — mesmo tipo de limitação já documentada em outras buscas.
+- **Painel mostra o total ANTES de confirmar** ("N itens marcados 'Recontar' vão entrar
+  na fila de recontagem do app") e confirma depois quantos entraram de fato — mesmo
+  padrão de transparência do resto da importação.
+- Testado com o arquivo real do cliente via Playwright: 116 das linhas "Recontar" (de
+  452 no total — as com `data` preenchida) viraram entradas na fila, confirmei o payload
+  exato de uma delas (`000.02788`, motivo "Chapas/Barras e Tubos", classificação
+  "Divergência crítica", `valor_divergente` absoluto batendo com o `Custo` assinado da
+  planilha) e que um código com Status="Ajustado" (`000.41707`) NÃO foi semeado. Depois,
+  simulando esse item já sincronizado localmente (mesmo formato que `contagemRowToLocal`
+  produz), confirmei que ele aparece em "Recontagens" → "Aguardando Segunda Contagem"
+  com "Importação Histórica" como quem contou, e que "Recontar este item" abre o
+  `RecountFlow` normalmente, sem erro de "item não encontrado". Não testei contra o
+  Supabase de verdade — falta o cliente rodar o SQL de `contagens_historico` (já
+  compartilhado) e confirmar a importação ao vivo.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase
