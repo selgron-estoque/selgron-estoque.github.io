@@ -1694,6 +1694,33 @@ na fila real de recontagem**.
   Supabase de verdade — falta o cliente rodar o SQL de `contagens_historico` (já
   compartilhado) e confirmar a importação ao vivo.
 
+## Reset geral de contagens/inventários antes de importar o histórico real
+
+O cliente testou o app antes de importar a planilha de análise e pediu pra "zerar tudo"
+(contagens e inventários de teste) antes de começar a usar o histórico real. Perguntou se
+dava pra fazer isso só via SQL — não dá: o `localStorage` é local de cada navegador/
+aparelho, nenhum SQL no Supabase alcança isso. A solução foi o mecanismo que o próprio
+código já previa pra esse cenário (`STORAGE_VERSION`, comentário original: "se o formato
+dos dados mudar... basta subir a versão pra ignorar dados antigos").
+
+- **`inventories`/`counts` viraram `inventories_v2`/`counts_v2`** (só essas duas chaves —
+  `users`, `passwordHistory`, `enderecosPropostos` etc. continuam nas chaves antigas, não
+  fazia sentido derrubar login/senhas dos usuários cadastrados). Qualquer aparelho que
+  abrir o app depois deste deploy procura uma chave que não existe mais no
+  `localStorage` e começa vazio sozinho — sem precisar de comando manual em cada tablet.
+- **Removida também a seed de 2 inventários fake** (`INV-001`/`INV-002`, do início do
+  protótipo, hardcoded como valor padrão de `usePersistedState`) — um aparelho novo, sem
+  nenhum dado local ainda, não fazia mais sentido reabrir mostrando esses dois
+  inventários de mentira agora que o app trabalha com dado real.
+- **Ainda assim precisa limpar o Supabase por SQL** (isso sim é possível e necessário):
+  `delete from contagens; delete from inventarios;` — o reset de `localStorage` só
+  cuida do lado do navegador; sem isso os dados de teste continuariam voltando pro
+  aparelho via o `sync()` de 30s (que traz o que está no Supabase pro local).
+- Testado via Playwright simulando dois cenários: aparelho com dado salvo na chave
+  antiga (`stock360:v1:counts`/`stock360:v1:inventories`) — confirma que o app ignora e
+  mostra as telas vazias; e aparelho sem nenhum dado — confirma que os 2 inventários
+  fake não aparecem mais.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase

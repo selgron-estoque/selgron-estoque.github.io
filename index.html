@@ -1900,12 +1900,17 @@ function App(){
     if(window.innerWidth < 768) setSidebarCollapsed(true);
   }
 
-  const [inventories, setInventories] = usePersistedState('inventories', [
-    {id:'INV-001', nome:'Inventário Cíclico Julho/2026', almoxarifado:'Almox 01', responsavel:'Carlos Mendes', data:'2026-07-14', tipo:'Contagem Aleatória', qtdItens:20, status:'em_andamento', contados: 6},
-    {id:'INV-002', nome:'Inventário Curva A — Rolamentos', almoxarifado:'Almox 01', responsavel:'Fernanda Lima', data:'2026-07-15', tipo:'Contagem por Curva ABC', qtdItens:12, status:'pendente', contados: 0},
-  ]);
+  // Chaves 'inventories_v2'/'counts_v2' (em vez de 'inventories'/'counts') —
+  // reset geral pedido pelo cliente antes de importar o histórico real da
+  // planilha de análise: qualquer aparelho que abrir o app depois desse
+  // deploy procura uma chave que não existe mais no localStorage e começa
+  // vazio, sem precisar de comando manual em cada tablet. Também removida a
+  // seed de 2 inventários fake (INV-001/INV-002, do início do protótipo) —
+  // não fazia mais sentido reaparecer num aparelho novo agora que o app usa
+  // dado real.
+  const [inventories, setInventories] = usePersistedState('inventories_v2', []);
 
-  const [counts, setCounts] = usePersistedState('counts', []); // finalized counts
+  const [counts, setCounts] = usePersistedState('counts_v2', []); // finalized counts
   const [enderecosPropostos, setEnderecosPropostos] = usePersistedState('enderecosPropostos', []); // endereços informados por operadores, aguardando validação do líder
   const [passwordRequests, setPasswordRequests] = usePersistedState('passwordRequests', []); // solicitações de "esqueci minha senha"
   const [passwordHistory, setPasswordHistory] = usePersistedState('passwordHistory', []); // histórico de alterações de senha
