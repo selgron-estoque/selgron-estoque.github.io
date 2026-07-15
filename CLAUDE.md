@@ -2285,6 +2285,37 @@ semana). Pediu pra sempre mostrar as últimas 10 semanas nos dois gráficos.
   como "sem contagens" no gráfico, não como um 0% escondido no meio da linha. Rodei de
   novo toda a suíte de regressão do scratchpad, sem quebrar nada.
 
+## "Tendência Semanal" passa a somar histórico + meta de contagem fixa
+
+Cliente esclareceu o que os dois gráficos de "Tendência Semanal" deveriam representar:
+"Contagens na Semana" = quantidade de itens contados TOTAL (meta de 250/semana),
+"Acuracidade Semanal" = acuracidade de TODOS os itens contados naquela semana — nos dois
+casos, contando tudo (ao vivo no app + histórico importado), não só o que foi contado
+dentro do Inventário 360. Perguntou por que estava "puxando zerado" com dado real na
+planilha `BD_Contagens`.
+
+- **Decisão anterior revista**: a seção "Bug crítico: tela de Recontagens..." e depois
+  "'Indicadores' ainda vazio..." tinham decidido deixar `weeklyStats` de fora do merge
+  com o histórico, com a justificativa de que "histórico concentrado numa importação em
+  massa criaria um pico artificial numa única semana". Essa suposição estava ERRADA: cada
+  linha da planilha carrega a **data real em que a contagem aconteceu** (fev-jul/2026),
+  não a data em que foi importada — soma exatamente na semana certa, igual a qualquer
+  contagem ao vivo, sem criar pico nenhum. `computeWeeklyStats(counts, 10)` virou
+  `computeWeeklyStats(todasParaQualidade, 10)` — reaproveita o mesmo pool já usado pra
+  Qualidade/Causas de Erro/Top Divergências (contagens ao vivo + histórico concluído, sem
+  duplicar os itens "Recontar" que já entram via `counts`).
+- **`META_CONTAGENS_SEMANAL = 250`** (constante isolada perto de `WeeklyCountChart`) —
+  linha de referência fixa no gráfico de contagens, com rótulo "Meta: 250" visível.
+  Substituiu a linha tracejada anterior que mostrava a MÉDIA das semanas exibidas (não
+  representava nenhum objetivo real, só mudava conforme a janela de tempo). O eixo Y
+  (`niceAxisTicks`) passou a considerar a meta no cálculo do teto, pra linha continuar
+  visível mesmo em semanas bem abaixo de 250.
+- Testado via Playwright com histórico mockado espalhado em semanas SEM nenhuma contagem
+  ao vivo (única forma de confirmar que o merge está funcionando de verdade, e não só
+  reaproveitando dado que já existia): confirmei que essas semanas passam a mostrar
+  contagem/acuracidade reais vindos só do histórico, e que "Meta: 250" aparece no
+  gráfico. Rodei de novo a suíte de regressão do scratchpad, sem quebrar nada.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase

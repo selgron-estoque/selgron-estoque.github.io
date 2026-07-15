@@ -5136,13 +5136,19 @@ function WeeklyLineChart({weeks}){
   );
 }
 
+// Meta semanal de contagem, confirmada pelo cliente ("meta de 250 itens") —
+// linha de referência fixa no gráfico "Contagens na Semana", em vez da
+// média das semanas exibidas (que mudava a cada janela e não representava
+// nenhum objetivo real). Constante isolada aqui em cima pra ser fácil de
+// ajustar se o cliente mudar a meta depois.
+const META_CONTAGENS_SEMANAL = 250;
+
 function WeeklyCountChart({weeks}){
   const W = 760, H = 220, padL = 34, padR = 30, padT = 26, padB = 40;
   const chartW = W - padL - padR, chartH = H - padT - padB;
   const n = weeks.length;
-  const ticks = niceAxisTicks(Math.max(...weeks.map(w=>w.total), 1), 4);
+  const ticks = niceAxisTicks(Math.max(...weeks.map(w=>w.total), META_CONTAGENS_SEMANAL, 1), 4);
   const maxVal = ticks[ticks.length-1];
-  const avg = weeks.reduce((s,w)=>s+w.total,0) / n;
   const slot = chartW / n;
   const barW = Math.min(40, slot * 0.5);
   const x = i => padL + i*slot + slot/2;
@@ -5155,7 +5161,8 @@ function WeeklyCountChart({weeks}){
           <text x={padL-8} y={y(t)+3.5} textAnchor="end" fontSize={10} fill="var(--ink-dim)" fontFamily="var(--font-mono)">{Math.round(t)}</text>
         </g>
       ))}
-      <line x1={padL} x2={W-padR} y1={y(avg)} y2={y(avg)} stroke={WEEKLY_CHART_COLOR} strokeWidth={1.5} strokeDasharray="5,4" opacity={0.55} />
+      <line x1={padL} x2={W-padR} y1={y(META_CONTAGENS_SEMANAL)} y2={y(META_CONTAGENS_SEMANAL)} stroke={WEEKLY_CHART_COLOR} strokeWidth={1.5} strokeDasharray="5,4" opacity={0.65} />
+      <text x={W-padR} y={y(META_CONTAGENS_SEMANAL)-6} textAnchor="end" fontSize={10} fontWeight={700} fill={WEEKLY_CHART_COLOR} fontFamily="var(--font-mono)">Meta: {META_CONTAGENS_SEMANAL}</text>
       {weeks.map((w,i)=>(
         <g key={w.key}>
           <rect x={x(i)-barW/2} y={y(w.total)} width={barW} height={Math.max(0, y(0)-y(w.total))} rx={4} fill={WEEKLY_CHART_COLOR}>
@@ -5229,7 +5236,15 @@ function Dashboard({counts, inventories, historicoConcluidas=[]}){
   const maxMotivo = Math.max(1, ...Object.values(porMotivo));
 
   const topDivergentes = [...todasParaQualidade].sort((a,b)=>Math.abs(b.diferenca||0)-Math.abs(a.diferenca||0)).slice(0,10);
-  const weeklyStats = computeWeeklyStats(counts, 10);
+  // "Tendência Semanal" reconsiderada: os dois gráficos precisam refletir
+  // TODAS as contagens já feitas (ao vivo no app + histórico importado), não
+  // só as do app — decisão anterior (só `counts`) partia de uma suposição
+  // errada, de que o histórico concentraria tudo numa única "semana da
+  // importação"; na prática cada linha da planilha carrega a DATA REAL em
+  // que a contagem aconteceu (fev-jul/2026), então soma nas semanas certas
+  // igual a qualquer contagem ao vivo. Reaproveita `todasParaQualidade`
+  // (mesmo pool já usado pra Qualidade/Causas de Erro/Top Divergências).
+  const weeklyStats = computeWeeklyStats(todasParaQualidade, 10);
 
   return (
     <div>
