@@ -890,6 +890,111 @@ async function fetchUltimaAtualizacaoEstoque(){
   }
 }
 
+/* ---------------- IMPORTAÇÃO DO HISTÓRICO DE CONTAGENS (planilha de análise) ---------------- */
+
+// Parser da aba "BD_Contagens" da planilha de análise que o cliente já
+// usava antes do Inventário 360 (Base_Analise_Contagens_2026.xlsx) — tem um
+// bloco de indicadores ANTES da tabela de verdade (linhas 1-5 do arquivo
+// original: título, metas, resumo), então lê a planilha como matriz crua
+// (`sheet_to_json(sheet, {header:1})`) e PROCURA a linha que contém
+// "Código" numa das colunas, em vez de assumir cabeçalho na linha 1 (padrão
+// diferente de todo o resto do app, onde a planilha subida já começa direto
+// com o cabeçalho). Colunas resolvidas pelo NOME (não pela posição) — se o
+// cliente reordenar colunas numa exportação futura, continua funcionando.
+function parseHistoricoContagensRows(matrix){
+  const headerRowIdx = matrix.findIndex(row => (row||[]).some(cell => String(cell||'').trim()==='Código'));
+  if(headerRowIdx===-1){
+    return { linhas: [], resumo: {totalLinhas:0, validas:0, semCodigo:0, semData:0, erroCabecalho:true} };
+  }
+  const header = matrix[headerRowIdx].map(h=>String(h||'').trim());
+  const col = nome => header.indexOf(nome);
+  const idx = {
+    codigo: col('Código'), descricao: col('Descrição'), end: col('End'),
+    sistema: col('Sistema'), fisico: col('Fisico'), diferenca: col('Diferença'),
+    custo: col('Custo'), acc: col('Acc'), data: col('Data'), sem: col('Sem.'),
+    status: col('Status'), classe: col('Classe'), causa: col('Causa'), obs: col('OBS'),
+    sa: col('SA'), diasSMov: col('Dias S/ Mov.'), doc: col('Doc'),
+  };
+  const num = v => { if(v==null || v==='') return null; const n = Number(v); return Number.isFinite(n) ? n : null; };
+  let totalLinhas = 0, semCodigo = 0, semData = 0;
+  const linhas = [];
+  for(let r=headerRowIdx+1; r<matrix.length; r++){
+    const row = matrix[r];
+    if(!row || row.every(c=>c==null || c==='')) continue; // linha em branco
+    totalLinhas++;
+    const codigoRaw = idx.codigo>=0 ? row[idx.codigo] : null;
+    if(codigoRaw==null || String(codigoRaw).trim()===''){ semCodigo++; continue; }
+    const dataRaw = idx.data>=0 ? row[idx.data] : null;
+    let data = null;
+    if(dataRaw instanceof Date && !Number.isNaN(dataRaw.getTime())) data = dataRaw.toISOString().slice(0,10);
+    if(!data) semData++;
+    linhas.push({
+      produto_codigo: String(codigoRaw).trim(),
+      descricao: idx.descricao>=0 ? String(row[idx.descricao]||'') : '',
+      endereco: idx.end>=0 && row[idx.end]!=null && row[idx.end]!=='' ? String(row[idx.end]) : null,
+      saldo_sistema: idx.sistema>=0 ? num(row[idx.sistema]) : null,
+      qtd_contada: idx.fisico>=0 ? num(row[idx.fisico]) : null,
+      diferenca: idx.diferenca>=0 ? num(row[idx.diferenca]) : null,
+      valor_divergente: idx.custo>=0 ? num(row[idx.custo]) : null,
+      acuracidade: idx.acc>=0 ? num(row[idx.acc]) : null,
+      data,
+      semana: idx.sem>=0 ? num(row[idx.sem]) : null,
+      status: idx.status>=0 && row[idx.status]!=null && row[idx.status]!=='' ? String(row[idx.status]) : null,
+      classe: idx.classe>=0 && row[idx.classe]!=null && row[idx.classe]!=='' ? String(row[idx.classe]) : null,
+      causa: idx.causa>=0 && row[idx.causa]!=null && row[idx.causa]!=='' ? String(row[idx.causa]) : null,
+      observacao: idx.obs>=0 && row[idx.obs]!=null && row[idx.obs]!=='' ? String(row[idx.obs]) : null,
+      solicitacao_ajuste: idx.sa>=0 && row[idx.sa]!=null && row[idx.sa]!=='' ? String(row[idx.sa]) : null,
+      dias_sem_movimento: idx.diasSMov>=0 ? num(row[idx.diasSMov]) : null,
+      documento: idx.doc>=0 && row[idx.doc]!=null && row[idx.doc]!=='' ? String(row[idx.doc]) : null,
+    });
+  }
+  return { linhas, resumo: { totalLinhas, validas: linhas.length, semCodigo, semData } };
+}
+
+// Upload em lote pra `contagens_historico`, via UPSERT (não substitui tudo
+// como o saldo SB2 — ver `replaceEstoqueSaldoInSupabase`) porque essas
+// linhas são um HISTÓRICO imutável: o arquivo master do cliente só cresce
+// com novas rodadas, então ele provavelmente vai re-subir o mesmo arquivo
+// (agora maior) mais de uma vez ao longo do tempo, não só uma. Upsert na
+// chave (produto_codigo, data, endereco) — mesma unique constraint da
+// tabela, ver backend/schema.sql — faz o re-upload não duplicar as linhas
+// já importadas antes.
+async function importHistoricoContagensToSupabase(linhas, onProgress){
+  if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
+  try{
+    const TAMANHO_LOTE = 500;
+    let inseridas = 0;
+    for(let i=0; i<linhas.length; i+=TAMANHO_LOTE){
+      const lote = linhas.slice(i, i+TAMANHO_LOTE);
+      const { error } = await supabaseClient
+        .from('contagens_historico')
+        .upsert(lote, {onConflict: 'produto_codigo,data,endereco'});
+      if(error) return {ok:false, erro:'Falha ao gravar lote (linha '+i+'): '+error.message, inseridas};
+      inseridas += lote.length;
+      if(onProgress) onProgress(inseridas, linhas.length);
+    }
+    return {ok:true, inseridas};
+  }catch(err){
+    return {ok:false, erro:String(err && err.message || err)};
+  }
+}
+
+async function fetchUltimaImportacaoHistorico(){
+  if(!supabaseClient) return null;
+  try{
+    const { data, error } = await supabaseClient
+      .from('contagens_historico')
+      .select('importado_em')
+      .order('importado_em', {ascending:false})
+      .limit(1);
+    if(error || !data || data.length===0) return null;
+    return data[0].importado_em;
+  }catch(err){
+    console.warn('Falha ao buscar última importação do histórico:', err);
+    return null;
+  }
+}
+
 // Converte uma linha vinda do Supabase (RPC ou consulta direta) pro MESMO
 // formato de objeto "produto" que o app sempre usou (antes vindo do cache
 // local RAW_SB2_PRODUCTS/PRODUCTS, removido — ver CLAUDE.md "cache local
@@ -1389,6 +1494,53 @@ function statusLabel(c){
   return (STATUS_INFO[c.statusAprovacao] || {}).text || c.classificacao.rule;
 }
 
+// Mapa pro vocabulário curto de status que o cliente já usa na planilha de
+// análise dele (aba BD_Contagens, coluna "Status": OK/Recontar/Ajustado/Sem
+// Ajuste/Pendente/Ajustar) — usado só na exportação do relatório, pra bater
+// com o padrão que ele já tem, sem mudar o `statusAprovacao` interno do app.
+// Aproximado: o app não distingue hoje "ajuste já aplicado no Protheus" de
+// "aprovado, sem ajuste necessário" — os dois caem em `aprovado_lider`, que
+// mapeia pra "Sem Ajuste" (não temos como saber se o ajuste foi de fato
+// lançado no Protheus depois da aprovação).
+const STATUS_LABEL_PADRAO = {
+  aprovado_auto: 'OK',
+  aprovado_segunda: 'OK',
+  aguardando_segunda: 'Recontar',
+  aguardando_analise_lider: 'Pendente',
+  aprovado_lider: 'Sem Ajuste',
+};
+function statusLabelPadrao(c){
+  return STATUS_LABEL_PADRAO[c.statusAprovacao] || '';
+}
+
+// "Custo" na planilha do cliente é o valor divergente COM SINAL (diferença ×
+// custo unitário) — o app só guarda o valor absoluto em `valorDivergente`
+// (ver CountStep.finalize), então recupera o sinal a partir de `diferenca`.
+function valorDivergenteComSinal(c){
+  const abs = Number(c.valorDivergente || 0);
+  if(c.diferenca == null || c.diferenca === 0 || abs === 0) return 0;
+  return c.diferenca > 0 ? abs : -abs;
+}
+
+// "Acc" na planilha do cliente: acuracidade do ITEM (não do estoque todo),
+// max(0, 1 - |diferença|/sistema) — mesma fórmula usada lá, confirmada
+// comparando várias linhas da Base_Analise_Contagens_2026.xlsx enviada.
+// Sem saldo do sistema pra comparar, não dá pra calcular (retorna '').
+function acuracidadeItem(c){
+  if(c.saldoSistema == null) return '';
+  if(c.saldoSistema === 0) return c.diferenca === 0 ? 1 : 0;
+  return Math.max(0, 1 - Math.abs(c.diferenca) / c.saldoSistema);
+}
+
+// "Doc" na planilha do cliente é só a própria data reformatada DDMMYY (não
+// é um identificador à parte — confirmado comparando as duas colunas linha
+// a linha no arquivo original).
+function formatDocFromData(dataStr){
+  if(!dataStr) return '';
+  const [y, m, d] = dataStr.split('-');
+  return (d||'') + (m||'') + (y||'').slice(2);
+}
+
 function buildSummaryRows(counts, inventories){
   const contados = counts.length;
   const divergentes = counts.filter(c=>c.diferenca!==0);
@@ -1404,26 +1556,44 @@ function buildSummaryRows(counts, inventories){
   ];
 }
 
+// Colunas na mesma ordem/nome do padrão que o cliente já usa (aba
+// BD_Contagens de Base_Analise_Contagens_2026.xlsx) primeiro — assim ele
+// pode colar/importar direto na análise dele sem reformatar — seguidas das
+// colunas extras que só o app tem (rastro de operador, rodada, endereço
+// realmente contado etc.), que não existem na planilha original.
+// "Classe" (ABC) e "SA" (nº de solicitação de ajuste) ficam sempre em
+// branco — o app não captura nenhum dos dois no fluxo de contagem hoje
+// (decisão consciente, ver CLAUDE.md "Padrão de planilha do cliente");
+// "Dias S/ Mov." também fica em branco pelo mesmo motivo — não é salvo
+// dentro do objeto `count`, só existe hoje em `estoque_saldo`.
 function buildCountRows(counts){
   return counts.map(c=>({
-    'ID Contagem': c.id,
-    'Inventário': c.inventario,
     'Código': c.productCode,
     'Descrição': c.descricao,
-    'Endereço': c.endereco,
+    'End': c.endereco,
+    'Sistema': c.saldoSistema,
+    'Fisico': c.qtdContada,
+    'Diferença': c.diferenca,
+    'Custo': Number(valorDivergenteComSinal(c).toFixed(2)),
+    'Acc': acuracidadeItem(c),
+    'Data': c.data,
+    'Sem.': c.data ? getWeekInfo(c.data).weekNumber : '',
+    'Status': statusLabelPadrao(c),
+    'Classe': '',
+    'Causa': c.motivo || '',
+    'OBS': c.observacao || '',
+    'SA': '',
+    'Dias S/ Mov.': '',
+    'Doc': formatDocFromData(c.data),
+    'ID Contagem': c.id,
+    'Inventário': c.inventario,
     'Endereço Contado': c.enderecoContado || '',
     'Rodada': c.numeroContagem || 1,
     'Usuário': c.usuario,
-    'Qtd. Contada': c.qtdContada,
-    'Saldo Sistema': c.saldoSistema,
-    'Diferença': c.diferenca,
     'Divergência (%)': Number((c.percentual||0).toFixed(2)),
-    'Valor Divergente (R$)': Number(c.valorDivergente || 0),
     'Classificação': c.classificacao.label,
-    'Status': statusLabel(c),
-    'Motivo': c.motivo || '',
+    'Status (detalhado)': statusLabel(c),
     'Endereço Pendente Validação': c.enderecoPendenteValidacao ? 'Sim' : 'Não',
-    'Data': c.data,
     'Hora': c.hora || '',
   }));
 }
@@ -4050,6 +4220,7 @@ function getWeekInfo(dataStr){
   const weekNumber = Math.ceil((((thursday - yearStart) / 86400000) + 1) / 7);
   return {
     key,
+    weekNumber,
     label: 'Sem ' + weekNumber,
     sublabel: monday.toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'}),
   };
@@ -4709,6 +4880,116 @@ function StockSyncPanel(){
   );
 }
 
+function HistoricoImportPanel(){
+  const [arquivoNome, setArquivoNome] = useState('');
+  const [parseResult, setParseResult] = useState(null);
+  const [erro, setErro] = useState('');
+  const [status, setStatus] = useState('idle'); // idle | uploading | done | error
+  const [progresso, setProgresso] = useState(null);
+  const [resultado, setResultado] = useState(null);
+  const [ultimaImportacao, setUltimaImportacao] = useState(undefined); // undefined = carregando, null = nunca importado
+  const fileRef = useRef();
+
+  useEffect(()=>{
+    let cancelado = false;
+    fetchUltimaImportacaoHistorico().then(v=>{ if(!cancelado) setUltimaImportacao(v); });
+    return ()=>{ cancelado = true; };
+  }, []);
+
+  function handleFile(e){
+    const file = e.target.files[0];
+    if(!file) return;
+    setErro(''); setResultado(null); setParseResult(null); setStatus('idle');
+    setArquivoNome(file.name);
+    const reader = new FileReader();
+    reader.onload = (evt)=>{
+      try{
+        const data = new Uint8Array(evt.target.result);
+        const wb = window.XLSX.read(data, {type:'array', cellDates:true});
+        const sheetName = wb.SheetNames.find(n=>n==='BD_Contagens') || wb.SheetNames[0];
+        const sheet = wb.Sheets[sheetName];
+        const matrix = window.XLSX.utils.sheet_to_json(sheet, {header:1, defval:null});
+        const parsed = parseHistoricoContagensRows(matrix);
+        if(parsed.resumo.erroCabecalho){
+          setErro('Não encontrei a coluna "Código" em nenhuma linha da planilha — confirme se essa é a aba BD_Contagens (ou equivalente) do arquivo de análise.');
+          return;
+        }
+        if(parsed.linhas.length===0){
+          setErro('Nenhuma linha válida encontrada — verifique se as linhas têm código preenchido.');
+          return;
+        }
+        setParseResult(parsed);
+      }catch(err){
+        setErro('Não foi possível ler o arquivo. Verifique se é um .xlsx válido.');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  async function handleConfirmar(){
+    if(!parseResult) return;
+    setStatus('uploading');
+    setProgresso({inseridas:0, total:parseResult.linhas.length});
+    const res = await importHistoricoContagensToSupabase(parseResult.linhas, (inseridas,total)=>setProgresso({inseridas,total}));
+    setResultado(res);
+    setStatus(res.ok ? 'done' : 'error');
+    if(res.ok) fetchUltimaImportacaoHistorico().then(setUltimaImportacao);
+  }
+
+  return (
+    <div className="panel">
+      <div className="section-title" style={{marginTop:0}}>Importar Histórico de Contagens (planilha de análise)</div>
+      <div style={{fontSize:13,color:'var(--ink-dim)',marginBottom:14,lineHeight:1.6}}>
+        Envia pro Supabase o histórico de contagens da planilha de análise que a Selgron já
+        usava antes do Inventário 360 (aba <strong>BD_Contagens</strong>). Fica guardado
+        numa tabela separada, só pra consulta/relatório — não interfere nas contagens em
+        andamento no app. Pode subir o mesmo arquivo mais de uma vez conforme ele for
+        crescendo: linhas já importadas antes não duplicam.
+      </div>
+      <div style={{fontSize:12.5,fontFamily:'var(--font-mono)',color:'var(--ink-dim)',marginBottom:14}}>
+        {ultimaImportacao===undefined
+          ? 'Verificando última importação…'
+          : ultimaImportacao
+            ? <>Última importação: {new Date(ultimaImportacao).toLocaleString('pt-BR')}</>
+            : 'Ainda sem histórico importado no Supabase.'}
+      </div>
+      <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{display:'none'}} onChange={handleFile} />
+      <button className="btn btn-secondary" onClick={()=>fileRef.current.click()}>
+        <Ic>📄</Ic> {arquivoNome || 'Selecionar planilha de análise (.xlsx)'}
+      </button>
+
+      {erro && <div className="divergence-alert" style={{marginTop:14}}><Ic>⚠</Ic><span>{erro}</span></div>}
+
+      {parseResult && status!=='done' && (
+        <div style={{marginTop:14}}>
+          <div style={{fontSize:13,color:'var(--ink-dim)',lineHeight:1.8}}>
+            {parseResult.resumo.totalLinhas} linhas na planilha · {parseResult.resumo.validas} válidas
+            {parseResult.resumo.semCodigo>0 && <> · {parseResult.resumo.semCodigo} sem código</>}
+            {parseResult.resumo.semData>0 && <> · {parseResult.resumo.semData} sem data</>}
+          </div>
+          <button className="btn btn-primary" style={{marginTop:10}} onClick={handleConfirmar} disabled={status==='uploading'}>
+            <Ic>⬆</Ic> {status==='uploading' ? 'Importando…' : 'Confirmar importação'}
+          </button>
+          {status==='uploading' && progresso && (
+            <div style={{fontSize:12,color:'var(--ink-dim)',marginTop:8}}>
+              {progresso.inseridas} de {progresso.total} linhas enviadas…
+            </div>
+          )}
+        </div>
+      )}
+
+      {resultado && resultado.ok && (
+        <div className="login-success" style={{marginTop:14}}>
+          Histórico importado: {resultado.inseridas} linhas gravadas (ou atualizadas) no Supabase.
+        </div>
+      )}
+      {resultado && !resultado.ok && (
+        <div className="divergence-alert" style={{marginTop:14}}><Ic>⚠</Ic><span>{resultado.erro}</span></div>
+      )}
+    </div>
+  );
+}
+
 function Settings({role, users=[], currentUser, goto, onToggleUserStatus, onDeleteUser, onAdminPasswordAction, passwordRequests=[], onResolvePasswordRequest, passwordHistory=[]}){
   const isAdmin = role==='admin';
   const pendentesSenha = passwordRequests.filter(r=>r.status==='pendente');
@@ -4764,6 +5045,7 @@ function Settings({role, users=[], currentUser, goto, onToggleUserStatus, onDele
       )}
 
       {isAdmin && <StockSyncPanel />}
+      {isAdmin && <HistoricoImportPanel />}
 
       <div className="panel">
         <div className="section-title" style={{marginTop:0}}>Regras de Divergência</div>
@@ -4776,9 +5058,11 @@ function Settings({role, users=[], currentUser, goto, onToggleUserStatus, onDele
       <div className="panel">
         <div className="section-title" style={{marginTop:0}}>Origem dos Dados</div>
         <div style={{fontSize:13,color:'var(--ink-dim)',lineHeight:1.7}}>
-          300 itens carregados de uma exportação real da tabela SB2 (Protheus) — amostra de
-          10.512 SKUs do Almox 01. Nenhum endereço físico cadastrado ainda; cadastro de endereços
-          em construção via contagem (ver "Endereços Pendentes" na tela inicial).
+          Catálogo completo (85 mil+ produtos) importado da tabela SB2 do Protheus, direto no
+          Supabase — sem cache local no app. Saldo em estoque atualizado por upload manual da
+          planilha SB2 acima ("Atualizar Saldo em Estoque"). Nenhum endereço físico cadastrado
+          ainda; cadastro de endereços em construção via contagem (ver "Endereços Pendentes" na
+          tela inicial).
         </div>
       </div>
       <div className="panel">

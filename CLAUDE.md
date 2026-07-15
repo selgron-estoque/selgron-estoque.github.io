@@ -1550,6 +1550,101 @@ SQL Editor.
   código; a lógica de agrupamento por corredor/rua é a mesma já usada antes, só trocando
   a fonte dos dados.
 
+## Padrão de planilha do cliente — histórico importado + export alinhado
+
+O cliente mandou `Base_Analise_Contagens_2026.xlsx`, a planilha de análise que a Selgron já
+usava para controlar contagens ANTES do Inventário 360 (aba **BD_Contagens**, 3.659 linhas
+reais, fev/2026–jul/2026, mais as abas SB2/BD_Descrição/Resumos_Calculo/Indicadores de
+apoio). Pediu duas coisas: (1) mandar esse histórico pra nossa base, e (2) usar essa
+planilha como padrão de geração de `.xlsx` do app. Confirmado via `AskUserQuestion`:
+histórico numa **tabela separada** (não a `contagens` que o app usa ao vivo), export do
+relatório ajustado pro mesmo layout, e **Classe/SA não capturados no fluxo de contagem por
+enquanto**.
+
+**Descoberta importante durante a análise**: as colunas da aba BD_Contagens têm fórmulas
+derivadas, não são todas dado bruto — confirmei comparando várias linhas reais:
+`Custo = Diferença × Custo Unitário` (com sinal), `Acc = max(0, 1 - |Diferença|/Sistema)`
+(acuracidade do item, 0 a 1), `Sem. = número da semana ISO` (mesma regra do
+`getWeekInfo`/gráficos semanais do Dashboard — bateu exato), e `Doc` é só a `Data`
+reformatada `DDMMYY` (não é um ID à parte). `Status` tem 6 estados (OK/Recontar/Ajustado/
+Sem Ajuste/Pendente/Ajustar) — mais granular que os 5 estados internos do app (não
+distingue "ajuste já aplicado no Protheus" de "aprovado, sem ajuste necessário").
+
+### Histórico: `contagens_historico` (Supabase, tabela separada)
+
+- **Por que separada da `contagens` viva**: `getOpenCountForProduct` usa a tabela
+  `contagens` pra bloquear lançar uma contagem NOVA de item que já tem "documento em
+  aberto" (status `aguardando_segunda`/`aguardando_analise_lider`). Linhas históricas com
+  Status tipo "Recontar"/"Pendente"/"Ajustar" — já resolvidas há meses na vida real, só não
+  no vocabulário que o app entende — se misturadas na mesma tabela fariam um item real
+  aparecer "bloqueado" hoje por causa de um registro de fevereiro. `contagens_historico`
+  é só leitura/relatório — nenhuma tela do app consulta essa tabela pra decidir nada ainda
+  (não tem UI de navegação pelo histórico implementada, só o armazenamento).
+- **Colunas ficam com o vocabulário CRU da planilha original** (`status`, `classe`,
+  `causa`, `solicitacao_ajuste` como texto livre) em vez de mapeadas pro vocabulário
+  interno do app — são conceitos de workflow diferentes (ver "Status" acima), forçar a
+  correspondência perderia informação real sem necessidade.
+- **`unique(produto_codigo, data, endereco)` + upsert (não insert/replace)**: o arquivo
+  master do cliente só cresce com novas rodadas — ele provavelmente vai re-subir o mesmo
+  arquivo mais de uma vez ao longo do tempo. Upsert nessa chave composta faz o re-upload
+  não duplicar linhas já importadas antes. **Assunção documentada**: não existem duas
+  contagens do MESMO item, MESMO endereço, MESMO dia na planilha original — plausível,
+  mas linhas sem `Data` preenchida (460 das 3.659 no arquivo real do cliente — a coluna
+  às vezes vem vazia) não dedupicam direito, porque `NULL` conta como valor distinto numa
+  unique constraint do Postgres.
+- **`parseHistoricoContagensRows`/`HistoricoImportPanel`** (Configurações, só admin) —
+  mesmo padrão visual/fluxo do `StockSyncPanel` (upload → resumo → confirmar → progresso
+  em lotes de 500), mas o PARSER é diferente: a planilha tem um bloco de indicadores
+  ANTES da tabela de verdade (linhas 1-5 do arquivo original — título, metas, resumo), então
+  lê a aba como matriz crua (`sheet_to_json(sheet, {header:1})`) e PROCURA a linha que tem
+  "Código" numa das colunas, em vez de assumir cabeçalho na linha 1 como todo o resto do
+  app. Resolve colunas pelo NOME (não posição) — robusto a reordenação numa exportação
+  futura do cliente.
+- **Testado com o arquivo real do cliente** (não só mockado): rodei o parser contra
+  `Base_Analise_Contagens_2026.xlsx` de verdade via Playwright (`setInputFiles` com o
+  arquivo real) — confirmou 3.659 linhas válidas, 0 sem código, 8 lotes de upsert
+  (3.659/500), e o payload da 1ª linha batendo exatamente com os valores reais da
+  planilha (`000.41707`, Custo -13.65, Acc 0, Sem. 9, Doc "250226", SA "71813" etc.).
+  Não testei contra o Supabase de verdade — falta o cliente rodar o SQL da tabela nova
+  (`backend/schema.sql`) no projeto real e confirmar o upload ao vivo, mesmo padrão de
+  handoff de sempre.
+
+### Export do relatório alinhado ao padrão do cliente
+
+- **`buildCountRows`** (aba "Contagens" do relatório .xlsx) foi reordenada: as colunas
+  no MESMO nome/ordem da planilha do cliente vêm primeiro (Código/Descrição/End/Sistema/
+  Fisico/Diferença/Custo/Acc/Data/Sem./Status/Classe/Causa/OBS/SA/Dias S/Mov./Doc) — ele
+  pode colar/importar direto na análise dele sem reformatar — seguidas das colunas extras
+  que só o app tem (ID Contagem, Inventário, Endereço Contado, Rodada, Usuário,
+  Divergência %, Classificação, Status detalhado, Endereço Pendente Validação, Hora), que
+  não existem na planilha original.
+- **`statusLabelPadrao`** — mapa pro vocabulário curto do cliente
+  (`aprovado_auto`/`aprovado_segunda`→`OK`, `aguardando_segunda`→`Recontar`,
+  `aguardando_analise_lider`→`Pendente`, `aprovado_lider`→`Sem Ajuste`). Aproximado por
+  natureza: o app não distingue "ajuste já aplicado no Protheus" de "aprovado, sem ajuste
+  necessário" (os dois caem em `aprovado_lider`) — não temos como saber se o ajuste foi
+  de fato lançado no Protheus depois da aprovação, então os dois mapeiam pra "Sem Ajuste".
+- **`valorDivergenteComSinal`** — o app só guarda o valor ABSOLUTO em `valorDivergente`
+  (ver `CountStep.finalize`); a coluna "Custo" do cliente é assinada, então recupera o
+  sinal a partir de `diferenca` na hora de montar a linha do relatório, sem mudar como o
+  app guarda o dado internamente.
+- **`acuracidadeItem`**/**`formatDocFromData`** — mesma fórmula confirmada na planilha
+  original (`max(0, 1-|diferença|/sistema)` e data reformatada `DDMMYY`).
+- **"Classe" e "SA" sempre em branco no export, de propósito** (decisão confirmada: "não
+  por enquanto") — o app não captura ABC nem número de solicitação de ajuste em nenhum
+  lugar do fluxo de contagem hoje. **"Dias S/ Mov." também fica em branco** pelo mesmo
+  motivo prático: não é salvo dentro do objeto `count` (só existe em `estoque_saldo`, que
+  o relatório não teria como cruzar sem uma consulta extra ao Supabase na hora de gerar o
+  arquivo — fora do escopo desta rodada). Se o cliente quiser esses três campos
+  preenchidos de verdade no futuro, o próximo passo é decidir onde capturar Classe/SA no
+  fluxo ao vivo (ex: líder informa o nº do ajuste ao aprovar a divergência; Classe viria
+  do catálogo/`estoque_saldo`, que já tem a lógica de valor financeiro pra derivar ABC).
+- Testado via Playwright (sandbox sem rede): baixei o relatório com 2 contagens seedadas
+  (incluindo o MESMO código `000.41707` do arquivo real do cliente) e confirmei, abrindo
+  o `.xlsx` gerado, que a aba "Contagens" tem as 27 colunas na ordem esperada e que
+  Custo/Acc/Sem./Doc batem com os valores reais da planilha original do cliente pra esse
+  código.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase

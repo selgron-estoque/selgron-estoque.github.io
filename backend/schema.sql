@@ -328,3 +328,67 @@ create policy "atualização pública" on inventarios for update using (true) wi
 -- escrita do app hoje. Mesma ressalva de sempre: aceitável pro protótipo,
 -- reavaliar (restringir a admin de verdade) junto da migração pro Supabase Auth.
 create policy "escrita pública" on estoque_saldo for all using (true) with check (true);
+
+-- ---------------------------------------------------------------------------
+-- CONTAGENS_HISTORICO — importação em lote da planilha de análise que o
+-- cliente já usava ANTES do Inventário 360 (aba "BD_Contagens" de
+-- Base_Analise_Contagens_2026.xlsx) — 3.659 linhas reais, fev/2026-jul/2026.
+--
+-- TABELA SEPARADA DE PROPÓSITO, não é a mesma `contagens` que o app grava ao
+-- vivo. Motivo: `contagens` é consultada por `getOpenCountForProduct` pra
+-- bloquear lançar uma contagem NOVA de um item que já tem um "documento em
+-- aberto" (status aguardando_segunda/aguardando_analise_lider). Se as linhas
+-- históricas (que têm status tipo "Recontar"/"Pendente"/"Ajustar" — já
+-- resolvidos há meses na vida real, só não no formato que o app entende)
+-- fossem misturadas ali, um item já bloqueado ontem por muito tempo antes do app
+-- existir apareceria como "em aberto" hoje e travaria o operador de contar um
+-- item real. `contagens_historico` é só leitura/relatório — nenhuma tela do
+-- app consulta essa tabela pra decidir nada ainda.
+--
+-- Colunas espelham as da planilha original (`BD_Contagens`), só traduzidas
+-- pra snake_case — não normalizado/mapeado pro vocabulário de status do app
+-- (aprovado_auto, aguardando_segunda, etc.), porque são conceitos de
+-- workflow DIFERENTES: o Status daquela planilha tem 6 estados (OK,
+-- Recontar, Ajustado, Sem Ajuste, Pendente, Ajustar) — mais granular que o
+-- do app hoje (não distingue "ajuste já aplicado no Protheus" de "aprovado,
+-- sem ajuste necessário"). Fica como texto cru da planilha (`status`,
+-- `classe`, `causa`, `solicitacao_ajuste`) — se um dia o app ganhar esses
+-- mesmos conceitos no fluxo ao vivo, aí sim faz sentido normalizar.
+--
+-- `unique(produto_codigo, data, endereco)` existe pra tornar o upload
+-- IDEMPOTENTE: o cliente provavelmente vai re-subir o arquivo master (que
+-- cresce com novas rodadas) mais de uma vez ao longo do tempo, não só uma —
+-- o painel de upload faz `upsert` nessa chave composta em vez de inserir
+-- direto, então re-subir o mesmo arquivo não duplica as linhas já
+-- importadas antes. Assunção: não existem duas contagens do MESMO item, no
+-- MESMO endereço, no MESMO dia, na planilha original — plausível (uma
+-- contagem por item por rodada diária), mas não 100% garantido pela fonte.
+-- ---------------------------------------------------------------------------
+create table contagens_historico (
+  id uuid primary key default gen_random_uuid(),
+  produto_codigo text not null,
+  descricao text,
+  endereco text,
+  saldo_sistema numeric(14,3),
+  qtd_contada numeric(14,3),
+  diferenca numeric(14,3),
+  valor_divergente numeric(14,2),        -- "Custo" na planilha original — COM sinal (diferença × custo unitário)
+  acuracidade numeric(5,4),              -- "Acc" — max(0, 1 - abs(diferença)/sistema), entre 0 e 1
+  data date,
+  semana int,                            -- "Sem." — número da semana ISO (mesma regra já usada nos gráficos do Dashboard)
+  status text,                           -- texto cru: OK | Recontar | Ajustado | Sem Ajuste | Pendente | Ajustar
+  classe text,                           -- classificação ABC do item (A/B/C/NA), como veio na planilha
+  causa text,                            -- motivo da divergência, vocabulário próprio da planilha original
+  observacao text,
+  solicitacao_ajuste text,               -- "SA" — nº da solicitação de ajuste no Protheus, texto (pode vir número ou "Dev.")
+  dias_sem_movimento int,
+  documento text,                        -- "Doc" — data reformatada DDMMYY, como veio na planilha (não é um ID à parte)
+  importado_em timestamptz not null default now(),
+  unique (produto_codigo, data, endereco)
+);
+create index idx_contagens_historico_produto on contagens_historico(produto_codigo);
+create index idx_contagens_historico_data on contagens_historico(data);
+
+alter table contagens_historico enable row level security;
+create policy "leitura pública" on contagens_historico for select using (true);
+create policy "escrita pública" on contagens_historico for all using (true) with check (true);
