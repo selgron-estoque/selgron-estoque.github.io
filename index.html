@@ -3243,16 +3243,8 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
         </div>
       </div>
 
-      {!hasSaldoLocal && (
-        <div className="divergence-alert">
-          <Ic>ℹ</Ic>
-          <span>Não há saldo do sistema disponível para este código (nem no catálogo, nem na planilha importada) — o saldo não está disponível aqui para comparação automática; a contagem será registrada para revisão manual do líder.</span>
-        </div>
-      )}
-
       {needsAddressInput && step==='enderecoManual' && (
         <div>
-          <div className="divergence-alert"><Ic>📍</Ic><span>Este item ainda não tem endereço cadastrado no sistema. Escaneie a etiqueta da prateleira ou informe onde você encontrou — o endereço é obrigatório para contar, e essa informação será enviada para validação do líder.</span></div>
           {scanning ? (
             <CameraScanner onDetected={handleEnderecoManualScanDetected} onCancel={()=>setScanning(false)} />
           ) : (
@@ -3263,6 +3255,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
             <input type="text" value={enderecoInformado} onChange={e=>setEnderecoInformado(formatEnderecoInput(e.target.value))} placeholder="Ex: 035-A-1" maxLength={7} />
           </div>
           <button className="btn btn-primary" disabled={!ENDERECO_REGEX.test(enderecoInformado)} onClick={confirmEnderecoManual}>Confirmar e continuar</button>
+          <div className="divergence-alert" style={{marginTop:14}}><Ic>📍</Ic><span>Este item ainda não tem endereço cadastrado no sistema. Escaneie a etiqueta da prateleira ou informe onde você encontrou — o endereço é obrigatório para contar, e essa informação será enviada para validação do líder.</span></div>
         </div>
       )}
 
@@ -3312,7 +3305,6 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
 
       {step==='count' && (
         <div>
-          <div className="divergence-alert"><Ic>👁‍🗨</Ic><span>Contagem cega — o saldo do sistema não é exibido. Informe apenas a quantidade física encontrada.</span></div>
           <div className="field">
             <label>Quantidade encontrada ({product.unidade || 'un. não informada'})</label>
             <input className="qty-input" type="number" inputMode="decimal" value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" autoFocus />
