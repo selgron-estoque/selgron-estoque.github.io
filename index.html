@@ -3808,6 +3808,11 @@ function RecountsPanel({counts, role, currentUser, goto, onApprove, onRequestRec
   const aguardandoSegunda = counts.filter(c=>c.statusAprovacao==='aguardando_segunda' && !byOriginal[c.id]);
   const aguardandoAnalise = counts.filter(c=>c.statusAprovacao==='aguardando_analise_lider');
   const canApprove = role==='lider' || role==='admin';
+  // Operador só recebe/atua na fila de recontagem de verdade — "Aguardando
+  // Análise do Líder" não tem nenhuma ação pra ele (só líder/admin aprovam
+  // ou rejeitam), então essa seção nem aparece nessa aba pro operador; ele
+  // vê só os itens que ele mesmo pode pegar e recontar.
+  const isOperador = role==='operador';
 
   return (
     <div>
@@ -3843,6 +3848,8 @@ function RecountsPanel({counts, role, currentUser, goto, onApprove, onRequestRec
         </div>
       ))}
 
+      {!isOperador && (
+      <>
       <div className="section-title">
         Aguardando Análise do Líder
         {aguardandoAnalise.length>0 && <span className="badge" style={{position:'static',marginLeft:8}}>{aguardandoAnalise.length}</span>}
@@ -3881,6 +3888,8 @@ function RecountsPanel({counts, role, currentUser, goto, onApprove, onRequestRec
           </div>
         );
       })}
+      </>
+      )}
     </div>
   );
 }
