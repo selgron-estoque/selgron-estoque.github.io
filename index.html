@@ -1171,6 +1171,33 @@ async function fetchContagensHistoricoConcluidas(){
   }
 }
 
+// "Tendência Semanal" (Dashboard) precisa de TODO evento de contagem real
+// do histórico, não só os já concluídos — diferente de
+// fetchContagensHistoricoConcluidas (usada por Contagens Concluídas/
+// Qualidade/Causas de Erro/Top Divergências, que só quer o que já tem
+// veredito). Cliente reportou que "Contagens na Semana" ficava faltando
+// dado mesmo depois do histórico entrar nos indicadores — causa: linhas
+// com Status="Pendente" (ainda aguardando decisão) eram excluídas de tudo,
+// mas pra fins de VOLUME/acuracidade semanal, um item pendente É uma
+// contagem real que aconteceu naquele dia, só ainda não foi decidido.
+// Só exclui "Recontar" — esses já estão representados em `counts` via
+// buildRecontarSeedsFromHistorico, incluir aqui duplicaria.
+async function fetchContagensHistoricoParaTendencia(){
+  if(!supabaseClient) return [];
+  try{
+    const { data, error } = await supabaseClient
+      .from('contagens_historico')
+      .select('produto_codigo, data, diferenca, saldo_sistema, acuracidade, status')
+      .order('data', {ascending:false})
+      .limit(10000);
+    if(error || !data) return [];
+    return data.filter(row => String(row.status||'').trim()!=='Recontar');
+  }catch(err){
+    console.warn('Falha ao buscar histórico pra tendência semanal:', err);
+    return [];
+  }
+}
+
 // Itens da planilha com Status="Recontar" não estão resolvidos de verdade —
 // o cliente confirmou que ainda precisam ser recontados. Diferente do resto
 // do histórico (que só vai pra `contagens_historico`, sem tocar no app ao
@@ -2166,8 +2193,14 @@ function App(){
   // via `refreshHistoricoConcluidas` logo após uma importação bem-sucedida,
   // pra quem já está logado ver o resultado sem precisar recarregar a página.
   const [historicoConcluidas, setHistoricoConcluidas] = useState([]);
+  // Pool mais amplo, só pra "Tendência Semanal" (Dashboard) — inclui
+  // "Pendente" (fora de escopo pro resto do app), já que ali o que importa é
+  // volume/acuracidade real de contagens feitas, não status de decisão. Ver
+  // fetchContagensHistoricoParaTendencia.
+  const [historicoParaTendencia, setHistoricoParaTendencia] = useState([]);
   function refreshHistoricoConcluidas(){
     fetchContagensHistoricoConcluidas().then(setHistoricoConcluidas);
+    fetchContagensHistoricoParaTendencia().then(setHistoricoParaTendencia);
   }
   useEffect(()=>{
     if(currentUser) refreshHistoricoConcluidas();
@@ -2517,7 +2550,7 @@ function App(){
         {view==='divergentes' && <DivergentItemsPanel counts={counts} role={role} goto={goto} onApprove={approveDivergence} onRequestRecount={requestRecountFromOperator} />}
         {view==='concluidas' && <ConcludedCountsPanel counts={counts} historicoConcluidas={historicoConcluidas} />}
         {view==='recount' && flowState && <RecountFlow original={flowState} user={currentUser} onAddressProposed={addAddressProposal} onFinish={(c)=>{registerFinishedCount(c); goto('recounts');}} />}
-        {view==='dashboard' && <Dashboard counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} />}
+        {view==='dashboard' && <Dashboard counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} historicoParaTendencia={historicoParaTendencia} />}
         {view==='relatorios' && <ReportsScreen counts={counts} inventories={inventories} currentUser={currentUser} sendHistory={reportSendHistory} onLogSend={logReportSend} />}
         {view==='settings' && (
           <Settings
@@ -5015,6 +5048,19 @@ function getWeekInfo(dataStr){
   };
 }
 
+// Acuracidade de UM item — usa o "Acc" que a própria planilha já traz
+// quando o item vem do histórico (0 a 1, fórmula original do cliente:
+// max(0, 1-|diferença|/sistema) — ver "Padrão de planilha do cliente" no
+// CLAUDE.md), senão calcula com a MESMA fórmula em cima de diferenca/
+// saldoSistema (contagem ao vivo do app). Retorna `null` quando não dá pra
+// calcular (sem saldo pra comparar) — esses itens ficam de fora da MÉDIA,
+// não entram como 0% nem como 100%.
+function itemAcuracidade(c){
+  if(c.acuracidade!=null) return c.acuracidade;
+  if(c.saldoSistema==null || c.saldoSistema===0 || c.diferenca==null) return null;
+  return Math.max(0, 1 - Math.abs(c.diferenca)/c.saldoSistema);
+}
+
 // Janela FIXA das últimas `maxWeeks` semanas civis terminando na semana
 // atual — sempre as mesmas `maxWeeks` posições no eixo, mesmo as sem
 // nenhuma contagem (zero-preenchidas). Antes só listava semanas que
@@ -5022,16 +5068,17 @@ function getWeekInfo(dataStr){
 // semanas quando a atividade era recente/esparsa, sem dar noção de quanto
 // tempo cada intervalo realmente representava — cliente pediu que sempre
 // apareçam as últimas 10 semanas nos dois gráficos.
-// Acuracidade por semana usa a mesma fórmula do KPI geral (`acuracidade`
-// em Dashboard), particionada por semana — precisa excluir
-// `diferenca==null` (item sem saldo local pra comparar) da contagem de
-// divergência, senão todo item sem saldo contava como "divergente" e a
-// acuracidade de qualquer semana com itens assim despencava artificialmente
-// pra perto de 0%, mesmo com as contagens corretas (bug real reportado
-// pelo cliente: 24/91/1 contagens nas últimas 3 semanas, 0% em todas).
-// Semana sem NENHUMA contagem vira `acuracidade:null` (não `0`) — 0% seria
-// enganoso, pareceria "semana péssima" em vez de "sem dado nenhum"; quem
-// desenha o gráfico decide como representar esse buraco (ver WeeklyLineChart).
+// "Acuracidade Semanal" é a MÉDIA da acuracidade individual de cada item
+// contado naquela semana (`itemAcuracidade`, contínua 0-100%) — não o %
+// binário de "quantos bateram exato" que o resto do app usa (KPI
+// "Acuracidade do Estoque"/Home). Cliente pediu especificamente essa
+// definição pro gráfico semanal ("média de acuracidade das contagens da
+// semana"); os dois convivem no mesmo app porque respondem perguntas
+// diferentes — um é "taxa de acerto perfeito", o outro é "o quão perto, em
+// média, a gente chega". Semana sem NENHUM item com acuracidade calculável
+// vira `acuracidade:null` (não `0`) — 0% seria enganoso, pareceria "semana
+// péssima" em vez de "sem dado nenhum"; quem desenha o gráfico decide como
+// representar esse buraco (ver WeeklyLineChart).
 function computeWeeklyStats(counts, maxWeeks){
   const buckets = {};
   const ordem = [];
@@ -5041,7 +5088,7 @@ function computeWeeklyStats(counts, maxWeeks){
     d.setDate(d.getDate() - i*7);
     const info = getWeekInfo(d.toISOString().slice(0,10));
     if(!buckets[info.key]){
-      buckets[info.key] = {key:info.key, label:info.label, sublabel:info.sublabel, total:0, divergentes:0};
+      buckets[info.key] = {key:info.key, label:info.label, sublabel:info.sublabel, total:0, somaAcuracidade:0, comAcuracidade:0};
       ordem.push(info.key);
     }
   }
@@ -5050,11 +5097,18 @@ function computeWeeklyStats(counts, maxWeeks){
     const {key} = getWeekInfo(c.data);
     if(!buckets[key]) return; // fora da janela das últimas `maxWeeks` semanas
     buckets[key].total += 1;
-    if(c.diferenca !== 0 && c.diferenca !== null) buckets[key].divergentes += 1;
+    const acc = itemAcuracidade(c);
+    if(acc!=null){
+      buckets[key].somaAcuracidade += acc;
+      buckets[key].comAcuracidade += 1;
+    }
   });
   return ordem.map(key=>{
     const w = buckets[key];
-    return {...w, acuracidade: w.total>0 ? ((w.total-w.divergentes)/w.total)*100 : null};
+    return {
+      key:w.key, label:w.label, sublabel:w.sublabel, total:w.total,
+      acuracidade: w.comAcuracidade>0 ? (w.somaAcuracidade/w.comAcuracidade)*100 : null,
+    };
   });
 }
 
@@ -5075,6 +5129,11 @@ function niceAxisTicks(maxVal, targetTicks){
 
 const WEEKLY_CHART_COLOR = '#0D9488'; // mesmo teal já usado em ARMAZEM_COLORS (Dashboard)
 
+// Meta de acuracidade semanal, confirmada pelo cliente ("meta de 95%") —
+// mesmo tratamento do META_CONTAGENS_SEMANAL: linha de referência fixa, não
+// mais a média das semanas exibidas.
+const META_ACURACIDADE_SEMANAL = 95;
+
 function WeeklyLineChart({weeks}){
   const W = 760, H = 220, padL = 34, padR = 30, padT = 26, padB = 40;
   const chartW = W - padL - padR, chartH = H - padT - padB;
@@ -5083,11 +5142,9 @@ function WeeklyLineChart({weeks}){
   const y = v => padT + chartH - (v/100)*chartH;
   // Semanas sem contagem nenhuma têm `acuracidade:null` (ver
   // computeWeeklyStats) — entram no eixo X (pra manter a janela fixa de
-  // `maxWeeks` semanas), mas NÃO na média nem na linha, que vira um "buraco"
-  // em vez de mergulhar pra 0% (0% enganaria, pareceria uma semana ruim em
-  // vez de uma semana sem dado nenhum).
-  const comDado = weeks.filter(w=>w.acuracidade!=null);
-  const avg = comDado.length ? comDado.reduce((s,w)=>s+w.acuracidade,0) / comDado.length : null;
+  // `maxWeeks` semanas), mas NÃO na linha, que vira um "buraco" em vez de
+  // mergulhar pra 0% (0% enganaria, pareceria uma semana ruim em vez de uma
+  // semana sem dado nenhum).
   const segmentos = [];
   let atual = [];
   weeks.forEach((w,i)=>{
@@ -5103,7 +5160,8 @@ function WeeklyLineChart({weeks}){
           <text x={padL-8} y={y(t)+3.5} textAnchor="end" fontSize={10} fill="var(--ink-dim)" fontFamily="var(--font-mono)">{t}%</text>
         </g>
       ))}
-      {avg!=null && <line x1={padL} x2={W-padR} y1={y(avg)} y2={y(avg)} stroke={WEEKLY_CHART_COLOR} strokeWidth={1.5} strokeDasharray="5,4" opacity={0.55} />}
+      <line x1={padL} x2={W-padR} y1={y(META_ACURACIDADE_SEMANAL)} y2={y(META_ACURACIDADE_SEMANAL)} stroke={WEEKLY_CHART_COLOR} strokeWidth={1.5} strokeDasharray="5,4" opacity={0.65} />
+      <text x={W-padR} y={y(META_ACURACIDADE_SEMANAL)-6} textAnchor="end" fontSize={10} fontWeight={700} fill={WEEKLY_CHART_COLOR} fontFamily="var(--font-mono)">Meta: {META_ACURACIDADE_SEMANAL}%</text>
       {segmentos.map((seg,si)=>{
         const pts = seg.map(i=>`${x(i)},${y(weeks[i].acuracidade)}`).join(' ');
         const area = `${x(seg[0])},${y(0)} ${pts} ${x(seg[seg.length-1])},${y(0)}`;
@@ -5177,7 +5235,7 @@ function WeeklyCountChart({weeks}){
   );
 }
 
-function Dashboard({counts, inventories, historicoConcluidas=[]}){
+function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTendencia=[]}){
   const planejados = inventories.reduce((s,i)=>s+i.qtdItens,0);
   const contados = counts.length;
   const pendentes = Math.max(planejados-contados,0);
@@ -5236,15 +5294,17 @@ function Dashboard({counts, inventories, historicoConcluidas=[]}){
   const maxMotivo = Math.max(1, ...Object.values(porMotivo));
 
   const topDivergentes = [...todasParaQualidade].sort((a,b)=>Math.abs(b.diferenca||0)-Math.abs(a.diferenca||0)).slice(0,10);
-  // "Tendência Semanal" reconsiderada: os dois gráficos precisam refletir
-  // TODAS as contagens já feitas (ao vivo no app + histórico importado), não
-  // só as do app — decisão anterior (só `counts`) partia de uma suposição
-  // errada, de que o histórico concentraria tudo numa única "semana da
-  // importação"; na prática cada linha da planilha carrega a DATA REAL em
-  // que a contagem aconteceu (fev-jul/2026), então soma nas semanas certas
-  // igual a qualquer contagem ao vivo. Reaproveita `todasParaQualidade`
-  // (mesmo pool já usado pra Qualidade/Causas de Erro/Top Divergências).
-  const weeklyStats = computeWeeklyStats(todasParaQualidade, 10);
+  // "Tendência Semanal" usa um pool AINDA MAIS amplo que "Qualidade" — inclui
+  // status "Pendente" do histórico (fora de escopo pro resto do app), porque
+  // aqui o que importa é quantas contagens de verdade aconteceram naquela
+  // semana e qual a acuracidade média delas, não se já foram decididas. Cada
+  // linha do histórico carrega a DATA REAL em que a contagem aconteceu
+  // (fev-jul/2026, não a data de importação), então soma na semana certa
+  // igual a qualquer contagem ao vivo — nenhum pico artificial.
+  const historicoTendenciaComoContagem = historicoParaTendencia
+    .filter(h=>h.data)
+    .map(h=>({data:h.data, diferenca:h.diferenca, saldoSistema:h.saldo_sistema, acuracidade:h.acuracidade}));
+  const weeklyStats = computeWeeklyStats([...counts, ...historicoTendenciaComoContagem], 10);
 
   return (
     <div>

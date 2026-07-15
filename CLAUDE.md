@@ -2316,6 +2316,52 @@ planilha `BD_Contagens`.
   contagem/acuracidade reais vindos só do histórico, e que "Meta: 250" aparece no
   gráfico. Rodei de novo a suíte de regressão do scratchpad, sem quebrar nada.
 
+## Meta de 95% na Acuracidade Semanal + acuracidade contínua + "Pendente" entra no volume
+
+Cliente ajustou o pedido anterior depois de ver o resultado: (1) "Acuracidade Semanal"
+precisa de uma meta de 95% (mesmo padrão do "Meta: 250" já adicionado em "Contagens na
+Semana"), e os pontos do gráfico representam a MÉDIA de acuracidade das contagens da
+semana — não a taxa binária de acerto exato que o app usa em todo o resto dos
+indicadores; (2) "Contagens na Semana" ainda aparecia com menos dado do que deveria,
+"visto que fazemos contagens diariamente" — apontando que ainda faltava informação
+mesmo depois do histórico ter entrado nos indicadores.
+
+- **`itemAcuracidade(c)`** (helper novo, perto de `computeWeeklyStats`) — usa o campo
+  `acuracidade` já calculado pela própria planilha quando a contagem vem do histórico
+  (0 a 1, mesma fórmula `max(0, 1-|diferença|/sistema)` documentada em "Padrão de
+  planilha do cliente"), ou calcula na hora com a MESMA fórmula em cima de
+  `diferenca`/`saldoSistema` pra contagem ao vivo do app. `computeWeeklyStats` passou a
+  somar essa acuracidade contínua por item e tirar a média por semana, em vez do %
+  binário de "quantos bateram exato" (`(total-divergentes)/total`) usado até agora.
+  **Os dois convivem no mesmo app de propósito**: a "Qualidade"/"Acuracidade do
+  Estoque" (Home) continuam com a taxa binária — o cliente não pediu mudança ali, só no
+  gráfico semanal, que responde a uma pergunta diferente ("o quão perto, em média, a
+  gente chega" vs. "quantos bateram 100%").
+- **`META_ACURACIDADE_SEMANAL = 95`** (perto de `WeeklyLineChart`, mesmo padrão do
+  `META_CONTAGENS_SEMANAL` já existente) — substitui a linha tracejada de média por uma
+  meta fixa com rótulo "Meta: 95%".
+- **`fetchContagensHistoricoParaTendencia()`** (nova, perto de
+  `fetchContagensHistoricoConcluidas`) — causa real do "ainda falta dado": o histórico
+  usado pelos gráficos semanais só incluía os 4 status já CONCLUÍDOS
+  (`HISTORICO_STATUS_CONCLUIDOS`), excluindo "Pendente" (ainda aguardando decisão do
+  líder) — mas pra fins de VOLUME/acuracidade semanal, um item pendente É uma contagem
+  real que já aconteceu naquele dia, só ainda sem veredito. Essa busca nova traz TUDO
+  menos "Recontar" (que já está representado em `counts` via
+  `buildRecontarSeedsFromHistorico` — incluir de novo aqui duplicaria). Estado novo em
+  `App()`, `historicoParaTendencia`, buscado junto com `historicoConcluidas` no mesmo
+  `refreshHistoricoConcluidas()` (login + após reimportação) — só passado pra `Dashboard`,
+  as outras telas (`ConcludedCountsPanel`, Home) continuam usando só `historicoConcluidas`
+  (concluído), que não mudou de comportamento.
+- Testado via Playwright: confirmei que "Meta: 95%" aparece; que um item histórico com
+  `status:'Pendente'` passa a contar no volume semanal (antes ficava de fora); que um
+  item histórico com `status:'Recontar'` continua de fora daqui (evita duplicar com o que
+  já vem de `counts`); e que a acuracidade agora é contínua (ex: item com diferença de
+  7 num saldo de 15 mostra 53,3%, não 0% como a taxa binária mostraria). Dois testes
+  antigos (`verify_weekly_trend_fix.js`/`verify_weekly_historico_meta.js`) tinham
+  asserção pra taxa binária antiga — atualizados pra esperar o valor contínuo certo
+  (mudança de comportamento intencional, não regressão). Rodei de novo toda a suíte de
+  regressão do scratchpad, sem quebrar nada.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase
