@@ -1036,10 +1036,16 @@ function parseHistoricoContagensRows(matrix){
     let data = null;
     if(dataRaw instanceof Date && !Number.isNaN(dataRaw.getTime())) data = dataRaw.toISOString().slice(0,10);
     if(!data) semData++;
+    // `.trim()` em TODOS os campos de texto — a planilha real já mostrou mais
+    // de uma vez ter espaço sobrando em células (ver o bug do "Sld.Atu." com
+    // padding do formato contábil do Excel, seção "Bug real no upload da
+    // SB2"), e um "Status" tipo "OK " (com espaço) faria o filtro de
+    // fetchContagensHistoricoConcluidas não bater com o valor esperado.
+    const txt = v => v!=null && String(v).trim()!=='' ? String(v).trim() : null;
     linhas.push({
       produto_codigo: String(codigoRaw).trim(),
-      descricao: idx.descricao>=0 ? String(row[idx.descricao]||'') : '',
-      endereco: idx.end>=0 && row[idx.end]!=null && row[idx.end]!=='' ? String(row[idx.end]) : null,
+      descricao: idx.descricao>=0 ? String(row[idx.descricao]||'').trim() : '',
+      endereco: idx.end>=0 ? txt(row[idx.end]) : null,
       saldo_sistema: idx.sistema>=0 ? num(row[idx.sistema]) : null,
       qtd_contada: idx.fisico>=0 ? num(row[idx.fisico]) : null,
       diferenca: idx.diferenca>=0 ? num(row[idx.diferenca]) : null,
@@ -1047,13 +1053,13 @@ function parseHistoricoContagensRows(matrix){
       acuracidade: idx.acc>=0 ? num(row[idx.acc]) : null,
       data,
       semana: idx.sem>=0 ? num(row[idx.sem]) : null,
-      status: idx.status>=0 && row[idx.status]!=null && row[idx.status]!=='' ? String(row[idx.status]) : null,
-      classe: idx.classe>=0 && row[idx.classe]!=null && row[idx.classe]!=='' ? String(row[idx.classe]) : null,
-      causa: idx.causa>=0 && row[idx.causa]!=null && row[idx.causa]!=='' ? String(row[idx.causa]) : null,
-      observacao: idx.obs>=0 && row[idx.obs]!=null && row[idx.obs]!=='' ? String(row[idx.obs]) : null,
-      solicitacao_ajuste: idx.sa>=0 && row[idx.sa]!=null && row[idx.sa]!=='' ? String(row[idx.sa]) : null,
+      status: idx.status>=0 ? txt(row[idx.status]) : null,
+      classe: idx.classe>=0 ? txt(row[idx.classe]) : null,
+      causa: idx.causa>=0 ? txt(row[idx.causa]) : null,
+      observacao: idx.obs>=0 ? txt(row[idx.obs]) : null,
+      solicitacao_ajuste: idx.sa>=0 ? txt(row[idx.sa]) : null,
       dias_sem_movimento: idx.diasSMov>=0 ? num(row[idx.diasSMov]) : null,
-      documento: idx.doc>=0 && row[idx.doc]!=null && row[idx.doc]!=='' ? String(row[idx.doc]) : null,
+      documento: idx.doc>=0 ? txt(row[idx.doc]) : null,
     });
   }
   // A planilha real do cliente tem linhas com a MESMA chave (produto_codigo,
@@ -1134,23 +1140,31 @@ async function fetchUltimaImportacaoHistorico(){
 // itens "Recontar" eram replicados pra `contagens`, ver
 // buildRecontarSeedsFromHistorico logo abaixo). Essa busca traz só os
 // status já CONCLUÍDOS na planilha antiga — "OK"/"Sem Ajuste"/"Ajustado"/
-// "Ajustar" — pra alimentar o painel de auditoria e a Acuracidade do
-// Estoque (ver ConcludedCountsPanel/Home). Exclui de propósito "Recontar"
-// (já vem pela rota separada acima, incluir aqui duplicaria) e "Pendente"
+// "Ajustar" — pra alimentar o painel de auditoria e os indicadores (ver
+// ConcludedCountsPanel/Home/Dashboard). Exclui de propósito "Recontar" (já
+// vem pela rota separada acima, incluir aqui duplicaria) e "Pendente"
 // (fora de escopo por enquanto — decisão consciente, ver CLAUDE.md).
+// O filtro de status é feito NO CLIENTE (não via `.in()` do PostgREST) de
+// propósito: linhas importadas antes da correção de trim em
+// `parseHistoricoContagensRows` podem ter espaço sobrando no valor
+// ("OK " em vez de "OK"), o que faria um `.in()` exato no servidor não
+// bater com nada e devolver a tabela toda vazia sem erro nenhum — mesmo
+// tipo de bug silencioso já visto antes (RLS bloqueando `produtos` sem
+// erro visível). Comparação normalizada (trim) do lado de cá cobre dado
+// legado sujo e dado novo já limpo, sem precisar tocar no banco.
 // Sem paginação de verdade ainda — mesmo tipo de limitação já aceita em
 // outras buscas do app (ver fetchContagensFromSupabase).
+const HISTORICO_STATUS_CONCLUIDOS = ['OK', 'Sem Ajuste', 'Ajustado', 'Ajustar'];
 async function fetchContagensHistoricoConcluidas(){
   if(!supabaseClient) return [];
   try{
     const { data, error } = await supabaseClient
       .from('contagens_historico')
       .select('*')
-      .in('status', ['OK', 'Sem Ajuste', 'Ajustado', 'Ajustar'])
       .order('data', {ascending:false})
       .limit(10000);
     if(error || !data) return [];
-    return data;
+    return data.filter(row => HISTORICO_STATUS_CONCLUIDOS.includes(String(row.status||'').trim()));
   }catch(err){
     console.warn('Falha ao buscar histórico concluído do Supabase:', err);
     return [];
@@ -2503,7 +2517,7 @@ function App(){
         {view==='divergentes' && <DivergentItemsPanel counts={counts} role={role} goto={goto} onApprove={approveDivergence} onRequestRecount={requestRecountFromOperator} />}
         {view==='concluidas' && <ConcludedCountsPanel counts={counts} historicoConcluidas={historicoConcluidas} />}
         {view==='recount' && flowState && <RecountFlow original={flowState} user={currentUser} onAddressProposed={addAddressProposal} onFinish={(c)=>{registerFinishedCount(c); goto('recounts');}} />}
-        {view==='dashboard' && <Dashboard counts={counts} inventories={inventories} />}
+        {view==='dashboard' && <Dashboard counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} />}
         {view==='relatorios' && <ReportsScreen counts={counts} inventories={inventories} currentUser={currentUser} sendHistory={reportSendHistory} onLogSend={logReportSend} />}
         {view==='settings' && (
           <Settings
@@ -4644,28 +4658,33 @@ function buildConcludedChains(counts){
 }
 
 // Converte uma linha de `contagens_historico` (já filtrada pros status
-// concluídos — ver fetchContagensHistoricoConcluidas) numa "cadeia" no
-// mesmo formato de `buildConcludedChains`, pra aparecer lado a lado com as
-// contagens feitas ao vivo no app. A planilha antiga não guarda a
-// sequência de rodadas (1ª contagem → recontagem → …) que o app registra
-// hoje — cada linha do histórico vira uma cadeia de 1 rodada só, com o
-// resultado final que a planilha já trazia.
+// concluídos — ver fetchContagensHistoricoConcluidas) num objeto "contagem"
+// no MESMO formato usado pro resto do app, pra poder ser reaproveitado em
+// qualquer lugar que já sabe ler `counts` (ConcludedCountsPanel, Dashboard,
+// futuros usos) sem duplicar lógica de mapeamento. Carrega TODOS os campos
+// que existem na planilha original — inclusive os que a contagem ao vivo do
+// app não tem (classe/SA/documento/dias sem movimento) — porque o cliente
+// pediu explicitamente que essa tela sirva de painel de auditoria: "um dia
+// bata uma auditoria, preciso de toda informação necessária ali".
 const HISTORICO_STATUS_DISPLAY = {
   'OK': {level:'ok', text:'Aprovado (histórico importado)'},
   'Sem Ajuste': {level:'ok', text:'Aprovado — sem ajuste necessário (histórico importado)'},
   'Ajustado': {level:'ok', text:'Ajuste já aplicado no Protheus (histórico importado)'},
   'Ajustar': {level:'warn', text:'Ajuste necessário no Protheus (histórico importado)'},
 };
-function historicoRowToConcludedChain(h){
-  const display = HISTORICO_STATUS_DISPLAY[h.status];
+function historicoRowToCountLike(h){
+  const statusNorm = String(h.status||'').trim();
+  const display = HISTORICO_STATUS_DISPLAY[statusNorm];
   if(!display || !h.produto_codigo) return null;
   const percentual = (h.saldo_sistema!=null && h.saldo_sistema!==0 && h.diferenca!=null)
     ? (h.diferenca / h.saldo_sistema) * 100
     : null;
-  const tip = {
+  return {
     id: 'HIST-CONCL-' + String(h.produto_codigo).replace(/[^A-Za-z0-9]/g,'') + '-' + (h.data||'sem-data') + '-' + (h.endereco||'sem-endereco'),
     productCode: h.produto_codigo,
     descricao: h.descricao || '',
+    endereco: h.endereco || null,
+    enderecoContado: h.endereco || null,
     usuario: 'Importação Histórica',
     numeroContagem: 1,
     contagemAnteriorId: null,
@@ -4677,11 +4696,29 @@ function historicoRowToConcludedChain(h){
     classificacao: {label: display.text, level: display.level, rule: ''},
     statusAprovacao: null, // sem equivalente 1:1 no vocabulário do app — usa _statusDisplay
     motivo: h.causa,
+    observacao: h.observacao || null,
     data: h.data,
     hora: null,
+    // Campos extras que só a planilha antiga tem — não existem numa
+    // contagem feita ao vivo no app, mas são reais e o cliente pediu que
+    // apareçam pra fins de auditoria.
+    classe: h.classe || null,
+    solicitacaoAjuste: h.solicitacao_ajuste || null,
+    documento: h.documento || null,
+    diasSemMovimento: h.dias_sem_movimento!=null ? h.dias_sem_movimento : null,
+    semana: h.semana!=null ? h.semana : null,
     _statusDisplay: display,
     _fromHistorico: true,
+    _statusOriginal: statusNorm,
   };
+}
+
+// Cada linha do histórico vira uma cadeia de 1 rodada só — a planilha
+// antiga não guarda a sequência de rodadas (1ª contagem → recontagem → …)
+// que o app registra hoje.
+function historicoRowToConcludedChain(h){
+  const tip = historicoRowToCountLike(h);
+  if(!tip) return null;
   // Diferente das cadeias ao vivo do app (onde `houveAjuste` precisa ser
   // inferido da diferença, por falta de um campo explícito — ver
   // buildConcludedChains), a planilha antiga JÁ diz isso diretamente pelo
@@ -4690,7 +4727,7 @@ function historicoRowToConcludedChain(h){
   // dentro da tolerância (é exatamente o que "Sem Ajuste" quer dizer) — não
   // usar o fallback de diferença!=0 aqui, ele contradiria o status da
   // própria planilha.
-  const houveAjuste = h.status==='Ajustado' || h.status==='Ajustar';
+  const houveAjuste = tip._statusOriginal==='Ajustado' || tip._statusOriginal==='Ajustar';
   return { chaveId: tip.id, tip, rodadas: [tip], houveAjuste };
 }
 
@@ -4725,6 +4762,7 @@ function ConcludedCountsPanel({counts, historicoConcluidas=[]}){
             <StatusTag status={statusInfo.level||'ok'} text={statusInfo.text||'—'} />
           </div>
           <div className="result-grid">
+            <div className="rg"><div className="k">Endereço</div><div className="v">{tip.endereco || tip.enderecoContado || '—'}</div></div>
             <div className="rg"><div className="k">Quantidade Final Validada</div><div className="v">{tip.qtdContada}</div></div>
             <div className="rg"><div className="k">Total de Contagens</div><div className="v">{tip.numeroContagem}</div></div>
             <div className="rg"><div className="k">Recontagens Realizadas</div><div className="v">{tip.numeroContagem-1}</div></div>
@@ -4738,21 +4776,41 @@ function ConcludedCountsPanel({counts, historicoConcluidas=[]}){
         <div className="section-title" style={{marginTop:0}}>Histórico de Contagens ({aberta.rodadas.length})</div>
         {aberta.rodadas.map((r,idx)=>{
           const info = r._statusDisplay || STATUS_INFO[r.statusAprovacao] || {};
+          // Painel de auditoria: mostra TODA informação disponível de cada
+          // rodada, não só um resumo — pedido explícito do cliente ("um dia
+          // bata uma auditoria, preciso de toda informação necessária ali").
+          // Data sempre explícita, com aviso claro quando a planilha antiga
+          // não trouxe data pra essa linha (não é bug, é limitação real do
+          // dado de origem — ver "Padrão de planilha do cliente" no CLAUDE.md).
           return (
             <div key={r.id} className="item-card">
               <div className="item-card-head">
                 <div>
-                  <div className="item-code">{idx+1}ª contagem</div>
-                  <div className="item-desc" style={{fontSize:13}}>{r.usuario} · {r.data} {r.hora||''}</div>
+                  <div className="item-code">{idx+1}ª contagem{r._fromHistorico && <span style={{color:'var(--ink-dim)',fontWeight:400,fontSize:12}}> · histórico importado</span>}</div>
+                  <div className="item-desc" style={{fontSize:13}}>{r.data ? r.data+(r.hora?' '+r.hora:'') : 'Data não registrada na planilha'}</div>
                 </div>
                 <StatusTag status={info.level||'ok'} text={info.text||(r.classificacao?r.classificacao.label:'—')} />
               </div>
-              <div style={{padding:'14px 18px',display:'flex',flexWrap:'wrap',gap:8,fontSize:12,color:'var(--ink-dim)',fontFamily:'var(--font-mono)'}}>
-                <span>Qtd. contada: {r.qtdContada}</span>·<span>Diferença {r.diferenca==null ? '— (sem saldo local)' : (r.diferenca>0?'+':'')+r.diferenca+(r.percentual==null?'':' ('+r.percentual.toFixed(1)+'%)')}</span>
+              <div className="result-grid" style={{padding:'0 18px 14px'}}>
+                <div className="rg"><div className="k">Usuário</div><div className="v">{r.usuario||'—'}</div></div>
+                <div className="rg"><div className="k">Endereço</div><div className="v">{r.endereco || r.enderecoContado || '—'}</div></div>
+                <div className="rg"><div className="k">Saldo Sistema</div><div className="v">{r.saldoSistema==null ? '—' : r.saldoSistema}</div></div>
+                <div className="rg"><div className="k">Qtd. Contada</div><div className="v">{r.qtdContada}</div></div>
+                <div className="rg"><div className="k">Diferença</div><div className="v">{r.diferenca==null ? '— (sem saldo local)' : (r.diferenca>0?'+':'')+r.diferenca+(r.percentual==null?'':' ('+r.percentual.toFixed(1)+'%)')}</div></div>
+                <div className="rg"><div className="k">Valor Divergente</div><div className="v">{r.valorDivergente!=null && r.valorDivergente!==0 ? 'R$ '+Number(r.valorDivergente).toFixed(2) : '—'}</div></div>
               </div>
-              {r.motivo && <div style={{padding:'0 18px 14px',fontSize:12.5}}>Motivo: <strong>{r.motivo}</strong></div>}
+              {r.motivo && <div style={{padding:'0 18px 10px',fontSize:12.5}}>Motivo: <strong>{r.motivo}</strong></div>}
+              {r.observacao && <div style={{padding:'0 18px 10px',fontSize:12.5}}>Observação: {r.observacao}</div>}
               {r.aprovadoPor && (
-                <div style={{padding:'0 18px 14px',fontSize:12,color:'var(--ink-dim)'}}>Aprovado por {r.aprovadoPor} em {r.aprovadoEm}</div>
+                <div style={{padding:'0 18px 10px',fontSize:12,color:'var(--ink-dim)'}}>Aprovado por {r.aprovadoPor} em {r.aprovadoEm}</div>
+              )}
+              {r._fromHistorico && (r.classe || r.solicitacaoAjuste || r.documento || r.diasSemMovimento!=null) && (
+                <div style={{padding:'0 18px 14px',fontSize:11.5,color:'var(--ink-dim)',fontFamily:'var(--font-mono)'}}>
+                  {r.classe && <>Classe ABC: {r.classe} · </>}
+                  {r.solicitacaoAjuste && <>SA: {r.solicitacaoAjuste} · </>}
+                  {r.documento && <>Doc: {r.documento} · </>}
+                  {r.diasSemMovimento!=null && <>Dias s/ movimento: {r.diasSemMovimento}</>}
+                </div>
               )}
             </div>
           );
@@ -4789,7 +4847,7 @@ function ConcludedCountsPanel({counts, historicoConcluidas=[]}){
               <StatusTag status={info.level||'ok'} text={info.text||'—'} />
             </div>
             <div style={{padding:'14px 18px',display:'flex',flexWrap:'wrap',gap:8,fontSize:12,color:'var(--ink-dim)',fontFamily:'var(--font-mono)'}}>
-              <span>Qtd. final: {tip.qtdContada}</span>·<span>{tip.numeroContagem} {tip.numeroContagem===1?'contagem':'contagens'}</span>·<span>{cd.houveAjuste ? 'Ajuste necessário' : (tip.diferenca==null?'Sem saldo local':'Sem ajuste necessário')}</span>·<span>{tip.data} {tip.hora||''}</span>
+              <span>Qtd. final: {tip.qtdContada}</span>·<span>{tip.numeroContagem} {tip.numeroContagem===1?'contagem':'contagens'}</span>·<span>{cd.houveAjuste ? 'Ajuste necessário' : (tip.diferenca==null?'Sem saldo local':'Sem ajuste necessário')}</span>·<span>{tip.data ? tip.data+(tip.hora?' '+tip.hora:'') : 'Sem data registrada'}</span>
             </div>
             <div style={{padding:'0 18px 14px',fontSize:12,color:'var(--accent2)'}}>Ver histórico completo →</div>
           </div>
@@ -5061,13 +5119,26 @@ function WeeklyCountChart({weeks}){
   );
 }
 
-function Dashboard({counts, inventories}){
+function Dashboard({counts, inventories, historicoConcluidas=[]}){
   const planejados = inventories.reduce((s,i)=>s+i.qtdItens,0);
   const contados = counts.length;
   const pendentes = Math.max(planejados-contados,0);
-  const divergentes = counts.filter(c=>c.diferenca!==0);
-  const acuracidade = contados>0 ? (((contados-divergentes.length)/contados)*100).toFixed(1) : '100.0';
-  const valorDivergente = counts.reduce((s,c)=>s+Number(c.valorDivergente||0),0);
+
+  // "Qualidade" (acuracidade/divergências/valor divergente), "Principais
+  // Causas de Erro" e "Top Itens com Maior Divergência" passam a somar o
+  // histórico importado — sem isso essa tela inteira ficava praticamente
+  // vazia logo depois de um reset, já que dependia só de `counts` (contagens
+  // feitas ao vivo no app). "Itens Planejados/Contados/Pendentes" (progresso
+  // de inventário em andamento) e "Produtividade por Operador" continuam só
+  // com dado ao vivo, de propósito — são conceitos sobre a operação ATUAL,
+  // não fazem sentido misturados com um histórico de meses atrás; o
+  // histórico também não tem operador real por trás de cada linha (ver
+  // `usuario:'Importação Histórica'` em historicoRowToCountLike).
+  const historicoComoContagem = historicoConcluidas.map(historicoRowToCountLike).filter(Boolean);
+  const todasParaQualidade = [...counts, ...historicoComoContagem];
+  const divergentes = todasParaQualidade.filter(c=>c.diferenca!==0);
+  const acuracidade = todasParaQualidade.length>0 ? (((todasParaQualidade.length-divergentes.length)/todasParaQualidade.length)*100).toFixed(1) : '100.0';
+  const valorDivergente = todasParaQualidade.reduce((s,c)=>s+Number(c.valorDivergente||0),0);
 
   // Valor em estoque por armazém — vem do Supabase (estoque_saldo,
   // atualizado via upload manual da planilha SB2 em Configurações, ver
@@ -5106,7 +5177,7 @@ function Dashboard({counts, inventories}){
   divergentes.forEach(c=>{ if(c.motivo) porMotivo[c.motivo] = (porMotivo[c.motivo]||0)+1; });
   const maxMotivo = Math.max(1, ...Object.values(porMotivo));
 
-  const topDivergentes = [...counts].sort((a,b)=>Math.abs(b.diferenca)-Math.abs(a.diferenca)).slice(0,10);
+  const topDivergentes = [...todasParaQualidade].sort((a,b)=>Math.abs(b.diferenca||0)-Math.abs(a.diferenca||0)).slice(0,10);
   const weeklyStats = computeWeeklyStats(counts, 8);
 
   return (

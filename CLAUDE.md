@@ -2167,6 +2167,80 @@ escolheu incluir o histórico tanto no painel de auditoria quanto nos indicadore
   mesma sessão, sem reload. Rodei de novo toda a suíte de regressão do scratchpad, sem
   quebrar nada.
 
+## "Indicadores" ainda vazio + histórico ganha todos os campos pra auditoria
+
+Depois do passo anterior, o cliente reportou que "os indicadores estão vazios ainda" e
+pediu explicitamente pra incluir a data de cada contagem no histórico, "imagine que um
+dia bata uma auditoria, preciso de toda informação necessária ali". Dois problemas
+distintos, investigados e corrigidos juntos:
+
+**1. "Indicadores" (a tela, `Dashboard`/`view==='dashboard'`) nunca tinha sido conectada
+ao histórico** — só a Home (`view==='home'`, a tela que abre após login, com o card
+"Acuracidade do Estoque") tinha sido ajustada no passo anterior. "Indicadores" é uma
+tela SEPARADA (Operação/Estoque/Qualidade/Tendência Semanal/Produtividade/Top
+Divergências), inteiramente calculada a partir de `counts` (contagens ao vivo) — sem
+histórico, com pouca atividade recente ela aparece quase vazia por completo: several
+seções (`Tendência Semanal`, `Produtividade por Operador`, `Principais Causas de Erro`)
+nem renderizavam, escondidas por `length>0` guards.
+- **`Dashboard` passou a receber `historicoConcluidas`** (mesmo dado já buscado em
+  `App()`) e monta `todasParaQualidade = [...counts, ...historicoComoContagem]`
+  (`historicoComoContagem` via `historicoRowToCountLike`, ver item 3 abaixo) — usado só
+  em **"Qualidade"** (Acuracidade/Divergências/Valor Divergente), **"Principais Causas de
+  Erro"** e **"Top Itens com Maior Divergência"**.
+- **Deliberadamente FORA do merge**: "Itens Planejados/Contados/Pendentes" (progresso de
+  inventário em andamento — conceito sobre a operação ATUAL, misturar com histórico de
+  meses atrás não faz sentido), "Produtividade por Operador" (histórico não tem operador
+  real por trás de cada linha, só `usuario:'Importação Histórica'` — incluir inflaria um
+  "operador" fictício no ranking) e "Tendência Semanal" (histórico concentrado numa
+  importação em massa criaria um pico artificial numa única semana, mais confuso que
+  útil). Mesmo critério de "não misturar conceitos diferentes" já usado nos KPIs da Home.
+
+**2. Filtro de status na busca do histórico não era resistente a formatação suja** — a
+correção anterior usava `.in('status', ['OK','Sem Ajuste','Ajustado','Ajustar'])` no
+PostgREST, uma comparação EXATA no servidor. Se uma linha já importada tivesse espaço
+sobrando no valor (`"OK "` em vez de `"OK"` — a planilha real já mostrou mais de uma vez
+ter esse tipo de sujeira, ver "Bug real no upload da SB2: valor sempre zerado"), o filtro
+excluía a linha silenciosamente, sem erro nenhum — mesma categoria de bug silencioso já
+vista com RLS bloqueando `produtos` sem aviso.
+- **`fetchContagensHistoricoConcluidas()`** trocou o filtro `.in()` do servidor por um
+  `.filter()` no cliente comparando `String(row.status||'').trim()` contra
+  `HISTORICO_STATUS_CONCLUIDOS` — cobre tanto dado legado sujo quanto dado novo já limpo,
+  sem precisar tocar no banco pra corrigir linhas antigas.
+- **`parseHistoricoContagensRows`** (o parser que roda no UPLOAD) ganhou um helper `txt(v)`
+  que aplica `.trim()` em TODOS os campos de texto (status, classe, causa, observação, SA,
+  documento, endereço — antes só `produto_codigo`/`descrição` eram tratados) — fecha o
+  ciclo pra reimportações futuras não repetirem o mesmo problema.
+
+**3. Histórico ganhou TODOS os campos disponíveis, não só um resumo** — pedido explícito
+do cliente. `historicoRowToConcludedChain` foi dividida em duas funções:
+`historicoRowToCountLike(h)` (novo, retorna o objeto "contagem" completo, reutilizável em
+qualquer lugar que já sabe ler `counts` — Dashboard incluso, ver item 1) +
+`historicoRowToConcludedChain(h)` (agora só embrulha o resultado no formato de cadeia).
+`historicoRowToCountLike` carrega **endereço**, **observação**, e os campos que só a
+planilha antiga tem e a contagem ao vivo do app não — **classe (ABC)**, **SA (nº da
+solicitação de ajuste no Protheus)**, **documento**, **dias sem movimento**.
+- **`ConcludedCountsPanel`**: o resumo da cadeia (topo do detalhe) ganhou o campo
+  "Endereço". Os cards de rodada foram reestruturados de spans soltos pra um
+  `result-grid` com Usuário/Endereço/Saldo Sistema/Qtd. Contada/Diferença/Valor
+  Divergente, seguido de Motivo/Observação quando presentes, e — só pra linhas vindas do
+  histórico — uma linha extra com Classe ABC/SA/Doc/Dias s/ movimento quando a planilha
+  trouxe esse dado.
+- **Data sempre explícita, nunca some em silêncio**: tanto no card da lista quanto no
+  detalhe, uma linha sem `data` (a planilha antiga tem ~460 dessas, campo genuinamente
+  vazio na origem) mostra "Sem data registrada"/"Data não registrada na planilha" em vez
+  de deixar um espaço em branco — importante justamente pro caso de auditoria que o
+  cliente citou: fica claro que a AUSÊNCIA de data é um dado real da planilha original,
+  não uma falha de exibição do app.
+- Testado via Playwright com dado "sujo" de propósito (`status: 'Ajustar '` com espaço,
+  `status: ' OK'` com espaço líder) pra confirmar o filtro client-side reconhece os dois;
+  confirmei que o detalhe mostra endereço/saldo sistema/valor divergente/motivo/
+  observação/classe/SA/documento/dias sem movimento todos juntos pra uma linha completa
+  do histórico; que uma linha sem data mostra o aviso explícito em vez de ficar em
+  branco, tanto na lista quanto no detalhe; e que "Indicadores" (Qualidade, Principais
+  Causas de Erro, Top Itens com Maior Divergência) passa a refletir o histórico
+  importado, com a Acuracidade do Estoque deixando de aparecer 100% artificial. Rodei de
+  novo toda a suíte de regressão do scratchpad, sem quebrar nada.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase
