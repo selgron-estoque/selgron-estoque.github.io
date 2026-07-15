@@ -1437,6 +1437,119 @@ caminho principal. Nenhuma mudança na lógica de estados/etapas, só na ordem v
   embaixo. Confirmei também (ponto 1) que buscar um item fora do cache local com saldo
   mockado em `estoque_saldo` já não cai mais no aviso de "sem saldo disponível".
 
+## Remoção do cache local de 300 SKUs — usa só o Supabase agora
+
+O cliente perguntou "o cache local, foi substituído pelos dados da SB2?" — a resposta
+honesta era não: o cache estático de 300 itens (`RAW_SB2_PRODUCTS`/`PRODUCTS`, embutido
+no `index.html`) continuava sendo consultado PRIMEIRO em vários fluxos, e só quando um
+código não estava nesses 300 é que o app buscava o dado vivo no Supabase. Na prática,
+contar um dos 300 itens do cache mostrava saldo **congelado antigo** (de quando o cache
+foi gerado), enquanto qualquer outro código já usava o saldo real e atualizado — uma
+inconsistência visível pro cliente. Ele pediu pra remover o cache de vez e usar só o
+Supabase em tudo (confirmado via `AskUserQuestion`, escolheu a opção de remoção completa
+em vez de só inverter a prioridade de busca).
+
+Isso foi mais profundo do que só busca: o cache também **gerava a lista de itens** das
+contagens "Aleatória"/"Curva ABC" (`RandomCountFlow`) e agrupava por corredor/rua na
+"Rota de Endereço" (`RouteCountFlow`) — removê-lo exigiu portar essa lógica pra consultas
+no banco.
+
+**Achado que reduziu o risco da remoção**: `ANY_ADDRESS_REGISTERED` (que liberava o
+módulo de Rota) era `RAW_SB2_PRODUCTS.some(p=>p.enderecoCadastrado)` — e as 300 linhas
+do cache tinham `enderecoCadastrado:false` em 100% dos casos. Ou seja, "Contagem por
+Rota de Endereço" já estava **sempre desligada** (empty-state permanente) antes desta
+mudança — não era um comportamento funcionando que a remoção fosse quebrar.
+
+**O que mudou**:
+
+- **`backend/schema.sql`** ganhou a função `contagem_itens_prioritarios(p_limit)` — uma
+  RPC que junta `estoque_saldo`+`produtos`+`estoque_enderecos`+`enderecos` e ordena por
+  `(sem_movimento_recente desc, valor_financeiro desc)`, reproduzindo a mesma prioridade
+  que o `RandomCountFlow` já usava sobre o cache local (item parado primeiro, depois por
+  valor). **Assunção nova, documentada e ajustável**: "sem movimento recente" = sem saída
+  há 90+ dias (ou nunca teve saída) — esse critério não existia em lugar nenhum antes (o
+  campo `semMovimentoRecente` do cache era só um valor fixo sem regra visível); 90 dias é
+  um padrão razoável de giro lento, mas o cliente pode pedir outro número.
+- **Três funções novas no `index.html`** (perto de `fetchEstoqueValorPorAlmoxarifado`):
+  `fetchContagemItensPrioritarios(limit)` (chama a RPC acima, mapeia pro mesmo formato de
+  objeto "produto" que o app sempre usou, via `estoqueRowToProduct`), `fetchAnyAddressRegistered()`
+  (substitui `ANY_ADDRESS_REGISTERED` — `count:'exact', head:true` em `estoque_enderecos`;
+  continua retornando `false` hoje porque a tabela está vazia, então o módulo de Rota
+  continua com o mesmo empty-state de sempre) e `fetchProdutosByCodigos(codigos)` (busca
+  em lote — `produtos`+`estoque_saldo` via `.in('codigo', codigos)` — usada pela lista
+  importada e pela recontagem).
+- **`ManualCountFlow`**: parou de checar o cache local primeiro — busca sempre via
+  `searchSupabaseCatalog` (já buscava em `produtos`+`estoque_saldo`+`estoque_enderecos`
+  desde a correção da sessão anterior), debounce de 350ms mantido.
+- **`RandomCountFlow`**/**`RouteCountFlow`**: `allItems`/`grouped` deixaram de ser
+  `useMemo` síncrono sobre `PRODUCTS` e viraram `useState`+`useEffect` chamando
+  `fetchContagemItensPrioritarios` — com estado de carregamento ("Carregando itens para
+  contagem…"/"Verificando endereços cadastrados…") enquanto a lista não chega.
+- **`Dashboard`**: a seção "Estoque" perdeu o fallback pro cache local — se
+  `estoque_valor_por_almoxarifado`/`estoque_resumo_geral` voltarem vazios, mostra um
+  empty-state honesto ("nenhum saldo carregado ainda — envie a planilha SB2 em
+  Configurações") em vez de calcular a partir de 300 itens estáticos.
+- **`NewInventory`/`buildImportTemplateWorkbook`**: o exemplo no modelo de planilha
+  (`PRODUCTS[0]`) virou um exemplo fixo hardcoded (`000.35310`/"Exemplo de item"), não
+  amarrado a nenhum produto real.
+- **`parseImportedListRows`**: os checks síncronos `PRODUCTS.some(...)` (pra achar "não
+  encontrados"/"sem saldo disponível") viraram um passo assíncrono novo,
+  `computeImportSummaryExtras(itens)`, chamado por `NewInventory.handleFileUpload` depois
+  do parse síncrono inicial — busca todos os códigos da planilha de uma vez (1 request) e
+  completa o resumo sem travar a exibição inicial.
+- **`ImportedListCountFlow`**: troca `PRODUCTS.find` por `fetchProdutosByCodigos` (lote,
+  uma vez ao montar) — o catálogo prevalece quando o item é achado, mas a planilha
+  continua tendo prioridade pra endereço/saldo próprios quando ela trouxe esses dados
+  (mesma regra de antes). Tela de carregamento ("Carregando itens da lista importada…")
+  enquanto isso não resolve.
+- **`RecountFlow`**: troca `PRODUCTS.find(...)` por busca ao vivo via
+  `fetchProdutosByCodigos([original.productCode])` — se não encontrar ou a rede falhar,
+  cai pro MESMO fallback sintético de sempre (montado a partir de `original`, que já
+  carrega descrição/endereço/saldo da 1ª contagem) — rede cair não quebra a recontagem.
+- **`PickCountType`** (tela "Nova Contagem" avulsa, escolha do tipo de contagem) também
+  usava `ANY_ADDRESS_REGISTERED` direto pra habilitar/desabilitar o botão "Contagem por
+  Rota de Endereço" — não tinha sido identificado na pesquisa inicial (só apareceu na
+  varredura final de verificação `grep`), corrigido com o mesmo padrão async de
+  `fetchAnyAddressRegistered()`.
+- **`RAW_SB2_PRODUCTS`, `PRODUCTS` e `ANY_ADDRESS_REGISTERED` foram removidos por
+  completo** do `index.html` (a linha gigante ~90KB do array estático e as duas
+  constantes derivadas dela) — reduz bastante o tamanho do arquivo. Alguns textos
+  visíveis no app que citavam "cache local"/"300 SKUs" também foram ajustados: o aviso
+  amarelo do `CountStep` pra item sem saldo (antes dizia "código não está no cache local
+  de 300 SKUs do protótipo" mesmo quando o saldo já vinha do catálogo real — texto
+  simplificado pra só aparecer quando realmente não há saldo nenhum pra comparar) e o
+  `rule` da classificação de item sem saldo (usado como texto de status em telas de
+  recontagem/relatório, antes dizia "fora do cache local do protótipo").
+
+**Fora de escopo, decisão consciente**:
+- Filtro por almoxarifado em `RandomCountFlow`/`RouteCountFlow`/`PickCountType`: hoje
+  `inv.almoxarifado` é texto livre tipo "Almox 01", mas os códigos reais de armazém no
+  Supabase são "1", "4", "EX" etc. — não bate. A RPC nova busca em TODOS os armazéns por
+  enquanto; resolver esse mapeamento de nomes é um problema separado.
+- O limiar de "sem movimento recente" (90 dias) é uma escolha razoável, não uma regra já
+  validada com o cliente — ajustável se ele pedir outro número depois de ver o resultado.
+
+**Precisa rodar no Supabase**: a função `contagem_itens_prioritarios` (SQL completo em
+`backend/schema.sql`) ainda não foi aplicada no projeto real — falta o cliente colar no
+SQL Editor.
+
+- Testado via Playwright (sandbox sem rede, todas as chamadas Supabase mockadas):
+  `ManualCountFlow` busca só remoto (sem "vencedor" local); `RandomCountFlow` mostra o
+  item "sem movimento recente" primeiro (respeitando a ordenação da RPC mockada) e monta
+  a etapa de contagem normalmente; `NewInventory` gera o modelo de planilha e cria um
+  inventário Aleatório sem erro nenhum sem `PRODUCTS`; `Dashboard` mostra o empty-state
+  novo quando as RPCs de estoque voltam vazias, sem número nenhum de cache; lista
+  importada mostra o 1º item na ordem original da planilha já enriquecido com a descrição
+  vinda do catálogo mockado; `RecountFlow` recontou um item com código ausente do
+  catálogo (mesmo cenário do bug `000.07514` corrigido antes) sem quebrar, reaproveitando
+  o endereço da 1ª contagem. Não consegui exercitar via Playwright o caminho de
+  `RouteCountFlow` com endereços cadastrados de verdade (`anyAddress:true`) — o mock de
+  `count:'exact', head:true` do Supabase-js depende do header `content-range` numa
+  resposta `HEAD`, e o Chromium do sandbox descarta esse header em respostas `HEAD`
+  mockadas (confirmado isolando o `fetch` puro) — limitação do ambiente de teste, não do
+  código; a lógica de agrupamento por corredor/rua é a mesma já usada antes, só trocando
+  a fonte dos dados.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase

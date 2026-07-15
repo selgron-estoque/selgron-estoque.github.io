@@ -100,6 +100,47 @@ returns table(armazens_ativos bigint, itens_distintos bigint, cobertura_pct nume
     (select round(100.0 * count(distinct produto_codigo) / nullif((select count(*) from produtos), 0), 1) from estoque_saldo);
 $$ language sql stable;
 
+-- Gera a lista priorizada de itens pra contagem "Aleatória"/"Curva ABC" e
+-- "Rota de Endereço" — substitui o cache local estático de 300 SKUs que o
+-- app usava antes (RAW_SB2_PRODUCTS/PRODUCTS, removido do index.html) pela
+-- base real do Supabase. Reproduz a mesma prioridade que o app já aplicava
+-- no navegador: item sem saída recente primeiro, depois por valor financeiro
+-- decrescente (curva A) — só que como ORDER BY de duas chaves em vez do hack
+-- antigo "(semMovimentoRecente?50000:0) + valorFinanceiro" (que corria risco
+-- de um item de alta rotação só de valor muito alto "furar" a prioridade de
+-- um item parado; o ORDER BY de duas chaves não tem essa falha).
+--
+-- "Sem movimento recente" = sem saída há 90+ dias (ou nunca teve saída
+-- registrada). Esse limiar não existia documentado em lugar nenhum antes —
+-- o campo equivalente no cache local antigo era só um valor fixo, sem regra
+-- visível — 90 dias é uma escolha razoável de "giro lento", ajustável se
+-- o cliente pedir outro número.
+--
+-- LEFT JOIN com estoque_enderecos/enderecos porque a MAIORIA dos itens ainda
+-- não tem endereço cadastrado (essas tabelas seguem praticamente vazias) —
+-- INNER JOIN esconderia quase tudo. `corredor`/`rua`/`endereco_codigo` vêm
+-- null até o cadastro de endereços avançar de verdade.
+create or replace function contagem_itens_prioritarios(p_limit int default 50)
+returns table(
+  codigo text, descricao text, grupo text, almoxarifado text, saldo numeric,
+  valor_financeiro numeric, data_ultima_saida date, sem_movimento_recente boolean,
+  endereco_codigo text, corredor text, rua text
+) as $$
+  select
+    p.codigo, p.descricao, p.grupo, es.almoxarifado, es.saldo, es.valor_financeiro,
+    es.data_ultima_saida,
+    (es.data_ultima_saida is null or es.data_ultima_saida < current_date - interval '90 days'),
+    e.codigo, e.corredor, e.rua
+  from estoque_saldo es
+  join produtos p on p.codigo = es.produto_codigo
+  left join estoque_enderecos ee on ee.produto_codigo = es.produto_codigo
+  left join enderecos e on e.id = ee.endereco_id
+  order by
+    (es.data_ultima_saida is null or es.data_ultima_saida < current_date - interval '90 days') desc,
+    es.valor_financeiro desc
+  limit p_limit;
+$$ language sql stable;
+
 -- Log de cada rodada de sincronização — auditoria e depuração.
 create table sync_log (
   id uuid primary key default gen_random_uuid(),
