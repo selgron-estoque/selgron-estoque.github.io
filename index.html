@@ -2455,7 +2455,9 @@ function App(){
         {view==='routeCount' && <RouteCountFlow inv={flowState} user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} />}
         {view==='importedListCount' && <ImportedListCountFlow inv={flowState} user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} />}
         {view==='myCounts' && <MyCounts counts={counts} user={currentUser} role={role} goto={goto} />}
-        {view==='recounts' && <RecountsPanel counts={counts} role={role} currentUser={currentUser} goto={goto} onApprove={approveDivergence} onRequestRecount={requestRecountFromOperator} />}
+        {view==='recounts' && <RecountsPanel counts={counts} goto={goto} />}
+        {view==='divergentes' && <DivergentItemsPanel counts={counts} role={role} goto={goto} onApprove={approveDivergence} onRequestRecount={requestRecountFromOperator} />}
+        {view==='concluidas' && <ConcludedCountsPanel counts={counts} />}
         {view==='recount' && flowState && <RecountFlow original={flowState} user={currentUser} onAddressProposed={addAddressProposal} onFinish={(c)=>{registerFinishedCount(c); goto('recounts');}} />}
         {view==='dashboard' && <Dashboard counts={counts} inventories={inventories} />}
         {view==='relatorios' && <ReportsScreen counts={counts} inventories={inventories} currentUser={currentUser} sendHistory={reportSendHistory} onLogSend={logReportSend} />}
@@ -2813,6 +2815,8 @@ const VIEW_TITLES = {
   importedListCount:'Lista Importada',
   myCounts:'Minhas Contagens',
   recounts:'Recontagens Pendentes',
+  divergentes:'Itens Divergentes',
+  concluidas:'Contagens Concluídas',
   enderecos:'Endereços Pendentes',
   recount:'Recontar Item',
   dashboard:'Indicadores',
@@ -2843,6 +2847,8 @@ function Sidebar({view, goto, role, user, collapsed, pendingSync=0}){
     {id:'inventories', ic:'box', label:'Inventários'},
     {id:'pickCountType', ic:'search', label:'Contagens'},
     {id:'recounts', ic:'repeat', label:'Recontagens'},
+    {id:'divergentes', ic:'alertTriangle', label:'Itens Divergentes'},
+    {id:'concluidas', ic:'checkCircle', label:'Contagens Concluídas'},
     {id:'myCounts', ic:'clipboardList', label:'Minhas Contagens'},
     ...(podeValidarEnderecos ? [{id:'enderecos', ic:'mapPin', label:'Endereços'}] : []),
     {id:'dashboard', ic:'barChart', label:'Indicadores'},
@@ -2854,6 +2860,7 @@ function Sidebar({view, goto, role, user, collapsed, pendingSync=0}){
     {id:'pickCountType', label:'Nova contagem'},
     {id:'myCounts', label:'Minhas contagens'},
     {id:'recounts', label:'Recontagens pendentes'},
+    {id:'divergentes', label:'Itens divergentes'},
     ...(podeValidarEnderecos ? [{id:'enderecos', label:'Endereços pendentes'}] : []),
   ];
   return (
@@ -2962,6 +2969,10 @@ function Home({role, user, inventories, counts, enderecosPropostos=[], goto, per
   const byOriginal = {};
   counts.forEach(c=>{ if(c.contagemAnteriorId) byOriginal[c.contagemAnteriorId]=true; });
   const pendentesRecontagem = counts.filter(c=>(c.statusAprovacao==='aguardando_segunda' && !byOriginal[c.id]) || c.statusAprovacao==='aguardando_analise_lider').length;
+  // "Itens Divergentes" (KPI + tela própria, ver DivergentItemsPanel) — só
+  // divergência que AINDA não entrou em processo de recontagem. Assim que o
+  // item vira aguardando_segunda, some daqui (mesma regra da tela).
+  const itensDivergentesPendentes = counts.filter(c=>c.statusAprovacao==='aguardando_analise_lider').length;
   const podeGerir = role==='lider'||role==='admin';
   const pendentesEnderecos = enderecosPropostos.filter(e=>e.status==='pendente').length;
 
@@ -2984,7 +2995,6 @@ function Home({role, user, inventories, counts, enderecosPropostos=[], goto, per
   const concluidasHoje = counts.filter(c=>c.data===hojeStr).length;
   const concluidasOntem = counts.filter(c=>c.data===ontemStr).length;
 
-  const divergentesTrendPct = pnlTrendPct(hoje.divergentes, ontem.divergentes);
   const concluidasTrendPct = pnlTrendPct(concluidasHoje, concluidasOntem);
   const acuracidadePontos = ontem.total>0 ? (hoje.acuracidade-ontem.acuracidade) : null;
 
@@ -3003,15 +3013,18 @@ function Home({role, user, inventories, counts, enderecosPropostos=[], goto, per
     },
     {
       key:'divergentes', icon:'alertTriangle', bg:'#FBE6E3', color:'#C4291B',
-      label:'Itens Divergentes', value:hoje.divergentes,
-      trend:<KpiTrend pct={divergentesTrendPct} invert />,
-      onClick:()=>goto('myCounts'),
+      label:'Itens Divergentes', value:itensDivergentesPendentes,
+      // Estado atual (fila de pendência), não cumulativo — mesmo critério já
+      // usado em "Recontagens Pendentes" (sem histórico de snapshot pra
+      // calcular tendência real, ver CLAUDE.md "KPIs — só dado real").
+      trend:<span className={"pnl-kpi-trend "+(itensDivergentesPendentes>0?'bad':'good')}>{itensDivergentesPendentes>0?'Requer atenção':'Nenhuma pendência'}</span>,
+      onClick:()=>goto('divergentes'),
     },
     {
       key:'concluidas', icon:'checkCircle', bg:'#E3F6EA', color:'#1E8E4F',
       label:'Contagens Concluídas Hoje', value:concluidasHoje,
       trend:<KpiTrend pct={concluidasTrendPct} />,
-      onClick:()=>goto('myCounts'),
+      onClick:()=>goto('concluidas'),
     },
     {
       key:'acuracidade', icon:'percent', bg:'#F1E9FB', color:'#7B3FC4',
@@ -4397,51 +4410,44 @@ function RecountFlow({original, user, onFinish, onAddressProposed}){
   );
 }
 
-function RecountsPanel({counts, role, currentUser, goto, onApprove, onRequestRecount}){
+// Fila de recontagem de verdade — item já com status aguardando_segunda,
+// pronto pra qualquer operador pegar e recontar. "Itens Divergentes"
+// (DivergentItemsPanel, logo abaixo) é uma tela separada: mostra a
+// divergência ANTES dela virar recontagem — assim que o líder decide
+// "Solicitar nova contagem" (ou a regra automática já cria o item aqui
+// direto), o item sai de lá e passa a aparecer só aqui.
+function RecountsPanel({counts, goto}){
   const byOriginal = {};
   counts.forEach(c=>{ if(c.contagemAnteriorId) byOriginal[c.contagemAnteriorId]=c; });
 
   const aguardandoSegunda = counts.filter(c=>c.statusAprovacao==='aguardando_segunda' && !byOriginal[c.id]);
-  const aguardandoAnalise = counts.filter(c=>c.statusAprovacao==='aguardando_analise_lider');
-  const canApprove = role==='lider' || role==='admin';
-  // Operador só recebe/atua na fila de recontagem de verdade — "Aguardando
-  // Análise do Líder" não tem nenhuma ação pra ele (só líder/admin aprovam
-  // ou rejeitam), então essa seção nem aparece nessa aba pro operador; ele
-  // vê só os itens que ele mesmo pode pegar e recontar.
-  const isOperador = role==='operador';
 
-  // `onApprove`/`onRequestRecount` agora aguardam confirmação do Supabase
-  // (ver App()) — `busyId` desabilita só o card em ação (não a tela
-  // inteira), `erros` guarda uma mensagem por id de contagem se a chamada
-  // falhar, sem mexer no card dos outros itens da fila.
-  const [busyId, setBusyId] = useState(null);
-  const [erros, setErros] = useState({});
-
-  async function handleApprove(countId){
-    setBusyId(countId);
-    setErros(prev=>({...prev, [countId]: null}));
-    const res = await onApprove(countId);
-    setBusyId(null);
-    if(!res || !res.ok) setErros(prev=>({...prev, [countId]: (res && res.erro) || 'Não foi possível aprovar — tente novamente.'}));
-  }
-
-  async function handleRequestRecount(countId){
-    setBusyId(countId);
-    setErros(prev=>({...prev, [countId]: null}));
-    const res = await onRequestRecount(countId);
-    setBusyId(null);
-    if(!res || !res.ok) setErros(prev=>({...prev, [countId]: (res && res.erro) || 'Não foi possível solicitar a recontagem — tente novamente.'}));
-  }
+  // Busca por código ou descrição — filtra a fila em tempo real, sem
+  // depender de rolar a lista inteira pra achar um item específico (pedido
+  // do cliente). Mesmo padrão simples já usado em UserManagementPanel/
+  // ManualCountFlow (case-insensitive, sem normalização de acento).
+  const [busca, setBusca] = useState('');
+  const buscaNorm = busca.trim().toLowerCase();
+  const listaFiltrada = buscaNorm
+    ? aguardandoSegunda.filter(c => c.productCode.toLowerCase().includes(buscaNorm) || (c.descricao||'').toLowerCase().includes(buscaNorm))
+    : aguardandoSegunda;
 
   return (
     <div>
+      <div className="field">
+        <label>Buscar item</label>
+        <input type="text" value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Código ou descrição do material" />
+      </div>
+
       <div className="section-title" style={{marginTop:0}}>
         Aguardando Segunda Contagem
         {aguardandoSegunda.length>0 && <span className="badge" style={{position:'static',marginLeft:8}}>{aguardandoSegunda.length}</span>}
       </div>
-      {aguardandoSegunda.length===0 ? (
-        <div className="empty-state" style={{padding:20}}>Nenhum item aguardando recontagem no momento.</div>
-      ) : aguardandoSegunda.map(c=>(
+      {listaFiltrada.length===0 ? (
+        <div className="empty-state" style={{padding:20}}>
+          {aguardandoSegunda.length===0 ? 'Nenhum item aguardando recontagem no momento.' : 'Nenhum item encontrado para essa busca.'}
+        </div>
+      ) : listaFiltrada.map(c=>(
         <div key={c.id} className="item-card" style={c.recontagemSolicitadaPeloLider ? {borderLeft:'3px solid var(--danger)'} : undefined}>
           <div className="item-card-head">
             <div>
@@ -4466,10 +4472,47 @@ function RecountsPanel({counts, role, currentUser, goto, onApprove, onRequestRec
           </div>
         </div>
       ))}
+    </div>
+  );
+}
 
-      {!isOperador && (
-      <>
-      <div className="section-title">
+// "Itens Divergentes" — tela própria (era a seção "Aguardando Análise do
+// Líder", que morava dentro de RecountsPanel). Regra pedida pelo cliente:
+// mostra só divergência que AINDA não entrou em processo de recontagem —
+// assim que vira aguardando_segunda (líder solicita nova contagem, ou a
+// regra automática já joga direto pra lá), o item some daqui e passa a
+// aparecer só em "Recontagens". Visível pra todos os papéis (antes ficava
+// escondida inteira do operador) — mas as ações (aprovar/solicitar
+// recontagem) continuam só pra líder/admin, operador vê em modo leitura.
+function DivergentItemsPanel({counts, role, goto, onApprove, onRequestRecount}){
+  const aguardandoAnalise = counts.filter(c=>c.statusAprovacao==='aguardando_analise_lider');
+  const canApprove = role==='lider' || role==='admin';
+
+  // `onApprove`/`onRequestRecount` aguardam confirmação do Supabase — `busyId`
+  // desabilita só o card em ação (não a tela inteira), `erros` guarda uma
+  // mensagem por id de contagem se a chamada falhar.
+  const [busyId, setBusyId] = useState(null);
+  const [erros, setErros] = useState({});
+
+  async function handleApprove(countId){
+    setBusyId(countId);
+    setErros(prev=>({...prev, [countId]: null}));
+    const res = await onApprove(countId);
+    setBusyId(null);
+    if(!res || !res.ok) setErros(prev=>({...prev, [countId]: (res && res.erro) || 'Não foi possível aprovar — tente novamente.'}));
+  }
+
+  async function handleRequestRecount(countId){
+    setBusyId(countId);
+    setErros(prev=>({...prev, [countId]: null}));
+    const res = await onRequestRecount(countId);
+    setBusyId(null);
+    if(!res || !res.ok) setErros(prev=>({...prev, [countId]: (res && res.erro) || 'Não foi possível solicitar a recontagem — tente novamente.'}));
+  }
+
+  return (
+    <div>
+      <div className="section-title" style={{marginTop:0}}>
         Aguardando Análise do Líder
         {aguardandoAnalise.length>0 && <span className="badge" style={{position:'static',marginLeft:8}}>{aguardandoAnalise.length}</span>}
       </div>
@@ -4510,13 +4553,144 @@ function RecountsPanel({counts, role, currentUser, goto, onApprove, onRequestRec
           </div>
         );
       })}
-      </>
-      )}
     </div>
   );
 }
 
+/* ---------------- CONTAGENS CONCLUÍDAS (painel de auditoria) ---------------- */
 
+// "Contagens Concluídas" deixou de ser um atalho pra MyCounts e virou um
+// painel de auditoria de verdade — agrupa `counts` em CADEIAS (a sequência
+// de rodadas do mesmo item, ligadas por contagemAnteriorId/numeroContagem),
+// uma linha por ciclo completo (não uma linha por rodada individual). Uma
+// cadeia é "concluída" quando a rodada mais recente (a ponta, sem nenhuma
+// outra contagem apontando pra ela via contagemAnteriorId) sai dos status
+// abertos (OPEN_STATUSES) — chegou a um veredito final: aprovada
+// automaticamente na 1ª contagem, aprovada pelo líder, ou confirmada na
+// recontagem. 100% derivado de campos que a contagem já grava — nenhum dado
+// novo precisou ser inventado nem persistido.
+function buildConcludedChains(counts){
+  const hasFollowUp = new Set();
+  counts.forEach(c=>{ if(c.contagemAnteriorId) hasFollowUp.add(c.contagemAnteriorId); });
+  const byId = new Map(counts.map(c=>[c.id, c]));
+  const pontas = counts.filter(c => !hasFollowUp.has(c.id) && !OPEN_STATUSES.includes(c.statusAprovacao));
+  return pontas.map(tip=>{
+    const rodadas = [];
+    let atual = tip;
+    while(atual){
+      rodadas.unshift(atual);
+      atual = atual.contagemAnteriorId ? byId.get(atual.contagemAnteriorId) : null;
+    }
+    // "Houve ajuste de estoque" = a rodada final tinha uma diferença real
+    // aprovada (não zero) — é o sinal mais honesto disponível hoje de que o
+    // saldo do Protheus precisa ser corrigido; o app não captura ainda se o
+    // ajuste foi de fato lançado lá (mesma limitação já documentada pro
+    // status "Sem Ajuste" no export do relatório).
+    const houveAjuste = tip.diferenca!=null && tip.diferenca!==0;
+    return { chaveId: tip.id, tip, rodadas, houveAjuste };
+  }).sort((a,b) => (b.tip.data+(b.tip.hora||'')).localeCompare(a.tip.data+(a.tip.hora||'')));
+}
+
+function ConcludedCountsPanel({counts}){
+  const [busca, setBusca] = useState('');
+  const [selecionado, setSelecionado] = useState(null); // chaveId da cadeia aberta em detalhe
+
+  const cadeias = useMemo(()=>buildConcludedChains(counts), [counts]);
+
+  const buscaNorm = busca.trim().toLowerCase();
+  const cadeiasFiltradas = buscaNorm
+    ? cadeias.filter(cd => cd.tip.productCode.toLowerCase().includes(buscaNorm) || (cd.tip.descricao||'').toLowerCase().includes(buscaNorm))
+    : cadeias;
+
+  const aberta = selecionado ? cadeias.find(cd=>cd.chaveId===selecionado) : null;
+
+  if(aberta){
+    const tip = aberta.tip;
+    const statusInfo = STATUS_INFO[tip.statusAprovacao] || {};
+    return (
+      <div>
+        <button className="back-btn" style={{marginBottom:14}} onClick={()=>setSelecionado(null)}><Ic>←</Ic> Voltar para a lista</button>
+
+        <div className="panel" style={{marginBottom:16}}>
+          <div className="item-code" style={{fontSize:16}}>{tip.productCode}</div>
+          <div className="item-desc" style={{fontSize:15,marginBottom:12}}>{tip.descricao}</div>
+          <div style={{marginBottom:12}}>
+            <StatusTag status={statusInfo.level||'ok'} text={statusInfo.text||'—'} />
+          </div>
+          <div className="result-grid">
+            <div className="rg"><div className="k">Quantidade Final Validada</div><div className="v">{tip.qtdContada}</div></div>
+            <div className="rg"><div className="k">Total de Contagens</div><div className="v">{tip.numeroContagem}</div></div>
+            <div className="rg"><div className="k">Recontagens Realizadas</div><div className="v">{tip.numeroContagem-1}</div></div>
+            <div className="rg"><div className="k">Ajuste de Estoque</div><div className="v">{tip.diferenca==null ? '— (sem saldo local)' : (aberta.houveAjuste ? 'Necessário' : 'Não necessário')}</div></div>
+            {aberta.houveAjuste && (
+              <div className="rg"><div className="k">Valor do Ajuste</div><div className="v">R$ {Number(tip.valorDivergente||0).toFixed(2)}</div></div>
+            )}
+          </div>
+        </div>
+
+        <div className="section-title" style={{marginTop:0}}>Histórico de Contagens ({aberta.rodadas.length})</div>
+        {aberta.rodadas.map((r,idx)=>{
+          const info = STATUS_INFO[r.statusAprovacao] || {};
+          return (
+            <div key={r.id} className="item-card">
+              <div className="item-card-head">
+                <div>
+                  <div className="item-code">{idx+1}ª contagem</div>
+                  <div className="item-desc" style={{fontSize:13}}>{r.usuario} · {r.data} {r.hora||''}</div>
+                </div>
+                <StatusTag status={info.level||'ok'} text={info.text||(r.classificacao?r.classificacao.label:'—')} />
+              </div>
+              <div style={{padding:'14px 18px',display:'flex',flexWrap:'wrap',gap:8,fontSize:12,color:'var(--ink-dim)',fontFamily:'var(--font-mono)'}}>
+                <span>Qtd. contada: {r.qtdContada}</span>·<span>Diferença {r.diferenca==null ? '— (sem saldo local)' : (r.diferenca>0?'+':'')+r.diferenca+(r.percentual==null?'':' ('+r.percentual.toFixed(1)+'%)')}</span>
+              </div>
+              {r.motivo && <div style={{padding:'0 18px 14px',fontSize:12.5}}>Motivo: <strong>{r.motivo}</strong></div>}
+              {r.aprovadoPor && (
+                <div style={{padding:'0 18px 14px',fontSize:12,color:'var(--ink-dim)'}}>Aprovado por {r.aprovadoPor} em {r.aprovadoEm}</div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="field">
+        <label>Buscar item</label>
+        <input type="text" value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Código ou descrição do material" />
+      </div>
+
+      <div className="section-title" style={{marginTop:0}}>
+        Contagens Concluídas
+        {cadeias.length>0 && <span className="badge" style={{position:'static',marginLeft:8}}>{cadeias.length}</span>}
+      </div>
+      {cadeiasFiltradas.length===0 ? (
+        <div className="empty-state" style={{padding:20}}>
+          {cadeias.length===0 ? 'Nenhuma contagem concluída ainda.' : 'Nenhum item encontrado para essa busca.'}
+        </div>
+      ) : cadeiasFiltradas.map(cd=>{
+        const tip = cd.tip;
+        const info = STATUS_INFO[tip.statusAprovacao] || {};
+        return (
+          <div key={cd.chaveId} className="item-card" style={{cursor:'pointer'}} onClick={()=>setSelecionado(cd.chaveId)}>
+            <div className="item-card-head">
+              <div>
+                <div className="item-code">{tip.productCode}</div>
+                <div className="item-desc" style={{fontSize:15}}>{tip.descricao}</div>
+              </div>
+              <StatusTag status={info.level||'ok'} text={info.text||'—'} />
+            </div>
+            <div style={{padding:'14px 18px',display:'flex',flexWrap:'wrap',gap:8,fontSize:12,color:'var(--ink-dim)',fontFamily:'var(--font-mono)'}}>
+              <span>Qtd. final: {tip.qtdContada}</span>·<span>{tip.numeroContagem} {tip.numeroContagem===1?'contagem':'contagens'}</span>·<span>{cd.houveAjuste ? 'Ajuste necessário' : (tip.diferenca==null?'Sem saldo local':'Sem ajuste necessário')}</span>·<span>{tip.data} {tip.hora||''}</span>
+            </div>
+            <div style={{padding:'0 18px 14px',fontSize:12,color:'var(--accent2)'}}>Ver histórico completo →</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 /* ---------------- RELATÓRIOS (Excel + e-mail) ---------------- */
 

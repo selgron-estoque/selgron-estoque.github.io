@@ -1968,6 +1968,134 @@ marcado "Recontar", indo pra fila "Aguardando Segunda Contagem".
   antes da correção isso derrubava a tela ao entrar em "Recontagens"; depois, a tela
   carrega normalmente e mostra "Diferença -5" sem percentual.
 
+## Busca em Recontagens, "Itens Divergentes" vira tela própria, "Contagens Concluídas" vira painel de auditoria
+
+Três pedidos do cliente na sequência, todos em cima do fluxo de recontagem/divergência:
+(1) campo de busca por código/descrição em "Recontagens", pra achar um item específico sem
+rolar a lista inteira; (2) "Itens Divergentes" deixar de mostrar tudo que já teve
+divergência e passar a mostrar só o que ainda NÃO entrou em processo de recontagem — some
+da lista assim que o item vira "Recontagem"; (3) "Contagens Concluídas" deixar de ser um
+atalho pra "Minhas Contagens" e virar um painel de auditoria de verdade, com o ciclo de
+vida completo de cada item (todas as rodadas, quem contou, quando, diferença de cada
+etapa, quantidade final, se houve ajuste).
+
+### 1. Busca em `RecountsPanel`
+
+Campo de texto no topo (`busca`, mesmo padrão simples já usado em `UserManagementPanel` —
+case-insensitive, sem normalização de acento), filtra a fila "Aguardando Segunda
+Contagem" por `productCode`/`descricao` em tempo real (é só um `.filter` sobre o array já
+carregado, sem chamada de rede). Continua sem precisar de nenhuma ação extra pra abrir a
+recontagem — a busca só estreita a lista, o botão "Recontar este item" de cada card
+continua fazendo `goto('recount', c)` como sempre.
+
+### 2. `DivergentItemsPanel` — "Itens Divergentes" virou tela própria
+
+A seção "Aguardando Análise do Líder" (itens com `statusAprovacao==='aguardando_analise_
+lider'` — divergência real que ainda não foi decidida pelo líder) morava DENTRO de
+`RecountsPanel`. Extraída pra um componente próprio, view `'divergentes'`, seguindo o
+mesmo padrão já usado antes pra "Endereços Pendentes de Cadastro" (extrair o bloco tal
+como está, criar a view, adicionar aos 3 pontos de entrada — Sidebar nav, Sidebar
+atalhos, KPI da Home).
+
+- **Regra pedida bate exatamente com o filtro que já existia**: "só mostrar o que ainda
+  não entrou em recontagem" é literalmente `statusAprovacao==='aguardando_analise_lider'`
+  — assim que o líder clica "Solicitar nova contagem" (ou a regra automática de
+  divergência leve já cria o item direto em `aguardando_segunda`), o item sai desse
+  status e desaparece da tela sozinho, sem precisar de nenhuma lógica nova.
+- **Antes era invisível pro operador por completo** (`{!isOperador && (...)}` escondia a
+  seção inteira); agora fica visível pra todos os papéis, só que em modo leitura — as
+  ações "Solicitar nova contagem"/"Recontar"/"Aprovar divergência" continuam atrás de
+  `canApprove` (líder/admin), operador vê a mesma mensagem que já existia
+  ("Aguardando decisão do líder de estoque.") em vez de não ver a tela alguma. Decisão
+  consciente: o KPI "Itens Divergentes" na Home é visível a todos os papéis (não é um
+  card só de líder/admin), então a tela que ele abre também precisa ser.
+- `RecountsPanel` ficou só com "Aguardando Segunda Contagem" — perdeu as props
+  `role`/`currentUser`/`onApprove`/`onRequestRecount` (não usa mais nenhuma delas, a
+  fila de recontagem em si nunca teve ação restrita por papel).
+
+### 3. `ConcludedCountsPanel` — "Contagens Concluídas" virou painel de auditoria
+
+Antes, o KPI "Contagens Concluídas Hoje" só levava pra `MyCounts` (a mesma tela de
+"Minhas Contagens", uma lista plana de contagens individuais). Virou uma tela própria
+(view `'concluidas'`), com uma ideia central: **agrupar por CADEIA, não por contagem
+individual**. Uma cadeia é a sequência de rodadas do mesmo item ligadas por
+`contagemAnteriorId`/`numeroContagem` (1ª contagem → recontagem → recontagem…) — 1 linha
+na lista principal representa o ciclo INTEIRO de um item, não cada rodada separada.
+
+- **`buildConcludedChains(counts)`** (helper puro, perto de `getOpenCountForProduct`,
+  mesmo raciocínio de "ponta da cadeia" que essa função já usa) — acha toda contagem que
+  é PONTA (nenhuma outra aponta pra ela via `contagemAnteriorId`) e que já saiu dos
+  status abertos (`!OPEN_STATUSES.includes(...)`, ou seja chegou a um veredito:
+  `aprovado_auto`, `aprovado_segunda` ou `aprovado_lider`). A partir da ponta, anda pra
+  trás por `contagemAnteriorId` até reconstruir a cadeia completa (mais antiga →  mais
+  recente). **100% derivado de campos que a contagem já grava** — nenhuma coluna nova no
+  Supabase, nenhum dado novo capturado no fluxo de contagem.
+- **"Houve ajuste de estoque"** = a rodada final tem `diferenca!=null && diferenca!==0`
+  — é o sinal mais honesto disponível hoje (mesmo critério já usado em `acumuladoAte`/
+  `divergentes` no Dashboard). O app não sabe dizer se o ajuste foi de fato lançado no
+  Protheus depois — mesma limitação já documentada pro status "Sem Ajuste" no export do
+  relatório (`statusLabelPadrao`). Valor do ajuste = `valorDivergente` da rodada final
+  (já vem calculado e salvo em cada contagem, sem precisar de conta nova).
+- **Lista principal** (cards, mesmo padrão visual do resto do app — não tabela, pra
+  continuar funcionando em tablet): código, descrição, `StatusTag` com o status final,
+  quantidade final, "N contagens", indicação de ajuste, data. Card inteiro é clicável
+  ("Ver histórico completo →"), abre o detalhe.
+- **Detalhe** (clique no card, estado local `selecionado` — SEM view/rota nova, é um
+  drill-down dentro do mesmo componente): quantidade final validada, total de
+  contagens, quantas foram recontagem (`numeroContagem-1`), se houve ajuste + valor,
+  seguido da lista de TODAS as rodadas (usuário, data/hora, quantidade, diferença,
+  status daquela rodada especificamente — reaproveita `STATUS_INFO`, o mesmo vocabulário
+  de status que o resto do app já usa). Botão "← Voltar para a lista" (texto
+  deliberadamente diferente do "← Voltar" do `SubBar`, que sempre vai pra Home — os dois
+  botões apareceriam juntos na mesma tela e "Voltar" sozinho seria ambíguo sobre qual
+  dos dois volta pra onde).
+- **Busca por código/descrição** também nessa tela (mesmo padrão do item 1), filtra a
+  lista de cadeias.
+- **Fora de escopo, decisão consciente**: sem paginação (mesmo critério já aceito em
+  `MyCounts`, que também é uma lista cheia sem paginar — se crescer demais, mesmo caminho
+  que `UserManagementPanel` já percorreu pode ser aplicado aqui depois). "Classe"/"SA"
+  (nº de solicitação de ajuste) continuam de fora, mesma limitação já documentada no
+  export do relatório — o app não captura esses dois campos em nenhum lugar do fluxo de
+  contagem hoje.
+
+### Home — KPIs atualizados
+
+- **"Itens Divergentes"**: valor mudou de "total cumulativo de divergências até hoje"
+  (`hoje.divergentes`, olhando pra TODAS as contagens já feitas) pra
+  "quantas estão pendentes agora" (`counts.filter(c=>statusAprovacao==='aguardando_
+  analise_lider').length`) — o mesmo número que a tela nova mostra. Como isso é estado
+  atual (não cumulativo), a tendência virou nota contextual ("Requer atenção"/"Nenhuma
+  pendência"), mesmo padrão já usado em "Recontagens Pendentes" — não dá pra calcular
+  uma variação percentual real sem um histórico de snapshot que o app não guarda (mesmo
+  critério já documentado em "KPIs — só dado real, nada fabricado").
+- **"Contagens Concluídas Hoje"**: só trocou o destino do clique (`goto('concluidas')`
+  em vez de `goto('myCounts')`) — o número em si continua sendo "quantas contagens
+  foram registradas hoje" (não mudou pra "quantas cadeias fecharam hoje", pra não misturar
+  dois conceitos diferentes no mesmo KPI).
+
+### Sidebar
+
+Dois itens novos (`divergentes`/`ic:'alertTriangle'`, `concluidas`/`ic:'checkCircle'` —
+mesmos ícones já usados nos KPIs correspondentes) entre "Recontagens" e "Minhas
+Contagens". "Itens Divergentes" também entrou nos atalhos rápidos (mesmo grupo de
+"Recontagens pendentes"); "Contagens Concluídas" ficou de fora dos atalhos — é mais uma
+tela de referência/auditoria do que uma ação rápida do dia a dia, mesmo critério que já
+deixa "Indicadores"/"Relatórios"/"Configurações" fora dos atalhos hoje.
+
+- Testado via Playwright (sandbox sem rede): busca em Recontagens filtra por código e por
+  descrição, mostra empty-state específico quando não acha nada; "Itens Divergentes"
+  mostra o item pendente pros 3 papéis mas só líder/admin veem os botões de ação
+  (operador vê "Aguardando decisão do líder de estoque"); item sai de "Itens Divergentes"
+  e passa a aparecer em "Recontagens" assim que "Solicitar nova contagem" é confirmado;
+  "Contagens Concluídas" mostra só cadeias resolvidas (não mostra itens ainda pendentes),
+  agrupa corretamente uma cadeia de 2 rodadas numa linha só, abre o detalhe com as duas
+  rodadas (usuários, diferenças, status de cada etapa), calcula "Recontagens Realizadas"
+  e valor do ajuste corretamente, e "Voltar para a lista" funciona sem se confundir com o
+  "Voltar" do `SubBar`. Os dois KPIs da Home levam pra tela nova certa. Rodei de novo toda
+  a suíte de regressão já existente no scratchpad — precisou só atualizar alguns testes
+  antigos que navegavam pra "Recontagens" esperando encontrar o que agora mora em "Itens
+  Divergentes" (mudança esperada da extração, não regressão).
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase
