@@ -4028,6 +4028,135 @@ function ReportsScreen({counts, inventories, currentUser, sendHistory, onLogSend
   );
 }
 
+/* ---------------- GRÁFICOS SEMANAIS (linha + colunas), usados no Dashboard ---------------- */
+
+// Agrupa por semana ISO (segunda a domingo), a partir do campo `data` de
+// cada contagem — mesmo tipo de agregação já usada no resto do Dashboard
+// (calculado em cima de `counts`, nada fabricado). `key` é a segunda-feira
+// da semana (YYYY-MM-DD, ordenável direto).
+function getWeekInfo(dataStr){
+  const d = new Date(dataStr + 'T00:00:00');
+  const dow = (d.getDay() + 6) % 7; // 0=segunda ... 6=domingo
+  const monday = new Date(d);
+  monday.setDate(d.getDate() - dow);
+  const key = monday.toISOString().slice(0, 10);
+  // Número da semana ISO: baseado na quinta-feira da mesma semana (regra
+  // ISO 8601 padrão — evita semana 0/53 ambígua na virada do ano).
+  const thursday = new Date(monday);
+  thursday.setDate(monday.getDate() + 3);
+  const yearStart = new Date(Date.UTC(thursday.getFullYear(), 0, 1));
+  const weekNumber = Math.ceil((((thursday - yearStart) / 86400000) + 1) / 7);
+  return {
+    key,
+    label: 'Sem ' + weekNumber,
+    sublabel: monday.toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit'}),
+  };
+}
+
+// Últimas `maxWeeks` semanas que tiveram pelo menos 1 contagem — evita eixo
+// cheio de semanas vazias quando o inventário cíclico começou há pouco
+// tempo. Acuracidade por semana usa a mesma fórmula do KPI geral
+// (`acuracidade` em Dashboard), só que particionada por semana.
+function computeWeeklyStats(counts, maxWeeks){
+  const buckets = {};
+  counts.forEach(c=>{
+    if(!c.data) return;
+    const {key, label, sublabel} = getWeekInfo(c.data);
+    if(!buckets[key]) buckets[key] = {key, label, sublabel, total:0, divergentes:0};
+    buckets[key].total += 1;
+    if(c.diferenca !== 0) buckets[key].divergentes += 1;
+  });
+  return Object.values(buckets)
+    .sort((a,b)=>a.key.localeCompare(b.key))
+    .slice(-maxWeeks)
+    .map(w=>({...w, acuracidade: w.total>0 ? ((w.total-w.divergentes)/w.total)*100 : 0}));
+}
+
+// Gera ticks "redondos" (passo de 1/2/5 × potência de 10) pro eixo Y —
+// evita um eixo tipo "0, 13, 25, 38, 50" e mostra "0, 15, 30, 45, 60" (ou
+// similar) em vez disso. O último tick vira o teto do eixo.
+function niceAxisTicks(maxVal, targetTicks){
+  if(maxVal<=0) return [0, 10];
+  const rawStep = maxVal / targetTicks;
+  const magnitude = Math.pow(10, Math.floor(Math.log10(rawStep)));
+  const residual = rawStep / magnitude;
+  const niceResidual = residual<=1 ? 1 : residual<=2 ? 2 : residual<=5 ? 5 : 10;
+  const step = niceResidual * magnitude;
+  const ticks = [0];
+  while(ticks[ticks.length-1] < maxVal - 1e-9) ticks.push(ticks[ticks.length-1] + step);
+  return ticks;
+}
+
+const WEEKLY_CHART_COLOR = '#0D9488'; // mesmo teal já usado em ARMAZEM_COLORS (Dashboard)
+
+function WeeklyLineChart({weeks}){
+  const W = 760, H = 220, padL = 34, padR = 16, padT = 26, padB = 40;
+  const chartW = W - padL - padR, chartH = H - padT - padB;
+  const n = weeks.length;
+  const x = i => padL + (n>1 ? (i/(n-1))*chartW : chartW/2);
+  const y = v => padT + chartH - (v/100)*chartH;
+  const avg = weeks.reduce((s,w)=>s+w.acuracidade,0) / n;
+  const points = weeks.map((w,i)=>`${x(i)},${y(w.acuracidade)}`).join(' ');
+  const areaPoints = `${x(0)},${y(0)} ${points} ${x(n-1)},${y(0)}`;
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'auto',display:'block'}} role="img" aria-label="Gráfico de acuracidade semanal">
+      {[0,25,50,75,100].map(t=>(
+        <g key={t}>
+          <line x1={padL} x2={W-padR} y1={y(t)} y2={y(t)} stroke="var(--line)" strokeWidth={1} strokeDasharray="3,3" />
+          <text x={padL-8} y={y(t)+3.5} textAnchor="end" fontSize={10} fill="var(--ink-dim)" fontFamily="var(--font-mono)">{t}%</text>
+        </g>
+      ))}
+      <line x1={padL} x2={W-padR} y1={y(avg)} y2={y(avg)} stroke={WEEKLY_CHART_COLOR} strokeWidth={1.5} strokeDasharray="5,4" opacity={0.55} />
+      <polygon points={areaPoints} fill={WEEKLY_CHART_COLOR} opacity={0.12} />
+      <polyline points={points} fill="none" stroke={WEEKLY_CHART_COLOR} strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
+      {weeks.map((w,i)=>(
+        <g key={w.key}>
+          <circle cx={x(i)} cy={y(w.acuracidade)} r={4} fill={WEEKLY_CHART_COLOR} stroke="var(--panel)" strokeWidth={2}>
+            <title>{w.label} ({w.sublabel}): {w.acuracidade.toFixed(1)}% · {w.total} contagem(ns)</title>
+          </circle>
+          <text x={x(i)} y={y(w.acuracidade)-11} textAnchor="middle" fontSize={11} fontWeight={700} fill="var(--ink)" fontFamily="var(--font-mono)">{Math.round(w.acuracidade)}%</text>
+          <text x={x(i)} y={H-24} textAnchor="middle" fontSize={10} fill="var(--ink-dim)" fontFamily="var(--font-mono)">{w.label}</text>
+          <text x={x(i)} y={H-11} textAnchor="middle" fontSize={10} fill="var(--ink-dim)" fontFamily="var(--font-mono)">{w.sublabel}</text>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+function WeeklyCountChart({weeks}){
+  const W = 760, H = 220, padL = 34, padR = 16, padT = 26, padB = 40;
+  const chartW = W - padL - padR, chartH = H - padT - padB;
+  const n = weeks.length;
+  const ticks = niceAxisTicks(Math.max(...weeks.map(w=>w.total), 1), 4);
+  const maxVal = ticks[ticks.length-1];
+  const avg = weeks.reduce((s,w)=>s+w.total,0) / n;
+  const slot = chartW / n;
+  const barW = Math.min(40, slot * 0.5);
+  const x = i => padL + i*slot + slot/2;
+  const y = v => padT + chartH - (v/maxVal)*chartH;
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'auto',display:'block'}} role="img" aria-label="Gráfico de contagens por semana">
+      {ticks.map(t=>(
+        <g key={t}>
+          <line x1={padL} x2={W-padR} y1={y(t)} y2={y(t)} stroke="var(--line)" strokeWidth={1} strokeDasharray="3,3" />
+          <text x={padL-8} y={y(t)+3.5} textAnchor="end" fontSize={10} fill="var(--ink-dim)" fontFamily="var(--font-mono)">{Math.round(t)}</text>
+        </g>
+      ))}
+      <line x1={padL} x2={W-padR} y1={y(avg)} y2={y(avg)} stroke={WEEKLY_CHART_COLOR} strokeWidth={1.5} strokeDasharray="5,4" opacity={0.55} />
+      {weeks.map((w,i)=>(
+        <g key={w.key}>
+          <rect x={x(i)-barW/2} y={y(w.total)} width={barW} height={Math.max(0, y(0)-y(w.total))} rx={4} fill={WEEKLY_CHART_COLOR}>
+            <title>{w.label} ({w.sublabel}): {w.total} contagem(ns)</title>
+          </rect>
+          <text x={x(i)} y={y(w.total)-8} textAnchor="middle" fontSize={11} fontWeight={700} fill="var(--ink)" fontFamily="var(--font-mono)">{w.total}</text>
+          <text x={x(i)} y={H-24} textAnchor="middle" fontSize={10} fill="var(--ink-dim)" fontFamily="var(--font-mono)">{w.label}</text>
+          <text x={x(i)} y={H-11} textAnchor="middle" fontSize={10} fill="var(--ink-dim)" fontFamily="var(--font-mono)">{w.sublabel}</text>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
 function Dashboard({counts, inventories}){
   const planejados = inventories.reduce((s,i)=>s+i.qtdItens,0);
   const contados = counts.length;
@@ -4074,6 +4203,7 @@ function Dashboard({counts, inventories}){
   const maxMotivo = Math.max(1, ...Object.values(porMotivo));
 
   const topDivergentes = [...counts].sort((a,b)=>Math.abs(b.diferenca)-Math.abs(a.diferenca)).slice(0,10);
+  const weeklyStats = computeWeeklyStats(counts, 8);
 
   return (
     <div>
@@ -4160,6 +4290,20 @@ function Dashboard({counts, inventories}){
         <div className="kpi"><div className="kv" style={{color:'var(--danger)'}}>R$ {valorDivergente.toFixed(0)}</div><div className="kl">Valor Divergente</div></div>
         <div className="kpi"><div className="kv">{inventories.length}</div><div className="kl">Inventários Ativos</div></div>
       </div>
+
+      {weeklyStats.length>0 && (
+        <div>
+          <div className="section-title">Tendência Semanal</div>
+          <div className="panel" style={{marginBottom:14}}>
+            <div style={{fontSize:13,fontWeight:700,marginBottom:12}}>Acuracidade Semanal (%)</div>
+            <WeeklyLineChart weeks={weeklyStats} />
+          </div>
+          <div className="panel">
+            <div style={{fontSize:13,fontWeight:700,marginBottom:12}}>Contagens na Semana</div>
+            <WeeklyCountChart weeks={weeklyStats} />
+          </div>
+        </div>
+      )}
 
       {Object.keys(porOperador).length>0 && (
         <div>
