@@ -1056,7 +1056,32 @@ function parseHistoricoContagensRows(matrix){
       documento: idx.doc>=0 && row[idx.doc]!=null && row[idx.doc]!=='' ? String(row[idx.doc]) : null,
     });
   }
-  return { linhas, resumo: { totalLinhas, validas: linhas.length, semCodigo, semData } };
+  // A planilha real do cliente tem linhas com a MESMA chave (produto_codigo,
+  // data, endereco) repetida — vira erro no Postgres ("ON CONFLICT DO UPDATE
+  // command cannot affect row a second time") se duas linhas com a mesma
+  // chave caem no mesmo lote de upsert. Dedupe só quando os TRÊS campos da
+  // chave são não-nulos e batem — mesma semântica da unique constraint do
+  // Postgres, que trata NULL como sempre distinto (mesmo de outro NULL), então
+  // uma linha com data ou endereço vazio NUNCA conflita de verdade no banco e
+  // não pode ser descartada aqui (perderia histórico real das ~460 linhas
+  // "sem data"). Mantém a ÚLTIMA ocorrência entre as que colidem (arquivo
+  // master só cresce, a linha mais abaixo tende a ser a mais recente/
+  // corrigida) — mesma chave da "linha 1500" do bug reportado.
+  const porChave = new Map();
+  const linhasDedup = [];
+  let duplicadas = 0;
+  linhas.forEach(l=>{
+    if(l.data==null || l.endereco==null){ linhasDedup.push(l); return; }
+    const chave = l.produto_codigo+'|'+l.data+'|'+l.endereco;
+    if(porChave.has(chave)){
+      duplicadas++;
+      linhasDedup[porChave.get(chave)] = l;
+    }else{
+      porChave.set(chave, linhasDedup.length);
+      linhasDedup.push(l);
+    }
+  });
+  return { linhas: linhasDedup, resumo: { totalLinhas, validas: linhasDedup.length, semCodigo, semData, duplicadas } };
 }
 
 // Upload em lote pra `contagens_historico`, via UPSERT (não substitui tudo
@@ -5347,6 +5372,7 @@ function HistoricoImportPanel(){
             {parseResult.resumo.totalLinhas} linhas na planilha · {parseResult.resumo.validas} válidas
             {parseResult.resumo.semCodigo>0 && <> · {parseResult.resumo.semCodigo} sem código</>}
             {parseResult.resumo.semData>0 && <> · {parseResult.resumo.semData} sem data</>}
+            {parseResult.resumo.duplicadas>0 && <> · {parseResult.resumo.duplicadas} duplicadas (mesmo código+data+endereço, mantida a mais recente)</>}
           </div>
           <div style={{fontSize:13,color:'var(--ink-dim)',marginTop:4}}>
             <Ic>🔁</Ic> {buildRecontarSeedsFromHistorico(parseResult.linhas).length} itens marcados "Recontar" vão entrar na fila de

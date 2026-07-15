@@ -1843,6 +1843,54 @@ item — trocado pelo atalho "Criar novo inventário" da Sidebar, que sempre exi
 Não testei contra o Supabase de verdade — falta o cliente rodar o SQL novo (`alter
 table`/policies, seção no `backend/schema.sql`) no projeto real.
 
+## Bug real na importação do histórico: linhas duplicadas na mesma planilha quebravam o upsert
+
+Ao rodar a importação de verdade (`Base_Analise_Contagens_2026.xlsx`, 3.659 linhas) contra
+o Supabase real do cliente pela primeira vez, o upload falhou no 4º lote (linha 1500) com
+`ON CONFLICT DO UPDATE command cannot affect row a second time` — erro nativo do Postgres
+quando um único `INSERT ... ON CONFLICT DO UPDATE` recebe, no mesmo lote, duas linhas que
+colidem na MESMA chave de conflito (`produto_codigo, data, endereco`, a unique constraint
+de `contagens_historico`). O Postgres não consegue aplicar um upsert duas vezes na mesma
+linha dentro da mesma instrução — precisa que cada chave apareça no máximo uma vez por
+lote de `upsert()`.
+
+- **Causa**: a planilha master do cliente tem, de fato, linhas com o mesmo
+  produto+data+endereço repetidas (provavelmente um lançamento duplicado ou uma correção
+  que foi adicionada como linha nova em vez de substituir a antiga) — a suposição
+  documentada antes ("não existem duas contagens do MESMO item, MESMO endereço, MESMO
+  dia") não se sustentou 100% no arquivo real.
+- **Correção em `parseHistoricoContagensRows`**: depois de montar `linhas`, um passo novo
+  deduplica por chave `produto_codigo+data+endereco`, mantendo a ÚLTIMA ocorrência (arquivo
+  master só cresce, a linha mais abaixo tende a ser a versão mais recente/corrigida) —
+  antes de qualquer lote ser montado, então nenhum lote pode mais conter a mesma chave
+  duas vezes.
+- **Cuidado importante pra não regredir a limitação já documentada das ~460 linhas "sem
+  data"**: o Postgres trata `NULL` como sempre distinto de qualquer outro valor, mesmo de
+  outro `NULL` — então duas linhas com `data` ou `endereco` vazios NUNCA colidem de
+  verdade na unique constraint, não importa quantas vezes o mesmo `produto_codigo` se
+  repita sem data. A primeira versão deste dedupe usava uma chave que tratava `null` como
+  `''`, o que teria colapsado incorretamente linhas distintas sem data do mesmo produto
+  (perda real de histórico) — corrigido pra só deduplicar quando os TRÊS campos da chave
+  são não-nulos e batem, espelhando exatamente a semântica do Postgres. Linhas com
+  data/endereço vazios continuam passando direto, sem dedupe (mesma limitação já aceita
+  antes, documentada na seção "Padrão de planilha do cliente").
+- **Resumo pré-confirmação ganhou mais um contador**: `resumo.duplicadas` (visível no
+  `HistoricoImportPanel` como "N duplicadas (mesmo código+data+endereço, mantida a mais
+  recente)"), mesmo padrão de transparência já usado pros outros contadores
+  (`semCodigo`/`semData`).
+- Testado com uma planilha sintética reproduzindo exatamente o cenário (duas linhas com
+  mesma chave completa — dedupe corretamente pra 1, mantendo o valor da última; duas
+  linhas do mesmo produto com data/endereço nulos — as duas mantidas, sem dedupe
+  incorreto) via script Node isolado (função copiada, sem depender do browser). Depois,
+  reproduzido via Playwright contra o `Base_Analise_Contagens_2026.xlsx` REAL do cliente
+  (o mesmo arquivo que gerou o erro original) com o upsert do Supabase mockado: a
+  importação completa passou a suceder — 3.658 linhas gravadas (3.659 válidas menos
+  exatamente 1 duplicata real colapsada), 8 lotes, nenhum lote com chave não-nula
+  repetida, sem o erro "ON CONFLICT DO UPDATE command cannot affect row a second time",
+  e os 116 itens "Recontar" continuaram entrando na fila normalmente (mesmo número já
+  documentado antes). Falta o cliente re-tentar o upload real no Supabase de verdade pra
+  confirmar ao vivo.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase
