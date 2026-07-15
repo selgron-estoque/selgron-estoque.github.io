@@ -194,6 +194,8 @@
   /* DASHBOARD */
   .kpi-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px;}
   @media (min-width:640px){.kpi-grid{grid-template-columns:repeat(4,1fr);}}
+  .weekly-charts-grid{display:flex;flex-direction:column;gap:14px;margin-bottom:14px;}
+  @media (min-width:900px){.weekly-charts-grid{display:grid;grid-template-columns:1fr 1fr;}}
   .kpi{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;}
   .kpi .kv{font-family:var(--font-mono);font-size:26px;font-weight:700;}
   .kpi .kl{font-size:11px;color:var(--ink-dim);margin-top:4px;text-transform:uppercase;letter-spacing:0.4px;}
@@ -4090,7 +4092,7 @@ function niceAxisTicks(maxVal, targetTicks){
 const WEEKLY_CHART_COLOR = '#0D9488'; // mesmo teal já usado em ARMAZEM_COLORS (Dashboard)
 
 function WeeklyLineChart({weeks}){
-  const W = 760, H = 220, padL = 34, padR = 16, padT = 26, padB = 40;
+  const W = 760, H = 220, padL = 34, padR = 30, padT = 26, padB = 40;
   const chartW = W - padL - padR, chartH = H - padT - padB;
   const n = weeks.length;
   const x = i => padL + (n>1 ? (i/(n-1))*chartW : chartW/2);
@@ -4124,7 +4126,7 @@ function WeeklyLineChart({weeks}){
 }
 
 function WeeklyCountChart({weeks}){
-  const W = 760, H = 220, padL = 34, padR = 16, padT = 26, padB = 40;
+  const W = 760, H = 220, padL = 34, padR = 30, padT = 26, padB = 40;
   const chartW = W - padL - padR, chartH = H - padT - padB;
   const n = weeks.length;
   const ticks = niceAxisTicks(Math.max(...weeks.map(w=>w.total), 1), 4);
@@ -4294,13 +4296,15 @@ function Dashboard({counts, inventories}){
       {weeklyStats.length>0 && (
         <div>
           <div className="section-title">Tendência Semanal</div>
-          <div className="panel" style={{marginBottom:14}}>
-            <div style={{fontSize:13,fontWeight:700,marginBottom:12}}>Acuracidade Semanal (%)</div>
-            <WeeklyLineChart weeks={weeklyStats} />
-          </div>
-          <div className="panel">
-            <div style={{fontSize:13,fontWeight:700,marginBottom:12}}>Contagens na Semana</div>
-            <WeeklyCountChart weeks={weeklyStats} />
+          <div className="weekly-charts-grid">
+            <div className="panel" style={{margin:0}}>
+              <div style={{fontSize:13,fontWeight:700,marginBottom:10}}>Acuracidade Semanal (%)</div>
+              <WeeklyLineChart weeks={weeklyStats} />
+            </div>
+            <div className="panel" style={{margin:0}}>
+              <div style={{fontSize:13,fontWeight:700,marginBottom:10}}>Contagens na Semana</div>
+              <WeeklyCountChart weeks={weeklyStats} />
+            </div>
           </div>
         </div>
       )}
