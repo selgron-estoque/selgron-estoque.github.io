@@ -4459,7 +4459,7 @@ function RecountsPanel({counts, role, currentUser, goto, onApprove, onRequestRec
             </div>
           )}
           <div style={{padding:'14px 18px',display:'flex',flexWrap:'wrap',gap:8,fontSize:12,color:'var(--ink-dim)',fontFamily:'var(--font-mono)'}}>
-            <span>1ª contagem: {c.qtdContada} un.</span>·<span>Diferença {c.diferenca==null ? '— (sem saldo local)' : (c.diferenca>0?'+':'')+c.diferenca+' ('+c.percentual.toFixed(1)+'%)'}</span>·<span>{c.usuario}</span>·<span>{c.data} {c.hora||''}</span>
+            <span>1ª contagem: {c.qtdContada} un.</span>·<span>Diferença {c.diferenca==null ? '— (sem saldo local)' : (c.diferenca>0?'+':'')+c.diferenca+(c.percentual==null?'':' ('+c.percentual.toFixed(1)+'%)')}</span>·<span>{c.usuario}</span>·<span>{c.data} {c.hora||''}</span>
           </div>
           <div style={{padding:'0 18px 16px'}}>
             <button className="btn btn-primary" onClick={()=>goto('recount', c)}><Ic>🔁</Ic> Recontar este item</button>
@@ -4487,7 +4487,7 @@ function RecountsPanel({counts, role, currentUser, goto, onApprove, onRequestRec
               <StatusTag status="danger" text={c.classificacao.label} />
             </div>
             <div style={{padding:'14px 18px',display:'flex',flexWrap:'wrap',gap:8,fontSize:12,color:'var(--ink-dim)',fontFamily:'var(--font-mono)'}}>
-              <span>Qtd. contada: {c.qtdContada} un.</span>·<span>Diferença {c.diferenca==null ? '— (sem saldo local)' : (c.diferenca>0?'+':'')+c.diferenca+' ('+c.percentual.toFixed(1)+'%)'}</span>·<span>{c.usuario}</span>·<span>{c.data} {c.hora||''}</span>
+              <span>Qtd. contada: {c.qtdContada} un.</span>·<span>Diferença {c.diferenca==null ? '— (sem saldo local)' : (c.diferenca>0?'+':'')+c.diferenca+(c.percentual==null?'':' ('+c.percentual.toFixed(1)+'%)')}</span>·<span>{c.usuario}</span>·<span>{c.data} {c.hora||''}</span>
             </div>
             {anterior && (
               <div style={{padding:'0 18px 10px',fontSize:12,color:'var(--ink-dim)'}}>
@@ -5338,6 +5338,7 @@ function HistoricoImportPanel(){
   const [progresso, setProgresso] = useState(null);
   const [resultado, setResultado] = useState(null);
   const [ultimaImportacao, setUltimaImportacao] = useState(undefined); // undefined = carregando, null = nunca importado
+  const [lendo, setLendo] = useState(false); // lendo/parseando o arquivo (planilha grande, ~5MB — sem isso a tela fica sem feedback nenhum entre selecionar o arquivo e o resumo aparecer)
   const fileRef = useRef();
 
   useEffect(()=>{
@@ -5351,6 +5352,7 @@ function HistoricoImportPanel(){
     if(!file) return;
     setErro(''); setResultado(null); setParseResult(null); setStatus('idle');
     setArquivoNome(file.name);
+    setLendo(true);
     const reader = new FileReader();
     reader.onload = (evt)=>{
       try{
@@ -5371,7 +5373,13 @@ function HistoricoImportPanel(){
         setParseResult(parsed);
       }catch(err){
         setErro('Não foi possível ler o arquivo. Verifique se é um .xlsx válido.');
+      }finally{
+        setLendo(false);
       }
+    };
+    reader.onerror = ()=>{
+      setErro('Não foi possível ler o arquivo. Verifique se é um .xlsx válido.');
+      setLendo(false);
     };
     reader.readAsArrayBuffer(file);
   }
@@ -5418,9 +5426,14 @@ function HistoricoImportPanel(){
             : 'Ainda sem histórico importado no Supabase.'}
       </div>
       <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{display:'none'}} onChange={handleFile} />
-      <button className="btn btn-secondary" onClick={()=>fileRef.current.click()}>
+      <button className="btn btn-secondary" onClick={()=>fileRef.current.click()} disabled={lendo}>
         <Ic>📄</Ic> {arquivoNome || 'Selecionar planilha de análise (.xlsx)'}
       </button>
+      {lendo && (
+        <div style={{fontSize:13,color:'var(--ink-dim)',marginTop:10}}>
+          <Ic>⏳</Ic> Lendo planilha… (pode levar alguns segundos, arquivo grande)
+        </div>
+      )}
 
       {erro && <div className="divergence-alert" style={{marginTop:14}}><Ic>⚠</Ic><span>{erro}</span></div>}
 

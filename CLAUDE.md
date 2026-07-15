@@ -1936,6 +1936,38 @@ continuar logado entre recarregamentos e confiar só no logout automático por i
   no scratchpad (aprovar/rejeitar divergência, excluir/criar inventário, dashboard,
   recontagens por perfil, remoção do cache local) rodou de novo sem quebrar.
 
+## Bug crítico: tela de Recontagens ficava em branco pra item vindo do histórico
+
+O cliente reportou que clicar em "Recontagens" deixava a tela inteira em branco (sem
+nenhum erro visível, só o topo do navegador). Causa: `RecountsPanel` lia
+`c.percentual.toFixed(1)` protegido só por `c.diferenca==null` — assumindo que
+`diferenca` e `percentual` são sempre os dois `null` ou os dois preenchidos juntos. Isso é
+verdade no fluxo normal de contagem (`CountStep.finalize`, ambos vêm de `hasSaldoLocal ?
+X : null` na mesma linha), mas **não** é verdade pros itens semeados pela importação do
+histórico (`buildRecontarSeedsFromHistorico`, ver seção "Itens 'Recontar' do histórico
+entram de verdade na fila de recontagem"): `percentual` só é calculado quando
+`saldo_sistema` (coluna "Sistema" da planilha) está presente e diferente de zero, mas
+`diferenca` (coluna "Diferença") vem direto da planilha independente disso — então um
+item do histórico com "Diferença" preenchida mas "Sistema" vazio/zero tem `diferenca`
+não-nulo e `percentual` nulo. Ao chamar `null.toFixed(1)`, o React (sem error boundary)
+derruba a árvore inteira e a tela vira branca — foi exatamente o que aconteceu assim que
+o cliente importou o histórico real (que tem itens assim) e teve algum desses itens
+marcado "Recontar", indo pra fila "Aguardando Segunda Contagem".
+
+- **Correção**: as duas linhas de `RecountsPanel` que montavam "Diferença X (Y%)"
+  (seções "Aguardando Segunda Contagem" e "Aguardando Análise do Líder") passaram a
+  checar `c.percentual==null` separadamente antes de chamar `.toFixed` — se `diferenca`
+  existe mas `percentual` não, mostra só a diferença sem o percentual (em vez de tentar
+  calcular uma porcentagem que não dá pra saber sem o saldo do sistema).
+- Não mexi em `buildRecontarSeedsFromHistorico` — o comportamento de deixar `percentual`
+  null quando não há saldo de sistema pra calcular a porcentagem está correto (a planilha
+  genuinamente não trouxe saldo pra aquele item); o bug era a suposição errada de quem
+  LÊ o dado, não de quem o gera.
+- Testado via Playwright reproduzindo o cenário exato (item com `diferenca:-5,
+  percentual:null`, mesmo formato que um item real do histórico sem "Sistema" produz):
+  antes da correção isso derrubava a tela ao entrar em "Recontagens"; depois, a tela
+  carrega normalmente e mostra "Diferença -5" sem percentual.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase
