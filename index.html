@@ -2001,13 +2001,59 @@ function usePersistedState(key, initialValue){
 
 const SESSION_TIMEOUT_MS = 15 * 60 * 1000; // 15 min de inatividade → logout automático
 
+// Sessão de login agora sobrevive a recarregar a página — pedido do cliente,
+// que reclamou de cair pro login toda vez que atualizava. Guardada à parte
+// de usePersistedState porque tem uma regra de expiração que o resto do
+// estado persistido não tem (ver SESSION_TIMEOUT_MS): só o id do usuário +
+// timestamp da última atividade, nunca senha nem nada sensível.
+// `loadSession`/`touchSession` são usados junto com o timer de inatividade
+// em App() pra calcular quanto tempo JÁ tinha passado antes do reload — sem
+// isso, um F5 repetido resetaria o timer pra 15 min de novo a cada vez e a
+// sessão nunca expiraria de verdade.
+const SESSION_STORAGE_KEY = 'stock360:v1:session';
+function loadSession(){
+  try{
+    const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
+    if(!raw) return null;
+    const parsed = JSON.parse(raw);
+    if(!parsed || !parsed.userId || !parsed.lastActivity) return null;
+    return parsed;
+  }catch(err){ return null; }
+}
+function saveSession(userId){
+  try{ window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({userId, lastActivity: Date.now()})); }catch(err){}
+}
+function touchSession(){
+  try{
+    const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
+    if(!raw) return;
+    const parsed = JSON.parse(raw);
+    if(!parsed) return;
+    parsed.lastActivity = Date.now();
+    window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(parsed));
+  }catch(err){}
+}
+function clearSession(){
+  try{ window.localStorage.removeItem(SESSION_STORAGE_KEY); }catch(err){}
+}
+
 function App(){
   // Dados que o app gera ficam salvos no localStorage (ver usePersistedState
   // acima) — sobrevivem a recarregar/fechar o navegador neste aparelho.
-  // Sessão de login (currentUserId) e navegação (view/flowState) continuam só
-  // em memória de propósito — cada recarregamento volta pra tela de login.
+  // Navegação (view/flowState) continua só em memória de propósito — cada
+  // recarregamento volta pra Home, não faz sentido reabrir no meio de um
+  // fluxo de contagem sem o contexto todo. Sessão de login (currentUserId)
+  // AGORA persiste (ver SESSION_STORAGE_KEY acima) — só expira de verdade
+  // por inatividade real (15 min, ver efeito mais abaixo) ou logout manual.
   const [users, setUsers] = usePersistedState('users', USERS_SEED);
-  const [currentUserId, setCurrentUserId] = useState(null);
+  const [currentUserId, setCurrentUserId] = useState(() => {
+    const session = loadSession();
+    if(!session) return null;
+    if(Date.now() - session.lastActivity > SESSION_TIMEOUT_MS){ clearSession(); return null; }
+    const user = users.find(u=>u.id===session.userId);
+    if(!user || user.status==='bloqueado' || user.status==='deve_definir_senha'){ clearSession(); return null; }
+    return session.userId;
+  });
   const [logoutNotice, setLogoutNotice] = useState('');
 
   const [view, setView] = useState('home');
@@ -2169,12 +2215,14 @@ function App(){
     if(user.status==='deve_definir_senha') return {ok:false, needsNewPassword:true, userId:user.id};
     if(user.senha !== senha) return {ok:false, error:'Usuário ou senha inválidos.'};
     setCurrentUserId(user.id);
+    saveSession(user.id);
     setView('home');
     return {ok:true};
   }
 
   function logout(notice){
     setCurrentUserId(null);
+    clearSession();
     setView('home');
     setFlowState(null);
     setLogoutNotice(notice || '');
@@ -2223,6 +2271,7 @@ function App(){
     setUsers(prev=>prev.map(u=>u.id===userId?{...u, senha:novaSenha, status:'ativo'}:u));
     if(target) logHistory(target.nome, 'Senha definida pelo próprio usuário', '—');
     setCurrentUserId(userId);
+    saveSession(userId);
     setView('home');
   }
 
@@ -2252,9 +2301,18 @@ function App(){
   // ---- Logout automático por inatividade ----
   useEffect(()=>{
     if(!currentUser) return;
-    let timer = setTimeout(()=>logout('Sessão encerrada por inatividade.'), SESSION_TIMEOUT_MS);
+    // Se a sessão foi restaurada de um reload (ver loadSession no useState de
+    // currentUserId, acima), o PRIMEIRO timer usa só o tempo que resta até
+    // completar 15 min desde a última atividade real — senão um F5 repetido
+    // reiniciaria o timer pra 15 min inteiros a cada vez e a sessão nunca
+    // expiraria de verdade por inatividade.
+    const sessaoRestaurada = loadSession();
+    const jaDecorrido = sessaoRestaurada && sessaoRestaurada.userId===currentUser.id
+      ? (Date.now() - sessaoRestaurada.lastActivity) : 0;
+    let timer = setTimeout(()=>logout('Sessão encerrada por inatividade.'), Math.max(0, SESSION_TIMEOUT_MS - jaDecorrido));
     function resetTimer(){
       clearTimeout(timer);
+      touchSession();
       timer = setTimeout(()=>logout('Sessão encerrada por inatividade.'), SESSION_TIMEOUT_MS);
     }
     const events = ['click','keydown','touchstart','mousemove'];

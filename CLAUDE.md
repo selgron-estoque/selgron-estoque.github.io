@@ -36,7 +36,7 @@ quebrar o `index.html` em componentes (`src/components/...`), mover os dados moc
 
 | Funcionalidade | Estado |
 |---|---|
-| Login, sessão, logout por inatividade | Real (mas senha em texto puro — só protótipo, ver aviso no `README.md`). Sessão em si continua só em memória de propósito — recarregar a página sempre volta pro login |
+| Login, sessão, logout por inatividade | Real (mas senha em texto puro — só protótipo, ver aviso no `README.md`). Sessão agora persiste no `localStorage` (`stock360:v1:session`) — recarregar a página NÃO desloga mais; só expira de verdade por inatividade real (15 min) ou logout manual (ver seção "Sessão de login sobrevive a recarregar a página" abaixo) |
 | CRUD de usuários, recuperação de senha | Real na UI, persistido no `localStorage` deste navegador (sobrevive a recarregar a página/fechar o navegador neste aparelho) |
 | 300 produtos carregados de uma exportação real da tabela SB2 do Protheus | Dados reais, mas cache estático embutido no JS (`RAW_SB2_PRODUCTS`) — não sincroniza |
 | Leitura de QR/código de barras pela câmera | Real (requer HTTPS/localhost + permissão) |
@@ -1890,6 +1890,51 @@ lote de `upsert()`.
   e os 116 itens "Recontar" continuaram entrando na fila normalmente (mesmo número já
   documentado antes). Falta o cliente re-tentar o upload real no Supabase de verdade pra
   confirmar ao vivo.
+
+## Sessão de login sobrevive a recarregar a página
+
+O cliente reclamou que atualizar a página estava sempre mandando de volta pro login — esse
+era um comportamento DELIBERADO desde o início do app (documentado antes como "não faz
+sentido reabrir no meio de um fluxo de contagem... manter sessão logada automaticamente
+teria implicação de segurança maior, tablet compartilhado no chão de fábrica"), mas na
+prática, com o uso real, ficou claro que é mais incômodo que protetor — o cliente prefere
+continuar logado entre recarregamentos e confiar só no logout automático por inatividade
+(que já existia, 15 min, `SESSION_TIMEOUT_MS`) pra cobrir o caso do tablet compartilhado.
+
+- **`SESSION_STORAGE_KEY = 'stock360:v1:session'`** (constante módulo, perto de
+  `usePersistedState`) — guarda só `{userId, lastActivity}` no `localStorage`, nunca
+  senha nem nada além do id. Funções `loadSession`/`saveSession`/`touchSession`/
+  `clearSession`, mesmo padrão simples já usado pra `pendingIncrements`
+  (leitura/escrita direta, fora do estado React, com `try/catch` silencioso se
+  `localStorage` não estiver disponível).
+- **`currentUserId` inicializa via `useState(() => ...)`** lendo `loadSession()`: se não
+  tem sessão salva, se ela já passou de `SESSION_TIMEOUT_MS` desde a última atividade, ou
+  se o usuário não existe mais / foi bloqueado / está com `deve_definir_senha` — volta
+  `null` (login normal). Senão, restaura a sessão direto, sem passar pela tela de login.
+  Funciona porque `users` (via `usePersistedState`) já está carregado síncronamente antes
+  desse `useState` rodar (hooks executam em ordem dentro do mesmo render).
+- **`attemptLogin`/`selfSetNewPassword` chamam `saveSession(user.id)`** depois de logar
+  com sucesso; **`logout` chama `clearSession()`** — mesmos 3 pontos de entrada/saída de
+  sessão de sempre, só ganharam a chamada extra.
+- **O timer de inatividade continua sendo a única forma de expirar a sessão sozinha**,
+  mas precisou de um ajuste pra não virar uma sessão eterna: sem isso, um F5 a cada 14
+  min reiniciaria o timer pra 15 min inteiros de novo, todo santo dia. Agora, ao montar o
+  efeito, o PRIMEIRO timer usa `SESSION_TIMEOUT_MS - (tempo já decorrido desde
+  lastActivity)` em vez de `SESSION_TIMEOUT_MS` cheio — e cada evento de atividade
+  (`click`/`keydown`/`touchstart`/`mousemove`) agora também chama `touchSession()`, pra
+  manter o `lastActivity` do `localStorage` atualizado (sem isso, o cálculo acima ficaria
+  sempre baseado no momento do login, não da última atividade real).
+- **Não mudou**: navegação (`view`/`flowState`) continua só em memória — recarregar
+  ainda volta pra Home, não pro meio de um fluxo de contagem (decisão diferente, não foi
+  o que o cliente pediu). RLS/backend não têm nada a ver com isso — é 100% front-end/
+  `localStorage`, mesmo escopo de sempre pra sessão.
+- Testado via Playwright (sandbox sem rede): login seguido de reload mantém logado (sem
+  cair na tela de login); uma sessão com `lastActivity` forçado pra 20 min atrás (>15 min)
+  força de volta pro login e limpa a chave do `localStorage`; logout explícito (menu do
+  usuário no `DesktopTopbar`) limpa a sessão e um reload posterior continua mostrando o
+  login (não "ressuscita" a sessão já encerrada). Toda a suíte de regressão já existente
+  no scratchpad (aprovar/rejeitar divergência, excluir/criar inventário, dashboard,
+  recontagens por perfil, remoção do cache local) rodou de novo sem quebrar.
 
 ## Convenções de design (não quebrar ao continuar)
 
