@@ -2521,6 +2521,60 @@ acuracidade **mensal** (também com meta de 95%).
   SVG ou o título "Tendência Semanal" (mudanças de UI intencionais desta rodada, não
   regressão) para apontar pro badge/título novos.
 
+## Filtro de período profissional (segmented control) + gráfico mensal em colunas, ano corrente
+
+Feedback do cliente depois de ver a rodada anterior (metas em badge, filtro de período,
+gráfico mensal novo): o `<select>` do filtro de período era pouco descobrível ("filtro de
+data não aparece") e pedia algo "mais profissional"; o gráfico "Acuracidade Mensal" devia
+ser em **colunas** (era o mesmo `WeeklyLineChart` de linha reaproveitado) e **mostrar
+todos os meses com dados do ano**, não só os poucos meses cobertos pela janela de "10
+semanas" (padrão do filtro semanal, ~2-3 meses); e faltava mais espaçamento entre o eixo
+Y (0-100%) e o topo do gráfico/badge de meta, que ficavam "muito em cima".
+
+- **Filtro de período virou um `.pnl-segmented`** (grupo de botões pill, fundo navy no
+  ativo) em vez do `<select>` — mesmas 4 opções de sempre (10/26 semanas, todo o período,
+  personalizado), só muda a forma de escolher: clique direto no botão em vez de abrir um
+  dropdown. Quando "Personalizado" fica ativo, aparece ao lado um **widget de intervalo de
+  datas** (`.pnl-daterange`) com ícone de calendário (`CalendarIcon`, SVG linear desenhado
+  à mão — não usa `DICON_PATHS` porque esse conjunto é reservado pra sidebar/header/
+  Dashboard, mas esse toolbar específico já tomava emprestada a paleta/tipografia corp do
+  `.pnl-period-select` antes desta mudança, então um ícone linear combina mais que emoji
+  aqui) e labels explícitos "De"/"Até" ao lado de cada campo — mais claro que dois
+  `<input type="date">` soltos como estava antes. `weeklyPeriod`/`weeklyCustomFrom`/
+  `weeklyCustomTo` (estado) não mudaram, só a UI que os controla.
+- **"Acuracidade Mensal" virou `MonthlyAccuracyBarChart`** (componente novo, perto de
+  `WeeklyCountChart`) — colunas em vez de linha, mas mantendo o eixo Y fixo 0-100% (como
+  `WeeklyLineChart`, já que é acuracidade, não contagem absoluta) e o mesmo tratamento de
+  meta (linha tracejada + badge no cabeçalho do painel, "no mesmo formato" dos outros
+  dois, como pedido).
+- **Gráfico mensal ficou INDEPENDENTE do filtro de período semanal** — decisão explícita
+  pra resolver "mostrar todos os meses com dados do ano": um mês é um balde grande demais
+  pro filtro "10/26 semanas" fazer sentido (10 semanas cobre só ~2-3 meses, deixando o
+  gráfico mensal praticamente vazio a maior parte do tempo). Em vez de amarrar ao mesmo
+  `dataInicioStr`/`dataFimStr` dos gráficos semanais, `Dashboard` calcula um intervalo
+  próprio só pra ele — sempre 1º de janeiro do ano corrente até hoje
+  (`String(new Date().getFullYear())+'-01-01'` até `hojeStr`) — e um subtítulo pequeno
+  abaixo do título do painel ("Todos os meses de 2026 com dado registrado") deixa esse
+  comportamento explícito, já que ele não segue mais o mesmo controle visível na tela.
+- **Mais espaçamento**: `padT` (respiro entre o topo do SVG e a primeira grade/dado) subiu
+  de 26 pra 34 em `WeeklyLineChart`/`WeeklyCountChart`, e pra 38 em
+  `MonthlyAccuracyBarChart` (colunas costumam bater perto de 100%, com o rótulo do valor
+  ACIMA da barra — precisa de um pouco mais de respiro que os outros dois pra não ficar
+  espremido contra a grade de "100%"). `marginBottom` entre o cabeçalho do painel
+  (título+badge) e o SVG também subiu de 10 pra 16px nos três painéis.
+- Testado via Playwright (sandbox sem rede, contagens sintéticas espalhadas de jan a
+  jul/2026): confirmei os 4 botões do segmented control (10/26/todo/personalizado), que
+  "10 semanas" vem ativo por padrão, que clicar em "Personalizado" revela o widget de
+  data com ícone+labels "De"/"Até", que o gráfico mensal usa `<rect>` (colunas) e não mais
+  `<polyline>` (linha), que ele mostra os 7 meses (Jan-Jul) com dado mesmo com o filtro
+  semanal em "10 semanas" (prova da independência), e que o subtítulo menciona o ano
+  corrente. Conferi visualmente por screenshot que não há mais sobreposição entre o eixo
+  "100%"/badge de meta e as barras/rótulos de valor. Rodei de novo a suíte de regressão da
+  seção de Indicadores — só `verify_view_persist_period_filter.js` precisou de ajuste (
+  usava `select.pnl-period-select` pra trocar de período, que não existe mais nessa seção;
+  trocado pra clicar no botão "Todo o período" do segmented control — mudança de UI
+  intencional desta rodada, não regressão).
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase
