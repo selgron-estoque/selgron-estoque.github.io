@@ -284,12 +284,12 @@
      enquanto"), não fingem um recurso que não existe. */
   .login-page{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;
     background:linear-gradient(180deg, #F7F8FB 0%, #EEF2F7 100%);
-    padding:20px;font-family:var(--font-corp);}
+    padding:10px;font-family:var(--font-corp);}
   .login-shell{width:100%;max-width:1300px;background:#fff;border-radius:28px;overflow:hidden;
     box-shadow:0 1px 2px rgba(15,23,42,0.03), 0 20px 48px rgba(15,23,42,0.07);
     display:flex;flex-direction:column;}
   .login-outer-footer{display:flex;align-items:center;justify-content:center;gap:10px;
-    margin-top:20px;font-family:var(--font-corp);font-size:12.5px;color:var(--gray-500);}
+    margin-top:8px;font-family:var(--font-corp);font-size:12.5px;color:var(--gray-500);}
   .login-outer-footer img{height:15px;width:auto;opacity:0.85;}
   .login-outer-footer .lof-sep{color:var(--gray-200);}
 
@@ -302,35 +302,43 @@
      conteúdo, depois como fundo com texto HTML sobreposto). `.login-brand`
      agora só existe pra dar a moldura (largura/altura da coluna); todo o
      conteúdo visual vem da própria imagem. */
-  .login-brand{display:flex;background:#fff;overflow:hidden;}
+  .login-brand{position:relative;display:flex;background:#fff;overflow:hidden;}
   /* Mobile-first: largura cheia, altura livre (`height:auto`) — mostra a
      imagem INTEIRA, sem cortar nada, já que agora ela é o único conteúdo do
      painel (sem HTML por cima pra proteger/duplicar). No desktop
-     (`@media min-width:900px` mais abaixo), `.login-brand` passa a ter uma
-     altura definida (herdada da coluna do formulário, via
-     `align-items:stretch` do `.login-shell` em row) — só aí faz sentido
-     `object-fit:cover` preencher o espaço todo. */
+     (`@media min-width:900px` mais abaixo), a imagem vira `position:
+     absolute` — bug real encontrado: com `height:100%` num `<img>` normal
+     (dentro do fluxo), `.login-brand` tenta esticar (`align-items:stretch`
+     do `.login-shell` em row) pra bater com a altura de `.login-form-col`,
+     mas o cálculo de "altura hipotética" do flexbox usa a proporção NATURAL
+     da imagem (bem alta, é retrato) antes de aplicar o stretch — isso
+     inflava a linha inteira pra ~1200px de altura (a altura natural da
+     imagem numa coluna de ~570px de largura), bem mais do que o formulário
+     precisa, forçando rolagem na tela toda. `position:absolute` tira a
+     imagem do cálculo de layout do flexbox — `.login-brand` passa a esticar
+     só pra bater com a altura de verdade do formulário, e a imagem (agora
+     fora do fluxo) preenche esse espaço via `inset:0`. */
   .login-brand-img{width:100%;height:auto;display:block;}
 
   /* ---- Coluna direita — formulário ---- */
-  .login-form-col{display:flex;flex-direction:column;padding:32px 28px;background:#fff;min-width:0;}
-  .login-form-topbar{display:flex;justify-content:flex-end;margin-bottom:16px;}
+  .login-form-col{display:flex;flex-direction:column;padding:24px 28px;background:#fff;min-width:0;}
+  .login-form-topbar{display:flex;justify-content:flex-end;margin-bottom:10px;}
   .login-lang-select{display:flex;align-items:center;gap:7px;background:none;border:none;
     color:var(--gray-500);font-family:var(--font-corp);font-size:13px;font-weight:500;padding:8px 4px;
     cursor:default;}
   .login-form-body{flex:1;display:flex;flex-direction:column;justify-content:center;max-width:480px;
     margin:0 auto;width:100%;}
   .login-welcome-title{font-family:var(--font-corp);font-weight:800;color:var(--navy);
-    font-size:clamp(24px,2.6vw,34px);line-height:1.1;letter-spacing:-0.5px;margin:0;}
-  .login-welcome-sub{font-family:var(--font-corp);font-size:14px;color:var(--gray-500);margin:8px 0 22px;}
+    font-size:clamp(22px,2.6vw,30px);line-height:1.1;letter-spacing:-0.5px;margin:0;}
+  .login-welcome-sub{font-family:var(--font-corp);font-size:14px;color:var(--gray-500);margin:6px 0 16px;}
 
-  .login-field2{margin-bottom:14px;}
+  .login-field2{margin-bottom:12px;}
   .login-field2 label{display:block;font-family:var(--font-corp);font-size:13px;font-weight:600;
     color:var(--navy);margin-bottom:6px;}
   .login-field2 .field-wrap2{position:relative;display:flex;align-items:center;}
   .login-field2 .field-icon2{position:absolute;left:18px;top:50%;transform:translateY(-50%);
     display:flex;color:var(--gray-400);pointer-events:none;}
-  .login-field2 input{width:100%;height:52px;background:#fff;border:1.5px solid var(--gray-200);
+  .login-field2 input{width:100%;height:46px;background:#fff;border:1.5px solid var(--gray-200);
     color:var(--navy);padding:0 18px 0 48px;border-radius:12px;font-family:var(--font-corp);
     font-size:14.5px;transition:border-color .15s, box-shadow .15s, background .15s;}
   .login-field2 input::placeholder{color:var(--gray-400);}
@@ -343,7 +351,7 @@
     border-radius:6px;transition:color .15s;}
   .pw-toggle2:hover{color:var(--navy);}
 
-  .login-row-between{display:flex;align-items:center;justify-content:space-between;margin:2px 0 18px;
+  .login-row-between{display:flex;align-items:center;justify-content:space-between;margin:2px 0 14px;
     font-family:var(--font-corp);font-size:13.5px;}
   .login-remember{display:flex;align-items:center;gap:9px;color:var(--navy);cursor:default;
     background:none;border:none;padding:0;font:inherit;}
@@ -354,19 +362,19 @@
     font-size:13.5px;font-weight:600;padding:0;}
   .login-forgot2:hover{color:#E67E00;text-decoration:underline;}
 
-  .login-btn2{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;height:52px;
+  .login-btn2{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;height:46px;
     background:var(--safety);color:#fff;border:none;border-radius:12px;font-family:var(--font-corp);
     font-size:15px;font-weight:700;transition:background .15s, transform .1s;}
   .login-btn2:hover:not(:disabled){background:#E67E00;}
   .login-btn2:active:not(:disabled){transform:translateY(1px);}
   .login-btn2:disabled{opacity:0.65;}
 
-  .login-or2{display:flex;align-items:center;gap:14px;margin:18px 0;font-family:var(--font-corp);
+  .login-or2{display:flex;align-items:center;gap:14px;margin:12px 0;font-family:var(--font-corp);
     font-size:12px;font-weight:600;color:var(--gray-400);letter-spacing:0.6px;}
   .login-or2::before, .login-or2::after{content:'';flex:1;height:1px;background:var(--gray-200);}
 
   .login-btn-outline{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;
-    height:52px;background:#fff;color:var(--navy);border:1.5px solid var(--safety);border-radius:12px;
+    height:46px;background:#fff;color:var(--navy);border:1.5px solid var(--safety);border-radius:12px;
     font-family:var(--font-corp);font-size:14.5px;font-weight:600;transition:background .15s;}
   .login-btn-outline:hover{background:#FFF7EC;}
 
@@ -388,7 +396,7 @@
 
   .login-demo-toggle{display:flex;align-items:center;justify-content:center;gap:6px;
     width:100%;background:none;border:none;color:var(--gray-500);font-family:var(--font-corp);
-    font-size:12px;font-weight:600;padding:6px;margin-top:20px;}
+    font-size:12px;font-weight:600;padding:6px;margin-top:12px;}
   .login-demo-toggle:hover{color:var(--navy);}
 
   .login-demo2{margin-top:12px;background:var(--gray-50);border:1px solid var(--gray-200);
@@ -417,17 +425,17 @@
   .login-footer2 .lf-restrict2{display:flex;align-items:center;justify-content:center;gap:6px;}
 
   @media (min-width:900px){
-    .login-shell{flex-direction:row;min-height:560px;}
+    .login-shell{flex-direction:row;min-height:480px;}
     .login-brand{width:44%;flex-shrink:0;}
-    .login-brand-img{height:100%;object-fit:cover;object-position:center top;}
-    .login-form-col{width:56%;padding:32px 64px;}
+    .login-brand-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center top;}
+    .login-form-col{width:56%;padding:24px 64px;}
   }
   @media (max-width:1150px) and (min-width:900px){
-    .login-form-col{padding:32px 40px;}
+    .login-form-col{padding:24px 40px;}
   }
   @media (max-width:899px){
-    .login-form-col{padding:28px 24px;}
-    .login-form-topbar{margin-bottom:12px;}
+    .login-form-col{padding:24px 24px;}
+    .login-form-topbar{margin-bottom:10px;}
     .login-form-body{padding-top:4px;}
   }
 

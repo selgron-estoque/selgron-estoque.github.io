@@ -3232,6 +3232,54 @@ está, sem NENHUM elemento HTML de texto por cima (nem logo, nem título, nem su
   via `height:auto`), sem nenhum elemento HTML de texto sobreposto, sem erros de console.
   `verify_login_flows.js` sem quebrar nada.
 
+## Bug real de layout: `object-fit:cover` num `<img>` de fluxo inflava a altura do painel
+
+Depois da rodada anterior (imagem completa preenchendo `.login-brand`), o cliente
+confirmou que o resultado visual estava bom mas pediu pra "reduzir pra caber na tela sem
+precisar rolar". Investigando antes de sair cortando padding: o `.login-shell` estava
+renderizando a **1206px de altura**, bem mais do que qualquer conteúdo do formulário
+justificaria — e essa altura era CONSTANTE, não mudava com a altura da viewport (sinal de
+que não vinha de `min-height` nem de conteúdo real, e sim de algum cálculo interno).
+
+- **Causa raiz**: `.login-brand-img` tinha `height:100%` dentro do fluxo normal (não
+  `position:absolute`). `.login-brand` tenta esticar (`align-items:stretch`, padrão do
+  `.login-shell` em `flex-direction:row`) pra bater com a altura de `.login-form-col` —
+  mas o algoritmo de flexbox primeiro calcula uma "altura hipotética" de cada item ANTES
+  de aplicar o stretch, baseada no conteúdo. Como a imagem é bem retrato (864×1821) e seu
+  `height:100%` não tem uma altura de referência resolvida nesse momento, o navegador cai
+  pro comportamento de `height:auto` — ou seja, usa a proporção NATURAL da imagem. Numa
+  coluna de ~570px de largura, isso significa uma altura "hipotética" de ~1200px (a altura
+  que a imagem teria inteira, sem cortar) — e é ESSA altura inflada que vira a altura
+  final do painel inteiro, bem maior que os ~650-700px que o formulário realmente precisa.
+- **Correção**: a partir de `@media(min-width:900px)`, `.login-brand-img` virou
+  `position:absolute;inset:0` (mesma técnica já usada na rodada "imagem como fundo",
+  perdida quando reescrevi pra "imagem sem HTML por cima"). Tirar a imagem do fluxo normal
+  remove ela do cálculo de altura hipotética do flexbox — `.login-brand` agora estica só
+  pra bater com a altura de verdade do `.login-form-col`, e a imagem (fora do fluxo)
+  preenche esse espaço via `inset:0`. Resultado: altura do shell caiu de 1206px pra 589px.
+  Mobile não é afetado (continua `height:auto`, dentro do fluxo, mostrando a imagem
+  inteira sem cortar — o bug só existia no cálculo de stretch do flex row, que só existe
+  a partir de 900px).
+- **Compactação adicional**: mesmo com o bug corrigido, sobravam ~130px de rolagem na
+  tela mais baixa que o cliente testou (~1360×620, provavelmente uma janela de navegador
+  não maximizada). Reduzido em cascata (mesmo padrão já usado na rodada "reduzir tamanho
+  geral" anterior, que tinha sido revertida quando a imagem virou fundo/depois conteúdo
+  cheio): padding do `.login-page` (20→10px), `.login-form-col` (32→24px vertical),
+  altura de campos/botões (52→46px), margens entre título/subtítulo/campos/divisor "ou"/
+  link de credenciais — cada uma cortada em 20-30%. Sobra final: ~12px numa tela de
+  620px de altura (imperceptível), zero rolagem em qualquer tela de 768px+ de altura.
+- **Lição pra próximas vezes que a altura de algo "não bate com o esperado"**: sempre
+  suspeitar de `height:100%`/`object-fit` dentro do fluxo normal de um flex item cujo
+  próprio tamanho vem de `stretch` — o cálculo de altura hipotética do flexbox pode usar a
+  proporção natural do conteúdo em vez da altura esperada, inflando (ou encolhendo) o item
+  inteiro de um jeito que não aparece óbvio só olhando o CSS. `position:absolute` quebra
+  esse ciclo porque tira o elemento do cálculo de layout do pai.
+- Testado via Playwright: shell cai de 1206px pra 589px de altura; na tela exata do
+  cliente (1360×620) a página cabe quase inteira (12px de sobra, imperceptível); em
+  qualquer tela de 768px+ de altura não precisa rolar nada; tablet e mobile continuam
+  corretos (imagem inteira sem cortar no mobile, preenchendo a coluna no tablet).
+  `verify_login_flows.js` sem quebrar nada.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase
