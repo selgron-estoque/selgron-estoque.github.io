@@ -315,24 +315,9 @@
   .login-brand-rule{width:64px;height:4px;background:var(--safety);border-radius:2px;margin:12px 0;}
   .login-brand-subtitle{font-family:var(--font-corp);font-weight:400;color:var(--gray-500);
     font-size:14.5px;line-height:1.5;max-width:340px;}
-  .login-illustration-scene{position:relative;z-index:2;width:100%;max-width:360px;max-height:190px;margin:18px auto 0;
+  .login-illustration-scene{position:relative;z-index:2;width:100%;max-width:400px;max-height:210px;margin:18px auto 0;
     aspect-ratio:16/10;background:var(--gray-50);border-radius:16px;overflow:hidden;}
   .login-illustration-img{width:100%;height:100%;display:block;object-fit:cover;border-radius:16px;}
-  /* max-width:47% em cada uma (ancoradas em bordas opostas, left:0/right:0) é
-     o que garante que as duas nunca consigam se sobrepor mesmo quando a cena
-     encolhe num tablet estreito — sem isso, o texto de largura fixa
-     (white-space:nowrap) empurrava a largura real do card além da metade da
-     cena disponível. */
-  .login-float-card{position:absolute;display:flex;align-items:center;gap:8px;background:#fff;
-    border:1px solid var(--gray-200);border-radius:12px;padding:8px 12px;max-width:47%;box-sizing:border-box;
-    box-shadow:0 8px 20px rgba(15,23,42,0.10);font-family:var(--font-corp);}
-  .login-float-card .fc-icon{width:26px;height:26px;border-radius:8px;display:flex;align-items:center;
-    justify-content:center;flex-shrink:0;}
-  .login-float-card .fc-label{display:flex;flex-direction:column;line-height:1.2;min-width:0;}
-  .login-float-card .fc-label strong{font-size:13px;color:var(--navy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .login-float-card .fc-label span{font-size:10px;color:var(--gray-500);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .login-float-1{top:2%;left:0;}
-  .login-float-2{top:6%;right:0;}
 
   .login-brand-benefits{position:relative;z-index:2;display:flex;align-items:stretch;justify-content:center;
     gap:0;padding:16px 32px 28px;}
@@ -3108,21 +3093,25 @@ function ShieldIcon(){
 
 
 // Componente separado pra área da ilustração da coluna de marca — pedido
-// explícito do cliente: "não desenhe nenhuma ilustração, não utilize SVG,
-// apenas reserve exatamente a área da imagem, depois ela será substituída".
+// explícito do cliente: "não desenhe nenhuma ilustração, não utilize SVG".
 // Renderiza um <img> de verdade (não SVG desenhado à mão como a versão
-// anterior, `WarehouseIllustration`) apontando pra um caminho de asset que
-// ainda não existe neste repo (projeto de arquivo único, sem pipeline de
-// build/pasta `public/` — ver topo do CLAUDE.md). Enquanto o arquivo real
-// não chega, `onError` esconde o ícone de imagem quebrada e deixa só o
-// fundo neutro reservando a área exata (mesmo `aspect-ratio` de antes),
-// sem fingir uma ilustração que não existe.
+// anterior, `WarehouseIllustration`) apontando pra `images/login-
+// illustration.png` — arquivo real fornecido pelo cliente (o mockup
+// original que ele mandou era a COMPOSIÇÃO inteira da tela, com logo/
+// título/benefícios embutidos na própria imagem; como o app já desenha
+// esses elementos em HTML separadamente, o arquivo foi recortado só na
+// parte da cena do armazém antes de entrar no repo — ver CLAUDE.md). Os
+// dois cards flutuantes ("Indicadores"/"Acuracidade") que antes eram
+// elementos HTML por cima da imagem foram removidos: já vêm prontos,
+// renderizados na própria foto, então mantê-los duplicaria o conteúdo.
+// `onError` continua como salvaguarda — se o arquivo um dia sumir/for
+// renomeado, esconde o ícone de imagem quebrada em vez de mostrá-lo.
 function BrandIllustration(){
   return (
     <img
       className="login-illustration-img"
       src="images/login-illustration.png"
-      alt="Ilustração de estoque"
+      alt="Ilustração de um armazém com prateleiras, empilhadeira e indicadores do sistema"
       onError={e=>{ e.target.style.visibility = 'hidden'; }}
     />
   );
@@ -3251,14 +3240,6 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
             <p className="login-brand-subtitle">Central de controles, inventários e indicadores.</p>
             <div className="login-illustration-scene">
               <BrandIllustration />
-              <div className="login-float-card login-float-1">
-                <span className="fc-icon" style={{background:'#FFF4E4',color:'var(--safety)'}}><DIcon name="trendingUp" size={14} /></span>
-                <span className="fc-label"><strong>Indicadores</strong><span>Tempo real</span></span>
-              </div>
-              <div className="login-float-card login-float-2">
-                <span className="fc-icon" style={{background:'#EEF2FF',color:'var(--navy)'}}><DIcon name="percent" size={14} /></span>
-                <span className="fc-label"><strong>Acuracidade</strong><span>92%</span></span>
-              </div>
             </div>
           </div>
           <div className="login-brand-benefits">

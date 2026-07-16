@@ -3019,6 +3019,52 @@ desenhado à mão (`WarehouseHeroIcon`) — traços grossos, cores lisas, propor
   Rodei de novo `verify_login_flows.js` (login válido/inválido, mostrar senha, esqueci
   senha, nota do código de acesso) sem quebrar nada.
 
+## Ilustração real do login chegou — recortada da composição completa que o cliente mandou
+
+O cliente forneceu o arquivo real da ilustração pendente desde a rodada de fidelidade
+pixel-perfect (`BrandIllustration`, que até aqui só renderizava um placeholder cinza
+vazio). Ele subiu o arquivo direto no GitHub (não tinha como me anexar a imagem colada no
+chat como arquivo de verdade — expliquei essa limitação e dei o passo a passo de upload
+pela interface web do GitHub, `Add file → Upload files`, direto na branch de trabalho).
+
+- **O arquivo enviado era a composição inteira da tela** (864×1821px, retrato) — logo
+  Selgron, ícone hexagonal, título "Gestão de Estoques", subtítulo, a cena do armazém
+  (prateleiras + empilhadeira + cards "Indicadores"/"Acuracidade"/QR/código de barras já
+  prontos na própria imagem), MAIS uma seção de laptop/celular com print do app, MAIS a
+  linha de benefícios (Seguro/Inteligente/Eficiente) — não só o recorte isolado da
+  ilustração que o componente `BrandIllustration` esperava. Como o app já desenha logo,
+  título, subtítulo e benefícios em HTML separadamente (por acessibilidade/manutenção,
+  não como parte de uma imagem), plugar a composição inteira ali duplicaria esse conteúdo
+  e cortaria a imagem de um jeito sem sentido dentro da caixa pequena reservada só pra
+  ilustração.
+- **Recorte feito com Python/PIL** (`img.crop((0, 665, 864, 1200))`, direto no arquivo já
+  salvo no repo) — extrai só a cena do armazém com os 4 cards prontos (QR Code,
+  Indicadores, Acuracidade, código de barras) e as linhas diagonais laranja decorativas,
+  excluindo o cabeçalho (logo/título/subtítulo) e o rodapé (laptop/celular/benefícios) da
+  composição original. Resultado: 864×535px (~1.615 de proporção, bem próximo do
+  `aspect-ratio:16/10` já configurado em `.login-illustration-scene`), 628KB (era 1.6MB
+  a composição inteira).
+- **Os 2 cards flutuantes em HTML (`.login-float-1`/`.login-float-2`, "Indicadores"/
+  "Acuracidade") foram removidos** — a imagem real já traz esses cards prontos, com muito
+  mais qualidade visual (sombra, gráfico de verdade, donut colorido) do que a versão HTML
+  simplificada que existia só como placeholder visual enquanto não havia imagem real.
+  Mantê-los por cima da foto duplicaria o conteúdo. CSS órfão removido junto
+  (`.login-float-card` e afins).
+- `.login-illustration-scene` ganhou um pequeno aumento (`max-width:360px→400px,
+  max-height:190px→210px`) já que agora é conteúdo real valioso de mostrar, não uma caixa
+  cinza vazia — mantido moderado pra não reverter a redução de tamanho geral da rodada
+  anterior.
+- Testado via Playwright nos 3 breakpoints (1600/1024/390px): imagem carrega sem erro
+  (`naturalWidth>0`), visualmente bate com a composição de referência do cliente (mesma
+  cena, cards e linhas laranja), e no mobile a ilustração continua escondida (mesma regra
+  já documentada: "ocultar só a ilustração, nunca o branding"). Rodei de novo
+  `verify_login_flows.js` sem quebrar nada.
+- **Se o cliente mandar uma imagem atualizada no futuro**: o padrão agora é sempre
+  conferir se o arquivo é só o recorte da ilustração ou a composição completa da tela —
+  se for a composição completa (mais fácil pro cliente gerar/exportar de uma vez), recorta
+  de novo com o mesmo raciocínio (excluir cabeçalho e rodapé, que o app já desenha em
+  HTML) antes de salvar em `images/login-illustration.png`.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase
