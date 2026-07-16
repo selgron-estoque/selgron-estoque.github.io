@@ -2401,6 +2401,55 @@ pra sempre mostrar tudo, ou deixar o cliente escolher — ele escolheu poder esc
   semanas" mas aparece com "Todo o período" (30 semanas no eixo nesse teste). Rodei de
   novo toda a suíte de regressão do scratchpad, sem quebrar nada.
 
+## Bug real de causa raiz: teto de linhas do Supabase cortava semanas inteiras do histórico
+
+Cliente questionou diretamente ("quer me dizer que nas semanas 23, 24 e 25 eu não tenho
+nenhuma contagem feita??") depois de ver essas 3 semanas aparecerem vazias em "Tendência
+Semanal" mesmo com a planilha `BD_Contagens` cheia de dado real. Pedi uma consulta SQL
+direta (`select status, count(*) from contagens_historico group by status`) pra descartar
+hipóteses — voltou 2.574+452+433+81+77+41 = **3.658**, batendo exatamente com o total
+esperado da importação. Isso por si só não provava nada (uma consulta `count()`/`group by`
+é uma AGREGAÇÃO — o Postgres calcula o resultado inteiro no servidor e devolve só o
+número final, então ela NUNCA é afetada por um teto de linhas retornadas). O bug real
+estava em `select *` (linhas de verdade, o que o app de fato busca).
+
+- **Causa raiz confirmada**: todo projeto Supabase tem um limite de linhas por
+  requisição configurado no PostgREST (Settings → API → Max Rows, geralmente 1000 por
+  padrão) — e esse limite é aplicado **silenciosamente**: um `.limit(10000)` pedido pelo
+  client nunca é honrado se o projeto está configurado pra um teto menor, e a resposta
+  não vem com erro nenhum, só menos linhas do que existem. Mesma categoria de bug
+  silencioso já vista antes neste projeto (RLS bloqueando `produtos` sem aviso, a coluna
+  "Sld.Atu." com espaço quebrando o parser da SB2) — sempre que um número "bate" mas o
+  outro não, vale suspeitar de um corte silencioso em algum nível.
+- **`fetchTodasPaginado(buildQuery)`** (helper novo, perto de `fetchContagensFromSupabase`)
+  — pagina com `.range(offset, offset+999)` em loop até uma página vir vazia ou menor que
+  1000 linhas, não importa quantas existam ao todo nem qual teto o projeto tenha
+  configurado. `buildQuery` é uma FUNÇÃO (não um builder já pronto) porque um query
+  builder do supabase-js só pode ser executado (`await`) uma vez — cada iteração do loop
+  monta um builder novo a partir do zero.
+  - **Ordenação com tiebreaker (`id`) obrigatória**: paginar só por `data`/`criado_em`
+    (colunas com muitos valores repetidos — vários registros no mesmo dia/timestamp) sem
+    um desempate estável faz o Postgres devolver as linhas em ordem não-determinística
+    entre uma página e outra, arriscando pular ou duplicar linhas exatamente na fronteira
+    de duas páginas. Adicionado `.order('id', {ascending:true})` como segundo critério em
+    TODAS as buscas paginadas — não precisa ter significado (é só desempate), só precisa
+    ser único e estável.
+- **As três buscas que liam a tabela inteira migraram pra paginação**:
+  `fetchContagensFromSupabase` (contagens ao vivo, tinha `.limit(2000)`),
+  `fetchContagensHistoricoConcluidas` e `fetchContagensHistoricoParaTendencia` (tinham
+  `.limit(10000)`) — nenhuma das três depende mais de nenhum teto, nem no código nem no
+  projeto Supabase, cliente pediu explicitamente "não quero que tenha limites".
+- Testado via Playwright simulando o cenário exato do bug real: 2.500 linhas mockadas +
+  um servidor mock que IGNORA o `limit` pedido pelo client e sempre corta em 1.000 por
+  resposta (reproduzindo fielmente o comportamento real de um projeto Supabase com Max
+  Rows configurado) — confirmei que `fetchTodasPaginado` faz 3 requisições
+  (offset 0/1000/2000) e recupera as 2.500 linhas completas, incluindo um item que só
+  existe na última página. Rodei de novo toda a suíte de regressão do scratchpad, sem
+  quebrar nada.
+- **Ainda não confirmado contra o Supabase real** — falta o cliente recarregar o app e
+  conferir se as semanas 23-25 (e o resto do histórico) aparecem agora em "Tendência
+  Semanal" com "Todo o período" selecionado.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase

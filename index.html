@@ -688,27 +688,49 @@ function contagemRowToLocal(row){
   };
 }
 
+// Busca TODAS as linhas de uma consulta, sem depender de um único `.limit()`
+// — nem de um teto fixo no código, nem do limite de linhas por requisição
+// configurado no projeto Supabase (Settings → API → Max Rows, geralmente
+// 1000 por padrão no PostgREST). Esse teto do projeto corta o resultado
+// SILENCIOSAMENTE — sem erro nenhum, `select *` simplesmente devolve menos
+// linhas do que existem — foi exatamente o que sumiu com semanas inteiras
+// do histórico em "Tendência Semanal" mesmo com o dado presente na tabela
+// (confirmado pelo cliente: `count(*)` batia com o total esperado, mas a
+// busca de linhas de verdade vinha incompleta). Pagina com `.range()` até
+// vir uma página menor que `PAGE_SIZE` (ou vazia) — sinal de que chegou ao
+// fim, não importa quantas linhas existam ao todo.
+// `buildQuery` é uma FUNÇÃO que devolve um query builder novo a cada
+// chamada (não um builder já construído) — necessário porque um builder do
+// supabase-js só pode ser "executado" (via `await`) uma vez.
+async function fetchTodasPaginado(buildQuery){
+  const PAGE_SIZE = 1000;
+  let offset = 0;
+  let todas = [];
+  while(true){
+    const { data, error } = await buildQuery().range(offset, offset + PAGE_SIZE - 1);
+    if(error) throw error;
+    if(!data || data.length === 0) break;
+    todas = todas.concat(data);
+    if(data.length < PAGE_SIZE) break;
+    offset += PAGE_SIZE;
+  }
+  return todas;
+}
+
 // Busca contagens gravadas em QUALQUER aparelho (ver saveContagemToSupabase) —
 // usada só pra completar o histórico local com o que aconteceu em outros
-// aparelhos, nunca substitui o que já existe localmente. Limite de 500 linhas
-// mais recentes: suficiente pro protótipo, sem paginação por ora.
+// aparelhos, nunca substitui o que já existe localmente. Ordenação com
+// tiebreaker (`id`) além de `criado_em` — necessário pra paginação ficar
+// estável quando duas linhas têm o mesmo timestamp (sem isso, uma linha
+// pode aparecer duas vezes ou nenhuma entre duas páginas).
 async function fetchContagensFromSupabase(){
   if(!supabaseClient) return [];
   try{
-    // Limite subiu de 500 pra 2000 depois que a importação do histórico
-    // passou a semear itens "Recontar" direto em `contagens` (ver
-    // buildRecontarSeedsFromHistorico/seedRecontarQueueFromHistorico) — são
-    // gravados com `criado_em=now()`, então ficam no topo da ordenação e
-    // podiam empurrar contagens reais mais antigas pra fora da página de
-    // 500 num aparelho que ainda não tinha sincronizado. Ainda sem
-    // paginação de verdade (ver CLAUDE.md "cache local removido" sobre o
-    // mesmo tipo de limitação em outras buscas) — suficiente por ora.
-    const { data, error } = await supabaseClient
+    const data = await fetchTodasPaginado(() => supabaseClient
       .from('contagens')
       .select('*')
       .order('criado_em', {ascending:false})
-      .limit(2000);
-    if(error || !data) return [];
+      .order('id', {ascending:true}));
     return data.map(contagemRowToLocal);
   }catch(err){
     console.warn('Falha ao buscar contagens do Supabase:', err);
@@ -1152,18 +1174,17 @@ async function fetchUltimaImportacaoHistorico(){
 // tipo de bug silencioso já visto antes (RLS bloqueando `produtos` sem
 // erro visível). Comparação normalizada (trim) do lado de cá cobre dado
 // legado sujo e dado novo já limpo, sem precisar tocar no banco.
-// Sem paginação de verdade ainda — mesmo tipo de limitação já aceita em
-// outras buscas do app (ver fetchContagensFromSupabase).
+// Paginado de verdade (ver fetchTodasPaginado) — nenhum teto fixo, nem do
+// código nem do projeto Supabase.
 const HISTORICO_STATUS_CONCLUIDOS = ['OK', 'Sem Ajuste', 'Ajustado', 'Ajustar'];
 async function fetchContagensHistoricoConcluidas(){
   if(!supabaseClient) return [];
   try{
-    const { data, error } = await supabaseClient
+    const data = await fetchTodasPaginado(() => supabaseClient
       .from('contagens_historico')
       .select('*')
       .order('data', {ascending:false})
-      .limit(10000);
-    if(error || !data) return [];
+      .order('id', {ascending:true}));
     return data.filter(row => HISTORICO_STATUS_CONCLUIDOS.includes(String(row.status||'').trim()));
   }catch(err){
     console.warn('Falha ao buscar histórico concluído do Supabase:', err);
@@ -1185,12 +1206,11 @@ async function fetchContagensHistoricoConcluidas(){
 async function fetchContagensHistoricoParaTendencia(){
   if(!supabaseClient) return [];
   try{
-    const { data, error } = await supabaseClient
+    const data = await fetchTodasPaginado(() => supabaseClient
       .from('contagens_historico')
-      .select('produto_codigo, data, diferenca, saldo_sistema, acuracidade, status')
+      .select('id, produto_codigo, data, diferenca, saldo_sistema, acuracidade, status')
       .order('data', {ascending:false})
-      .limit(10000);
-    if(error || !data) return [];
+      .order('id', {ascending:true}));
     return data.filter(row => String(row.status||'').trim()!=='Recontar');
   }catch(err){
     console.warn('Falha ao buscar histórico pra tendência semanal:', err);
