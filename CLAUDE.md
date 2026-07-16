@@ -2450,6 +2450,77 @@ estava em `select *` (linhas de verdade, o que o app de fato busca).
   conferir se as semanas 23-25 (e o resto do histórico) aparecem agora em "Tendência
   Semanal" com "Todo o período" selecionado.
 
+## Metas sobrepostas nos gráficos, período personalizável e gráfico de acuracidade mensal
+
+Depois da correção da paginação, o cliente confirmou que os dados voltaram a aparecer
+("a principio deu certo") e trouxe três pedidos novos sobre a mesma seção de
+Indicadores: (1) as etiquetas "Meta: X" dentro dos dois gráficos semanais estavam se
+sobrepondo aos rótulos dos pontos de dado; (2) o filtro de período (antes só
+10/26 semanas/"todo o período") devia ficar "mais personalizável, caso me peçam algum
+período específico"; (3) um terceiro gráfico, do mesmo tamanho dos outros dois, com
+acuracidade **mensal** (também com meta de 95%).
+
+- **Causa da sobreposição**: `WeeklyLineChart`/`WeeklyCountChart` desenhavam o texto
+  "Meta: X" DENTRO do próprio SVG, ancorado no canto superior direito
+  (`x={W-padR}, y={y(meta)-6}`) — exatamente o mesmo canto onde o rótulo do último ponto
+  de dado aparece quando a semana mais recente tem acuracidade alta (perto de 100%, ou
+  seja perto do topo do gráfico). Não tinha como os dois nunca coincidirem sem
+  depender do valor real dos dados a cada semana.
+- **Correção**: o rótulo "Meta: X" saiu do SVG por completo e virou um badge HTML no
+  cabeçalho do painel (`.chart-meta-badge`, pill pequeno com fundo teal claro), ao lado
+  do título do gráfico (ex.: "Acuracidade Semanal (%)　Meta: 95%"). Como não depende
+  mais de nenhuma coordenada calculada a partir dos dados, é estruturalmente impossível
+  esse rótulo colidir com um ponto do gráfico de novo. A linha tracejada de referência
+  continua dentro do SVG (agora só a linha, sem texto — ganhou um `<title>` como
+  tooltip acessível).
+- **`WeeklyLineChart`/`WeeklyCountChart` ganharam uma prop `meta`** (com o valor de
+  `META_ACURACIDADE_SEMANAL`/`META_CONTAGENS_SEMANAL` como default, pra não quebrar
+  quem já chamava sem passar a prop) — isso é o que permite reaproveitar
+  `WeeklyLineChart` pro gráfico mensal novo, só passando `weeks={monthlyStats}` em vez
+  de `weeks={weeklyStats}` (o componente não sabe nem precisa saber se cada "semana"
+  do array é na verdade um mês — só usa `label`/`sublabel`/`total`/`acuracidade` de
+  cada item, que `computeMonthlyStats` já produz no mesmo formato).
+- **`computeWeeklyStats`/`computeMonthlyStats` trocaram de assinatura**: de
+  `(counts, maxWeeks/maxMonths)` (janela fixa terminando "hoje") para
+  `(counts, dataInicioStr, dataFimStr)` — intervalo de data explícito. Cada função gera
+  todos os baldes (semana ou mês) entre o início e o fim informados (zero-preenchidos,
+  com guarda de 300/120 iterações), depois soma as contagens reais que caem em cada
+  balde. `getMonthInfo(dataStr)` é o par de `getWeekInfo` pra mês (`{key:'YYYY-MM',
+  label:'Jul', sublabel:'2026'}`, via `NOMES_MESES`).
+- **Período personalizável**: o `<select>` de período (10/26 semanas, todo o período)
+  ganhou uma 4ª opção, "Período personalizado…", que revela dois `<input type="date">`
+  (`.pnl-date-input`, mesmo estilo visual do `.pnl-period-select`) — `weeklyCustomFrom`/
+  `weeklyCustomTo` em `Dashboard`. As 4 opções convergem pro mesmo par
+  `dataInicioStr`/`dataFimStr` que alimenta os três gráficos (os dois semanais e o
+  mensal novo) — não existe mais um cálculo separado de "quantas semanas cabem", só um
+  intervalo de data, calculado a partir de "hoje - N×7 dias" pras opções fixas, do
+  registro mais antigo do pool até hoje pra "todo o período", ou direto dos dois campos
+  pra "personalizado" (com proteção contra data final antes da inicial, e `max`/`min`
+  nos próprios campos pra a UI já impedir isso na maioria dos casos).
+- **Terceiro gráfico "Acuracidade Mensal (%)"**: mesmo `weekly-charts-grid` (grid de 2
+  colunas em telas ≥900px) dos outros dois — como são 3 itens num grid de 2 colunas, o
+  terceiro cai sozinho na segunda linha (mesmo tamanho dos outros dois, só com uma
+  lacuna vazia ao lado, aceito como trade-off simples em vez de criar um grid
+  específico só pra esse caso). Reaproveita o MESMO pool de dados (`poolTendencia`,
+  contagens ao vivo + histórico "para tendência") e o MESMO intervalo de data dos
+  gráficos semanais — não é um filtro independente.
+- **Título da seção**: "Tendência Semanal" virou só "Tendência" (agora cobre semanal E
+  mensal).
+- Testado via Playwright: com dado sintético de ~22 semanas (fev-jul/2026, acuracidade
+  sempre 98-100%, o cenário onde a sobreposição era mais provável) — confirmei que os 3
+  badges de meta aparecem no cabeçalho dos painéis (fora do SVG, `.chart-meta-badge`) e
+  que nenhum `<text>` com "Meta" existe mais dentro de nenhum SVG; que trocar pra
+  "Todo o período" não quebra nada; que selecionar "Período personalizado" revela os 2
+  campos de data e que preencher março/2026 faz o gráfico semanal mostrar só as
+  semanas de março (Sem 9-14) e o gráfico mensal mostrar só 1 balde ("Mar 2026");
+  conferi visualmente por screenshot que os rótulos "99%"/"100%" dos pontos de dado não
+  colidem mais com o badge "Meta: 95%" em nenhum dos três gráficos. Rodei de novo os
+  testes de regressão da seção de Indicadores (`verify_weekly_*`,
+  `verify_view_persist_period_filter`, `verify_dashboard_recount`, `verify_home_kpis`)
+  — precisou só atualizar 4 scripts antigos que checavam o texto "Meta: X" dentro do
+  SVG ou o título "Tendência Semanal" (mudanças de UI intencionais desta rodada, não
+  regressão) para apontar pro badge/título novos.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase

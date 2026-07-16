@@ -196,6 +196,9 @@
   @media (min-width:640px){.kpi-grid{grid-template-columns:repeat(4,1fr);}}
   .weekly-charts-grid{display:flex;flex-direction:column;gap:14px;margin-bottom:14px;}
   @media (min-width:900px){.weekly-charts-grid{display:grid;grid-template-columns:1fr 1fr;}}
+  .chart-meta-badge{font-family:var(--font-mono);font-size:11px;font-weight:700;color:#0D9488;background:rgba(13,148,136,0.12);border-radius:6px;padding:3px 8px;white-space:nowrap;}
+  .pnl-period-toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-left:auto;}
+  .pnl-date-input{font-family:var(--font-corp);font-size:12.5px;font-weight:500;color:var(--navy);background:#fff;border:1px solid var(--gray-200);border-radius:8px;padding:7px 10px;}
   .kpi{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;}
   .kpi .kv{font-family:var(--font-mono);font-size:26px;font-weight:700;}
   .kpi .kl{font-size:11px;color:var(--ink-dim);margin-top:4px;text-transform:uppercase;letter-spacing:0.4px;}
@@ -5090,13 +5093,28 @@ function itemAcuracidade(c){
   return Math.max(0, 1 - Math.abs(c.diferenca)/c.saldoSistema);
 }
 
-// Janela FIXA das últimas `maxWeeks` semanas civis terminando na semana
-// atual — sempre as mesmas `maxWeeks` posições no eixo, mesmo as sem
-// nenhuma contagem (zero-preenchidas). Antes só listava semanas que
-// tiveram pelo menos 1 contagem, o que fazia o gráfico mostrar só 2-3
-// semanas quando a atividade era recente/esparsa, sem dar noção de quanto
-// tempo cada intervalo realmente representava — cliente pediu que sempre
-// apareçam as últimas 10 semanas nos dois gráficos.
+// Agrupa por MÊS civil (YYYY-MM) — mesma ideia de `getWeekInfo`, granularidade
+// maior. Usado pelo gráfico "Acuracidade Mensal".
+const NOMES_MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+function getMonthInfo(dataStr){
+  const d = new Date(dataStr + 'T00:00:00');
+  const key = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+  return {
+    key,
+    label: NOMES_MESES[d.getMonth()],
+    sublabel: String(d.getFullYear()),
+  };
+}
+
+// Janela por INTERVALO DE DATAS explícito (`dataInicioStr`/`dataFimStr`,
+// YYYY-MM-DD) — troca a antiga janela fixa "últimas N semanas terminando
+// hoje" por algo que o cliente pode apontar pra qualquer período (inclusive
+// um pedido pontual tipo "me manda março inteiro"). Sempre gera TODAS as
+// semanas entre as duas datas (zero-preenchidas), não só as que tiveram
+// contagem — mesmo raciocínio de antes, só que a origem do intervalo agora
+// é escolhida por fora (ver `Dashboard`) em vez de fixa em "hoje".
+// `guard` evita um intervalo absurdo (datas invertidas, anos de diferença)
+// gerar um loop gigante — corta em 300 semanas (~5 anos e meio).
 // "Acuracidade Semanal" é a MÉDIA da acuracidade individual de cada item
 // contado naquela semana (`itemAcuracidade`, contínua 0-100%) — não o %
 // binário de "quantos bateram exato" que o resto do app usa (KPI
@@ -5107,24 +5125,65 @@ function itemAcuracidade(c){
 // média, a gente chega". Semana sem NENHUM item com acuracidade calculável
 // vira `acuracidade:null` (não `0`) — 0% seria enganoso, pareceria "semana
 // péssima" em vez de "sem dado nenhum"; quem desenha o gráfico decide como
-// representar esse buraco (ver WeeklyLineChart).
-function computeWeeklyStats(counts, maxWeeks){
+// representar esse buraco (ver TrendLineChart).
+function computeWeeklyStats(counts, dataInicioStr, dataFimStr){
   const buckets = {};
   const ordem = [];
-  const hoje = new Date();
-  for(let i=maxWeeks-1; i>=0; i--){
-    const d = new Date(hoje);
-    d.setDate(d.getDate() - i*7);
-    const info = getWeekInfo(d.toISOString().slice(0,10));
+  let cursor = new Date(getWeekInfo(dataInicioStr).key + 'T00:00:00');
+  const fimMonday = new Date(getWeekInfo(dataFimStr).key + 'T00:00:00');
+  let guard = 0;
+  while(cursor <= fimMonday && guard < 300){
+    const info = getWeekInfo(cursor.toISOString().slice(0,10));
     if(!buckets[info.key]){
       buckets[info.key] = {key:info.key, label:info.label, sublabel:info.sublabel, total:0, somaAcuracidade:0, comAcuracidade:0};
       ordem.push(info.key);
     }
+    cursor.setDate(cursor.getDate()+7);
+    guard++;
   }
   counts.forEach(c=>{
     if(!c.data) return;
     const {key} = getWeekInfo(c.data);
-    if(!buckets[key]) return; // fora da janela das últimas `maxWeeks` semanas
+    if(!buckets[key]) return; // fora do intervalo escolhido
+    buckets[key].total += 1;
+    const acc = itemAcuracidade(c);
+    if(acc!=null){
+      buckets[key].somaAcuracidade += acc;
+      buckets[key].comAcuracidade += 1;
+    }
+  });
+  return ordem.map(key=>{
+    const w = buckets[key];
+    return {
+      key:w.key, label:w.label, sublabel:w.sublabel, total:w.total,
+      acuracidade: w.comAcuracidade>0 ? (w.somaAcuracidade/w.comAcuracidade)*100 : null,
+    };
+  });
+}
+
+// Mesma ideia de `computeWeeklyStats`, granularidade mensal — alimenta
+// "Acuracidade Mensal". `guard` corta em 120 meses (10 anos).
+function computeMonthlyStats(counts, dataInicioStr, dataFimStr){
+  const buckets = {};
+  const ordem = [];
+  let cursor = new Date(dataInicioStr + 'T00:00:00');
+  cursor.setDate(1);
+  const fim = new Date(dataFimStr + 'T00:00:00');
+  fim.setDate(1);
+  let guard = 0;
+  while(cursor <= fim && guard < 120){
+    const info = getMonthInfo(cursor.toISOString().slice(0,10));
+    if(!buckets[info.key]){
+      buckets[info.key] = {key:info.key, label:info.label, sublabel:info.sublabel, total:0, somaAcuracidade:0, comAcuracidade:0};
+      ordem.push(info.key);
+    }
+    cursor.setMonth(cursor.getMonth()+1);
+    guard++;
+  }
+  counts.forEach(c=>{
+    if(!c.data) return;
+    const {key} = getMonthInfo(c.data);
+    if(!buckets[key]) return;
     buckets[key].total += 1;
     const acc = itemAcuracidade(c);
     if(acc!=null){
@@ -5163,7 +5222,7 @@ const WEEKLY_CHART_COLOR = '#0D9488'; // mesmo teal já usado em ARMAZEM_COLORS 
 // mais a média das semanas exibidas.
 const META_ACURACIDADE_SEMANAL = 95;
 
-function WeeklyLineChart({weeks}){
+function WeeklyLineChart({weeks, meta=META_ACURACIDADE_SEMANAL}){
   const W = 760, H = 220, padL = 34, padR = 30, padT = 26, padB = 40;
   const chartW = W - padL - padR, chartH = H - padT - padB;
   const n = weeks.length;
@@ -5189,8 +5248,14 @@ function WeeklyLineChart({weeks}){
           <text x={padL-8} y={y(t)+3.5} textAnchor="end" fontSize={10} fill="var(--ink-dim)" fontFamily="var(--font-mono)">{t}%</text>
         </g>
       ))}
-      <line x1={padL} x2={W-padR} y1={y(META_ACURACIDADE_SEMANAL)} y2={y(META_ACURACIDADE_SEMANAL)} stroke={WEEKLY_CHART_COLOR} strokeWidth={1.5} strokeDasharray="5,4" opacity={0.65} />
-      <text x={W-padR} y={y(META_ACURACIDADE_SEMANAL)-6} textAnchor="end" fontSize={10} fontWeight={700} fill={WEEKLY_CHART_COLOR} fontFamily="var(--font-mono)">Meta: {META_ACURACIDADE_SEMANAL}%</text>
+      {/* Rótulo "Meta: X%" saiu do SVG (ver .chart-meta-badge no cabeçalho do
+          painel, fora do gráfico) — dentro do SVG ele sobrepunha o rótulo do
+          ponto de dado sempre que a semana mais recente tinha acuracidade
+          próxima da meta (os dois ficavam no mesmo canto superior direito).
+          Fica só a linha tracejada de referência aqui, com tooltip. */}
+      <line x1={padL} x2={W-padR} y1={y(meta)} y2={y(meta)} stroke={WEEKLY_CHART_COLOR} strokeWidth={1.5} strokeDasharray="5,4" opacity={0.65}>
+        <title>Meta: {meta}%</title>
+      </line>
       {segmentos.map((seg,si)=>{
         const pts = seg.map(i=>`${x(i)},${y(weeks[i].acuracidade)}`).join(' ');
         const area = `${x(seg[0])},${y(0)} ${pts} ${x(seg[seg.length-1])},${y(0)}`;
@@ -5230,11 +5295,11 @@ function WeeklyLineChart({weeks}){
 // ajustar se o cliente mudar a meta depois.
 const META_CONTAGENS_SEMANAL = 250;
 
-function WeeklyCountChart({weeks}){
+function WeeklyCountChart({weeks, meta=META_CONTAGENS_SEMANAL}){
   const W = 760, H = 220, padL = 34, padR = 30, padT = 26, padB = 40;
   const chartW = W - padL - padR, chartH = H - padT - padB;
   const n = weeks.length;
-  const ticks = niceAxisTicks(Math.max(...weeks.map(w=>w.total), META_CONTAGENS_SEMANAL, 1), 4);
+  const ticks = niceAxisTicks(Math.max(...weeks.map(w=>w.total), meta, 1), 4);
   const maxVal = ticks[ticks.length-1];
   const slot = chartW / n;
   const barW = Math.min(40, slot * 0.5);
@@ -5248,8 +5313,9 @@ function WeeklyCountChart({weeks}){
           <text x={padL-8} y={y(t)+3.5} textAnchor="end" fontSize={10} fill="var(--ink-dim)" fontFamily="var(--font-mono)">{Math.round(t)}</text>
         </g>
       ))}
-      <line x1={padL} x2={W-padR} y1={y(META_CONTAGENS_SEMANAL)} y2={y(META_CONTAGENS_SEMANAL)} stroke={WEEKLY_CHART_COLOR} strokeWidth={1.5} strokeDasharray="5,4" opacity={0.65} />
-      <text x={W-padR} y={y(META_CONTAGENS_SEMANAL)-6} textAnchor="end" fontSize={10} fontWeight={700} fill={WEEKLY_CHART_COLOR} fontFamily="var(--font-mono)">Meta: {META_CONTAGENS_SEMANAL}</text>
+      <line x1={padL} x2={W-padR} y1={y(meta)} y2={y(meta)} stroke={WEEKLY_CHART_COLOR} strokeWidth={1.5} strokeDasharray="5,4" opacity={0.65}>
+        <title>Meta: {meta}</title>
+      </line>
       {weeks.map((w,i)=>(
         <g key={w.key}>
           <rect x={x(i)-barW/2} y={y(w.total)} width={barW} height={Math.max(0, y(0)-y(w.total))} rx={4} fill={WEEKLY_CHART_COLOR}>
@@ -5269,10 +5335,15 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   const contados = counts.length;
   const pendentes = Math.max(planejados-contados,0);
 
-  // Filtro de período de "Tendência Semanal" — cliente pediu poder escolher
-  // em vez de uma janela fixa, já que o histórico importado (fev-jul/2026)
-  // é bem mais longo que 10 semanas. Só afeta os dois gráficos semanais.
+  // Filtro de período de "Tendência Semanal"/"Tendência Mensal" — cliente
+  // pediu poder escolher em vez de uma janela fixa, já que o histórico
+  // importado (fev-jul/2026) é bem mais longo que 10 semanas, e depois
+  // pediu um período "personalizável, caso me peçam algum período
+  // específico" — por isso a opção "custom" com dois campos de data, além
+  // das janelas fixas de sempre. Afeta os três gráficos (semanal x2 + mensal).
   const [weeklyPeriod, setWeeklyPeriod] = useState('10');
+  const [weeklyCustomFrom, setWeeklyCustomFrom] = useState('');
+  const [weeklyCustomTo, setWeeklyCustomTo] = useState('');
 
   // "Qualidade" (acuracidade/divergências/valor divergente), "Principais
   // Causas de Erro" e "Top Itens com Maior Divergência" passam a somar o
@@ -5339,20 +5410,33 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
     .filter(h=>h.data)
     .map(h=>({data:h.data, diferenca:h.diferenca, saldoSistema:h.saldo_sistema, acuracidade:h.acuracidade}));
   const poolTendencia = [...counts, ...historicoTendenciaComoContagem];
-  // Janela do gráfico é escolhível (cliente pediu): fixa em 10/26 semanas ou
-  // "todo o período" — nesse último caso calcula quantas semanas cabem desde
-  // a contagem mais antiga do pool até hoje, em vez de um número fixo. A
-  // planilha BD_Contagens cobre fev-jul/2026 (~22-26 semanas) — só com "todo
-  // o período" selecionado é que ela aparece inteira nos dois gráficos.
-  const maxWeeksParaPeriodo = periodo => {
-    if(periodo!=='all') return Number(periodo);
-    const datas = poolTendencia.map(c=>c.data).filter(Boolean);
-    if(datas.length===0) return 10;
-    const maisAntiga = datas.reduce((min,d)=> d<min?d:min, datas[0]);
-    const dias = (new Date() - new Date(maisAntiga+'T00:00:00')) / 86400000;
-    return Math.max(1, Math.ceil(dias/7) + 1);
-  };
-  const weeklyStats = computeWeeklyStats(poolTendencia, maxWeeksParaPeriodo(weeklyPeriod));
+  // Janela dos gráficos é escolhível (cliente pediu): fixa em 10/26 semanas,
+  // "todo o período" (da contagem mais antiga do pool até hoje) ou um
+  // período personalizado (dois campos de data) pra quando o cliente
+  // precisar olhar uma janela específica. As três opções convergem pro mesmo
+  // par `dataInicioStr`/`dataFimStr`, usado tanto por `computeWeeklyStats`
+  // quanto por `computeMonthlyStats` — os dois recebem intervalo de data
+  // agora, não mais "quantidade de semanas".
+  const hojeStr = new Date().toISOString().slice(0,10);
+  const datasPool = poolTendencia.map(c=>c.data).filter(Boolean);
+  const dataMaisAntigaPool = datasPool.length ? datasPool.reduce((min,d)=> d<min?d:min, datasPool[0]) : hojeStr;
+  let dataInicioStr, dataFimStr;
+  if(weeklyPeriod==='custom'){
+    dataInicioStr = weeklyCustomFrom || dataMaisAntigaPool;
+    dataFimStr = weeklyCustomTo || hojeStr;
+    if(dataInicioStr > dataFimStr) dataInicioStr = dataFimStr; // evita intervalo invertido se o usuário escolher datas fora de ordem
+  } else if(weeklyPeriod==='all'){
+    dataInicioStr = dataMaisAntigaPool;
+    dataFimStr = hojeStr;
+  } else {
+    const semanas = Number(weeklyPeriod);
+    const inicio = new Date();
+    inicio.setDate(inicio.getDate() - (semanas-1)*7);
+    dataInicioStr = inicio.toISOString().slice(0,10);
+    dataFimStr = hojeStr;
+  }
+  const weeklyStats = computeWeeklyStats(poolTendencia, dataInicioStr, dataFimStr);
+  const monthlyStats = computeMonthlyStats(poolTendencia, dataInicioStr, dataFimStr);
 
   return (
     <div>
@@ -5444,26 +5528,48 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
           não precisa de guard condicional aqui. */}
       <div>
         <div className="section-title">
-          Tendência Semanal
-          <select
-            className="pnl-period-select"
-            style={{marginLeft:'auto', textTransform:'none', letterSpacing:'normal'}}
-            value={weeklyPeriod}
-            onChange={e=>setWeeklyPeriod(e.target.value)}
-          >
-            <option value="10">Últimas 10 semanas</option>
-            <option value="26">Últimas 26 semanas</option>
-            <option value="all">Todo o período</option>
-          </select>
+          Tendência
+          <div className="pnl-period-toolbar" style={{textTransform:'none', letterSpacing:'normal'}}>
+            <select
+              className="pnl-period-select"
+              value={weeklyPeriod}
+              onChange={e=>setWeeklyPeriod(e.target.value)}
+            >
+              <option value="10">Últimas 10 semanas</option>
+              <option value="26">Últimas 26 semanas</option>
+              <option value="all">Todo o período</option>
+              <option value="custom">Período personalizado…</option>
+            </select>
+            {weeklyPeriod==='custom' && (
+              <>
+                <input type="date" className="pnl-date-input" value={weeklyCustomFrom} onChange={e=>setWeeklyCustomFrom(e.target.value)} max={weeklyCustomTo || hojeStr} />
+                <span style={{fontSize:11,color:'var(--ink-dim)'}}>até</span>
+                <input type="date" className="pnl-date-input" value={weeklyCustomTo} onChange={e=>setWeeklyCustomTo(e.target.value)} min={weeklyCustomFrom} max={hojeStr} />
+              </>
+            )}
+          </div>
         </div>
         <div className="weekly-charts-grid">
           <div className="panel" style={{margin:0}}>
-            <div style={{fontSize:13,fontWeight:700,marginBottom:10}}>Acuracidade Semanal (%)</div>
-            <WeeklyLineChart weeks={weeklyStats} />
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:10}}>
+              <div style={{fontSize:13,fontWeight:700}}>Acuracidade Semanal (%)</div>
+              <span className="chart-meta-badge">Meta: {META_ACURACIDADE_SEMANAL}%</span>
+            </div>
+            <WeeklyLineChart weeks={weeklyStats} meta={META_ACURACIDADE_SEMANAL} />
           </div>
           <div className="panel" style={{margin:0}}>
-            <div style={{fontSize:13,fontWeight:700,marginBottom:10}}>Contagens na Semana</div>
-            <WeeklyCountChart weeks={weeklyStats} />
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:10}}>
+              <div style={{fontSize:13,fontWeight:700}}>Contagens na Semana</div>
+              <span className="chart-meta-badge">Meta: {META_CONTAGENS_SEMANAL}</span>
+            </div>
+            <WeeklyCountChart weeks={weeklyStats} meta={META_CONTAGENS_SEMANAL} />
+          </div>
+          <div className="panel" style={{margin:0}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:10}}>
+              <div style={{fontSize:13,fontWeight:700}}>Acuracidade Mensal (%)</div>
+              <span className="chart-meta-badge">Meta: {META_ACURACIDADE_SEMANAL}%</span>
+            </div>
+            <WeeklyLineChart weeks={monthlyStats} meta={META_ACURACIDADE_SEMANAL} />
           </div>
         </div>
       </div>
