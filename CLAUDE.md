@@ -3194,6 +3194,44 @@ sobrepostos por cima dela, exatamente como a imagem de referência sempre mostro
   moldura/corte visível; mobile mostra o painel branco liso de sempre, sem a foto
   cortada. `verify_login_flows.js` sem quebrar nada.
 
+## Quarta imagem do login: composição inteira, zero HTML por cima
+
+Depois de três tentativas de posicionamento (imagem como bloco de conteúdo → imagem como
+fundo com logo/título HTML sobrepostos), o cliente rejeitou a última também ("péssimo") e
+enviou uma quarta imagem sendo direto: **"vou te mandar a imagem completa. não precisa
+alterar ou acrescentar nada"**. O arquivo (subido como `login-illustration v1.png`, tive
+que renomear pra `login-illustration.png` — nome que o app já espera) é, na prática, o
+MESMO arquivo da 1ª tentativa (864×1821, composição inteira com logo/título/subtítulo/
+ilustração/dispositivos/benefícios tudo dentro) — confirmado por tamanho de arquivo
+idêntico (1.633.454 bytes). A diferença desta vez é a instrução: usar exatamente como
+está, sem NENHUM elemento HTML de texto por cima (nem logo, nem título, nem subtítulo).
+
+- **`.login-brand` virou só um contêiner de moldura pro `<img>`** — removidos
+  `.login-brand-logo-wrap` (logo em HTML), `.login-brand-center`/`.login-brand-title`/
+  `.login-brand-rule`/`.login-brand-subtitle` (título/linha/subtítulo em HTML) e o
+  degradê `.login-brand::before` da tentativa anterior — nenhum precisa mais existir,
+  porque a imagem já traz tudo isso pronto.
+- **`BrandIllustration`/`.login-brand-img`**: `alt` voltou a ser descritivo (era `alt=""`
+  na tentativa anterior, quando a imagem era só decoração de fundo atrás de texto real em
+  HTML) — agora a imagem é a ÚNICA fonte desse conteúdo pra quem usa leitor de tela, então
+  precisa de um texto alternativo que resuma o que está escrito nela.
+- **Responsivo em duas camadas, sem esconder nada**: mobile-first é `width:100%;
+  height:auto` (mostra a imagem INTEIRA, sem cortar — a única forma de garantir isso em
+  qualquer largura de tela, já que não tem mais texto HTML que precise de um espaço
+  garantido por cima). A partir de `@media (min-width:900px)` (quando `.login-shell` vira
+  `row` e `.login-brand` ganha uma largura fixa de 44%), troca pra `height:100%;
+  object-fit:cover` — nesse breakpoint `.login-brand` herda a altura da coluna do
+  formulário via `align-items:stretch` do flex row, então faz sentido a imagem preencher
+  esse espaço todo (cortando só o excesso, não o essencial — testado visualmente, o
+  corte no topo/rodapé é mínimo nas larguras comuns). **Diferente das rodadas anteriores,
+  a imagem NUNCA é escondida em nenhuma largura** — não tem mais motivo pra esconder,
+  já que não existe texto HTML duplicado ou espaço curto demais que a cortaria mal (no
+  mobile ela simplesmente ganha a altura que precisar, empurrando o formulário pra baixo).
+- Testado via Playwright nos 3 breakpoints: imagem aparece inteira e legível nos 3
+  tamanhos (desktop/tablet preenchendo a coluna via `cover`, mobile na proporção natural
+  via `height:auto`), sem nenhum elemento HTML de texto sobreposto, sem erros de console.
+  `verify_login_flows.js` sem quebrar nada.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase

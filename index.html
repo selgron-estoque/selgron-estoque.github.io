@@ -294,30 +294,23 @@
   .login-outer-footer .lof-sep{color:var(--gray-200);}
 
   /* ---- Coluna esquerda — marca ---- */
-  /* A imagem do cliente é o FUNDO do painel inteiro (não um bloco pequeno
-     intercalado no meio do texto, como nas duas tentativas anteriores) —
-     pedido explícito: "essa imagem é pra ser um plano de fundo, aí vem a
-     logo da Selgron dentro e etc". `.login-brand-bg` é um <img> absoluto
-     cobrindo `.login-brand` inteiro (`object-fit:cover`), atrás de tudo
-     (z-index:0); logo/título/subtítulo (que já eram z-index:2) continuam
-     por cima, agora literalmente sobre a foto. `.login-brand::before`
-     (z-index:1, entre a foto e o texto) é um degradê branco que garante
-     contraste pro texto no topo (quase opaco) e vai clareando a foto de
-     cima pra baixo — sem esse degradê o texto ficaria ilegível em cima do
-     armazém fotografado. */
-  .login-brand{position:relative;display:flex;flex-direction:column;background:#fff;overflow:hidden;}
-  .login-brand-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center top;z-index:0;}
-  .login-brand::before{content:'';position:absolute;inset:0;z-index:1;
-    background:linear-gradient(180deg, #fff 0%, #fff 34%, rgba(255,255,255,0.72) 55%, rgba(255,255,255,0.32) 78%, rgba(255,255,255,0.12) 100%);}
-  .login-brand-logo-wrap{position:relative;z-index:2;padding:32px 40px 0;}
-  .login-brand-logo-wrap img{height:auto;max-height:30px;width:auto;max-width:100%;display:block;}
-  .login-brand-center{position:relative;z-index:2;flex:1;display:flex;flex-direction:column;align-items:center;
-    justify-content:flex-start;text-align:center;padding:28px 40px 0;gap:0;}
-  .login-brand-title{font-family:var(--font-corp);font-weight:800;color:var(--navy);
-    font-size:clamp(24px,2.6vw,38px);line-height:1.1;letter-spacing:-0.5px;margin:0;}
-  .login-brand-rule{width:64px;height:4px;background:var(--safety);border-radius:2px;margin:12px auto;}
-  .login-brand-subtitle{font-family:var(--font-corp);font-weight:400;color:var(--gray-500);
-    font-size:14.5px;line-height:1.5;max-width:340px;}
+  /* Terceira imagem do cliente: a composição inteira da tela (logo, título,
+     subtítulo, cena do armazém, dispositivos, benefícios — tudo já dentro
+     do arquivo), com instrução explícita de usar exatamente como veio, SEM
+     nenhum elemento HTML por cima ("não precisa alterar ou acrescentar
+     nada") — diferente das duas tentativas anteriores (imagem como bloco de
+     conteúdo, depois como fundo com texto HTML sobreposto). `.login-brand`
+     agora só existe pra dar a moldura (largura/altura da coluna); todo o
+     conteúdo visual vem da própria imagem. */
+  .login-brand{display:flex;background:#fff;overflow:hidden;}
+  /* Mobile-first: largura cheia, altura livre (`height:auto`) — mostra a
+     imagem INTEIRA, sem cortar nada, já que agora ela é o único conteúdo do
+     painel (sem HTML por cima pra proteger/duplicar). No desktop
+     (`@media min-width:900px` mais abaixo), `.login-brand` passa a ter uma
+     altura definida (herdada da coluna do formulário, via
+     `align-items:stretch` do `.login-shell` em row) — só aí faz sentido
+     `object-fit:cover` preencher o espaço todo. */
+  .login-brand-img{width:100%;height:auto;display:block;}
 
   /* ---- Coluna direita — formulário ---- */
   .login-form-col{display:flex;flex-direction:column;padding:32px 28px;background:#fff;min-width:0;}
@@ -426,24 +419,13 @@
   @media (min-width:900px){
     .login-shell{flex-direction:row;min-height:560px;}
     .login-brand{width:44%;flex-shrink:0;}
+    .login-brand-img{height:100%;object-fit:cover;object-position:center top;}
     .login-form-col{width:56%;padding:32px 64px;}
   }
   @media (max-width:1150px) and (min-width:900px){
     .login-form-col{padding:32px 40px;}
   }
-  /* Mobile: a coluna de marca (logo, título, subtítulo) continua visível,
-     empilhada acima do formulário — só a FOTO DE FUNDO some, por pedido
-     explícito do cliente ("Ocultar apenas a ilustração. Nunca ocultar o
-     branding"). Sem `.login-shell{flex-direction:row}` (só entra a partir de
-     900px), `.login-brand` no mobile tem só a altura do próprio texto — bem
-     mais baixa que a imagem original (retrato) precisaria pra aparecer sem
-     ficar cortada quase toda; em vez de mostrar só uma tira cortada do topo,
-     a foto fica escondida e o painel volta a ser branco liso, mesmo padrão
-     já usado antes de a imagem existir. */
   @media (max-width:899px){
-    .login-brand-bg{display:none;}
-    .login-brand::before{background:none;}
-    .login-brand-center{padding:20px 24px 20px;}
     .login-form-col{padding:28px 24px;}
     .login-form-topbar{margin-bottom:12px;}
     .login-form-body{padding-top:4px;}
@@ -3089,26 +3071,24 @@ function ShieldIcon(){
 // Componente separado pra área da ilustração da coluna de marca — pedido
 // explícito do cliente: "não desenhe nenhuma ilustração, não utilize SVG".
 // Renderiza um <img> de verdade apontando pra `images/login-
-// illustration.png` — arquivo real fornecido pelo cliente, usado EXATAMENTE
-// como enviado, sem recorte/edição (pedido explícito: "não é pra recortar
-// nem recriar nada da imagem que eu enviei"). Terceira tentativa de
-// posicionamento: as duas primeiras tratavam a imagem como um bloco de
-// conteúdo dentro do fluxo normal (embaixo do texto) — o cliente esclareceu
-// que ela é pra ser o FUNDO do painel inteiro ("essa imagem é pra ser um
-// plano de fundo, aí vem a logo da Selgron dentro e etc"), com logo/título/
-// subtítulo sobrepostos por cima. Por isso `alt=""` (decorativa/de fundo,
-// não é mais conteúdo com significado próprio que precise de texto
-// alternativo — o texto real da tela já está em `.login-brand-logo-wrap`/
-// `.login-brand-center`) e `position:absolute` via `.login-brand-bg`
-// (definida no `<style>`, cobre `.login-brand` inteiro com
-// `object-fit:cover`). `onError` continua como salvaguarda.
+// illustration.png`. Quarta versão do arquivo, e desta vez o cliente foi
+// explícito que é a composição INTEIRA da tela (logo, título, subtítulo,
+// cena do armazém, dispositivos, benefícios — tudo já dentro da imagem) e
+// pediu pra usar exatamente como está, "não precisa alterar ou acrescentar
+// nada" — ou seja, sem nenhum elemento HTML de texto por cima (as duas
+// tentativas anteriores, imagem como bloco de conteúdo e depois como fundo
+// com logo/título sobrepostos, foram as duas rejeitadas). `.login-brand`
+// agora só tem esse `<img>` como filho único. `alt` voltou a ser descritivo
+// (em vez de `alt=""`/decorativo) porque esta imagem é a ÚNICA
+// representação do conteúdo da coluna de marca — sem HTML paralelo, um
+// leitor de tela perderia essa informação inteira sem um texto alternativo
+// que resuma o que está escrito nela. `onError` continua como salvaguarda.
 function BrandIllustration(){
   return (
     <img
-      className="login-brand-bg"
+      className="login-brand-img"
       src="images/login-illustration.png"
-      alt=""
-      aria-hidden="true"
+      alt="Selgron Gestão de Estoques — central de controles, inventários e indicadores. Ilustração de um armazém com prateleiras, empilhadeira, notebook e celular exibindo indicadores do sistema. Seguro: seus dados protegidos. Inteligente: indicadores para decisões rápidas. Eficiente: processos otimizados."
       onError={e=>{ e.target.style.visibility = 'hidden'; }}
     />
   );
@@ -3228,14 +3208,6 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
       <div className="login-shell login-card">
         <div className="login-brand">
           <BrandIllustration />
-          <div className="login-brand-logo-wrap">
-            <img src={SELGRON_LOGO_URL} alt="Selgron" />
-          </div>
-          <div className="login-brand-center">
-            <h1 className="login-brand-title">Gestão de Estoques</h1>
-            <div className="login-brand-rule"></div>
-            <p className="login-brand-subtitle">Central de controles, inventários e indicadores.</p>
-          </div>
         </div>
 
         <div className="login-form-col">
