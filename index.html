@@ -197,19 +197,44 @@
   .weekly-charts-grid{display:flex;flex-direction:column;gap:14px;margin-bottom:14px;}
   @media (min-width:900px){.weekly-charts-grid{display:grid;grid-template-columns:1fr 1fr;}}
   .chart-meta-badge{font-family:var(--font-mono);font-size:11px;font-weight:700;color:#0D9488;background:rgba(13,148,136,0.12);border-radius:6px;padding:3px 8px;white-space:nowrap;}
-  .pnl-period-toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-left:auto;}
-  .pnl-segmented{display:inline-flex;border:1px solid var(--gray-200);border-radius:8px;overflow:hidden;background:#fff;}
-  .pnl-segmented button{font-family:var(--font-corp);font-size:12.5px;font-weight:600;color:var(--ink-dim);background:transparent;border:none;border-right:1px solid var(--gray-200);padding:7px 13px;cursor:pointer;white-space:nowrap;transition:background 0.15s,color 0.15s;}
-  .pnl-segmented button:last-child{border-right:none;}
-  .pnl-segmented button:hover:not(.active){background:var(--gray-50);}
-  .pnl-segmented button.active{background:var(--navy);color:#fff;}
-  .pnl-daterange{display:inline-flex;align-items:center;gap:10px;border:1px solid var(--gray-200);border-radius:8px;background:#fff;padding:6px 12px;}
-  .pnl-daterange .pdr-icon{color:var(--ink-dim);flex-shrink:0;display:flex;}
-  .pnl-daterange .pdr-field{display:flex;align-items:center;gap:6px;}
-  .pnl-daterange .pdr-field label{font-family:var(--font-corp);font-size:11px;font-weight:600;color:var(--ink-dim);white-space:nowrap;}
-  .pnl-daterange .pdr-sep{color:var(--gray-400);font-size:12px;}
-  .pnl-date-input{font-family:var(--font-corp);font-size:12.5px;font-weight:500;color:var(--navy);background:transparent;border:none;padding:0;}
-  .pnl-date-input:focus{outline:none;}
+
+  /* Painel "Filtros" do Dashboard — card premium estilo Power BI/Stripe
+     Dashboard/Vercel (ver CLAUDE.md "Filtro de período vira painel Filtros
+     estilo SaaS"). Cor de destaque (--tfb-teal) é a mesma já usada nos
+     gráficos de tendência (WEEKLY_CHART_COLOR) — mantém os toggle buttons
+     "verde/teal" pedidos alinhados com o resto da seção, em vez de
+     introduzir mais uma cor de marca. */
+  .trend-filter-bar{background:#fff;border:1px solid #EAEAEA;border-radius:18px;padding:24px;box-shadow:0 8px 30px rgba(0,0,0,.05);margin-bottom:18px;}
+  .tfb-head{display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap;}
+  .tfb-icon-badge{width:40px;height:40px;border-radius:12px;background:rgba(13,148,136,0.12);color:#0D9488;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .tfb-icon-badge svg{margin:auto;}
+  .tfb-head-text{min-width:0;}
+  .tfb-title{font-family:var(--font-corp);font-size:15px;font-weight:700;color:var(--navy);}
+  .tfb-subtitle{font-family:var(--font-corp);font-size:12px;color:var(--ink-dim);margin-top:2px;}
+  .tfb-head-actions{display:flex;align-items:center;gap:10px;margin-left:auto;flex-wrap:wrap;}
+  .tfb-range-chip{display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:12px;font-weight:600;color:var(--navy);background:var(--gray-50);border:1px solid var(--gray-200);border-radius:10px;padding:9px 14px;white-space:nowrap;}
+  .tfb-refresh-btn{display:flex;align-items:center;gap:8px;font-family:var(--font-corp);font-size:12.5px;font-weight:700;color:#fff;background:#0D9488;border:none;border-radius:10px;padding:9px 16px;cursor:pointer;transition:background 0.2s;white-space:nowrap;}
+  .tfb-refresh-btn:hover:not(:disabled){background:#0b7a70;}
+  .tfb-refresh-btn:disabled{opacity:0.7;cursor:default;}
+  .tfb-period-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:20px;}
+  .tfb-period-label{display:flex;align-items:center;gap:6px;font-family:var(--font-corp);font-size:12px;font-weight:700;color:var(--ink-dim);text-transform:uppercase;letter-spacing:0.4px;flex-shrink:0;}
+  .tfb-quick-buttons{display:flex;flex-wrap:wrap;gap:8px;}
+  .tfb-pill{font-family:var(--font-corp);font-size:12.5px;font-weight:600;color:var(--ink-dim);background:#fff;border:1px solid var(--gray-200);border-radius:10px;padding:8px 14px;cursor:pointer;white-space:nowrap;transition:background 0.2s,color 0.2s,border-color 0.2s,box-shadow 0.2s;}
+  .tfb-pill:hover:not(.active){background:rgba(13,148,136,0.08);border-color:rgba(13,148,136,0.3);}
+  .tfb-pill.active{background:#0D9488;color:#fff;border-color:#0D9488;box-shadow:0 4px 10px rgba(13,148,136,0.3);}
+  .tfb-custom-row{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-top:16px;padding-top:16px;border-top:1px solid var(--gray-100);}
+  .tfb-date-field{display:flex;flex-direction:column;gap:6px;}
+  .tfb-date-field label{font-family:var(--font-corp);font-size:11px;font-weight:600;color:var(--ink-dim);}
+  .tfb-date-input-wrap{display:flex;align-items:center;gap:8px;border:1px solid var(--gray-200);border-radius:10px;background:#fff;padding:8px 12px;color:var(--ink-dim);}
+  .tfb-date-input-wrap input{border:none;background:transparent;font-family:var(--font-corp);font-size:12.5px;font-weight:500;color:var(--navy);padding:0;}
+  .tfb-date-input-wrap input:focus{outline:none;}
+  .spin-icon{animation:tfb-spin 0.8s linear infinite;}
+  @keyframes tfb-spin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
+  @media (max-width:640px){
+    .tfb-head-actions{margin-left:0;width:100%;justify-content:space-between;}
+    .tfb-period-row{flex-direction:column;align-items:flex-start;}
+    .tfb-custom-row{flex-direction:column;align-items:stretch;}
+  }
   .kpi{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;}
   .kpi .kv{font-family:var(--font-mono);font-size:26px;font-weight:700;}
   .kpi .kl{font-size:11px;color:var(--ink-dim);margin-top:4px;text-transform:uppercase;letter-spacing:0.4px;}
@@ -5117,6 +5142,53 @@ function getMonthInfo(dataStr){
   };
 }
 
+// Traduz o filtro de período do painel "Filtros" (Dashboard/Indicadores) num
+// par de datas concreto. Pedido do cliente: abandonar o conceito de "10/26
+// semanas" (pouco intuitivo, amarrado à granularidade do gráfico) por
+// presets no vocabulário do dia a dia — mesmo catálogo usado por
+// ferramentas tipo Power BI/Stripe Dashboard ("Hoje", "Este mês", "Últimos
+// 30 dias"...). Os presets fixos são sempre recalculados a partir de "hoje"
+// (não guardam data absoluta) — reabrir o dashboard amanhã com "Últimos 30
+// dias" ainda selecionado desliza a janela sozinho, sem precisar o usuário
+// reconfirmar nada. Só "custom" usa `from`/`to` (persistidos) como fonte de
+// verdade, já que aí a intenção do usuário É uma data absoluta específica.
+function computeTrendRange(tipo, hojeStr, from, to){
+  const hoje = new Date(hojeStr + 'T00:00:00');
+  const fmt = d => d.toISOString().slice(0,10);
+  switch(tipo){
+    case 'hoje':
+      return { from: hojeStr, to: hojeStr };
+    case 'semana': {
+      const diasDesdeSegunda = (hoje.getDay()+6) % 7; // 0=segunda-feira
+      const segunda = new Date(hoje); segunda.setDate(hoje.getDate() - diasDesdeSegunda);
+      return { from: fmt(segunda), to: hojeStr };
+    }
+    case 'mes': {
+      const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+      return { from: fmt(inicioMes), to: hojeStr };
+    }
+    case '90d': {
+      const d = new Date(hoje); d.setDate(d.getDate() - 89);
+      return { from: fmt(d), to: hojeStr };
+    }
+    case 'ano':
+      return { from: hoje.getFullYear() + '-01-01', to: hojeStr };
+    case 'custom':
+      return { from: from || hojeStr, to: to || hojeStr };
+    case '30d':
+    default: {
+      const d = new Date(hoje); d.setDate(d.getDate() - 29);
+      return { from: fmt(d), to: hojeStr };
+    }
+  }
+}
+
+function fmtDataBR(dataStr){
+  if(!dataStr) return '—';
+  const [ano,mes,dia] = dataStr.split('-');
+  return dia+'/'+mes+'/'+ano;
+}
+
 // Janela por INTERVALO DE DATAS explícito (`dataInicioStr`/`dataFimStr`,
 // YYYY-MM-DD) — troca a antiga janela fixa "últimas N semanas terminando
 // hoje" por algo que o cliente pode apontar pra qualquer período (inclusive
@@ -5408,20 +5480,42 @@ function CalendarIcon(){
   );
 }
 
+// Mesmo raciocínio do CalendarIcon — Lucide-ish, desenhado à mão, escopado
+// ao toolbar de filtros do Dashboard.
+function FilterIcon(){
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+    </svg>
+  );
+}
+
+function RefreshIcon({spinning}){
+  return (
+    <svg className={spinning ? 'spin-icon' : ''} width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="23 4 23 10 17 10" />
+      <polyline points="1 20 1 14 7 14" />
+      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+    </svg>
+  );
+}
+
 function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTendencia=[]}){
   const planejados = inventories.reduce((s,i)=>s+i.qtdItens,0);
   const contados = counts.length;
   const pendentes = Math.max(planejados-contados,0);
 
-  // Filtro de período de "Tendência Semanal"/"Tendência Mensal" — cliente
-  // pediu poder escolher em vez de uma janela fixa, já que o histórico
-  // importado (fev-jul/2026) é bem mais longo que 10 semanas, e depois
-  // pediu um período "personalizável, caso me peçam algum período
-  // específico" — por isso a opção "custom" com dois campos de data, além
-  // das janelas fixas de sempre. Afeta os três gráficos (semanal x2 + mensal).
-  const [weeklyPeriod, setWeeklyPeriod] = useState('10');
-  const [weeklyCustomFrom, setWeeklyCustomFrom] = useState('');
-  const [weeklyCustomTo, setWeeklyCustomTo] = useState('');
+  // Filtro de período do painel "Filtros" — trocado de janelas fixas
+  // ("10/26 semanas") pra presets de calendário (Hoje/Esta semana/Este
+  // mês/Últimos 30-90 dias/Este ano/Personalizado), pedido explícito do
+  // cliente pra ficar "mais profissional" e no vocabulário do dia a dia
+  // (mesmo catálogo usado por Power BI/Stripe Dashboard). Persiste no
+  // localStorage (`usePersistedState`) — reabrir a tela de Indicadores
+  // mantém o último filtro escolhido, também pedido explicitamente.
+  // `from`/`to` só têm significado quando `tipo==='custom'`; os presets
+  // fixos são sempre recalculados a partir de "hoje" (ver
+  // `computeTrendRange`), então nunca ficam desatualizados.
+  const [trendFilter, setTrendFilter] = usePersistedState('dashboardTrendFilter', {tipo:'30d', from:'', to:''});
 
   // "Qualidade" (acuracidade/divergências/valor divergente), "Principais
   // Causas de Erro" e "Top Itens com Maior Divergência" passam a somar o
@@ -5448,13 +5542,31 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   const [ultimaAtualizacaoEstoque, setUltimaAtualizacaoEstoque] = useState(undefined);
   const [resumoGeral, setResumoGeral] = useState(null);
   const [modoValor, setModoValor] = useState('valor'); // 'valor' | 'percentual' — toggle do painel "Valor por Armazém"
-  useEffect(()=>{
-    let cancelado = false;
-    fetchEstoqueValorPorAlmoxarifado().then(rows=>{ if(!cancelado) setEstoqueRemoto(rows); });
-    fetchUltimaAtualizacaoEstoque().then(v=>{ if(!cancelado) setUltimaAtualizacaoEstoque(v); });
-    fetchEstoqueResumoGeral().then(v=>{ if(!cancelado) setResumoGeral(v); });
-    return ()=>{ cancelado = true; };
-  }, []);
+  // "Atualizar" do painel de Filtros re-busca o saldo/resumo do Supabase —
+  // ação de verdade (não decorativa): os gráficos de tendência já são
+  // recalculados na hora a partir de `counts`/histórico (em memória, sem
+  // custo de rede), mas a seção "Estoque" depende de RPCs que só rodam no
+  // mount por padrão — esse botão dá ao usuário um jeito manual de puxar o
+  // saldo mais recente sem precisar recarregar a página inteira (útil se o
+  // líder subiu uma planilha SB2 nova em outro aparelho/aba enquanto essa
+  // tela já estava aberta).
+  const [atualizando, setAtualizando] = useState(false);
+  const carregarEstoque = async () => {
+    setAtualizando(true);
+    try {
+      const [rows, ultima, resumo] = await Promise.all([
+        fetchEstoqueValorPorAlmoxarifado(),
+        fetchUltimaAtualizacaoEstoque(),
+        fetchEstoqueResumoGeral(),
+      ]);
+      setEstoqueRemoto(rows);
+      setUltimaAtualizacaoEstoque(ultima);
+      setResumoGeral(resumo);
+    } finally {
+      setAtualizando(false);
+    }
+  };
+  useEffect(()=>{ carregarEstoque(); }, []);
 
   const porArmazem = {};
   (estoqueRemoto||[]).forEach(r=>{ porArmazem[r.almoxarifado || '—'] = Number(r.valor_total||0); });
@@ -5496,23 +5608,9 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   // quanto por `computeMonthlyStats` — os dois recebem intervalo de data
   // agora, não mais "quantidade de semanas".
   const hojeStr = new Date().toISOString().slice(0,10);
-  const datasPool = poolTendencia.map(c=>c.data).filter(Boolean);
-  const dataMaisAntigaPool = datasPool.length ? datasPool.reduce((min,d)=> d<min?d:min, datasPool[0]) : hojeStr;
-  let dataInicioStr, dataFimStr;
-  if(weeklyPeriod==='custom'){
-    dataInicioStr = weeklyCustomFrom || dataMaisAntigaPool;
-    dataFimStr = weeklyCustomTo || hojeStr;
-    if(dataInicioStr > dataFimStr) dataInicioStr = dataFimStr; // evita intervalo invertido se o usuário escolher datas fora de ordem
-  } else if(weeklyPeriod==='all'){
-    dataInicioStr = dataMaisAntigaPool;
-    dataFimStr = hojeStr;
-  } else {
-    const semanas = Number(weeklyPeriod);
-    const inicio = new Date();
-    inicio.setDate(inicio.getDate() - (semanas-1)*7);
-    dataInicioStr = inicio.toISOString().slice(0,10);
-    dataFimStr = hojeStr;
-  }
+  const trendRange = computeTrendRange(trendFilter.tipo, hojeStr, trendFilter.from, trendFilter.to);
+  let dataInicioStr = trendRange.from, dataFimStr = trendRange.to;
+  if(dataInicioStr > dataFimStr) dataInicioStr = dataFimStr; // evita intervalo invertido se o usuário escolher datas fora de ordem
   const weeklyStats = computeWeeklyStats(poolTendencia, dataInicioStr, dataFimStr);
   // "Acuracidade Mensal" é INDEPENDENTE do filtro de período acima —
   // deliberado, cliente pediu "mostrar todos os meses com dados do ano".
@@ -5609,43 +5707,79 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
         <div className="kpi"><div className="kv">{inventories.length}</div><div className="kl">Inventários Ativos</div></div>
       </div>
 
+      {/* Painel "Filtros" — pedido do cliente pra abandonar de vez o
+          vocabulário "10/26 semanas" por presets de calendário, no mesmo
+          padrão visual de dashboards SaaS corporativos (Power BI, Stripe
+          Dashboard, Vercel): card branco com cabeçalho (ícone + título +
+          subtítulo), chip mostrando o intervalo aplicado, botão "Atualizar",
+          e uma linha de toggle buttons pra escolher o período rápido. */}
+      <div className="trend-filter-bar">
+        <div className="tfb-head">
+          <div className="tfb-icon-badge"><FilterIcon /></div>
+          <div className="tfb-head-text">
+            <div className="tfb-title">Filtros</div>
+            <div className="tfb-subtitle">Selecione o período para atualizar os indicadores</div>
+          </div>
+          <div className="tfb-head-actions">
+            <div className="tfb-range-chip"><CalendarIcon /> {fmtDataBR(dataInicioStr)} – {fmtDataBR(dataFimStr)}</div>
+            <button type="button" className="tfb-refresh-btn" onClick={carregarEstoque} disabled={atualizando}>
+              <RefreshIcon spinning={atualizando} /> {atualizando ? 'Atualizando…' : 'Atualizar'}
+            </button>
+          </div>
+        </div>
+        <div className="tfb-period-row">
+          <div className="tfb-period-label"><CalendarIcon /> Período</div>
+          <div className="tfb-quick-buttons">
+            {[
+              {v:'hoje', l:'Hoje'},
+              {v:'semana', l:'Esta semana'},
+              {v:'mes', l:'Este mês'},
+              {v:'30d', l:'Últimos 30 dias'},
+              {v:'90d', l:'Últimos 90 dias'},
+              {v:'ano', l:'Este ano'},
+              {v:'custom', l:'Personalizado'},
+            ].map(opt=>(
+              <button
+                key={opt.v}
+                type="button"
+                className={'tfb-pill'+(trendFilter.tipo===opt.v ? ' active' : '')}
+                onClick={()=>{
+                  if(opt.v==='custom'){
+                    // Preenche os campos com o intervalo já aplicado (em vez
+                    // de começar de "hoje até hoje") pra não dar a impressão
+                    // de que o filtro "sumiu" ao entrar no modo personalizado.
+                    setTrendFilter({tipo:'custom', from:dataInicioStr, to:dataFimStr});
+                  } else {
+                    setTrendFilter({tipo:opt.v, from:'', to:''});
+                  }
+                }}
+              >{opt.l}</button>
+            ))}
+          </div>
+        </div>
+        {trendFilter.tipo==='custom' && (
+          <div className="tfb-custom-row">
+            <div className="tfb-date-field">
+              <label htmlFor="tfb-date-from">Data inicial</label>
+              <div className="tfb-date-input-wrap">
+                <CalendarIcon />
+                <input id="tfb-date-from" type="date" value={trendFilter.from} max={trendFilter.to || hojeStr} onChange={e=>setTrendFilter(f=>({...f, from:e.target.value}))} />
+              </div>
+            </div>
+            <div className="tfb-date-field">
+              <label htmlFor="tfb-date-to">Data final</label>
+              <div className="tfb-date-input-wrap">
+                <CalendarIcon />
+                <input id="tfb-date-to" type="date" value={trendFilter.to} min={trendFilter.from} max={hojeStr} onChange={e=>setTrendFilter(f=>({...f, to:e.target.value}))} />
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Sempre aparece, mesmo sem nenhuma contagem ainda (ver computeWeeklyStats) —
           não precisa de guard condicional aqui. */}
       <div>
-        <div className="section-title">
-          Tendência
-          <div className="pnl-period-toolbar" style={{textTransform:'none', letterSpacing:'normal'}}>
-            <div className="pnl-segmented" role="group" aria-label="Período da tendência semanal">
-              {[
-                {v:'10', l:'10 semanas'},
-                {v:'26', l:'26 semanas'},
-                {v:'all', l:'Todo o período'},
-                {v:'custom', l:'Personalizado'},
-              ].map(opt=>(
-                <button
-                  key={opt.v}
-                  type="button"
-                  className={weeklyPeriod===opt.v ? 'active' : ''}
-                  onClick={()=>setWeeklyPeriod(opt.v)}
-                >{opt.l}</button>
-              ))}
-            </div>
-            {weeklyPeriod==='custom' && (
-              <div className="pnl-daterange">
-                <span className="pdr-icon"><CalendarIcon /></span>
-                <span className="pdr-field">
-                  <label htmlFor="pnl-date-from">De</label>
-                  <input id="pnl-date-from" type="date" className="pnl-date-input" value={weeklyCustomFrom} onChange={e=>setWeeklyCustomFrom(e.target.value)} max={weeklyCustomTo || hojeStr} />
-                </span>
-                <span className="pdr-sep">→</span>
-                <span className="pdr-field">
-                  <label htmlFor="pnl-date-to">Até</label>
-                  <input id="pnl-date-to" type="date" className="pnl-date-input" value={weeklyCustomTo} onChange={e=>setWeeklyCustomTo(e.target.value)} min={weeklyCustomFrom} max={hojeStr} />
-                </span>
-              </div>
-            )}
-          </div>
-        </div>
         <div className="weekly-charts-grid">
           <div className="panel" style={{margin:0}}>
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:16}}>

@@ -2575,6 +2575,102 @@ Y (0-100%) e o topo do gráfico/badge de meta, que ficavam "muito em cima".
   trocado pra clicar no botão "Todo o período" do segmented control — mudança de UI
   intencional desta rodada, não regressão).
 
+## Painel "Filtros" — redesign completo estilo SaaS premium (Power BI/Stripe/Vercel)
+
+O segmented control com "10/26 semanas/Todo o período" da rodada anterior ainda não
+resolveu a queixa do cliente: mandou um crop mostrando "94%" encostando no "100%" do eixo
+de novo, e pediu um redesign completo da barra de filtros, com referência explícita a um
+mockup (Power BI, Linear, Notion, Vercel, Figma) — abandonar de vez o vocabulário
+"10/26 semanas/todo período" por presets de calendário do dia a dia, mais um card
+"Filtros" com cabeçalho, chip de intervalo aplicado e botão "Atualizar". O pedido veio com
+uma especificação técnica pra React+TypeScript+TailwindCSS com componentes separados
+(`DashboardFilters.tsx` etc.) e Framer Motion — **não seguida ao pé da letra**: este app
+não tem build step nem TypeScript/Tailwind (ver topo deste arquivo, "Estado atual"), então
+a implementação replicou o resultado visual/UX pedido dentro da arquitetura existente
+(um componente de função React dentro do mesmo `index.html`, CSS puro escopado, Babel
+Standalone) — trade-off já aceito antes nesse projeto (ex.: "Ícones Lucide" via SVG
+desenhado à mão em vez de puxar o pacote real). Framer Motion também não entrou — as
+transições pedidas (200ms no hover dos botões) saem só de CSS `transition`, sem lib nova.
+
+- **`computeTrendRange(tipo, hojeStr, from, to)`** (função nova, perto de
+  `computeWeeklyStats`) — traduz um preset (`hoje`/`semana`/`mes`/`30d`/`90d`/`ano`/
+  `custom`) num par `{from, to}` de datas concretas. Presets fixos são SEMPRE recalculados
+  a partir de "hoje" (não guardam data absoluta) — reabrir o dashboard amanhã com "Últimos
+  30 dias" ainda selecionado desliza a janela sozinho. Só `custom` usa `from`/`to`
+  (persistidos) como fonte de verdade.
+- **`trendFilter` = `usePersistedState('dashboardTrendFilter', {tipo:'30d', from:'', to:''})`**
+  — substituiu os três `useState` soltos da rodada anterior (`weeklyPeriod`/
+  `weeklyCustomFrom`/`weeklyCustomTo`). Pedido explícito do cliente ("persistir o último
+  filtro utilizado no localStorage") — antes o filtro resetava pra "10 semanas" toda vez
+  que a tela era remontada (trocar de view e voltar), sem persistência nenhuma.
+- **`.trend-filter-bar`** (card novo, substitui o antigo `.pnl-period-toolbar` dentro do
+  `section-title` "Tendência" — essa seção perdeu o título "Tendência" por completo, o
+  card "Filtros" agora cumpre esse papel de cabeçalho da área): `border-radius:18px`,
+  `border:1px solid #EAEAEA`, `box-shadow:0 8px 30px rgba(0,0,0,.05)`, `padding:24px` —
+  valores exatos pedidos pelo cliente. Estrutura: cabeçalho (`.tfb-icon-badge` com
+  `FilterIcon`, título "Filtros", subtítulo, e à direita `.tfb-range-chip` mostrando o
+  intervalo aplicado + `.tfb-refresh-btn` "Atualizar"), depois a linha de presets
+  (`.tfb-period-label` + `.tfb-quick-buttons`), e por último — só quando `tipo==='custom'`
+  — `.tfb-custom-row` com os dois campos "Data inicial"/"Data final".
+- **7 toggle buttons** (`.tfb-pill`): Hoje/Esta semana/Este mês/Últimos 30 dias/Últimos 90
+  dias/Este ano/Personalizado — exatamente a lista pedida, susbtituindo "10/26 semanas/
+  todo período" por completo. Ativo: fundo `#0D9488` (mesmo teal já usado como
+  `WEEKLY_CHART_COLOR` nos três gráficos — reaproveita a cor de destaque já estabelecida
+  pra essa seção em vez de introduzir "mais um verde"), texto branco, `border-radius:10px`,
+  sombra leve. Inativo: branco, borda cinza clara, hover com tingimento teal suave,
+  `transition:200ms` — valores exatos pedidos. Clicar num preset fixo aplica o filtro NA
+  HORA (`setTrendFilter({tipo, from:'', to:''})`, `from`/`to` ficam vazios porque não têm
+  significado fora do modo custom) — "alterar rapidamente o período com apenas um clique",
+  como pedido.
+- **Modo "Personalizado"**: ao clicar, os campos de data são pré-preenchidos com o
+  intervalo JÁ APLICADO (`dataInicioStr`/`dataFimStr` calculados a partir do preset
+  anterior), não com "hoje até hoje" — evita a sensação de que o filtro "sumiu" ao entrar
+  no modo. Editar os campos aplica direto (`setTrendFilter(f=>({...f, from:...}))`,
+  reativo) — como não há mais nenhum jeito de editar essas datas fora do modo
+  `custom`, a regra "ao alterar manualmente uma data, marcar automaticamente como
+  Personalizado" fica satisfeita por construção (os campos só existem quando o modo já É
+  personalizado).
+- **Botão "Atualizar"** (`.tfb-refresh-btn`, ícone `RefreshIcon` com animação de spin
+  via `.spin-icon`/`@keyframes tfb-spin` enquanto `atualizando`): diferente dos gráficos
+  de tendência (recalculados na hora, em memória, sem custo de rede, a partir de
+  `counts`/histórico já carregados), a seção "Estoque" depende de 3 RPCs do Supabase que
+  só rodavam uma vez no mount (`fetchEstoqueValorPorAlmoxarifado`/
+  `fetchUltimaAtualizacaoEstoque`/`fetchEstoqueResumoGeral`). Extraí essa lógica pra
+  `carregarEstoque()` (função async reutilizável, chamada tanto no mount quanto no
+  clique do botão) — dá ao "Atualizar" uma função de verdade (puxar o saldo mais recente
+  sem recarregar a página inteira, útil se outro aparelho subiu uma planilha SB2 nova
+  enquanto essa aba já estava aberta) em vez de um botão decorativo que só mexe em dado
+  que já estava em memória.
+- **Ícones Lucide-ish novos**: `FilterIcon` (funil, cabeçalho do card) e `RefreshIcon`
+  (setas circulares, botão Atualizar) — mesmo padrão já usado pro `CalendarIcon` da rodada
+  anterior (SVG desenhado à mão, não uma dependência real do pacote Lucide).
+- **Responsividade**: `.tfb-quick-buttons`/`.tfb-head-actions` já usam `flex-wrap`, então
+  telas médias (tablet) quebram os botões sozinhas sem CSS extra. Um
+  `@media (max-width:640px)` (mesmo breakpoint já usado por `.kpi-grid`) empilha
+  `.tfb-head-actions` (chip + botão) numa linha própria abaixo do título, e
+  `.tfb-period-row`/`.tfb-custom-row` viram coluna — "mobile: filtros ficam em coluna",
+  como pedido.
+- **Classes antigas removidas**: `.pnl-period-toolbar`/`.pnl-segmented`/`.pnl-daterange`/
+  `.pnl-date-input` (introduzidas na rodada anterior, só usadas nesse toolbar) foram
+  apagadas do CSS — ficaram órfãs depois da substituição, nenhum outro lugar do app as
+  usava (`.pnl-period-select`, usado pelo filtro de período da Home/`DesktopTopbar`, é uma
+  classe DIFERENTE e continua intacta).
+- Testado via Playwright (sandbox sem rede): confirmei os 7 botões na ordem certa,
+  "Últimos 30 dias" ativo por padrão, o chip de intervalo mostrando as datas certas em
+  pt-BR (`fmtDataBR`), que clicar em "Hoje" aplica em 1 clique (chip atualiza, botão fica
+  ativo), que "Personalizado" revela os campos com labels "Data inicial"/"Data final",
+  que editar as datas atualiza o chip E os gráficos na hora, que "Atualizar" refaz a
+  chamada RPC de estoque, e que o filtro sobrevive a um reload da página (persistido em
+  `stock360:v1:dashboardTrendFilter`). Rodei de novo a suíte de regressão da seção de
+  Indicadores — os scripts que fixavam datas históricas específicas (`verify_weekly_
+  historico_meta`, `verify_weekly_pendente_meta95`, `verify_weekly_trend_fix`,
+  `verify_weekly_charts`, `verify_view_persist_period_filter`) precisaram selecionar
+  explicitamente um período mais largo ("Este ano" ou um intervalo personalizado) já que
+  o padrão mudou de "10 semanas" pra "Últimos 30 dias" (janela mais estreita) — mudança de
+  UI intencional desta rodada, não regressão; um teste (`verify_weekly_trend_fix`) também
+  teve a asserção "exatamente 10 semanas no eixo" relaxada pra "mesmo número de baldes nos
+  dois gráficos", já que o conceito de janela fixa em N semanas foi removido de propósito.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase
