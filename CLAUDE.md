@@ -1924,10 +1924,12 @@ continuar logado entre recarregamentos e confiar só no logout automático por i
   (`click`/`keydown`/`touchstart`/`mousemove`) agora também chama `touchSession()`, pra
   manter o `lastActivity` do `localStorage` atualizado (sem isso, o cálculo acima ficaria
   sempre baseado no momento do login, não da última atividade real).
-- **Não mudou**: navegação (`view`/`flowState`) continua só em memória — recarregar
-  ainda volta pra Home, não pro meio de um fluxo de contagem (decisão diferente, não foi
-  o que o cliente pediu). RLS/backend não têm nada a ver com isso — é 100% front-end/
-  `localStorage`, mesmo escopo de sempre pra sessão.
+- **Não mudou nesta rodada**: navegação (`view`/`flowState`) continuava só em memória —
+  recarregar ainda voltava pra Home. **Atualização posterior**: o cliente pediu
+  explicitamente pra isso também persistir (ver seção "Navegação sobrevive a recarregar
+  a página" mais abaixo) — essa frase aqui documenta só a decisão original desta rodada,
+  já superada. RLS/backend não têm nada a ver com isso — é 100% front-end/`localStorage`,
+  mesmo escopo de sempre pra sessão.
 - Testado via Playwright (sandbox sem rede): login seguido de reload mantém logado (sem
   cair na tela de login); uma sessão com `lastActivity` forçado pra 20 min atrás (>15 min)
   força de volta pro login e limpa a chave do `localStorage`; logout explícito (menu do
@@ -2361,6 +2363,43 @@ mesmo depois do histórico ter entrado nos indicadores.
   asserção pra taxa binária antiga — atualizados pra esperar o valor contínuo certo
   (mudança de comportamento intencional, não regressão). Rodei de novo toda a suíte de
   regressão do scratchpad, sem quebrar nada.
+
+## Navegação sobrevive a recarregar a página + filtro de período na Tendência Semanal
+
+Dois pedidos do cliente na sequência do ajuste anterior: (1) recarregar a página estava
+jogando de volta pra Home — igual ao problema já resolvido antes pra sessão de login
+("Sessão de login sobrevive a recarregar a página"), só que dessa vez com a navegação em
+si; (2) questionou se os gráficos de "Tendência Semanal" realmente consideravam TODAS as
+contagens — investigado e confirmado: a janela fixa de 10 semanas (pedido de uma rodada
+anterior) corta a maior parte do histórico importado, já que `BD_Contagens` cobre
+fev-jul/2026 (~22-26 semanas). Perguntado via `AskUserQuestion` entre manter fixo, ampliar
+pra sempre mostrar tudo, ou deixar o cliente escolher — ele escolheu poder escolher.
+
+- **`view`/`flowState` viraram `usePersistedState`** (eram `useState` puro) — mesmo
+  mecanismo já usado pro resto do estado do app, sem nada novo. `flowState` sempre foi um
+  objeto simples (o inventário sendo contado, a contagem original de uma recontagem, os
+  parâmetros de edição de usuário) — serializa em JSON sem problema, não tem função nem
+  referência a DOM. `logout()` já forçava `view:'home'`/`flowState:null` antes disso (pra
+  limpar a sessão) — isso continua valendo, então trocar de usuário no mesmo aparelho
+  nunca "vaza" a tela de um pro outro, mesmo com a navegação agora persistindo.
+- **Filtro de período em "Tendência Semanal"** (`weeklyPeriod`, estado local do
+  `Dashboard` — não precisa ser global, só essa seção usa): `<select className="pnl-
+  period-select">` no canto direito do título da seção (mesmo componente visual já usado
+  no filtro de período da Home), com 3 opções — "Últimas 10 semanas" (padrão, mesmo
+  comportamento de antes), "Últimas 26 semanas", "Todo o período" (calcula quantas
+  semanas cabem da contagem mais antiga do pool até hoje, em vez de um número fixo — só
+  assim as 3.659 linhas de `BD_Contagens` aparecem inteiras nos dois gráficos). Só afeta
+  `computeWeeklyStats` — nenhuma outra parte do Dashboard/Home muda.
+- **Trade-off assumido, não escondido**: com "Todo o período" (pode passar de 20 semanas),
+  o gráfico fica mais compacto por semana (mesma largura fixa de 760px dividida por mais
+  pontos) — mencionado explicitamente na pergunta feita ao cliente antes de implementar,
+  pra ele decidir com essa informação em mãos.
+- Testado via Playwright: reload numa tela diferente de Home mantém na mesma tela (não
+  cai mais no login nem na Home); logout continua limpando `view`/`flowState` normalmente,
+  e um login novo (usuário diferente) cai na Home, não onde o usuário anterior tinha
+  parado; um item de histórico com 200 dias de idade fica de fora com "Últimas 10
+  semanas" mas aparece com "Todo o período" (30 semanas no eixo nesse teste). Rodei de
+  novo toda a suíte de regressão do scratchpad, sem quebrar nada.
 
 ## Convenções de design (não quebrar ao continuar)
 

@@ -2126,8 +2126,17 @@ function App(){
   });
   const [logoutNotice, setLogoutNotice] = useState('');
 
-  const [view, setView] = useState('home');
-  const [flowState, setFlowState] = useState(null); // params passed into a flow
+  // Navegação (view/flowState) agora sobrevive a recarregar a página — pedido
+  // do cliente, que estava sendo jogado de volta pra Home a cada F5 no meio
+  // de uma análise (ex: na tela Indicadores). Mesmo padrão já usado pra
+  // sessão de login (`SESSION_STORAGE_KEY`) e pro resto do estado do app
+  // (`usePersistedState`) — `flowState` é sempre um objeto simples (o
+  // inventário sendo contado, a contagem original de uma recontagem, etc.),
+  // serializa sem problema. `logout()` já força `view:'home'`/
+  // `flowState:null` de volta, então isso não "vaza" contexto de um usuário
+  // pro próximo login no mesmo aparelho.
+  const [view, setView] = usePersistedState('view', 'home');
+  const [flowState, setFlowState] = usePersistedState('flowState', null); // params passed into a flow
   const [dashboardPeriod, setDashboardPeriod] = useState('7d'); // filtro de período do Dashboard novo
   // Esconder sidebar (desktop/tablet: começa aberta e empurra o conteúdo; celular
   // <768px: começa fechada, vira painel flutuante — ver CSS ".sidebar" no <style>).
@@ -5240,6 +5249,11 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   const contados = counts.length;
   const pendentes = Math.max(planejados-contados,0);
 
+  // Filtro de período de "Tendência Semanal" — cliente pediu poder escolher
+  // em vez de uma janela fixa, já que o histórico importado (fev-jul/2026)
+  // é bem mais longo que 10 semanas. Só afeta os dois gráficos semanais.
+  const [weeklyPeriod, setWeeklyPeriod] = useState('10');
+
   // "Qualidade" (acuracidade/divergências/valor divergente), "Principais
   // Causas de Erro" e "Top Itens com Maior Divergência" passam a somar o
   // histórico importado — sem isso essa tela inteira ficava praticamente
@@ -5304,7 +5318,21 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   const historicoTendenciaComoContagem = historicoParaTendencia
     .filter(h=>h.data)
     .map(h=>({data:h.data, diferenca:h.diferenca, saldoSistema:h.saldo_sistema, acuracidade:h.acuracidade}));
-  const weeklyStats = computeWeeklyStats([...counts, ...historicoTendenciaComoContagem], 10);
+  const poolTendencia = [...counts, ...historicoTendenciaComoContagem];
+  // Janela do gráfico é escolhível (cliente pediu): fixa em 10/26 semanas ou
+  // "todo o período" — nesse último caso calcula quantas semanas cabem desde
+  // a contagem mais antiga do pool até hoje, em vez de um número fixo. A
+  // planilha BD_Contagens cobre fev-jul/2026 (~22-26 semanas) — só com "todo
+  // o período" selecionado é que ela aparece inteira nos dois gráficos.
+  const maxWeeksParaPeriodo = periodo => {
+    if(periodo!=='all') return Number(periodo);
+    const datas = poolTendencia.map(c=>c.data).filter(Boolean);
+    if(datas.length===0) return 10;
+    const maisAntiga = datas.reduce((min,d)=> d<min?d:min, datas[0]);
+    const dias = (new Date() - new Date(maisAntiga+'T00:00:00')) / 86400000;
+    return Math.max(1, Math.ceil(dias/7) + 1);
+  };
+  const weeklyStats = computeWeeklyStats(poolTendencia, maxWeeksParaPeriodo(weeklyPeriod));
 
   return (
     <div>
@@ -5392,11 +5420,22 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
         <div className="kpi"><div className="kv">{inventories.length}</div><div className="kl">Inventários Ativos</div></div>
       </div>
 
-      {/* Janela fixa das últimas 10 semanas (ver computeWeeklyStats) — sempre
-          aparece, mesmo sem nenhuma contagem ainda, então não precisa mais
-          de guard condicional aqui. */}
+      {/* Sempre aparece, mesmo sem nenhuma contagem ainda (ver computeWeeklyStats) —
+          não precisa de guard condicional aqui. */}
       <div>
-        <div className="section-title">Tendência Semanal</div>
+        <div className="section-title">
+          Tendência Semanal
+          <select
+            className="pnl-period-select"
+            style={{marginLeft:'auto', textTransform:'none', letterSpacing:'normal'}}
+            value={weeklyPeriod}
+            onChange={e=>setWeeklyPeriod(e.target.value)}
+          >
+            <option value="10">Últimas 10 semanas</option>
+            <option value="26">Últimas 26 semanas</option>
+            <option value="all">Todo o período</option>
+          </select>
+        </div>
         <div className="weekly-charts-grid">
           <div className="panel" style={{margin:0}}>
             <div style={{fontSize:13,fontWeight:700,marginBottom:10}}>Acuracidade Semanal (%)</div>
