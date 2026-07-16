@@ -303,31 +303,24 @@
   .login-brand-logo-wrap img{height:auto;max-height:30px;width:auto;max-width:100%;display:block;}
   .login-brand-center{position:relative;z-index:2;flex:1;display:flex;flex-direction:column;align-items:center;
     justify-content:center;text-align:center;padding:16px 40px;gap:0;}
-  /* Ícone "hero" reaproveita o mesmo sistema Lucide-style (DIcon) já usado
-     no resto do app (sidebar/header/dashboard) — badge simples com fundo
-     laranja bem claro, em vez do hexágono+cubo isométrico desenhado à mão
-     da versão anterior (achado "cara de desenho de criança" pelo cliente,
-     bold/colorido demais pra bater com o resto do design corporativo). */
-  .login-hero-icon{width:64px;height:64px;border-radius:18px;background:#FFF4E4;color:var(--safety);
-    display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-bottom:14px;}
   .login-brand-title{font-family:var(--font-corp);font-weight:800;color:var(--navy);
     font-size:clamp(24px,2.6vw,38px);line-height:1.1;letter-spacing:-0.5px;margin:0;}
   .login-brand-rule{width:64px;height:4px;background:var(--safety);border-radius:2px;margin:12px 0;}
   .login-brand-subtitle{font-family:var(--font-corp);font-weight:400;color:var(--gray-500);
     font-size:14.5px;line-height:1.5;max-width:340px;}
-  .login-illustration-scene{position:relative;z-index:2;width:100%;max-width:400px;max-height:210px;margin:18px auto 0;
-    aspect-ratio:16/10;background:var(--gray-50);border-radius:16px;overflow:hidden;}
-  .login-illustration-img{width:100%;height:100%;display:block;object-fit:cover;border-radius:16px;}
-
-  .login-brand-benefits{position:relative;z-index:2;display:flex;align-items:stretch;justify-content:center;
-    gap:0;padding:16px 32px 28px;}
-  .login-benefit{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:6px;
-    padding:0 12px;text-align:center;}
-  .login-benefit + .login-benefit{border-left:1px solid var(--gray-200);}
-  .login-benefit .bn-icon{width:34px;height:34px;border-radius:9px;background:var(--gray-50);
-    color:var(--navy);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
-  .login-benefit strong{font-family:var(--font-corp);font-size:13.5px;font-weight:700;color:var(--navy);}
-  .login-benefit span{font-family:var(--font-corp);font-size:11.5px;color:var(--gray-500);line-height:1.35;}
+  /* A imagem enviada pelo cliente já traz o ícone "hero" (hexágono+caixa) E a
+     fileira de benefícios (Seguro/Inteligente/Eficiente) desenhados dentro
+     dela mesma — por isso os elementos HTML que faziam esse papel antes
+     (`.login-hero-icon`, `.login-brand-benefits`) foram removidos, pra não
+     duplicar. `object-fit:contain` (não `cover`) mostra a imagem INTEIRA,
+     sem cortar nada — pedido explícito do cliente ("não recorte, não
+     recrie nada da imagem"). Sem fundo/borda/raio ao redor (a rodada
+     anterior tinha isso e o cliente reclamou que parecia "um quadrado
+     colado dentro") — como o fundo da própria imagem já é bem clarinho/
+     esmaecido nas bordas, ela se funde direto com o branco de `.login-brand`
+     sem precisar de nenhuma moldura. */
+  .login-illustration-scene{position:relative;z-index:2;width:100%;max-width:380px;max-height:460px;margin:16px auto 0;}
+  .login-illustration-img{width:100%;height:100%;display:block;object-fit:contain;}
 
   /* ---- Coluna direita — formulário ---- */
   .login-form-col{display:flex;flex-direction:column;padding:32px 28px;background:#fff;min-width:0;}
@@ -441,15 +434,18 @@
   @media (max-width:1150px) and (min-width:900px){
     .login-form-col{padding:32px 40px;}
   }
-  /* Mobile: a coluna de marca (logo, ícone, título, subtítulo, benefícios)
-     continua visível, empilhada acima do formulário — só a ILUSTRAÇÃO
-     (imagem + cards flutuantes) some, por pedido explícito do cliente
-     ("Ocultar apenas a ilustração. Nunca ocultar o branding") — decisão que
-     substituiu a versão anterior, que escondia o painel de marca inteiro. */
+  /* Mobile: a coluna de marca (logo, título, subtítulo) continua visível,
+     empilhada acima do formulário — só a ILUSTRAÇÃO some, por pedido
+     explícito do cliente ("Ocultar apenas a ilustração. Nunca ocultar o
+     branding"). Como a imagem atual já embute o ícone hero E a fileira de
+     benefícios (ver comentário em `.login-illustration-scene`), escondê-la
+     no mobile também esconde esses dois — únicos elementos do branding sem
+     equivalente HTML separado hoje; se isso incomodar no celular, a solução
+     seria voltar a ter um ícone/benefícios HTML só pro mobile, mas não foi
+     pedido ainda. */
   @media (max-width:899px){
     .login-illustration-scene{display:none;}
-    .login-brand-center{padding:20px 24px 4px;}
-    .login-brand-benefits{padding:16px 24px 24px;}
+    .login-brand-center{padding:20px 24px 20px;}
     .login-form-col{padding:28px 24px;}
     .login-form-topbar{margin-bottom:12px;}
     .login-form-body{padding-top:4px;}
@@ -3094,24 +3090,25 @@ function ShieldIcon(){
 
 // Componente separado pra área da ilustração da coluna de marca — pedido
 // explícito do cliente: "não desenhe nenhuma ilustração, não utilize SVG".
-// Renderiza um <img> de verdade (não SVG desenhado à mão como a versão
-// anterior, `WarehouseIllustration`) apontando pra `images/login-
-// illustration.png` — arquivo real fornecido pelo cliente (o mockup
-// original que ele mandou era a COMPOSIÇÃO inteira da tela, com logo/
-// título/benefícios embutidos na própria imagem; como o app já desenha
-// esses elementos em HTML separadamente, o arquivo foi recortado só na
-// parte da cena do armazém antes de entrar no repo — ver CLAUDE.md). Os
-// dois cards flutuantes ("Indicadores"/"Acuracidade") que antes eram
-// elementos HTML por cima da imagem foram removidos: já vêm prontos,
-// renderizados na própria foto, então mantê-los duplicaria o conteúdo.
-// `onError` continua como salvaguarda — se o arquivo um dia sumir/for
+// Renderiza um <img> de verdade apontando pra `images/login-
+// illustration.png` — arquivo real fornecido pelo cliente. Usado EXATAMENTE
+// como enviado, sem recorte/edição (pedido explícito: "não é pra recortar
+// nem recriar nada da imagem que eu enviei") — essa versão já veio sem
+// logo/título embutidos (só o ícone hero + cena do armazém + dispositivos +
+// fileira de benefícios), diferente da primeira tentativa do cliente, que
+// era a composição da tela inteira e por isso tinha sido recortada. Como
+// esta imagem já traz o ícone hero e os benefícios prontos, os elementos
+// HTML equivalentes (`.login-hero-icon`, `.login-brand-benefits`) foram
+// removidos — ver comentário em `.login-illustration-scene` no `<style>`.
+// `object-fit:contain` garante que a imagem aparece INTEIRA, sem cortar
+// nada. `onError` é só salvaguarda — se o arquivo um dia sumir/for
 // renomeado, esconde o ícone de imagem quebrada em vez de mostrá-lo.
 function BrandIllustration(){
   return (
     <img
       className="login-illustration-img"
       src="images/login-illustration.png"
-      alt="Ilustração de um armazém com prateleiras, empilhadeira e indicadores do sistema"
+      alt="Ilustração de um armazém com prateleiras, empilhadeira, dispositivos de leitura e indicadores do sistema"
       onError={e=>{ e.target.style.visibility = 'hidden'; }}
     />
   );
@@ -3234,29 +3231,11 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
             <img src={SELGRON_LOGO_URL} alt="Selgron" />
           </div>
           <div className="login-brand-center">
-            <div className="login-hero-icon"><DIcon name="box" size={30} strokeWidth={1.6} /></div>
             <h1 className="login-brand-title">Gestão de Estoques</h1>
             <div className="login-brand-rule"></div>
             <p className="login-brand-subtitle">Central de controles, inventários e indicadores.</p>
             <div className="login-illustration-scene">
               <BrandIllustration />
-            </div>
-          </div>
-          <div className="login-brand-benefits">
-            <div className="login-benefit">
-              <span className="bn-icon"><DIcon name="shieldCheck" size={19} /></span>
-              <strong>Seguro</strong>
-              <span>Seus dados protegidos.</span>
-            </div>
-            <div className="login-benefit">
-              <span className="bn-icon"><DIcon name="barChart" size={19} /></span>
-              <strong>Inteligente</strong>
-              <span>Indicadores para decisões rápidas.</span>
-            </div>
-            <div className="login-benefit">
-              <span className="bn-icon"><DIcon name="zap" size={19} /></span>
-              <strong>Eficiente</strong>
-              <span>Processos otimizados.</span>
             </div>
           </div>
         </div>

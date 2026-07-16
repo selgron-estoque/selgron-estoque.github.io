@@ -3065,6 +3065,49 @@ pela interface web do GitHub, `Add file → Upload files`, direto na branch de t
   de novo com o mesmo raciocínio (excluir cabeçalho e rodapé, que o app já desenha em
   HTML) antes de salvar em `images/login-illustration.png`.
 
+## Segunda imagem do login: sem recorte, ícone e benefícios em HTML removidos
+
+O primeiro recorte que eu tinha feito da ilustração (ver seção anterior) deixou a imagem
+com aparência de "quadrado colado dentro" — a caixa com fundo cinza, cantos arredondados
+e `object-fit:cover` cortando as bordas fazia a foto parecer um cartão fechado por cima do
+layout, em vez de se fundir com o fundo. O cliente pediu uma imagem nova e foi explícito:
+**"não é pra recortar nem recriar nada da imagem que eu enviei"** — ao contrário da 1ª
+imagem (que era a composição inteira da tela e por isso precisou ser recortada), usar essa
+2ª imagem exatamente como veio, sem nenhuma edição.
+
+- **A imagem nova (1024×1536) já veio sem logo/título/subtítulo** (o cliente tirou esses
+  elementos por conta própria desta vez, sabendo que o app já desenha isso em HTML), mas
+  **ainda tem o ícone hero (hexágono+caixa) e a fileira "Seguro/Inteligente/Eficiente"
+  desenhados dentro dela**. Como o app também tinha elementos HTML pra essas duas coisas
+  (`.login-hero-icon`, `.login-brand-benefits`), perguntei ao cliente (`AskUserQuestion`,
+  caiu pra texto simples) se queria remover os HTML (pra não duplicar) ou manter os dois —
+  escolheu remover.
+- **`.login-hero-icon` e `.login-brand-benefits` removidos do JSX e do CSS** — a coluna de
+  marca agora é só: logo → título → linha → subtítulo → imagem (que já contém ícone, cena
+  do armazém, dispositivos e benefícios prontos).
+- **Sem moldura ao redor da imagem**: `.login-illustration-scene` perdeu
+  `background`/`border-radius`/`overflow:hidden`/`aspect-ratio` fixo (era isso que dava a
+  aparência de "quadrado colado"); `.login-illustration-img` trocou `object-fit:cover` por
+  **`object-fit:contain`** — mostra a imagem INTEIRA, sem cortar nada (pedido explícito),
+  com `max-width:380px;max-height:460px` só limitando o espaço disponível, sem forçar
+  proporção. Como o fundo da própria imagem já é bem claro e esmaece nas bordas, ela se
+  funde com o branco de `.login-brand` sem precisar de nenhuma borda/sombra.
+- **Mobile**: a regra que já existia (`.login-illustration-scene{display:none}`) continua
+  escondendo só a ilustração — só que agora, como o ícone hero e os benefícios estão
+  dentro dela, o celular perde esses dois junto (antes eles ficavam visíveis mesmo com a
+  ilustração escondida, por serem HTML separado). Documentado como trade-off consciente no
+  CSS — se incomodar, a solução seria um ícone/benefícios só-mobile separado, não pedido
+  ainda.
+- **Cuidado tomado ao processar o pedido**: antes de remover os elementos HTML, eu tinha
+  chegado a testar (só num arquivo de rascunho fora do repo, nunca sobrescrevendo
+  `images/login-illustration.png` de verdade) um recorte dessa 2ª imagem também, do mesmo
+  jeito que fiz na 1ª — o cliente interrompeu e deixou claro que NENHUM recorte deveria
+  acontecer dessa vez, nem nos testes. Revertido antes de qualquer commit; o arquivo no
+  repo é exatamente o que o cliente subiu, byte a byte.
+- Testado via Playwright nos 3 breakpoints: imagem aparece inteira (sem corte), sem borda
+  visível ao redor, sem sobreposição com o resto do conteúdo; `verify_login_flows.js`
+  continua passando sem nenhuma mudança de comportamento.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase
