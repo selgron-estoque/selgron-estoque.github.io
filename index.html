@@ -425,7 +425,13 @@
   .login-footer2 .lf-restrict2{display:flex;align-items:center;justify-content:center;gap:6px;}
 
   @media (min-width:900px){
-    .login-shell{flex-direction:row;min-height:480px;}
+    /* min-height:700px casado com o tamanho de imagem pedido ao cliente
+       (1150×1400px, ~2x de 572×700 — a largura real da coluna de marca no
+       card no tamanho máximo, 44% de 1300px) — pedido em andamento, ver
+       CLAUDE.md. Com a imagem atual (proporção antiga, bem mais alongada)
+       ainda corta a parte de baixo; assim que a imagem nova chegar nesse
+       tamanho o corte deve sumir por completo. */
+    .login-shell{flex-direction:row;min-height:700px;}
     .login-brand{width:44%;flex-shrink:0;}
     .login-brand-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center top;}
     .login-form-col{width:56%;padding:24px 64px;}

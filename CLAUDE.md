@@ -3280,6 +3280,34 @@ que não vinha de `min-height` nem de conteúdo real, e sim de algum cálculo in
   corretos (imagem inteira sem cortar no mobile, preenchendo a coluna no tablet).
   `verify_login_flows.js` sem quebrar nada.
 
+## Pendência: nova imagem do login no tamanho exato do painel
+
+Depois da correção do bug de altura (seção anterior), o cliente notou que a imagem estava
+sendo cortada (`object-fit:cover` cortando a parte de baixo — empilhadeira/dispositivos/
+benefícios — pra caber numa altura mais baixa). Em vez de ficar ajustando corte por
+tentativa e erro, o cliente perguntou o tamanho exato que a imagem devia ter, pra gerar um
+arquivo novo já na proporção certa.
+
+- **Tamanho pedido**: 1150×1400px (proporção ≈0,82:1). Calculado a partir do layout real:
+  a coluna de marca (`.login-brand`) tem 44% da largura do card, que no tamanho máximo
+  (`.login-shell{max-width:1300px}`) dá 572px; a altura-alvo do card é 700px (o suficiente
+  pra caber numa janela de laptop comum de ~768px de altura sem rolar, descontando
+  padding da página/rodapé externo). 1150×1400 é 572×700 multiplicado por 2, pra ficar
+  nítido em tela retina.
+- **`.login-shell{min-height:700px}`** (era 480px, que deixava a altura só a cargo do
+  conteúdo do formulário — média de ~589px, curta de mais pra mostrar a imagem sem cortar
+  demais) já foi ajustado pra bater com essa meta, ANTES da imagem nova chegar — com a
+  imagem atual (proporção antiga, bem mais alongada, 864×1821) o corte na parte de baixo
+  ainda vai acontecer até a imagem nova ser trocada. Assim que ela chegar no tamanho
+  pedido, o `object-fit:cover` deve preencher o espaço quase sem cortar nada (pequenas
+  variações de largura entre 900-1300px de viewport ainda podem cortar um pouco nas
+  bordas, mas bem menos que hoje).
+- **Se o cliente mandar um tamanho diferente**: recalcular a partir do mesmo raciocínio
+  (44% da largura do card no tamanho máximo × meta de altura que caiba sem rolar numa
+  tela comum) em vez de reusar esses números às cegas — a meta de altura em si (700px) é
+  uma escolha razoável, não uma regra fixa, pode mudar se o cliente preferir mais/menos
+  espaço pra imagem.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase
