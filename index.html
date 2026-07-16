@@ -319,8 +319,14 @@
      colado dentro") — como o fundo da própria imagem já é bem clarinho/
      esmaecido nas bordas, ela se funde direto com o branco de `.login-brand`
      sem precisar de nenhuma moldura. */
-  .login-illustration-scene{position:relative;z-index:2;width:100%;max-width:380px;max-height:460px;margin:16px auto 0;}
-  .login-illustration-img{width:100%;height:100%;display:block;object-fit:contain;}
+  /* Sem max-height: a rodada anterior limitava a altura (460px), o que
+     forçava a largura efetiva pra ~307px (bem menor que os 380px de
+     max-width configurados) — a imagem ficava pequena/ilegível de mais,
+     bem diferente da proporção generosa da referência do cliente. Agora só
+     a largura é limitada; a altura segue livre (`height:auto` na imagem),
+     then a proporção original da imagem (retrato) dita a altura sozinha. */
+  .login-illustration-scene{position:relative;z-index:2;width:100%;max-width:420px;margin:16px auto 0;}
+  .login-illustration-img{width:100%;height:auto;display:block;}
 
   /* ---- Coluna direita — formulário ---- */
   .login-form-col{display:flex;flex-direction:column;padding:32px 28px;background:#fff;min-width:0;}

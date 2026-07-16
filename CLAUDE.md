@@ -3108,6 +3108,43 @@ imagem (que era a composição inteira da tela e por isso precisou ser recortada
   visível ao redor, sem sobreposição com o resto do conteúdo; `verify_login_flows.js`
   continua passando sem nenhuma mudança de comportamento.
 
+## Ilustração pequena/ilegível demais — `max-height` da rodada anterior cortava o tamanho
+
+Cliente reagiu mal ao resultado ("ficou uma merda", com print comparando lado a lado com
+a referência). Investigando antes de mexer em qualquer coisa: primeiro confirmei que NÃO
+havia bug de funcionalidade — testei a largura estreita (514px, próxima da do print) via
+Playwright local e a regra que esconde a ilustração no mobile (`max-width:899px`)
+continuava funcionando corretamente. O print do cliente era, quase certamente, um recorte
+da visualização desktop mostrando só a coluna esquerda — o problema real não era
+estrutural, era de **tamanho**: a imagem estava pequena e cheia de detalhe ilegível
+(ícone, cards, texto dos benefícios todos espremidos) comparado à proporção generosa da
+referência.
+
+- **Causa raiz**: `.login-illustration-scene` tinha `max-width:380px` E `max-height:460px`
+  ao mesmo tempo. Como a imagem é retrato (1024×1536, proporção ≈0.667), respeitar os dois
+  limites significa que o `max-height` vence primeiro — a 460px de altura, a largura
+  correspondente é só ~307px (bem menor que os 380px de `max-width` configurados,
+  que na prática nunca eram alcançados). Resultado: a imagem renderizava consideravelmente
+  menor do que a intenção original.
+- **Correção**: removido o `max-height` por completo — agora só a largura é limitada
+  (`max-width:420px`) e a altura segue livre via `height:auto` na tag `<img>` (a proporção
+  original da imagem dita o resto). Sem cap de altura, a imagem cresce livremente até o
+  limite de largura — no teste local, isso levou a altura renderizada de ~460px pra
+  ~630px (desktop) e ~530px (tablet), bem mais próxima da presença visual da referência.
+- **Efeito colateral aceito conscientemente**: a altura do `.login-shell` voltou a crescer
+  (era ~675px na rodada "reduzir tamanho geral", agora ~860px no desktop) — decisão
+  consciente de priorizar fidelidade/legibilidade da ilustração (prioridade desta rodada)
+  sobre o objetivo de compactação de duas rodadas atrás (que era sobre remover espaço
+  vazio de um placeholder cinza, não sobre limitar uma imagem real e valiosa). Se o
+  cliente reclamar de novo que "ficou grande", a resposta não é voltar a espremer a
+  imagem — é rever outro elemento (ex: reduzir ainda mais os campos/botões do formulário,
+  que sobra bastante espaço vazio na coluna direita agora que a esquerda cresceu).
+- Testado via Playwright nos 3 breakpoints — imagem visivelmente maior e mais legível
+  (ícone, gráfico "Indicadores", donut "Acuracidade", texto dos benefícios todos
+  legíveis a olho nu no screenshot, diferente de antes); mobile continua escondendo só a
+  ilustração (confirmado que não é bug, testado isoladamente antes de qualquer mudança);
+  `verify_login_flows.js` sem quebrar nada.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase
