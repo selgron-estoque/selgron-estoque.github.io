@@ -3308,6 +3308,45 @@ arquivo novo já na proporção certa.
   uma escolha razoável, não uma regra fixa, pode mudar se o cliente preferir mais/menos
   espaço pra imagem.
 
+## Login: colunas redimensionadas pra imagem em paisagem, `aspect-ratio` em vez de `min-height`
+
+A imagem enviada pelo cliente pro tamanho combinado (1150×1400) veio em **paisagem**
+(1280×1024, proporção 1,25:1) em vez de retrato — provavelmente a ferramenta de IA usada
+pra gerar não respeitou a orientação pedida. Em vez de pedir uma 3ª geração, o cliente
+sugeriu ajustar a divisão das colunas pra bater com o formato que já tinha: "não daria
+pra diminuir um pouco o quadro da direita? não precisa de todo esse espaçamento da
+lateral".
+
+- **Divisão das colunas mudou de 44/56 pra 67/33** — cálculo: com a coluna de marca
+  numa altura-alvo H, a largura sem corte nenhum é `H × (1280/1024)`. Resolvendo pra
+  bater com os 1300px máximos do card: 67,3% pra marca, resto pro formulário.
+  `.login-form-col` perdeu padding lateral (64px→32px) pra o formulário continuar
+  confortável mesmo mais estreito — `max-width:480px` no corpo do formulário já era só
+  um teto, nunca uma exigência.
+- **Bug pego durante o teste, antes de virar rodada nova**: usar só `min-height:700px`
+  fixo no `.login-shell` zerava o corte APENAS na largura máxima (1300px) — em telas de
+  tablet (900-1150px), a coluna de marca fica proporcionalmente mais estreita mas a
+  altura fixa não acompanhava, voltando a cortar as laterais (inclusive a logo de novo).
+  Corrigido trocando `min-height` fixo por **`aspect-ratio:1280/1024` direto em
+  `.login-brand`** — assim a altura da coluna sempre acompanha a largura real (67% da
+  tela, seja qual for), mantendo a proporção idêntica à da imagem em qualquer largura
+  ≥900px, não só na máxima.
+- **Limitação residual, aceita conscientemente**: quando o conteúdo do formulário (login)
+  é mais alto do que a proporção da imagem pediria numa largura específica, o
+  `align-items:stretch` do flex row ainda força `.login-brand` a esticar além do
+  `aspect-ratio`, voltando a cortar um pouco as bordas — acontece de forma leve no tablet
+  comum (1024px, ex: iPad, só um filete da logo/QR Code cortado) e um pouco mais na
+  largura mínima do breakpoint (900px, faixa rara de dispositivo real). Resolver 100% em
+  qualquer largura exigiria encolher ainda mais os campos do formulário nessa faixa
+  específica — não fiz isso agora porque o ganho visual é pequeno perto do risco de
+  campos/botões ficarem apertados de mais pra digitar.
+- Testado via Playwright em 5 larguras (1600/1366/1024/900/390px): confirmei a proporção
+  exata da coluna de marca em cada uma (1.250 nas duas larguras ≥1300px de card — corte
+  zero — e degradando graciosamente pra 1.107/0.941 nas larguras de tablet, ainda assim
+  bem melhor que o corte original que tirava a logo inteira) e por screenshot que mobile
+  continua mostrando a imagem inteira sem cortar (comportamento não tocado, já era
+  `height:auto` fora do breakpoint de 900px). `verify_login_flows.js` sem quebrar nada.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase
