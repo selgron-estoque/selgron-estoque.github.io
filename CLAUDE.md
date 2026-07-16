@@ -3370,6 +3370,41 @@ O cliente gerou uma 3ª versão da imagem, agora sim em retrato (928×1136px, pr
   tablet, mesma tolerância já aceita antes), e mobile continua mostrando a imagem
   inteira sem cortar. `verify_login_flows.js` sem quebrar nada.
 
+## Corte residual na faixa 900-1150px: mais largura pra imagem, formulário mais apertado
+
+Mesmo com a imagem em retrato certa (928×1136) e `aspect-ratio` em vez de `min-height`
+fixo, o cliente ainda via corte (logo cortada de novo, cards da direita sumindo) — print
+batendo com a faixa de tablet/monitor pequeno (900-1150px de largura de viewport).
+Pedido do cliente foi direto: "pode diminuir o espaçamento da coluna da direita se
+necessário".
+
+- **Causa exata**: nessa faixa, a altura MÍNIMA que o conteúdo do formulário precisa
+  (~580-750px, dependendo da largura) era maior do que a altura que o `aspect-ratio` da
+  coluna de marca pediria pra uma largura de 44% — o `align-items:stretch` do flex row
+  então esticava a coluna de marca além do que o aspect-ratio queria, voltando a cortar
+  a imagem nas laterais (confirmado medindo a proporção real da caixa: 0.666-0.755 contra
+  os 0.817 da imagem, dependendo da largura exata).
+- **Correção com dois ajustes juntos, só nessa faixa** (`@media(max-width:1150px) and
+  (min-width:900px)`, que já existia mas só mexia em padding antes):
+  - `.login-brand{width:44%→54%}` / `.login-form-col{width:56%→46%}` — a coluna de marca
+    ganha mais espaço relativo justamente na faixa onde precisa mais dele.
+  - Formulário mais compacto SÓ nessa faixa (além do padding, que já apertava):
+    título (24px→22px), campos/botões (46px→42px de altura), margem entre campos
+    (12px→10px) — reduz a altura mínima que o formulário exige, fechando a lacuna que
+    sobrava mesmo com a coluna maior.
+  - As duas mudanças juntas (não uma sozinha) foram necessárias — só aumentar a largura
+    da coluna de marca não fecha a lacuna completa em toda a faixa (900px é o pior caso,
+    onde a altura do formulário é proporcionalmente mais alta que a largura disponível).
+- **Verificado matematicamente antes do teste visual**: medi a proporção real da caixa
+  `.login-brand` via Playwright em 900/1024/1150px de largura — as três bateram
+  EXATAMENTE 0.817 (a proporção da imagem) depois da correção, contra 0.666/0.755/0.817
+  antes (só a largura máxima já batia). Confirma que o ajuste elimina o corte na faixa
+  inteira, não só nos pontos testados visualmente.
+- Testado via Playwright nas 3 larguras problemáticas (900/1024/1150px): zero rolagem em
+  todas, screenshot confirma logo/cards/donut/código de barras/benefícios TODOS visíveis
+  sem corte nenhum. Desktop (≥1300px de card) e mobile (<900px) não foram tocados e
+  continuam iguais. `verify_login_flows.js` sem quebrar nada.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase
