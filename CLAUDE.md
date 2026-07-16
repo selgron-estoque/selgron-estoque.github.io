@@ -2885,6 +2885,96 @@ esqueci-minha-senha (ida e volta) e o aviso do botão de código de acesso funci
 nenhuma mudança de comportamento. Rodei de novo boa parte da suíte de regressão existente
 (sessão, logout, sync de usuários) sem quebrar nada, graças às classes de compatibilidade.
 
+## Segunda rodada do login: fidelidade pixel-perfect + bug real de layout que afetava as 3 larguras
+
+Depois do redesign da seção anterior, o cliente pediu uma segunda passada bem mais
+rígida: "revisão de UI... quanto menor a diferença visual [com a imagem de referência],
+melhor a avaliação... não interprete, não simplifique, não modernize, não redesenhe" —
+com a mesma imagem de referência de antes (2 colunas, ilustração de armazém, cards
+flutuantes "Indicadores"/"Acuracidade", rodapé com logo pequena + separador + tagline
+FORA do card branco). Pontos concretos pedidos que a rodada anterior não tinha acertado:
+container mais estreito (max-width 1300px em vez do valor anterior) e com `border-radius`
+maior; **ilustração não deve ser desenhada em SVG à mão** ("não utilize desenhos... não
+utilize clipart... utilize temporariamente uma imagem placeholder, depois será
+substituída"); toggle de senha só com ícone (sem o texto "Mostrar"/"Ocultar" ao lado);
+"ou" em minúsculo; credenciais de demonstração escondidas atrás de um link, não sempre
+visíveis; e — ponto que mudou de posição entre as duas rodadas — **"Mobile: Ocultar
+apenas a ilustração. Nunca ocultar o branding"**, ao contrário da 1ª rodada que dizia pra
+esconder o painel de marca inteiro no celular.
+
+- **`BrandIllustration`** (substituiu `WarehouseIllustration`, a cena SVG desenhada à mão
+  com prateleiras/paletes/empilhadeira) — agora é só um `<img src="images/login-
+  illustration.png" onError={...}/>`, exatamente como pedido ("reserve apenas a área da
+  imagem, ela será substituída depois"). Como este projeto não tem pipeline de assets
+  (`public/`, sem build step — ver topo deste arquivo), o caminho é um placeholder: se o
+  arquivo não existir, `onError` esconde a tag (`visibility:hidden`) e o espaço reservado
+  (`.login-illustration-scene`, fundo cinza claro) aparece vazio em vez de um ícone de
+  imagem quebrada. **Fica pendente o cliente fornecer o arquivo real** — quando ele mandar
+  uma imagem de verdade, o próximo passo é só salvá-la em `images/login-illustration.png`
+  (ou trocar o `src`), nenhuma mudança de código adicional necessária.
+- **Cards flutuantes**: o card "Leitura rápida" (3º card da rodada anterior) foi removido
+  — a imagem de referência só mostra 2. Os 2 que restaram (`login-float-1`/`-2`) ganharam
+  `max-width:47%` (ancorados em bordas opostas via `left:0`/`right:0`) + `text-overflow:
+  ellipsis` no lugar de `white-space:nowrap` sem limite — antes, o texto de largura fixa
+  podia estourar a metade da cena disponível e as duas fazerem overlap conforme a coluna
+  de marca encolhe num tablet; agora é estruturalmente impossível as duas se tocarem,
+  não importa a largura. `.login-float-3` (CSS órfão depois de remover o 3º card do JSX)
+  foi apagado.
+- **Credenciais de demonstração** viraram um link colapsável (`.login-demo-toggle`,
+  `showDemoCreds` state, default fechado) em vez de aparecerem sempre abertas — mantém a
+  funcionalidade (útil pra QA, já existia antes de qualquer pedido de redesign, então não
+  podia simplesmente sumir) enquanto bate com a imagem de referência (que não mostra esse
+  bloco por padrão).
+- **`.login-brand-logo-wrap img`**: `height:34px;width:auto` fixo virou `height:auto;
+  max-height:34px;width:auto;max-width:100%` — bug real pego por screenshot: no tablet
+  (largura ~44% da coluna de marca, ~1024px de viewport), a largura natural da logo numa
+  altura fixa de 34px ficava maior que a coluna disponível, e como `.login-brand` tem
+  `overflow:hidden`, a logo aparecia cortada no meio da palavra ("SELGR" com "ON"
+  cortado). `max-width:100%` deixa o navegador escalar proporcionalmente pela dimensão
+  mais apertada (altura OU largura), sem cortar.
+- **Bug real mais sério, achado comparando screenshot com a imagem de referência**: o
+  rodapé externo (`.login-outer-footer`, logo pequena + "|" + "Tecnologia que impulsiona
+  nossa indústria.") tinha sido adicionado como IRMÃO de `.login-shell` dentro de
+  `.login-page` na rodada anterior — mas `.login-page` nunca tinha `flex-direction:
+  column` declarado (só `display:flex;align-items:center;justify-content:center`, que
+  por padrão é `flex-direction:row`). Resultado: o rodapé renderizava **ao LADO do card**
+  (não abaixo, como a imagem sempre mostrou), flutuando verticalmente centralizado num
+  espaço vazio à direita — visível nos 3 breakpoints, mas dramático no celular, onde os
+  dois itens (card + rodapé) competindo por 350px de largura numa linha só forçava
+  `flex-shrink` a espremer AMBOS a ~117px, quebrando o layout inteiro (textos
+  sobrepostos, coluna de marca ilegível). Corrigido com uma linha:
+  `.login-page{flex-direction:column}`. Esse bug não tinha sido pego na rodada anterior
+  porque os screenshots de verificação daquela rodada foram tirados ANTES do rodapé
+  externo existir no JSX (o rodapé foi adicionado depois, sem re-screenshot completo) —
+  lição: sempre re-tirar screenshot nos 3 breakpoints depois de QUALQUER mudança
+  estrutural no JSX da tela de login, não só depois de mudança de CSS.
+- **Mobile — comportamento trocado**: a regra `@media(max-width:899px){.login-brand{
+  display:none}}` (que escondia a coluna de marca inteira, da 1ª rodada) foi substituída
+  por esconder só `.login-illustration-scene` — o resto da coluna de marca (logo, ícone
+  hexagonal, título "Gestão de Estoques", linha decorativa, subtítulo, os 3 benefícios)
+  continua visível, empilhado acima do formulário, só com paddings/tamanhos reduzidos
+  pra caber melhor numa tela estreita. Isso também tornou `.login-mobile-brand` (o
+  bloco compacto duplicado de logo+título que só existia pra aparecer quando o painel de
+  marca inteiro sumia) redundante — removido do CSS e do JSX, já que agora `.login-brand`
+  em si já cumpre esse papel no celular.
+- Testado via Playwright nos 3 breakpoints (1600/1024/390px) com verificações
+  automatizadas (não só visuais): coluna de marca visível nos 3; ilustração escondida só
+  no mobile; os 2 cards flutuantes nunca se sobrepõem (bounding box, checado
+  matematicamente); a logo nunca excede a largura do container (sem corte); e por
+  screenshot, que o rodapé externo aparece corretamente centralizado ABAIXO do card nos 3
+  tamanhos. Rodei de novo `verify_login_flows.js` (login válido/inválido, mostrar/ocultar
+  senha, esqueci-minha-senha, nota do código de acesso — tudo passou sem nenhuma mudança
+  de comportamento) e a suíte de regressão de sessão/usuários (`verify_smoke`,
+  `verify_session_logout`, `verify_users_sync`) sem quebrar nada.
+- **Fora de escopo desta rodada**: a componentização pedida no prompt
+  (`LoginPage`/`BrandPanel`/`LoginPanel`/`LoginForm`/`LoginFooter` como componentes
+  React separados, arquitetura TypeScript/Tailwind) não foi seguida à risca — mesmo
+  trade-off já aceito nas rodadas anteriores (este projeto não tem build step nem
+  TypeScript/Tailwind, ver topo deste arquivo). Só `BrandIllustration` virou um
+  componente de função próprio (o pedido era mais enfático sobre esse elemento
+  especificamente — "crie apenas `<BrandIllustration />`"); o resto continua dentro de
+  um único `LoginScreen`, mesmo padrão de organização já usado no resto do app.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase

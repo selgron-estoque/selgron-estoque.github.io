@@ -282,12 +282,16 @@
      login por código) ficam honestamente decorativos — mesmo critério já
      usado no sino de notificação do DesktopTopbar ("Nenhuma notificação por
      enquanto"), não fingem um recurso que não existe. */
-  .login-page{min-height:100vh;display:flex;align-items:center;justify-content:center;
+  .login-page{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;
     background:linear-gradient(180deg, #F7F8FB 0%, #EEF2F7 100%);
     padding:32px 20px;font-family:var(--font-corp);}
-  .login-shell{width:100%;max-width:1450px;background:#fff;border-radius:24px;overflow:hidden;
-    box-shadow:0 1px 2px rgba(15,23,42,0.04), 0 24px 64px rgba(15,23,42,0.10);
+  .login-shell{width:100%;max-width:1300px;background:#fff;border-radius:28px;overflow:hidden;
+    box-shadow:0 1px 2px rgba(15,23,42,0.03), 0 20px 48px rgba(15,23,42,0.07);
     display:flex;flex-direction:column;}
+  .login-outer-footer{display:flex;align-items:center;justify-content:center;gap:10px;
+    margin-top:20px;font-family:var(--font-corp);font-size:12.5px;color:var(--gray-500);}
+  .login-outer-footer img{height:15px;width:auto;opacity:0.85;}
+  .login-outer-footer .lof-sep{color:var(--gray-200);}
 
   /* ---- Coluna esquerda — marca ---- */
   .login-brand{position:relative;display:flex;flex-direction:column;background:#fff;overflow:hidden;
@@ -296,7 +300,7 @@
   .login-brand::before{content:'';position:absolute;inset:0;
     background:linear-gradient(180deg, #fff 0%, #fff 55%, rgba(255,255,255,0.4) 100%);}
   .login-brand-logo-wrap{position:relative;z-index:2;padding:50px 44px 0;}
-  .login-brand-logo-wrap img{height:34px;width:auto;display:block;}
+  .login-brand-logo-wrap img{height:auto;max-height:34px;width:auto;max-width:100%;display:block;}
   .login-brand-center{position:relative;z-index:2;flex:1;display:flex;flex-direction:column;align-items:center;
     justify-content:center;text-align:center;padding:28px 40px;gap:0;}
   .login-hero-icon{width:100px;height:100px;flex-shrink:0;margin-bottom:22px;}
@@ -306,19 +310,23 @@
   .login-brand-subtitle{font-family:var(--font-corp);font-weight:400;color:var(--gray-500);
     font-size:16px;line-height:1.5;max-width:360px;}
   .login-illustration-scene{position:relative;z-index:2;width:100%;max-width:520px;margin:32px auto 0;
-    aspect-ratio:16/10;}
-  .login-illustration-scene svg{width:100%;height:100%;display:block;}
+    aspect-ratio:16/10;background:var(--gray-50);border-radius:16px;overflow:hidden;}
+  .login-illustration-img{width:100%;height:100%;display:block;object-fit:cover;border-radius:16px;}
+  /* max-width:47% em cada uma (ancoradas em bordas opostas, left:0/right:0) é
+     o que garante que as duas nunca consigam se sobrepor mesmo quando a cena
+     encolhe num tablet estreito — sem isso, o texto de largura fixa
+     (white-space:nowrap) empurrava a largura real do card além da metade da
+     cena disponível. */
   .login-float-card{position:absolute;display:flex;align-items:center;gap:8px;background:#fff;
-    border:1px solid var(--gray-200);border-radius:12px;padding:8px 12px;
+    border:1px solid var(--gray-200);border-radius:12px;padding:8px 12px;max-width:47%;box-sizing:border-box;
     box-shadow:0 8px 20px rgba(15,23,42,0.10);font-family:var(--font-corp);}
   .login-float-card .fc-icon{width:26px;height:26px;border-radius:8px;display:flex;align-items:center;
     justify-content:center;flex-shrink:0;}
-  .login-float-card .fc-label{display:flex;flex-direction:column;line-height:1.2;white-space:nowrap;}
-  .login-float-card .fc-label strong{font-size:13px;color:var(--navy);}
-  .login-float-card .fc-label span{font-size:10px;color:var(--gray-500);}
+  .login-float-card .fc-label{display:flex;flex-direction:column;line-height:1.2;min-width:0;}
+  .login-float-card .fc-label strong{font-size:13px;color:var(--navy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .login-float-card .fc-label span{font-size:10px;color:var(--gray-500);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .login-float-1{top:2%;left:0;}
   .login-float-2{top:6%;right:0;}
-  .login-float-3{bottom:6%;left:2%;}
 
   .login-brand-benefits{position:relative;z-index:2;display:flex;align-items:stretch;justify-content:center;
     gap:0;padding:26px 32px 40px;}
@@ -355,10 +363,10 @@
   .login-field2 input:hover{border-color:#FBD9A8;background:#FFFBF5;}
   .login-field2 input:focus{outline:none;border-color:var(--safety);background:#fff;
     box-shadow:0 0 0 4px rgba(246,162,0,0.14);}
-  .login-field2 input.has-toggle2{padding-right:104px;}
+  .login-field2 input.has-toggle2{padding-right:52px;}
   .pw-toggle2{position:absolute;right:18px;top:50%;transform:translateY(-50%);background:none;
-    border:none;color:var(--gray-500);display:flex;align-items:center;gap:6px;padding:4px;
-    border-radius:6px;font-family:var(--font-corp);font-size:13px;font-weight:600;transition:color .15s;}
+    border:none;color:var(--gray-500);display:flex;align-items:center;padding:4px;
+    border-radius:6px;transition:color .15s;}
   .pw-toggle2:hover{color:var(--navy);}
 
   .login-row-between{display:flex;align-items:center;justify-content:space-between;margin:2px 0 24px;
@@ -404,12 +412,15 @@
   .login-inline-note2{font-family:var(--font-corp);font-size:12.5px;color:var(--gray-500);
     text-align:center;margin-top:12px;}
 
-  .login-demo2{margin-top:28px;background:var(--gray-50);border:1px solid var(--gray-200);
+  .login-demo-toggle{display:flex;align-items:center;justify-content:center;gap:6px;
+    width:100%;background:none;border:none;color:var(--gray-500);font-family:var(--font-corp);
+    font-size:12px;font-weight:600;padding:6px;margin-top:20px;}
+  .login-demo-toggle:hover{color:var(--navy);}
+
+  .login-demo2{margin-top:12px;background:var(--gray-50);border:1px solid var(--gray-200);
     border-radius:14px;padding:16px 18px;}
-  .login-demo2 .dc-title2{display:flex;align-items:center;gap:7px;font-family:var(--font-corp);
-    font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--navy);}
   .login-demo2 .dc-sub2{font-family:var(--font-corp);font-size:11.5px;color:var(--gray-500);
-    margin:2px 0 12px 20px;}
+    margin:0 0 12px;}
   .login-demo2 .dc-row2{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--gray-200);flex-wrap:wrap;}
   .login-demo2 .dc-row2:first-of-type{border-top:none;padding-top:0;}
   .login-demo2 .dc-avatar2{width:26px;height:26px;border-radius:50%;background:#fff;
@@ -431,26 +442,26 @@
     margin-top:24px;line-height:1.8;}
   .login-footer2 .lf-restrict2{display:flex;align-items:center;justify-content:center;gap:6px;}
 
-  /* Mobile: painel esquerdo inteiro (ilustração/benefícios) some — só
-     logo+título compactos ficam, direto na coluna do formulário, como
-     pedido ("Ocultar painel esquerdo. Exibir somente: Logo, Título, Login"). */
-  .login-mobile-brand{display:flex;flex-direction:column;align-items:center;text-align:center;
-    gap:10px;margin-bottom:28px;}
-  .login-mobile-brand img{height:26px;width:auto;}
-  .login-mobile-brand strong{font-family:var(--font-corp);font-weight:800;color:var(--navy);
-    font-size:20px;letter-spacing:-0.3px;}
-
   @media (min-width:900px){
     .login-shell{flex-direction:row;min-height:760px;}
-    .login-brand{width:45%;flex-shrink:0;}
-    .login-form-col{width:55%;padding:44px 80px;}
-    .login-mobile-brand{display:none;}
+    .login-brand{width:44%;flex-shrink:0;}
+    .login-form-col{width:56%;padding:44px 80px;}
   }
   @media (max-width:1150px) and (min-width:900px){
     .login-form-col{padding:40px 48px;}
   }
+  /* Mobile: a coluna de marca (logo, ícone, título, subtítulo, benefícios)
+     continua visível, empilhada acima do formulário — só a ILUSTRAÇÃO
+     (imagem + cards flutuantes) some, por pedido explícito do cliente
+     ("Ocultar apenas a ilustração. Nunca ocultar o branding") — decisão que
+     substituiu a versão anterior, que escondia o painel de marca inteiro. */
   @media (max-width:899px){
-    .login-brand{display:none;}
+    .login-illustration-scene{display:none;}
+    .login-brand-center{padding:24px 24px 4px;}
+    .login-hero-icon{width:64px;height:64px;margin-bottom:14px;}
+    .login-brand-title{font-size:26px;}
+    .login-brand-subtitle{font-size:14px;}
+    .login-brand-benefits{padding:20px 24px 28px;}
     .login-form-col{padding:36px 24px;}
     .login-form-topbar{margin-bottom:14px;}
     .login-form-body{padding-top:8px;}
@@ -3117,67 +3128,24 @@ function WarehouseHeroIcon(){
   );
 }
 
-// Cena ilustrada da coluna de marca (racks, pallets, empilhadeira) — SVG
-// geométrico "flat" em vez de foto/render 3D (o app não tem esse asset, e o
-// próprio pedido do cliente já tinha essa ressalva numa rodada anterior de
-// login: "sem foto real de estoque", ver CLAUDE.md). Paleta restrita a
-// navy/cinza/laranja/branco, sem verde, como pedido. Os 3 "cards flutuantes"
-// (indicadores, acuracidade, QR/código) são elementos HTML separados
-// (`.login-float-card`), posicionados por cima via CSS — mais simples de
-// estilizar com sombra/texto do que tudo dentro do SVG.
-function WarehouseIllustration(){
+// Componente separado pra área da ilustração da coluna de marca — pedido
+// explícito do cliente: "não desenhe nenhuma ilustração, não utilize SVG,
+// apenas reserve exatamente a área da imagem, depois ela será substituída".
+// Renderiza um <img> de verdade (não SVG desenhado à mão como a versão
+// anterior, `WarehouseIllustration`) apontando pra um caminho de asset que
+// ainda não existe neste repo (projeto de arquivo único, sem pipeline de
+// build/pasta `public/` — ver topo do CLAUDE.md). Enquanto o arquivo real
+// não chega, `onError` esconde o ícone de imagem quebrada e deixa só o
+// fundo neutro reservando a área exata (mesmo `aspect-ratio` de antes),
+// sem fingir uma ilustração que não existe.
+function BrandIllustration(){
   return (
-    <svg viewBox="0 0 400 240" fill="none" aria-hidden="true">
-      <line x1="10" y1="210" x2="390" y2="210" stroke="var(--gray-200)" strokeWidth="2"/>
-      <g stroke="var(--navy)" strokeWidth="3" strokeLinecap="round">
-        <line x1="30" y1="60" x2="30" y2="210"/>
-        <line x1="110" y1="60" x2="110" y2="210"/>
-        <line x1="30" y1="90" x2="110" y2="90"/>
-        <line x1="30" y1="130" x2="110" y2="130"/>
-        <line x1="30" y1="170" x2="110" y2="170"/>
-      </g>
-      <rect x="38" y="66" width="26" height="20" rx="2" fill="var(--gray-200)"/>
-      <rect x="70" y="66" width="26" height="20" rx="2" fill="var(--safety)" opacity="0.85"/>
-      <rect x="38" y="98" width="26" height="26" rx="2" fill="var(--safety)" opacity="0.5"/>
-      <rect x="70" y="98" width="26" height="26" rx="2" fill="var(--gray-200)"/>
-      <rect x="38" y="138" width="26" height="26" rx="2" fill="var(--gray-200)"/>
-      <rect x="70" y="138" width="26" height="26" rx="2" fill="var(--gray-400)" opacity="0.4"/>
-      <g stroke="var(--navy)" strokeWidth="3" strokeLinecap="round">
-        <line x1="140" y1="30" x2="140" y2="210"/>
-        <line x1="220" y1="30" x2="220" y2="210"/>
-        <line x1="140" y1="60" x2="220" y2="60"/>
-        <line x1="140" y1="100" x2="220" y2="100"/>
-        <line x1="140" y1="140" x2="220" y2="140"/>
-        <line x1="140" y1="175" x2="220" y2="175"/>
-      </g>
-      <rect x="148" y="36" width="26" height="18" rx="2" fill="var(--gray-200)"/>
-      <rect x="180" y="36" width="26" height="18" rx="2" fill="var(--gray-200)"/>
-      <rect x="148" y="68" width="26" height="26" rx="2" fill="var(--safety)" opacity="0.85"/>
-      <rect x="180" y="68" width="26" height="26" rx="2" fill="var(--gray-200)"/>
-      <rect x="148" y="108" width="26" height="26" rx="2" fill="var(--gray-200)"/>
-      <rect x="180" y="108" width="26" height="26" rx="2" fill="var(--gray-400)" opacity="0.4"/>
-      <rect x="148" y="147" width="26" height="22" rx="2" fill="var(--safety)" opacity="0.5"/>
-      <rect x="180" y="147" width="26" height="22" rx="2" fill="var(--gray-200)"/>
-      <g>
-        <rect x="330" y="160" width="52" height="10" rx="1" fill="var(--gray-400)" opacity="0.5"/>
-        <rect x="336" y="128" width="40" height="32" rx="2" fill="var(--gray-200)"/>
-        <rect x="336" y="128" width="40" height="32" rx="2" fill="none" stroke="var(--navy)" strokeWidth="2"/>
-        <rect x="342" y="96" width="28" height="28" rx="2" fill="var(--safety)" opacity="0.85"/>
-      </g>
-      <g strokeLinecap="round" strokeLinejoin="round">
-        <rect x="238" y="150" width="52" height="34" rx="4" fill="var(--safety)"/>
-        <rect x="238" y="150" width="52" height="34" rx="4" fill="none" stroke="var(--navy)" strokeWidth="2.5"/>
-        <rect x="252" y="126" width="18" height="26" rx="2" fill="var(--navy)"/>
-        <line x1="292" y1="126" x2="292" y2="184" stroke="var(--navy)" strokeWidth="4"/>
-        <line x1="296" y1="126" x2="296" y2="184" stroke="var(--navy)" strokeWidth="4"/>
-        <line x1="292" y1="176" x2="316" y2="176" stroke="var(--navy)" strokeWidth="5"/>
-        <line x1="292" y1="184" x2="316" y2="184" stroke="var(--navy)" strokeWidth="5"/>
-        <circle cx="250" cy="190" r="9" fill="var(--navy)"/>
-        <circle cx="278" cy="190" r="9" fill="var(--navy)"/>
-        <circle cx="250" cy="190" r="3.5" fill="#fff"/>
-        <circle cx="278" cy="190" r="3.5" fill="#fff"/>
-      </g>
-    </svg>
+    <img
+      className="login-illustration-img"
+      src="images/login-illustration.png"
+      alt="Ilustração de estoque"
+      onError={e=>{ e.target.style.visibility = 'hidden'; }}
+    />
   );
 }
 
@@ -3251,6 +3219,13 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
   // existe (mesmo critério do sino de notificação no DesktopTopbar).
   const [lembrar, setLembrar] = useState(true);
   const [qrNote, setQrNote] = useState(false);
+  // Painel de credenciais de demonstração continua existindo (é
+  // funcionalidade real, útil pra QA — não fazia parte do pedido de
+  // redesign) mas fica recolhido por padrão, atrás de um link discreto: a
+  // imagem de referência não mostra esse bloco, e mantê-lo sempre aberto
+  // deixaria o card visivelmente mais alto/cheio do que o mockup. Colapsado
+  // por padrão bate com a imagem pixel a pixel sem remover a função.
+  const [showDemoCreds, setShowDemoCreds] = useState(false);
 
   function submitLogin(e){
     e.preventDefault();
@@ -3296,7 +3271,7 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
             <div className="login-brand-rule"></div>
             <p className="login-brand-subtitle">Central de controles, inventários e indicadores.</p>
             <div className="login-illustration-scene">
-              <WarehouseIllustration />
+              <BrandIllustration />
               <div className="login-float-card login-float-1">
                 <span className="fc-icon" style={{background:'#FFF4E4',color:'var(--safety)'}}><DIcon name="trendingUp" size={14} /></span>
                 <span className="fc-label"><strong>Indicadores</strong><span>Tempo real</span></span>
@@ -3304,10 +3279,6 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
               <div className="login-float-card login-float-2">
                 <span className="fc-icon" style={{background:'#EEF2FF',color:'var(--navy)'}}><DIcon name="percent" size={14} /></span>
                 <span className="fc-label"><strong>Acuracidade</strong><span>92%</span></span>
-              </div>
-              <div className="login-float-card login-float-3">
-                <span className="fc-icon" style={{background:'var(--gray-100)',color:'var(--navy)'}}><DIcon name="qrCode" size={14} /></span>
-                <span className="fc-label"><strong>Leitura rápida</strong><span>QR / código</span></span>
               </div>
             </div>
           </div>
@@ -3338,11 +3309,6 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
           </div>
 
           <div className="login-form-body">
-            <div className="login-mobile-brand">
-              <img src={SELGRON_LOGO_URL} alt="Selgron" />
-              <strong>Gestão de Estoques</strong>
-            </div>
-
             {notice && mode==='login' && (
               <div className="login-notice2">{notice}</div>
             )}
@@ -3365,7 +3331,7 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
                   <div className="field-wrap2">
                     <span className="field-icon2"><LoginFieldIcon name="lock" /></span>
                     <input className="has-toggle2" type={showSenha?'text':'password'} value={senha} onChange={e=>setSenha(e.target.value)} placeholder="Digite sua senha" />
-                    <button type="button" className="pw-toggle2" onClick={()=>setShowSenha(s=>!s)} title={showSenha?'Ocultar senha':'Mostrar senha'}><EyeIcon off={showSenha} />{showSenha?'Ocultar':'Mostrar'}</button>
+                    <button type="button" className="pw-toggle2" onClick={()=>setShowSenha(s=>!s)} title={showSenha?'Ocultar senha':'Mostrar senha'}><EyeIcon off={showSenha} /></button>
                   </div>
                 </div>
 
@@ -3379,31 +3345,35 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
 
                 <button className="login-btn2 login-btn" type="submit"><DIcon name="logIn" size={18} /> Entrar</button>
 
-                <div className="login-or2">OU</div>
+                <div className="login-or2">ou</div>
                 <button type="button" className="login-btn-outline" onClick={()=>setQrNote(v=>!v)}>
                   <DIcon name="qrCode" size={18} /> Entrar com código de acesso
                 </button>
                 {qrNote && <div className="login-inline-note2">Login por código de acesso ainda não está disponível.</div>}
 
-                <div className="login-demo2">
-                  <div className="dc-title2"><ShieldIcon /> Acesso de demonstração</div>
-                  <div className="dc-sub2">Ambiente de demonstração (remover em produção)</div>
-                  <div className="dc-row2">
-                    <span className="dc-avatar2"><DIcon name="user" size={13} /></span>
-                    <span className="dc-cred2">alisson / admin123</span>
-                    <span className="dc-role-pill admin">Administrador</span>
+                <button type="button" className="login-demo-toggle" onClick={()=>setShowDemoCreds(v=>!v)}>
+                  <ShieldIcon /> {showDemoCreds ? 'Ocultar' : 'Ver'} credenciais de demonstração
+                </button>
+                {showDemoCreds && (
+                  <div className="login-demo2">
+                    <div className="dc-sub2">Ambiente de demonstração (remover em produção)</div>
+                    <div className="dc-row2">
+                      <span className="dc-avatar2"><DIcon name="user" size={13} /></span>
+                      <span className="dc-cred2">alisson / admin123</span>
+                      <span className="dc-role-pill admin">Administrador</span>
+                    </div>
+                    <div className="dc-row2">
+                      <span className="dc-avatar2"><DIcon name="user" size={13} /></span>
+                      <span className="dc-cred2">roberto.alves / lider123</span>
+                      <span className="dc-role-pill lider">Líder de Estoque</span>
+                    </div>
+                    <div className="dc-row2">
+                      <span className="dc-avatar2"><DIcon name="user" size={13} /></span>
+                      <span className="dc-cred2">carlos.mendes / operador123</span>
+                      <span className="dc-role-pill operador">Operador</span>
+                    </div>
                   </div>
-                  <div className="dc-row2">
-                    <span className="dc-avatar2"><DIcon name="user" size={13} /></span>
-                    <span className="dc-cred2">roberto.alves / lider123</span>
-                    <span className="dc-role-pill lider">Líder de Estoque</span>
-                  </div>
-                  <div className="dc-row2">
-                    <span className="dc-avatar2"><DIcon name="user" size={13} /></span>
-                    <span className="dc-cred2">carlos.mendes / operador123</span>
-                    <span className="dc-role-pill operador">Operador</span>
-                  </div>
-                </div>
+                )}
               </form>
             )}
 
@@ -3458,6 +3428,9 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
             </div>
           </div>
         </div>
+      </div>
+      <div className="login-outer-footer">
+        <img src={SELGRON_LOGO_URL} alt="Selgron" /> <span className="lof-sep">|</span> Tecnologia que impulsiona nossa indústria.
       </div>
     </div>
   );
