@@ -266,100 +266,194 @@
 
   .role-note{font-family:var(--font-mono);font-size:11px;color:var(--ink-dim);background:var(--panel-raised);border-radius:8px;padding:10px 12px;margin-bottom:16px;border-left:3px solid var(--accent2);}
 
-  /* LOGIN SCREEN — identidade corporativa/ERP (navy + branco + laranja Selgron),
-     card dividido em 2 colunas (ilustração + formulário), replicando o mockup de
-     referência do cliente. Ver CLAUDE.md "Tela de login vira o mockup de 2 colunas". */
-  .login-screen{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;
-    background:
-      radial-gradient(circle at 12% 8%, rgba(15,23,42,0.07), transparent 40%),
-      radial-gradient(circle at 88% 92%, rgba(246,162,0,0.09), transparent 42%),
-      var(--gray-100);
-    padding:24px;font-family:var(--font-corp);}
-  .login-card{width:100%;max-width:900px;display:flex;flex-direction:column;align-items:stretch;background:#FFFFFF;border:1px solid var(--gray-200);border-radius:20px;overflow:hidden;box-shadow:0 1px 2px rgba(15,23,42,0.04), 0 16px 40px rgba(15,23,42,0.08);}
+  /* LOGIN SCREEN v3 — redesign completo estilo SaaS premium (Microsoft 365,
+     SAP Fiori, Power BI, Atlassian, Linear), pedido explícito do cliente com
+     mockup de referência exato ("esta imagem passa a ser o Design System
+     desta tela"). Ver CLAUDE.md "Login vira redesign premium (Fiori/M365)".
+     Estrutura: página com degradê suave → shell centralizado (max 1450px,
+     radius 24px) → duas colunas (45% marca / 55% formulário). --safety
+     (laranja oficial da Selgron, já usado em todo o app) permanece a cor de
+     destaque aqui — não introduzi um hex novo só pra esta tela, mesmo o
+     mockup citando #F7941D (visualmente indistinguível de #F6A200, e
+     CLAUDE.md já registra --safety como "cor oficial da marca", não um tom
+     genérico pra trocar à toa). --navy, --gray-N e --font-corp já eram
+     compartilhadas com o Dashboard desde a rodada anterior de redesign.
+     Elementos do mockup sem funcionalidade real por trás (idioma, lembrar-me,
+     login por código) ficam honestamente decorativos — mesmo critério já
+     usado no sino de notificação do DesktopTopbar ("Nenhuma notificação por
+     enquanto"), não fingem um recurso que não existe. */
+  .login-page{min-height:100vh;display:flex;align-items:center;justify-content:center;
+    background:linear-gradient(180deg, #F7F8FB 0%, #EEF2F7 100%);
+    padding:32px 20px;font-family:var(--font-corp);}
+  .login-shell{width:100%;max-width:1450px;background:#fff;border-radius:24px;overflow:hidden;
+    box-shadow:0 1px 2px rgba(15,23,42,0.04), 0 24px 64px rgba(15,23,42,0.10);
+    display:flex;flex-direction:column;}
 
-  /* Coluna/faixa esquerda — ilustração. SEMPRE visível (mobile-first): em telas
-     estreitas vira uma faixa horizontal compacta no topo do card (logo + ícone +
-     nome, sem tagline nem o recorte decorativo, pra não gastar espaço vertical
-     precioso); a partir de 760px vira a coluna alta e centralizada do mockup de
-     referência, com tagline e o recorte diagonal decorativo. */
-  .login-illustration{display:flex;flex-direction:row;align-items:center;gap:14px;width:100%;flex-shrink:0;background:var(--gray-50);padding:20px 24px;position:relative;overflow:hidden;}
-  .login-illustration img{height:20px;width:auto;display:block;position:relative;z-index:2;flex-shrink:0;}
-  .login-illust-mid{flex:1;display:flex;flex-direction:row;align-items:center;justify-content:flex-start;text-align:left;gap:10px;position:relative;z-index:2;}
-  .login-cycle-icon{width:36px;height:36px;flex-shrink:0;}
-  .login-illust-title{display:none;font-family:var(--font-corp);font-size:23px;font-weight:700;color:var(--navy);white-space:nowrap;}
-  .login-illust-title span{color:var(--safety);}
-  .login-illust-tagline{display:none;font-family:var(--font-corp);font-size:13px;color:var(--gray-500);margin-top:-6px;}
-  .login-illust-decor{display:none;position:absolute;left:-10%;bottom:-8%;width:130%;height:46%;z-index:1;
-    background:repeating-linear-gradient(0deg, rgba(15,23,42,0.05) 0px, rgba(15,23,42,0.05) 2px, transparent 2px, transparent 20px);
-    clip-path:polygon(0 40%, 100% 0%, 100% 100%, 0 100%);}
-  .login-illust-decor::after{content:'';position:absolute;inset:0;background:linear-gradient(135deg, rgba(246,162,0,0.22), rgba(246,162,0,0) 65%);}
+  /* ---- Coluna esquerda — marca ---- */
+  .login-brand{position:relative;display:flex;flex-direction:column;background:#fff;overflow:hidden;
+    background-image:radial-gradient(circle, var(--gray-200) 1px, transparent 1px);
+    background-size:22px 22px; background-position:-6px -6px;}
+  .login-brand::before{content:'';position:absolute;inset:0;
+    background:linear-gradient(180deg, #fff 0%, #fff 55%, rgba(255,255,255,0.4) 100%);}
+  .login-brand-logo-wrap{position:relative;z-index:2;padding:50px 44px 0;}
+  .login-brand-logo-wrap img{height:34px;width:auto;display:block;}
+  .login-brand-center{position:relative;z-index:2;flex:1;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;text-align:center;padding:28px 40px;gap:0;}
+  .login-hero-icon{width:100px;height:100px;flex-shrink:0;margin-bottom:22px;}
+  .login-brand-title{font-family:var(--font-corp);font-weight:800;color:var(--navy);
+    font-size:clamp(30px,3.4vw,56px);line-height:1.08;letter-spacing:-0.5px;margin:0;}
+  .login-brand-rule{width:80px;height:4px;background:var(--safety);border-radius:2px;margin:18px 0;}
+  .login-brand-subtitle{font-family:var(--font-corp);font-weight:400;color:var(--gray-500);
+    font-size:16px;line-height:1.5;max-width:360px;}
+  .login-illustration-scene{position:relative;z-index:2;width:100%;max-width:520px;margin:32px auto 0;
+    aspect-ratio:16/10;}
+  .login-illustration-scene svg{width:100%;height:100%;display:block;}
+  .login-float-card{position:absolute;display:flex;align-items:center;gap:8px;background:#fff;
+    border:1px solid var(--gray-200);border-radius:12px;padding:8px 12px;
+    box-shadow:0 8px 20px rgba(15,23,42,0.10);font-family:var(--font-corp);}
+  .login-float-card .fc-icon{width:26px;height:26px;border-radius:8px;display:flex;align-items:center;
+    justify-content:center;flex-shrink:0;}
+  .login-float-card .fc-label{display:flex;flex-direction:column;line-height:1.2;white-space:nowrap;}
+  .login-float-card .fc-label strong{font-size:13px;color:var(--navy);}
+  .login-float-card .fc-label span{font-size:10px;color:var(--gray-500);}
+  .login-float-1{top:2%;left:0;}
+  .login-float-2{top:6%;right:0;}
+  .login-float-3{bottom:6%;left:2%;}
 
-  /* Coluna direita — formulário */
-  .login-form-panel{flex:1;min-width:0;padding:44px 48px;display:flex;flex-direction:column;justify-content:center;}
-  .login-title{font-family:var(--font-corp);font-size:26px;font-weight:700;letter-spacing:-0.2px;color:var(--navy);margin:0;}
-  .login-title span{color:var(--safety);}
-  .login-subtitle{font-family:var(--font-corp);font-size:11px;font-weight:600;color:var(--gray-500);letter-spacing:1.2px;text-transform:uppercase;margin:6px 0 0 0;}
-  .login-rule{width:44px;height:3px;background:var(--safety);border-radius:2px;margin:14px 0 24px;}
-  .login-field{margin-bottom:16px;position:relative;}
-  .login-field label{display:block;font-family:var(--font-corp);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;color:var(--gray-500);margin-bottom:7px;}
-  .login-field .field-wrap{position:relative;display:flex;align-items:center;}
-  .login-field .field-icon{position:absolute;left:13px;top:50%;transform:translateY(-50%);display:flex;color:var(--gray-400);pointer-events:none;}
-  .login-field input{width:100%;background:var(--gray-50);border:1px solid var(--gray-200);color:var(--navy);padding:12px 14px 12px 40px;border-radius:8px;font-family:var(--font-corp);font-size:14.5px;transition:border-color .12s, background .12s;}
-  .login-field input::placeholder{color:var(--gray-400);}
-  .login-field input:focus{outline:none;border-color:var(--navy);background:#fff;box-shadow:0 0 0 3px rgba(15,23,42,0.07);}
-  .login-field input[type="password"],
-  .login-field input.has-toggle{padding-right:76px;}
-  .pw-toggle{position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--gray-500);display:flex;align-items:center;gap:5px;padding:4px;border-radius:6px;font-family:var(--font-corp);font-size:12px;font-weight:600;}
-  .pw-toggle:hover{color:var(--navy);}
-  .login-error{display:flex;align-items:center;gap:8px;background:#FEF2F2;border:1px solid #FECACA;color:#B91C1C;border-radius:8px;padding:11px 13px;font-size:13px;font-family:var(--font-corp);margin-bottom:16px;}
-  .login-success{display:flex;align-items:center;gap:8px;background:#F0FDF4;border:1px solid #BBF7D0;color:#15803D;border-radius:8px;padding:11px 13px;font-size:13px;font-family:var(--font-corp);margin-bottom:16px;}
-  .login-notice{display:flex;align-items:center;gap:8px;background:#FFF7ED;border:1px solid #FED7AA;color:#9A5B13;border-radius:8px;padding:11px 13px;font-size:13px;font-family:var(--font-corp);margin-bottom:16px;}
-  .login-btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;background:var(--safety);color:var(--safety-ink);border:none;border-radius:8px;padding:13px 20px;font-family:var(--font-corp);font-size:14.5px;font-weight:700;letter-spacing:0.3px;text-transform:uppercase;margin-top:8px;transition:background .12s;}
-  .login-btn:hover{background:#e0940a;}
-  .login-btn:active{background:#d9a300;}
-  .login-or{display:flex;align-items:center;gap:12px;margin:18px 0 4px;font-family:var(--font-corp);font-size:11.5px;color:var(--gray-400);text-transform:uppercase;letter-spacing:0.5px;}
-  .login-or::before, .login-or::after{content:'';flex:1;height:1px;background:var(--gray-200);}
-  .login-forgot{display:flex;align-items:center;justify-content:center;gap:6px;text-align:center;margin-top:6px;background:none;border:none;color:var(--accent2);font-family:var(--font-corp);font-size:13px;font-weight:600;width:100%;padding:8px;}
-  .login-forgot:hover{text-decoration:underline;}
-  .login-back{display:block;text-align:center;margin-top:14px;background:none;border:none;color:var(--gray-500);font-family:var(--font-corp);font-size:12.5px;width:100%;padding:8px;}
-  .demo-creds{margin-top:22px;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:10px;padding:14px 16px;}
-  .demo-creds .dc-title{display:flex;align-items:center;gap:6px;font-family:var(--font-corp);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--navy);}
-  .demo-creds .dc-sub{font-family:var(--font-corp);font-size:11px;color:var(--gray-500);margin:2px 0 10px 19px;}
-  .demo-creds .dc-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--gray-200);}
-  .demo-creds .dc-row:first-of-type{border-top:none;padding-top:0;}
-  .demo-creds .dc-avatar{width:24px;height:24px;border-radius:50%;background:#fff;border:1px solid var(--gray-200);color:var(--gray-400);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
-  .demo-creds .dc-cred{flex:1;font-family:var(--font-mono);font-size:12px;color:var(--navy);}
-  .dc-role-pill{font-family:var(--font-corp);font-size:10.5px;font-weight:700;padding:3px 10px;border-radius:20px;white-space:nowrap;}
-  .dc-role-pill.admin{background:#DBEAFE;color:#1D4ED8;}
-  .dc-role-pill.lider{background:#DCFCE7;color:#15803D;}
-  .dc-role-pill.operador{background:#FFEDD5;color:#C2410C;}
-  .login-card .role-note{font-family:var(--font-corp);font-size:12.5px;color:var(--gray-500);background:var(--gray-50);border-radius:8px;border-left:3px solid var(--navy);}
+  .login-brand-benefits{position:relative;z-index:2;display:flex;align-items:stretch;justify-content:center;
+    gap:0;padding:26px 32px 40px;}
+  .login-benefit{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:8px;
+    padding:0 12px;text-align:center;}
+  .login-benefit + .login-benefit{border-left:1px solid var(--gray-200);}
+  .login-benefit .bn-icon{width:38px;height:38px;border-radius:10px;background:var(--gray-50);
+    color:var(--navy);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .login-benefit strong{font-family:var(--font-corp);font-size:13.5px;font-weight:700;color:var(--navy);}
+  .login-benefit span{font-family:var(--font-corp);font-size:11.5px;color:var(--gray-500);line-height:1.35;}
 
-  /* Faixa de confiança + rodapé, abaixo do card */
-  /* Faixa de confiança: sempre lado a lado (mesmo em telas estreitas), os itens
-     encolhem — ícone em cima do texto, fontes menores — em vez de empilhar
-     verticalmente. A partir de 760px vira o layout largo (ícone ao lado do texto). */
-  .login-trust-row{display:flex;align-items:stretch;justify-content:center;gap:0;width:100%;max-width:900px;margin-top:28px;}
-  .login-trust-item{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:4px;padding:0 6px;text-align:center;}
-  .login-trust-item + .login-trust-item{border-left:1px solid var(--gray-200);}
-  .login-trust-item .ti-icon{color:var(--gray-500);flex-shrink:0;}
-  .login-trust-item strong{display:block;font-family:var(--font-corp);font-size:11px;color:var(--navy);font-weight:700;white-space:nowrap;}
-  .login-trust-item span{display:block;font-family:var(--font-corp);font-size:9.5px;color:var(--gray-500);margin-top:1px;line-height:1.25;}
-  .login-footer{text-align:center;font-family:var(--font-corp);font-size:11.5px;color:var(--gray-500);margin-top:26px;letter-spacing:0.2px;line-height:1.7;}
-  .login-footer .lf-restrict{display:flex;align-items:center;justify-content:center;gap:6px;}
+  /* ---- Coluna direita — formulário ---- */
+  .login-form-col{display:flex;flex-direction:column;padding:44px 28px;background:#fff;min-width:0;}
+  .login-form-topbar{display:flex;justify-content:flex-end;margin-bottom:24px;}
+  .login-lang-select{display:flex;align-items:center;gap:7px;background:none;border:none;
+    color:var(--gray-500);font-family:var(--font-corp);font-size:13px;font-weight:500;padding:8px 4px;
+    cursor:default;}
+  .login-form-body{flex:1;display:flex;flex-direction:column;justify-content:center;max-width:480px;
+    margin:0 auto;width:100%;}
+  .login-welcome-title{font-family:var(--font-corp);font-weight:800;color:var(--navy);
+    font-size:clamp(28px,3.2vw,44px);line-height:1.1;letter-spacing:-0.5px;margin:0;}
+  .login-welcome-sub{font-family:var(--font-corp);font-size:15px;color:var(--gray-500);margin:10px 0 32px;}
 
-  @media (min-width:760px){
-    .login-card{flex-direction:row;}
-    .login-illustration{flex-direction:column;justify-content:space-between;width:38%;padding:36px 34px;}
-    .login-illustration img{height:22px;}
-    .login-illust-mid{flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:14px;}
-    .login-cycle-icon{width:104px;height:104px;}
-    .login-illust-title{display:block;font-size:23px;}
-    .login-illust-tagline{display:block;}
-    .login-illust-decor{display:block;}
-    .login-trust-item{flex-direction:row;align-items:flex-start;gap:10px;padding:0 20px;text-align:left;}
-    .login-trust-item strong{font-size:13px;white-space:normal;}
-    .login-trust-item span{font-size:11.5px;}
+  .login-field2{margin-bottom:18px;}
+  .login-field2 label{display:block;font-family:var(--font-corp);font-size:13px;font-weight:600;
+    color:var(--navy);margin-bottom:8px;}
+  .login-field2 .field-wrap2{position:relative;display:flex;align-items:center;}
+  .login-field2 .field-icon2{position:absolute;left:20px;top:50%;transform:translateY(-50%);
+    display:flex;color:var(--gray-400);pointer-events:none;}
+  .login-field2 input{width:100%;height:64px;background:#fff;border:1.5px solid var(--gray-200);
+    color:var(--navy);padding:0 20px 0 52px;border-radius:14px;font-family:var(--font-corp);
+    font-size:15px;transition:border-color .15s, box-shadow .15s, background .15s;}
+  .login-field2 input::placeholder{color:var(--gray-400);}
+  .login-field2 input:hover{border-color:#FBD9A8;background:#FFFBF5;}
+  .login-field2 input:focus{outline:none;border-color:var(--safety);background:#fff;
+    box-shadow:0 0 0 4px rgba(246,162,0,0.14);}
+  .login-field2 input.has-toggle2{padding-right:104px;}
+  .pw-toggle2{position:absolute;right:18px;top:50%;transform:translateY(-50%);background:none;
+    border:none;color:var(--gray-500);display:flex;align-items:center;gap:6px;padding:4px;
+    border-radius:6px;font-family:var(--font-corp);font-size:13px;font-weight:600;transition:color .15s;}
+  .pw-toggle2:hover{color:var(--navy);}
+
+  .login-row-between{display:flex;align-items:center;justify-content:space-between;margin:2px 0 24px;
+    font-family:var(--font-corp);font-size:13.5px;}
+  .login-remember{display:flex;align-items:center;gap:9px;color:var(--navy);cursor:default;
+    background:none;border:none;padding:0;font:inherit;}
+  .login-remember .cb-box{width:20px;height:20px;border-radius:6px;border:1.5px solid var(--gray-200);
+    background:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .15s, border-color .15s;}
+  .login-remember .cb-box.checked{background:var(--safety);border-color:var(--safety);color:#fff;}
+  .login-forgot2{background:none;border:none;color:var(--safety);font-family:var(--font-corp);
+    font-size:13.5px;font-weight:600;padding:0;}
+  .login-forgot2:hover{color:#E67E00;text-decoration:underline;}
+
+  .login-btn2{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;height:64px;
+    background:var(--safety);color:#fff;border:none;border-radius:14px;font-family:var(--font-corp);
+    font-size:16px;font-weight:700;transition:background .15s, transform .1s;}
+  .login-btn2:hover:not(:disabled){background:#E67E00;}
+  .login-btn2:active:not(:disabled){transform:translateY(1px);}
+  .login-btn2:disabled{opacity:0.65;}
+
+  .login-or2{display:flex;align-items:center;gap:14px;margin:24px 0;font-family:var(--font-corp);
+    font-size:12px;font-weight:600;color:var(--gray-400);letter-spacing:0.6px;}
+  .login-or2::before, .login-or2::after{content:'';flex:1;height:1px;background:var(--gray-200);}
+
+  .login-btn-outline{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;
+    height:64px;background:#fff;color:var(--navy);border:1.5px solid var(--safety);border-radius:14px;
+    font-family:var(--font-corp);font-size:15px;font-weight:600;transition:background .15s;}
+  .login-btn-outline:hover{background:#FFF7EC;}
+
+  .login-back2{display:block;text-align:center;margin-top:18px;background:none;border:none;
+    color:var(--gray-500);font-family:var(--font-corp);font-size:13px;width:100%;padding:8px;}
+  .login-back2:hover{color:var(--navy);}
+
+  .login-error2{display:flex;align-items:center;gap:8px;background:#FEF2F2;border:1px solid #FECACA;
+    color:#B91C1C;border-radius:10px;padding:12px 14px;font-size:13.5px;font-family:var(--font-corp);
+    margin-bottom:18px;}
+  .login-success2{display:flex;align-items:center;gap:8px;background:#F0FDF4;border:1px solid #BBF7D0;
+    color:#15803D;border-radius:10px;padding:12px 14px;font-size:13.5px;font-family:var(--font-corp);
+    margin-bottom:18px;}
+  .login-notice2{display:flex;align-items:center;gap:8px;background:#FFF7ED;border:1px solid #FED7AA;
+    color:#9A5B13;border-radius:10px;padding:12px 14px;font-size:13.5px;font-family:var(--font-corp);
+    margin-bottom:18px;}
+  .login-inline-note2{font-family:var(--font-corp);font-size:12.5px;color:var(--gray-500);
+    text-align:center;margin-top:12px;}
+
+  .login-demo2{margin-top:28px;background:var(--gray-50);border:1px solid var(--gray-200);
+    border-radius:14px;padding:16px 18px;}
+  .login-demo2 .dc-title2{display:flex;align-items:center;gap:7px;font-family:var(--font-corp);
+    font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:var(--navy);}
+  .login-demo2 .dc-sub2{font-family:var(--font-corp);font-size:11.5px;color:var(--gray-500);
+    margin:2px 0 12px 20px;}
+  .login-demo2 .dc-row2{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--gray-200);flex-wrap:wrap;}
+  .login-demo2 .dc-row2:first-of-type{border-top:none;padding-top:0;}
+  .login-demo2 .dc-avatar2{width:26px;height:26px;border-radius:50%;background:#fff;
+    border:1px solid var(--gray-200);color:var(--gray-400);display:flex;align-items:center;
+    justify-content:center;flex-shrink:0;}
+  .login-demo2 .dc-cred2{flex:1;min-width:0;font-family:var(--font-mono);font-size:12px;color:var(--navy);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  @media (max-width:420px){
+    .login-demo2 .dc-row2{gap:4px 10px;}
+    .login-demo2 .dc-cred2{flex-basis:100%;order:1;white-space:normal;margin-left:36px;}
+    .dc-role-pill{order:2;margin-left:36px;}
+  }
+
+  .login-role-note2{font-family:var(--font-corp);font-size:13px;color:var(--gray-500);
+    background:var(--gray-50);border-radius:10px;border-left:3px solid var(--safety);padding:12px 14px;
+    margin-bottom:20px;}
+
+  .login-footer2{text-align:center;font-family:var(--font-corp);font-size:12.5px;color:var(--gray-500);
+    margin-top:24px;line-height:1.8;}
+  .login-footer2 .lf-restrict2{display:flex;align-items:center;justify-content:center;gap:6px;}
+
+  /* Mobile: painel esquerdo inteiro (ilustração/benefícios) some — só
+     logo+título compactos ficam, direto na coluna do formulário, como
+     pedido ("Ocultar painel esquerdo. Exibir somente: Logo, Título, Login"). */
+  .login-mobile-brand{display:flex;flex-direction:column;align-items:center;text-align:center;
+    gap:10px;margin-bottom:28px;}
+  .login-mobile-brand img{height:26px;width:auto;}
+  .login-mobile-brand strong{font-family:var(--font-corp);font-weight:800;color:var(--navy);
+    font-size:20px;letter-spacing:-0.3px;}
+
+  @media (min-width:900px){
+    .login-shell{flex-direction:row;min-height:760px;}
+    .login-brand{width:45%;flex-shrink:0;}
+    .login-form-col{width:55%;padding:44px 80px;}
+    .login-mobile-brand{display:none;}
+  }
+  @media (max-width:1150px) and (min-width:900px){
+    .login-form-col{padding:40px 48px;}
+  }
+  @media (max-width:899px){
+    .login-brand{display:none;}
+    .login-form-col{padding:36px 24px;}
+    .login-form-topbar{margin-bottom:14px;}
+    .login-form-body{padding-top:8px;}
   }
 
   /* ---------------- LAYOUT DESKTOP (sidebar) — a partir de celular médio ----------------
@@ -2998,25 +3092,90 @@ function ShieldIcon(){
   );
 }
 
-// Ícone "hero" da coluna ilustrada do login: ciclo (duas setas em arco) em volta
-// de uma caixa — representa a contagem cíclica de inventário.
-// Setas com ponta triangular preenchida (em vez de um chevron só com stroke)
-// — a versão anterior usava um "L L" de 2 segmentos como ponta de seta, que
-// ficava ilegível/"bugado" no tamanho pequeno (36px, faixa mobile do login):
-// com stroke-width proporcional ao viewBox, o chevron virava um risco torto
-// em vez de uma seta reconhecível. Triângulo preenchido, com o vértice exato
-// na tangente do arco, continua nítido em qualquer tamanho.
-function CycleIcon({className}){
+// Ícone "hero" da coluna de marca do login (redesign v3, ver CLAUDE.md
+// "Login vira redesign premium") — hexágono outline em laranja bem claro
+// (mesmo espírito do mockup do cliente) com uma caixa isométrica + risca de
+// código de barras dentro, em navy/laranja. Substitui o `CycleIcon` da
+// versão anterior (setas em arco) — mockup pede "ícone outline moderno
+// relacionado a estoque: cube/warehouse/barcode", não mais o conceito de
+// "ciclo".
+function WarehouseHeroIcon(){
   return (
-    <svg className={className} viewBox="0 0 100 100" fill="none" aria-hidden="true">
-      <path d="M42.72 15.76 A35 35 0 0 1 84.24 42.72" stroke="var(--safety)" strokeWidth="6" strokeLinecap="round" fill="none"/>
-      <polygon points="84.44,43.70 75.87,32.23 87.61,29.74" fill="var(--safety)"/>
-      <path d="M57.28 84.24 A35 35 0 0 1 15.76 57.28" stroke="var(--safety)" strokeWidth="6" strokeLinecap="round" fill="none"/>
-      <polygon points="15.56,56.30 24.13,67.77 12.39,70.26" fill="var(--safety)"/>
-      <g transform="translate(50 50)" stroke="var(--navy)" strokeWidth="4" strokeLinejoin="round" strokeLinecap="round" fill="none">
-        <path d="M-14 -8 L0 -16 L14 -8 L14 8 L0 16 L-14 8 Z"/>
-        <path d="M-14 -8 L0 0 L14 -8"/>
-        <path d="M0 0 L0 16"/>
+    <svg viewBox="0 0 120 120" fill="none" aria-hidden="true" style={{width:'100%',height:'100%'}}>
+      <path d="M60 6 108 33 108 87 60 114 12 87 12 33 Z" fill="#FFF4E4" stroke="var(--safety)" strokeWidth="2"/>
+      <g transform="translate(60 58)">
+        <g stroke="var(--navy)" strokeWidth="4.5" strokeLinejoin="round" strokeLinecap="round" fill="none">
+          <path d="M-20 -8 0 -18 20 -8 20 14 0 24 -20 14 Z"/>
+          <path d="M-20 -8 0 2 20 -8"/>
+          <path d="M0 2 0 24"/>
+        </g>
+        <rect x="-13" y="6" width="4" height="11" rx="0.5" fill="var(--safety)"/>
+        <rect x="-6.5" y="6" width="2" height="11" fill="var(--safety)"/>
+        <rect x="-2.5" y="6" width="3" height="11" fill="var(--safety)"/>
+      </g>
+    </svg>
+  );
+}
+
+// Cena ilustrada da coluna de marca (racks, pallets, empilhadeira) — SVG
+// geométrico "flat" em vez de foto/render 3D (o app não tem esse asset, e o
+// próprio pedido do cliente já tinha essa ressalva numa rodada anterior de
+// login: "sem foto real de estoque", ver CLAUDE.md). Paleta restrita a
+// navy/cinza/laranja/branco, sem verde, como pedido. Os 3 "cards flutuantes"
+// (indicadores, acuracidade, QR/código) são elementos HTML separados
+// (`.login-float-card`), posicionados por cima via CSS — mais simples de
+// estilizar com sombra/texto do que tudo dentro do SVG.
+function WarehouseIllustration(){
+  return (
+    <svg viewBox="0 0 400 240" fill="none" aria-hidden="true">
+      <line x1="10" y1="210" x2="390" y2="210" stroke="var(--gray-200)" strokeWidth="2"/>
+      <g stroke="var(--navy)" strokeWidth="3" strokeLinecap="round">
+        <line x1="30" y1="60" x2="30" y2="210"/>
+        <line x1="110" y1="60" x2="110" y2="210"/>
+        <line x1="30" y1="90" x2="110" y2="90"/>
+        <line x1="30" y1="130" x2="110" y2="130"/>
+        <line x1="30" y1="170" x2="110" y2="170"/>
+      </g>
+      <rect x="38" y="66" width="26" height="20" rx="2" fill="var(--gray-200)"/>
+      <rect x="70" y="66" width="26" height="20" rx="2" fill="var(--safety)" opacity="0.85"/>
+      <rect x="38" y="98" width="26" height="26" rx="2" fill="var(--safety)" opacity="0.5"/>
+      <rect x="70" y="98" width="26" height="26" rx="2" fill="var(--gray-200)"/>
+      <rect x="38" y="138" width="26" height="26" rx="2" fill="var(--gray-200)"/>
+      <rect x="70" y="138" width="26" height="26" rx="2" fill="var(--gray-400)" opacity="0.4"/>
+      <g stroke="var(--navy)" strokeWidth="3" strokeLinecap="round">
+        <line x1="140" y1="30" x2="140" y2="210"/>
+        <line x1="220" y1="30" x2="220" y2="210"/>
+        <line x1="140" y1="60" x2="220" y2="60"/>
+        <line x1="140" y1="100" x2="220" y2="100"/>
+        <line x1="140" y1="140" x2="220" y2="140"/>
+        <line x1="140" y1="175" x2="220" y2="175"/>
+      </g>
+      <rect x="148" y="36" width="26" height="18" rx="2" fill="var(--gray-200)"/>
+      <rect x="180" y="36" width="26" height="18" rx="2" fill="var(--gray-200)"/>
+      <rect x="148" y="68" width="26" height="26" rx="2" fill="var(--safety)" opacity="0.85"/>
+      <rect x="180" y="68" width="26" height="26" rx="2" fill="var(--gray-200)"/>
+      <rect x="148" y="108" width="26" height="26" rx="2" fill="var(--gray-200)"/>
+      <rect x="180" y="108" width="26" height="26" rx="2" fill="var(--gray-400)" opacity="0.4"/>
+      <rect x="148" y="147" width="26" height="22" rx="2" fill="var(--safety)" opacity="0.5"/>
+      <rect x="180" y="147" width="26" height="22" rx="2" fill="var(--gray-200)"/>
+      <g>
+        <rect x="330" y="160" width="52" height="10" rx="1" fill="var(--gray-400)" opacity="0.5"/>
+        <rect x="336" y="128" width="40" height="32" rx="2" fill="var(--gray-200)"/>
+        <rect x="336" y="128" width="40" height="32" rx="2" fill="none" stroke="var(--navy)" strokeWidth="2"/>
+        <rect x="342" y="96" width="28" height="28" rx="2" fill="var(--safety)" opacity="0.85"/>
+      </g>
+      <g strokeLinecap="round" strokeLinejoin="round">
+        <rect x="238" y="150" width="52" height="34" rx="4" fill="var(--safety)"/>
+        <rect x="238" y="150" width="52" height="34" rx="4" fill="none" stroke="var(--navy)" strokeWidth="2.5"/>
+        <rect x="252" y="126" width="18" height="26" rx="2" fill="var(--navy)"/>
+        <line x1="292" y1="126" x2="292" y2="184" stroke="var(--navy)" strokeWidth="4"/>
+        <line x1="296" y1="126" x2="296" y2="184" stroke="var(--navy)" strokeWidth="4"/>
+        <line x1="292" y1="176" x2="316" y2="176" stroke="var(--navy)" strokeWidth="5"/>
+        <line x1="292" y1="184" x2="316" y2="184" stroke="var(--navy)" strokeWidth="5"/>
+        <circle cx="250" cy="190" r="9" fill="var(--navy)"/>
+        <circle cx="278" cy="190" r="9" fill="var(--navy)"/>
+        <circle cx="250" cy="190" r="3.5" fill="#fff"/>
+        <circle cx="278" cy="190" r="3.5" fill="#fff"/>
       </g>
     </svg>
   );
@@ -3058,6 +3217,10 @@ const DICON_PATHS = {
   lock: <><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></>,
   clock: <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></>,
   shieldCheck: <><path d="M12 3.5l7 2.6v5.4c0 4.6-3 8.3-7 9-4-0.7-7-4.4-7-9V6.1l7-2.6Z"/><path d="m9 12 2 2 4-4.2"/></>,
+  zap: <path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/>,
+  globe: <><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14.5 14.5 0 0 1 0 18a14.5 14.5 0 0 1 0-18Z"/></>,
+  qrCode: <><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3z"/><path d="M20 14h1v1h-1z"/><path d="M14 20h1v1h-1z"/><path d="M20 20h1v1h-1z"/><path d="M17.5 17.5h.01"/></>,
+  logIn: <><path d="M11 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6"/><path d="m15 8 4 4-4 4"/><path d="M19 12H8"/></>,
 };
 
 function DIcon({name, size=18, strokeWidth=1.8, style}){
@@ -3079,6 +3242,15 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
   const [novaSenha, setNovaSenha] = useState('');
   const [confirmaSenha, setConfirmaSenha] = useState('');
   const [salvandoSenha, setSalvandoSenha] = useState(false);
+  // Puramente visuais, sem lógica por trás (mockup do cliente pede esses
+  // elementos, mas nenhum tem funcionalidade real hoje — ver CLAUDE.md
+  // "Login vira redesign premium"): "Lembrar-me" é decorativo porque a
+  // sessão já persiste sozinha sempre (ver SESSION_STORAGE_KEY); o seletor
+  // de idioma não faz nada porque o app só existe em pt-BR; "código de
+  // acesso" mostra uma nota honesta em vez de fingir um QR-login que não
+  // existe (mesmo critério do sino de notificação no DesktopTopbar).
+  const [lembrar, setLembrar] = useState(true);
+  const [qrNote, setQrNote] = useState(false);
 
   function submitLogin(e){
     e.preventDefault();
@@ -3112,135 +3284,180 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
   }
 
   return (
-    <div className="login-screen">
-      <div className="login-card">
-        <div className="login-illustration">
-          <img src={SELGRON_LOGO_URL} alt="Selgron" />
-          <div className="login-illust-mid">
-            <CycleIcon className="login-cycle-icon" />
-            <div className="login-illust-title">Inventário <span>360</span></div>
-            <div className="login-illust-tagline">Visão completa. Controle eficiente.</div>
+    <div className="login-page login-screen">
+      <div className="login-shell login-card">
+        <div className="login-brand">
+          <div className="login-brand-logo-wrap">
+            <img src={SELGRON_LOGO_URL} alt="Selgron" />
           </div>
-          <div className="login-illust-decor"></div>
+          <div className="login-brand-center">
+            <div className="login-hero-icon"><WarehouseHeroIcon /></div>
+            <h1 className="login-brand-title">Gestão de Estoques</h1>
+            <div className="login-brand-rule"></div>
+            <p className="login-brand-subtitle">Central de controles, inventários e indicadores.</p>
+            <div className="login-illustration-scene">
+              <WarehouseIllustration />
+              <div className="login-float-card login-float-1">
+                <span className="fc-icon" style={{background:'#FFF4E4',color:'var(--safety)'}}><DIcon name="trendingUp" size={14} /></span>
+                <span className="fc-label"><strong>Indicadores</strong><span>Tempo real</span></span>
+              </div>
+              <div className="login-float-card login-float-2">
+                <span className="fc-icon" style={{background:'#EEF2FF',color:'var(--navy)'}}><DIcon name="percent" size={14} /></span>
+                <span className="fc-label"><strong>Acuracidade</strong><span>92%</span></span>
+              </div>
+              <div className="login-float-card login-float-3">
+                <span className="fc-icon" style={{background:'var(--gray-100)',color:'var(--navy)'}}><DIcon name="qrCode" size={14} /></span>
+                <span className="fc-label"><strong>Leitura rápida</strong><span>QR / código</span></span>
+              </div>
+            </div>
+          </div>
+          <div className="login-brand-benefits">
+            <div className="login-benefit">
+              <span className="bn-icon"><DIcon name="shieldCheck" size={19} /></span>
+              <strong>Seguro</strong>
+              <span>Seus dados protegidos.</span>
+            </div>
+            <div className="login-benefit">
+              <span className="bn-icon"><DIcon name="barChart" size={19} /></span>
+              <strong>Inteligente</strong>
+              <span>Indicadores para decisões rápidas.</span>
+            </div>
+            <div className="login-benefit">
+              <span className="bn-icon"><DIcon name="zap" size={19} /></span>
+              <strong>Eficiente</strong>
+              <span>Processos otimizados.</span>
+            </div>
+          </div>
         </div>
 
-        <div className="login-form-panel">
-          <h1 className="login-title">Inventário <span>360°</span></h1>
-          <div className="login-subtitle">Controle de Inventário Cíclico</div>
-          <div className="login-rule"></div>
+        <div className="login-form-col">
+          <div className="login-form-topbar">
+            <button type="button" className="login-lang-select" title="Único idioma disponível no momento">
+              <DIcon name="globe" size={15} /> Português (BR) <DIcon name="chevronDown" size={13} />
+            </button>
+          </div>
 
-          {notice && mode==='login' && (
-            <div className="login-notice">{notice}</div>
-          )}
+          <div className="login-form-body">
+            <div className="login-mobile-brand">
+              <img src={SELGRON_LOGO_URL} alt="Selgron" />
+              <strong>Gestão de Estoques</strong>
+            </div>
 
-          {mode==='login' && (
-            <form onSubmit={submitLogin}>
-              {error && <div className="login-error">{error}</div>}
-              <div className="login-field">
-                <label>Usuário ou e-mail</label>
-                <div className="field-wrap">
-                  <span className="field-icon"><LoginFieldIcon name="user" /></span>
-                  <input type="text" value={identifier} onChange={e=>{setIdentifier(e.target.value); clearNotice&&clearNotice();}} placeholder="Digite seu usuário ou e-mail" autoCapitalize="none" autoFocus />
-                </div>
-              </div>
-              <div className="login-field">
-                <label>Senha</label>
-                <div className="field-wrap">
-                  <span className="field-icon"><LoginFieldIcon name="lock" /></span>
-                  <input className="has-toggle" type={showSenha?'text':'password'} value={senha} onChange={e=>setSenha(e.target.value)} placeholder="••••••••" />
-                  <button type="button" className="pw-toggle" onClick={()=>setShowSenha(s=>!s)} title={showSenha?'Ocultar senha':'Mostrar senha'}><EyeIcon off={showSenha} />{showSenha?'Ocultar':'Mostrar'}</button>
-                </div>
-              </div>
-              <button className="login-btn" type="submit">Entrar</button>
+            {notice && mode==='login' && (
+              <div className="login-notice2">{notice}</div>
+            )}
 
-              <div className="login-or">ou</div>
-              <button type="button" className="login-forgot" onClick={()=>{setMode('forgot'); setError(''); setForgotMsg('');}}><DIcon name="lock" size={13} /> Esqueci minha senha</button>
+            {mode==='login' && (
+              <form onSubmit={submitLogin}>
+                <h2 className="login-welcome-title">Bem-vindo de volta!</h2>
+                <p className="login-welcome-sub">Faça login para acessar a plataforma.</p>
 
-              <div className="demo-creds">
-                <div className="dc-title"><ShieldIcon /> Acesso de demonstração</div>
-                <div className="dc-sub">Ambiente de demonstração (remover em produção)</div>
-                <div className="dc-row">
-                  <span className="dc-avatar"><DIcon name="user" size={13} /></span>
-                  <span className="dc-cred">alisson / admin123</span>
-                  <span className="dc-role-pill admin">Administrador</span>
-                </div>
-                <div className="dc-row">
-                  <span className="dc-avatar"><DIcon name="user" size={13} /></span>
-                  <span className="dc-cred">roberto.alves / lider123</span>
-                  <span className="dc-role-pill lider">Líder de Estoque</span>
-                </div>
-                <div className="dc-row">
-                  <span className="dc-avatar"><DIcon name="user" size={13} /></span>
-                  <span className="dc-cred">carlos.mendes / operador123</span>
-                  <span className="dc-role-pill operador">Operador</span>
-                </div>
-              </div>
-            </form>
-          )}
-
-          {mode==='forgot' && (
-            <form onSubmit={submitForgot}>
-              {!forgotMsg ? (
-                <div>
-                  <div className="role-note" style={{marginBottom:20}}>Informe seu usuário ou e-mail. Um administrador vai analisar e liberar o acesso.</div>
-                  <div className="login-field">
-                    <label>Usuário ou e-mail</label>
-                    <div className="field-wrap">
-                      <span className="field-icon"><LoginFieldIcon name="user" /></span>
-                      <input type="text" value={identifier} onChange={e=>setIdentifier(e.target.value)} autoFocus />
-                    </div>
+                {error && <div className="login-error2">{error}</div>}
+                <div className="login-field2 login-field">
+                  <label>Usuário ou e-mail</label>
+                  <div className="field-wrap2">
+                    <span className="field-icon2"><LoginFieldIcon name="user" /></span>
+                    <input type="text" value={identifier} onChange={e=>{setIdentifier(e.target.value); clearNotice&&clearNotice();}} placeholder="Digite seu usuário ou e-mail" autoCapitalize="none" autoFocus />
                   </div>
-                  <button className="login-btn" type="submit">Solicitar recuperação</button>
                 </div>
-              ) : (
-                <div className="login-success">{forgotMsg}</div>
-              )}
-              <button type="button" className="login-back" onClick={()=>{setMode('login'); setForgotMsg(''); setIdentifier('');}}>← Voltar ao login</button>
-            </form>
-          )}
-
-          {mode==='newPassword' && (
-            <form onSubmit={submitNewPassword}>
-              <div className="role-note" style={{marginBottom:20}}>O administrador liberou sua conta para você criar uma nova senha.</div>
-              {error && <div className="login-error">{error}</div>}
-              <div className="login-field">
-                <label>Nova senha</label>
-                <div className="field-wrap">
-                  <span className="field-icon"><LoginFieldIcon name="lock" /></span>
-                  <input type="password" value={novaSenha} onChange={e=>setNovaSenha(e.target.value)} autoFocus />
+                <div className="login-field2 login-field">
+                  <label>Senha</label>
+                  <div className="field-wrap2">
+                    <span className="field-icon2"><LoginFieldIcon name="lock" /></span>
+                    <input className="has-toggle2" type={showSenha?'text':'password'} value={senha} onChange={e=>setSenha(e.target.value)} placeholder="Digite sua senha" />
+                    <button type="button" className="pw-toggle2" onClick={()=>setShowSenha(s=>!s)} title={showSenha?'Ocultar senha':'Mostrar senha'}><EyeIcon off={showSenha} />{showSenha?'Ocultar':'Mostrar'}</button>
+                  </div>
                 </div>
-              </div>
-              <div className="login-field">
-                <label>Confirmar nova senha</label>
-                <div className="field-wrap">
-                  <span className="field-icon"><LoginFieldIcon name="lock" /></span>
-                  <input type="password" value={confirmaSenha} onChange={e=>setConfirmaSenha(e.target.value)} />
+
+                <div className="login-row-between">
+                  <button type="button" className="login-remember" onClick={()=>setLembrar(l=>!l)} title="Sua sessão já é mantida automaticamente neste aparelho">
+                    <span className={'cb-box'+(lembrar?' checked':'')}>{lembrar && <DIcon name="checkCircle" size={13} style={{marginTop:0}} />}</span>
+                    Lembrar-me
+                  </button>
+                  <button type="button" className="login-forgot2" onClick={()=>{setMode('forgot'); setError(''); setForgotMsg('');}}>Esqueci minha senha</button>
                 </div>
-              </div>
-              <button className="login-btn" type="submit" disabled={salvandoSenha}>{salvandoSenha ? 'Salvando…' : 'Definir senha e entrar'}</button>
-            </form>
-          )}
-        </div>
-      </div>
 
-      <div className="login-trust-row">
-        <div className="login-trust-item">
-          <span className="ti-icon"><DIcon name="shieldCheck" size={20} /></span>
-          <div><strong>Seguro</strong><span>Acesso protegido</span></div>
-        </div>
-        <div className="login-trust-item">
-          <span className="ti-icon"><DIcon name="barChart" size={20} /></span>
-          <div><strong>Confiável</strong><span>Dados sempre íntegros</span></div>
-        </div>
-        <div className="login-trust-item">
-          <span className="ti-icon"><DIcon name="clock" size={20} /></span>
-          <div><strong>Eficiente</strong><span>Processos otimizados</span></div>
-        </div>
-      </div>
+                <button className="login-btn2 login-btn" type="submit"><DIcon name="logIn" size={18} /> Entrar</button>
 
-      <div className="login-footer">
-        <div className="lf-restrict"><DIcon name="lock" size={12} /> Acesso restrito. Uso exclusivo para usuários autorizados.</div>
-        <div>© {new Date().getFullYear()} Selgron. Todos os direitos reservados.</div>
+                <div className="login-or2">OU</div>
+                <button type="button" className="login-btn-outline" onClick={()=>setQrNote(v=>!v)}>
+                  <DIcon name="qrCode" size={18} /> Entrar com código de acesso
+                </button>
+                {qrNote && <div className="login-inline-note2">Login por código de acesso ainda não está disponível.</div>}
+
+                <div className="login-demo2">
+                  <div className="dc-title2"><ShieldIcon /> Acesso de demonstração</div>
+                  <div className="dc-sub2">Ambiente de demonstração (remover em produção)</div>
+                  <div className="dc-row2">
+                    <span className="dc-avatar2"><DIcon name="user" size={13} /></span>
+                    <span className="dc-cred2">alisson / admin123</span>
+                    <span className="dc-role-pill admin">Administrador</span>
+                  </div>
+                  <div className="dc-row2">
+                    <span className="dc-avatar2"><DIcon name="user" size={13} /></span>
+                    <span className="dc-cred2">roberto.alves / lider123</span>
+                    <span className="dc-role-pill lider">Líder de Estoque</span>
+                  </div>
+                  <div className="dc-row2">
+                    <span className="dc-avatar2"><DIcon name="user" size={13} /></span>
+                    <span className="dc-cred2">carlos.mendes / operador123</span>
+                    <span className="dc-role-pill operador">Operador</span>
+                  </div>
+                </div>
+              </form>
+            )}
+
+            {mode==='forgot' && (
+              <form onSubmit={submitForgot}>
+                <h2 className="login-welcome-title" style={{fontSize:'clamp(24px,2.6vw,34px)'}}>Recuperar acesso</h2>
+                {!forgotMsg ? (
+                  <div>
+                    <p className="login-welcome-sub" style={{marginBottom:20}}>Informe seu usuário ou e-mail. Um administrador vai analisar e liberar o acesso.</p>
+                    <div className="login-field2 login-field">
+                      <label>Usuário ou e-mail</label>
+                      <div className="field-wrap2">
+                        <span className="field-icon2"><LoginFieldIcon name="user" /></span>
+                        <input type="text" value={identifier} onChange={e=>setIdentifier(e.target.value)} autoFocus />
+                      </div>
+                    </div>
+                    <button className="login-btn2 login-btn" type="submit">Solicitar recuperação</button>
+                  </div>
+                ) : (
+                  <div className="login-success2">{forgotMsg}</div>
+                )}
+                <button type="button" className="login-back2" onClick={()=>{setMode('login'); setForgotMsg(''); setIdentifier('');}}>← Voltar ao login</button>
+              </form>
+            )}
+
+            {mode==='newPassword' && (
+              <form onSubmit={submitNewPassword}>
+                <h2 className="login-welcome-title" style={{fontSize:'clamp(24px,2.6vw,34px)'}}>Nova senha</h2>
+                <div className="login-role-note2" style={{marginTop:16}}>O administrador liberou sua conta para você criar uma nova senha.</div>
+                {error && <div className="login-error2">{error}</div>}
+                <div className="login-field2 login-field">
+                  <label>Nova senha</label>
+                  <div className="field-wrap2">
+                    <span className="field-icon2"><LoginFieldIcon name="lock" /></span>
+                    <input type="password" value={novaSenha} onChange={e=>setNovaSenha(e.target.value)} autoFocus />
+                  </div>
+                </div>
+                <div className="login-field2 login-field">
+                  <label>Confirmar nova senha</label>
+                  <div className="field-wrap2">
+                    <span className="field-icon2"><LoginFieldIcon name="lock" /></span>
+                    <input type="password" value={confirmaSenha} onChange={e=>setConfirmaSenha(e.target.value)} />
+                  </div>
+                </div>
+                <button className="login-btn2 login-btn" type="submit" disabled={salvandoSenha}>{salvandoSenha ? 'Salvando…' : 'Definir senha e entrar'}</button>
+              </form>
+            )}
+
+            <div className="login-footer2">
+              <div className="lf-restrict2"><DIcon name="lock" size={12} /> Acesso restrito. Uso exclusivo para usuários autorizados.</div>
+              <div>© {new Date().getFullYear()} Selgron. Todos os direitos reservados.</div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

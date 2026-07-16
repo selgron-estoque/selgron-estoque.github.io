@@ -2783,6 +2783,108 @@ Auth real ainda).
   recomendar `cascade` às cegas — o schema.sql deste repo não é necessariamente um
   espelho fiel do que existe no projeto real.
 
+## Login vira redesign premium (Fiori/M365/Power BI) — terceira identidade da tela de login
+
+O cliente pediu um redesign completo da tela de login com um mockup de referência exato
+(imagem pixel-a-pixel) e uma instrução explícita: "esta imagem passa a ser o Design System
+desta tela... em caso de conflito entre o texto do prompt e a imagem, a imagem tem
+prioridade" — e "NÃO altere nenhuma funcionalidade existente, apenas o layout". Isso supera
+por completo a versão de 2 colunas da rodada anterior (ver "Tela de login vira o mockup de
+2 colunas"), que já tinha ilustração+formulário lado a lado mas num formato/proporção/
+paleta diferentes do que foi pedido agora.
+
+**Especificação técnica não seguida ao pé da letra, por design**: o prompt pedia React+
+TypeScript+TailwindCSS com componentes separados (`LoginPage.tsx`/`BrandPanel.tsx`/etc.) e
+Framer Motion. Este projeto não tem build step (Babel Standalone via CDN, sem bundler,
+sem TypeScript/Tailwind — ver topo deste arquivo). Implementei o mesmo resultado visual
+dentro da arquitetura existente: um `LoginScreen` só, CSS puro escopado, ícones SVG
+desenhados à mão no estilo Lucide (mesmo padrão já usado no Dashboard/sidebar) — mesmo
+trade-off já aceito antes neste projeto. Framer Motion não entrou; as transições pedidas
+(hover 200ms, focus) saem só de CSS `transition`.
+
+### Estrutura nova
+
+- **`.login-page`** (fundo com degradê suave `#F7F8FB→#EEF2F7`, sem imagem) → **`.login-shell`**
+  (max-width 1450px, `border-radius:24px`, sombra suave, `overflow:hidden`, flex row 45/55
+  a partir de 900px) → **`.login-brand`** (45%, coluna esquerda) + **`.login-form-col`**
+  (55%, coluna direita).
+- **`.login-brand`**: fundo branco com grade de pontos bem sutil (`radial-gradient` repetido
+  via `background-size`), logo Selgron grande no topo (`padding-top:50px`), `WarehouseHeroIcon`
+  (hexágono outline laranja claro com caixa isométrica + risca de código de barras dentro —
+  substitui o `CycleIcon` da versão anterior, que representava "ciclo de contagem"; o mockup
+  novo pede especificamente "cube/warehouse/barcode"), título "Gestão de Estoques" (`clamp
+  (30px,3.4vw,56px)`, peso 800), linha decorativa laranja 80×4px, subtítulo, e a
+  `WarehouseIllustration` (cena SVG geométrica "flat" — racks, pallets, empilhadeira — em
+  navy/cinza/laranja/branco, sem verde, com 3 "cards flutuantes" de HTML sobrepostos via
+  `position:absolute`: Indicadores/tempo real, Acuracidade/92%, Leitura rápida/QR). Sem foto
+  real (mesma ressalva já documentada antes: "o app não tem esse asset", cena inteira
+  desenhada só com formas geométricas). Rodapé com os 3 benefícios (Seguro/Inteligente/
+  Eficiente) em linha, ícones em `.bn-icon`.
+- **`.login-form-col`**: seletor de idioma (canto superior direito, decorativo — só
+  Português existe), título "Bem-vindo de volta!" (mesmo `clamp` do título da marca, um
+  pouco menor), campos com 64px de altura/`border-radius:14px`/ícone à esquerda (hover:
+  laranja bem suave; focus: borda laranja + `box-shadow` de destaque — valores exatos
+  pedidos), linha "Lembrar-me" (checkbox custom) + "Esqueci minha senha" (link laranja),
+  botão "Entrar" (64px, laranja, ícone `logIn`), divisor "OU", botão outline "Entrar com
+  código de acesso" (borda laranja, texto navy), painel de credenciais de demonstração
+  (mantido — é funcionalidade já existente, útil pra QA, não fazia parte do que devia
+  mudar), rodapé com cadeado + texto de acesso restrito + copyright.
+- **Cor laranja**: mockup citava um hex novo (`#F7941D`) — mantive `--safety` (`#F6A200`,
+  já usado em todo o app, documentado como "cor oficial da marca") em vez de introduzir
+  mais um tom quase idêntico só pra esta tela. `--navy`/`--gray-*`/`--font-corp` já eram
+  compartilhadas com o Dashboard desde o redesign anterior, reaproveitadas direto.
+
+### Elementos do mockup sem funcionalidade real por trás — decorativos, honestamente
+
+Três elementos do mockup não correspondem a nenhum recurso que o app tem hoje. Confirmado
+mentalmente com o critério já estabelecido no projeto (sino de notificação do
+`DesktopTopbar`: "abre um dropdown fixo dizendo 'Nenhuma notificação por enquanto' — não
+finge que existe uma lista real"), apliquei o mesmo padrão em vez de inventar
+funcionalidade nova (que o próprio pedido do cliente proibia — "não altere nenhuma
+funcionalidade existente") ou fingir que algo funciona:
+- **Seletor de idioma** ("🌐 Português (BR)"): botão inerte, `title="Único idioma
+  disponível no momento"` — não abre dropdown nenhum, porque não existe i18n no app.
+- **"Lembrar-me"**: checkbox decorativo (`useState` local só de UI, sem ligação com
+  `attemptLogin`/sessão) — a sessão já persiste automaticamente sempre (ver
+  `SESSION_STORAGE_KEY`), então um checkbox "lembrar" seria redundante/enganoso se
+  realmente controlasse alguma coisa; `title` no botão explica isso.
+- **"Entrar com código de acesso"**: ao clicar, mostra uma nota inline honesta ("Login por
+  código de acesso ainda não está disponível") em vez de não fazer nada (silencioso,
+  pareceria quebrado) ou fingir abrir um scanner de verdade.
+
+### Compatibilidade com a suíte de testes existente
+
+Praticamente todo script de regressão do scratchpad usa um "login helper" copiado repetido
+(`.login-field input[type="text"]` + `.login-field input[type="password"]` + `.login-btn`,
+e `.login-card`/`.login-screen` pra detectar "está na tela de login") — reescrever ~40
+scripts só por causa da renomeação de classe seria desproporcional. Em vez disso, os
+elementos novos carregam DOIS nomes de classe: `.login-field2 login-field`,
+`.login-btn2 login-btn`, `.login-shell login-card`, `.login-page login-screen` — os nomes
+antigos (`login-field`/`login-btn`/`login-card`/`login-screen`) não têm NENHUMA regra CSS
+própria mais (só existem como seletores estáveis pros testes), toda a aparência real vem
+das classes novas (`-2`/`-shell`/`-page`). Zero efeito visual, só evita quebrar a suíte de
+testes inteira por um detalhe de nome de classe.
+
+**Bug real encontrado e corrigido durante a implementação**: o primeiro screenshot saiu
+com a página inteira sem estilo nenhum (logo gigante, campos sem layout) — toda a folha de
+estilo tinha parado de ser aplicada. Causa: um comentário CSS que eu mesmo escrevi continha
+o texto `--navy/--gray-*/--font-corp` — a sequência de caracteres `*/` no meio do texto
+(vinda de `gray-*` seguido de `/--font`) fechou o comentário ANTES da hora, e tudo que
+vinha depois (incluindo o `*/` de fechamento de verdade, bem mais abaixo) virou CSS
+inválido, quebrando o resto da folha de estilo inteira. Corrigido reescrevendo o comentário
+pra não formar `*/` sem querer (`--gray-N` em vez de `--gray-*`) — lição: nunca usar `*/`
+literal (mesmo por acaso, tipo `algo-*` seguido de `/outra-coisa`) dentro de um comentário
+CSS.
+
+Testado via Playwright nos três breakpoints (desktop 1600px, tablet 1024px, mobile 390px)
+— confirmei visualmente por screenshot que a coluna de marca desaparece no mobile (só logo
+compacto + título ficam, como pedido), que os campos de demonstração empilham
+corretamente em telas estreitas (mesmo ajuste já feito antes pro layout antigo, reaplicado
+aqui pra `.dc-row2`), e funcionalmente que login válido/inválido, mostrar/ocultar senha,
+esqueci-minha-senha (ida e volta) e o aviso do botão de código de acesso funcionam sem
+nenhuma mudança de comportamento. Rodei de novo boa parte da suíte de regressão existente
+(sessão, logout, sync de usuários) sem quebrar nada, graças às classes de compatibilidade.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase
