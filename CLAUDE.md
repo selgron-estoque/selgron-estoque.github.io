@@ -3347,6 +3347,29 @@ lateral".
   continua mostrando a imagem inteira sem cortar (comportamento não tocado, já era
   `height:auto` fora do breakpoint de 900px). `verify_login_flows.js` sem quebrar nada.
 
+## Terceira imagem do login: retrato de verdade, layout volta pra 44/56
+
+O cliente gerou uma 3ª versão da imagem, agora sim em retrato (928×1136px, proporção
+≈0,817:1) — bem próxima da pedida (1150×1400, ≈0,821:1), mesma composição de sempre
+(logo, ícone hero, título, subtítulo, cena do armazém, dispositivos, benefícios).
+
+- **Layout voltou pra divisão 44/56** (marca/formulário) — a divisão 67/33 da rodada
+  anterior só existia pra compensar a imagem em paisagem que tinha chegado por engano;
+  com a proporção certa de volta, a divisão original faz sentido de novo.
+- **`aspect-ratio` em `.login-brand` trocado de `1280/1024` pra `928/1136`** — mesmo
+  mecanismo já explicado antes (a altura da coluna acompanha a largura real em qualquer
+  tela ≥900px, não só na largura máxima do card). Não recalculei a divisão de colunas
+  a partir do tamanho exato do arquivo (928×1136 vs. os 1150×1400 pedidos) porque a
+  diferença de proporção entre os dois é mínima (≈0,5%) — não vale o esforço.
+- **Padding do formulário voltou ao normal** (32px→64px lateral no desktop, 24px→40px
+  no breakpoint intermediário) — a coluna do formulário tem mais espaço de novo com a
+  divisão 44/56, não precisa mais do aperto que a divisão 67/33 exigia.
+- Testado via Playwright em 4 larguras (1600/1366/1024/390px): confirmei que NENHUMA
+  largura de desktop/tablet precisa de rolagem (scrollHeight ≤ viewport em todas),
+  visualmente a imagem aparece quase inteira em todas (só um filete mínimo cortado no
+  tablet, mesma tolerância já aceita antes), e mobile continua mostrando a imagem
+  inteira sem cortar. `verify_login_flows.js` sem quebrar nada.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase

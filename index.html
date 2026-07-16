@@ -425,24 +425,20 @@
   .login-footer2 .lf-restrict2{display:flex;align-items:center;justify-content:center;gap:6px;}
 
   @media (min-width:900px){
-    /* A 2ª imagem enviada veio em PAISAGEM (1280×1024, proporção 1.25:1) em
-       vez do retrato pedido (1150×1400) — em vez de pedir uma 3ª geração,
-       o cliente preferiu ajustar a divisão das colunas pra bater com o
-       formato que já tem. `.login-brand{width:67%}` bate com o corte zero
-       só na largura MÁXIMA do card (1300px); um `min-height` fixo no shell
-       não acompanha telas mais estreitas (tablet), onde a coluna fica mais
-       baixa proporcionalmente e volta a cortar as laterais. Corrigido com
-       `aspect-ratio:1280/1024` direto em `.login-brand` — assim a altura da
-       coluna sempre acompanha a largura real (67% da tela, o que for), a
-       proporção bate exatamente com a imagem em QUALQUER largura ≥900px,
-       não só na máxima. */
+    /* 3ª imagem: veio em retrato de verdade dessa vez (928×1136, proporção
+       ≈0.817:1), bem próxima da pedida (1150×1400, ≈0.821:1) — volta pra
+       divisão 44/56 (marca/formulário) de antes da imagem em paisagem, só
+       trocando a proporção do `aspect-ratio` pra bater com o arquivo real
+       em vez do valor pedido (a diferença entre os dois é mínima, não vale
+       a pena recalcular a divisão de colunas de novo por causa disso). Ver
+       CLAUDE.md pro histórico completo dessa image (paisagem → retrato). */
     .login-shell{flex-direction:row;min-height:480px;}
-    .login-brand{width:67%;flex-shrink:0;aspect-ratio:1280/1024;}
+    .login-brand{width:44%;flex-shrink:0;aspect-ratio:928/1136;}
     .login-brand-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center top;}
-    .login-form-col{width:33%;padding:24px 32px;}
+    .login-form-col{width:56%;padding:24px 64px;}
   }
   @media (max-width:1150px) and (min-width:900px){
-    .login-form-col{padding:24px 24px;}
+    .login-form-col{padding:24px 40px;}
   }
   @media (max-width:899px){
     .login-form-col{padding:24px 24px;}
