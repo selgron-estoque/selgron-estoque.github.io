@@ -3427,6 +3427,31 @@ como elemento visual.
   console, e que o formulário continua com boa aparência mesmo mais compacto.
   `verify_login_flows.js` sem quebrar nada.
 
+## Login: reduz espaço lateral morto na coluna do formulário
+
+Cliente marcou com print (retângulos vermelhos) o espaço vazio entre a borda do card e os
+campos do formulário, pedindo pra cortar pela metade. Investigando antes de só reduzir o
+padding: o espaço visível não vinha só do `padding:24px 64px` do `.login-form-col` — vinha
+também de `.login-form-body{max-width:480px}`, que centralizava o conteúdo bem mais
+estreito do que a coluna (56% do card, até 728px) permitia, sobrando um respiro extra
+"invisível" (margem automática de centralização) além do padding em si.
+
+- **Reduzir só o padding não teria efeito nenhum na largura ≥1300px do card**: com
+  `max-width:480px` fixo, qualquer padding menor que `(728-480)/2=124px` de cada lado
+  simplesmente vira MAIS margem de centralização automática, sem mudar o espaço visível
+  entre a borda do card e o campo — confirmado matematicamente antes de mexer no CSS
+  (a soma padding+centralização é constante nesse regime).
+- **Correção com os dois ajustes juntos**: `.login-form-col{padding:24px 64px→32px}` e
+  `.login-form-body{max-width:480px→600px}` — juntos, cortam o espaço total (padding +
+  centralização) de ~124px pra ~64px de cada lado nas larguras maiores (card no máximo de
+  1300px), e de ~64px pra ~24-32px nas larguras menores (900-1150px, onde o `max-width`
+  nem chegava a entrar em jogo antes). Reduções de 48-62% dependendo da largura — na
+  faixa da meta de "50%" pedida.
+- Testado via Playwright: medi a distância real do campo até a borda da coluna (não só
+  o CSS declarado) em duas larguras (1050px, a mesma do print do cliente, e 1600px) —
+  confirma a redução na prática, não só na intenção do CSS. Sem rolagem nova em nenhuma
+  largura testada (900/390px). `verify_login_flows.js` sem quebrar nada.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase
