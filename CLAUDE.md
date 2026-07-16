@@ -3405,6 +3405,28 @@ necessário".
   sem corte nenhum. Desktop (≥1300px de card) e mobile (<900px) não foram tocados e
   continuam iguais. `verify_login_flows.js` sem quebrar nada.
 
+## Login: remove seletor de idioma decorativo + compacta mais o formulário
+
+Cliente aprovou o resultado da correção anterior e pediu dois ajustes finais: apertar mais
+os espaçamentos da coluna direita, e remover o botão de idioma ("🌐 Português (BR)") do
+canto superior direito — decorativo desde que foi criado (só existe um idioma no app, ver
+seção "Login vira redesign premium"), o cliente decidiu que não vale a pena manter nem
+como elemento visual.
+
+- **`.login-form-topbar`/`.login-lang-select` removidos** do JSX e do CSS — o `<div
+  className="login-form-topbar">` só continha esse botão, então o container inteiro saiu
+  junto (não sobrou wrapper vazio). `.login-form-body` (que já tinha `justify-content:
+  center`) preenche o espaço sozinho, sem precisar de nenhum ajuste adicional.
+- **Espaçamentos gerais cortados mais uma vez** (mesmo padrão das rodadas anteriores de
+  compactação): campos e botões (46px→42px), margem entre campos (12px→10px), margem do
+  divisor "ou" (12px→10px), margem das mensagens de erro/sucesso/aviso (18px→14px),
+  padding vertical da coluna do formulário (24px→20px) — cada corte pequeno, mas a soma
+  deixa a coluna direita visivelmente mais enxuta, como pedido.
+- Testado via Playwright em 3 larguras (1600/1024/390px): confirmei que o botão de idioma
+  não existe mais em nenhuma delas (`.login-lang-select` com 0 ocorrências), sem erros de
+  console, e que o formulário continua com boa aparência mesmo mais compacto.
+  `verify_login_flows.js` sem quebrar nada.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase
