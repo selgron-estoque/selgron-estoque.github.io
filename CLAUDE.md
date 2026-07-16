@@ -2765,9 +2765,23 @@ Auth real ainda).
   não relacionados a esta mudança — `verify_inventory_delete_create`/
   `verify_session_persist` — já tinham asserções frágeis/seletores desatualizados antes
   desta rodada, não mexi neles por estarem fora de escopo).
-- **Ainda não confirmado contra o Supabase real** — falta o cliente rodar o SQL novo
-  (`drop table usuarios` + recriação, `create table enderecos_propostos` + RLS) no
-  projeto real e testar em dois aparelhos de verdade.
+- **Confirmado contra o Supabase real** — o cliente rodou o SQL e reportou sucesso.
+  Achado no caminho: o `drop table usuarios` simples deu erro (`2BP01: cannot drop table
+  usuarios because other objects depend on it`) — o projeto real tinha uma coluna
+  `enderecos.criado_por` e uma tabela `endereco_propostas` (singular, nomes que não
+  existem em lugar nenhum deste repo) com FK pra `usuarios`, criadas em algum momento
+  direto no painel do Supabase, fora de qualquer SQL deste `schema.sql` (schema drift).
+  Antes de resolver, pedi ao cliente pra rodar uma consulta de introspecção
+  (`information_schema.columns` + `count(*)` das três tabelas) — confirmou 0 linhas nas
+  três, então era seguro usar `drop table usuarios cascade` (só remove as CONSTRAINTS de
+  FK que dependem de `usuarios`, não apaga `enderecos` nem dado nenhum) e também dropar a
+  `endereco_propostas` órfã (evita duas tabelas de nome quase idêntico coexistindo, uma
+  delas — a `enderecos_propostos` plural — sendo a única que o app de fato usa).
+  `backend/schema.sql` já reflete essa versão corrigida do bloco de migração. Lição pro
+  futuro: quando uma migração aqui envolve `drop table` num projeto que o cliente
+  gerencia direto pelo painel, sempre pedir uma consulta de introspecção antes de
+  recomendar `cascade` às cegas — o schema.sql deste repo não é necessariamente um
+  espelho fiel do que existe no projeto real.
 
 ## Convenções de design (não quebrar ao continuar)
 

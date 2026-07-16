@@ -502,7 +502,26 @@ create policy "exclusão pública" on inventarios for delete using (true);
 -- nunca foi populada de verdade (login sempre autenticou 100% contra o
 -- localStorage), é seguro dropar e recriar do zero em vez de fazer `alter
 -- table add column` em cima da estrutura errada.
-drop table if exists usuarios;
+--
+-- `cascade` é necessário aqui: o projeto real tinha objetos criados direto
+-- no painel do Supabase, fora deste schema.sql (`enderecos.criado_por` e
+-- uma tabela `endereco_propostas`, singular — nomes/colunas que não existem
+-- em lugar nenhum deste arquivo), ambos com FK pra `usuarios`. Confirmado
+-- via `select count(*)` que as três tabelas envolvidas estavam com ZERO
+-- linhas antes desta migração — `cascade` só remove as CONSTRAINTS de FK
+-- que dependem de `usuarios`, não apaga a tabela `enderecos` nem dado
+-- nenhum (não que houvesse dado pra perder). Se um dia isso rodar de novo
+-- num projeto com dado real nessas colunas, conferir antes com
+-- `select count(*) from enderecos where criado_por is not null` — se vier
+-- >0, não rode isto sem decidir antes o que fazer com esse vínculo.
+drop table if exists usuarios cascade;
+
+-- `endereco_propostas` (singular) é o mesmo objeto órfão mencionado acima —
+-- ficaria duplicando o papel de `enderecos_propostos` (plural, a tabela que
+-- o app de fato lê/escreve, criada logo abaixo). Também confirmada vazia
+-- antes de dropar.
+drop table if exists endereco_propostas;
+
 create table usuarios (
   id text primary key,
   nome text not null,
@@ -521,6 +540,6 @@ create policy "inserção pública" on usuarios for insert with check (true);
 create policy "atualização pública" on usuarios for update using (true) with check (true);
 create policy "exclusão pública" on usuarios for delete using (true);
 
--- ENDEREÇOS PROPOSTOS — tabela nova, não existia antes; só o `create table`
--- de verdade (mais acima neste arquivo, junto das RLS logo depois) precisa
--- ser rodado — nada pra migrar aqui.
+-- ENDEREÇOS PROPOSTOS — tabela nova, não existia antes (com este nome); só o
+-- `create table enderecos_propostos` de verdade (mais acima neste arquivo,
+-- junto das RLS logo depois) precisa ser rodado — nada mais pra migrar aqui.
