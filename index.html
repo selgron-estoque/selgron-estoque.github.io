@@ -5167,6 +5167,10 @@ function computeTrendRange(tipo, hojeStr, from, to){
       const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
       return { from: fmt(inicioMes), to: hojeStr };
     }
+    case '60d': {
+      const d = new Date(hoje); d.setDate(d.getDate() - 59);
+      return { from: fmt(d), to: hojeStr };
+    }
     case '90d': {
       const d = new Date(hoje); d.setDate(d.getDate() - 89);
       return { from: fmt(d), to: hojeStr };
@@ -5735,6 +5739,7 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
               {v:'semana', l:'Esta semana'},
               {v:'mes', l:'Este mês'},
               {v:'30d', l:'Últimos 30 dias'},
+              {v:'60d', l:'Últimos 60 dias'},
               {v:'90d', l:'Últimos 90 dias'},
               {v:'ano', l:'Este ano'},
               {v:'custom', l:'Personalizado'},

@@ -2612,9 +2612,11 @@ transições pedidas (200ms no hover dos botões) saem só de CSS `transition`, 
   intervalo aplicado + `.tfb-refresh-btn` "Atualizar"), depois a linha de presets
   (`.tfb-period-label` + `.tfb-quick-buttons`), e por último — só quando `tipo==='custom'`
   — `.tfb-custom-row` com os dois campos "Data inicial"/"Data final".
-- **7 toggle buttons** (`.tfb-pill`): Hoje/Esta semana/Este mês/Últimos 30 dias/Últimos 90
-  dias/Este ano/Personalizado — exatamente a lista pedida, susbtituindo "10/26 semanas/
-  todo período" por completo. Ativo: fundo `#0D9488` (mesmo teal já usado como
+- **8 toggle buttons** (`.tfb-pill`): Hoje/Esta semana/Este mês/Últimos 30 dias/Últimos 60
+  dias/Últimos 90 dias/Este ano/Personalizado — lista original pedida (7 opções) mais
+  "Últimos 60 dias", pedido numa rodada seguinte pra preencher o degrau entre 30 e 90 dias
+  (`computeTrendRange`, `case '60d'`, mesmo padrão dos outros — `hoje.setDate(-59)`).
+  Ativo: fundo `#0D9488` (mesmo teal já usado como
   `WEEKLY_CHART_COLOR` nos três gráficos — reaproveita a cor de destaque já estabelecida
   pra essa seção em vez de introduzir "mais um verde"), texto branco, `border-radius:10px`,
   sombra leve. Inativo: branco, borda cinza clara, hover com tingimento teal suave,
