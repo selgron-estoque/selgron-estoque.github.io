@@ -3145,6 +3145,55 @@ referência.
   ilustração (confirmado que não é bug, testado isoladamente antes de qualquer mudança);
   `verify_login_flows.js` sem quebrar nada.
 
+## Terceira tentativa de posicionamento: a imagem é o FUNDO do painel, não um bloco de conteúdo
+
+Cliente cortou a explicação anterior: "essa imagem é para ser um plano de fundo, aí vem a
+logo da Selgron dentro e etc". As duas tentativas anteriores (recorte + card com moldura;
+depois imagem inteira sem moldura, mas ainda como um bloco de conteúdo entre o subtítulo e
+o fim da coluna) trataram a imagem como um ELEMENTO dentro do fluxo normal de texto —
+errado: ela deveria ser o **fundo de todo o painel esquerdo**, com logo/título/subtítulo
+sobrepostos por cima dela, exatamente como a imagem de referência sempre mostrou.
+
+- **`.login-brand-bg`** (novo, substitui `.login-illustration-scene`) — a mesma tag
+  `<img>` de `BrandIllustration`, agora com `position:absolute;inset:0;object-fit:cover`,
+  cobrindo `.login-brand` inteiro, atrás de tudo (`z-index:0`). `alt=""` +
+  `aria-hidden="true"` — deixou de ser "conteúdo com significado" (que merecia texto
+  alternativo descritivo) pra virar decoração de fundo (o texto real da tela já está em
+  `.login-brand-logo-wrap`/`.login-brand-center`, que continuam com `z-index:2`).
+- **`.login-brand::before` virou o degradê que garante legibilidade do texto por cima da
+  foto** — antes era só um leve esmaecimento sobre um fundo de bolinhas; agora é
+  `linear-gradient(180deg, #fff 0% → #fff 34% → rgba(255,255,255,.72) 55% →
+  rgba(255,255,255,.32) 78% → rgba(255,255,255,.12) 100%)`, entre a foto e o texto
+  (`z-index:1`) — quase opaco no topo (onde ficam logo/título/subtítulo, que precisam de
+  contraste forte) e vai revelando a foto conforme desce (onde não tem mais texto por
+  cima, só a cena do armazém/dispositivos/benefícios que já são legíveis por si). O padrão
+  de bolinhas (`radial-gradient` de pontos) foi removido — competia visualmente com a
+  foto por baixo.
+- **`.login-brand-center` mudou de `justify-content:center` pra `flex-start`** (com
+  `padding-top:28px`) — antes centralizava verticalmente porque era o único conteúdo do
+  painel (sem fundo nenhum); agora o painel inteiro é preenchido pela foto, então
+  título/subtítulo precisam ficar ancorados perto do topo (onde o degradê branco garante
+  contraste), não flutuando no meio da foto.
+- **Mobile continua escondendo a foto** (mesma decisão de sempre, "ocultar só a
+  ilustração, nunca o branding") — mas agora por um motivo técnico a mais: no mobile
+  `.login-shell` empilha em coluna (só vira `row` a partir de 900px), então `.login-brand`
+  tem só a altura do próprio texto (bem mais baixa que a foto original, que é bem
+  retrato) — mostrar a foto nessa altura cortaria quase tudo, sobrando só uma tira do
+  topo. Em vez disso, `.login-brand-bg{display:none}` + `.login-brand::before{background:
+  none}` fazem o painel voltar a ser branco liso no celular, mesmo visual de antes da
+  imagem existir.
+- **`BrandIllustration`** teve o `className` trocado de `login-illustration-img` pra
+  `login-brand-bg` e passou a ser o PRIMEIRO filho de `.login-brand` no JSX (antes de
+  `.login-brand-logo-wrap`) — precisa vir primeiro/atrás visualmente, e como todo o resto
+  tem `position:relative;z-index:2`, a ordem no DOM não importa pra empilhamento, mas
+  manter como primeiro filho deixa a leitura do JSX mais parecida com a ordem visual real
+  (fundo → logo → texto).
+- Testado via Playwright nos 3 breakpoints: desktop e tablet mostram a foto cobrindo o
+  painel inteiro com logo/título legíveis por cima (degradê funcionando), a cena do
+  armazém e a fileira de benefícios aparecem naturalmente na parte de baixo sem nenhuma
+  moldura/corte visível; mobile mostra o painel branco liso de sempre, sem a foto
+  cortada. `verify_login_flows.js` sem quebrar nada.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase
