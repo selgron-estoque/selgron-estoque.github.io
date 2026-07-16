@@ -2975,6 +2975,50 @@ esconder o painel de marca inteiro no celular.
   especificamente — "crie apenas `<BrandIllustration />`"); o resto continua dentro de
   um único `LoginScreen`, mesmo padrão de organização já usado no resto do app.
 
+## Terceira rodada do login: reduzir o tamanho geral + trocar ícone "cara de desenho de criança"
+
+Depois da rodada de fidelidade pixel-perfect, o cliente testou no próprio navegador e
+reportou dois problemas concretos, com print: "ficou muito grande na tela" (o card
+ultrapassava a altura da janela, cortando o botão "Entrar com código de acesso" antes do
+fim) e "não ficou igual, ficou parecendo desenho de criança" — a segunda queixa, por
+eliminação (o print mostrava a área de ilustração vazia, já que o placeholder `<img>`
+ainda não tem asset real), só podia se referir ao ícone hexagonal com o cubo isométrico
+desenhado à mão (`WarehouseHeroIcon`) — traços grossos, cores lisas, proporções meio
+"brinquedo", destoando do resto do app que usa um sistema de ícones lineares mais sóbrio.
+
+- **`WarehouseHeroIcon` removido, substituído por `<DIcon name="box" .../>`** — o mesmo
+  sistema de ícones Lucide-style (`DICON_PATHS`/`DIcon`) já usado no resto do app
+  (sidebar, header, Dashboard). Em vez de um hexágono multicolorido com cubo 3D desenhado
+  à mão, agora é um badge simples (fundo laranja bem claro `#FFF4E4`, ícone de caixa em
+  stroke fino cor `--safety`) — visualmente consistente com o resto da identidade
+  corporativa da tela, não mais um elemento isolado com estilo próprio.
+- **Redução geral de tamanho** — o card tinha ficado alto de mais (altura mínima de
+  760px só do shell) pra caber em janelas de navegador mais baixas (ex: laptop com barra
+  de favoritos ocupando espaço, ~600-650px de altura útil). Reduzido em cascata, sem
+  cortar nenhum elemento do layout de referência, só os respiros/proporções:
+  `.login-shell{min-height:760px→560px}`, ícone hero (100px→64px), título da marca
+  (`clamp(30-56px)→clamp(24-38px)`), subtítulo (16px→14.5px), ilustração
+  (max-width 520px→360px, ganhou `max-height:190px`), benefícios (padding 26/40→16/28),
+  campos e botões (altura 64px→52px, radius 14px→12px), paddings da coluna de formulário
+  (44px→32px verticalmente, 80px→64px horizontalmente) e praticamente todas as margens
+  entre blocos do formulário (welcome-sub, row-between, divisor "ou", demo-toggle) —
+  cada uma cortada em ~25-30%. Resultado: altura do shell caiu de ~950px+ pra 675px numa
+  tela 1280px de largura, cabendo com folga em janelas de 768px de altura e quase inteiro
+  em janelas de 620px (só a faixa de rodapé externo fica cortada nesse caso extremo).
+- **Preservado sem mudança**: a estrutura/composição em si (2 colunas, ilustração +
+  cards flutuantes, benefícios, rodapé externo) — só a ESCALA de cada elemento mudou, não
+  o layout. Continua batendo com a imagem de referência, só que num tamanho mais
+  compacto, mais parecido com a proporção real de uma tela de login (que na imagem
+  original também não deveria dominar a janela inteira).
+- Testado via Playwright em 5 larguras (1280×620 "laptop curto" — o cenário real do
+  print do cliente —, 1366×768, 1600×950, 1024×900, 390×844): confirmei por screenshot
+  que o ícone novo aparece limpo (sem o hexágono antigo), que a altura do shell caiu
+  significativamente em todas as larguras, e que só a janela mais curta artificialmente
+  (620px, mais baixa que a maioria dos laptops reais) ainda precisa de uma rolagem
+  pequena — bem menos do que antes, quando cortava o botão principal do formulário.
+  Rodei de novo `verify_login_flows.js` (login válido/inválido, mostrar senha, esqueci
+  senha, nota do código de acesso) sem quebrar nada.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase

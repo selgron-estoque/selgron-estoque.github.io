@@ -284,7 +284,7 @@
      enquanto"), não fingem um recurso que não existe. */
   .login-page{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;
     background:linear-gradient(180deg, #F7F8FB 0%, #EEF2F7 100%);
-    padding:32px 20px;font-family:var(--font-corp);}
+    padding:20px;font-family:var(--font-corp);}
   .login-shell{width:100%;max-width:1300px;background:#fff;border-radius:28px;overflow:hidden;
     box-shadow:0 1px 2px rgba(15,23,42,0.03), 0 20px 48px rgba(15,23,42,0.07);
     display:flex;flex-direction:column;}
@@ -299,17 +299,23 @@
     background-size:22px 22px; background-position:-6px -6px;}
   .login-brand::before{content:'';position:absolute;inset:0;
     background:linear-gradient(180deg, #fff 0%, #fff 55%, rgba(255,255,255,0.4) 100%);}
-  .login-brand-logo-wrap{position:relative;z-index:2;padding:50px 44px 0;}
-  .login-brand-logo-wrap img{height:auto;max-height:34px;width:auto;max-width:100%;display:block;}
+  .login-brand-logo-wrap{position:relative;z-index:2;padding:32px 40px 0;}
+  .login-brand-logo-wrap img{height:auto;max-height:30px;width:auto;max-width:100%;display:block;}
   .login-brand-center{position:relative;z-index:2;flex:1;display:flex;flex-direction:column;align-items:center;
-    justify-content:center;text-align:center;padding:28px 40px;gap:0;}
-  .login-hero-icon{width:100px;height:100px;flex-shrink:0;margin-bottom:22px;}
+    justify-content:center;text-align:center;padding:16px 40px;gap:0;}
+  /* Ícone "hero" reaproveita o mesmo sistema Lucide-style (DIcon) já usado
+     no resto do app (sidebar/header/dashboard) — badge simples com fundo
+     laranja bem claro, em vez do hexágono+cubo isométrico desenhado à mão
+     da versão anterior (achado "cara de desenho de criança" pelo cliente,
+     bold/colorido demais pra bater com o resto do design corporativo). */
+  .login-hero-icon{width:64px;height:64px;border-radius:18px;background:#FFF4E4;color:var(--safety);
+    display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-bottom:14px;}
   .login-brand-title{font-family:var(--font-corp);font-weight:800;color:var(--navy);
-    font-size:clamp(30px,3.4vw,56px);line-height:1.08;letter-spacing:-0.5px;margin:0;}
-  .login-brand-rule{width:80px;height:4px;background:var(--safety);border-radius:2px;margin:18px 0;}
+    font-size:clamp(24px,2.6vw,38px);line-height:1.1;letter-spacing:-0.5px;margin:0;}
+  .login-brand-rule{width:64px;height:4px;background:var(--safety);border-radius:2px;margin:12px 0;}
   .login-brand-subtitle{font-family:var(--font-corp);font-weight:400;color:var(--gray-500);
-    font-size:16px;line-height:1.5;max-width:360px;}
-  .login-illustration-scene{position:relative;z-index:2;width:100%;max-width:520px;margin:32px auto 0;
+    font-size:14.5px;line-height:1.5;max-width:340px;}
+  .login-illustration-scene{position:relative;z-index:2;width:100%;max-width:360px;max-height:190px;margin:18px auto 0;
     aspect-ratio:16/10;background:var(--gray-50);border-radius:16px;overflow:hidden;}
   .login-illustration-img{width:100%;height:100%;display:block;object-fit:cover;border-radius:16px;}
   /* max-width:47% em cada uma (ancoradas em bordas opostas, left:0/right:0) é
@@ -329,36 +335,36 @@
   .login-float-2{top:6%;right:0;}
 
   .login-brand-benefits{position:relative;z-index:2;display:flex;align-items:stretch;justify-content:center;
-    gap:0;padding:26px 32px 40px;}
-  .login-benefit{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:8px;
+    gap:0;padding:16px 32px 28px;}
+  .login-benefit{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:6px;
     padding:0 12px;text-align:center;}
   .login-benefit + .login-benefit{border-left:1px solid var(--gray-200);}
-  .login-benefit .bn-icon{width:38px;height:38px;border-radius:10px;background:var(--gray-50);
+  .login-benefit .bn-icon{width:34px;height:34px;border-radius:9px;background:var(--gray-50);
     color:var(--navy);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
   .login-benefit strong{font-family:var(--font-corp);font-size:13.5px;font-weight:700;color:var(--navy);}
   .login-benefit span{font-family:var(--font-corp);font-size:11.5px;color:var(--gray-500);line-height:1.35;}
 
   /* ---- Coluna direita — formulário ---- */
-  .login-form-col{display:flex;flex-direction:column;padding:44px 28px;background:#fff;min-width:0;}
-  .login-form-topbar{display:flex;justify-content:flex-end;margin-bottom:24px;}
+  .login-form-col{display:flex;flex-direction:column;padding:32px 28px;background:#fff;min-width:0;}
+  .login-form-topbar{display:flex;justify-content:flex-end;margin-bottom:16px;}
   .login-lang-select{display:flex;align-items:center;gap:7px;background:none;border:none;
     color:var(--gray-500);font-family:var(--font-corp);font-size:13px;font-weight:500;padding:8px 4px;
     cursor:default;}
   .login-form-body{flex:1;display:flex;flex-direction:column;justify-content:center;max-width:480px;
     margin:0 auto;width:100%;}
   .login-welcome-title{font-family:var(--font-corp);font-weight:800;color:var(--navy);
-    font-size:clamp(28px,3.2vw,44px);line-height:1.1;letter-spacing:-0.5px;margin:0;}
-  .login-welcome-sub{font-family:var(--font-corp);font-size:15px;color:var(--gray-500);margin:10px 0 32px;}
+    font-size:clamp(24px,2.6vw,34px);line-height:1.1;letter-spacing:-0.5px;margin:0;}
+  .login-welcome-sub{font-family:var(--font-corp);font-size:14px;color:var(--gray-500);margin:8px 0 22px;}
 
-  .login-field2{margin-bottom:18px;}
+  .login-field2{margin-bottom:14px;}
   .login-field2 label{display:block;font-family:var(--font-corp);font-size:13px;font-weight:600;
-    color:var(--navy);margin-bottom:8px;}
+    color:var(--navy);margin-bottom:6px;}
   .login-field2 .field-wrap2{position:relative;display:flex;align-items:center;}
-  .login-field2 .field-icon2{position:absolute;left:20px;top:50%;transform:translateY(-50%);
+  .login-field2 .field-icon2{position:absolute;left:18px;top:50%;transform:translateY(-50%);
     display:flex;color:var(--gray-400);pointer-events:none;}
-  .login-field2 input{width:100%;height:64px;background:#fff;border:1.5px solid var(--gray-200);
-    color:var(--navy);padding:0 20px 0 52px;border-radius:14px;font-family:var(--font-corp);
-    font-size:15px;transition:border-color .15s, box-shadow .15s, background .15s;}
+  .login-field2 input{width:100%;height:52px;background:#fff;border:1.5px solid var(--gray-200);
+    color:var(--navy);padding:0 18px 0 48px;border-radius:12px;font-family:var(--font-corp);
+    font-size:14.5px;transition:border-color .15s, box-shadow .15s, background .15s;}
   .login-field2 input::placeholder{color:var(--gray-400);}
   .login-field2 input:hover{border-color:#FBD9A8;background:#FFFBF5;}
   .login-field2 input:focus{outline:none;border-color:var(--safety);background:#fff;
@@ -369,7 +375,7 @@
     border-radius:6px;transition:color .15s;}
   .pw-toggle2:hover{color:var(--navy);}
 
-  .login-row-between{display:flex;align-items:center;justify-content:space-between;margin:2px 0 24px;
+  .login-row-between{display:flex;align-items:center;justify-content:space-between;margin:2px 0 18px;
     font-family:var(--font-corp);font-size:13.5px;}
   .login-remember{display:flex;align-items:center;gap:9px;color:var(--navy);cursor:default;
     background:none;border:none;padding:0;font:inherit;}
@@ -380,23 +386,23 @@
     font-size:13.5px;font-weight:600;padding:0;}
   .login-forgot2:hover{color:#E67E00;text-decoration:underline;}
 
-  .login-btn2{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;height:64px;
-    background:var(--safety);color:#fff;border:none;border-radius:14px;font-family:var(--font-corp);
-    font-size:16px;font-weight:700;transition:background .15s, transform .1s;}
+  .login-btn2{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;height:52px;
+    background:var(--safety);color:#fff;border:none;border-radius:12px;font-family:var(--font-corp);
+    font-size:15px;font-weight:700;transition:background .15s, transform .1s;}
   .login-btn2:hover:not(:disabled){background:#E67E00;}
   .login-btn2:active:not(:disabled){transform:translateY(1px);}
   .login-btn2:disabled{opacity:0.65;}
 
-  .login-or2{display:flex;align-items:center;gap:14px;margin:24px 0;font-family:var(--font-corp);
+  .login-or2{display:flex;align-items:center;gap:14px;margin:18px 0;font-family:var(--font-corp);
     font-size:12px;font-weight:600;color:var(--gray-400);letter-spacing:0.6px;}
   .login-or2::before, .login-or2::after{content:'';flex:1;height:1px;background:var(--gray-200);}
 
   .login-btn-outline{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;
-    height:64px;background:#fff;color:var(--navy);border:1.5px solid var(--safety);border-radius:14px;
-    font-family:var(--font-corp);font-size:15px;font-weight:600;transition:background .15s;}
+    height:52px;background:#fff;color:var(--navy);border:1.5px solid var(--safety);border-radius:12px;
+    font-family:var(--font-corp);font-size:14.5px;font-weight:600;transition:background .15s;}
   .login-btn-outline:hover{background:#FFF7EC;}
 
-  .login-back2{display:block;text-align:center;margin-top:18px;background:none;border:none;
+  .login-back2{display:block;text-align:center;margin-top:14px;background:none;border:none;
     color:var(--gray-500);font-family:var(--font-corp);font-size:13px;width:100%;padding:8px;}
   .login-back2:hover{color:var(--navy);}
 
@@ -443,12 +449,12 @@
   .login-footer2 .lf-restrict2{display:flex;align-items:center;justify-content:center;gap:6px;}
 
   @media (min-width:900px){
-    .login-shell{flex-direction:row;min-height:760px;}
+    .login-shell{flex-direction:row;min-height:560px;}
     .login-brand{width:44%;flex-shrink:0;}
-    .login-form-col{width:56%;padding:44px 80px;}
+    .login-form-col{width:56%;padding:32px 64px;}
   }
   @media (max-width:1150px) and (min-width:900px){
-    .login-form-col{padding:40px 48px;}
+    .login-form-col{padding:32px 40px;}
   }
   /* Mobile: a coluna de marca (logo, ícone, título, subtítulo, benefícios)
      continua visível, empilhada acima do formulário — só a ILUSTRAÇÃO
@@ -457,14 +463,11 @@
      substituiu a versão anterior, que escondia o painel de marca inteiro. */
   @media (max-width:899px){
     .login-illustration-scene{display:none;}
-    .login-brand-center{padding:24px 24px 4px;}
-    .login-hero-icon{width:64px;height:64px;margin-bottom:14px;}
-    .login-brand-title{font-size:26px;}
-    .login-brand-subtitle{font-size:14px;}
-    .login-brand-benefits{padding:20px 24px 28px;}
-    .login-form-col{padding:36px 24px;}
-    .login-form-topbar{margin-bottom:14px;}
-    .login-form-body{padding-top:8px;}
+    .login-brand-center{padding:20px 24px 4px;}
+    .login-brand-benefits{padding:16px 24px 24px;}
+    .login-form-col{padding:28px 24px;}
+    .login-form-topbar{margin-bottom:12px;}
+    .login-form-body{padding-top:4px;}
   }
 
   /* ---------------- LAYOUT DESKTOP (sidebar) — a partir de celular médio ----------------
@@ -3103,30 +3106,6 @@ function ShieldIcon(){
   );
 }
 
-// Ícone "hero" da coluna de marca do login (redesign v3, ver CLAUDE.md
-// "Login vira redesign premium") — hexágono outline em laranja bem claro
-// (mesmo espírito do mockup do cliente) com uma caixa isométrica + risca de
-// código de barras dentro, em navy/laranja. Substitui o `CycleIcon` da
-// versão anterior (setas em arco) — mockup pede "ícone outline moderno
-// relacionado a estoque: cube/warehouse/barcode", não mais o conceito de
-// "ciclo".
-function WarehouseHeroIcon(){
-  return (
-    <svg viewBox="0 0 120 120" fill="none" aria-hidden="true" style={{width:'100%',height:'100%'}}>
-      <path d="M60 6 108 33 108 87 60 114 12 87 12 33 Z" fill="#FFF4E4" stroke="var(--safety)" strokeWidth="2"/>
-      <g transform="translate(60 58)">
-        <g stroke="var(--navy)" strokeWidth="4.5" strokeLinejoin="round" strokeLinecap="round" fill="none">
-          <path d="M-20 -8 0 -18 20 -8 20 14 0 24 -20 14 Z"/>
-          <path d="M-20 -8 0 2 20 -8"/>
-          <path d="M0 2 0 24"/>
-        </g>
-        <rect x="-13" y="6" width="4" height="11" rx="0.5" fill="var(--safety)"/>
-        <rect x="-6.5" y="6" width="2" height="11" fill="var(--safety)"/>
-        <rect x="-2.5" y="6" width="3" height="11" fill="var(--safety)"/>
-      </g>
-    </svg>
-  );
-}
 
 // Componente separado pra área da ilustração da coluna de marca — pedido
 // explícito do cliente: "não desenhe nenhuma ilustração, não utilize SVG,
@@ -3266,7 +3245,7 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
             <img src={SELGRON_LOGO_URL} alt="Selgron" />
           </div>
           <div className="login-brand-center">
-            <div className="login-hero-icon"><WarehouseHeroIcon /></div>
+            <div className="login-hero-icon"><DIcon name="box" size={30} strokeWidth={1.6} /></div>
             <h1 className="login-brand-title">Gestão de Estoques</h1>
             <div className="login-brand-rule"></div>
             <p className="login-brand-subtitle">Central de controles, inventários e indicadores.</p>
