@@ -16,19 +16,60 @@
 create extension if not exists pgcrypto; -- para gen_random_uuid()
 
 -- ---------------------------------------------------------------------------
--- USUÁRIOS
+-- USUÁRIOS — VERSÃO LEVE (mesmo espírito de `contagens`/`inventarios`: sync
+-- sem Supabase Auth de verdade). A versão original desta tabela (comentário
+-- "senha fica no Supabase Auth") nunca chegou a ser usada — o app sempre
+-- autenticou 100% contra o `localStorage` (ver `attemptLogin` no index.html),
+-- e migrar login pra Supabase Auth de verdade foi adiado explicitamente (ver
+-- CLAUDE.md, "Terceiro pedaço do backend real") porque resetar senha de
+-- OUTRO usuário via Auth exigiria a service role key no navegador — falha de
+-- segurança grave. Essa tabela aqui NÃO é isso: é só um espelho da lista de
+-- usuários (mesma senha em texto puro do protótipo, mesma limitação já
+-- documentada no README) pra resolver um problema concreto — excluir/criar/
+-- editar um usuário num aparelho não propagava pra os outros, porque `users`
+-- só existia no `localStorage` de cada um.
+--
+-- `id` é `text` (não `uuid`) porque o app já gera seus próprios ids
+-- (`'u'+Math.random()...`, ver `createUser` no index.html) — mesmo padrão já
+-- usado em `inventarios`/`contagens` (`'INV-XXX'`/`'CNT-XXX'`).
+-- `atualizado_em` cumpre o mesmo papel que já cumpre em `contagens`: decidir
+-- qual lado (local vs. remoto) é mais recente ao reconciliar no sync de 30s.
 -- ---------------------------------------------------------------------------
 create table usuarios (
-  id uuid primary key default gen_random_uuid(),
+  id text primary key,
   nome text not null,
-  usuario text unique not null,
+  usuario text not null,
   email text,
+  senha text,                       -- texto puro, mesma limitação já documentada no README
   perfil text not null check (perfil in ('operador','lider','admin')),
   status text not null default 'ativo' check (status in ('ativo','bloqueado','deve_definir_senha')),
-  criado_em timestamptz not null default now()
+  criado_em timestamptz not null default now(),
+  atualizado_em timestamptz not null default now()
 );
--- Senha em si fica no Supabase Auth (auth.users), não nesta tabela — esta
--- tabela guarda só os dados de perfil/permissão do Stock360.
+create unique index idx_usuarios_login on usuarios (lower(usuario));
+
+-- ---------------------------------------------------------------------------
+-- ENDEREÇOS PROPOSTOS — fila de validação do líder (Módulo 5/6): operador
+-- conta um item sem endereço cadastrado, informa onde encontrou, e essa
+-- proposta fica pendente até o líder confirmar ou rejeitar (ver
+-- `AddressValidationPanel`/`addAddressProposal`/`resolveAddressProposal` no
+-- index.html). Mesma versão leve/denormalizada de sempre — sem FK pra
+-- `usuarios` (login continua local), `produto_codigo` sem FK pra `produtos`
+-- pelo mesmo motivo já documentado em `contagens` (item pode estar fora do
+-- catálogo). Nunca é deletada, só muda de `status` — por isso não precisa de
+-- policy de DELETE.
+-- ---------------------------------------------------------------------------
+create table enderecos_propostos (
+  id text primary key,              -- 'END-XXXXX', gerado no app
+  produto_codigo text not null,
+  descricao text,
+  endereco_informado text not null,
+  usuario text not null,            -- nome de quem propôs, texto puro (sem FK)
+  data date,
+  status text not null default 'pendente' check (status in ('pendente','confirmado','rejeitado')),
+  criado_em timestamptz not null default now(),
+  atualizado_em timestamptz not null default now()
+);
 
 -- ---------------------------------------------------------------------------
 -- CATÁLOGO — espelho do cadastro de produto do Protheus (SB1).
@@ -345,6 +386,26 @@ create policy "atualização pública" on inventarios for update using (true) wi
 -- aditiva podia "ressuscitar" o inventário excluído em outro aparelho.
 create policy "exclusão pública" on inventarios for delete using (true);
 
+-- Usuários: mesma ressalva de sempre (sem Supabase Auth, `using(true)` em
+-- tudo). Precisa das 4 operações — criar/editar/bloquear E excluir um
+-- usuário só propagam de verdade pra outros aparelhos com SELECT+INSERT+
+-- UPDATE+DELETE liberados, mesmo padrão já usado em `inventarios`. Aceitável
+-- pro protótipo (qualquer um com a publishable key vê a lista de usuários,
+-- incluindo senha em texto puro) — reforça, de novo, a necessidade de
+-- Supabase Auth real antes de produção (ver README.md).
+alter table usuarios enable row level security;
+create policy "leitura pública" on usuarios for select using (true);
+create policy "inserção pública" on usuarios for insert with check (true);
+create policy "atualização pública" on usuarios for update using (true) with check (true);
+create policy "exclusão pública" on usuarios for delete using (true);
+
+-- Endereços propostos: só SELECT+INSERT+UPDATE — nunca são deletados (só
+-- mudam de status pendente→confirmado/rejeitado, ver comentário na tabela).
+alter table enderecos_propostos enable row level security;
+create policy "leitura pública" on enderecos_propostos for select using (true);
+create policy "inserção pública" on enderecos_propostos for insert with check (true);
+create policy "atualização pública" on enderecos_propostos for update using (true) with check (true);
+
 -- Escrita em estoque_saldo: originalmente pensada só pra service role (via
 -- Edge Function de sincronização automática), mas essa sync nunca foi
 -- aplicada — o upload manual da planilha SB2 acontece direto do navegador
@@ -433,3 +494,33 @@ alter table contagens add column if not exists atualizado_em timestamptz not nul
 
 create policy "atualização pública" on contagens for update using (true) with check (true);
 create policy "exclusão pública" on inventarios for delete using (true);
+
+-- USUÁRIOS — o projeto real já tem uma tabela `usuarios` desde a aplicação
+-- inicial do schema, mas com a estrutura ANTIGA (id uuid, sem coluna de
+-- senha, pensada pra um Supabase Auth que nunca chegou a ser aplicado — ver
+-- comentário na definição nova, mais acima neste arquivo). Como essa tabela
+-- nunca foi populada de verdade (login sempre autenticou 100% contra o
+-- localStorage), é seguro dropar e recriar do zero em vez de fazer `alter
+-- table add column` em cima da estrutura errada.
+drop table if exists usuarios;
+create table usuarios (
+  id text primary key,
+  nome text not null,
+  usuario text not null,
+  email text,
+  senha text,
+  perfil text not null check (perfil in ('operador','lider','admin')),
+  status text not null default 'ativo' check (status in ('ativo','bloqueado','deve_definir_senha')),
+  criado_em timestamptz not null default now(),
+  atualizado_em timestamptz not null default now()
+);
+create unique index idx_usuarios_login on usuarios (lower(usuario));
+alter table usuarios enable row level security;
+create policy "leitura pública" on usuarios for select using (true);
+create policy "inserção pública" on usuarios for insert with check (true);
+create policy "atualização pública" on usuarios for update using (true) with check (true);
+create policy "exclusão pública" on usuarios for delete using (true);
+
+-- ENDEREÇOS PROPOSTOS — tabela nova, não existia antes; só o `create table`
+-- de verdade (mais acima neste arquivo, junto das RLS logo depois) precisa
+-- ser rodado — nada pra migrar aqui.

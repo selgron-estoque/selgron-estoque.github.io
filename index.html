@@ -904,6 +904,168 @@ async function fetchInventoriesFromSupabase(){
   }
 }
 
+// ---- Usuários — sync leve entre aparelhos (sem Supabase Auth) ----
+// Login continua autenticando 100% contra o `localStorage` (`attemptLogin`
+// em App(), instantâneo, funciona offline) — o Supabase aqui é só um espelho
+// da lista de usuários pra criar/editar/bloquear/excluir propagar entre
+// aparelhos, o que faltava até agora (ver CLAUDE.md, "Sincronizar usuários
+// entre aparelhos"). Mesmo padrão de `saveInventarioToSupabase`/
+// `deleteInventarioFromSupabase`: `await`adas por quem chama, só comprometem
+// o estado local depois de confirmar a gravação remota.
+function usuarioRowToLocal(row){
+  return {
+    id: row.id,
+    nome: row.nome,
+    usuario: row.usuario,
+    email: row.email,
+    senha: row.senha,
+    perfil: row.perfil,
+    status: row.status,
+    atualizadoEm: row.atualizado_em,
+  };
+}
+
+async function saveUsuarioToSupabase(user){
+  if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
+  try{
+    const { error } = await supabaseClient.from('usuarios').insert({
+      id: user.id,
+      nome: user.nome,
+      usuario: user.usuario,
+      email: user.email || null,
+      senha: user.senha || null,
+      perfil: user.perfil,
+      status: user.status || 'ativo',
+      atualizado_em: new Date().toISOString(),
+    });
+    if(error) return {ok:false, erro:error.message};
+    return {ok:true};
+  }catch(err){
+    return {ok:false, erro:String(err && err.message || err)};
+  }
+}
+
+// `patch` usa nomes de campo em camelCase (mesmo formato do objeto local) —
+// convertido pra snake_case aqui dentro, então quem chama não precisa saber
+// o nome das colunas no banco.
+async function updateUsuarioToSupabase(id, patch){
+  if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
+  try{
+    const row = {atualizado_em: new Date().toISOString()};
+    if('nome' in patch) row.nome = patch.nome;
+    if('usuario' in patch) row.usuario = patch.usuario;
+    if('email' in patch) row.email = patch.email || null;
+    if('senha' in patch) row.senha = patch.senha;
+    if('perfil' in patch) row.perfil = patch.perfil;
+    if('status' in patch) row.status = patch.status;
+    const { error } = await supabaseClient.from('usuarios').update(row).eq('id', id);
+    if(error) return {ok:false, erro:error.message};
+    return {ok:true};
+  }catch(err){
+    return {ok:false, erro:String(err && err.message || err)};
+  }
+}
+
+async function deleteUsuarioFromSupabase(id){
+  if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
+  try{
+    const { error } = await supabaseClient.from('usuarios').delete().eq('id', id);
+    if(error) return {ok:false, erro:error.message};
+    return {ok:true};
+  }catch(err){
+    return {ok:false, erro:String(err && err.message || err)};
+  }
+}
+
+// Retorna `null` (não `[]`) quando a busca FALHA — mesma distinção já usada
+// em `fetchInventoriesFromSupabase`, essencial pra sincronização poder
+// remover localmente um usuário ausente remotamente (exclusão feita em outro
+// aparelho) sem confundir "sem usuário nenhum" com "a rede caiu".
+async function fetchUsuariosFromSupabase(){
+  if(!supabaseClient) return null;
+  try{
+    const data = await fetchTodasPaginado(() => supabaseClient
+      .from('usuarios')
+      .select('*')
+      .order('criado_em', {ascending:true})
+      .order('id', {ascending:true}));
+    return data.map(usuarioRowToLocal);
+  }catch(err){
+    console.warn('Falha ao buscar usuários do Supabase:', err);
+    return null;
+  }
+}
+
+// ---- Endereços propostos — fila de validação do líder (Módulo 5/6) ----
+// `addAddressProposal` (App()) continua instantânea/local (o operador não
+// pode travar esperando rede no meio de uma contagem) — a gravação no
+// Supabase é fire-and-forget, mesmo padrão de `saveContagemToSupabase`.
+// `resolveAddressProposal` (confirmar/rejeitar, ação do líder) já é
+// `await`ada, mesmo padrão de `approveDivergence`.
+function enderecoPropostoRowToLocal(row){
+  return {
+    id: row.id,
+    productCode: row.produto_codigo,
+    descricao: row.descricao,
+    enderecoInformado: row.endereco_informado,
+    usuario: row.usuario,
+    data: row.data,
+    status: row.status,
+    atualizadoEm: row.atualizado_em,
+  };
+}
+
+async function saveEnderecoPropostoToSupabase(p){
+  if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
+  try{
+    const { error } = await supabaseClient.from('enderecos_propostos').insert({
+      id: p.id,
+      produto_codigo: p.productCode,
+      descricao: p.descricao,
+      endereco_informado: p.enderecoInformado,
+      usuario: p.usuario,
+      data: p.data,
+      status: p.status || 'pendente',
+    });
+    if(error) return {ok:false, erro:error.message};
+    return {ok:true};
+  }catch(err){
+    return {ok:false, erro:String(err && err.message || err)};
+  }
+}
+
+async function updateEnderecoPropostoToSupabase(id, status){
+  if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
+  try{
+    const { error } = await supabaseClient.from('enderecos_propostos').update({
+      status, atualizado_em: new Date().toISOString(),
+    }).eq('id', id);
+    if(error) return {ok:false, erro:error.message};
+    return {ok:true};
+  }catch(err){
+    return {ok:false, erro:String(err && err.message || err)};
+  }
+}
+
+// Aditiva por natureza (mesmo raciocínio de fetchContagensFromSupabase) —
+// nunca precisa distinguir "falhou" de "vazio" porque o merge no sync() só
+// ADICIONA/ATUALIZA por id, nunca remove local (proposta nunca é deletada,
+// só muda de status).
+async function fetchEnderecosPropostosFromSupabase(){
+  if(!supabaseClient) return [];
+  try{
+    const data = await fetchTodasPaginado(() => supabaseClient
+      .from('enderecos_propostos')
+      .select('*')
+      .order('criado_em', {ascending:false})
+      .order('id', {ascending:true}));
+    return data.map(enderecoPropostoRowToLocal);
+  }catch(err){
+    console.warn('Falha ao buscar endereços propostos do Supabase:', err);
+    return [];
+  }
+}
+
 // ---- Atualização diária do saldo em estoque (planilha SB2) ----
 // O cliente ainda não tem a sincronização automática com o Protheus (a Edge
 // Function sync-saldo-protheus continua só desenhada) — enquanto isso, ele
@@ -2220,7 +2382,13 @@ function App(){
   const [inventories, setInventories] = usePersistedState('inventories_v2', []);
 
   const [counts, setCounts] = usePersistedState('counts_v2', []); // finalized counts
-  const [enderecosPropostos, setEnderecosPropostos] = usePersistedState('enderecosPropostos', []); // endereços informados por operadores, aguardando validação do líder
+  // Chave 'enderecosPropostos_v2' (era 'enderecosPropostos') — mesmo reset
+  // pedido pelo cliente já aplicado antes a inventários/contagens: esse
+  // aparelho ainda tinha propostas de endereço de teste (item tipo "TRAVA
+  // ROLO PRESS") sobrando do período de demonstração. Bump de chave zera
+  // sozinho em qualquer aparelho que abrir depois deste deploy, sem precisar
+  // de comando manual em cada um.
+  const [enderecosPropostos, setEnderecosPropostos] = usePersistedState('enderecosPropostos_v2', []); // endereços informados por operadores, aguardando validação do líder
   const [passwordRequests, setPasswordRequests] = usePersistedState('passwordRequests', []); // solicitações de "esqueci minha senha"
   const [passwordHistory, setPasswordHistory] = usePersistedState('passwordHistory', []); // histórico de alterações de senha
   const [reportSendHistory, setReportSendHistory] = usePersistedState('reportSendHistory', []); // histórico de envios de relatório por e-mail
@@ -2235,7 +2403,15 @@ function App(){
   function goto(v, params){ setFlowState(params||null); setView(v); window.scrollTo(0,0); }
 
   function addAddressProposal(p){
-    setEnderecosPropostos(prev=>[{...p, id:'END-'+Math.random().toString(36).slice(2,7).toUpperCase(), status:'pendente'}, ...prev]);
+    const proposta = {...p, id:'END-'+Math.random().toString(36).slice(2,7).toUpperCase(), status:'pendente'};
+    setEnderecosPropostos(prev=>[proposta, ...prev]);
+    // Fire-and-forget — mesmo padrão de saveContagemToSupabase: o operador
+    // não pode travar esperando rede no meio de uma contagem. Se falhar, a
+    // proposta continua visível neste aparelho (fonte local já atualizada);
+    // só não aparece em outros até o próximo ciclo de sync bem-sucedido.
+    saveEnderecoPropostoToSupabase(proposta).then(res=>{
+      if(!res.ok) console.warn('Falha ao sincronizar endereço proposto:', res.erro);
+    });
   }
 
   // `counts` muda o tempo todo (cada contagem finalizada), mas o efeito de
@@ -2247,6 +2423,59 @@ function App(){
   // recente, independente do closure).
   const countsRef = useRef(counts);
   useEffect(()=>{ countsRef.current = counts; }, [counts]);
+
+  // Mesmo raciocínio de `countsRef`, mas pra `users` — precisa de leitura
+  // fresca dentro do efeito de sync de usuários logo abaixo (que roda com
+  // `[]` de dependência, closure fixo do mount).
+  const usersRef = useRef(users);
+  useEffect(()=>{ usersRef.current = users; }, [users]);
+
+  // ---- Sincronização de usuários — roda mesmo ANTES do login ----
+  // Diferente do ciclo de 30s "principal" (mais abaixo, só ativo depois de
+  // autenticar), este PRECISA rodar sem sessão nenhuma: se um usuário foi
+  // criado/editado/excluído em outro aparelho, este aparelho precisa saber
+  // ANTES de alguém tentar logar aqui — não dá pra esperar o login acontecer
+  // pra só então buscar. Era exatamente o bug relatado: excluir um usuário
+  // num tablet continuava permitindo login nos outros, porque a única
+  // sincronização existente só rodava depois de autenticado.
+  useEffect(()=>{
+    if(!supabaseClient) return;
+    let cancelled = false;
+    async function syncUsuarios(){
+      const remoteUsers = await fetchUsuariosFromSupabase();
+      if(cancelled || remoteUsers===null) return;
+      if(remoteUsers.length===0){
+        // Tabela `usuarios` existe mas está vazia — provavelmente o SQL
+        // acabou de ser aplicado no projeto real e nenhum aparelho
+        // sincronizou ainda. Bootstrap: empurra os usuários que já existem
+        // NESTE aparelho pro Supabase, sem remover nada localmente (um
+        // remoto genuinamente vazio não deve apagar usuário nenhum, só
+        // "ainda não populado"). Ids que colidirem com outro aparelho
+        // fazendo o mesmo bootstrap ao mesmo tempo (ex: USERS_SEED, idêntico
+        // em todo aparelho novo) só falham silenciosamente — inofensivo.
+        usersRef.current.forEach(u=>{ saveUsuarioToSupabase(u).catch(()=>{}); });
+        return;
+      }
+      setUsers(prev=>{
+        const remoteIds = new Set(remoteUsers.map(u=>u.id));
+        const byId = new Map(prev.map(u=>[u.id, u]));
+        remoteUsers.forEach(ru=>{
+          const local = byId.get(ru.id);
+          if(!local){
+            byId.set(ru.id, ru);
+          } else {
+            const remoteTs = ru.atualizadoEm ? new Date(ru.atualizadoEm).getTime() : 0;
+            const localTs = local.atualizadoEm ? new Date(local.atualizadoEm).getTime() : 0;
+            if(remoteTs >= localTs) byId.set(ru.id, {...local, ...ru});
+          }
+        });
+        return Array.from(byId.values()).filter(u=>remoteIds.has(u.id));
+      });
+    }
+    syncUsuarios();
+    const interval = setInterval(syncUsuarios, 30000);
+    return ()=>{ cancelled = true; clearInterval(interval); };
+  }, []);
 
   // Reflete `getPendingIncrements().length` (ver index.html perto de
   // incrementContadosSupabase) de forma reativa, só pro indicador visual —
@@ -2290,8 +2519,15 @@ function App(){
     });
   }
 
-  function resolveAddressProposal(id, status){
-    setEnderecosPropostos(prev=>prev.map(e=>e.id===id?{...e, status}:e));
+  // Decisão do líder (confirmar/rejeitar) — aguarda confirmação do Supabase
+  // antes de mudar a tela, mesmo padrão de approveDivergence: sem isso, um
+  // líder decidindo num tablet nunca aparecia nos outros.
+  async function resolveAddressProposal(id, status){
+    const res = await updateEnderecoPropostoToSupabase(id, status);
+    if(res.ok){
+      setEnderecosPropostos(prev=>prev.map(e=>e.id===id?{...e, status}:e));
+    }
+    return res;
   }
 
   // Decisão do líder — precisa confirmar no Supabase ANTES de mudar a tela
@@ -2400,61 +2636,97 @@ function App(){
     return 'Se o usuário existir, uma solicitação foi enviada para aprovação do administrador.';
   }
 
-  function resolvePasswordRequest(reqId, acao, novaSenhaDigitada){
+  async function resolvePasswordRequest(reqId, acao, novaSenhaDigitada){
     const req = passwordRequests.find(r=>r.id===reqId);
-    if(!req) return;
-    applyAdminPasswordAction(req.userId, acao, novaSenhaDigitada);
-    setPasswordRequests(prev=>prev.map(r=>r.id===reqId?{...r, status:'resolvido'}:r));
+    if(!req) return {ok:false, erro:'Solicitação não encontrada.'};
+    const res = await applyAdminPasswordAction(req.userId, acao, novaSenhaDigitada);
+    if(res.ok){
+      setPasswordRequests(prev=>prev.map(r=>r.id===reqId?{...r, status:'resolvido'}:r));
+    }
+    return res;
   }
 
-  function applyAdminPasswordAction(userId, acao, novaSenhaDigitada){
+  // Todas as ações abaixo (senha/criar/editar/bloquear/excluir) aguardam
+  // confirmação do Supabase ANTES de mudar o estado local — mesmo padrão já
+  // usado em approveDivergence/deleteInventory. Sem isso, uma ação num
+  // tablet nunca aparecia nos outros (foi exatamente o bug relatado: excluir
+  // um usuário num aparelho continuava aparecendo nos demais).
+  async function applyAdminPasswordAction(userId, acao, novaSenhaDigitada){
     const target = users.find(u=>u.id===userId);
-    if(!target || !currentUser) return;
-    let acaoLabel = '';
+    if(!target || !currentUser) return {ok:false, erro:'Usuário não encontrado.'};
+    let patch, acaoLabel;
     if(acao==='temp'){
       const temp = generateTempPassword();
-      setUsers(prev=>prev.map(u=>u.id===userId?{...u, senha:temp, status:'ativo'}:u));
+      patch = {senha:temp, status:'ativo'};
       acaoLabel = `Senha temporária gerada (${temp}) — repassar ao usuário`;
     } else if(acao==='definir'){
-      setUsers(prev=>prev.map(u=>u.id===userId?{...u, senha:novaSenhaDigitada, status:'ativo'}:u));
+      patch = {senha:novaSenhaDigitada, status:'ativo'};
       acaoLabel = 'Nova senha definida pelo administrador';
     } else if(acao==='liberar'){
-      setUsers(prev=>prev.map(u=>u.id===userId?{...u, senha:null, status:'deve_definir_senha'}:u));
+      patch = {senha:null, status:'deve_definir_senha'};
       acaoLabel = 'Usuário liberado para criar nova senha';
+    } else {
+      return {ok:false, erro:'Ação inválida.'};
     }
-    logHistory(target.nome, acaoLabel, currentUser.nome);
+    const res = await updateUsuarioToSupabase(userId, patch);
+    if(res.ok){
+      setUsers(prev=>prev.map(u=>u.id===userId?{...u, ...patch}:u));
+      logHistory(target.nome, acaoLabel, currentUser.nome);
+    }
+    return res;
   }
 
-  function selfSetNewPassword(userId, novaSenha){
+  async function selfSetNewPassword(userId, novaSenha){
     const target = users.find(u=>u.id===userId);
-    setUsers(prev=>prev.map(u=>u.id===userId?{...u, senha:novaSenha, status:'ativo'}:u));
-    if(target) logHistory(target.nome, 'Senha definida pelo próprio usuário', '—');
-    setCurrentUserId(userId);
-    saveSession(userId);
-    setView('home');
+    const res = await updateUsuarioToSupabase(userId, {senha:novaSenha, status:'ativo'});
+    if(res.ok){
+      setUsers(prev=>prev.map(u=>u.id===userId?{...u, senha:novaSenha, status:'ativo'}:u));
+      if(target) logHistory(target.nome, 'Senha definida pelo próprio usuário', '—');
+      setCurrentUserId(userId);
+      saveSession(userId);
+      setView('home');
+    }
+    return res;
   }
 
-  function createUser(data){
-    setUsers(prev=>[{...data, id:'u'+Math.random().toString(36).slice(2,7), status:'ativo'}, ...prev]);
+  async function createUser(data){
+    const novoUsuario = {...data, id:'u'+Math.random().toString(36).slice(2,7), status:'ativo'};
+    const res = await saveUsuarioToSupabase(novoUsuario);
+    if(res.ok){
+      setUsers(prev=>[novoUsuario, ...prev]);
+    }
+    return res;
   }
 
-  function updateUser(userId, data){
-    setUsers(prev=>prev.map(u=>u.id===userId?{...u, ...data}:u));
+  async function updateUser(userId, data){
+    const res = await updateUsuarioToSupabase(userId, data);
+    if(res.ok){
+      setUsers(prev=>prev.map(u=>u.id===userId?{...u, ...data}:u));
+    }
+    return res;
   }
 
-  function toggleUserStatus(userId){
+  async function toggleUserStatus(userId){
     const target = users.find(u=>u.id===userId);
-    if(!target) return;
+    if(!target) return {ok:false, erro:'Usuário não encontrado.'};
     const novoStatus = target.status==='bloqueado' ? 'ativo' : 'bloqueado';
-    setUsers(prev=>prev.map(u=>u.id===userId?{...u, status:novoStatus}:u));
-    logHistory(target.nome, novoStatus==='bloqueado' ? 'Usuário bloqueado' : 'Usuário desbloqueado', currentUser?currentUser.nome:'—');
+    const res = await updateUsuarioToSupabase(userId, {status:novoStatus});
+    if(res.ok){
+      setUsers(prev=>prev.map(u=>u.id===userId?{...u, status:novoStatus}:u));
+      logHistory(target.nome, novoStatus==='bloqueado' ? 'Usuário bloqueado' : 'Usuário desbloqueado', currentUser?currentUser.nome:'—');
+    }
+    return res;
   }
 
-  function deleteUser(userId){
+  async function deleteUser(userId){
     const target = users.find(u=>u.id===userId);
-    if(!target || userId===currentUserId) return;
-    setUsers(prev=>prev.filter(u=>u.id!==userId));
-    logHistory(target.nome, 'Usuário excluído', currentUser?currentUser.nome:'—');
+    if(!target || userId===currentUserId) return {ok:false, erro:'Não é possível excluir este usuário.'};
+    const res = await deleteUsuarioFromSupabase(userId);
+    if(res.ok){
+      setUsers(prev=>prev.filter(u=>u.id!==userId));
+      logHistory(target.nome, 'Usuário excluído', currentUser?currentUser.nome:'—');
+    }
+    return res;
   }
 
   // ---- Logout automático por inatividade ----
@@ -2503,6 +2775,11 @@ function App(){
   //      aparelho se propaga. Só é seguro remover porque `fetchInventories
   //      FromSupabase` retorna `null` (não `[]`) quando a busca FALHA, então
   //      uma queda de rede nunca é confundida com "lista vazia de verdade".
+  //    - Endereços propostos: só aditivo + atualiza por `atualizadoEm`,
+  //      igual contagens — nunca remove (proposta nunca é deletada, só muda
+  //      de status). `users` NÃO entra aqui — tem seu próprio ciclo de sync
+  //      independente, que roda mesmo antes do login (ver useEffect logo
+  //      acima de `countsRef`).
   useEffect(()=>{
     if(!currentUser || !supabaseClient) return;
     let cancelled = false;
@@ -2522,9 +2799,10 @@ function App(){
       if(!cancelled) setPendingIncrementsCount(getPendingIncrements().length);
 
       // --- 2) reconciliação com o Supabase ---
-      const [remoteInv, remoteCounts] = await Promise.all([
+      const [remoteInv, remoteCounts, remoteEnderecos] = await Promise.all([
         fetchInventoriesFromSupabase(),
         fetchContagensFromSupabase(),
+        fetchEnderecosPropostosFromSupabase(),
       ]);
       if(cancelled) return;
       if(remoteInv !== null){
@@ -2549,6 +2827,25 @@ function App(){
               const remoteTs = rc.atualizadoEm ? new Date(rc.atualizadoEm).getTime() : 0;
               const localTs = local.atualizadoEm ? new Date(local.atualizadoEm).getTime() : 0;
               if(remoteTs >= localTs) byId.set(rc.id, {...local, ...rc});
+            }
+          });
+          return Array.from(byId.values());
+        });
+      }
+      // Endereços propostos: só aditivo + atualiza por `atualizadoEm`, nunca
+      // remove — a proposta nunca é deletada no app, só muda de status (ver
+      // AddressValidationPanel/resolveAddressProposal).
+      if(remoteEnderecos.length){
+        setEnderecosPropostos(prev=>{
+          const byId = new Map(prev.map(e=>[e.id, e]));
+          remoteEnderecos.forEach(re=>{
+            const local = byId.get(re.id);
+            if(!local){
+              byId.set(re.id, re);
+            } else {
+              const remoteTs = re.atualizadoEm ? new Date(re.atualizadoEm).getTime() : 0;
+              const localTs = local.atualizadoEm ? new Date(local.atualizadoEm).getTime() : 0;
+              if(remoteTs >= localTs) byId.set(re.id, {...local, ...re});
             }
           });
           return Array.from(byId.values());
@@ -2643,8 +2940,9 @@ function App(){
             mode={flowState.mode}
             initialData={flowState.initialData}
             users={users}
-            onCreateUser={(data)=>{ createUser(data); goto('settings'); }}
-            onUpdateUser={(id,data)=>{ updateUser(id,data); goto('settings'); }}
+            onCreateUser={createUser}
+            onUpdateUser={updateUser}
+            onSaved={()=>goto('settings')}
             onCancel={()=>goto('settings')}
           />
         )}
@@ -2780,6 +3078,7 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
   const [pendingUserId, setPendingUserId] = useState(null);
   const [novaSenha, setNovaSenha] = useState('');
   const [confirmaSenha, setConfirmaSenha] = useState('');
+  const [salvandoSenha, setSalvandoSenha] = useState(false);
 
   function submitLogin(e){
     e.preventDefault();
@@ -2801,12 +3100,15 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
     setForgotMsg(msg);
   }
 
-  function submitNewPassword(e){
+  async function submitNewPassword(e){
     e.preventDefault();
     setError('');
     if(novaSenha.length < 6){ setError('A nova senha deve ter pelo menos 6 caracteres.'); return; }
     if(novaSenha !== confirmaSenha){ setError('As senhas não coincidem.'); return; }
-    onSelfSetPassword(pendingUserId, novaSenha);
+    setSalvandoSenha(true);
+    const res = await onSelfSetPassword(pendingUserId, novaSenha);
+    setSalvandoSenha(false);
+    if(res && !res.ok) setError(res.erro || 'Não foi possível salvar a nova senha — tente novamente.');
   }
 
   return (
@@ -2915,7 +3217,7 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
                   <input type="password" value={confirmaSenha} onChange={e=>setConfirmaSenha(e.target.value)} />
                 </div>
               </div>
-              <button className="login-btn" type="submit">Definir senha e entrar</button>
+              <button className="login-btn" type="submit" disabled={salvandoSenha}>{salvandoSenha ? 'Salvando…' : 'Definir senha e entrar'}</button>
             </form>
           )}
         </div>
@@ -5888,6 +6190,43 @@ function UserManagementPanel({users, currentUser, goto, onToggleUserStatus, onDe
   const [pwAction, setPwAction] = useState(null); // userId currently doing a password action
   const [pwValue, setPwValue] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  // Ações agora aguardam confirmação do Supabase (ver App()) — busyId
+  // desabilita só o botão clicado, erros guarda a mensagem por usuário, mesmo
+  // padrão já usado em RecountsPanel pra aprovar/rejeitar divergência.
+  const [busyId, setBusyId] = useState(null);
+  const [erros, setErros] = useState({});
+
+  async function handleToggle(userId){
+    setBusyId(userId);
+    setErros(prev=>({...prev, [userId]: null}));
+    const res = await onToggleUserStatus(userId);
+    setBusyId(null);
+    if(!res || !res.ok) setErros(prev=>({...prev, [userId]: (res && res.erro) || 'Não foi possível atualizar — tente novamente.'}));
+  }
+
+  async function handleDelete(userId){
+    setBusyId(userId);
+    setErros(prev=>({...prev, [userId]: null}));
+    const res = await onDeleteUser(userId);
+    setBusyId(null);
+    if(res && res.ok){
+      setConfirmDeleteId(null);
+    } else {
+      setErros(prev=>({...prev, [userId]: (res && res.erro) || 'Não foi possível excluir — tente novamente.'}));
+    }
+  }
+
+  async function handlePwAction(userId, acao, senha){
+    setBusyId(userId);
+    setErros(prev=>({...prev, [userId]: null}));
+    const res = await onAdminPasswordAction(userId, acao, senha);
+    setBusyId(null);
+    if(res && res.ok){
+      setPwAction(null);
+    } else {
+      setErros(prev=>({...prev, [userId]: (res && res.erro) || 'Não foi possível salvar a senha — tente novamente.'}));
+    }
+  }
 
   const filtered = useMemo(()=>{
     const q = search.trim().toLowerCase();
@@ -5932,29 +6271,34 @@ function UserManagementPanel({users, currentUser, goto, onToggleUserStatus, onDe
               <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:8}}>
                 <StatusTag status={u.status==='ativo'?'ok':u.status==='bloqueado'?'danger':'warn'} text={u.status==='ativo'?'Ativo':u.status==='bloqueado'?'Bloqueado':'Aguardando nova senha'} />
                 <div className="btn-row" style={{width:'auto'}}>
-                  <button className="btn btn-outline" style={{padding:'7px 10px',fontSize:10.5}} onClick={()=>goto('userForm', {mode:u.id, initialData:u})}>Editar</button>
-                  <button className="btn btn-outline" style={{padding:'7px 10px',fontSize:10.5}} onClick={()=>onToggleUserStatus(u.id)}>{u.status==='bloqueado'?'Desbloquear':'Bloquear'}</button>
-                  <button className="btn btn-outline" style={{padding:'7px 10px',fontSize:10.5}} onClick={()=>{setPwAction(pwAction===u.id?null:u.id); setPwValue('');}}>Redefinir senha</button>
+                  <button className="btn btn-outline" style={{padding:'7px 10px',fontSize:10.5}} disabled={busyId===u.id} onClick={()=>goto('userForm', {mode:u.id, initialData:u})}>Editar</button>
+                  <button className="btn btn-outline" style={{padding:'7px 10px',fontSize:10.5}} disabled={busyId===u.id} onClick={()=>handleToggle(u.id)}>{busyId===u.id ? 'Enviando…' : (u.status==='bloqueado'?'Desbloquear':'Bloquear')}</button>
+                  <button className="btn btn-outline" style={{padding:'7px 10px',fontSize:10.5}} disabled={busyId===u.id} onClick={()=>{setPwAction(pwAction===u.id?null:u.id); setPwValue(''); setErros(prev=>({...prev,[u.id]:null}));}}>Redefinir senha</button>
                   {u.id!==currentUser.id && (
-                    <button className="btn btn-danger" style={{padding:'7px 10px',fontSize:10.5,width:'auto'}} onClick={()=>setConfirmDeleteId(u.id)}>Excluir</button>
+                    <button className="btn btn-danger" style={{padding:'7px 10px',fontSize:10.5,width:'auto'}} disabled={busyId===u.id} onClick={()=>{setConfirmDeleteId(u.id); setErros(prev=>({...prev,[u.id]:null}));}}>Excluir</button>
                   )}
                 </div>
+                {erros[u.id] && pwAction!==u.id && confirmDeleteId!==u.id && (
+                  <div style={{fontSize:11.5,color:'var(--danger)',maxWidth:260,textAlign:'right'}}>{erros[u.id]}</div>
+                )}
                 {pwAction===u.id && (
                   <div style={{background:'var(--panel-raised)',border:'1px solid var(--line)',borderRadius:8,padding:12,width:260}}>
+                    {erros[u.id] && <div style={{fontSize:11.5,color:'var(--danger)',marginBottom:8}}>{erros[u.id]}</div>}
                     <div className="btn-row" style={{marginBottom:8}}>
-                      <button className="btn btn-secondary" style={{padding:'8px',fontSize:10}} onClick={()=>{onAdminPasswordAction(u.id,'temp'); setPwAction(null);}}>Gerar temporária</button>
-                      <button className="btn btn-secondary" style={{padding:'8px',fontSize:10}} onClick={()=>{onAdminPasswordAction(u.id,'liberar'); setPwAction(null);}}>Liberar p/ criar</button>
+                      <button className="btn btn-secondary" style={{padding:'8px',fontSize:10}} disabled={busyId===u.id} onClick={()=>handlePwAction(u.id,'temp')}>Gerar temporária</button>
+                      <button className="btn btn-secondary" style={{padding:'8px',fontSize:10}} disabled={busyId===u.id} onClick={()=>handlePwAction(u.id,'liberar')}>Liberar p/ criar</button>
                     </div>
                     <input type="text" placeholder="Definir senha manual" value={pwValue} onChange={e=>setPwValue(e.target.value)} style={{width:'100%',padding:8,marginBottom:8,background:'var(--panel)',border:'1px solid var(--line)',borderRadius:6,color:'var(--ink)',fontSize:12}} />
-                    <button className="btn btn-primary" style={{padding:'8px',fontSize:10}} disabled={pwValue.length<6} onClick={()=>{onAdminPasswordAction(u.id,'definir',pwValue); setPwAction(null);}}>Confirmar senha definida</button>
+                    <button className="btn btn-primary" style={{padding:'8px',fontSize:10}} disabled={pwValue.length<6 || busyId===u.id} onClick={()=>handlePwAction(u.id,'definir',pwValue)}>{busyId===u.id ? 'Enviando…' : 'Confirmar senha definida'}</button>
                   </div>
                 )}
                 {confirmDeleteId===u.id && (
                   <div style={{background:'var(--danger-bg)',border:'1px solid var(--danger)',borderRadius:8,padding:12,width:260}}>
                     <div style={{fontSize:12,color:'var(--danger)',marginBottom:10}}>Excluir "{u.nome}"? Essa ação não pode ser desfeita.</div>
+                    {erros[u.id] && <div style={{fontSize:11.5,color:'var(--danger)',marginBottom:10}}>{erros[u.id]}</div>}
                     <div className="btn-row">
-                      <button className="btn btn-secondary" style={{padding:'8px',fontSize:10}} onClick={()=>setConfirmDeleteId(null)}>Cancelar</button>
-                      <button className="btn btn-danger" style={{padding:'8px',fontSize:10}} onClick={()=>{onDeleteUser(u.id); setConfirmDeleteId(null);}}>Confirmar exclusão</button>
+                      <button className="btn btn-secondary" style={{padding:'8px',fontSize:10}} disabled={busyId===u.id} onClick={()=>setConfirmDeleteId(null)}>Cancelar</button>
+                      <button className="btn btn-danger" style={{padding:'8px',fontSize:10}} disabled={busyId===u.id} onClick={()=>handleDelete(u.id)}>{busyId===u.id ? 'Excluindo…' : 'Confirmar exclusão'}</button>
                     </div>
                   </div>
                 )}
@@ -5974,25 +6318,35 @@ function UserManagementPanel({users, currentUser, goto, onToggleUserStatus, onDe
   );
 }
 
-function UserForm({mode, initialData, users, onCreateUser, onUpdateUser, onCancel}){
+function UserForm({mode, initialData, users, onCreateUser, onUpdateUser, onSaved, onCancel}){
   const isEdit = mode!=='new';
   const [form, setForm] = useState(isEdit && initialData
     ? {nome:initialData.nome, usuario:initialData.usuario, email:initialData.email||'', senha:'', perfil:initialData.perfil}
     : emptyUserForm());
   const [feedback, setFeedback] = useState('');
+  const [salvando, setSalvando] = useState(false);
 
-  function submitForm(e){
+  async function submitForm(e){
     e.preventDefault();
     if(!form.nome.trim() || !form.usuario.trim()){ setFeedback('Nome e usuário de acesso são obrigatórios.'); return; }
     if(isLoginDuplicado(users, form.usuario, isEdit ? mode : null)){
       setFeedback('Este login já está sendo utilizado por outro usuário.');
       return;
     }
+    setSalvando(true);
+    setFeedback('');
+    let res;
     if(!isEdit){
-      if(!form.senha || form.senha.length<6){ setFeedback('Defina uma senha inicial com pelo menos 6 caracteres.'); return; }
-      onCreateUser({nome:form.nome.trim(), usuario:form.usuario.trim(), email:form.email.trim(), senha:form.senha, perfil:form.perfil});
+      if(!form.senha || form.senha.length<6){ setFeedback('Defina uma senha inicial com pelo menos 6 caracteres.'); setSalvando(false); return; }
+      res = await onCreateUser({nome:form.nome.trim(), usuario:form.usuario.trim(), email:form.email.trim(), senha:form.senha, perfil:form.perfil});
     } else {
-      onUpdateUser(mode, {nome:form.nome.trim(), usuario:form.usuario.trim(), email:form.email.trim(), perfil:form.perfil});
+      res = await onUpdateUser(mode, {nome:form.nome.trim(), usuario:form.usuario.trim(), email:form.email.trim(), perfil:form.perfil});
+    }
+    setSalvando(false);
+    if(res && res.ok){
+      onSaved();
+    } else {
+      setFeedback((res && res.erro) || 'Não foi possível salvar — tente novamente.');
     }
   }
 
@@ -6026,8 +6380,8 @@ function UserForm({mode, initialData, users, onCreateUser, onUpdateUser, onCance
           </select>
         </div>
         <div className="btn-row">
-          <button type="button" className="btn btn-secondary" onClick={onCancel}>Cancelar</button>
-          <button type="submit" className="btn btn-primary">{isEdit ? 'Salvar Alterações' : 'Criar Usuário'}</button>
+          <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={salvando}>Cancelar</button>
+          <button type="submit" className="btn btn-primary" disabled={salvando}>{salvando ? 'Salvando…' : (isEdit ? 'Salvar Alterações' : 'Criar Usuário')}</button>
         </div>
       </form>
     </div>
@@ -6074,6 +6428,20 @@ function PasswordRequestRow({req, onResolve}){
 // a navegação até ele que mudou (ver Home, Sidebar).
 function AddressValidationPanel({enderecosPropostos=[], onResolve}){
   const pendentes = enderecosPropostos.filter(e=>e.status==='pendente');
+  // Confirmar/rejeitar agora aguarda confirmação do Supabase (ver
+  // resolveAddressProposal em App()) — mesmo padrão de busyId/erros já usado
+  // em UserManagementPanel/RecountsPanel.
+  const [busyId, setBusyId] = useState(null);
+  const [erros, setErros] = useState({});
+
+  async function handleResolve(id, status){
+    setBusyId(id);
+    setErros(prev=>({...prev, [id]: null}));
+    const res = await onResolve(id, status);
+    setBusyId(null);
+    if(!res || !res.ok) setErros(prev=>({...prev, [id]: (res && res.erro) || 'Não foi possível salvar — tente novamente.'}));
+  }
+
   return (
     <div className="panel">
       <div className="section-title" style={{marginTop:0}}>
@@ -6091,11 +6459,12 @@ function AddressValidationPanel({enderecosPropostos=[], onResolve}){
             <div>
               <div className="lr-title">{e.descricao}</div>
               <div className="lr-sub">{e.productCode} · informado como <strong style={{color:'var(--ink)'}}>{e.enderecoInformado}</strong> por {e.usuario} em {e.data}</div>
+              {erros[e.id] && <div style={{fontSize:11.5,color:'var(--danger)',marginTop:4}}>{erros[e.id]}</div>}
             </div>
             {e.status==='pendente' ? (
               <div className="btn-row" style={{width:'auto'}}>
-                <button className="btn btn-secondary" style={{padding:'8px 12px',fontSize:11}} onClick={()=>onResolve(e.id,'rejeitado')}>Rejeitar</button>
-                <button className="btn btn-primary" style={{padding:'8px 12px',fontSize:11}} onClick={()=>onResolve(e.id,'confirmado')}>Confirmar</button>
+                <button className="btn btn-secondary" style={{padding:'8px 12px',fontSize:11}} disabled={busyId===e.id} onClick={()=>handleResolve(e.id,'rejeitado')}>Rejeitar</button>
+                <button className="btn btn-primary" style={{padding:'8px 12px',fontSize:11}} disabled={busyId===e.id} onClick={()=>handleResolve(e.id,'confirmado')}>{busyId===e.id ? 'Enviando…' : 'Confirmar'}</button>
               </div>
             ) : (
               <StatusTag status={e.status==='confirmado'?'ok':'danger'} text={e.status==='confirmado'?'Confirmado':'Rejeitado'} />

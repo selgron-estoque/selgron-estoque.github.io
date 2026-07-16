@@ -2673,6 +2673,102 @@ transições pedidas (200ms no hover dos botões) saem só de CSS `transition`, 
   teve a asserção "exatamente 10 semanas no eixo" relaxada pra "mesmo número de baldes nos
   dois gráficos", já que o conceito de janela fixa em N semanas foi removido de propósito.
 
+## Quarto pedaço do backend real: usuários e endereços pendentes sincronizam entre aparelhos
+
+O cliente reportou dois sintomas no mesmo dia: excluiu um usuário (Carlos Mendes) num
+computador de tarde, mas ele continuava aparecendo em outro; e um segundo aparelho ainda
+mostrava endereços pendentes de teste (ex.: "TRAVA ROLO PRESS") de uma limpeza que já
+tinha sido feita antes. Investigando o código, os dois tinham a MESMA causa raiz: `users`
+e `enderecosPropostos` nunca foram migrados pro Supabase — ficavam 100% no `localStorage`
+de cada aparelho (login/usuários continuavam locais por decisão explícita anterior, ver
+"Terceiro pedaço do backend real"; endereços nunca tinha entrado no escopo de nenhuma
+sincronização). Confirmado com o cliente (`AskUserQuestion`, 3 perguntas): sincronizar
+usuários (versão leve, sem Supabase Auth de verdade), sincronizar endereços propostos, e
+aplicar o mesmo reset de dados de teste já usado antes (bump de chave) nos endereços.
+
+### `backend/schema.sql` — tabela `usuarios` reescrita, `enderecos_propostos` nova
+
+A tabela `usuarios` original (criada na 1ª aplicação do schema) tinha `id uuid`, nenhuma
+coluna de senha, e um comentário dizendo "senha fica no Supabase Auth" — nunca foi usada
+de verdade, porque login sempre autenticou 100% contra o `localStorage`. Reescrita pra
+bater com a realidade: `id text` (o app já gera seus próprios ids, `'u'+Math.random()...`,
+mesmo padrão de `inventarios`/`contagens`), `senha text` (texto puro, mesma limitação já
+documentada no README), `atualizado_em` (mesmo papel que já cumpre em `contagens`, decidir
+qual lado é mais recente ao reconciliar). Bloco de migração no fim do arquivo faz
+`drop table if exists usuarios` + recria (seguro porque a tabela antiga nunca tinha dado
+real) — **não** um `alter table add column`, que deixaria a estrutura errada por baixo.
+
+`enderecos_propostos` é tabela nova, mesmo espírito denormalizado de sempre (sem FK pra
+`usuarios`/`produtos`, mesmas razões já documentadas em `contagens`) — espelha
+`addAddressProposal`/`resolveAddressProposal` no `index.html`. Nunca é deletada, só muda
+de `status` (`pendente`→`confirmado`/`rejeitado`), por isso não tem policy de DELETE.
+RLS de ambas: `using(true)` em tudo que precisa (mesma ressalva de sempre, sem Supabase
+Auth real ainda).
+
+### `index.html` — funções Supabase, mutators assíncronos, dois ciclos de sync
+
+- **Funções novas** (perto de `fetchInventoriesFromSupabase`): `saveUsuarioToSupabase`/
+  `updateUsuarioToSupabase`/`deleteUsuarioFromSupabase`/`fetchUsuariosFromSupabase` e o
+  par equivalente pra `enderecos_propostos`. `fetchUsuariosFromSupabase` retorna `null`
+  (não `[]`) quando a busca FALHA — mesma distinção já usada em
+  `fetchInventoriesFromSupabase`, essencial pra sincronização poder remover um usuário
+  ausente remotamente sem confundir "sem usuário nenhum" com "a rede caiu".
+- **Todos os mutators de usuário viraram assíncronos** (`createUser`/`updateUser`/
+  `deleteUser`/`toggleUserStatus`/`applyAdminPasswordAction`/`selfSetNewPassword`) —
+  aguardam confirmação do Supabase ANTES de mudar o estado local, mesmo padrão já usado em
+  `approveDivergence`/`deleteInventory`. Isso é o que resolve o bug relatado: antes,
+  `deleteUser` só fazia `setUsers(prev=>prev.filter(...))`, sem tocar em rede nenhuma.
+  `resolveAddressProposal` (confirmar/rejeitar endereço) segue o mesmo padrão;
+  `addAddressProposal` (operador propondo um endereço) continua fire-and-forget, mesmo
+  espírito de `saveContagemToSupabase` — não pode travar o operador no meio de uma
+  contagem esperando rede.
+- **Ciclo de sync de USUÁRIOS é separado do ciclo de 30s "principal"** e roda mesmo ANTES
+  do login (`useEffect` com `[]` de dependência, não `[currentUser]`) — resolvia
+  exatamente o problema relatado: se o ciclo só rodasse depois de autenticado, um usuário
+  excluído em outro aparelho continuaria conseguindo logar neste até... nunca, porque a
+  sincronização nunca teria chance de rodar antes da tentativa de login (`attemptLogin` lê
+  `users` local, síncrono). Faz merge por `atualizadoEm` e REMOVE localmente um usuário
+  ausente remotamente (propaga exclusão) — e, como efeito colateral bom, se o usuário
+  logado neste aparelho for excluído em outro, `currentUser` recalcula pra `null` no
+  próximo render (é só `users.find(u=>u.id===currentUserId)`) e o app cai pro login
+  sozinho, sem precisar de nenhum código de logout explícito adicional.
+- **Bootstrap pra primeira sincronização**: se `fetchUsuariosFromSupabase()` volta um
+  array VAZIO (não `null` — a tabela existe mas ninguém sincronizou ainda, cenário típico
+  logo depois do cliente rodar o SQL novo), o app empurra os usuários que já existem
+  NESTE aparelho pro Supabase em vez de tratar "vazio" como "remove todo mundo local" —
+  sem isso, o primeiro aparelho a sincronizar depois do deploy apagaria a lista de
+  usuários de todo mundo por engano. Ids que colidem entre aparelhos fazendo bootstrap ao
+  mesmo tempo (ex: `USERS_SEED`, idêntico em todo aparelho novo) só falham silenciosamente
+  (linha já existe) — inofensivo.
+- **Endereços propostos entraram no ciclo de sync "principal"** (o de 30s, já autenticado,
+  junto de inventários/contagens) — só aditivo + atualiza por `atualizadoEm`, nunca
+  remove (proposta nunca é deletada no app).
+- **Chave `enderecosPropostos_v2`** (era `enderecosPropostos`) — mesmo reset já aplicado
+  antes a inventários/contagens (ver "Reset geral de contagens/inventários"): zera sozinho
+  em qualquer aparelho que abrir depois deste deploy, sem comando manual. `users` NÃO
+  teve a chave trocada — não fazia sentido apagar usuários reais que o cliente já
+  cadastrou, o problema ali era sincronização, não dado de teste sobrando.
+- **UI com busy/erro por linha**: `UserManagementPanel` (bloquear/excluir/senha),
+  `UserForm` (criar/editar) e `AddressValidationPanel` (confirmar/rejeitar) ganharam
+  estado `busyId`/`erros` (ou `salvando`/`feedback` no formulário) — mesmo padrão já
+  usado em `RecountsPanel`: desabilita só o botão clicado, mostra erro inline, não trava a
+  tela toda nem finge sucesso quando a gravação remota falha.
+- Testado via Playwright (sandbox sem rede, Supabase mockado incluindo simulação de dois
+  "aparelhos" compartilhando um objeto de banco em memória): confirmei que um usuário
+  criado em outro aparelho consegue logar neste sem nunca ter feito login aqui antes
+  (fetch pré-login); que excluir um usuário no aparelho A o remove da lista lá E impede
+  login com esse usuário no aparelho B; que o bootstrap empurra os 4 usuários locais
+  quando a tabela remota está vazia sem quebrar login; que confirmar/rejeitar um endereço
+  proposto envia o PATCH certo e atualiza a tela; e que a chave antiga
+  (`enderecosPropostos`, sem `_v2`) é ignorada — dado de teste não aparece mais. Rodei de
+  novo boa parte da suíte de regressão existente, sem quebrar nada (dois scripts antigos
+  não relacionados a esta mudança — `verify_inventory_delete_create`/
+  `verify_session_persist` — já tinham asserções frágeis/seletores desatualizados antes
+  desta rodada, não mexi neles por estarem fora de escopo).
+- **Ainda não confirmado contra o Supabase real** — falta o cliente rodar o SQL novo
+  (`drop table usuarios` + recriação, `create table enderecos_propostos` + RLS) no
+  projeto real e testar em dois aparelhos de verdade.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase
