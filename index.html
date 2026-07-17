@@ -477,10 +477,11 @@
     .sidebar-toggle{display:flex;align-items:center;justify-content:center;position:absolute;top:24px;left:250px;width:28px;height:28px;border-radius:50%;background:var(--accent2);color:#fff;border:2px solid var(--bg);box-shadow:0 2px 6px rgba(0,0,0,0.18);z-index:30;transition:left .18s ease;}
     .sidebar-toggle:hover{background:#195a89;}
     .sidebar-toggle.collapsed{left:8px;}
-    .sidebar-brand{padding:22px 22px 18px;border-bottom:1px solid rgba(255,255,255,0.08);width:264px;flex-shrink:0;box-sizing:border-box;}
-    .sidebar-brand img{width:100%;max-width:170px;height:auto;display:block;margin-bottom:10px;}
-    .sidebar-brand .product{font-family:var(--font-display);font-size:15px;font-weight:600;letter-spacing:0.4px;text-transform:uppercase;color:#fff;}
-    .sidebar-brand .product small{display:block;font-family:var(--font-mono);font-size:9px;color:rgba(255,255,255,0.5);letter-spacing:1.2px;text-transform:uppercase;margin-top:2px;}
+    .sidebar-brand{padding:22px 22px 18px;border-bottom:1px solid rgba(255,255,255,0.08);width:264px;flex-shrink:0;box-sizing:border-box;text-align:center;}
+    .sidebar-brand img{width:100%;max-width:170px;height:auto;display:block;margin:0 auto;}
+    .sidebar-brand-divider{position:relative;height:2px;background:var(--safety);margin:14px auto;width:80%;}
+    .sidebar-brand-divider::after{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:8px;height:8px;border-radius:50%;background:var(--safety);box-shadow:0 0 0 3px var(--navy);}
+    .sidebar-brand .product{font-family:var(--font-display);font-size:12px;font-weight:600;letter-spacing:0.4px;text-transform:uppercase;color:#fff;}
     .sidebar-nav{padding:14px 12px;display:flex;flex-direction:column;gap:2px;width:264px;flex-shrink:0;box-sizing:border-box;}
     .sidebar-nav-item{display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:8px;background:none;border:none;color:rgba(255,255,255,0.72);font-size:13.5px;font-weight:500;text-align:left;width:100%;}
     .sidebar-nav-item:hover{background:rgba(255,255,255,0.07);}
@@ -3439,7 +3440,8 @@ function Sidebar({view, goto, role, user, collapsed, pendingSync=0}){
     <div className={"sidebar"+(collapsed?' collapsed':'')}>
       <div className="sidebar-brand">
         <img src={SELGRON_LOGO_WHITE_URL} alt="Selgron" />
-        <div className="product">Gestão de Estoques<small>Controle Cíclico</small></div>
+        <div className="sidebar-brand-divider"></div>
+        <div className="product">Gestão de Estoques</div>
       </div>
       <nav className="sidebar-nav">
         {items.map(it=>(
