@@ -3286,6 +3286,19 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
   // deixaria o card visivelmente mais alto/cheio do que o mockup. Colapsado
   // por padrão bate com a imagem pixel a pixel sem remover a função.
   const [showDemoCreds, setShowDemoCreds] = useState(false);
+  const senhaRef = useRef(null);
+
+  // Enter no campo "Usuário ou e-mail" pula pro campo "Senha" em vez de
+  // tentar logar direto (o formulário só tem os dois campos, então Enter
+  // dentro de um <form> submeteria — tinha que apertar Enter DUAS vezes,
+  // uma pra "confirmar" o usuário sem querer e outra pra logar de verdade).
+  // Só o campo de senha aciona o submit normal do form.
+  function handleIdentifierKeyDown(e){
+    if(e.key==='Enter'){
+      e.preventDefault();
+      senhaRef.current && senhaRef.current.focus();
+    }
+  }
 
   // Cliente reportou que, no celular, tocar num campo pra digitar exige
   // arrastar a tela manualmente pra ver o que está escrevendo — o teclado
@@ -3358,14 +3371,14 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
                   <label>Usuário ou e-mail</label>
                   <div className="field-wrap2">
                     <span className="field-icon2"><LoginFieldIcon name="user" /></span>
-                    <input type="text" value={identifier} onChange={e=>{setIdentifier(e.target.value); clearNotice&&clearNotice();}} placeholder="Digite seu usuário ou e-mail" autoCapitalize="none" autoFocus />
+                    <input type="text" value={identifier} onChange={e=>{setIdentifier(e.target.value); clearNotice&&clearNotice();}} onKeyDown={handleIdentifierKeyDown} placeholder="Digite seu usuário ou e-mail" autoCapitalize="none" autoFocus enterKeyHint="next" />
                   </div>
                 </div>
                 <div className="login-field2 login-field">
                   <label>Senha</label>
                   <div className="field-wrap2">
                     <span className="field-icon2"><LoginFieldIcon name="lock" /></span>
-                    <input className="has-toggle2" type={showSenha?'text':'password'} value={senha} onChange={e=>setSenha(e.target.value)} placeholder="Digite sua senha" />
+                    <input ref={senhaRef} className="has-toggle2" type={showSenha?'text':'password'} value={senha} onChange={e=>setSenha(e.target.value)} placeholder="Digite sua senha" enterKeyHint="go" />
                     <button type="button" className="pw-toggle2" onClick={()=>setShowSenha(s=>!s)} title={showSenha?'Ocultar senha':'Mostrar senha'}><EyeIcon off={showSenha} /></button>
                   </div>
                 </div>
