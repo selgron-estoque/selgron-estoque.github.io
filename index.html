@@ -128,6 +128,13 @@
   .field input:focus,.field select:focus,.field textarea:focus{outline:2px solid var(--safety);outline-offset:0;}
   .field textarea{resize:vertical;min-height:70px;}
   .field .qty-input{font-family:var(--font-mono);font-size:28px;font-weight:700;text-align:center;padding:18px;}
+  .field-erro{color:var(--danger);font-size:12.5px;margin-top:6px;}
+  .chip-input{display:flex;flex-wrap:wrap;align-items:center;gap:8px;width:100%;background:var(--panel-raised);border:1px solid var(--line);padding:9px 10px;border-radius:8px;}
+  .chip-input:focus-within{outline:2px solid var(--safety);outline-offset:0;}
+  .chip-input .chip{display:flex;align-items:center;gap:6px;background:var(--safety);color:#1a1200;font-family:var(--font-mono);font-weight:700;font-size:13px;padding:6px 8px 6px 12px;border-radius:20px;}
+  .chip-input .chip button{background:none;border:none;color:inherit;font-size:16px;line-height:1;cursor:pointer;padding:0 2px;}
+  .chip-input input{flex:1;min-width:90px;border:none;background:none;padding:6px 4px;font-size:16px;color:var(--ink);}
+  .chip-input input:focus{outline:none;}
   .radio-group{display:flex;flex-direction:column;gap:10px;}
   .radio-opt{display:flex;align-items:center;gap:12px;background:var(--panel-raised);border:1px solid var(--line);padding:14px;border-radius:8px;}
   .radio-opt.active{border-color:var(--safety);background:#FFF4E0;}
@@ -2988,7 +2995,7 @@ function App(){
       <div className="content">
         {view==='home' && <Home role={role} user={currentUser} inventories={inventories} counts={counts} historicoConcluidas={historicoConcluidas} enderecosPropostos={enderecosPropostos} goto={goto} />}
         {view==='inventories' && <InventoryList inventories={inventories} goto={goto} role={role} counts={counts} onDelete={deleteInventory} />}
-        {view==='newInventory' && (role==='lider'||role==='admin') && <NewInventory users={users} onCreate={async(inv)=>{
+        {view==='newInventory' && (role==='lider'||role==='admin') && <NewInventory onCreate={async(inv)=>{
           const res = await saveInventarioToSupabase(inv);
           if(res.ok){ setInventories(prev=>[inv,...prev]); goto('inventories'); }
           return res;
@@ -3914,7 +3921,7 @@ function InventoryList({inventories, goto, role, counts, onDelete}){
             </div>
             <div style={{padding:'14px 18px'}}>
               <div style={{display:'flex',justifyContent:'space-between',fontSize:12.5,color:'var(--ink-dim)'}}>
-                <span>{inv.tipo} · Resp. {inv.responsavel}</span>
+                <span>{inv.tipo}</span>
                 <span>{inv.data}</span>
               </div>
               <div className="progress-bar"><div className="fill" style={{width:pct+'%'}}></div></div>
@@ -3950,11 +3957,17 @@ function StatusTag({status, text}){
   return <span className={"status-tag status-"+status}><span className="status-dot"></span>{text}</span>;
 }
 
-function NewInventory({users, onCreate}){
+function NewInventory({onCreate}){
   const [nome, setNome] = useState('');
-  const [almox, setAlmox] = useState('');
-  const [resp, setResp] = useState('');
-  const [data, setData] = useState('');
+  // Almoxarifado virou multi-seleção (chips) — começa com "01" pré-adicionado,
+  // dá pra tirar e/ou adicionar outros. Só aceita código numérico que exista
+  // de verdade na planilha SB2 (estoque_saldo), buscado do Supabase ao montar
+  // — evita cadastrar inventário num armazém que não existe.
+  const [almoxCodes, setAlmoxCodes] = useState(['1']);
+  const [almoxInput, setAlmoxInput] = useState('');
+  const [almoxErro, setAlmoxErro] = useState('');
+  const [armazensValidos, setArmazensValidos] = useState(null); // null = ainda não carregou (não bloqueia validação nesse meio-tempo)
+  const [data, setData] = useState(()=> new Date().toISOString().slice(0,10));
   const [qtd, setQtd] = useState('');
   const [tipo, setTipo] = useState('Contagem Aleatória');
 
@@ -3966,6 +3979,47 @@ function NewInventory({users, onCreate}){
   const [erroCriacao, setErroCriacao] = useState('');
   const fileRef = useRef();
 
+  useEffect(()=>{
+    let cancelado = false;
+    fetchEstoqueValorPorAlmoxarifado().then(rows=>{
+      if(cancelado || !rows || rows.length===0) return;
+      setArmazensValidos(rows.map(r=>String(r.almoxarifado)));
+    });
+    return ()=>{ cancelado = true; };
+  }, []);
+
+  const hojeStr = new Date().toISOString().slice(0,10);
+
+  function normalizarCodigoAlmox(v){
+    const semZeros = v.replace(/^0+(?=\d)/, '');
+    return semZeros || '0';
+  }
+
+  function addAlmoxCode(){
+    const bruto = almoxInput.trim();
+    if(!bruto) return;
+    if(!/^\d+$/.test(bruto)){
+      setAlmoxErro('Informe só o número do armazém (ex.: 01, 4) — sem letras.');
+      return;
+    }
+    const norm = normalizarCodigoAlmox(bruto);
+    if(almoxCodes.includes(norm)){
+      setAlmoxErro('Esse armazém já foi adicionado.');
+      return;
+    }
+    if(armazensValidos && !armazensValidos.some(c=>normalizarCodigoAlmox(c)===norm)){
+      setAlmoxErro('Armazém "' + bruto + '" não existe na planilha SB2.');
+      return;
+    }
+    setAlmoxCodes(prev=>[...prev, norm]);
+    setAlmoxInput('');
+    setAlmoxErro('');
+  }
+
+  function removeAlmoxCode(code){
+    setAlmoxCodes(prev=>prev.filter(c=>c!==code));
+  }
+
   const tipos = [
     {v:'Contagem Aleatória', d:'O sistema seleciona os itens automaticamente'},
     {v:'Contagem por Curva ABC', d:'Prioriza itens de maior valor ou giro'},
@@ -3975,7 +4029,7 @@ function NewInventory({users, onCreate}){
   ];
 
   const isImportado = tipo==='Lista Importada (Excel)';
-  const camposBasicosOk = nome.trim() && almox && resp && data && (isImportado || Number(qtd)>0);
+  const camposBasicosOk = nome.trim() && almoxCodes.length>0 && data && data>=hojeStr && (isImportado || Number(qtd)>0);
   const canCreate = camposBasicosOk && (isImportado ? !!(itensImportados && itensImportados.length>0) : true);
 
   function handleDownloadTemplate(){
@@ -4025,8 +4079,9 @@ function NewInventory({users, onCreate}){
   async function handleCreate(){
     setSalvando(true);
     setErroCriacao('');
+    const almoxarifado = almoxCodes.map(c=>c.padStart(2,'0')).join(', ');
     const res = await onCreate({
-      id:'INV-'+Math.floor(Math.random()*900+100), nome, almoxarifado:almox, responsavel:resp, data, tipo,
+      id:'INV-'+Math.floor(Math.random()*900+100), nome, almoxarifado, data, tipo,
       qtdItens: isImportado ? itensImportados.length : Number(qtd), status:'pendente', contados:0,
       ...(isImportado ? {itensImportados} : {}),
     });
@@ -4043,22 +4098,28 @@ function NewInventory({users, onCreate}){
         </div>
         <div className="field">
           <label>Almoxarifado</label>
-          <select value={almox} onChange={e=>setAlmox(e.target.value)}>
-            <option value="" disabled>Selecione o almoxarifado</option>
-            <option>Almox 01</option>
-            <option>Almox 02</option>
-          </select>
-        </div>
-        <div className="field">
-          <label>Responsável</label>
-          <select value={resp} onChange={e=>setResp(e.target.value)}>
-            <option value="" disabled>Selecione o responsável</option>
-            {users.filter(u=>u.perfil==='operador').map(u=><option key={u.id}>{u.nome}</option>)}
-          </select>
+          <div className="chip-input">
+            {almoxCodes.map(c=>(
+              <span key={c} className="chip">
+                {c.padStart(2,'0')}
+                <button type="button" onClick={()=>removeAlmoxCode(c)} aria-label={"Remover armazém "+c}>×</button>
+              </span>
+            ))}
+            <input
+              type="text"
+              inputMode="numeric"
+              value={almoxInput}
+              onChange={e=>{setAlmoxInput(e.target.value); setAlmoxErro('');}}
+              onKeyDown={e=>{ if(e.key==='Enter'){ e.preventDefault(); addAlmoxCode(); } }}
+              onBlur={addAlmoxCode}
+              placeholder={almoxCodes.length ? 'Adicionar outro…' : 'Ex.: 01'}
+            />
+          </div>
+          {almoxErro && <div className="field-erro">{almoxErro}</div>}
         </div>
         <div className="field">
           <label>Data</label>
-          <input type="date" value={data} onChange={e=>setData(e.target.value)} />
+          <input type="date" value={data} min={hojeStr} onChange={e=>setData(e.target.value)} />
         </div>
         {!isImportado && (
           <div className="field">
