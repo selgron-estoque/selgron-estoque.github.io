@@ -1,4 +1,7 @@
-# Stock360 — Inventário Cíclico Industrial
+# Gestão de Estoques — Inventário Cíclico Industrial
+
+> Nome do produto: **Gestão de Estoques** (antes chamado "Stock360" — o repositório/pasta no
+> disco continua com o nome antigo `Stock360`, só a marca exibida dentro do app mudou).
 
 Protótipo funcional (front-end) do PWA descrito no briefing, cobrindo os 10 módulos
 especificados. Roda 100% no navegador — não há backend conectado ainda.
@@ -36,22 +39,78 @@ genérica, exista ou não o usuário informado — evita que alguém descubra lo
 tentativa e erro.
 
 **Segurança implementada no protótipo:**
-- Sessão individual por usuário logado (guardada em memória — sem localStorage, que não é
-  suportado em artifacts).
+- Sessão individual por usuário logado, guardada só em memória de propósito — recarregar
+  a página sempre exige login de novo (ver "Persistência local" abaixo para o que já
+  sobrevive a recarregar).
 - Logout manual (botão no topo) e logout automático após 15 minutos de inatividade (sem
   clique, toque ou tecla).
 - Bloqueio de usuário pelo administrador impede login imediatamente.
 - Controle de permissões por perfil em cada tela (criar inventário só líder/admin, gestão
   de usuários só admin, etc.).
 
-**⚠️ O que isso NÃO é ainda:** o protótipo guarda as senhas em texto puro em memória do
-navegador só para simular o fluxo de login sem backend. Isso é aceitável apenas para
+**⚠️ O que isso NÃO é ainda:** o protótipo guarda as senhas em texto puro (agora também no
+`localStorage` do navegador, ver abaixo — antes só existiam em memória enquanto a aba
+ficava aberta) só para simular o fluxo de login sem backend. Isso é aceitável apenas para
 demonstração. Em produção, a autenticação deve usar o **Supabase Auth** (ou equivalente),
 com hash de senha (bcrypt/argon2) feito no servidor — a senha nunca deve trafegar em texto
 puro nem ficar visível para o administrador. As ações "gerar senha temporária" e "definir
 senha manualmente" no protótipo mostram o valor em texto só para fins de demonstração; na
 versão real, isso seria enviado por um canal seguro (e-mail/SMS) e nunca ficaria gravado
 em log.
+
+## Atualização: Persistência local (localStorage)
+
+Antes desta atualização, tudo vivia só em `useState` — recarregar a página apagava
+usuários criados, inventários, contagens, tudo. Agora os dados que o app gera (usuários,
+inventários, contagens, endereços propostos, histórico de senha, histórico de envio de
+relatório) são salvos no `localStorage` do navegador e recarregados automaticamente na
+próxima abertura da página, **neste mesmo aparelho**.
+
+- **O que isso resolve**: perder o trabalho ao recarregar a página sem querer, fechar a
+  aba, ou o tablet reiniciar o navegador.
+- **O que isso NÃO resolve**: sincronizar dados entre tablets/operadores diferentes. Cada
+  aparelho tem sua própria cópia isolada do `localStorage` — se o líder cria um
+  inventário no tablet dele, ele não aparece automaticamente no tablet do operador. Pra
+  isso, precisa do backend real (Supabase) — ver seção "Backend (Supabase) — desenhado,
+  ainda não aplicado" abaixo. Essa persistência local é um passo intermediário, não um
+  substituto.
+- A sessão de login continua **não** persistindo de propósito (ver nota de segurança
+  acima) — só os dados operacionais.
+
+## Atualização: Nova identidade visual da tela de login (rebrand para "Gestão de Estoques")
+
+O app foi renomeado de "Stock360" para **"Gestão de Estoques"** em toda a interface (topbar,
+sidebar, título da aba, PWA, arquivos exportados) — o repositório/pasta no disco continua
+`Stock360` por conveniência, só o nome de marca dentro do produto mudou.
+
+A tela de login ganhou uma identidade visual própria, separada do resto do app: branco
+predominante, azul-marinho (`#0F172A`) e laranja institucional da Selgron, tipografia
+Inter, ícones lineares (sem emoji), cantos de 8px, sombra bem suave — visual inspirado em
+softwares corporativos/ERP (SAP Fiori, Dynamics 365) em vez do visual "genérico de
+template" que existia antes. Essa paleta/tipografia é exclusiva da tela de login — o
+restante do app (tablet do operador, dashboards, etc.) continua com o design system
+original documentado no `CLAUDE.md`. O layout final é um card de 2 colunas (ilustração à
+esquerda com o mark "ciclo + caixa" da Selgron, formulário à direita), replicando à risca
+o mockup de referência enviado pelo cliente — a coluna de ilustração só aparece em telas
+≥760px, em telas estreitas (celular) fica só o formulário.
+
+## Atualização: Dashboard novo (agora é a própria tela inicial)
+
+Depois do primeiro rascunho (Dashboard como uma tela nova, separada de "Início"), o
+cliente pediu pra simplificar: **"Início" foi removido, e "Dashboard" passou a ser a
+própria tela que abre depois do login** — no desktop. Mostra 5 indicadores operacionais,
+últimas atividades, ações rápidas, e a situação geral dos inventários (gráfico donut +
+tabela de status), com o mesmo visual corporativo/ERP da tela de login (navy, branco,
+laranja, Inter, ícones lineares) — esse visual também foi aplicado à moldura da
+sidebar/header em todas as telas desktop (o conteúdo interno de cada tela continua com o
+design original). Tudo calculado a partir dos dados reais que o app já tem
+(`counts`/`inventories`), sem número inventado.
+
+No tablet/celular do operador, a tela "Início" continua exatamente como sempre foi (grid
+de atalhos simples) — só ganhou o rótulo "Dashboard" no menu lateral do desktop, o
+conteúdo mobile em si não mudou. A tela de indicadores/gráficos que já existia continua
+existindo à parte, renomeada para "Indicadores" no menu (pra não ter duas coisas chamadas
+"Dashboard"). Ver `CLAUDE.md` para os detalhes da decisão.
 
 O protótipo agora carrega **300 itens reais** extraídos de uma exportação da tabela SB2
 (Saldo em Estoque) do Protheus — uma amostra dos 10.512 SKUs do Almox 01 (150 de maior
@@ -99,7 +158,8 @@ No tablet Android, abra pelo Chrome → menu → "Adicionar à tela inicial" par
   já que não há autenticação real ainda.
 - Tela inicial com os 5 cards do briefing.
 - **Módulo 1** — Criação de inventário (líder): nome, almoxarifado, responsável, data,
-  quantidade de itens, 4 tipos de contagem.
+  quantidade de itens, 5 tipos de contagem (o 5º, Lista Importada via Excel, está descrito
+  na seção "Atualização: Importação de lista de contagem via Excel" abaixo).
 - **Módulo 2** — Contagem aleatória: fila gerada automaticamente a partir do mock de
   produtos.
 - **Módulo 3** — Contagem manual: busca por código ou descrição.
@@ -114,17 +174,50 @@ No tablet Android, abra pelo Chrome → menu → "Adicionar à tela inicial" par
   automática; 5–15% na 1ª contagem fica "aguardando segunda contagem"; acima de 15% (em
   qualquer rodada) vai para "aguardando análise do líder". Veja a seção abaixo.
 
+## Atualização: Importação de lista de contagem via Excel
+
+5º tipo de inventário em "Módulo 1": **Lista Importada (Excel)**. Em vez do sistema
+gerar a lista de itens a contar, o líder sobe uma planilha padrão e o app conta exatamente
+os itens que vieram nela, na mesma ordem — sem embaralhar, sem filtrar.
+
+- **Baixar modelo padrão (.xlsx)** — template com as colunas **Produto*** (obrigatório),
+  **Descrição, End, Sistema, Fisico** (aba "Contar"), gerado no navegador via SheetJS. Esse
+  layout replica a planilha que a fábrica já usa hoje pra contar — não é um formato novo
+  inventado pelo app.
+- **Upload da planilha preenchida** — parse 100% client-side. Nomes de coluna são
+  normalizados (aceita "Produto" ou "Código", "End" ou "Endereço", acentos/maiúsculas
+  variados), linhas sem código são ignoradas, códigos duplicados são removidos mantendo a
+  1ª ocorrência. Antes de criar o inventário, um resumo mostra quantas linhas são válidas,
+  quantas foram ignoradas/duplicadas, quantos códigos não constam no cache local de 300
+  produtos do protótipo e, desses, quantos ainda assim trouxeram o saldo do sistema pela
+  própria planilha (coluna "Sistema").
+- **Contagem** — segue o fluxo padrão (contagem cega, QR/código de barras, foto, motivo de
+  divergência, regras de segunda contagem do Módulo 7). A coluna **Sistema** da planilha é
+  o que faz a maioria dos itens funcionar mesmo fora do cache local: como o protótipo só
+  tem 300 dos 10.512 SKUs reais, a planilha real de teste trouxe 23 itens e só 1 batia com
+  o cache — os outros 22 só têm saldo pra comparar porque a própria planilha trouxe. Só fica
+  sem comparação automática (aviso visual, contagem vai direto pra análise do líder) o
+  código que não está no cache **e** também não veio com saldo na planilha. Em produção,
+  com o banco sincronizado, o saldo apareceria normalmente para qualquer código, com ou sem
+  a coluna Sistema.
+
 ## Atualização: Relatório Excel (download e e-mail)
 
 Novo card "Relatórios" na tela inicial, com duas ações:
 
 **Baixar Excel (.xlsx)** — geração 100% no navegador usando SheetJS, sem precisar de
-backend. O arquivo sai com 3 abas:
+backend. O arquivo sai com 4 abas:
 - **Resumo** — indicadores gerais (itens contados, divergências, acuracidade, valor
   divergente).
 - **Contagens** — todas as contagens registradas, com histórico completo de rodadas
-  (1ª, 2ª contagem…), endereço, usuário, quantidade, saldo do sistema, diferença, % de
+  (1ª, 2ª contagem…), endereço cadastrado, **endereço onde o item foi fisicamente
+  contado** (pode divergir do cadastrado — ex: operador escaneia um endereço diferente e
+  opta por "Contar mesmo assim"), usuário, quantidade, saldo do sistema, diferença, % de
   divergência, valor, status e motivo.
+- **Contar** — mesmo formato da planilha de importação (Produto, Descrição, End, Sistema,
+  Fisico), já com "Fisico" preenchido com a quantidade contada no app e uma coluna extra
+  "Endereço Contado" — pensada pra fechar o ciclo: a mesma planilha que o líder sobe pra
+  gerar a lista volta preenchida com o resultado, no formato que o cliente já reconhece.
 - **Solicitação de Ajuste** — só os itens com divergência, já no formato pensado para
   mandar à equipe que corrige o saldo no Protheus (código, saldo sistema, saldo contado,
   ajuste necessário, valor, motivo, quem aprovou).
@@ -193,6 +286,21 @@ página). Para virar o sistema real descrito no briefing, falta:
    estáticos; para operar em áreas do almoxarifado com sinal fraco, o ideal é fila de
    contagens pendentes salvas localmente (IndexedDB) e sincronizadas quando a conexão
    voltar.
+
+## Atualização: catálogo real de produtos (primeiro pedaço do backend aplicado)
+
+O projeto Supabase descrito abaixo deixou de ser só um modelo sugerido — foi criado de
+verdade (`https://geeqfpzamexmeketcecu.supabase.co`) e o schema completo (`backend/schema.sql`)
+já está aplicado. Por enquanto só a tabela `produtos` está populada, com **85.357 itens**
+importados de uma planilha real do cliente (código, descrição, grupo) — bem mais completo
+que os 300 SKUs do cache estático embutido no `index.html`.
+
+Na tela de **Nova Contagem** (contagem manual avulsa), quando o item buscado não está no
+cache local de 300 SKUs, o app agora consulta esse catálogo real automaticamente e traz a
+descrição (e o endereço, se já estiver cadastrado) — em vez de simplesmente não encontrar
+o item. Login, usuários, inventários e contagens continuam no `localStorage` por
+enquanto — essa é só a primeira fatia migrada pro banco de verdade. Ver `CLAUDE.md` para
+os detalhes técnicos.
 
 ## Modelo de dados sugerido (Supabase / PostgreSQL)
 
