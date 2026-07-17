@@ -4249,7 +4249,7 @@ function PickCountType({inv, goto}){
           disabled={!anyAddress}
           onClick={()=>{ if(anyAddress) goto('routeCount', inv); }}
         >
-          <div className="opt-title" style={{fontSize:15}}><Ic>🗺</Ic>&nbsp; Contagem por Rota de Endereço</div>
+          <div className="opt-title" style={{fontSize:15}}><Ic>🗺</Ic>&nbsp; Contagem por Rota</div>
           <div className="opt-desc">{anyAddress ? 'Sequência otimizada por corredor e rua, menor deslocamento' : 'Indisponível — nenhum endereço cadastrado ainda neste almoxarifado'}</div>
         </button>
       </div>
