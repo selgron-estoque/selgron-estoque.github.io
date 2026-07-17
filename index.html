@@ -3023,7 +3023,7 @@ function App(){
       <div className="content">
         {view==='home' && <Home role={role} user={currentUser} inventories={inventories} counts={counts} historicoConcluidas={historicoConcluidas} enderecosPropostos={enderecosPropostos} goto={goto} />}
         {view==='inventories' && <InventoryList inventories={inventories} goto={goto} role={role} counts={counts} onDelete={deleteInventory} />}
-        {view==='pickCountType' && <PickCountType role={role} goto={goto} onCreate={async(inv)=>{
+        {view==='pickCountType' && <PickCountType role={role} goto={goto} inventories={inventories} onCreate={async(inv)=>{
           const res = await saveInventarioToSupabase(inv);
           if(res.ok){ setInventories(prev=>[inv,...prev]); goto('inventories'); }
           return res;
@@ -3972,7 +3972,29 @@ function StatusTag({status, text}){
   return <span className={"status-tag status-"+status}><span className="status-dot"></span>{text}</span>;
 }
 
-function NewInventory({onCreate, goto}){
+// Nome automático do inventário — pedido do cliente: identificar de onde
+// cada inventário veio (tipo + armazém + data) sem precisar digitar nada, e
+// nunca duplicar nome de um documento existente (checa contra os nomes já
+// usados e acrescenta " #2", " #3"... se colidir).
+const TIPO_ABREV_NOME = {
+  'Contagem Aleatória': 'Aleatória',
+  'Contagem por Curva ABC': 'Curva ABC',
+  'Contagem por Rota de Endereço': 'Rota',
+};
+function gerarNomeAutomaticoInventario(tipo, almoxCodes, data, nomesExistentes){
+  const abrev = TIPO_ABREV_NOME[tipo] || tipo;
+  const almoxLabel = (almoxCodes && almoxCodes.length) ? almoxCodes.map(c=>c.padStart(2,'0')).join('+') : '—';
+  const [ano, mes, dia] = (data || '').split('-');
+  const dataLabel = (dia && mes && ano) ? (dia + '/' + mes + '/' + ano) : '';
+  const base = abrev + ' — Almox ' + almoxLabel + (dataLabel ? (' — ' + dataLabel) : '');
+  const usados = new Set((nomesExistentes || []).map(n => String(n || '').trim().toLowerCase()));
+  if(!usados.has(base.toLowerCase())) return base;
+  let n = 2;
+  while(usados.has((base + ' #' + n).toLowerCase())) n++;
+  return base + ' #' + n;
+}
+
+function NewInventory({onCreate, goto, inventories}){
   const [nome, setNome] = useState('');
   // Almoxarifado virou multi-seleção (chips) — começa com "01" pré-adicionado,
   // dá pra tirar e/ou adicionar outros. Só aceita código numérico que exista
@@ -4047,7 +4069,19 @@ function NewInventory({onCreate, goto}){
   ];
 
   const isImportado = tipo==='Lista Importada (Excel)';
-  const camposBasicosOk = nome.trim() && almoxCodes.length>0 && data && data>=hojeStr && (isImportado || Number(qtd)>0);
+
+  // Nome do inventário: pra "Lista Importada" continua saindo do nome do
+  // arquivo (setNome em handleFileUpload); pros outros 3 tipos que ainda
+  // passam por este formulário (Aleatória/Curva ABC/Rota), é gerado sozinho
+  // a partir de tipo+armazém+data, sem campo pra digitar — recalcula a cada
+  // mudança de armazém/data, sempre único frente aos inventários já criados.
+  const nomeAuto = useMemo(()=>{
+    if(!tipo || isImportado) return '';
+    return gerarNomeAutomaticoInventario(tipo, almoxCodes, data, (inventories||[]).map(i=>i.nome));
+  }, [tipo, isImportado, almoxCodes, data, inventories]);
+  const nomeFinal = isImportado ? nome : nomeAuto;
+
+  const camposBasicosOk = nomeFinal.trim() && almoxCodes.length>0 && data && data>=hojeStr && (isImportado || Number(qtd)>0);
   const canCreate = camposBasicosOk && (isImportado ? !!(itensImportados && itensImportados.length>0) : true);
 
   function handleDownloadTemplate(){
@@ -4103,7 +4137,7 @@ function NewInventory({onCreate, goto}){
     setErroCriacao('');
     const almoxarifado = almoxCodes.map(c=>c.padStart(2,'0')).join(', ');
     const res = await onCreate({
-      id:'INV-'+Math.floor(Math.random()*900+100), nome, almoxarifado, data, tipo,
+      id:'INV-'+Math.floor(Math.random()*900+100), nome:nomeFinal, almoxarifado, data, tipo,
       qtdItens: isImportado ? itensImportados.length : Number(qtd), status:'pendente', contados:0,
       ...(isImportado ? {itensImportados} : {}),
     });
@@ -4150,7 +4184,8 @@ function NewInventory({onCreate, goto}){
           <>
             <div className="field">
               <label>Nome do inventário</label>
-              <input type="text" value={nome} onChange={e=>setNome(e.target.value)} placeholder="Ex.: Inventário Cíclico Julho/2026" />
+              <input type="text" value={nomeAuto} disabled title="Gerado automaticamente a partir do tipo, armazém e data — não é possível editar." />
+              <div className="opt-desc" style={{marginTop:4}}>Gerado automaticamente, sem repetir nome de outro inventário.</div>
             </div>
             <div className="field">
               <label>Almoxarifado</label>
@@ -4237,7 +4272,7 @@ function NewInventory({onCreate, goto}){
 // pedido do cliente) e fundido aqui. Pra operador, continua sendo a tela
 // rápida de sempre (contagem avulsa, sem inventário associado) — criar
 // inventário sempre foi ação de líder/admin, essa fusão não muda isso.
-function PickCountType({role, goto, onCreate}){
+function PickCountType({role, goto, onCreate, inventories}){
   const podeGerir = role==='lider' || role==='admin';
 
   // Substitui o antigo `ANY_ADDRESS_REGISTERED` (derivado do cache local
@@ -4256,7 +4291,7 @@ function PickCountType({role, goto, onCreate}){
   }, [podeGerir]);
 
   if(podeGerir){
-    return <NewInventory onCreate={onCreate} goto={goto} />;
+    return <NewInventory onCreate={onCreate} goto={goto} inventories={inventories} />;
   }
 
   return (
