@@ -5639,11 +5639,13 @@ function ConcludedCountsPanel({counts, historicoConcluidas=[], onDeleteCount, on
     return [...doApp, ...doHistorico].sort(compararCadeiasPorData);
   }, [counts, historicoConcluidas]);
 
-  // Filtro de período: nunca esconde uma cadeia sem data (a planilha antiga
-  // tem linhas assim de propósito, ver CLAUDE.md "Data sempre explícita,
-  // nunca some em silêncio") — só as com data caem dentro/fora do intervalo.
+  // Filtro de período: pedido explícito do cliente — item SEM data não deve
+  // aparecer em NENHUM filtro de período (nem "Hoje", nem "Todo o período"
+  // via preset, nenhum). Decisão anterior (mostrar sempre, pra não "esconder
+  // dado" da planilha antiga) foi revertida — o cliente prefere que a
+  // ausência de data exclua o item da lista filtrada por período, ponto.
   const cadeiasNoPeriodo = useMemo(()=>
-    cadeias.filter(cd => !cd.tip.data || (cd.tip.data>=dataInicioStr && cd.tip.data<=dataFimStr)),
+    cadeias.filter(cd => cd.tip.data && cd.tip.data>=dataInicioStr && cd.tip.data<=dataFimStr),
   [cadeias, dataInicioStr, dataFimStr]);
 
   const buscaNorm = busca.trim().toLowerCase();
