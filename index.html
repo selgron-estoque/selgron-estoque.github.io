@@ -1350,6 +1350,35 @@ async function fetchUltimaAtualizacaoEstoque(){
 // diferente de todo o resto do app, onde a planilha subida já começa direto
 // com o cabeçalho). Colunas resolvidas pelo NOME (não pela posição) — se o
 // cliente reordenar colunas numa exportação futura, continua funcionando.
+// Célula de data da planilha de histórico nem sempre chega como um `Date`
+// de verdade — se a coluna foi formatada como TEXTO no Excel original (bem
+// comum numa planilha alimentada à mão por várias pessoas ao longo de
+// meses, como a `BD_Contagens`), o SheetJS entrega uma string crua mesmo
+// com `cellDates:true`, e o parser antigo (só `instanceof Date`) descartava
+// a data inteira — cliente reportou item com data visível na planilha
+// aparecendo como "Sem data registrada" no app. Cobre os 3 formatos mais
+// prováveis: string "DD/MM/AAAA" ou "DD/MM/AA", string "AAAA-MM-DD", e
+// número de série do Excel (célula numérica que perdeu a formatação de data
+// na leitura). Mantém o comportamento antigo (`Date` real) como caso feliz.
+function parseDataHistorico(v){
+  if(v instanceof Date && !Number.isNaN(v.getTime())) return v.toISOString().slice(0,10);
+  if(typeof v === 'number' && window.XLSX && window.XLSX.SSF && window.XLSX.SSF.parse_date_code){
+    const d = window.XLSX.SSF.parse_date_code(v);
+    if(d && d.y) return String(d.y).padStart(4,'0')+'-'+String(d.m).padStart(2,'0')+'-'+String(d.d).padStart(2,'0');
+    return null;
+  }
+  if(typeof v === 'string'){
+    const s = v.trim();
+    let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if(m) return m[1]+'-'+m[2].padStart(2,'0')+'-'+m[3].padStart(2,'0');
+    m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if(m) return m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0');
+    m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/);
+    if(m) return '20'+m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0');
+  }
+  return null;
+}
+
 function parseHistoricoContagensRows(matrix){
   const headerRowIdx = matrix.findIndex(row => (row||[]).some(cell => String(cell||'').trim()==='Código'));
   if(headerRowIdx===-1){
@@ -1374,8 +1403,7 @@ function parseHistoricoContagensRows(matrix){
     const codigoRaw = idx.codigo>=0 ? row[idx.codigo] : null;
     if(codigoRaw==null || String(codigoRaw).trim()===''){ semCodigo++; continue; }
     const dataRaw = idx.data>=0 ? row[idx.data] : null;
-    let data = null;
-    if(dataRaw instanceof Date && !Number.isNaN(dataRaw.getTime())) data = dataRaw.toISOString().slice(0,10);
+    const data = parseDataHistorico(dataRaw);
     if(!data) semData++;
     // `.trim()` em TODOS os campos de texto — a planilha real já mostrou mais
     // de uma vez ter espaço sobrando em células (ver o bug do "Sld.Atu." com
