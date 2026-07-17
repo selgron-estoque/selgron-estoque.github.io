@@ -4077,6 +4077,10 @@ function NewInventory({onCreate, goto}){
         }
         setItensImportados(itens);
         setImportResumo(resumo);
+        // "Lista Importada" pula os campos de nome/almoxarifado/data (ver
+        // abaixo, escondidos pra esse tipo) — o nome do inventário sai
+        // sozinho do nome do arquivo, sem precisar digitar nada.
+        setNome(prev => prev.trim() ? prev : ('Lista Importada — ' + file.name.replace(/\.(xlsx|xls)$/i, '')));
         // Completa o resumo com "não encontrados"/"sem saldo" depois — busca
         // no catálogo real do Supabase, não trava a exibição inicial do resumo.
         const extras = await computeImportSummaryExtras(itens);
@@ -4142,40 +4146,42 @@ function NewInventory({onCreate, goto}){
       <button className="back-btn" style={{marginBottom:14}} onClick={()=>setTipo(null)}><Ic>←</Ic> Trocar tipo de inventário</button>
       <div className="panel">
         <div className="role-note" style={{marginBottom:16}}>Tipo selecionado: <strong>{tipo}</strong></div>
-        <div className="field">
-          <label>Nome do inventário</label>
-          <input type="text" value={nome} onChange={e=>setNome(e.target.value)} placeholder="Ex.: Inventário Cíclico Julho/2026" />
-        </div>
-        <div className="field">
-          <label>Almoxarifado</label>
-          <div className="chip-input">
-            {almoxCodes.map(c=>(
-              <span key={c} className="chip">
-                {c.padStart(2,'0')}
-                <button type="button" onClick={()=>removeAlmoxCode(c)} aria-label={"Remover armazém "+c}>×</button>
-              </span>
-            ))}
-            <input
-              type="text"
-              inputMode="numeric"
-              value={almoxInput}
-              onChange={e=>{setAlmoxInput(e.target.value); setAlmoxErro('');}}
-              onKeyDown={e=>{ if(e.key==='Enter'){ e.preventDefault(); addAlmoxCode(); } }}
-              onBlur={addAlmoxCode}
-              placeholder={almoxCodes.length ? 'Adicionar outro…' : 'Ex.: 01'}
-            />
-          </div>
-          {almoxErro && <div className="field-erro">{almoxErro}</div>}
-        </div>
-        <div className="field">
-          <label>Data</label>
-          <input type="date" value={data} min={hojeStr} onChange={e=>setData(e.target.value)} />
-        </div>
         {!isImportado && (
-          <div className="field">
-            <label>Quantidade de itens</label>
-            <input type="number" value={qtd} onChange={e=>setQtd(e.target.value)} placeholder="Ex.: 20" />
-          </div>
+          <>
+            <div className="field">
+              <label>Nome do inventário</label>
+              <input type="text" value={nome} onChange={e=>setNome(e.target.value)} placeholder="Ex.: Inventário Cíclico Julho/2026" />
+            </div>
+            <div className="field">
+              <label>Almoxarifado</label>
+              <div className="chip-input">
+                {almoxCodes.map(c=>(
+                  <span key={c} className="chip">
+                    {c.padStart(2,'0')}
+                    <button type="button" onClick={()=>removeAlmoxCode(c)} aria-label={"Remover armazém "+c}>×</button>
+                  </span>
+                ))}
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={almoxInput}
+                  onChange={e=>{setAlmoxInput(e.target.value); setAlmoxErro('');}}
+                  onKeyDown={e=>{ if(e.key==='Enter'){ e.preventDefault(); addAlmoxCode(); } }}
+                  onBlur={addAlmoxCode}
+                  placeholder={almoxCodes.length ? 'Adicionar outro…' : 'Ex.: 01'}
+                />
+              </div>
+              {almoxErro && <div className="field-erro">{almoxErro}</div>}
+            </div>
+            <div className="field">
+              <label>Data</label>
+              <input type="date" value={data} min={hojeStr} onChange={e=>setData(e.target.value)} />
+            </div>
+            <div className="field">
+              <label>Quantidade de itens</label>
+              <input type="number" value={qtd} onChange={e=>setQtd(e.target.value)} placeholder="Ex.: 20" />
+            </div>
+          </>
         )}
 
         {isImportado && (
