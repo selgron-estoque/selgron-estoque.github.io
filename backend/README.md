@@ -1,7 +1,7 @@
-# Inventário 360 — Backend de Sincronização (Supabase)
+# Gestão de Estoques — Backend de Sincronização (Supabase)
 
 Esta pasta contém o banco (schema.sql) e a função que mantém o saldo sincronizado
-com o Protheus. É o que falta para o Inventário 360 sair do protótipo (dados em
+com o Protheus. É o que falta para o Gestão de Estoques sair do protótipo (dados em
 memória) e virar sistema real.
 
 ## 1. Criar o projeto Supabase
@@ -76,7 +76,7 @@ A partir daí, toda contagem desse inventário compara contra
 
 ## 7. Endereços — não precisa de sincronização nenhuma
 
-Diferente do saldo, o endereço é escrito direto pelo Inventário 360 no Supabase —
+Diferente do saldo, o endereço é escrito direto pelo Gestão de Estoques no Supabase —
 não existe fonte externa para puxar. O fluxo já desenhado no front-end
 (operador informa → líder confirma) vira, no backend, simplesmente:
 
@@ -94,7 +94,7 @@ await supabase.from('endereco_propostas').update({
 await supabase.from('enderecos').insert({ codigo: enderecoInformado, almoxarifado });
 ```
 
-## 8. Como o front-end (Inventário 360) deve ler os dados, resumindo
+## 8. Como o front-end (Gestão de Estoques) deve ler os dados, resumindo
 
 | Tela | De onde lê |
 |---|---|
