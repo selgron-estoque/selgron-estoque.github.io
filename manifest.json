@@ -1,6 +1,6 @@
 {
-  "name": "Inventário 360 — Controle de Inventário Cíclico",
-  "short_name": "Inventário 360",
+  "name": "Gestão de Estoques — Controle de Inventário Cíclico",
+  "short_name": "Gestão de Estoques",
   "description": "Controle de inventário cíclico para almoxarifado industrial",
   "start_url": "./index.html",
   "display": "standalone",

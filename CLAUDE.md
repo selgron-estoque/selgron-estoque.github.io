@@ -1,4 +1,4 @@
-# Inventário 360 (repo/pasta: Stock360) — Contexto do Projeto (para Claude Code)
+# Gestão de Estoques (repo/pasta: Stock360) — Contexto do Projeto (para Claude Code)
 
 Este arquivo existe para você (Claude Code) entender rápido onde este projeto parou,
 sem precisar reconstruir o histórico de decisões do zero.
@@ -3459,9 +3459,10 @@ estreito do que a coluna (56% do card, até 728px) permitia, sobrando um respiro
   sob luz forte de almoxarifado. Não reverter para tema escuro.
 - Laranja Selgron (`--safety: #F6A200`) como cor de destaque/ação principal — cor oficial
   da marca do cliente (Pantone 137 / CMYK 0,42,100,0), não um amarelo genérico. O cliente
-  é a **Selgron**; "Inventário 360" é o nome do produto/app que roda dentro da marca dela
-  (renomeado de "Stock360" — ver seção "Rebrand" abaixo; o repositório/pasta no disco
-  continua se chamando `Stock360`, só o nome exibido no app mudou). Cinza institucional
+  é a **Selgron**; "Gestão de Estoques" é o nome do produto/app que roda dentro da marca
+  dela (renomeado de "Stock360" e depois de "Inventário 360" — ver seção "Rebrand" acima
+  no histórico; o repositório/pasta no disco continua se chamando `Stock360`, só o nome
+  exibido no app mudou). Cinza institucional
   (`--ink-dim: #575756`, Pantone 432) também vem da identidade da Selgron.
   Fontes: `Logotipo_Selgron_Laranja_CMYK.pdf` e `Logotipo_Selgron_Cores_Promocionais.pdf`
   (enviados pelo cliente durante a conversa).
@@ -3475,3 +3476,23 @@ estreito do que a coluna (56% do card, até 728px) permitia, sobrando um respiro
 - Botões grandes, poucos campos por tela, pensado para uso com luvas — não adicionar
   campos de digitação onde um leitor de câmera resolveria melhor.
 - Todo texto da interface é em português (pt-BR) — manter esse padrão.
+
+## Rebrand: "Inventário 360" → "Gestão de Estoques"
+
+O nome exibido do produto mudou de "Inventário 360" para **"Gestão de Estoques"** em todo
+o app. Repositório/pasta no disco continua `Stock360` (não muda). Trocado em:
+
+- `<title>` da página e `apple-mobile-web-app-title` em `index.html`.
+- `manifest.json`: `name` e `short_name`.
+- `TopBar` (mobile, `brand-text`) e `Sidebar` (desktop, `product`).
+- Assunto padrão do e-mail em `ReportsScreen` (`useState` de `assunto`).
+- Prefixo dos arquivos Excel gerados: `Inventario360_` → `GestaoEstoques_` (relatório e
+  modelo de importação de lista de contagem).
+- `README.md` e `backend/README.md` (documentação viva, texto substituído direto).
+
+Não alterado de propósito: as seções históricas deste arquivo (ex. "Rebrand: Stock360 →
+Inventário 360" e demais menções ao nome antigo ao longo do texto) continuam como estavam
+— narram decisões tomadas quando o produto ainda se chamava "Inventário 360" e não devem
+ser reescritas. Também não mexi em comentários de código nem no texto histórico da tela de
+importação de contagens antigas (que menciona "antes do Inventário 360") — fora do escopo
+pedido.
