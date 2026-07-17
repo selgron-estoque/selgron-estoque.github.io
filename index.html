@@ -3023,12 +3023,11 @@ function App(){
       <div className="content">
         {view==='home' && <Home role={role} user={currentUser} inventories={inventories} counts={counts} historicoConcluidas={historicoConcluidas} enderecosPropostos={enderecosPropostos} goto={goto} />}
         {view==='inventories' && <InventoryList inventories={inventories} goto={goto} role={role} counts={counts} onDelete={deleteInventory} />}
-        {view==='newInventory' && (role==='lider'||role==='admin') && <NewInventory onCreate={async(inv)=>{
+        {view==='pickCountType' && <PickCountType role={role} goto={goto} onCreate={async(inv)=>{
           const res = await saveInventarioToSupabase(inv);
           if(res.ok){ setInventories(prev=>[inv,...prev]); goto('inventories'); }
           return res;
         }} />}
-        {view==='pickCountType' && <PickCountType inv={flowState} goto={goto} />}
         {view==='randomCount' && <RandomCountFlow inv={flowState} user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} />}
         {view==='manualCount' && <ManualCountFlow user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('home');}} onAddressProposed={addAddressProposal} />}
         {view==='routeCount' && <RouteCountFlow inv={flowState} user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} />}
@@ -3415,7 +3414,6 @@ function TopBar({user, role, onHome, onLogout}){
 const VIEW_TITLES = {
   home:'Início',
   inventories:'Inventários Pendentes',
-  newInventory:'Novo Inventário',
   pickCountType:'Nova Contagem',
   randomCount:'Contagem',
   manualCount:'Contagem Manual',
@@ -3464,7 +3462,6 @@ function Sidebar({view, goto, role, user, collapsed, pendingSync=0}){
     {id:'settings', ic:'settings', label:'Configurações'},
   ];
   const shortcuts = [
-    ...(podeValidarEnderecos ? [{id:'newInventory', label:'Criar novo inventário'}] : []),
     {id:'pickCountType', label:'Nova contagem'},
     {id:'myCounts', label:'Minhas contagens'},
     {id:'recounts', label:'Recontagens pendentes'},
@@ -3654,7 +3651,6 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
     .slice(0,7);
 
   const acoes = [
-    ...(podeGerir ? [{icon:'plus', label:'Novo Inventário', onClick:()=>goto('newInventory')}] : []),
     {icon:'search', label:'Nova Contagem', onClick:()=>goto('pickCountType')},
     {icon:'clipboardList', label:'Minhas Contagens', onClick:()=>goto('myCounts')},
     {icon:'repeat', label:'Recontagens', onClick:()=>goto('recounts')},
@@ -3819,15 +3815,6 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
           <span className="icon"><Ic>📄</Ic></span>
           <span className="label">Relatórios</span>
         </div>
-        {(role==='lider'||role==='admin') && (
-          <div className="home-card wide" onClick={()=>goto('newInventory')}>
-            <div style={{display:'flex',alignItems:'center',gap:12}}>
-              <span className="icon"><Ic>➕</Ic></span>
-              <span className="label">Criar Novo Inventário</span>
-            </div>
-            <span className="chevron"><Ic>›</Ic></span>
-          </div>
-        )}
         <div className="home-card" onClick={()=>goto('settings')}>
           <span className="icon"><Ic>⚙</Ic></span>
           <span className="label">Configurações</span>
@@ -3932,7 +3919,7 @@ function InventoryList({inventories, goto, role, counts, onDelete}){
   return (
     <div>
       {(role==='lider'||role==='admin') && (
-        <button className="btn btn-primary" style={{marginBottom:16}} onClick={()=>goto('newInventory')}>
+        <button className="btn btn-primary" style={{marginBottom:16}} onClick={()=>goto('pickCountType')}>
           <Ic>➕</Ic> Criar Inventário
         </button>
       )}
@@ -4217,25 +4204,38 @@ function NewInventory({onCreate}){
 
 /* ---------------- MÓDULO ENTRY: ESCOLHA DO TIPO DE CONTAGEM ---------------- */
 
-function PickCountType({inv, goto}){
+// "Nova Contagem" — pra líder/admin, é literalmente o formulário de criar
+// inventário (NewInventory, ver abaixo), já que o atalho "Criar novo
+// inventário" foi removido (deixou de existir como entrada separada,
+// pedido do cliente) e fundido aqui. Pra operador, continua sendo a tela
+// rápida de sempre (contagem avulsa, sem inventário associado) — criar
+// inventário sempre foi ação de líder/admin, essa fusão não muda isso.
+function PickCountType({role, goto, onCreate}){
+  const podeGerir = role==='lider' || role==='admin';
+
   // Substitui o antigo `ANY_ADDRESS_REGISTERED` (derivado do cache local
   // estático, removido — ver CLAUDE.md "cache local removido"). Começa
   // desabilitado (mesmo comportamento de sempre, já que endereços cadastrados
   // ainda são raros) e libera assim que a checagem no Supabase responder.
+  // Só usado pela tela do operador — hooks continuam declarados sem
+  // condição (regra dos hooks), o efeito só faz alguma coisa quando
+  // `podeGerir` é false.
   const [anyAddress, setAnyAddress] = useState(false);
   useEffect(()=>{
+    if(podeGerir) return;
     let cancelado = false;
     fetchAnyAddressRegistered().then(v=>{ if(!cancelado) setAnyAddress(v); });
     return ()=>{ cancelado = true; };
-  }, []);
+  }, [podeGerir]);
+
+  if(podeGerir){
+    return <NewInventory onCreate={onCreate} />;
+  }
 
   return (
     <div>
-      {inv && (
-        <div className="role-note">Inventário selecionado: <strong>{inv.nome}</strong> ({inv.tipo})</div>
-      )}
       <div className="radio-group">
-        <button className="item-card" style={{padding:18,textAlign:'left',border:'1px solid var(--line)',background:'var(--panel)'}} onClick={()=>goto('randomCount', inv)}>
+        <button className="item-card" style={{padding:18,textAlign:'left',border:'1px solid var(--line)',background:'var(--panel)'}} onClick={()=>goto('randomCount')}>
           <div className="opt-title" style={{fontSize:15}}><Ic>🎲</Ic>&nbsp; Contagem Aleatória / por Rota Gerada</div>
           <div className="opt-desc">O sistema indica o próximo item e endereço a contar</div>
         </button>
@@ -4247,7 +4247,7 @@ function PickCountType({inv, goto}){
           className="item-card"
           style={{padding:18,textAlign:'left',border:'1px solid var(--line)',background:'var(--panel)', opacity: anyAddress?1:0.5, cursor: anyAddress?'pointer':'not-allowed'}}
           disabled={!anyAddress}
-          onClick={()=>{ if(anyAddress) goto('routeCount', inv); }}
+          onClick={()=>{ if(anyAddress) goto('routeCount'); }}
         >
           <div className="opt-title" style={{fontSize:15}}><Ic>🗺</Ic>&nbsp; Contagem por Rota</div>
           <div className="opt-desc">{anyAddress ? 'Sequência otimizada por corredor e rua, menor deslocamento' : 'Indisponível — nenhum endereço cadastrado ainda neste almoxarifado'}</div>
