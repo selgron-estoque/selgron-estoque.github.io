@@ -501,7 +501,6 @@
     .desktop-topbar-title{font-family:var(--font-corp);font-size:20px;font-weight:700;color:var(--navy);letter-spacing:-0.1px;}
     .desktop-topbar-subtitle{font-family:var(--font-corp);font-size:12.5px;color:var(--gray-500);}
     .desktop-topbar-right{display:flex;align-items:center;gap:14px;}
-    .pnl-period-select{font-family:var(--font-corp);font-size:12.5px;font-weight:500;color:var(--navy);background:#fff;border:1px solid var(--gray-200);border-radius:8px;padding:8px 12px;}
     .desktop-bell{width:36px;height:36px;border-radius:8px;border:1px solid var(--gray-200);background:#fff;display:flex;align-items:center;justify-content:center;color:var(--gray-500);flex-shrink:0;}
     .desktop-bell:hover{background:var(--gray-50);color:var(--navy);}
     .desktop-notif-menu{position:absolute;top:60px;right:32px;background:#fff;border:1px solid var(--gray-200);border-radius:10px;box-shadow:0 8px 24px rgba(15,23,42,.12);width:240px;padding:16px;z-index:50;font-family:var(--font-corp);font-size:12.5px;color:var(--gray-500);text-align:center;}
@@ -2454,7 +2453,6 @@ function App(){
   // pro próximo login no mesmo aparelho.
   const [view, setView] = usePersistedState('view', 'home');
   const [flowState, setFlowState] = usePersistedState('flowState', null); // params passed into a flow
-  const [dashboardPeriod, setDashboardPeriod] = useState('7d'); // filtro de período do Dashboard novo
   // Esconder sidebar (desktop/tablet: começa aberta e empurra o conteúdo; celular
   // <768px: começa fechada, vira painel flutuante — ver CSS ".sidebar" no <style>).
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => typeof window!=='undefined' && window.innerWidth < 768);
@@ -2984,17 +2982,10 @@ function App(){
         role={role}
         onLogout={()=>logout('')}
         subtitle={VIEW_SUBTITLES[view]}
-        rightExtra={view==='home' ? (
-          <select className="pnl-period-select" value={dashboardPeriod} onChange={e=>setDashboardPeriod(e.target.value)}>
-            <option value="7d">Últimos 7 dias</option>
-            <option value="30d">Últimos 30 dias</option>
-            <option value="all">Todo o período</option>
-          </select>
-        ) : null}
       />
       {view!=='home' && <SubBar view={view} goto={goto} />}
       <div className="content">
-        {view==='home' && <Home role={role} user={currentUser} inventories={inventories} counts={counts} historicoConcluidas={historicoConcluidas} enderecosPropostos={enderecosPropostos} goto={goto} period={dashboardPeriod} />}
+        {view==='home' && <Home role={role} user={currentUser} inventories={inventories} counts={counts} historicoConcluidas={historicoConcluidas} enderecosPropostos={enderecosPropostos} goto={goto} />}
         {view==='inventories' && <InventoryList inventories={inventories} goto={goto} role={role} counts={counts} onDelete={deleteInventory} />}
         {view==='newInventory' && (role==='lider'||role==='admin') && <NewInventory users={users} onCreate={async(inv)=>{
           const res = await saveInventarioToSupabase(inv);
@@ -3478,7 +3469,7 @@ function Sidebar({view, goto, role, user, collapsed, pendingSync=0}){
   );
 }
 
-function DesktopTopbar({view, user, role, onLogout, subtitle, rightExtra}){
+function DesktopTopbar({view, user, role, onLogout, subtitle}){
   const [menuOpen, setMenuOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const initials = user.nome.split(' ').filter(Boolean).slice(0,2).map(p=>p[0]).join('').toUpperCase();
@@ -3489,7 +3480,6 @@ function DesktopTopbar({view, user, role, onLogout, subtitle, rightExtra}){
         {subtitle && <div className="desktop-topbar-subtitle">{subtitle}</div>}
       </div>
       <div className="desktop-topbar-right">
-        {rightExtra}
         <div style={{position:'relative'}}>
           <button className="desktop-bell" onClick={()=>{setNotifOpen(o=>!o); setMenuOpen(false);}} title="Notificações"><DIcon name="bell" size={17} /></button>
           {notifOpen && (
@@ -3546,7 +3536,7 @@ function saudacaoPorHorario(){
   return 'Boa noite';
 }
 
-function Home({role, user, inventories, counts, historicoConcluidas=[], enderecosPropostos=[], goto, period}){
+function Home({role, user, inventories, counts, historicoConcluidas=[], enderecosPropostos=[], goto}){
   const pendentes = inventories.filter(i=>i.status!=='concluido').length;
   const byOriginal = {};
   counts.forEach(c=>{ if(c.contagemAnteriorId) byOriginal[c.contagemAnteriorId]=true; });
@@ -3623,9 +3613,7 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
     },
   ];
 
-  const cutoff = pnlPeriodCutoff(period);
   const atividades = [...counts]
-    .filter(c=>c.data>=cutoff)
     .sort((a,b)=> (b.data+b.hora).localeCompare(a.data+a.hora))
     .slice(0,7);
 
@@ -3679,7 +3667,7 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
               <button className="pnl-section-link" onClick={()=>goto('myCounts')}>Ver todas <DIcon name="chevronRight" size={13} /></button>
             </div>
             {atividades.length===0 ? (
-              <div style={{color:'var(--gray-500)', fontSize:13, padding:'12px 4px'}}>Nenhuma atividade registrada neste período.</div>
+              <div style={{color:'var(--gray-500)', fontSize:13, padding:'12px 4px'}}>Nenhuma atividade registrada ainda.</div>
             ) : (
               <table className="pnl-table">
                 <thead><tr><th>Status</th><th>Descrição</th><th>Usuário</th><th>Data</th><th>Hora</th></tr></thead>
@@ -3822,13 +3810,6 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
    data); para KPIs que são puro estado atual (sem histórico registrado —
    inventários em andamento, recontagens pendentes) mostra uma nota contextual
    real em vez de inventar uma variação percentual sem base de dados. */
-
-function pnlPeriodCutoff(period){
-  const now = new Date();
-  if(period==='7d') return new Date(now.getTime()-6*86400000).toISOString().slice(0,10);
-  if(period==='30d') return new Date(now.getTime()-29*86400000).toISOString().slice(0,10);
-  return '0000-00-00';
-}
 
 function pnlTrendPct(atual, anterior){
   if(anterior===0) return atual===0 ? 0 : null;
