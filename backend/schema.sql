@@ -373,6 +373,10 @@ create policy "inserção pública" on contagens for insert with check (true);
 -- essa policy, essas ações continuam só locais e nunca aparecem em outro
 -- aparelho (era exatamente esse o buraco antes desta policy existir).
 create policy "atualização pública" on contagens for update using (true) with check (true);
+-- DELETE: usada por `deleteCountEverywhere` (App()) — exclusão definitiva de
+-- uma contagem lançada por engano (líder/admin), sem deixar rastro nem em
+-- outro aparelho.
+create policy "exclusão pública" on contagens for delete using (true);
 
 -- Inventários: mesma razão de contagens acima, mas aqui também precisa de
 -- UPDATE público — é como o app incrementa `contados` (via increment_contados)
@@ -494,6 +498,7 @@ alter table contagens add column if not exists atualizado_em timestamptz not nul
 
 create policy "atualização pública" on contagens for update using (true) with check (true);
 create policy "exclusão pública" on inventarios for delete using (true);
+create policy "exclusão pública" on contagens for delete using (true);
 
 -- USUÁRIOS — o projeto real já tem uma tabela `usuarios` desde a aplicação
 -- inicial do schema, mas com a estrutura ANTIGA (id uuid, sem coluna de

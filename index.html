@@ -926,6 +926,21 @@ async function deleteInventarioFromSupabase(id){
   }
 }
 
+// Exclui uma contagem no Supabase — mesmo padrão de `deleteInventarioFromSupabase`.
+// Usada por `deleteCount` em App() pra apagar de vez uma contagem lançada por
+// engano (líder/admin), sem deixar rastro: some tanto do localStorage quanto
+// do banco, sem virar só uma mudança de status.
+async function deleteContagemFromSupabase(id){
+  if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
+  try{
+    const { error } = await supabaseClient.from('contagens').delete().eq('id', id);
+    if(error) return {ok:false, erro:error.message};
+    return {ok:true};
+  }catch(err){
+    return {ok:false, erro:String(err && err.message || err)};
+  }
+}
+
 // Incrementa `contados` no Supabase via função de banco (increment_contados,
 // ver backend/schema.sql) em vez de ler+somar+gravar no client — evita perder
 // incremento se dois aparelhos completarem uma contagem quase ao mesmo tempo.
@@ -2693,6 +2708,19 @@ function App(){
     return res;
   }
 
+  // Exclusão definitiva de uma contagem (lançada por engano) — mesmo padrão
+  // de `deleteInventory`: aguarda confirmação do Supabase antes de sumir da
+  // tela, pra não "ressuscitar" via sincronização se a exclusão remota tiver
+  // falhado. Usada por todas as telas que listam contagens individuais
+  // (Recontagens, Itens Divergentes, Minhas Contagens, Contagens Concluídas).
+  async function deleteCount(id){
+    const res = await deleteContagemFromSupabase(id);
+    if(res.ok){
+      setCounts(prev=>prev.filter(c=>c.id!==id));
+    }
+    return res;
+  }
+
   function logHistory(usuarioAlvo, acao, administrador){
     setPasswordHistory(prev=>[{
       id:'HIST-'+Math.random().toString(36).slice(2,7).toUpperCase(),
@@ -3005,10 +3033,10 @@ function App(){
         {view==='manualCount' && <ManualCountFlow user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('home');}} onAddressProposed={addAddressProposal} />}
         {view==='routeCount' && <RouteCountFlow inv={flowState} user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} />}
         {view==='importedListCount' && <ImportedListCountFlow inv={flowState} user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} />}
-        {view==='myCounts' && <MyCounts counts={counts} user={currentUser} role={role} goto={goto} />}
-        {view==='recounts' && <RecountsPanel counts={counts} goto={goto} />}
-        {view==='divergentes' && <DivergentItemsPanel counts={counts} role={role} goto={goto} onApprove={approveDivergence} onRequestRecount={requestRecountFromOperator} />}
-        {view==='concluidas' && <ConcludedCountsPanel counts={counts} historicoConcluidas={historicoConcluidas} />}
+        {view==='myCounts' && <MyCounts counts={counts} user={currentUser} role={role} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} />}
+        {view==='recounts' && <RecountsPanel counts={counts} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} />}
+        {view==='divergentes' && <DivergentItemsPanel counts={counts} role={role} goto={goto} onApprove={approveDivergence} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} />}
+        {view==='concluidas' && <ConcludedCountsPanel counts={counts} historicoConcluidas={historicoConcluidas} onDeleteCount={role==='admin' ? deleteCount : undefined} />}
         {view==='recount' && flowState && <RecountFlow original={flowState} user={currentUser} onAddressProposed={addAddressProposal} onFinish={(c)=>{registerFinishedCount(c); goto('recounts');}} />}
         {view==='dashboard' && <Dashboard counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} historicoParaTendencia={historicoParaTendencia} />}
         {view==='relatorios' && <ReportsScreen counts={counts} inventories={inventories} currentUser={currentUser} sendHistory={reportSendHistory} onLogSend={logReportSend} role={role} onHistoricoImportado={refreshHistoricoConcluidas} />}
@@ -4926,8 +4954,23 @@ function ImportedListCountFlow({inv, user, onFinish, onAddressProposed, setInven
 
 /* ---------------- MÓDULO: MINHAS CONTAGENS ---------------- */
 
-function MyCounts({counts, user, role, goto}){
+function MyCounts({counts, user, role, goto, onDeleteCount}){
   const mine = role==='operador' ? counts.filter(c=>c.usuario===user.nome) : counts;
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [excluindo, setExcluindo] = useState(false);
+  const [erroExclusao, setErroExclusao] = useState('');
+
+  async function handleConfirmDelete(id){
+    setExcluindo(true);
+    setErroExclusao('');
+    const res = await onDeleteCount(id);
+    setExcluindo(false);
+    if(res && res.ok){
+      setConfirmDeleteId(null);
+    } else {
+      setErroExclusao((res && res.erro) || 'Não foi possível excluir — tente novamente.');
+    }
+  }
 
   if(mine.length===0){
     return <div className="empty-state"><div className="ic"><Ic>📋</Ic></div>Nenhuma contagem registrada ainda.</div>;
@@ -4959,6 +5002,24 @@ function MyCounts({counts, user, role, goto}){
             <div style={{padding:'0 18px 16px'}}>
               <StatusTag status={status.level} text={status.text} />
             </div>
+            {onDeleteCount && (
+              confirmDeleteId===c.id ? (
+                <div style={{padding:'0 18px 16px'}}>
+                  <div className="divergence-alert" style={{marginBottom:10}}>
+                    <Ic>⚠</Ic><span>Excluir esta contagem de {c.productCode}? Essa ação não pode ser desfeita e não deixa rastro.</span>
+                  </div>
+                  {erroExclusao && <div className="divergence-alert" style={{marginBottom:10}}><Ic>⚠</Ic><span>{erroExclusao}</span></div>}
+                  <div className="btn-row">
+                    <button className="btn btn-secondary" disabled={excluindo} onClick={()=>{setConfirmDeleteId(null); setErroExclusao('');}}>Cancelar</button>
+                    <button className="btn btn-danger" disabled={excluindo} onClick={()=>handleConfirmDelete(c.id)}>{excluindo ? 'Excluindo…' : 'Confirmar exclusão'}</button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{padding:'0 18px 16px'}}>
+                  <button className="btn btn-danger" onClick={()=>setConfirmDeleteId(c.id)}><Ic>🗑</Ic> Excluir contagem</button>
+                </div>
+              )
+            )}
           </div>
         );
       })}
@@ -5051,7 +5112,7 @@ function RecountFlow({original, user, onFinish, onAddressProposed}){
 // divergência ANTES dela virar recontagem — assim que o líder decide
 // "Solicitar nova contagem" (ou a regra automática já cria o item aqui
 // direto), o item sai de lá e passa a aparecer só aqui.
-function RecountsPanel({counts, goto}){
+function RecountsPanel({counts, goto, onDeleteCount}){
   const byOriginal = {};
   counts.forEach(c=>{ if(c.contagemAnteriorId) byOriginal[c.contagemAnteriorId]=c; });
 
@@ -5066,6 +5127,22 @@ function RecountsPanel({counts, goto}){
   const listaFiltrada = buscaNorm
     ? aguardandoSegunda.filter(c => c.productCode.toLowerCase().includes(buscaNorm) || (c.descricao||'').toLowerCase().includes(buscaNorm))
     : aguardandoSegunda;
+
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [excluindo, setExcluindo] = useState(false);
+  const [erroExclusao, setErroExclusao] = useState('');
+
+  async function handleConfirmDelete(id){
+    setExcluindo(true);
+    setErroExclusao('');
+    const res = await onDeleteCount(id);
+    setExcluindo(false);
+    if(res && res.ok){
+      setConfirmDeleteId(null);
+    } else {
+      setErroExclusao((res && res.erro) || 'Não foi possível excluir — tente novamente.');
+    }
+  }
 
   return (
     <div>
@@ -5102,9 +5179,23 @@ function RecountsPanel({counts, goto}){
           <div style={{padding:'14px 18px',display:'flex',flexWrap:'wrap',gap:8,fontSize:12,color:'var(--ink-dim)',fontFamily:'var(--font-mono)'}}>
             <span>1ª contagem: {c.qtdContada} un.</span>·<span>Diferença {c.diferenca==null ? '— (sem saldo local)' : (c.diferenca>0?'+':'')+c.diferenca+(c.percentual==null?'':' ('+c.percentual.toFixed(1)+'%)')}</span>·<span>{c.usuario}</span>·<span>{c.data} {c.hora||''}</span>
           </div>
-          <div style={{padding:'0 18px 16px'}}>
-            <button className="btn btn-primary" onClick={()=>goto('recount', c)}><Ic>🔁</Ic> Recontar este item</button>
-          </div>
+          {confirmDeleteId===c.id ? (
+            <div style={{padding:'0 18px 16px'}}>
+              <div className="divergence-alert" style={{marginBottom:10}}>
+                <Ic>⚠</Ic><span>Excluir esta contagem de {c.productCode}? Essa ação não pode ser desfeita e não deixa rastro.</span>
+              </div>
+              {erroExclusao && <div className="divergence-alert" style={{marginBottom:10}}><Ic>⚠</Ic><span>{erroExclusao}</span></div>}
+              <div className="btn-row">
+                <button className="btn btn-secondary" disabled={excluindo} onClick={()=>{setConfirmDeleteId(null); setErroExclusao('');}}>Cancelar</button>
+                <button className="btn btn-danger" disabled={excluindo} onClick={()=>handleConfirmDelete(c.id)}>{excluindo ? 'Excluindo…' : 'Confirmar exclusão'}</button>
+              </div>
+            </div>
+          ) : (
+            <div className="btn-row" style={{padding:'0 18px 16px'}}>
+              <button className="btn btn-primary" onClick={()=>goto('recount', c)}><Ic>🔁</Ic> Recontar este item</button>
+              {onDeleteCount && <button className="btn btn-danger" onClick={()=>setConfirmDeleteId(c.id)}><Ic>🗑</Ic></button>}
+            </div>
+          )}
         </div>
       ))}
     </div>
@@ -5119,7 +5210,7 @@ function RecountsPanel({counts, goto}){
 // aparecer só em "Recontagens". Visível pra todos os papéis (antes ficava
 // escondida inteira do operador) — mas as ações (aprovar/solicitar
 // recontagem) continuam só pra líder/admin, operador vê em modo leitura.
-function DivergentItemsPanel({counts, role, goto, onApprove, onRequestRecount}){
+function DivergentItemsPanel({counts, role, goto, onApprove, onRequestRecount, onDeleteCount}){
   const aguardandoAnalise = counts.filter(c=>c.statusAprovacao==='aguardando_analise_lider');
   const canApprove = role==='lider' || role==='admin';
 
@@ -5128,6 +5219,7 @@ function DivergentItemsPanel({counts, role, goto, onApprove, onRequestRecount}){
   // mensagem por id de contagem se a chamada falhar.
   const [busyId, setBusyId] = useState(null);
   const [erros, setErros] = useState({});
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
   async function handleApprove(countId){
     setBusyId(countId);
@@ -5143,6 +5235,18 @@ function DivergentItemsPanel({counts, role, goto, onApprove, onRequestRecount}){
     const res = await onRequestRecount(countId);
     setBusyId(null);
     if(!res || !res.ok) setErros(prev=>({...prev, [countId]: (res && res.erro) || 'Não foi possível solicitar a recontagem — tente novamente.'}));
+  }
+
+  async function handleConfirmDelete(countId){
+    setBusyId(countId);
+    setErros(prev=>({...prev, [countId]: null}));
+    const res = await onDeleteCount(countId);
+    setBusyId(null);
+    if(res && res.ok){
+      setConfirmDeleteId(null);
+    } else {
+      setErros(prev=>({...prev, [countId]: (res && res.erro) || 'Não foi possível excluir — tente novamente.'}));
+    }
   }
 
   return (
@@ -5176,11 +5280,22 @@ function DivergentItemsPanel({counts, role, goto, onApprove, onRequestRecount}){
             {erros[c.id] && (
               <div className="divergence-alert" style={{margin:'0 18px 10px'}}><Ic>⚠</Ic><span>{erros[c.id]}</span></div>
             )}
-            {canApprove ? (
+            {confirmDeleteId===c.id ? (
+              <div style={{padding:'0 18px 16px'}}>
+                <div className="divergence-alert" style={{marginBottom:10}}>
+                  <Ic>⚠</Ic><span>Excluir esta contagem de {c.productCode}? Essa ação não pode ser desfeita e não deixa rastro.</span>
+                </div>
+                <div className="btn-row">
+                  <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>setConfirmDeleteId(null)}>Cancelar</button>
+                  <button className="btn btn-danger" disabled={busyId===c.id} onClick={()=>handleConfirmDelete(c.id)}>{busyId===c.id ? 'Excluindo…' : 'Confirmar exclusão'}</button>
+                </div>
+              </div>
+            ) : canApprove ? (
               <div className="btn-row" style={{padding:'0 18px 16px'}}>
                 <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>handleRequestRecount(c.id)}>{busyId===c.id ? 'Enviando…' : 'Solicitar nova contagem'}</button>
                 <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>goto('recount', c)}><Ic>🔁</Ic> Recontar</button>
                 <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>handleApprove(c.id)}>{busyId===c.id ? 'Enviando…' : 'Aprovar divergência'}</button>
+                {onDeleteCount && <button className="btn btn-danger" disabled={busyId===c.id} onClick={()=>setConfirmDeleteId(c.id)}><Ic>🗑</Ic></button>}
               </div>
             ) : (
               <div style={{padding:'0 18px 16px',fontSize:12,color:'var(--ink-dim)'}}>Aguardando decisão do líder de estoque.</div>
@@ -5300,9 +5415,24 @@ function historicoRowToConcludedChain(h){
   return { chaveId: tip.id, tip, rodadas: [tip], houveAjuste };
 }
 
-function ConcludedCountsPanel({counts, historicoConcluidas=[]}){
+function ConcludedCountsPanel({counts, historicoConcluidas=[], onDeleteCount}){
   const [busca, setBusca] = useState('');
   const [selecionado, setSelecionado] = useState(null); // chaveId da cadeia aberta em detalhe
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [excluindo, setExcluindo] = useState(false);
+  const [erroExclusao, setErroExclusao] = useState('');
+
+  async function handleConfirmDelete(id){
+    setExcluindo(true);
+    setErroExclusao('');
+    const res = await onDeleteCount(id);
+    setExcluindo(false);
+    if(res && res.ok){
+      setConfirmDeleteId(null);
+    } else {
+      setErroExclusao((res && res.erro) || 'Não foi possível excluir — tente novamente.');
+    }
+  }
 
   const cadeias = useMemo(()=>{
     const doApp = buildConcludedChains(counts);
@@ -5380,6 +5510,24 @@ function ConcludedCountsPanel({counts, historicoConcluidas=[]}){
                   {r.documento && <>Doc: {r.documento} · </>}
                   {r.diasSemMovimento!=null && <>Dias s/ movimento: {r.diasSemMovimento}</>}
                 </div>
+              )}
+              {onDeleteCount && !r._fromHistorico && (
+                confirmDeleteId===r.id ? (
+                  <div style={{padding:'0 18px 16px'}}>
+                    <div className="divergence-alert" style={{marginBottom:10}}>
+                      <Ic>⚠</Ic><span>Excluir esta {idx+1}ª contagem? Essa ação não pode ser desfeita e não deixa rastro.</span>
+                    </div>
+                    {erroExclusao && <div className="divergence-alert" style={{marginBottom:10}}><Ic>⚠</Ic><span>{erroExclusao}</span></div>}
+                    <div className="btn-row">
+                      <button className="btn btn-secondary" disabled={excluindo} onClick={()=>{setConfirmDeleteId(null); setErroExclusao('');}}>Cancelar</button>
+                      <button className="btn btn-danger" disabled={excluindo} onClick={()=>handleConfirmDelete(r.id)}>{excluindo ? 'Excluindo…' : 'Confirmar exclusão'}</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{padding:'0 18px 16px'}}>
+                    <button className="btn btn-danger" onClick={()=>setConfirmDeleteId(r.id)}><Ic>🗑</Ic> Excluir esta contagem</button>
+                  </div>
+                )
               )}
             </div>
           );
