@@ -1,6 +1,6 @@
-# Inventário 360 — Inventário Cíclico Industrial
+# Gestão de Estoques — Inventário Cíclico Industrial
 
-> Nome do produto: **Inventário 360** (antes chamado "Stock360" — o repositório/pasta no
+> Nome do produto: **Gestão de Estoques** (antes chamado "Stock360" — o repositório/pasta no
 > disco continua com o nome antigo `Stock360`, só a marca exibida dentro do app mudou).
 
 Protótipo funcional (front-end) do PWA descrito no briefing, cobrindo os 10 módulos
@@ -77,9 +77,9 @@ próxima abertura da página, **neste mesmo aparelho**.
 - A sessão de login continua **não** persistindo de propósito (ver nota de segurança
   acima) — só os dados operacionais.
 
-## Atualização: Nova identidade visual da tela de login (rebrand para "Inventário 360")
+## Atualização: Nova identidade visual da tela de login (rebrand para "Gestão de Estoques")
 
-O app foi renomeado de "Stock360" para **"Inventário 360"** em toda a interface (topbar,
+O app foi renomeado de "Stock360" para **"Gestão de Estoques"** em toda a interface (topbar,
 sidebar, título da aba, PWA, arquivos exportados) — o repositório/pasta no disco continua
 `Stock360` por conveniência, só o nome de marca dentro do produto mudou.
 
