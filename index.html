@@ -3287,6 +3287,23 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
   // por padrão bate com a imagem pixel a pixel sem remover a função.
   const [showDemoCreds, setShowDemoCreds] = useState(false);
 
+  // Cliente reportou que, no celular, tocar num campo pra digitar exige
+  // arrastar a tela manualmente pra ver o que está escrevendo — o teclado
+  // virtual cobre o campo e o navegador não rola sozinho até ele (a tela de
+  // login é mais alta que a viewport visível quando o teclado abre, já que
+  // a ilustração ocupa bastante espaço). Delegado num único handler no
+  // container (React propaga foco/blur como qualquer evento) em vez de
+  // repetir em cada <input> — cobre os 3 modos (login/esqueci senha/nova
+  // senha) de uma vez, inclusive se um campo novo for adicionado depois.
+  // O atraso dá tempo da animação do teclado começar antes de rolar —
+  // rolar cedo demais rola pra posição errada (calculada com o teclado
+  // ainda fechado).
+  function scrollCampoFocadoParaVisivel(e){
+    if(!e.target || e.target.tagName!=='INPUT') return;
+    const el = e.target;
+    setTimeout(()=>{ el.scrollIntoView({behavior:'smooth', block:'center'}); }, 300);
+  }
+
   function submitLogin(e){
     e.preventDefault();
     setError('');
@@ -3326,7 +3343,7 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
         </div>
 
         <div className="login-form-col">
-          <div className="login-form-body">
+          <div className="login-form-body" onFocus={scrollCampoFocadoParaVisivel}>
             {notice && mode==='login' && (
               <div className="login-notice2">{notice}</div>
             )}
