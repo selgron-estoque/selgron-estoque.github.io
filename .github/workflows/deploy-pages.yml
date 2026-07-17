@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [claude/stock360-excel-count-import-0608zr]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
