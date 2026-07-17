@@ -3972,7 +3972,7 @@ function StatusTag({status, text}){
   return <span className={"status-tag status-"+status}><span className="status-dot"></span>{text}</span>;
 }
 
-function NewInventory({onCreate}){
+function NewInventory({onCreate, goto}){
   const [nome, setNome] = useState('');
   // Almoxarifado virou multi-seleção (chips) — começa com "01" pré-adicionado,
   // dá pra tirar e/ou adicionar outros. Só aceita código numérico que exista
@@ -4039,9 +4039,9 @@ function NewInventory({onCreate}){
   }
 
   const tipos = [
+    {v:'Contagem Manual', d:'Operador escolhe os itens livremente'},
     {v:'Contagem Aleatória', d:'O sistema seleciona os itens automaticamente'},
     {v:'Contagem por Curva ABC', d:'Prioriza itens de maior valor ou giro'},
-    {v:'Contagem Manual', d:'Operador escolhe os itens livremente'},
     {v:'Contagem por Rota de Endereço', d:'Sequência otimizada por corredor/rua'},
     {v:'Lista Importada (Excel)', d:'Conta exatamente os itens de uma planilha importada, na ordem em que vieram'},
   ];
@@ -4108,7 +4108,11 @@ function NewInventory({onCreate}){
   }
 
   // Passo 1: só a escolha do tipo — cada card já navega pro passo 2 ao
-  // clicar (não precisa de botão "Avançar" separado).
+  // clicar (não precisa de botão "Avançar" separado). Exceção: "Contagem
+  // Manual" não cria inventário nenhum — pula direto pra tela de contagem
+  // avulsa (mesmo destino que o operador já usa), sem pedir nome/
+  // almoxarifado/data/quantidade, que não fazem sentido pra uma busca
+  // pontual de item.
   if(!tipo){
     return (
       <div>
@@ -4121,7 +4125,7 @@ function NewInventory({onCreate}){
                 type="button"
                 className="item-card"
                 style={{padding:18,textAlign:'left',border:'1px solid var(--line)',background:'var(--panel)',width:'100%'}}
-                onClick={()=>setTipo(t.v)}
+                onClick={()=>{ if(t.v==='Contagem Manual'){ goto('manualCount'); return; } setTipo(t.v); }}
               >
                 <div className="opt-title" style={{fontSize:15}}>{t.v}</div>
                 <div className="opt-desc">{t.d}</div>
@@ -4246,7 +4250,7 @@ function PickCountType({role, goto, onCreate}){
   }, [podeGerir]);
 
   if(podeGerir){
-    return <NewInventory onCreate={onCreate} />;
+    return <NewInventory onCreate={onCreate} goto={goto} />;
   }
 
   return (
