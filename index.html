@@ -3984,7 +3984,10 @@ function NewInventory({onCreate}){
   const [armazensValidos, setArmazensValidos] = useState(null); // null = ainda não carregou (não bloqueia validação nesse meio-tempo)
   const [data, setData] = useState(()=> new Date().toISOString().slice(0,10));
   const [qtd, setQtd] = useState('');
-  const [tipo, setTipo] = useState('Contagem Aleatória');
+  // Fluxo em 2 passos, pedido do cliente: primeiro escolhe o tipo de
+  // inventário, só depois configura o resto (nome, almoxarifado, data,
+  // quantidade). `tipo:null` = ainda no passo 1 (escolha do tipo).
+  const [tipo, setTipo] = useState(null);
 
   const [arquivoNome, setArquivoNome] = useState('');
   const [itensImportados, setItensImportados] = useState(null);
@@ -4104,9 +4107,37 @@ function NewInventory({onCreate}){
     if(res && !res.ok) setErroCriacao(res.erro || 'Não foi possível criar o inventário — tente novamente.');
   }
 
+  // Passo 1: só a escolha do tipo — cada card já navega pro passo 2 ao
+  // clicar (não precisa de botão "Avançar" separado).
+  if(!tipo){
+    return (
+      <div>
+        <div className="field">
+          <label>Tipo de inventário</label>
+          <div className="radio-group">
+            {tipos.map(t=>(
+              <button
+                key={t.v}
+                type="button"
+                className="item-card"
+                style={{padding:18,textAlign:'left',border:'1px solid var(--line)',background:'var(--panel)',width:'100%'}}
+                onClick={()=>setTipo(t.v)}
+              >
+                <div className="opt-title" style={{fontSize:15}}>{t.v}</div>
+                <div className="opt-desc">{t.d}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
+      <button className="back-btn" style={{marginBottom:14}} onClick={()=>setTipo(null)}><Ic>←</Ic> Trocar tipo de inventário</button>
       <div className="panel">
+        <div className="role-note" style={{marginBottom:16}}>Tipo selecionado: <strong>{tipo}</strong></div>
         <div className="field">
           <label>Nome do inventário</label>
           <input type="text" value={nome} onChange={e=>setNome(e.target.value)} placeholder="Ex.: Inventário Cíclico Julho/2026" />
@@ -4142,20 +4173,6 @@ function NewInventory({onCreate}){
             <input type="number" value={qtd} onChange={e=>setQtd(e.target.value)} placeholder="Ex.: 20" />
           </div>
         )}
-        <div className="field">
-          <label>Tipo de inventário</label>
-          <div className="radio-group">
-            {tipos.map(t=>(
-              <label key={t.v} className={"radio-opt"+(tipo===t.v?' active':'')}>
-                <input type="radio" name="tipo" checked={tipo===t.v} onChange={()=>setTipo(t.v)} />
-                <div>
-                  <div className="opt-title">{t.v}</div>
-                  <div className="opt-desc">{t.d}</div>
-                </div>
-              </label>
-            ))}
-          </div>
-        </div>
 
         {isImportado && (
           <div className="field">
