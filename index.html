@@ -3003,7 +3003,7 @@ function App(){
         {view==='concluidas' && <ConcludedCountsPanel counts={counts} historicoConcluidas={historicoConcluidas} />}
         {view==='recount' && flowState && <RecountFlow original={flowState} user={currentUser} onAddressProposed={addAddressProposal} onFinish={(c)=>{registerFinishedCount(c); goto('recounts');}} />}
         {view==='dashboard' && <Dashboard counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} historicoParaTendencia={historicoParaTendencia} />}
-        {view==='relatorios' && <ReportsScreen counts={counts} inventories={inventories} currentUser={currentUser} sendHistory={reportSendHistory} onLogSend={logReportSend} />}
+        {view==='relatorios' && <ReportsScreen counts={counts} inventories={inventories} currentUser={currentUser} sendHistory={reportSendHistory} onLogSend={logReportSend} role={role} onHistoricoImportado={refreshHistoricoConcluidas} />}
         {view==='settings' && (
           <Settings
             role={role}
@@ -3016,7 +3016,6 @@ function App(){
             passwordRequests={passwordRequests}
             onResolvePasswordRequest={resolvePasswordRequest}
             passwordHistory={passwordHistory}
-            onHistoricoImportado={refreshHistoricoConcluidas}
           />
         )}
         {view==='enderecos' && (role==='lider'||role==='admin') && (
@@ -5363,7 +5362,8 @@ function ConcludedCountsPanel({counts, historicoConcluidas=[]}){
 
 /* ---------------- RELATÓRIOS (Excel + e-mail) ---------------- */
 
-function ReportsScreen({counts, inventories, currentUser, sendHistory, onLogSend}){
+function ReportsScreen({counts, inventories, currentUser, sendHistory, onLogSend, role, onHistoricoImportado}){
+  const isAdmin = role==='admin';
   const [email, setEmail] = useState('');
   const [assunto, setAssunto] = useState('Gestão de Estoques — Relatório de Inventário Cíclico');
   const [mensagem, setMensagem] = useState('Segue relatório de contagens e divergências do inventário cíclico para análise e solicitação de ajuste de estoque.');
@@ -5489,6 +5489,32 @@ function ReportsScreen({counts, inventories, currentUser, sendHistory, onLogSend
           </table>
         </div>
       )}
+
+      {isAdmin && <StockSyncPanel />}
+      {isAdmin && <HistoricoImportPanel onImported={onHistoricoImportado} />}
+
+      <div className="panel">
+        <div className="section-title" style={{marginTop:0}}>Regras de Divergência</div>
+        <div style={{fontSize:13,lineHeight:1.9,color:'var(--ink-dim)'}}>
+          <div>≤ 5% → <span style={{color:'var(--ok)'}}>Aprovação automática</span></div>
+          <div>5% – 15% → <span style={{color:'var(--warn)'}}>Segunda contagem obrigatória</span></div>
+          <div>&gt; 15% → <span style={{color:'var(--danger)'}}>Análise do líder de estoque</span></div>
+        </div>
+      </div>
+      <div className="panel">
+        <div className="section-title" style={{marginTop:0}}>Origem dos Dados</div>
+        <div style={{fontSize:13,color:'var(--ink-dim)',lineHeight:1.7}}>
+          Catálogo completo (85 mil+ produtos) importado da tabela SB2 do Protheus, direto no
+          Supabase — sem cache local no app. Saldo em estoque atualizado por upload manual da
+          planilha SB2 acima ("Atualizar Saldo em Estoque"). Nenhum endereço físico cadastrado
+          ainda; cadastro de endereços em construção via contagem (ver "Endereços Pendentes" na
+          tela inicial).
+        </div>
+      </div>
+      <div className="panel">
+        <div className="section-title" style={{marginTop:0}}>Integrações Futuras</div>
+        <div style={{fontSize:13,color:'var(--ink-dim)'}}>ERP TOTVS · Power BI · Preparado, ainda não conectado.</div>
+      </div>
     </div>
   );
 }
@@ -6831,7 +6857,7 @@ function HistoricoImportPanel({onImported}){
   );
 }
 
-function Settings({role, users=[], currentUser, goto, onToggleUserStatus, onDeleteUser, onAdminPasswordAction, passwordRequests=[], onResolvePasswordRequest, passwordHistory=[], onHistoricoImportado}){
+function Settings({role, users=[], currentUser, goto, onToggleUserStatus, onDeleteUser, onAdminPasswordAction, passwordRequests=[], onResolvePasswordRequest, passwordHistory=[]}){
   const isAdmin = role==='admin';
   const pendentesSenha = passwordRequests.filter(r=>r.status==='pendente');
 
@@ -6884,32 +6910,6 @@ function Settings({role, users=[], currentUser, goto, onToggleUserStatus, onDele
           </table>
         </div>
       )}
-
-      {isAdmin && <StockSyncPanel />}
-      {isAdmin && <HistoricoImportPanel onImported={onHistoricoImportado} />}
-
-      <div className="panel">
-        <div className="section-title" style={{marginTop:0}}>Regras de Divergência</div>
-        <div style={{fontSize:13,lineHeight:1.9,color:'var(--ink-dim)'}}>
-          <div>≤ 5% → <span style={{color:'var(--ok)'}}>Aprovação automática</span></div>
-          <div>5% – 15% → <span style={{color:'var(--warn)'}}>Segunda contagem obrigatória</span></div>
-          <div>&gt; 15% → <span style={{color:'var(--danger)'}}>Análise do líder de estoque</span></div>
-        </div>
-      </div>
-      <div className="panel">
-        <div className="section-title" style={{marginTop:0}}>Origem dos Dados</div>
-        <div style={{fontSize:13,color:'var(--ink-dim)',lineHeight:1.7}}>
-          Catálogo completo (85 mil+ produtos) importado da tabela SB2 do Protheus, direto no
-          Supabase — sem cache local no app. Saldo em estoque atualizado por upload manual da
-          planilha SB2 acima ("Atualizar Saldo em Estoque"). Nenhum endereço físico cadastrado
-          ainda; cadastro de endereços em construção via contagem (ver "Endereços Pendentes" na
-          tela inicial).
-        </div>
-      </div>
-      <div className="panel">
-        <div className="section-title" style={{marginTop:0}}>Integrações Futuras</div>
-        <div style={{fontSize:13,color:'var(--ink-dim)'}}>ERP TOTVS · Power BI · Preparado, ainda não conectado.</div>
-      </div>
     </div>
   );
 }
