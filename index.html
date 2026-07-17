@@ -130,7 +130,7 @@
   .field .qty-input{font-family:var(--font-mono);font-size:28px;font-weight:700;text-align:center;padding:18px;}
   .radio-group{display:flex;flex-direction:column;gap:10px;}
   .radio-opt{display:flex;align-items:center;gap:12px;background:var(--panel-raised);border:1px solid var(--line);padding:14px;border-radius:8px;}
-  .radio-opt.active{border-color:var(--safety);background:#2a2410;}
+  .radio-opt.active{border-color:var(--safety);background:#FFF4E0;}
   .radio-opt input{width:20px;height:20px;accent-color:var(--safety);}
   .radio-opt .opt-title{font-weight:600;font-size:14.5px;}
   .radio-opt .opt-desc{font-size:12px;color:var(--ink-dim);margin-top:2px;}
@@ -3951,11 +3951,11 @@ function StatusTag({status, text}){
 }
 
 function NewInventory({users, onCreate}){
-  const [nome, setNome] = useState('Inventário Cíclico Julho/2026');
-  const [almox, setAlmox] = useState('Almox 01');
-  const [resp, setResp] = useState('Carlos Mendes');
-  const [data, setData] = useState('2026-07-20');
-  const [qtd, setQtd] = useState(20);
+  const [nome, setNome] = useState('');
+  const [almox, setAlmox] = useState('');
+  const [resp, setResp] = useState('');
+  const [data, setData] = useState('');
+  const [qtd, setQtd] = useState('');
   const [tipo, setTipo] = useState('Contagem Aleatória');
 
   const [arquivoNome, setArquivoNome] = useState('');
@@ -3975,7 +3975,8 @@ function NewInventory({users, onCreate}){
   ];
 
   const isImportado = tipo==='Lista Importada (Excel)';
-  const canCreate = isImportado ? !!(itensImportados && itensImportados.length>0) : true;
+  const camposBasicosOk = nome.trim() && almox && resp && data && (isImportado || Number(qtd)>0);
+  const canCreate = camposBasicosOk && (isImportado ? !!(itensImportados && itensImportados.length>0) : true);
 
   function handleDownloadTemplate(){
     if(!window.XLSX) return;
@@ -4026,7 +4027,7 @@ function NewInventory({users, onCreate}){
     setErroCriacao('');
     const res = await onCreate({
       id:'INV-'+Math.floor(Math.random()*900+100), nome, almoxarifado:almox, responsavel:resp, data, tipo,
-      qtdItens: isImportado ? itensImportados.length : qtd, status:'pendente', contados:0,
+      qtdItens: isImportado ? itensImportados.length : Number(qtd), status:'pendente', contados:0,
       ...(isImportado ? {itensImportados} : {}),
     });
     setSalvando(false);
@@ -4038,11 +4039,12 @@ function NewInventory({users, onCreate}){
       <div className="panel">
         <div className="field">
           <label>Nome do inventário</label>
-          <input type="text" value={nome} onChange={e=>setNome(e.target.value)} />
+          <input type="text" value={nome} onChange={e=>setNome(e.target.value)} placeholder="Ex.: Inventário Cíclico Julho/2026" />
         </div>
         <div className="field">
           <label>Almoxarifado</label>
           <select value={almox} onChange={e=>setAlmox(e.target.value)}>
+            <option value="" disabled>Selecione o almoxarifado</option>
             <option>Almox 01</option>
             <option>Almox 02</option>
           </select>
@@ -4050,6 +4052,7 @@ function NewInventory({users, onCreate}){
         <div className="field">
           <label>Responsável</label>
           <select value={resp} onChange={e=>setResp(e.target.value)}>
+            <option value="" disabled>Selecione o responsável</option>
             {users.filter(u=>u.perfil==='operador').map(u=><option key={u.id}>{u.nome}</option>)}
           </select>
         </div>
@@ -4060,7 +4063,7 @@ function NewInventory({users, onCreate}){
         {!isImportado && (
           <div className="field">
             <label>Quantidade de itens</label>
-            <input type="number" value={qtd} onChange={e=>setQtd(Number(e.target.value))} />
+            <input type="number" value={qtd} onChange={e=>setQtd(e.target.value)} placeholder="Ex.: 20" />
           </div>
         )}
         <div className="field">
