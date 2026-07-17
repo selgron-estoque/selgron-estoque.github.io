@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<title>Inventário 360 — Controle de Inventário Cíclico</title>
+<title>Gestão de Estoques — Controle de Inventário Cíclico</title>
 <link rel="manifest" href="manifest.json" />
 <meta name="theme-color" content="#EEF0F3" />
 <!-- iOS: Safari ignora o manifest.json pra ícone/instalação — precisa desses -->
@@ -13,7 +13,7 @@
 <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-<meta name="apple-mobile-web-app-title" content="Inventário 360" />
+<meta name="apple-mobile-web-app-title" content="Gestão de Estoques" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
@@ -3370,7 +3370,7 @@ function TopBar({user, role, onHome, onLogout}){
     <div className="topbar mobile-topbar">
       <div className="brand" onClick={onHome} style={{cursor:'pointer'}}>
         <img src={SELGRON_LOGO_URL} alt="Selgron" className="brand-logo" />
-        <div className="brand-text">Inventário 360<small>Controle Cíclico</small></div>
+        <div className="brand-text">Gestão de Estoques<small>Controle Cíclico</small></div>
       </div>
       <div style={{display:'flex',alignItems:'center',gap:8}}>
         <div className="role-pill" style={{cursor:'default'}}>
@@ -3446,7 +3446,7 @@ function Sidebar({view, goto, role, user, collapsed, pendingSync=0}){
     <div className={"sidebar"+(collapsed?' collapsed':'')}>
       <div className="sidebar-brand">
         <img src={SELGRON_LOGO_WHITE_URL} alt="Selgron" />
-        <div className="product">Inventário 360<small>Controle Cíclico</small></div>
+        <div className="product">Gestão de Estoques<small>Controle Cíclico</small></div>
       </div>
       <nav className="sidebar-nav">
         {items.map(it=>(
@@ -3894,7 +3894,7 @@ function InventoryList({inventories, goto, role, counts, onDelete}){
     const invCounts = (counts||[]).filter(c=>c.inventario===inv.id);
     const wb = generateReportWorkbook(invCounts, [inv]);
     const nomeArquivo = inv.nome.replace(/[^\w]+/g,'_');
-    window.XLSX.writeFile(wb, `Inventario360_${inv.id}_${nomeArquivo}.xlsx`);
+    window.XLSX.writeFile(wb, `GestaoEstoques_${inv.id}_${nomeArquivo}.xlsx`);
   }
 
   async function handleConfirmDelete(id){
@@ -3995,7 +3995,7 @@ function NewInventory({users, onCreate}){
   function handleDownloadTemplate(){
     if(!window.XLSX) return;
     const wb = buildImportTemplateWorkbook();
-    window.XLSX.writeFile(wb, 'Inventario360_Modelo_Lista_Contagem.xlsx');
+    window.XLSX.writeFile(wb, 'GestaoEstoques_Modelo_Lista_Contagem.xlsx');
   }
 
   function handleFileUpload(e){
@@ -5381,7 +5381,7 @@ function ConcludedCountsPanel({counts, historicoConcluidas=[]}){
 
 function ReportsScreen({counts, inventories, currentUser, sendHistory, onLogSend}){
   const [email, setEmail] = useState('');
-  const [assunto, setAssunto] = useState('Inventário 360 — Relatório de Inventário Cíclico');
+  const [assunto, setAssunto] = useState('Gestão de Estoques — Relatório de Inventário Cíclico');
   const [mensagem, setMensagem] = useState('Segue relatório de contagens e divergências do inventário cíclico para análise e solicitação de ajuste de estoque.');
   const [feedback, setFeedback] = useState('');
   // Filtro opcional por dia (formato YYYY-MM-DD, igual ao que já sai de
@@ -5399,7 +5399,7 @@ function ReportsScreen({counts, inventories, currentUser, sendHistory, onLogSend
     }
     const wb = generateReportWorkbook(countsFiltrados, inventories);
     const sufixo = filtroData || new Date().toISOString().slice(0,10);
-    const filename = `Inventario360_Relatorio_${sufixo}.xlsx`;
+    const filename = `GestaoEstoques_Relatorio_${sufixo}.xlsx`;
     window.XLSX.writeFile(wb, filename);
     return filename;
   }
