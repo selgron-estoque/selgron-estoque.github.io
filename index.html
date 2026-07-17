@@ -4725,13 +4725,25 @@ function RandomCountFlow({inv, user, onFinish, onAddressProposed, setInventories
       // ordenados por corredor → rua → endereço (deslocamento físico menor);
       // itens sem endereço cadastrado ainda ficam depois, na ordem por valor
       // (a RPC já devolve nessa ordem de valor/movimento).
-      const comEndereco = itens.filter(p=>p.enderecoCadastrado).sort((a,b)=>
-        (a.corredor||'').localeCompare(b.corredor||'') ||
-        (a.rua||'').localeCompare(b.rua||'') ||
-        (a.endereco||'').localeCompare(b.endereco||'')
-      );
-      const semEndereco = itens.filter(p=>!p.enderecoCadastrado);
-      setAllItems([...comEndereco, ...semEndereco].slice(0, qtd));
+      function ordenarPorEndereco(lista){
+        const comEndereco = lista.filter(p=>p.enderecoCadastrado).sort((a,b)=>
+          (a.corredor||'').localeCompare(b.corredor||'') ||
+          (a.rua||'').localeCompare(b.rua||'') ||
+          (a.endereco||'').localeCompare(b.endereco||'')
+        );
+        const semEndereco = lista.filter(p=>!p.enderecoCadastrado);
+        return [...comEndereco, ...semEndereco];
+      }
+      // Prioriza itens que AINDA NÃO foram contados (pedido do cliente) —
+      // um código com qualquer contagem já registrada (qualquer inventário/
+      // rodada, qualquer status) só entra na fila se sobrar vaga depois de
+      // esgotar os itens nunca contados. Snapshot de `counts` tirado no
+      // momento em que a lista é montada (mesmo padrão de "não re-sortear a
+      // cada remontagem" já usado aqui) — não muda a ordem no meio da fila.
+      const codigosJaContados = new Set((counts||[]).map(c=>c.productCode));
+      const naoContados = itens.filter(p=>!codigosJaContados.has(p.codigo));
+      const jaContados = itens.filter(p=>codigosJaContados.has(p.codigo));
+      setAllItems([...ordenarPorEndereco(naoContados), ...ordenarPorEndereco(jaContados)].slice(0, qtd));
     });
     return ()=>{ cancelado = true; };
   }, [inv]);
@@ -4759,7 +4771,7 @@ function RandomCountFlow({inv, user, onFinish, onAddressProposed, setInventories
 
   return (
     <div>
-      <div className="role-note">Item {jaContados+q.idx+1} de {allItems.length} · Sequência por endereço (itens sem endereço cadastrado entram por último)</div>
+      <div className="role-note">Item {jaContados+q.idx+1} de {allItems.length} · Itens ainda não contados primeiro, depois por sequência de endereço</div>
       <CountStep
         product={q.current}
         user={user}
