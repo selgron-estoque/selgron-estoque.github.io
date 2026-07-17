@@ -4008,7 +4008,7 @@ function NewInventory({onCreate}){
       return;
     }
     if(armazensValidos && !armazensValidos.some(c=>normalizarCodigoAlmox(c)===norm)){
-      setAlmoxErro('Armazém "' + bruto + '" não existe na planilha SB2.');
+      setAlmoxErro('Armazém "' + bruto + '" não encontrado.');
       return;
     }
     setAlmoxCodes(prev=>[...prev, norm]);
