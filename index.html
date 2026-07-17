@@ -2613,8 +2613,14 @@ function App(){
   // fetchContagensHistoricoParaTendencia.
   const [historicoParaTendencia, setHistoricoParaTendencia] = useState([]);
   function refreshHistoricoConcluidas(){
-    fetchContagensHistoricoConcluidas().then(setHistoricoConcluidas);
-    fetchContagensHistoricoParaTendencia().then(setHistoricoParaTendencia);
+    // Retorna a Promise combinada (não só fire-and-forget) — o botão
+    // "Atualizar" do painel "Contagens Concluídas" espera essa promise pra
+    // saber quando parar de girar o ícone, mesmo padrão já usado pelo
+    // "Atualizar" do Dashboard (carregarEstoque).
+    return Promise.all([
+      fetchContagensHistoricoConcluidas().then(setHistoricoConcluidas),
+      fetchContagensHistoricoParaTendencia().then(setHistoricoParaTendencia),
+    ]);
   }
   useEffect(()=>{
     if(currentUser) refreshHistoricoConcluidas();
@@ -3035,7 +3041,7 @@ function App(){
         {view==='myCounts' && <MyCounts counts={counts} user={currentUser} role={role} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} />}
         {view==='recounts' && <RecountsPanel counts={counts} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} />}
         {view==='divergentes' && <DivergentItemsPanel counts={counts} role={role} goto={goto} onApprove={approveDivergence} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} />}
-        {view==='concluidas' && <ConcludedCountsPanel counts={counts} historicoConcluidas={historicoConcluidas} onDeleteCount={role==='admin' ? deleteCount : undefined} />}
+        {view==='concluidas' && <ConcludedCountsPanel counts={counts} historicoConcluidas={historicoConcluidas} onDeleteCount={role==='admin' ? deleteCount : undefined} onRefresh={refreshHistoricoConcluidas} />}
         {view==='recount' && flowState && <RecountFlow original={flowState} user={currentUser} onAddressProposed={addAddressProposal} onFinish={(c)=>{registerFinishedCount(c); goto('recounts');}} />}
         {view==='dashboard' && <Dashboard counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} historicoParaTendencia={historicoParaTendencia} />}
         {view==='relatorios' && <ReportsScreen counts={counts} inventories={inventories} currentUser={currentUser} sendHistory={reportSendHistory} onLogSend={logReportSend} role={role} onHistoricoImportado={refreshHistoricoConcluidas} />}
@@ -5489,12 +5495,26 @@ function historicoRowToConcludedChain(h){
   return { chaveId: tip.id, tip, rodadas: [tip], houveAjuste };
 }
 
-function ConcludedCountsPanel({counts, historicoConcluidas=[], onDeleteCount}){
+function ConcludedCountsPanel({counts, historicoConcluidas=[], onDeleteCount, onRefresh}){
   const [busca, setBusca] = useState('');
   const [selecionado, setSelecionado] = useState(null); // chaveId da cadeia aberta em detalhe
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [excluindo, setExcluindo] = useState(false);
   const [erroExclusao, setErroExclusao] = useState('');
+  const [atualizando, setAtualizando] = useState(false);
+
+  // Mesmo painel "Filtros" (presets de calendário) já usado em Indicadores —
+  // chave de persistência própria (`concluidasTrendFilter`), não compartilha
+  // estado com o filtro do Dashboard, são telas independentes.
+  const [trendFilter, setTrendFilter] = usePersistedState('concluidasTrendFilter', {tipo:'30d', from:'', to:''});
+  const hojeStr = new Date().toISOString().slice(0,10);
+  const { from: dataInicioStr, to: dataFimStr } = computeTrendRange(trendFilter.tipo, hojeStr, trendFilter.from, trendFilter.to);
+
+  async function handleRefresh(){
+    if(!onRefresh) return;
+    setAtualizando(true);
+    try{ await onRefresh(); } finally { setAtualizando(false); }
+  }
 
   async function handleConfirmDelete(id){
     setExcluindo(true);
@@ -5514,10 +5534,17 @@ function ConcludedCountsPanel({counts, historicoConcluidas=[], onDeleteCount}){
     return [...doApp, ...doHistorico].sort((a,b) => (b.tip.data+(b.tip.hora||'')).localeCompare(a.tip.data+(a.tip.hora||'')));
   }, [counts, historicoConcluidas]);
 
+  // Filtro de período: nunca esconde uma cadeia sem data (a planilha antiga
+  // tem linhas assim de propósito, ver CLAUDE.md "Data sempre explícita,
+  // nunca some em silêncio") — só as com data caem dentro/fora do intervalo.
+  const cadeiasNoPeriodo = useMemo(()=>
+    cadeias.filter(cd => !cd.tip.data || (cd.tip.data>=dataInicioStr && cd.tip.data<=dataFimStr)),
+  [cadeias, dataInicioStr, dataFimStr]);
+
   const buscaNorm = busca.trim().toLowerCase();
   const cadeiasFiltradas = buscaNorm
-    ? cadeias.filter(cd => cd.tip.productCode.toLowerCase().includes(buscaNorm) || (cd.tip.descricao||'').toLowerCase().includes(buscaNorm))
-    : cadeias;
+    ? cadeiasNoPeriodo.filter(cd => cd.tip.productCode.toLowerCase().includes(buscaNorm) || (cd.tip.descricao||'').toLowerCase().includes(buscaNorm))
+    : cadeiasNoPeriodo;
 
   const aberta = selecionado ? cadeias.find(cd=>cd.chaveId===selecionado) : null;
 
@@ -5612,6 +5639,17 @@ function ConcludedCountsPanel({counts, historicoConcluidas=[], onDeleteCount}){
 
   return (
     <div>
+      <TrendFilterBar
+        trendFilter={trendFilter}
+        setTrendFilter={setTrendFilter}
+        dataInicioStr={dataInicioStr}
+        dataFimStr={dataFimStr}
+        hojeStr={hojeStr}
+        onRefresh={onRefresh ? handleRefresh : undefined}
+        refreshing={atualizando}
+        subtitle="Selecione o período para filtrar as contagens concluídas"
+      />
+
       <div className="field">
         <label>Buscar item</label>
         <input type="text" value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Código ou descrição do material" />
@@ -5619,11 +5657,11 @@ function ConcludedCountsPanel({counts, historicoConcluidas=[], onDeleteCount}){
 
       <div className="section-title" style={{marginTop:0}}>
         Contagens Concluídas
-        {cadeias.length>0 && <span className="badge" style={{position:'static',marginLeft:8}}>{cadeias.length}</span>}
+        {cadeiasNoPeriodo.length>0 && <span className="badge" style={{position:'static',marginLeft:8}}>{cadeiasNoPeriodo.length}</span>}
       </div>
       {cadeiasFiltradas.length===0 ? (
         <div className="empty-state" style={{padding:20}}>
-          {cadeias.length===0 ? 'Nenhuma contagem concluída ainda.' : 'Nenhum item encontrado para essa busca.'}
+          {cadeiasNoPeriodo.length===0 ? 'Nenhuma contagem concluída nesse período.' : 'Nenhum item encontrado para essa busca.'}
         </div>
       ) : cadeiasFiltradas.map(cd=>{
         const tip = cd.tip;
@@ -6221,6 +6259,89 @@ function RefreshIcon({spinning}){
   );
 }
 
+// Painel "Filtros" — extraído do Dashboard pra ser reaproveitado em
+// qualquer outra tela que precise do mesmo controle de período (presets de
+// calendário + intervalo personalizado + chip do intervalo aplicado). Só
+// dono do INTERVALO (`trendFilter`/`setTrendFilter`, geralmente
+// usePersistedState no componente pai — cada tela usa sua própria chave, o
+// filtro de uma tela não deve afetar a outra) — quem usa o intervalo pra
+// filtrar dado é sempre o componente pai. `onRefresh`/`refreshing` são
+// opcionais: só faz sentido passar quando a tela depende de uma busca
+// assíncrona que vale a pena repetir sob demanda (ex.: saldo do Supabase no
+// Dashboard); telas que só recalculam em cima de dado já carregado em
+// memória (ex.: Contagens Concluídas) podem omitir os dois e o botão
+// "Atualizar" nem aparece.
+function TrendFilterBar({trendFilter, setTrendFilter, dataInicioStr, dataFimStr, hojeStr, onRefresh, refreshing, subtitle}){
+  return (
+    <div className="trend-filter-bar">
+      <div className="tfb-head">
+        <div className="tfb-icon-badge"><FilterIcon /></div>
+        <div className="tfb-head-text">
+          <div className="tfb-title">Filtros</div>
+          <div className="tfb-subtitle">{subtitle || 'Selecione o período para atualizar os indicadores'}</div>
+        </div>
+        <div className="tfb-head-actions">
+          <div className="tfb-range-chip"><CalendarIcon /> {fmtDataBR(dataInicioStr)} – {fmtDataBR(dataFimStr)}</div>
+          {onRefresh && (
+            <button type="button" className="tfb-refresh-btn" onClick={onRefresh} disabled={refreshing}>
+              <RefreshIcon spinning={refreshing} /> {refreshing ? 'Atualizando…' : 'Atualizar'}
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="tfb-period-row">
+        <div className="tfb-period-label"><CalendarIcon /> Período</div>
+        <div className="tfb-quick-buttons">
+          {[
+            {v:'hoje', l:'Hoje'},
+            {v:'semana', l:'Esta semana'},
+            {v:'mes', l:'Este mês'},
+            {v:'30d', l:'Últimos 30 dias'},
+            {v:'60d', l:'Últimos 60 dias'},
+            {v:'90d', l:'Últimos 90 dias'},
+            {v:'ano', l:'Este ano'},
+            {v:'custom', l:'Personalizado'},
+          ].map(opt=>(
+            <button
+              key={opt.v}
+              type="button"
+              className={'tfb-pill'+(trendFilter.tipo===opt.v ? ' active' : '')}
+              onClick={()=>{
+                if(opt.v==='custom'){
+                  // Preenche os campos com o intervalo já aplicado (em vez
+                  // de começar de "hoje até hoje") pra não dar a impressão
+                  // de que o filtro "sumiu" ao entrar no modo personalizado.
+                  setTrendFilter({tipo:'custom', from:dataInicioStr, to:dataFimStr});
+                } else {
+                  setTrendFilter({tipo:opt.v, from:'', to:''});
+                }
+              }}
+            >{opt.l}</button>
+          ))}
+        </div>
+      </div>
+      {trendFilter.tipo==='custom' && (
+        <div className="tfb-custom-row">
+          <div className="tfb-date-field">
+            <label htmlFor="tfb-date-from">Data inicial</label>
+            <div className="tfb-date-input-wrap">
+              <CalendarIcon />
+              <input id="tfb-date-from" type="date" value={trendFilter.from} max={trendFilter.to || hojeStr} onChange={e=>setTrendFilter(f=>({...f, from:e.target.value}))} />
+            </div>
+          </div>
+          <div className="tfb-date-field">
+            <label htmlFor="tfb-date-to">Data final</label>
+            <div className="tfb-date-input-wrap">
+              <CalendarIcon />
+              <input id="tfb-date-to" type="date" value={trendFilter.to} min={trendFilter.from} max={hojeStr} onChange={e=>setTrendFilter(f=>({...f, to:e.target.value}))} />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTendencia=[]}){
   const planejados = inventories.reduce((s,i)=>s+i.qtdItens,0);
   const contados = counts.length;
@@ -6428,76 +6549,15 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
         <div className="kpi"><div className="kv">{inventories.length}</div><div className="kl">Inventários Ativos</div></div>
       </div>
 
-      {/* Painel "Filtros" — pedido do cliente pra abandonar de vez o
-          vocabulário "10/26 semanas" por presets de calendário, no mesmo
-          padrão visual de dashboards SaaS corporativos (Power BI, Stripe
-          Dashboard, Vercel): card branco com cabeçalho (ícone + título +
-          subtítulo), chip mostrando o intervalo aplicado, botão "Atualizar",
-          e uma linha de toggle buttons pra escolher o período rápido. */}
-      <div className="trend-filter-bar">
-        <div className="tfb-head">
-          <div className="tfb-icon-badge"><FilterIcon /></div>
-          <div className="tfb-head-text">
-            <div className="tfb-title">Filtros</div>
-            <div className="tfb-subtitle">Selecione o período para atualizar os indicadores</div>
-          </div>
-          <div className="tfb-head-actions">
-            <div className="tfb-range-chip"><CalendarIcon /> {fmtDataBR(dataInicioStr)} – {fmtDataBR(dataFimStr)}</div>
-            <button type="button" className="tfb-refresh-btn" onClick={carregarEstoque} disabled={atualizando}>
-              <RefreshIcon spinning={atualizando} /> {atualizando ? 'Atualizando…' : 'Atualizar'}
-            </button>
-          </div>
-        </div>
-        <div className="tfb-period-row">
-          <div className="tfb-period-label"><CalendarIcon /> Período</div>
-          <div className="tfb-quick-buttons">
-            {[
-              {v:'hoje', l:'Hoje'},
-              {v:'semana', l:'Esta semana'},
-              {v:'mes', l:'Este mês'},
-              {v:'30d', l:'Últimos 30 dias'},
-              {v:'60d', l:'Últimos 60 dias'},
-              {v:'90d', l:'Últimos 90 dias'},
-              {v:'ano', l:'Este ano'},
-              {v:'custom', l:'Personalizado'},
-            ].map(opt=>(
-              <button
-                key={opt.v}
-                type="button"
-                className={'tfb-pill'+(trendFilter.tipo===opt.v ? ' active' : '')}
-                onClick={()=>{
-                  if(opt.v==='custom'){
-                    // Preenche os campos com o intervalo já aplicado (em vez
-                    // de começar de "hoje até hoje") pra não dar a impressão
-                    // de que o filtro "sumiu" ao entrar no modo personalizado.
-                    setTrendFilter({tipo:'custom', from:dataInicioStr, to:dataFimStr});
-                  } else {
-                    setTrendFilter({tipo:opt.v, from:'', to:''});
-                  }
-                }}
-              >{opt.l}</button>
-            ))}
-          </div>
-        </div>
-        {trendFilter.tipo==='custom' && (
-          <div className="tfb-custom-row">
-            <div className="tfb-date-field">
-              <label htmlFor="tfb-date-from">Data inicial</label>
-              <div className="tfb-date-input-wrap">
-                <CalendarIcon />
-                <input id="tfb-date-from" type="date" value={trendFilter.from} max={trendFilter.to || hojeStr} onChange={e=>setTrendFilter(f=>({...f, from:e.target.value}))} />
-              </div>
-            </div>
-            <div className="tfb-date-field">
-              <label htmlFor="tfb-date-to">Data final</label>
-              <div className="tfb-date-input-wrap">
-                <CalendarIcon />
-                <input id="tfb-date-to" type="date" value={trendFilter.to} min={trendFilter.from} max={hojeStr} onChange={e=>setTrendFilter(f=>({...f, to:e.target.value}))} />
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
+      <TrendFilterBar
+        trendFilter={trendFilter}
+        setTrendFilter={setTrendFilter}
+        dataInicioStr={dataInicioStr}
+        dataFimStr={dataFimStr}
+        hojeStr={hojeStr}
+        onRefresh={carregarEstoque}
+        refreshing={atualizando}
+      />
 
       {/* Sempre aparece, mesmo sem nenhuma contagem ainda (ver computeWeeklyStats) —
           não precisa de guard condicional aqui. */}
