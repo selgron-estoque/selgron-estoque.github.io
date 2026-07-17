@@ -1356,10 +1356,12 @@ async function fetchUltimaAtualizacaoEstoque(){
 // meses, como a `BD_Contagens`), o SheetJS entrega uma string crua mesmo
 // com `cellDates:true`, e o parser antigo (só `instanceof Date`) descartava
 // a data inteira — cliente reportou item com data visível na planilha
-// aparecendo como "Sem data registrada" no app. Cobre os 3 formatos mais
-// prováveis: string "DD/MM/AAAA" ou "DD/MM/AA", string "AAAA-MM-DD", e
-// número de série do Excel (célula numérica que perdeu a formatação de data
-// na leitura). Mantém o comportamento antigo (`Date` real) como caso feliz.
+// aparecendo como "Sem data registrada" no app. Cobre os formatos mais
+// prováveis: string "DD/MM/AAAA"/"DD-MM-AAAA"/"DD/MM/AA" (com "/" ou "-"
+// como separador, com ou sem hora colada no fim, ex. "14/07/2026 00:00:00"),
+// string "AAAA-MM-DD"/"AAAA/MM/DD", e número de série do Excel (célula
+// numérica que perdeu a formatação de data na leitura). Mantém o
+// comportamento antigo (`Date` real) como caso feliz.
 function parseDataHistorico(v){
   if(v instanceof Date && !Number.isNaN(v.getTime())) return v.toISOString().slice(0,10);
   if(typeof v === 'number' && window.XLSX && window.XLSX.SSF && window.XLSX.SSF.parse_date_code){
@@ -1368,15 +1370,36 @@ function parseDataHistorico(v){
     return null;
   }
   if(typeof v === 'string'){
-    const s = v.trim();
-    let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    // Tira hora/segundos colados no fim (ex.: "14/07/2026 00:00:00") antes
+    // de tentar casar com os formatos de data pura.
+    const s = v.trim().replace(/\s+\d{1,2}:\d{2}(:\d{2})?\s*$/, '');
+    let m = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
     if(m) return m[1]+'-'+m[2].padStart(2,'0')+'-'+m[3].padStart(2,'0');
-    m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    m = s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
     if(m) return m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0');
-    m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/);
+    m = s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{2})$/);
     if(m) return '20'+m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0');
   }
   return null;
+}
+
+// Fallback pra quando a própria coluna "Data" não bate com nenhum formato
+// conhecido: "Doc" é confirmadamente só a "Data" reformatada "DDMMYY" (ver
+// CLAUDE.md "Descoberta importante durante a análise" — comparação real
+// contra a planilha do cliente, "Doc" nunca é um ID à parte). Formato mais
+// simples e mais estável que "Data" em si (planilha alimentada à mão), então
+// vale tentar antes de desistir e marcar a linha como "sem data". Cobre o
+// caso de "Doc" ter perdido o zero à esquerda por ter sido lido como número
+// no Excel (mesma classe de bug já vista em código de produto/Sld.Atu.).
+function parseDocParaData(v){
+  if(v==null || v==='') return null;
+  let s = String(v).trim();
+  if(/^\d+$/.test(s)) s = s.padStart(6,'0');
+  const m = s.match(/^(\d{2})(\d{2})(\d{2})$/);
+  if(!m) return null;
+  const [, dd, mm, yy] = m;
+  if(Number(mm)<1 || Number(mm)>12 || Number(dd)<1 || Number(dd)>31) return null;
+  return '20'+yy+'-'+mm+'-'+dd;
 }
 
 function parseHistoricoContagensRows(matrix){
@@ -1403,7 +1426,8 @@ function parseHistoricoContagensRows(matrix){
     const codigoRaw = idx.codigo>=0 ? row[idx.codigo] : null;
     if(codigoRaw==null || String(codigoRaw).trim()===''){ semCodigo++; continue; }
     const dataRaw = idx.data>=0 ? row[idx.data] : null;
-    const data = parseDataHistorico(dataRaw);
+    let data = parseDataHistorico(dataRaw);
+    if(!data && idx.doc>=0) data = parseDocParaData(row[idx.doc]);
     if(!data) semData++;
     // `.trim()` em TODOS os campos de texto — a planilha real já mostrou mais
     // de uma vez ter espaço sobrando em células (ver o bug do "Sld.Atu." com
@@ -5427,6 +5451,24 @@ function DivergentItemsPanel({counts, role, goto, onApprove, onRequestRecount, o
 // automaticamente na 1ª contagem, aprovada pelo líder, ou confirmada na
 // recontagem. 100% derivado de campos que a contagem já grava — nenhum dado
 // novo precisou ser inventado nem persistido.
+// Ordena cadeias por data+hora (mais recente primeiro) — cadeia SEM data
+// (item do histórico importado cuja planilha original não trouxe "Data",
+// ver CLAUDE.md "Data sempre explícita") vai sempre pro FIM da lista, nunca
+// pro topo. Bug real corrigido aqui: o sort antigo comparava strings
+// (`b.tip.data+... .localeCompare(a.tip.data+...)`) e, quando `tip.data` é
+// `null`, a concatenação vira a STRING literal `"null"` — que por
+// comparação lexicográfica (`'n' > qualquer dígito`) sempre "vence" contra
+// uma data real tipo `"2026-07-14"`, fazendo os itens sem data flutuarem
+// pro TOPO da lista (parecendo "mais recentes que tudo") em vez de para o
+// fim, que é o que faz sentido numa lista "mais recente primeiro".
+function compararCadeiasPorData(a, b){
+  const da = a.tip.data, db = b.tip.data;
+  if(!da && !db) return 0;
+  if(!da) return 1;
+  if(!db) return -1;
+  return (db+(b.tip.hora||'')).localeCompare(da+(a.tip.hora||''));
+}
+
 function buildConcludedChains(counts){
   const hasFollowUp = new Set();
   counts.forEach(c=>{ if(c.contagemAnteriorId) hasFollowUp.add(c.contagemAnteriorId); });
@@ -5446,7 +5488,7 @@ function buildConcludedChains(counts){
     // status "Sem Ajuste" no export do relatório).
     const houveAjuste = tip.diferenca!=null && tip.diferenca!==0;
     return { chaveId: tip.id, tip, rodadas, houveAjuste };
-  }).sort((a,b) => (b.tip.data+(b.tip.hora||'')).localeCompare(a.tip.data+(a.tip.hora||'')));
+  }).sort(compararCadeiasPorData);
 }
 
 // Converte uma linha de `contagens_historico` (já filtrada pros status
@@ -5559,7 +5601,7 @@ function ConcludedCountsPanel({counts, historicoConcluidas=[], onDeleteCount, on
   const cadeias = useMemo(()=>{
     const doApp = buildConcludedChains(counts);
     const doHistorico = historicoConcluidas.map(historicoRowToConcludedChain).filter(Boolean);
-    return [...doApp, ...doHistorico].sort((a,b) => (b.tip.data+(b.tip.hora||'')).localeCompare(a.tip.data+(a.tip.hora||'')));
+    return [...doApp, ...doHistorico].sort(compararCadeiasPorData);
   }, [counts, historicoConcluidas]);
 
   // Filtro de período: nunca esconde uma cadeia sem data (a planilha antiga
