@@ -48,6 +48,10 @@ create table usuarios (
   -- promovê-lo a líder) — ver ACESSOS_RESTRITOS/hasAccess no index.html.
   -- Só ADICIONA acesso além do que o perfil já libera, nunca remove.
   acessos_extras jsonb not null default '[]'::jsonb,
+  -- Data/hora do último login bem-sucedido (attemptLogin/selfSetNewPassword
+  -- no index.html) — exibido na tela "Usuários", pedido do cliente. `null`
+  -- = usuário criado mas nunca fez login ainda.
+  ultimo_acesso timestamptz,
   criado_em timestamptz not null default now(),
   atualizado_em timestamptz not null default now()
 );
@@ -609,3 +613,7 @@ create policy "exclusão pública" on usuarios for delete using (true);
 -- acima já foi aplicada) — `add column if not exists` em vez de recriar,
 -- mesmo padrão já usado pra `inventarios.grupo`/`contagens.almoxarifado`.
 alter table usuarios add column if not exists acessos_extras jsonb not null default '[]'::jsonb;
+
+-- ÚLTIMO ACESSO — pedido do cliente ("incluir abaixo de cada um o último
+-- acesso, data e hora", tela Usuários). Mesmo padrão de migração aditiva.
+alter table usuarios add column if not exists ultimo_acesso timestamptz;
