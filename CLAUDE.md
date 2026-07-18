@@ -2783,6 +2783,116 @@ Auth real ainda).
   recomendar `cascade` às cegas — o schema.sql deste repo não é necessariamente um
   espelho fiel do que existe no projeto real.
 
+## Quinto pedaço do backend real: login migrado pro Supabase Auth de verdade
+
+O cliente perguntou "qual a vantagem e o que precisamos pra trabalhar com Supabase Auth?"
+— expliquei o ganho (senha deixa de ficar em texto puro numa tabela que qualquer um com a
+publishable key lê; sessão deixa de ser um `{userId, lastActivity}` falsificável no
+`localStorage`; RLS deixa de ser `using(true)` em tudo) e o motivo de isso ter sido adiado
+duas vezes antes: qualquer ação do admin sobre OUTRO usuário (redefinir senha, bloquear,
+excluir) exige a Admin API do Supabase Auth, que só funciona com a service role key — uma
+chave que nunca pode existir no navegador. O cliente pediu pra planejar a migração
+completa (login E as ações de admin), usando `EnterPlanMode`/`ExitPlanMode` pra desenhar o
+plano antes de mexer em qualquer coisa. Confirmado via `AskUserQuestion`: migração
+completa (não só o login) e e-mail passa a ser obrigatório em todo cadastro (antes era
+opcional).
+
+### O que mudou
+
+- **`usuarios` (schema.sql)**: `id` virou `uuid` (era `text` gerado pelo próprio app),
+  igual ao `auth.users.id`; `senha` saiu de vez da tabela (mora só no `auth.users`,
+  gerenciada via Admin API); `email` virou obrigatório. Como o projeto real já tinha 4
+  linhas de verdade (diferente de toda migração anterior deste arquivo, que sempre operava
+  numa tabela confirmada vazia), a tabela antiga foi RENOMEADA pra
+  `usuarios_pre_auth_backup` em vez de dropada — nada foi perdido, e o app publicado
+  continuou funcionando normalmente enquanto a migração acontecia (login só passou a
+  depender da tabela nova depois do `index.html` novo ser publicado).
+- **Duas funções SQL novas**: `resolver_login(identifier)` — resolve "usuário ou e-mail"
+  (a tela de login sempre aceitou os dois) pro e-mail real que o
+  `signInWithPassword` do Supabase Auth precisa, sem precisar expor a tabela inteira via
+  SELECT público; e `pode_gerenciar_usuarios(uid)` — espelha EXATAMENTE o
+  `hasAccess(user,'usuarios')` do front-end (admin libera por padrão, OU o usuário tem a
+  exceção `'usuarios'` em `acessos_extras`) pra decidir quem pode ler a lista inteira via
+  RLS. **Achado importante durante o design**: se essa segunda função só checasse
+  `perfil='admin'`, a funcionalidade de "acessos extras" (ver seção anterior) quebraria
+  silenciosamente pra esta tela específica — um líder/operador com a exceção concedida
+  continuaria vendo o item no menu (isso é decisão do client), mas a lista sempre viria
+  vazia/só a própria linha. A mesma regra foi replicada dentro da Edge Function (ver
+  abaixo), pelo mesmo motivo.
+- **RLS de `usuarios`**: leitura só da própria linha OU de quem tem acesso à tela (a
+  função acima); a única escrita que o navegador ainda faz DIRETO é a própria coluna
+  `ultimo_acesso` (GRANT de coluna, não só RLS de linha — sem isso, qualquer usuário
+  autenticado poderia tentar se autopromover a admin via um PATCH direto na própria
+  linha). Sem policy de INSERT/UPDATE(resto)/DELETE pra `authenticated`/`anon` — criar,
+  editar perfil/senha/acessos_extras, bloquear e excluir usuário passam a ser só a Edge
+  Function (roda com a service role key, ignora RLS).
+- **Edge Function nova, a primeira de fato publicada neste projeto**:
+  `backend/functions/usuarios-admin/index.ts` (a `sync-saldo-protheus` já existia como
+  código, mas nunca foi deployada). Uma função só, roteada por `{acao, ...}` — todas as
+  ações privilegiadas (`criar_usuario`/`atualizar_usuario`/`definir_senha`/
+  `alternar_bloqueio`/`excluir_usuario`) compartilham a mesma checagem "quem chama é
+  admin OU tem a exceção 'usuarios'" logo no início. Uma exceção de propósito:
+  `auto_definir_senha` (usuário liberado pelo admin definindo a própria senha) não exige
+  JWT de chamador — mesmo modelo de confiança que o fluxo local antigo já tinha (só quem
+  sabe o `userId` de uma conta marcada `deve_definir_senha` consegue completar esse
+  passo). `alternar_bloqueio` usa o `ban_duration` nativo do Supabase Auth (`"876000h"`
+  bloqueia, `"none"` desbloqueia) — bloqueio agora impede login de verdade no nível do
+  Auth, não só um campo `status` que o front-end respeitava por convenção.
+- **RLS endurecida em `contagens`/`inventarios`/`enderecos_propostos`/`estoque_saldo`**:
+  trocou de `using(true)` (aceita `anon`) pra `auth.role()='authenticated'` — fecha
+  exatamente o risco que os comentários deste arquivo já apontavam há tempos ("qualquer
+  um com a publishable key pode ler/gravar"). Escopado deliberadamente como o ÚLTIMO passo
+  de SQL (só depois de confirmar o login novo funcionando em produção) — trocar isso cedo
+  demais bloquearia o próprio app enquanto ainda estivesse logando como `anon`.
+- **`index.html`**: `attemptLogin` virou assíncrono (RPC `resolver_login` + `auth.
+  signInWithPassword`, preservando a UX de logar por usuário OU e-mail); sessão de login
+  passou a ser 100% governada pelo `getSession()`/`onAuthStateChange` do Supabase (o
+  `SESSION_STORAGE_KEY`/`loadSession`/`saveSession`/`clearSession` caseiros foram
+  removidos); o timer de inatividade de 15 min continua EXATAMENTE como estava, só que
+  agora só precisa rastrear um timestamp de última atividade (`LAST_ACTIVITY_KEY`), não
+  mais quem está logado. `createUser`/`updateUser`/`toggleUserStatus`/`deleteUser`/
+  `applyAdminPasswordAction` viraram chamadas finas à Edge Function
+  (`chamarUsuariosAdmin`) em vez de escrever direto em `usuarios`. `USERS_SEED` (os 4
+  usuários fake de demonstração, com senha em texto puro) foi esvaziado — não fazem mais
+  sentido como seed local já que os ids de verdade agora são os UUIDs do Supabase Auth; o
+  painel de "credenciais de demonstração" na tela de login (que mostrava esses logins/
+  senhas fixos) foi removido pelo mesmo motivo, ficaria mostrando contas que não existem
+  mais. `UserForm` passou a exigir e-mail (era opcional).
+- **Sincronização de usuários deixou de rodar pré-login**: antes, precisava rodar mesmo
+  sem sessão nenhuma (senão um usuário excluído em outro aparelho continuava conseguindo
+  logar aqui). Com o Supabase Auth de verdade, login nunca mais confia em cache local
+  (toda tentativa bate direto no Auth), então esse problema deixou de existir — a
+  sincronização completa da lista agora só roda pra quem já está logado E tem acesso à
+  tela "Usuários". Um efeito novo, separado, busca o PRÓPRIO perfil de qualquer usuário
+  logado (não só admin) assim que a sessão resolve — RLS libera essa leitura pra
+  qualquer um sobre a própria linha — e desloga com um aviso se essa busca falhar, em vez
+  de deixar a tela de carregamento presa pra sempre.
+- **Migração dos 4 usuários reais**: feita pelo cliente à mão (Dashboard → Authentication
+  → Add User), não por script — é uma operação única de 4 linhas, e um script exigiria
+  manusear a service role key na própria máquina do cliente pra algo que o painel resolve
+  em menos de um minuto por pessoa.
+
+### Fora de escopo desta migração (decisão consciente)
+
+RLS por papel (ex: só líder/admin resolver endereço proposto, espelhando
+`ACESSOS_RESTRITOS` em cada tabela) e apertar `produtos`/`enderecos`/`estoque_enderecos`/
+`contagens_historico` (sem dado sensível) — endurecimentos separados, não é o que
+motivou esta migração.
+
+### Verificação
+
+Testado via simulação em Node (sandbox sem rede, sem acesso ao Supabase real —
+mesma limitação de sempre): `attemptLogin` contra um `supabaseClient` mockado cobrindo
+os 5 cenários (usuário inexistente, bloqueado, `deve_definir_senha`, senha errada, login
+válido — confirmando que `ultimo_acesso` é gravado e a navegação vai pra Home); a
+checagem de permissão da Edge Function (`admin` OU `acessos_extras` contém `'usuarios'`)
+contra 8 cenários incluindo usuário bloqueado e exceção concedida a perfis não-admin;
+type-check do TypeScript da Edge Function via `tsc` (com um shim pros globais do Deno,
+já que o ambiente de teste não tem Deno instalado). Transpile Babel do `index.html`
+inteiro, como sempre. **Não testado contra o Supabase real** — falta o cliente rodar a
+migração completa (SQL, criar os 4 usuários no Auth, deploy da Edge Function) seguindo o
+passo a passo em `backend/README.md`, seção "Migrar login pro Supabase Auth".
+
 ## Login vira redesign premium (Fiori/M365/Power BI) — terceira identidade da tela de login
 
 O cliente pediu um redesign completo da tela de login com um mockup de referência exato

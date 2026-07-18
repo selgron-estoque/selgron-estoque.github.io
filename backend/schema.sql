@@ -617,3 +617,179 @@ alter table usuarios add column if not exists acessos_extras jsonb not null defa
 -- ÚLTIMO ACESSO — pedido do cliente ("incluir abaixo de cada um o último
 -- acesso, data e hora", tela Usuários). Mesmo padrão de migração aditiva.
 alter table usuarios add column if not exists ultimo_acesso timestamptz;
+
+-- =============================================================================
+-- MIGRAÇÃO — LOGIN VIA SUPABASE AUTH DE VERDADE (substitui o localStorage
+-- puro, ver comentário no topo da definição original de `usuarios` mais
+-- acima neste arquivo — essa migração já tinha sido adiada duas vezes por
+-- causa do problema abaixo).
+--
+-- Motivo de ter ficado pra depois até agora: qualquer ação do admin sobre
+-- OUTRO usuário (criar, redefinir senha, bloquear, excluir) exige a Admin
+-- API do Supabase Auth, que só funciona com a service role key — uma chave
+-- que nunca pode existir no navegador. A partir de agora essas ações vivem
+-- na Edge Function `usuarios-admin` (backend/functions/usuarios-admin/
+-- index.ts), que guarda essa chave só no servidor.
+--
+-- PASSO 0 — RODAR ANTES DE QUALQUER COISA ABAIXO: confirmar que não sobrou
+-- nenhuma foreign key apontando pra `usuarios` no projeto REAL (o arquivo
+-- schema.sql nem sempre reflete o estado exato do banco ao vivo — já
+-- aconteceu antes, ver migração de `usuarios` mais acima, que precisou de
+-- `cascade` por causa de objetos criados direto no painel). Rodar:
+--
+--   select conname, conrelid::regclass, confrelid::regclass
+--   from pg_constraint
+--   where confrelid = 'usuarios'::regclass;
+--
+-- Se vier alguma linha, resolver (normalmente dropar a constraint — o app
+-- nunca escreve nesses campos, confirmado por grep em index.html) ANTES de
+-- seguir pro restante deste bloco.
+--
+-- Diferente da migração anterior de `usuarios` (que fazia `drop table
+-- cascade` com segurança porque a tabela real estava ZERADA), desta vez a
+-- tabela tem linhas reais — por isso RENOMEIA em vez de dropar, preservando
+-- o dado pra reconciliar depois de criar os usuários de verdade no Supabase
+-- Auth (ver backend/README.md, seção "Migrar login pro Supabase Auth").
+--
+-- `senha` sai de vez daqui — a partir de agora mora só no `auth.users` do
+-- Supabase, gerenciada via Admin API pela Edge Function `usuarios-admin`,
+-- nunca mais em texto puro numa tabela nossa. `id` vira `uuid` igual ao
+-- `auth.users.id` (era `text`, gerado pelo próprio app) — seguro depois de
+-- confirmado o Passo 0 acima.
+-- =============================================================================
+alter table usuarios rename to usuarios_pre_auth_backup;
+
+create table usuarios (
+  id uuid primary key references auth.users(id) on delete cascade,
+  nome text not null,
+  usuario text not null,             -- login por username continua existindo (UX preservada), só não é mais a chave de auth
+  email text not null,               -- agora obrigatório: Supabase Auth exige e-mail real por conta
+  perfil text not null check (perfil in ('operador','lider','admin')),
+  status text not null default 'ativo' check (status in ('ativo','bloqueado','deve_definir_senha')),
+  acessos_extras jsonb not null default '[]'::jsonb,
+  ultimo_acesso timestamptz,
+  criado_em timestamptz not null default now(),
+  atualizado_em timestamptz not null default now()
+);
+create unique index idx_usuarios_login on usuarios (lower(usuario));
+create unique index idx_usuarios_email on usuarios (lower(email));
+
+-- ---- Funções de apoio ao login (rodam ANTES de autenticar) ----
+
+-- Resolve "usuário ou e-mail" (a tela de login aceita os dois, ver
+-- `identifier` em `attemptLogin` no index.html) pro e-mail real que o
+-- Supabase Auth precisa pra `signInWithPassword` — sem isso, precisaríamos
+-- expor a tabela inteira via SELECT público de novo (senão a UX de "logar
+-- com usuário" quebra). `security definer` funciona mesmo com a tabela
+-- travada por RLS pra admin/dono da linha só (ver policies abaixo). Devolve
+-- só o mínimo necessário (id/email/status) — nunca perfil, acessos_extras.
+create or replace function public.resolver_login(p_identifier text)
+returns table(id uuid, email text, status text) as $$
+  select u.id, u.email, u.status
+  from usuarios u
+  where lower(u.usuario) = lower(p_identifier) or lower(u.email) = lower(p_identifier)
+  limit 1;
+$$ language sql stable security definer set search_path = public;
+revoke all on function public.resolver_login(text) from public;
+grant execute on function public.resolver_login(text) to anon, authenticated;
+
+-- Helper de autorização — evita RLS recursiva ("select da própria tabela
+-- usuarios dentro de uma policy de usuarios"). `security definer` deixa a
+-- intenção clara e não depende de RLS dentro da própria checagem de RLS.
+-- Espelha EXATAMENTE o `hasAccess(user, 'usuarios')` do index.html — o
+-- perfil admin já libera por padrão, e um líder/operador pode ganhar a
+-- mesma exceção via `acessos_extras` (ver ACESSOS_RESTRITOS/hasAccess, e
+-- checkboxes "Acessos extras" no UserForm) sem precisar virar admin. Sem
+-- espelhar essa segunda condição aqui, a funcionalidade de "acessos
+-- extras" quebraria silenciosamente pra esta tela específica assim que o
+-- RLS entrasse em vigor: o usuário continuaria vendo o item no menu (isso
+-- é decidido no client), mas a lista viria sempre vazia/só a própria linha.
+create or replace function public.pode_gerenciar_usuarios(p_uid uuid)
+returns boolean as $$
+  select exists(
+    select 1 from usuarios
+    where id = p_uid and status <> 'bloqueado'
+      and (perfil = 'admin' or acessos_extras ? 'usuarios')
+  );
+$$ language sql stable security definer set search_path = public;
+revoke all on function public.pode_gerenciar_usuarios(uuid) from public;
+grant execute on function public.pode_gerenciar_usuarios(uuid) to authenticated;
+
+alter table usuarios enable row level security;
+
+-- Leitura: cada usuário só vê a própria linha; quem tem acesso à tela
+-- "Usuários" (admin, ou exceção via acessos_extras) vê todas.
+create policy "leitura própria ou com acesso a usuários" on usuarios for select
+  using (auth.uid() = id or public.pode_gerenciar_usuarios(auth.uid()));
+
+-- Única escrita que o CLIENTE (navegador) ainda faz direto, sem passar pela
+-- Edge Function: gravar o próprio "último acesso" no login bem-sucedido
+-- (ver attemptLogin no index.html) — self-only E restrita à coluna
+-- `ultimo_acesso` via GRANT de coluna (RLS sozinha só filtra LINHA, não
+-- coluna; sem esse grant restrito, qualquer usuário autenticado poderia se
+-- autopromover a admin via um PATCH direto na própria linha).
+create policy "atualizar próprio último acesso" on usuarios for update
+  using (auth.uid() = id) with check (auth.uid() = id);
+revoke update on usuarios from authenticated;
+grant update (ultimo_acesso) on usuarios to authenticated;
+
+-- Sem policy de INSERT/DELETE pra authenticated/anon: criar, editar perfil/
+-- senha/acessos_extras, bloquear e excluir usuário passam a ser só a Edge
+-- Function `usuarios-admin` (roda com a service role key, ignora RLS).
+
+-- =============================================================================
+-- RECONCILIAÇÃO DOS USUÁRIOS REAIS — rodar DEPOIS de criar cada usuário de
+-- verdade em Authentication → Add User no painel do Supabase (ver
+-- backend/README.md). Não dá pra fazer isso automaticamente por e-mail (a
+-- coluna `email` era OPCIONAL na tabela antiga — pode estar vazia pra algum
+-- usuário) — cole o UUID gerado pelo Auth pra cada pessoa, casando com o
+-- `usuario` (login) que já existia. Rodar 1x por usuário, trocando os
+-- valores entre <> :
+--
+-- insert into usuarios (id, nome, usuario, email, perfil, status, acessos_extras, ultimo_acesso, criado_em)
+-- select '<uuid-do-auth-users-aqui>', nome, usuario, '<email-real-aqui>', perfil, status, acessos_extras, ultimo_acesso, criado_em
+-- from usuarios_pre_auth_backup where usuario = '<login-antigo-aqui>';
+--
+-- Depois de confirmar que os logins novos funcionam de ponta a ponta (com o
+-- index.html já publicado com o novo fluxo), esta tabela de backup pode ser
+-- removida — só rodar isto depois, não faz parte deste bloco:
+--   drop table usuarios_pre_auth_backup;
+-- =============================================================================
+
+-- =============================================================================
+-- ENDURECIMENTO DE RLS — rodar SÓ DEPOIS de confirmar que o novo login
+-- (Supabase Auth) está funcionando em produção (ver backend/README.md,
+-- ordem de deploy). Trocar essas policies pra `authenticated` ANTES disso
+-- bloquearia o próprio app enquanto ele ainda estivesse logando localmente/
+-- como anon. Fora de escopo deste bloco (fica pra um endurecimento
+-- separado, não é o que motivou esta migração): RLS por papel (ex: só
+-- líder/admin resolver endereço proposto) e apertar `produtos`/`enderecos`/
+-- `estoque_enderecos`/`contagens_historico` (sem dado sensível).
+-- =============================================================================
+drop policy "leitura pública" on contagens;
+drop policy "inserção pública" on contagens;
+drop policy "atualização pública" on contagens;
+drop policy "exclusão pública" on contagens;
+create policy "leitura autenticada" on contagens for select using (auth.role() = 'authenticated');
+create policy "inserção autenticada" on contagens for insert with check (auth.role() = 'authenticated');
+create policy "atualização autenticada" on contagens for update using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+create policy "exclusão autenticada" on contagens for delete using (auth.role() = 'authenticated');
+
+drop policy "leitura pública" on inventarios;
+drop policy "inserção pública" on inventarios;
+drop policy "atualização pública" on inventarios;
+drop policy "exclusão pública" on inventarios;
+create policy "leitura autenticada" on inventarios for select using (auth.role() = 'authenticated');
+create policy "inserção autenticada" on inventarios for insert with check (auth.role() = 'authenticated');
+create policy "atualização autenticada" on inventarios for update using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+create policy "exclusão autenticada" on inventarios for delete using (auth.role() = 'authenticated');
+
+drop policy "leitura pública" on enderecos_propostos;
+drop policy "inserção pública" on enderecos_propostos;
+drop policy "atualização pública" on enderecos_propostos;
+create policy "leitura autenticada" on enderecos_propostos for select using (auth.role() = 'authenticated');
+create policy "inserção autenticada" on enderecos_propostos for insert with check (auth.role() = 'authenticated');
+create policy "atualização autenticada" on enderecos_propostos for update using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+
+drop policy "escrita pública" on estoque_saldo;
+create policy "escrita autenticada" on estoque_saldo for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');

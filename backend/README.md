@@ -108,3 +108,81 @@ Recomendo mostrar esse "última sincronização" em algum lugar visível do app
 (a tela de Configurações do protótipo já tem um painel "Origem dos Dados" —
 é o lugar natural para isso) para que líder/operador saibam se o saldo que
 estão vendo é de agora há pouco ou de ontem à noite.
+
+## 9. Migrar login pro Supabase Auth
+
+Login hoje é 100% local (senha em texto puro numa tabela espelho, sessão
+falsificável no `localStorage`). Esta seção troca isso pelo Supabase Auth de
+verdade — siga a ordem exatamente, ela foi desenhada pra nenhum passo travar
+o app que as 4 pessoas já usam no dia a dia.
+
+**9.1 — Confirmar que não sobrou nenhuma foreign key solta apontando pra
+`usuarios`** (SQL Editor):
+
+```sql
+select conname, conrelid::regclass, confrelid::regclass
+from pg_constraint
+where confrelid = 'usuarios'::regclass;
+```
+
+Se vier alguma linha, me avise antes de continuar — pode ser preciso
+dropar essa constraint (o app não usa esses campos, mas quero confirmar
+antes de qualquer coisa).
+
+**9.2 — Rodar o bloco de migração** (`schema.sql`, seção "MIGRAÇÃO — LOGIN
+VIA SUPABASE AUTH DE VERDADE") no SQL Editor. Isso renomeia a tabela
+`usuarios` atual pra `usuarios_pre_auth_backup` (nada é apagado) e cria a
+`usuarios` nova, vazia, já ligada ao Supabase Auth. **O app que já está no
+ar continua funcionando normalmente neste momento** — ele ainda loga contra
+o código antigo, que nem sabe que essa tabela nova existe.
+
+**9.3 — Coletar um e-mail real de cada uma das 4 pessoas** que usam o
+sistema hoje (Supabase Auth exige e-mail de verdade por conta).
+
+**9.4 — Criar os 4 usuários no Supabase Auth**: Dashboard → Authentication →
+Users → "Add user" — um por vez, usando o e-mail real + uma senha
+temporária à sua escolha (repasse pra pessoa por fora, como já faz hoje com
+senha temporária). Anote o UUID de cada um (aparece na lista, ou rode
+`select id, email from auth.users;` no SQL Editor).
+
+**9.5 — Reconciliar os dados**: no SQL Editor, rodar o `insert` de
+reconciliação (modelo no mesmo bloco de migração do 9.2) uma vez pra cada
+pessoa, colando o UUID do 9.4 e o login antigo dela.
+
+**9.6 — Deploy da Edge Function nova**:
+
+```bash
+npx supabase functions deploy usuarios-admin
+```
+
+(`SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` já ficam disponíveis
+automaticamente, nada a configurar — mesmo aviso do passo 3 acima.)
+
+**9.7 — Publicar o novo `index.html`** (o commit/push já entrega isso).
+
+**9.8 — Testar de ponta a ponta antes de seguir**: login com os 4 usuários
+reais, e todas as ações de admin — criar um usuário de teste, bloquear/
+desbloquear, redefinir senha nos 3 modos (temporária/manual/liberar), e
+excluir o usuário de teste. Só avance pro próximo passo depois de confirmar
+que tudo isso funciona.
+
+**9.9 — Só depois do 9.8 confirmado**: rodar o bloco "ENDURECIMENTO DE RLS"
+do `schema.sql` (fecha o acesso anônimo que `contagens`/`inventarios`/
+`enderecos_propostos`/`estoque_saldo` têm hoje — só usuários autenticados
+passam a poder ler/gravar essas tabelas).
+
+**9.10 — Alguns dias depois, sem pressa**: `drop table
+usuarios_pre_auth_backup;` — limpeza final, só quando estiver confiante de
+que a migração foi bem.
+
+### Se algo der errado no meio do caminho
+
+- **Antes do passo 9.7** (novo `index.html` ainda não publicado): totalmente
+  reversível, nada foi apagado. `alter table usuarios rename to
+  usuarios_broken; alter table usuarios_pre_auth_backup rename to
+  usuarios;` desfaz o 9.2 por completo.
+- **Depois do 9.7, antes do 9.9**: se o login novo não funcionar em
+  produção, me avise — a correção é republicar a versão anterior do
+  `index.html`, sem precisar mexer no banco.
+- **9.9 é o único passo que pode travar tráfego de verdade** se rodado cedo
+  demais — por isso é sempre o último, e só depois do 9.8 confirmado.
