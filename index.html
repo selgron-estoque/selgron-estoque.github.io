@@ -204,6 +204,12 @@
   .count-card-values .cv .k{font-family:var(--font-mono);font-size:9.5px;text-transform:uppercase;color:var(--ink-dim);letter-spacing:0.5px;}
   .count-card-values .cv .v{font-size:15px;font-weight:700;margin-top:2px;}
   .count-card-actions{padding:14px 16px 16px;}
+  /* Botões dentro do card compacto novo usam o mesmo .btn/.btn-primary/
+     .btn-danger do resto do app (não criei classe nova), mas o tamanho
+     padrão (pensado pro card espaçado antigo) fica desproporcional aqui —
+     reduzido só neste contexto, sem mudar o botão em nenhum outro lugar. */
+  .count-card-actions .btn{padding:11px 14px;font-size:12px;width:auto;flex:1 1 auto;}
+  .count-card-actions .btn-danger{flex:0 0 auto;}
 
   /* QR SCAN VISUAL */
   .scan-box{position:relative;background:#0A0B0D;border:1px solid var(--line);border-radius:var(--radius);height:180px;display:flex;align-items:center;justify-content:center;overflow:hidden;margin-bottom:14px;}
