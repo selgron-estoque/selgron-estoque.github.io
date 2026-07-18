@@ -2324,7 +2324,12 @@ function formatDocFromData(dataStr){
 
 function buildSummaryRows(counts, inventories){
   const contados = counts.length;
-  const divergentes = counts.filter(c=>c.diferenca!==0);
+  // `diferenca!==0` sozinho conta item SEM saldo pra comparar (diferenca:null)
+  // como divergente — bug real já corrigido em computeWeeklyStats antes,
+  // reproduzido aqui também (achado ao investigar 3 cards de acuracidade
+  // mostrando números diferentes). null nunca é divergência de verdade, é
+  // ausência de comparação.
+  const divergentes = counts.filter(c=>c.diferenca!==0 && c.diferenca!==null);
   const acuracidade = contados>0 ? (((contados-divergentes.length)/contados)*100).toFixed(1) : '100.0';
   const valorDivergente = counts.reduce((s,c)=>s+Number(c.valorDivergente||0),0);
   return [
@@ -6905,7 +6910,15 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   // `usuario:'Importação Histórica'` em historicoRowToCountLike).
   const historicoComoContagem = historicoConcluidas.map(historicoRowToCountLike).filter(Boolean);
   const todasParaQualidade = [...counts, ...historicoComoContagem];
-  const divergentes = todasParaQualidade.filter(c=>c.diferenca!==0);
+  // Bug real corrigido aqui: `diferenca!==0` sozinho conta item SEM saldo
+  // pra comparar (diferenca:null, ex.: código fora do catálogo) como
+  // divergente — mesma classe de bug já corrigida antes em
+  // computeWeeklyStats, reproduzida aqui e em buildSummaryRows (relatório
+  // Excel). Era a causa de "Acuracidade do Estoque" mostrar um número
+  // diferente aqui do que na Home (que já excluía null corretamente via
+  // acumuladoAte) — cliente reportou 3 cards de acuracidade com valores
+  // diferentes.
+  const divergentes = todasParaQualidade.filter(c=>c.diferenca!==0 && c.diferenca!==null);
   const acuracidade = todasParaQualidade.length>0 ? (((todasParaQualidade.length-divergentes.length)/todasParaQualidade.length)*100).toFixed(1) : '100.0';
   const valorDivergente = todasParaQualidade.reduce((s,c)=>s+Number(c.valorDivergente||0),0);
 
