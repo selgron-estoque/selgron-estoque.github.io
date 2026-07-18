@@ -4252,3 +4252,45 @@ confirmar o número que já está vendo na tela).
   tocada).
 - Testado só com transpile Babel (mesma limitação de sempre) — verificação visual fica
   a cargo do cliente.
+
+## Tela de contagem: remove o cabeçalho do app, reordena hierarquia, referência do sistema antes de digitar
+
+O cliente reescreveu o pedido anterior num formato mais explicativo (motivo em vez de só
+"mova isso") — print da tela "Recontar Item" mostrando o cabeçalho do app (título,
+avatar, nome, perfil, sino) ocupando o topo. Pedido, com o "porquê" de cada item:
+
+1. **Remover o cabeçalho do app inteiro** nas telas de contagem — nome/avatar/perfil já
+   aparecem em outras partes da aplicação, e essa é a tela mais usada durante o dia
+   inteiro, precisa do espaço vertical. `COUNT_SCREEN_VIEWS` (novo, perto de
+   `VIEW_SUBTITLES`) lista as 5 views que renderizam `CountStep` como conteúdo principal
+   (`randomCount`/`manualCount`/`routeCount`/`importedListCount`/`recount`) — `App()`
+   esconde `TopBar`+`DesktopTopbar`+`SubBar` só nessas telas. A Sidebar continua acessível
+   pelo botão flutuante (`.sidebar-toggle`, sempre renderizado, independente do
+   cabeçalho) — nenhuma perda de navegação, só o cabeçalho de identidade some.
+2. **Card "Nª contagem" (dados da rodada anterior) foi pro final**, logo acima do rodapé
+   — é informação de apoio/histórico, o operador precisa ver o material primeiro.
+3. **Espaço liberado no topo agora mostra contexto operacional**: barra de progresso +
+   "Faltam N itens" (`itensRestantes = queueTotal - queueAtual`, novo) pras filas
+   (Aleatória/Lista Importada), OU um badge de prioridade (reaproveita
+   `.severity-chip`/`classifySeverity4`, mesmo componente já usado em Recontagens/Itens
+   Divergentes) mostrando a severidade da divergência da rodada ANTERIOR quando é
+   recontagem — explica de cara por que aquele item está sendo recontado.
+4. **Almox/Endereço saíram do canto do card do material** — já apareciam duplicados nas
+   informações técnicas mais abaixo.
+5. **Ícone da câmera ~20% maior** (40px→56px de botão, 20px→24px de ícone), preenchendo o
+   espaço que sobrou, com contorno e fundo laranja (antes era um botão cinza discreto) —
+   parece uma ação de verdade, não um ícone perdido no canto.
+6. **Hierarquia reordenada** exatamente como pedido: progresso/contexto → material → 
+   quantidade → atalhos → informações técnicas → card da 2ª contagem → confirmar.
+7. **Sugestão adicional aceita**: referência do saldo do sistema aparece ANTES de digitar
+   (`.cs-sistema-ref`, "Sistema · 9 un." + seta pra baixo), com o rótulo do campo virando
+   "Informe a quantidade" (era "Quantidade encontrada") — reduz erro de digitação por
+   comparação visual direta enquanto digita, não só depois. O card de comparação ao vivo
+   (Sistema/Informado/Diferença, já existia desde o redesenho anterior) continua
+   aparecendo assim que há um número digitado — mais rápido que "só depois de
+   confirmar" como o cliente sugeriu, mesma lógica já estabelecida no redesenho anterior.
+- Testado via scripts Node isolados (mesma limitação de sempre — login via Supabase Auth
+  real não é simulável no sandbox): fórmula de "Faltam N itens" batendo com o exemplo do
+  pedido (18 de 152 → faltam 134). Transpile Babel do arquivo inteiro e balanceamento de
+  chaves do CSS conferidos. **A verificação visual de ponta a ponta fica a cargo do
+  cliente** — mesma limitação de sempre.

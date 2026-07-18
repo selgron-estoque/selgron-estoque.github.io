@@ -293,28 +293,47 @@
      diferente do --radius:10px do resto do app — mesmo tipo de exceção já
      documentada em .count-card acima, escopada só a esta tela. */
   .cs-screen{display:flex;flex-direction:column;gap:14px;padding-bottom:88px;}
-  .cs-progress{display:flex;align-items:center;gap:12px;}
-  .cs-progress-track{flex:1;height:6px;border-radius:4px;background:var(--line);overflow:hidden;}
+  /* Cabeçalho do app some inteiro nas telas de contagem (pedido do
+     cliente: "essas informações já existem em outras partes da aplicação
+     e ocupam uma área muito valiosa da tela operacional") — o espaço
+     liberado é usado por este contexto operacional (progresso da fila ou
+     prioridade da recontagem) em vez de nome/avatar/perfil do usuário. */
+  .cs-context{display:flex;flex-direction:column;gap:8px;}
+  .cs-progress{display:flex;flex-direction:column;gap:6px;}
+  .cs-progress-track{height:6px;border-radius:4px;background:var(--line);overflow:hidden;}
   .cs-progress-fill{height:100%;background:var(--safety);border-radius:4px;transition:width .2s ease;}
-  .cs-progress-label{font-family:var(--font-mono);font-size:11px;color:var(--ink-dim);white-space:nowrap;}
+  .cs-progress-meta{display:flex;justify-content:space-between;gap:8px;font-family:var(--font-mono);font-size:11px;color:var(--ink-dim);}
 
+  /* Card "Nª contagem" (dados da rodada anterior) — movido pro final da
+     tela, logo acima do rodapé: é informação de apoio/histórico, não o
+     que o operador precisa ver primeiro (pedido do cliente). */
   .cs-top{display:flex;align-items:center;gap:16px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:0 1px 3px rgba(0,0,0,.04);padding:10px 16px;}
   .cs-round-badge{font-family:var(--font-mono);font-size:11px;font-weight:700;letter-spacing:0.5px;color:#fff;background:var(--accent2);padding:5px 10px;border-radius:20px;white-space:nowrap;}
   .cs-top-sep{width:1px;align-self:stretch;background:var(--line);}
   .cs-top-block .cs-top-k{font-family:var(--font-mono);font-size:9.5px;text-transform:uppercase;color:var(--ink-dim);letter-spacing:0.4px;}
   .cs-top-block .cs-top-v{font-size:13px;font-weight:600;margin-top:1px;}
 
-  .cs-material{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:0 1px 3px rgba(0,0,0,.04);padding:20px;}
-  .cs-material-tag{position:absolute;top:16px;right:20px;text-align:right;font-family:var(--font-mono);font-size:10.5px;line-height:1.5;color:var(--ink-dim);}
-  .cs-material-code-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-right:110px;}
+  /* Card do material — Almox/Endereço saíram do canto (já aparecem nas
+     informações técnicas mais abaixo, seria duplicado) e o espaço virou
+     pro botão de câmera, ~20% maior e centralizado, pra parecer uma ação
+     de verdade, não um ícone pequeno perdido no canto. */
+  .cs-material{display:flex;align-items:center;justify-content:space-between;gap:16px;background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:0 1px 3px rgba(0,0,0,.04);padding:20px;}
+  .cs-material-info{flex:1;min-width:0;}
   .cs-code{font-family:var(--font-mono);font-size:clamp(30px,6vw,36px);font-weight:700;color:var(--ink);letter-spacing:0.5px;line-height:1;}
-  .cs-scan-btn{flex-shrink:0;width:40px;height:40px;border-radius:10px;border:1px solid var(--line);background:var(--panel-raised);color:var(--ink-dim);display:flex;align-items:center;justify-content:center;}
-  .cs-scan-btn:active{background:#FFF3E0;color:var(--safety);}
+  .cs-scan-btn{flex-shrink:0;width:56px;height:56px;border-radius:14px;border:2px solid var(--safety);background:#FFF3E0;color:var(--safety);display:flex;align-items:center;justify-content:center;}
+  .cs-scan-btn:active{background:var(--safety);color:#fff;}
   .cs-desc{font-family:var(--font-display);font-size:22px;font-weight:600;text-transform:uppercase;margin-top:8px;line-height:1.25;}
-  .cs-scan-feedback{margin-top:10px;font-size:12.5px;font-weight:600;border-radius:8px;padding:8px 12px;}
+  .cs-scan-feedback{margin-top:-4px;font-size:12.5px;font-weight:600;border-radius:8px;padding:8px 12px;}
   .cs-scan-feedback.ok{background:var(--ok-bg);color:var(--ok);}
   .cs-scan-feedback.warn{background:var(--warn-bg);color:var(--warn);}
 
+  /* Referência do saldo do sistema ANTES de digitar — mostra o valor
+     esperado junto do campo de quantidade (em vez de só depois de já ter
+     digitado), reduzindo erro de digitação por comparação visual direta. */
+  .cs-sistema-ref{text-align:center;background:var(--panel-raised);border-radius:12px;padding:10px;}
+  .cs-sistema-ref .cs-sistema-k{font-family:var(--font-mono);font-size:10px;text-transform:uppercase;color:var(--ink-dim);letter-spacing:0.5px;}
+  .cs-sistema-ref .cs-sistema-v{font-family:var(--font-mono);font-size:20px;font-weight:700;margin-top:2px;}
+  .cs-sistema-arrow{display:flex;justify-content:center;color:var(--ink-dim);margin:-6px 0;}
   .cs-qty-label{text-align:center;font-family:var(--font-mono);font-size:12px;text-transform:uppercase;letter-spacing:0.6px;color:var(--ink-dim);}
   .cs-qty-input{width:100%;height:90px;font-family:var(--font-mono);font-size:48px;font-weight:700;text-align:center;background:var(--panel);border:2px solid var(--line);border-radius:16px;color:var(--ink);}
   .cs-qty-input:focus{outline:none;border-color:var(--accent2);}
@@ -3561,15 +3580,19 @@ function App(){
         <DIcon name={sidebarCollapsed?'chevronRight':'chevronLeft'} size={14} />
       </button>
       <div className="app-main">
-      <TopBar user={currentUser} role={role} onHome={()=>goto('home')} onLogout={()=>logout('')} />
-      <DesktopTopbar
-        view={view}
-        user={currentUser}
-        role={role}
-        onLogout={()=>logout('')}
-        subtitle={VIEW_SUBTITLES[view]}
-      />
-      {view!=='home' && <SubBar view={view} goto={goto} />}
+      {!COUNT_SCREEN_VIEWS.includes(view) && (
+        <>
+          <TopBar user={currentUser} role={role} onHome={()=>goto('home')} onLogout={()=>logout('')} />
+          <DesktopTopbar
+            view={view}
+            user={currentUser}
+            role={role}
+            onLogout={()=>logout('')}
+            subtitle={VIEW_SUBTITLES[view]}
+          />
+        </>
+      )}
+      {view!=='home' && !COUNT_SCREEN_VIEWS.includes(view) && <SubBar view={view} goto={goto} />}
       <div className="content">
         {view==='home' && <Home role={role} user={currentUser} inventories={inventories} counts={counts} historicoConcluidas={historicoConcluidas} enderecosPropostos={enderecosPropostos} goto={goto} />}
         {view==='inventories' && <InventoryList inventories={inventories} goto={goto} role={role} counts={counts} onDelete={deleteInventory} />}
@@ -4022,6 +4045,14 @@ const VIEW_TITLES = {
 const VIEW_SUBTITLES = {
   home: 'Resumo operacional do inventário',
 };
+
+// Telas que renderizam o motor de contagem (CountStep) direto na tela —
+// pedido do cliente: "esta é a tela mais importante... título/avatar/nome/
+// perfil do usuário já existem em outras partes da aplicação e ocupam uma
+// área muito valiosa da tela operacional". O cabeçalho do app (TopBar/
+// DesktopTopbar) some inteiro nessas telas; a Sidebar continua acessível
+// pelo botão flutuante (.sidebar-toggle), então a navegação não se perde.
+const COUNT_SCREEN_VIEWS = ['randomCount', 'manualCount', 'routeCount', 'importedListCount', 'recount'];
 
 function SubBar({view, goto}){
   return (
@@ -5461,6 +5492,12 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
     : 'Diferença crítica. Necessária nova validação.';
 
   const progressoPct = (queueAtual && queueTotal) ? Math.round((queueAtual/queueTotal)*100) : null;
+  const itensRestantes = (queueAtual && queueTotal) ? Math.max(queueTotal - queueAtual, 0) : null;
+  // Prioridade da recontagem — deriva da MESMA classificação de severidade
+  // já usada nos painéis de Recontagens/Itens Divergentes (classifySeverity4),
+  // aplicada sobre o percentual da rodada ANTERIOR (é ela que explica por que
+  // este item está sendo recontado). Só existe quando `previousCount` existe.
+  const previousSeverity = previousCount ? classifySeverity4(previousCount.percentual) : null;
 
   return (
     <div>
@@ -5541,58 +5578,51 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
 
       {step==='count' && (
         <div className="cs-screen">
-          {progressoPct!=null && (
-            <div className="cs-progress">
-              <div className="cs-progress-track"><div className="cs-progress-fill" style={{width:progressoPct+'%'}}></div></div>
-              <div className="cs-progress-label">Item {queueAtual} de {queueTotal} · {progressoPct}%</div>
+          {(progressoPct!=null || previousSeverity) && (
+            <div className="cs-context">
+              {progressoPct!=null && (
+                <div className="cs-progress">
+                  <div className="cs-progress-track"><div className="cs-progress-fill" style={{width:progressoPct+'%'}}></div></div>
+                  <div className="cs-progress-meta">
+                    <span>Item {queueAtual} de {queueTotal} · {progressoPct}%</span>
+                    <span>Faltam {itensRestantes} itens</span>
+                  </div>
+                </div>
+              )}
+              {previousSeverity && (
+                <span className="severity-chip" style={{background:previousSeverity.bg,color:previousSeverity.color}}>
+                  <Ic>{previousSeverity.icon}</Ic> {previousSeverity.label==='Sem saldo' ? 'Sem saldo para comparar' : 'Divergência '+previousSeverity.label.toLowerCase()}
+                </span>
+              )}
             </div>
           )}
 
-          <div className="cs-top">
-            <span className="cs-round-badge">{numeroContagem}ª CONTAGEM</span>
-            {previousCount && (
-              <>
-                <div className="cs-top-sep"></div>
-                <div className="cs-top-block">
-                  <div className="cs-top-k">{previousCount.numeroContagem}ª contagem</div>
-                  <div className="cs-top-v">{previousCount.qtdContada} {product.unidade || 'un.'}</div>
-                </div>
-                <div className="cs-top-block">
-                  <div className="cs-top-k">Operador</div>
-                  <div className="cs-top-v">{previousCount.usuario}</div>
-                </div>
-                <div className="cs-top-block">
-                  <div className="cs-top-k">{previousCount.data}</div>
-                  <div className="cs-top-v">{previousCount.hora || ''}</div>
-                </div>
-              </>
-            )}
-          </div>
-
           <div className="cs-material">
-            <div className="cs-material-tag">
-              {product.almoxarifado && product.almoxarifado!=='—' && <div>Almox {product.almoxarifado}</div>}
-              {product.corredor && <div>Corredor {product.corredor}{product.rua ? (' · Rua '+product.rua) : ''}</div>}
-              <div>{product.endereco || 'sem endereço'}</div>
-            </div>
-            <div className="cs-material-code-row">
+            <div className="cs-material-info">
               <div className="cs-code">{product.codigo}</div>
-              <button type="button" className="cs-scan-btn" title="Escanear para conferir o item" onClick={()=>{setItemScanFeedback(null); setScanningItem(true);}}>
-                <DIcon name="camera" size={20} />
-              </button>
+              <div className="cs-desc">{product.descricao}</div>
             </div>
-            <div className="cs-desc">{product.descricao}</div>
-            {scanningItem && (
-              <div style={{marginTop:12}}>
-                <CameraScanner onDetected={handleItemVerifyScan} onCancel={()=>setScanningItem(false)} />
-              </div>
-            )}
-            {itemScanFeedback && (
-              <div className={"cs-scan-feedback "+(itemScanFeedback.ok ? 'ok' : 'warn')}>{itemScanFeedback.text}</div>
-            )}
+            <button type="button" className="cs-scan-btn" title="Escanear para conferir o item" onClick={()=>{setItemScanFeedback(null); setScanningItem(true);}}>
+              <DIcon name="camera" size={24} />
+            </button>
           </div>
+          {scanningItem && (
+            <div style={{marginTop:-4}}>
+              <CameraScanner onDetected={handleItemVerifyScan} onCancel={()=>setScanningItem(false)} />
+            </div>
+          )}
+          {itemScanFeedback && (
+            <div className={"cs-scan-feedback "+(itemScanFeedback.ok ? 'ok' : 'warn')}>{itemScanFeedback.text}</div>
+          )}
 
-          <div className="cs-qty-label">Quantidade encontrada</div>
+          {hasSaldoLocal && (
+            <div className="cs-sistema-ref">
+              <div className="cs-sistema-k">Sistema</div>
+              <div className="cs-sistema-v">{product.saldoSistema} {product.unidade || 'un.'}</div>
+            </div>
+          )}
+          {hasSaldoLocal && <div className="cs-sistema-arrow"><DIcon name="arrowDown" size={18} /></div>}
+          <div className="cs-qty-label">{hasSaldoLocal ? 'Informe a quantidade' : 'Quantidade encontrada'}</div>
           <input
             className={"cs-qty-input"+(qty!=='' ? ' '+classification.level : '')}
             type="number"
@@ -5613,7 +5643,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
             <div className={"cs-compare "+classification.level}>
               <div className="cs-compare-grid">
                 <div className="cs-compare-cell"><div className="k">Sistema</div><div className="v">{hasSaldoLocal ? product.saldoSistema : '—'}</div></div>
-                <div className="cs-compare-cell"><div className="k">Você informou</div><div className="v">{qty}</div></div>
+                <div className="cs-compare-cell"><div className="k">Informado</div><div className="v">{qty}</div></div>
                 <div className="cs-compare-cell"><div className="k">Diferença</div><div className="v">{hasSaldoLocal ? (diffAbs>0?'+':'')+diffAbs : '—'}</div></div>
               </div>
               <div className="cs-feedback"><span className="cs-dot"></span>{feedbackTexto}</div>
@@ -5626,6 +5656,25 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
             <div className="cs-mini"><div className="k">Almox</div><div className="v">{product.almoxarifado || '—'}</div></div>
             <div className="cs-mini"><div className="k">Endereço</div><div className="v">{product.endereco || 'não cadastrado'}</div></div>
           </div>
+
+          {previousCount && (
+            <div className="cs-top">
+              <span className="cs-round-badge">{numeroContagem}ª CONTAGEM</span>
+              <div className="cs-top-sep"></div>
+              <div className="cs-top-block">
+                <div className="cs-top-k">{previousCount.numeroContagem}ª contagem</div>
+                <div className="cs-top-v">{previousCount.qtdContada} {product.unidade || 'un.'}</div>
+              </div>
+              <div className="cs-top-block">
+                <div className="cs-top-k">Operador</div>
+                <div className="cs-top-v">{previousCount.usuario}</div>
+              </div>
+              <div className="cs-top-block">
+                <div className="cs-top-k">{previousCount.data}</div>
+                <div className="cs-top-v">{previousCount.hora || ''}</div>
+              </div>
+            </div>
+          )}
 
           <div className="cs-footer">
             <div className="cs-footer-row">
