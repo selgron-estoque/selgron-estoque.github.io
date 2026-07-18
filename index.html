@@ -6016,7 +6016,7 @@ function SearchWithScanner({value, onChange, placeholder}){
         <label>Buscar item</label>
         <input type="text" value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} />
       </div>
-      <button type="button" className="btn btn-secondary" style={{width:'auto',padding:'0 16px',height:44}} onClick={()=>setScanning(true)}><Ic>📷</Ic> Scanner</button>
+      <button type="button" className="btn btn-secondary" title="Scanner" style={{width:44,padding:0,height:44,flexShrink:0}} onClick={()=>setScanning(true)}><Ic>📷</Ic></button>
     </div>
   );
 }
