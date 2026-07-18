@@ -4274,6 +4274,19 @@ function NewInventory({onCreate, goto, inventories}){
     return nomes.slice(0,2).join(' + ') + ' + ' + (nomes.length-2) + ' outro' + (nomes.length-2===1?'':'s');
   }, [isPorGrupo, gruposSelecionados, grupos]);
 
+  // "Quantidade de itens" some do formulário pra este tipo (pedido do
+  // cliente) — a contagem já cobre TODOS os itens dos grupos escolhidos,
+  // então a quantidade sai sozinha somando `qtdItens` de cada grupo
+  // selecionado (já vem pronto de `grupos_com_estoque`), sem precisar
+  // perguntar de novo pro usuário.
+  const qtdItensGrupo = useMemo(()=>{
+    if(!isPorGrupo) return 0;
+    return gruposSelecionados.reduce((soma, cod)=>{
+      const g = (grupos||[]).find(x=>x.grupo===cod);
+      return soma + (g ? g.qtdItens : 0);
+    }, 0);
+  }, [isPorGrupo, gruposSelecionados, grupos]);
+
   // Nome do inventário: pra "Lista Importada" continua saindo do nome do
   // arquivo (setNome em handleFileUpload); pros outros tipos que ainda
   // passam por este formulário (Aleatória/Curva ABC/Rota/Grupo), é gerado
@@ -4286,7 +4299,7 @@ function NewInventory({onCreate, goto, inventories}){
   }, [tipo, isImportado, almoxCodes, data, inventories, gruposLabel]);
   const nomeFinal = isImportado ? nome : nomeAuto;
 
-  const camposBasicosOk = nomeFinal.trim() && almoxCodes.length>0 && data && data>=hojeStr && (isImportado || Number(qtd)>0) && (!isPorGrupo || gruposSelecionados.length>0);
+  const camposBasicosOk = nomeFinal.trim() && almoxCodes.length>0 && data && data>=hojeStr && (isImportado || isPorGrupo || Number(qtd)>0) && (!isPorGrupo || gruposSelecionados.length>0);
   const canCreate = camposBasicosOk && (isImportado ? !!(itensImportados && itensImportados.length>0) : true);
 
   function handleDownloadTemplate(){
@@ -4343,7 +4356,7 @@ function NewInventory({onCreate, goto, inventories}){
     const almoxarifado = almoxCodes.map(c=>c.padStart(2,'0')).join(', ');
     const res = await onCreate({
       id:'INV-'+Math.floor(Math.random()*900+100), nome:nomeFinal, almoxarifado, data, tipo,
-      qtdItens: isImportado ? itensImportados.length : Number(qtd), status:'pendente', contados:0,
+      qtdItens: isImportado ? itensImportados.length : (isPorGrupo ? qtdItensGrupo : Number(qtd)), status:'pendente', contados:0,
       ...(isImportado ? {itensImportados} : {}),
       ...(isPorGrupo ? {grupo: gruposSelecionados.join(',')} : {}),
     });
@@ -4435,10 +4448,12 @@ function NewInventory({onCreate, goto, inventories}){
               <label>Data</label>
               <input type="date" value={data} min={hojeStr} onChange={e=>setData(e.target.value)} />
             </div>
-            <div className="field">
-              <label>Quantidade de itens</label>
-              <input type="number" value={qtd} onChange={e=>setQtd(e.target.value)} placeholder="Ex.: 20" />
-            </div>
+            {!isPorGrupo && (
+              <div className="field">
+                <label>Quantidade de itens</label>
+                <input type="number" value={qtd} onChange={e=>setQtd(e.target.value)} placeholder="Ex.: 20" />
+              </div>
+            )}
           </>
         )}
 
@@ -4575,7 +4590,17 @@ function PickCountType({role, goto, onCreate, inventories}){
                   className="btn btn-primary"
                   style={{marginTop:10}}
                   disabled={gruposAvulsoSelecionados.length===0}
-                  onClick={()=>goto('randomCount', {grupo: gruposAvulsoSelecionados.join(',')})}
+                  onClick={()=>{
+                    // Soma qtdItens dos grupos escolhidos (já vem pronto de
+                    // grupos_com_estoque) — sem isso, RandomCountFlow cairia
+                    // no padrão de 5 itens (mesmo fallback da Aleatória
+                    // avulsa), deixando de fora o resto do grupo.
+                    const qtdItensGrupoAvulso = gruposAvulsoSelecionados.reduce((soma, cod)=>{
+                      const g = gruposAvulso.find(x=>x.grupo===cod);
+                      return soma + (g ? g.qtdItens : 0);
+                    }, 0);
+                    goto('randomCount', {grupo: gruposAvulsoSelecionados.join(','), qtdItens: qtdItensGrupoAvulso});
+                  }}
                 >Iniciar contagem</button>
               </>
             )}
