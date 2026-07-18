@@ -3236,9 +3236,9 @@ function App(){
         {view==='recount' && flowState && <RecountFlow original={flowState} user={currentUser} onAddressProposed={addAddressProposal} onFinish={(c)=>{registerFinishedCount(c); goto('recounts');}} />}
         {view==='dashboard' && <Dashboard counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} historicoParaTendencia={historicoParaTendencia} goto={goto} />}
         {view==='relatorios' && <ReportsScreen counts={counts} inventories={inventories} currentUser={currentUser} sendHistory={reportSendHistory} onLogSend={logReportSend} role={role} onHistoricoImportado={refreshHistoricoConcluidas} />}
-        {view==='settings' && (
-          <Settings
-            role={role}
+        {view==='settings' && <Settings role={role} currentUser={currentUser} />}
+        {view==='usuarios' && role==='admin' && (
+          <UsuariosScreen
             users={users}
             currentUser={currentUser}
             goto={goto}
@@ -3260,8 +3260,8 @@ function App(){
             users={users}
             onCreateUser={createUser}
             onUpdateUser={updateUser}
-            onSaved={()=>goto('settings')}
-            onCancel={()=>goto('settings')}
+            onSaved={()=>goto('usuarios')}
+            onCancel={()=>goto('usuarios')}
           />
         )}
       </div>
@@ -3651,6 +3651,7 @@ const VIEW_TITLES = {
   todasDivergencias:'Todas as Divergências',
   concluidas:'Contagens Concluídas',
   enderecos:'Endereços Pendentes',
+  usuarios:'Usuários',
   recount:'Recontar Item',
   dashboard:'Indicadores',
   relatorios:'Relatórios',
@@ -3687,6 +3688,17 @@ function SubBar({view, goto}){
 // destinos nos dois lugares, sem duplicar manutenção.
 function buildSidebarGroups(role){
   const podeValidarEnderecos = role==='lider'||role==='admin';
+  const isAdmin = role==='admin';
+  // "Usuários" saiu de dentro de Configurações e entrou aqui (pedido do
+  // cliente: fazia mais sentido como cadastro do que como configuração do
+  // sistema) — mesmo grupo que já tinha "Endereços Pendentes" por razão
+  // parecida. Cada item aparece só pra quem já tinha acesso ao conteúdo
+  // antes (Usuários era admin-only dentro de Configurações; Endereços já
+  // era lider/admin) — o grupo inteiro só existe se sobrar pelo menos 1 item.
+  const cadastrosItems = [
+    ...(isAdmin ? [{id:'usuarios', ic:'user', label:'Usuários'}] : []),
+    ...(podeValidarEnderecos ? [{id:'enderecos', ic:'mapPin', label:'Endereços Pendentes'}] : []),
+  ];
   return [
     { label: null, items: [
       {id:'home', ic:'home', label:'Início'},
@@ -3698,9 +3710,7 @@ function buildSidebarGroups(role){
       {id:'divergentes', ic:'alertTriangle', label:'Itens Divergentes'},
       {id:'concluidas', ic:'checkCircle', label:'Contagens Concluídas'},
     ]},
-    ...(podeValidarEnderecos ? [{ label: 'Cadastros', items: [
-      {id:'enderecos', ic:'mapPin', label:'Endereços Pendentes'},
-    ]}] : []),
+    ...(cadastrosItems.length>0 ? [{ label: 'Cadastros', items: cadastrosItems }] : []),
     { label: 'Análise', items: [
       {id:'dashboard', ic:'barChart', label:'Indicadores'},
       {id:'relatorios', ic:'fileText', label:'Relatórios'},
@@ -7927,47 +7937,42 @@ function HistoricoImportPanel({onImported}){
   );
 }
 
-function Settings({role, users=[], currentUser, goto, onToggleUserStatus, onDeleteUser, onAdminPasswordAction, passwordRequests=[], onResolvePasswordRequest, passwordHistory=[]}){
-  const isAdmin = role==='admin';
+// "Usuários" — extraído de dentro de Configurações (cliente notou que fazia
+// mais sentido como cadastro do que como configuração de sistema, mesma
+// razão que já tinha levado "Endereços Pendentes" pra fora de Configurações
+// antes). Levei junto os dois painéis de senha (Solicitações de
+// Redefinição, Histórico de Alterações) — são bem ligados a usuário, mesmo
+// padrão de "extrair o bloco tal como está" já usado antes. Só admin
+// acessa, mesmo grupo que já tinha esse conteúdo dentro de Configurações.
+function UsuariosScreen({users, currentUser, goto, onToggleUserStatus, onDeleteUser, onAdminPasswordAction, passwordRequests=[], onResolvePasswordRequest, passwordHistory=[]}){
   const pendentesSenha = passwordRequests.filter(r=>r.status==='pendente');
 
   return (
     <div>
-      <div className="role-note">Perfil atual: {ROLE_LABELS[role]} · {currentUser.nome}</div>
+      <UserManagementPanel
+        users={users}
+        currentUser={currentUser}
+        goto={goto}
+        onToggleUserStatus={onToggleUserStatus}
+        onDeleteUser={onDeleteUser}
+        onAdminPasswordAction={onAdminPasswordAction}
+      />
 
-      {isAdmin ? (
-        <UserManagementPanel
-          users={users}
-          currentUser={currentUser}
-          goto={goto}
-          onToggleUserStatus={onToggleUserStatus}
-          onDeleteUser={onDeleteUser}
-          onAdminPasswordAction={onAdminPasswordAction}
-        />
-      ) : (
-        <div className="panel">
-          <div className="section-title" style={{marginTop:0}}>Usuários</div>
-          <div style={{fontSize:13,color:'var(--ink-dim)'}}>Gerenciamento de usuários é restrito ao perfil Administrador.</div>
+      <div className="panel">
+        <div className="section-title" style={{marginTop:0}}>
+          Solicitações de Redefinição de Senha
+          {pendentesSenha.length>0 && <span className="badge" style={{position:'static',marginLeft:8}}>{pendentesSenha.length}</span>}
         </div>
-      )}
+        {passwordRequests.length===0 ? (
+          <div style={{fontSize:13,color:'var(--ink-dim)'}}>Nenhuma solicitação de "esqueci minha senha" recebida ainda.</div>
+        ) : (
+          passwordRequests.map(r=>(
+            <PasswordRequestRow key={r.id} req={r} onResolve={onResolvePasswordRequest} />
+          ))
+        )}
+      </div>
 
-      {isAdmin && (
-        <div className="panel">
-          <div className="section-title" style={{marginTop:0}}>
-            Solicitações de Redefinição de Senha
-            {pendentesSenha.length>0 && <span className="badge" style={{position:'static',marginLeft:8}}>{pendentesSenha.length}</span>}
-          </div>
-          {passwordRequests.length===0 ? (
-            <div style={{fontSize:13,color:'var(--ink-dim)'}}>Nenhuma solicitação de "esqueci minha senha" recebida ainda.</div>
-          ) : (
-            passwordRequests.map(r=>(
-              <PasswordRequestRow key={r.id} req={r} onResolve={onResolvePasswordRequest} />
-            ))
-          )}
-        </div>
-      )}
-
-      {isAdmin && passwordHistory.length>0 && (
+      {passwordHistory.length>0 && (
         <div className="panel">
           <div className="section-title" style={{marginTop:0}}>Histórico de Alterações de Senha</div>
           <table className="rank-table">
@@ -7980,6 +7985,21 @@ function Settings({role, users=[], currentUser, goto, onToggleUserStatus, onDele
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+// Configurações — esvaziada depois que Usuários (+ painéis de senha) virou
+// tela própria em Cadastros. Cliente pediu pra manter a tela no menu mesmo
+// vazia ("pode surgir ideias pra colocarmos lá dentro"), em vez de remover o
+// item de navegação — placeholder simples até aparecer algo real pra ir aqui.
+function Settings({role, currentUser}){
+  return (
+    <div>
+      <div className="role-note">Perfil atual: {ROLE_LABELS[role]} · {currentUser.nome}</div>
+      <div className="panel">
+        <div style={{fontSize:13,color:'var(--ink-dim)'}}>Nenhuma configuração disponível no momento.</div>
+      </div>
     </div>
   );
 }
