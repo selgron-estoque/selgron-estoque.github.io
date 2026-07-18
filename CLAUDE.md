@@ -3794,6 +3794,101 @@ reserva por item").
   automática (tempo a definir) e aviso explícito de "já sendo contado por
   fulano" pro segundo operador.
 
+## Redesign das telas de Recontagens / Itens Divergentes / Contagens Concluídas
+
+O cliente mandou um mockup de referência ("Recontagens Pendentes" — cards
+com faixa de severidade colorida, badge de categoria, filtros por
+severidade, cabeçalho de progresso com donut) e pediu pra aplicar esse
+padrão ao "modelo de contagem, recontagem". Planejado via `EnterPlanMode`
+dado o tamanho (toca 3 telas + várias decisões de dado real vs. fabricado).
+Confirmado com o cliente via `AskUserQuestion` (4 perguntas):
+
+1. **Escopo**: as 3 telas de listagem de contagem — `RecountsPanel`
+   ("Recontagens"), `DivergentItemsPanel` ("Itens Divergentes") e
+   `ConcludedCountsPanel` ("Contagens Concluídas") — não só a tela que
+   veio no mockup.
+2. **Severidade**: o mockup mostra 4 níveis (Crítica/Alta/Média/Baixa) com
+   percentuais que passam de 15% — hoje o app só tem 2 níveis reais na
+   fila de "Recontagens" (tudo ali já é "divergência moderada", 5-15%,
+   senão iria direto pra análise do líder). Cliente escolheu **criar uma
+   escala nova de 4 níveis só pra exibição** nessas 3 telas — não muda
+   `classifyDivergence`/`computeStatus` (regra de negócio real de
+   aprovação automática/segunda contagem/análise do líder, que continua
+   com os limiares 5%/15% de sempre).
+3. **Endereço**: o mockup divide em Almox/Rua/Nível/Posição (4 campos) —
+   não existe no banco (endereço real da Selgron é um código único tipo
+   "035-A-1"). Cliente confirmou: **mostrar o endereço real como está
+   hoje**, com um ícone de local, sem inventar campos.
+4. **Menu inferior**: o mockup tem uma barra diferente (Buscar/Scanner/
+   Tarefas/Perfil) — cliente confirmou que isso **não faz parte deste
+   pedido**, o menu atual continua como está.
+
+**`classifySeverity4(pct)`** (perto de `classifyDivergence`) — escala
+nova, só de exibição: `≤5% baixa` / `≤15% média` / `≤30% alta` / `>30%
+crítica` (o corte em 30% é novo, criado pra separar "alta" de "crítica"
+nos itens que já passaram da 1ª contagem — "Itens Divergentes"/
+"Concluídas" podem ter percentuais bem maiores que 15%, coisa que nunca
+acontece em "Recontagens"). `pct==null` (item sem saldo local) vira
+`sem_dado`, tratado à parte — nunca fingido como "baixa" só porque a
+diferença absoluta é 0.
+
+**`categoriaDoInventario(count, inventories)`** (mesmo lugar) — badge de
+categoria do card ("Importação"/"Aleatória"/"Curva ABC"/"Manual"/"Rota de
+Endereço"/"Avulsa"), cruzando `count.inventario` com a lista de
+inventários já carregada — dado 100% real, sem inventar nada; cai em
+"Avulsa" tanto pra contagem sem inventário quanto pra inventário não
+encontrado (ex: já excluído), mesmo tratamento pros dois casos.
+
+**Componentes compartilhados novos** (reaproveitados pelas 3 telas):
+- `SeverityFilterRow` — chips "Todos/Críticas/Altas/Médias/Baixas" com
+  contagem ao lado, filtro client-side puro sobre a lista já carregada.
+- `SearchWithScanner` — campo de busca + botão "Scanner" que abre
+  `CameraScanner` (componente genérico já existente, usado em
+  `ManualCountFlow`/`CountStep`) — ao detectar um código, preenche a
+  busca, mesmo efeito de digitar à mão.
+- `ListaProgressoHeader` — cabeçalho com donut (reaproveita `PnlDonut`,
+  que ganhou um `centerLabel` configurável — antes só mostrava
+  "inventários" fixo, usado no Dashboard) + contadores concluídas/
+  restantes + botão "Atualizar". Usado em Recontagens/Itens Divergentes;
+  Concluídas não usa (já é só itens resolvidos, "restantes" não faz
+  sentido semântico ali).
+- **Filtro de período** reaproveita `TrendFilterBar`/`computeTrendRange`
+  (mesmo componente já usado em Indicadores/Contagens Concluídas), chaves
+  de persistência próprias (`recontagensTrendFilter`/
+  `divergentesTrendFilter`) — afeta só o contador "concluídas" do
+  cabeçalho de progresso, a lista de pendentes continua mostrando TODOS
+  os itens em aberto independente do período (um item pendente de 3 meses
+  atrás continua pendente hoje, filtrar esconderia isso sem necessidade).
+
+**"Atualizar"**: `refreshContagens()` (novo, em `App()`) — o Realtime já
+mantém `counts` atualizado sozinho (ver seção anterior), mas o botão
+continua útil pra forçar uma busca na hora, mesmo padrão já usado no
+Dashboard/Concluídas. `inventories` passou a ser passado às 3 telas (não
+era antes) só pro badge de categoria.
+
+**Ações de cada tela continuam as mesmas** — o card novo é só um "shell"
+visual (`.count-card`/`.count-card-bar`/`.count-card-badges`/
+`.count-card-values`, CSS novo perto de `.item-card`) por cima dos MESMOS
+botões que já existiam: Recontagens mantém "Recontar"+excluir; Itens
+Divergentes mantém as 4 ações que já tinha (Solicitar nova contagem/
+Recontar/Aprovar/Excluir — o mockup não cobre esse caso, que tem mais
+decisões possíveis, então não forcei um layout de 2 botões onde não
+cabia); Concluídas mantém "Ver detalhes" abrindo o MESMO drill-down que
+já existia (`selecionado`/"Histórico de Contagens"), só a lista foi
+reestilizada.
+
+**Limitação de teste, desde a migração pro Supabase Auth**: como o login
+agora exige autenticação real (não dá mais pra simular com um usuário
+local fake), rodar Playwright completo no sandbox contra a tela logada
+deixou de ser viável (mockar todo o fluxo de `signInWithPassword`/sessão
+seria mais frágil que confiável). Testado só o que dá: `classifySeverity4`/
+`categoriaDoInventario` isoladamente via Node (limiares 5/15/30, incluindo
+os valores exatos do mockup do cliente — 26,1%/38,9%/5,8%/0,9% — caindo
+nos níveis certos pela escala nova) e transpile Babel do `index.html`
+inteiro. **A verificação visual/funcional de ponta a ponta (cards, filtros,
+scanner, donut) fica a cargo do cliente**, mesmo handoff já usado pra
+outras mudanças pós-migração de Auth.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase
