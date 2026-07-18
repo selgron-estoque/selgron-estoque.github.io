@@ -906,6 +906,7 @@ async function saveInventarioToSupabase(inv){
       status: inv.status,
       contados: inv.contados,
       itens_importados: inv.itensImportados || null,
+      grupo: inv.grupo || null,
     });
     if(error) return {ok:false, erro:error.message};
     return {ok:true};
@@ -1020,6 +1021,7 @@ async function fetchInventoriesFromSupabase(){
       status: row.status,
       contados: row.contados,
       ...(row.itens_importados ? {itensImportados: row.itens_importados} : {}),
+      ...(row.grupo ? {grupo: row.grupo} : {}),
     }));
   }catch(err){
     console.warn('Falha ao buscar inventários do Supabase:', err);
@@ -1706,18 +1708,37 @@ function estoqueRowToProduct(row){
   };
 }
 
-// Lista priorizada de itens pra "Contagem Aleatória"/"Curva ABC" e "Rota de
-// Endereço" — substitui o cache local estático de 300 SKUs (removido, ver
-// CLAUDE.md). Chama a RPC `contagem_itens_prioritarios` (sem-movimento-
-// recente primeiro, depois valor financeiro decrescente).
-async function fetchContagemItensPrioritarios(limit){
+// Lista priorizada de itens pra "Contagem Aleatória"/"Curva ABC", "Rota de
+// Endereço" e "Contagem por Grupo" — substitui o cache local estático de 300
+// SKUs (removido, ver CLAUDE.md). Chama a RPC `contagem_itens_prioritarios`
+// (sem-movimento-recente primeiro, depois valor financeiro decrescente).
+// `grupo` (opcional) filtra só os itens daquele grupo/família de produto —
+// usado por "Contagem por Grupo" (`inv.grupo`); os outros tipos chamam sem
+// esse argumento, mesmo comportamento de sempre.
+async function fetchContagemItensPrioritarios(limit, grupo){
   if(!supabaseClient) return [];
   try{
-    const { data, error } = await supabaseClient.rpc('contagem_itens_prioritarios', {p_limit: limit});
+    const { data, error } = await supabaseClient.rpc('contagem_itens_prioritarios', {p_limit: limit, p_grupo: grupo || null});
     if(error || !data) return [];
     return data.map(estoqueRowToProduct);
   }catch(err){
     console.warn('Falha ao buscar itens prioritários para contagem:', err);
+    return [];
+  }
+}
+
+// Grupos que realmente têm algum item com saldo carregado (não os ~248
+// grupos possíveis do catálogo, a maioria ainda sem saldo importado) —
+// alimenta o seletor de grupo em "Contagem por Grupo". Cada item já vem com
+// a descrição resolvida (`describeGrupo`), pronta pra exibir num <select>.
+async function fetchGruposComEstoque(){
+  if(!supabaseClient) return [];
+  try{
+    const { data, error } = await supabaseClient.rpc('grupos_com_estoque');
+    if(error || !data) return [];
+    return data.map(row => ({ grupo: row.grupo, descricao: describeGrupo(row.grupo), qtdItens: Number(row.qtd_itens) }));
+  }catch(err){
+    console.warn('Falha ao buscar grupos com estoque:', err);
     return [];
   }
 }
@@ -4073,13 +4094,18 @@ const TIPO_ABREV_NOME = {
   'Contagem Aleatória': 'Aleatória',
   'Contagem por Curva ABC': 'Curva ABC',
   'Contagem por Rota de Endereço': 'Rota',
+  'Contagem por Grupo': 'Grupo',
 };
-function gerarNomeAutomaticoInventario(tipo, almoxCodes, data, nomesExistentes){
+function gerarNomeAutomaticoInventario(tipo, almoxCodes, data, nomesExistentes, grupoDescricao){
   const abrev = TIPO_ABREV_NOME[tipo] || tipo;
   const almoxLabel = (almoxCodes && almoxCodes.length) ? almoxCodes.map(c=>c.padStart(2,'0')).join('+') : '—';
   const [ano, mes, dia] = (data || '').split('-');
   const dataLabel = (dia && mes && ano) ? (dia + '/' + mes + '/' + ano) : '';
-  const base = abrev + ' — Almox ' + almoxLabel + (dataLabel ? (' — ' + dataLabel) : '');
+  // "Contagem por Grupo" acrescenta a descrição do grupo escolhido no nome
+  // (ex.: "Grupo — ACRILICOS — Almox 01 — 17/07/2026") — sem isso, dois
+  // inventários por grupo diferentes no mesmo dia/armazém ficariam com o
+  // mesmo nome base e só se diferenciariam pelo sufixo "#2" sem sentido.
+  const base = abrev + (grupoDescricao ? (' — ' + grupoDescricao) : '') + ' — Almox ' + almoxLabel + (dataLabel ? (' — ' + dataLabel) : '');
   const usados = new Set((nomesExistentes || []).map(n => String(n || '').trim().toLowerCase()));
   if(!usados.has(base.toLowerCase())) return base;
   let n = 2;
@@ -4104,6 +4130,13 @@ function NewInventory({onCreate, goto, inventories}){
   // quantidade). `tipo:null` = ainda no passo 1 (escolha do tipo).
   const [tipo, setTipo] = useState(null);
 
+  // "Contagem por Grupo" — grupos disponíveis carregados sob demanda (só
+  // quando esse tipo é escolhido, não vale a pena buscar sempre) via a RPC
+  // grupos_com_estoque, que já filtra pros grupos com saldo carregado (evita
+  // listar os ~248 grupos possíveis do catálogo, a maioria ainda vazia).
+  const [grupos, setGrupos] = useState(null); // null = ainda não carregou
+  const [grupoSelecionado, setGrupoSelecionado] = useState('');
+
   const [arquivoNome, setArquivoNome] = useState('');
   const [itensImportados, setItensImportados] = useState(null);
   const [importResumo, setImportResumo] = useState(null);
@@ -4120,6 +4153,13 @@ function NewInventory({onCreate, goto, inventories}){
     });
     return ()=>{ cancelado = true; };
   }, []);
+
+  useEffect(()=>{
+    if(tipo!=='Contagem por Grupo' || grupos!==null) return;
+    let cancelado = false;
+    fetchGruposComEstoque().then(lista=>{ if(!cancelado) setGrupos(lista); });
+    return ()=>{ cancelado = true; };
+  }, [tipo, grupos]);
 
   const hojeStr = hojeLocalStr();
 
@@ -4158,23 +4198,27 @@ function NewInventory({onCreate, goto, inventories}){
     {v:'Contagem Aleatória', d:'O sistema seleciona os itens automaticamente'},
     {v:'Contagem por Curva ABC', d:'Prioriza itens de maior valor ou giro'},
     {v:'Contagem por Rota de Endereço', d:'Sequência otimizada por corredor/rua'},
+    {v:'Contagem por Grupo', d:'Conta só os itens de um grupo/família de produto específico'},
     {v:'Lista Importada (Excel)', d:'Conta exatamente os itens de uma planilha importada, na ordem em que vieram'},
   ];
 
   const isImportado = tipo==='Lista Importada (Excel)';
+  const isPorGrupo = tipo==='Contagem por Grupo';
+  const grupoDescricao = isPorGrupo ? (grupos||[]).find(g=>g.grupo===grupoSelecionado) : null;
 
   // Nome do inventário: pra "Lista Importada" continua saindo do nome do
-  // arquivo (setNome em handleFileUpload); pros outros 3 tipos que ainda
-  // passam por este formulário (Aleatória/Curva ABC/Rota), é gerado sozinho
-  // a partir de tipo+armazém+data, sem campo pra digitar — recalcula a cada
-  // mudança de armazém/data, sempre único frente aos inventários já criados.
+  // arquivo (setNome em handleFileUpload); pros outros tipos que ainda
+  // passam por este formulário (Aleatória/Curva ABC/Rota/Grupo), é gerado
+  // sozinho a partir de tipo+(grupo)+armazém+data, sem campo pra digitar —
+  // recalcula a cada mudança de armazém/data/grupo, sempre único frente aos
+  // inventários já criados.
   const nomeAuto = useMemo(()=>{
     if(!tipo || isImportado) return '';
-    return gerarNomeAutomaticoInventario(tipo, almoxCodes, data, (inventories||[]).map(i=>i.nome));
-  }, [tipo, isImportado, almoxCodes, data, inventories]);
+    return gerarNomeAutomaticoInventario(tipo, almoxCodes, data, (inventories||[]).map(i=>i.nome), grupoDescricao ? grupoDescricao.descricao : null);
+  }, [tipo, isImportado, almoxCodes, data, inventories, grupoDescricao]);
   const nomeFinal = isImportado ? nome : nomeAuto;
 
-  const camposBasicosOk = nomeFinal.trim() && almoxCodes.length>0 && data && data>=hojeStr && (isImportado || Number(qtd)>0);
+  const camposBasicosOk = nomeFinal.trim() && almoxCodes.length>0 && data && data>=hojeStr && (isImportado || Number(qtd)>0) && (!isPorGrupo || !!grupoSelecionado);
   const canCreate = camposBasicosOk && (isImportado ? !!(itensImportados && itensImportados.length>0) : true);
 
   function handleDownloadTemplate(){
@@ -4233,6 +4277,7 @@ function NewInventory({onCreate, goto, inventories}){
       id:'INV-'+Math.floor(Math.random()*900+100), nome:nomeFinal, almoxarifado, data, tipo,
       qtdItens: isImportado ? itensImportados.length : Number(qtd), status:'pendente', contados:0,
       ...(isImportado ? {itensImportados} : {}),
+      ...(isPorGrupo ? {grupo: grupoSelecionado} : {}),
     });
     setSalvando(false);
     if(res && !res.ok) setErroCriacao(res.erro || 'Não foi possível criar o inventário — tente novamente.');
@@ -4280,6 +4325,23 @@ function NewInventory({onCreate, goto, inventories}){
               <input type="text" value={nomeAuto} disabled title="Gerado automaticamente a partir do tipo, armazém e data — não é possível editar." />
               <div className="opt-desc" style={{marginTop:4}}>Gerado automaticamente, sem repetir nome de outro inventário.</div>
             </div>
+            {isPorGrupo && (
+              <div className="field">
+                <label>Grupo</label>
+                {grupos===null ? (
+                  <div className="empty-state" style={{padding:14}}>Carregando grupos disponíveis…</div>
+                ) : grupos.length===0 ? (
+                  <div className="empty-state" style={{padding:14}}>Nenhum grupo com saldo carregado ainda.</div>
+                ) : (
+                  <select value={grupoSelecionado} onChange={e=>setGrupoSelecionado(e.target.value)}>
+                    <option value="">Selecione um grupo…</option>
+                    {grupos.map(g=>(
+                      <option key={g.grupo} value={g.grupo}>{g.descricao} ({g.qtdItens} {g.qtdItens===1?'item':'itens'})</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )}
             <div className="field">
               <label>Almoxarifado</label>
               <div className="chip-input">
@@ -4383,6 +4445,22 @@ function PickCountType({role, goto, onCreate, inventories}){
     return ()=>{ cancelado = true; };
   }, [podeGerir]);
 
+  // "Contagem por Grupo" avulsa (sem criar inventário) — mesma ideia da
+  // versão de líder/admin em NewInventory, só que pro operador escolher na
+  // hora e já cair direto na fila (goto('randomCount', {grupo}) — RandomCountFlow
+  // já sabe filtrar por `inv.grupo`, e como esse "inv" avulso não tem `.id`,
+  // o incremento de `contados`/gravação de progresso é pulado sozinho, sem
+  // nenhum tratamento especial extra aqui).
+  const [grupoAvulsoAberto, setGrupoAvulsoAberto] = useState(false);
+  const [gruposAvulso, setGruposAvulso] = useState(null);
+  const [grupoAvulsoSelecionado, setGrupoAvulsoSelecionado] = useState('');
+  useEffect(()=>{
+    if(podeGerir || !grupoAvulsoAberto || gruposAvulso!==null) return;
+    let cancelado = false;
+    fetchGruposComEstoque().then(lista=>{ if(!cancelado) setGruposAvulso(lista); });
+    return ()=>{ cancelado = true; };
+  }, [podeGerir, grupoAvulsoAberto, gruposAvulso]);
+
   if(podeGerir){
     return <NewInventory onCreate={onCreate} goto={goto} inventories={inventories} />;
   }
@@ -4407,6 +4485,34 @@ function PickCountType({role, goto, onCreate, inventories}){
           <div className="opt-title" style={{fontSize:15}}><Ic>🗺</Ic>&nbsp; Contagem por Rota</div>
           <div className="opt-desc">{anyAddress ? 'Sequência otimizada por corredor e rua, menor deslocamento' : 'Indisponível — nenhum endereço cadastrado ainda neste almoxarifado'}</div>
         </button>
+        <button className="item-card" style={{padding:18,textAlign:'left',border:'1px solid var(--line)',background:'var(--panel)'}} onClick={()=>setGrupoAvulsoAberto(v=>!v)}>
+          <div className="opt-title" style={{fontSize:15}}><Ic>🏷</Ic>&nbsp; Contagem por Grupo</div>
+          <div className="opt-desc">Contar só os itens de um grupo/família específico</div>
+        </button>
+        {grupoAvulsoAberto && (
+          <div className="field" style={{marginTop:-6}}>
+            {gruposAvulso===null ? (
+              <div className="empty-state" style={{padding:14}}>Carregando grupos disponíveis…</div>
+            ) : gruposAvulso.length===0 ? (
+              <div className="empty-state" style={{padding:14}}>Nenhum grupo com saldo carregado ainda.</div>
+            ) : (
+              <>
+                <select value={grupoAvulsoSelecionado} onChange={e=>setGrupoAvulsoSelecionado(e.target.value)}>
+                  <option value="">Selecione um grupo…</option>
+                  {gruposAvulso.map(g=>(
+                    <option key={g.grupo} value={g.grupo}>{g.descricao} ({g.qtdItens} {g.qtdItens===1?'item':'itens'})</option>
+                  ))}
+                </select>
+                <button
+                  className="btn btn-primary"
+                  style={{marginTop:10}}
+                  disabled={!grupoAvulsoSelecionado}
+                  onClick={()=>goto('randomCount', {grupo: grupoAvulsoSelecionado})}
+                >Iniciar contagem</button>
+              </>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -4812,7 +4918,10 @@ function RandomCountFlow({inv, user, onFinish, onAddressProposed, setInventories
   useEffect(()=>{
     let cancelado = false;
     const qtd = (inv && inv.qtdItens) || 5;
-    fetchContagemItensPrioritarios(Math.max(qtd, 25)).then(itens=>{
+    // "Contagem por Grupo" filtra a busca pelo grupo salvo no inventário
+    // (`inv.grupo`) — os outros tipos passam `undefined`, sem filtro, mesmo
+    // comportamento de sempre.
+    fetchContagemItensPrioritarios(Math.max(qtd, 25), inv && inv.grupo).then(itens=>{
       if(cancelado) return;
       // Sequência de endereço: itens com endereço cadastrado vêm primeiro,
       // ordenados por corredor → rua → endereço (deslocamento físico menor);
@@ -4864,7 +4973,7 @@ function RandomCountFlow({inv, user, onFinish, onAddressProposed, setInventories
 
   return (
     <div>
-      <div className="role-note">Item {jaContados+q.idx+1} de {allItems.length} · Itens ainda não contados primeiro, depois por sequência de endereço</div>
+      <div className="role-note">Item {jaContados+q.idx+1} de {allItems.length} · Itens ainda não contados primeiro, depois por sequência de endereço{inv && inv.grupo ? (' · Grupo: ' + describeGrupo(inv.grupo)) : ''}</div>
       <CountStep
         product={q.current}
         user={user}
@@ -4872,7 +4981,7 @@ function RandomCountFlow({inv, user, onFinish, onAddressProposed, setInventories
         counts={counts}
         onAddressProposed={onAddressProposed}
         onComplete={(c)=>{
-          if(inv){ setInventories(prev=>prev.map(i=>i.id===inv.id?{...i, contados:i.contados+1}:i)); incrementContadosSupabase(inv.id); }
+          if(inv && inv.id){ setInventories(prev=>prev.map(i=>i.id===inv.id?{...i, contados:i.contados+1}:i)); incrementContadosSupabase(inv.id); }
           onFinish(c);
           q.next();
         }}
@@ -4988,7 +5097,7 @@ function RouteCountFlow({inv, user, onFinish, onAddressProposed, setInventories,
 
   if(active){
     return <CountStep product={active} user={user} inv={inv} counts={counts} onAddressProposed={onAddressProposed} onComplete={(c)=>{
-      if(inv){ setInventories(prev=>prev.map(i=>i.id===inv.id?{...i, contados:i.contados+1}:i)); incrementContadosSupabase(inv.id); }
+      if(inv && inv.id){ setInventories(prev=>prev.map(i=>i.id===inv.id?{...i, contados:i.contados+1}:i)); incrementContadosSupabase(inv.id); }
       onFinish(c);
       setActive(null);
     }} />;
@@ -5110,7 +5219,7 @@ function ImportedListCountFlow({inv, user, onFinish, onAddressProposed, setInven
         counts={counts}
         onAddressProposed={onAddressProposed}
         onComplete={(c)=>{
-          if(inv){ setInventories(prev=>prev.map(i=>i.id===inv.id?{...i, contados:i.contados+1}:i)); incrementContadosSupabase(inv.id); }
+          if(inv && inv.id){ setInventories(prev=>prev.map(i=>i.id===inv.id?{...i, contados:i.contados+1}:i)); incrementContadosSupabase(inv.id); }
           onFinish(c);
           q.next();
         }}

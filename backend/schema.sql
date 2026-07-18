@@ -161,7 +161,13 @@ $$ language sql stable;
 -- não tem endereço cadastrado (essas tabelas seguem praticamente vazias) —
 -- INNER JOIN esconderia quase tudo. `corredor`/`rua`/`endereco_codigo` vêm
 -- null até o cadastro de endereços avançar de verdade.
-create or replace function contagem_itens_prioritarios(p_limit int default 50)
+--
+-- `p_grupo` (opcional, default null = comportamento de sempre, sem filtro)
+-- foi acrescentado pro tipo de inventário "Contagem por Grupo" — quando
+-- informado, filtra só os itens daquele grupo/família de produto (`grupo`
+-- em `produtos`, SB2), mantendo a mesma prioridade (sem movimento recente
+-- primeiro, depois valor financeiro).
+create or replace function contagem_itens_prioritarios(p_limit int default 50, p_grupo text default null)
 returns table(
   codigo text, descricao text, grupo text, almoxarifado text, saldo numeric,
   valor_financeiro numeric, data_ultima_saida date, sem_movimento_recente boolean,
@@ -176,10 +182,26 @@ returns table(
   join produtos p on p.codigo = es.produto_codigo
   left join estoque_enderecos ee on ee.produto_codigo = es.produto_codigo
   left join enderecos e on e.id = ee.endereco_id
+  where (p_grupo is null or p.grupo = p_grupo)
   order by
     (es.data_ultima_saida is null or es.data_ultima_saida < current_date - interval '90 days') desc,
     es.valor_financeiro desc
   limit p_limit;
+$$ language sql stable;
+
+-- Lista os grupos que realmente têm algum item com saldo carregado (não os
+-- 248 grupos possíveis do catálogo inteiro, a maioria sem saldo ainda) —
+-- alimenta o seletor de grupo em "Contagem por Grupo", pra líder/admin não
+-- escolher um grupo vazio sem querer. `qtd_itens` ajuda a decidir o
+-- tamanho da contagem antes de criar o inventário.
+create or replace function grupos_com_estoque()
+returns table(grupo text, qtd_itens bigint) as $$
+  select p.grupo, count(*)
+  from estoque_saldo es
+  join produtos p on p.codigo = es.produto_codigo
+  where p.grupo is not null
+  group by p.grupo
+  order by count(*) desc;
 $$ language sql stable;
 
 -- Log de cada rodada de sincronização — auditoria e depuração.
@@ -255,6 +277,7 @@ create table inventarios (
   status text not null default 'pendente',
   contados int not null default 0,
   itens_importados jsonb,           -- só preenchido quando tipo = 'Lista Importada (Excel)'
+  grupo text,                       -- só preenchido quando tipo = 'Contagem por Grupo' (código do grupo/família, tabela produtos)
   criado_em timestamptz not null default now()
 );
 
@@ -499,6 +522,10 @@ alter table contagens add column if not exists atualizado_em timestamptz not nul
 create policy "atualização pública" on contagens for update using (true) with check (true);
 create policy "exclusão pública" on inventarios for delete using (true);
 create policy "exclusão pública" on contagens for delete using (true);
+
+-- Tipo de inventário novo "Contagem por Grupo" (ver CLAUDE.md) — grava o
+-- grupo/família escolhido pra filtrar a busca de itens.
+alter table inventarios add column if not exists grupo text;
 
 -- USUÁRIOS — o projeto real já tem uma tabela `usuarios` desde a aplicação
 -- inicial do schema, mas com a estrutura ANTIGA (id uuid, sem coluna de
