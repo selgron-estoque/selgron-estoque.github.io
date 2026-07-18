@@ -207,6 +207,15 @@
   .count-card-menu-dropdown button{display:block;width:100%;padding:9px 16px;background:none;border:none;text-align:left;font-size:12.5px;color:var(--danger);cursor:pointer;}
   .count-card-menu-dropdown button:hover{background:var(--danger-bg);}
   .count-card-title{line-height:1.15;}
+  /* Destaque invertido em relação ao .item-code/.item-desc padrão do resto
+     do app (lá a descrição é maior) — pedido do cliente pensando em
+     facilidade operacional: o código é o que o operador confere contra o
+     item físico/etiqueta, então precisa ser o principal destaque visual
+     aqui, com a descrição como apoio secundário menor. Escopado só a
+     .count-card-title (Recontagens/Itens Divergentes/Concluídas), não
+     muda .item-code/.item-desc em nenhum outro lugar do app. */
+  .count-card-title .item-code{font-size:20px;font-weight:700;letter-spacing:0.3px;}
+  .count-card-title .item-desc{font-size:12.5px;font-weight:600;margin-top:2px;}
   .count-card-location{font-size:12.5px;color:var(--ink-dim);display:flex;align-items:center;gap:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .count-card-main{display:flex;gap:16px;align-items:stretch;flex:1;}
   .count-card-content{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px;justify-content:center;}
@@ -6153,7 +6162,7 @@ function RecountsPanel({counts, inventories, goto, onDeleteCount, onRefresh}){
             </div>
             <div className="count-card-title">
               <div className="item-code">{c.productCode}</div>
-              <div className="item-desc" style={{fontSize:15}}>{c.descricao}</div>
+              <div className="item-desc">{c.descricao}</div>
             </div>
             <div className="count-card-location"><Ic>📍</Ic> {c.endereco || 'não cadastrado'}</div>
             {c.recontagemSolicitadaPeloLider && (
@@ -6313,7 +6322,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequ
               </div>
               <div className="count-card-title">
                 <div className="item-code">{c.productCode}</div>
-                <div className="item-desc" style={{fontSize:15}}>{c.descricao}</div>
+                <div className="item-desc">{c.descricao}</div>
               </div>
               <div className="count-card-location"><Ic>📍</Ic> {c.endereco || 'não cadastrado'}</div>
               {anterior && (
@@ -6755,7 +6764,7 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
               </div>
               <div className="count-card-title">
                 <div className="item-code">{tip.productCode}</div>
-                <div className="item-desc" style={{fontSize:15}}>{tip.descricao}</div>
+                <div className="item-desc">{tip.descricao}</div>
               </div>
               <div className="count-card-location"><Ic>📍</Ic> {tip.endereco || tip.enderecoContado || 'não cadastrado'}</div>
               <div className="count-card-values">
