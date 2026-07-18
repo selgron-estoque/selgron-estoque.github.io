@@ -7574,7 +7574,12 @@ function UserManagementPanel({users, currentUser, goto, onToggleUserStatus, onDe
                 <StatusTag status={u.status==='ativo'?'ok':u.status==='bloqueado'?'danger':'warn'} text={u.status==='ativo'?'Ativo':u.status==='bloqueado'?'Bloqueado':'Aguardando nova senha'} />
                 <div className="btn-row" style={{width:'auto'}}>
                   <button className="btn btn-outline" style={{padding:'7px 10px',fontSize:10.5}} disabled={busyId===u.id} onClick={()=>goto('userForm', {mode:u.id, initialData:u})}>Editar</button>
-                  <button className="btn btn-outline" style={{padding:'7px 10px',fontSize:10.5}} disabled={busyId===u.id} onClick={()=>handleToggle(u.id)}>{busyId===u.id ? 'Enviando…' : (u.status==='bloqueado'?'Desbloquear':'Bloquear')}</button>
+                  {/* Nunca mostra "Bloquear" na própria linha — mesmo raciocínio já
+                      usado no botão "Excluir" abaixo. Se por algum motivo a própria
+                      conta já estiver bloqueada, "Desbloquear" continua visível. */}
+                  {(u.id!==currentUser.id || u.status==='bloqueado') && (
+                    <button className="btn btn-outline" style={{padding:'7px 10px',fontSize:10.5}} disabled={busyId===u.id} onClick={()=>handleToggle(u.id)}>{busyId===u.id ? 'Enviando…' : (u.status==='bloqueado'?'Desbloquear':'Bloquear')}</button>
+                  )}
                   <button className="btn btn-outline" style={{padding:'7px 10px',fontSize:10.5}} disabled={busyId===u.id} onClick={()=>{setPwAction(pwAction===u.id?null:u.id); setPwValue(''); setErros(prev=>({...prev,[u.id]:null}));}}>Redefinir senha</button>
                   {u.id!==currentUser.id && (
                     <button className="btn btn-danger" style={{padding:'7px 10px',fontSize:10.5,width:'auto'}} disabled={busyId===u.id} onClick={()=>{setConfirmDeleteId(u.id); setErros(prev=>({...prev,[u.id]:null}));}}>Excluir</button>

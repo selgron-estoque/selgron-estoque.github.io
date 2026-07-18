@@ -178,6 +178,13 @@ Deno.serve(async (req: Request) => {
 
     if (acao === "alternar_bloqueio") {
       const { userId } = body;
+      // Mesma proteção que `excluir_usuario` já tinha (linha abaixo) — sem
+      // isso, um admin podia bloquear a própria conta e, como TODA ação
+      // admin exige "quem chama não está bloqueado" (checagem acima), ficava
+      // sem nenhum jeito de se desbloquear sozinho. Se só existe uma conta
+      // admin no momento, isso trava o sistema inteiro (só corrigível via
+      // SQL direto no banco).
+      if (userId === chamador.id) return resposta(400, { ok: false, erro: "Não é possível bloquear a própria conta." });
       const { data: alvo } = await supabase.from("usuarios").select("status").eq("id", userId).single();
       if (!alvo) return resposta(404, { ok: false, erro: "Usuário não encontrado." });
       const novoStatus = alvo.status === "bloqueado" ? "ativo" : "bloqueado";
