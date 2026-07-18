@@ -3656,6 +3656,93 @@ guiado comando a comando, sem pressupor nenhum conhecimento prévio — inclusiv
 no meio do caminho um erro de path (a pasta "Documentos" no Windows em português, não
 "Documents") e confirmando "y" em vez de "s" num prompt do npm em inglês.
 
+## Sincronização em tempo real (Supabase Realtime) — substitui o polling de 30s
+
+O cliente perguntou se a atualização entre aparelhos era instantânea ou
+ainda dependia dos 30s de polling — expliquei que ainda era polling
+(exceto ações do próprio aparelho, já instantâneas desde a rodada de
+feedback do formulário de usuário) e ele pediu pra virar instantâneo de
+vez, justificando: "a ideia futuramente seria usar esse app para um
+inventário geral" — ou seja, mais aparelhos contando ao mesmo tempo, cenário
+onde 30s de atraso vira um problema real (dois operadores podem pegar o
+mesmo item "na vez" antes do outro aparelho saber que já foi contado,
+limitação já documentada antes). Planejado via `EnterPlanMode`/
+`ExitPlanMode` dado o tamanho da mudança (toca 4 pontos de sincronização
+diferentes). Confirmado com o cliente via `AskUserQuestion`: escopo
+"tudo" (contagens, inventários, usuários, endereços propostos — não só
+contagens/inventários) e aceitou que o app "pode exigir conexão sempre"
+em vez de preservar o modo 100% offline como prioridade.
+
+- **Os dois `useEffect` de polling (`setInterval(..., 30000)`) viraram
+  assinaturas de canal do Supabase Realtime** (`supabaseClient.channel(...)
+  .on('postgres_changes', {event:'*', schema:'public', table:...}, ...)
+  .subscribe(...)`) — um canal por tabela (`contagens`, `inventarios`,
+  `enderecos_propostos`, `usuarios`), cada um atualizando só a LINHA do
+  evento recebido (via os mappers `contagemRowToLocal`/
+  `inventarioRowToLocal`/`enderecoPropostoRowToLocal`/`usuarioRowToLocal`,
+  já existentes ou extraídos agora — `inventarioRowToLocal` era só um
+  mapeamento inline dentro de `fetchInventoriesFromSupabase`, virou função
+  nomeada pelo mesmo motivo dos outros três: o handler do Realtime também
+  precisa mapear uma linha isolada).
+- **`mergeByIdComTimestamp(prev, incoming, {timestampField, removeMissing})`**
+  (função nova, perto de `fetchInventoriesFromSupabase`) — extrai a lógica
+  de merge que já existia repetida quase idêntica em cada ciclo de
+  sincronização (contagens/endereços/usuários, desempate por
+  `atualizadoEm`). `removeMissing:true` só é usado no fetch de
+  reconciliação (lista remota COMPLETA); nunca ao processar um evento
+  isolado do Realtime, ou tudo que não fosse aquele registro seria
+  removido do estado local por engano. Inventários mantém a lógica própria
+  (`contados >= local.contados`, sem coluna de timestamp), não encaixa no
+  helper genérico.
+- **DELETE do Realtime remove localmente** — contagens/inventários/
+  usuários podem ser excluídos (`deleteCount`/`deleteInventory`/
+  `deleteUser`, todos já existentes); endereços propostos nunca são
+  deletados (só mudam de status), então esse canal não trata evento de
+  DELETE.
+- **Fetch completo só roda quando o canal conecta/reconecta**
+  (`status==='SUBSCRIBED'` no callback de `.subscribe(...)`, dispara na
+  conexão inicial E em toda reconexão automática) — o Postgres Changes do
+  Realtime não garante reentrega de eventos perdidos enquanto o canal
+  estava desconectado (aba em segundo plano, queda de rede breve), então
+  esse fetch cobre qualquer mudança perdida nesse intervalo. Não é o
+  polling de 30s voltando — é só a "primeira sincronizada" de cada vez que
+  a conexão (re)abre.
+- **Fila de retry de GRAVAÇÕES que falharem (`_syncPendente`/
+  `getPendingIncrements`) não muda** — virou um `useEffect` próprio,
+  separado da sincronização de leitura (antes estava "carona" no mesmo
+  ciclo de 30s) — continua rodando a cada 30s, independente do Realtime.
+  Decisão consciente dado "pode exigir conexão sempre": mantido porque não
+  tem custo nenhum e evita perder uma contagem se UMA gravação específica
+  falhar por um segundo de instabilidade, mesmo o app não precisando mais
+  funcionar 100% offline como cenário principal.
+- **RLS não precisou de nenhuma policy nova** — o Realtime da Supabase já
+  respeita as policies `auth.role() = 'authenticated'` que essas 4 tabelas
+  já tinham desde o endurecimento de RLS da migração de Auth (passo 9.9).
+  Só precisa habilitar a REPLICAÇÃO das tabelas na publicação
+  `supabase_realtime` (`backend/schema.sql`, bloco novo; `backend/README.md`,
+  seção 10) — ação do cliente, uma linha de SQL
+  (`alter publication supabase_realtime add table contagens, inventarios,
+  enderecos_propostos, usuarios;`), com uma introspecção antes (`select ...
+  from pg_publication_tables where pubname = 'supabase_realtime';`) pra
+  evitar erro de "already member" se alguma tabela já estivesse habilitada.
+- **Fora de escopo, decisão consciente**: RLS por papel/linha (ex: operador
+  só receber em tempo real as próprias contagens) e "Presence" (ver quem
+  mais está com o app aberto agora) — recursos separados do Realtime, não
+  pedidos.
+- Testado: `mergeByIdComTimestamp` isoladamente via Node (insere item novo
+  via evento isolado, atualiza quando remoto é mais novo, NÃO regride
+  quando remoto é mais antigo — proteção contra evento fora de ordem,
+  `removeMissing` remove item ausente da lista remota completa, e evento
+  isolado sem `removeMissing` nunca apaga outros itens locais). Transpile
+  Babel do `index.html` inteiro. **Não testado contra o Supabase real** —
+  diferente de testes anteriores (mockáveis via Playwright/`page.route`
+  porque são chamadas REST simples), o Realtime usa WebSocket, que o
+  sandbox não tem como simular fielmente — falta o cliente rodar o
+  `alter publication` no projeto real (seção 10 do `backend/README.md`) e
+  testar com dois aparelhos/duas abas, confirmando que uma contagem/
+  inventário/usuário criado num aparece no outro em poucos segundos sem
+  precisar recarregar a página.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase
