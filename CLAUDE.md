@@ -4294,3 +4294,46 @@ avatar, nome, perfil, sino) ocupando o topo. Pedido, com o "porquê" de cada ite
   pedido (18 de 152 → faltam 134). Transpile Babel do arquivo inteiro e balanceamento de
   chaves do CSS conferidos. **A verificação visual de ponta a ponta fica a cargo do
   cliente** — mesma limitação de sempre.
+
+## Menu lateral (celular) vira rodapé com 2 ícones: Início / Voltar
+
+Cliente notou que o menu lateral completo (fundo azul-marinho, abre por cima da tela ao
+tocar no botão flutuante) duplicava exatamente os mesmos destinos que a tela Início no
+celular já mostra em forma de lista (`MobileHomeMenu`, ver seção "Início no celular"
+acima) — pediu pra substituir por um rodapé fixo com só 2 ícones: Início e Voltar.
+Confirmado via `AskUserQuestion` (2 perguntas): "Voltar" deveria desfazer a navegação de
+verdade (não só ir pra Início de novo) e o menu lateral deveria sumir por completo no
+celular (não ficar como alternativa).
+
+- **Histórico de navegação** (`navHistory`, novo estado em `App()`) — pilha de
+  `{view, flowState}` visitados. `goto(v, params)` (já existia, ponto único de navegação
+  usado por todo o app) passou a empurrar o par `{view, flowState}` ATUAL pra pilha antes
+  de trocar de tela. `voltarUmPasso()` (novo) desempilha o último e restaura os dois —
+  funciona pra qualquer tela, inclusive as que dependem de `flowState` (ex: voltar de
+  dentro de uma recontagem restaura o `flowState` de quem chamou, não só o nome da view).
+  Ephêmero de propósito (`useState` puro, não `usePersistedState`) — recarregar a página
+  já reinicia a "sessão de navegação" naturalmente, mesmo critério já usado pra
+  `sidebarCollapsed`. `logout()` limpa a pilha, mesmo padrão já usado pra `view`/
+  `flowState` (não vaza navegação de um usuário pro próximo login no mesmo aparelho).
+- **`MobileNavBar`** (componente novo, perto de `BottomNav`) — 2 botões só com ícone
+  (`DIcon home`/`chevronLeft`, sem texto, como pedido), fundo navy, sempre renderizado no
+  JSX (mesmo critério de sempre: CSS decide visibilidade por tamanho de tela, nunca
+  branching em JS) — `.mobile-nav-bar` só aparece de verdade abaixo de 768px via CSS,
+  mesmo breakpoint onde a Sidebar já virava painel flutuante antes. "Voltar" fica
+  desabilitado (`podeVoltar=false`) quando a pilha está vazia, em vez de não fazer nada
+  silenciosamente.
+- **Sidebar/sidebar-toggle somem por completo abaixo de 768px** (antes viravam um painel
+  flutuante com botão de abrir/fechar) — `display:none` direto, sem alternativa. Acima de
+  768px (tablet largo/desktop) nada mudou, a Sidebar continua exatamente como estava.
+- **Rodapé fixo (`.cs-footer`) da tela de contagem** precisou de um ajuste pontual pra
+  não ficar embaixo do novo `.mobile-nav-bar`: `bottom:56px` (a altura do rodapé novo) em
+  vez de `bottom:0` só nessa faixa de tela — mesmo raciocínio, `.content` também ganhou
+  mais `padding-bottom` (32px→88px) pra o final da rolagem não ficar escondido atrás do
+  rodapé fixo.
+- Testado via script Node isolado (simulação da pilha `goto`/`voltarUmPasso`, mesma
+  técnica de sempre): navegar por 2 telas e voltar duas vezes restaura exatamente a
+  view/flowState de cada passo anterior, incluindo o caso de história vazia (voltar sem
+  ter pra onde não quebra, só não faz nada). Transpile Babel do arquivo inteiro e
+  balanceamento de chaves do CSS conferidos. **A verificação visual de ponta a ponta
+  (o rodapé em si, nos vários tamanhos de tela) fica a cargo do cliente** — mesma
+  limitação de sempre (login via Supabase Auth real não é simulável no sandbox).

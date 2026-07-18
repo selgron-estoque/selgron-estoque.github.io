@@ -684,7 +684,7 @@
      novo funciona em qualquer largura de tela"). Abaixo de 768px a sidebar vira um
      painel sobreposto (overlay) que desliza por cima do conteúdo em vez de empurrá-lo,
      já que não cabe um menu fixo de 264px numa tela de celular. */
-  .desktop-topbar, .sidebar, .sidebar-toggle, .sidebar-backdrop, .desktop-kpi-grid, .desktop-quick-grid, .desktop-cta-row, .pnl-wrap, .mobile-home-menu{display:none;}
+  .desktop-topbar, .sidebar, .sidebar-toggle, .sidebar-backdrop, .desktop-kpi-grid, .desktop-quick-grid, .desktop-cta-row, .pnl-wrap, .mobile-home-menu, .mobile-nav-bar{display:none;}
 
   @media (min-width:360px){
     .app{max-width:none;flex-direction:row;align-items:flex-start;position:relative;}
@@ -833,20 +833,24 @@
       .pnl-col-8,.pnl-col-4,.pnl-col-5,.pnl-col-7{grid-column:span 12;}
     }
 
-    /* Celular (360-767px): sidebar vira painel flutuante (overlay) sobre o
-       conteúdo, começa fechada, e some sozinha ao navegar — ver Sidebar.jsx
-       (prop collapsed + goto que fecha ao clicar) e CLAUDE.md. */
+    /* Celular (360-767px): menu lateral completo (Sidebar/sidebar-toggle,
+       fundo azul-marinho) sai de cena por completo — cliente notou que
+       duplicava exatamente os mesmos destinos que a tela Início já mostra
+       em lista (MobileHomeMenu). Vira um rodapé fixo com só 2 ícones
+       (Início/Voltar, ver MobileNavBar) — mais rápido que abrir um menu
+       cheio pra uma navegação rápida. */
     @media (max-width:767px){
-      .sidebar{position:fixed;top:0;left:0;width:264px;height:100vh;transform:translateX(0);transition:transform .2s ease;box-shadow:4px 0 24px rgba(0,0,0,.25);z-index:100;}
-      .sidebar.collapsed{width:264px;transform:translateX(-100%);}
-      .sidebar-backdrop{display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:90;}
-      .sidebar-backdrop.visible{display:block;}
-      .sidebar-toggle{position:fixed;top:16px;left:236px;z-index:110;}
-      .sidebar-toggle.collapsed{left:16px;}
+      .sidebar, .sidebar-backdrop, .sidebar-toggle{display:none;}
+      .mobile-nav-bar{display:flex;position:fixed;bottom:0;left:0;right:0;height:56px;background:var(--navy);z-index:120;box-shadow:0 -2px 10px rgba(0,0,0,.2);}
+      .mnb-btn{flex:1;display:flex;align-items:center;justify-content:center;background:none;border:none;color:#fff;}
+      .mnb-btn:active{background:rgba(255,255,255,.08);}
+      .mnb-btn:disabled{color:rgba(255,255,255,.3);}
+      .mnb-btn+.mnb-btn{border-left:1px solid rgba(255,255,255,.12);}
       .app-main{width:100%;}
-      .desktop-topbar{height:auto;min-height:64px;flex-wrap:wrap;row-gap:8px;padding:12px 16px 12px 58px;}
+      .desktop-topbar{height:auto;min-height:64px;flex-wrap:wrap;row-gap:8px;padding:12px 16px;}
       .desktop-topbar-subtitle{display:none;}
-      .content{padding:18px 14px 32px;}
+      .content{padding:18px 14px 88px;}
+      .cs-footer{bottom:56px;}
       .pnl-kpi-row{grid-template-columns:repeat(2,1fr);gap:12px;}
       .pnl-row{gap:14px;}
       .pnl-card{padding:14px;overflow-x:auto;}
@@ -3011,7 +3015,31 @@ function App(){
   const currentUser = users.find(u=>u.id===currentUserId) || null;
   const role = currentUser ? currentUser.perfil : null;
 
-  function goto(v, params){ setFlowState(params||null); setView(v); window.scrollTo(0,0); }
+  // Histórico de navegação — pilha de {view, flowState} visitados, usada só
+  // pelo botão "Voltar" do rodapé mobile (ver `MobileNavBar` abaixo).
+  // Ephêmero de propósito (useState puro, não `usePersistedState`) — recarregar
+  // a página já reinicia a "sessão de navegação" naturalmente, mesmo critério
+  // já usado pra `sidebarCollapsed`. Não precisa disso no desktop/tablet largo:
+  // lá a Sidebar sempre visível já cobre a navegação.
+  const [navHistory, setNavHistory] = useState([]);
+
+  function goto(v, params){
+    setNavHistory(prev=>[...prev, {view, flowState}]);
+    setFlowState(params||null);
+    setView(v);
+    window.scrollTo(0,0);
+  }
+
+  function voltarUmPasso(){
+    setNavHistory(prev=>{
+      if(prev.length===0) return prev;
+      const anterior = prev[prev.length-1];
+      setFlowState(anterior.flowState);
+      setView(anterior.view);
+      window.scrollTo(0,0);
+      return prev.slice(0,-1);
+    });
+  }
 
   // A navegação (view) sobrevive a recarregar a página — se o usuário
   // perdeu acesso à tela em que estava (perfil trocado, exceção de acesso
@@ -3279,6 +3307,7 @@ function App(){
     clearLastActivity();
     setView('home');
     setFlowState(null);
+    setNavHistory([]);
     setLogoutNotice(notice || '');
   }
 
@@ -3579,6 +3608,7 @@ function App(){
       >
         <DIcon name={sidebarCollapsed?'chevronRight':'chevronLeft'} size={14} />
       </button>
+      <MobileNavBar onHome={()=>goto('home')} onVoltar={voltarUmPasso} podeVoltar={navHistory.length>0} />
       <div className="app-main">
       {!COUNT_SCREEN_VIEWS.includes(view) && (
         <>
@@ -4050,8 +4080,9 @@ const VIEW_SUBTITLES = {
 // pedido do cliente: "esta é a tela mais importante... título/avatar/nome/
 // perfil do usuário já existem em outras partes da aplicação e ocupam uma
 // área muito valiosa da tela operacional". O cabeçalho do app (TopBar/
-// DesktopTopbar) some inteiro nessas telas; a Sidebar continua acessível
-// pelo botão flutuante (.sidebar-toggle), então a navegação não se perde.
+// DesktopTopbar) some inteiro nessas telas; a navegação continua acessível
+// pelo botão flutuante da Sidebar (desktop/tablet largo, ≥768px) ou pelo
+// `MobileNavBar` (celular, <768px), então nunca se perde.
 const COUNT_SCREEN_VIEWS = ['randomCount', 'manualCount', 'routeCount', 'importedListCount', 'recount'];
 
 function SubBar({view, goto}){
@@ -4179,6 +4210,29 @@ function DesktopTopbar({view, user, role, onLogout, subtitle}){
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// Rodapé de navegação do celular (<768px) — substitui o menu lateral
+// completo (fundo azul-marinho, `Sidebar`/`sidebar-toggle`) nessa faixa de
+// tela: cliente notou que o menu lateral duplicava exatamente os mesmos
+// destinos que a própria tela Início já mostra em forma de lista
+// (`MobileHomeMenu`), então bastam 2 ícones fixos pra navegação rápida —
+// Início (mesma tela de sempre) e Voltar (desfaz o último passo de
+// navegação, ver `navHistory`/`voltarUmPasso` em `App()`). Sempre
+// renderizado (mesmo critério do resto do app: CSS decide visibilidade por
+// tamanho de tela, nunca branching em JS) — `.mobile-nav-bar` só aparece de
+// verdade abaixo de 768px via CSS.
+function MobileNavBar({onHome, onVoltar, podeVoltar}){
+  return (
+    <div className="mobile-nav-bar">
+      <button type="button" className="mnb-btn" onClick={onHome} title="Início" aria-label="Início">
+        <DIcon name="home" size={22} />
+      </button>
+      <button type="button" className="mnb-btn" onClick={onVoltar} disabled={!podeVoltar} title="Voltar" aria-label="Voltar">
+        <DIcon name="chevronLeft" size={22} />
+      </button>
     </div>
   );
 }
