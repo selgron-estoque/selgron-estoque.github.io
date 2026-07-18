@@ -7682,6 +7682,11 @@ function UserForm({mode, initialData, users, onCreateUser, onUpdateUser, onSaved
         <div className="field">
           <label>E-mail</label>
           <input type="text" value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))} placeholder="nome@empresa.com" autoCapitalize="none" autoCorrect="off" spellCheck="false" />
+          <div style={{fontSize:11.5,color:'var(--ink-dim)',marginTop:6}}>
+            Operador sem e-mail próprio? Use um endereço fictício com o login da pessoa,
+            por exemplo <strong style={{color:'var(--ink)'}}>{(form.usuario||'nome.sobrenome').trim()||'nome.sobrenome'}@estoque.selgron.local</strong> —
+            ninguém recebe mensagem nesse endereço, ele só precisa ser único no sistema.
+          </div>
         </div>
         {!isEdit && (
           <div className="field">
