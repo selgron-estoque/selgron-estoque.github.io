@@ -291,6 +291,7 @@
   .rank-table th{text-align:left;font-family:var(--font-mono);font-size:10px;text-transform:uppercase;color:var(--ink-dim);padding:8px 6px;border-bottom:1px solid var(--line);}
   .rank-table td{padding:10px 6px;border-bottom:1px solid var(--line);font-size:13px;}
   .rank-table td.num{font-family:var(--font-mono);text-align:right;}
+  .rank-table th.num{text-align:right;}
 
   /* BOTTOM NAV */
   .bottom-nav{position:fixed;bottom:0;left:0;right:0;background:var(--panel);border-top:1px solid var(--line);display:flex;max-width:900px;margin:0 auto;z-index:20;}
@@ -6988,7 +6989,7 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   divergentes.forEach(c=>{ if(c.motivo) porMotivo[c.motivo] = (porMotivo[c.motivo]||0)+1; });
   const maxMotivo = Math.max(1, ...Object.values(porMotivo));
 
-  const topDivergentes = [...todasParaQualidade].sort((a,b)=>Math.abs(b.diferenca||0)-Math.abs(a.diferenca||0)).slice(0,10);
+  const topDivergentes = [...todasParaQualidade].sort((a,b)=>Math.abs(b.diferenca||0)-Math.abs(a.diferenca||0)).slice(0,5);
   // "Tendência Semanal" usa um pool AINDA MAIS amplo que "Qualidade" — inclui
   // status "Pendente" do histórico (fora de escopo pro resto do app), porque
   // aqui o que importa é quantas contagens de verdade aconteceram naquela
@@ -7178,17 +7179,31 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
         </div>
       )}
 
-      <div className="section-title">Top Itens com Maior Divergência</div>
+      <div className="section-title">Top 5 Maiores Divergências</div>
       <div className="panel">
         {topDivergentes.length===0 ? <div style={{color:'var(--ink-dim)',fontSize:13}}>Sem contagens registradas.</div> : (
-          <table className="rank-table">
-            <thead><tr><th>Item</th><th>Endereço</th><th>Diferença</th></tr></thead>
-            <tbody>
-              {topDivergentes.map(c=>(
-                <tr key={c.id}><td>{c.descricao}</td><td>{c.endereco}</td><td className="num" style={{color:c.diferenca===0?'var(--ok)':'var(--danger)'}}>{c.diferenca>0?'+':''}{c.diferenca}</td></tr>
-              ))}
-            </tbody>
-          </table>
+          <>
+            <table className="rank-table">
+              <thead><tr><th>Produto</th><th>Almox.</th><th className="num">Esperado</th><th className="num">Encontrado</th><th className="num">Diferença</th><th className="num">Valor (R$)</th></tr></thead>
+              <tbody>
+                {topDivergentes.map(c=>{
+                  const almoxLabel = c.almoxarifado ? ('Almox ' + (/^[0-9]+$/.test(c.almoxarifado) ? c.almoxarifado.padStart(2,'0') : c.almoxarifado)) : '—';
+                  const valorComSinal = valorDivergenteComSinal(c);
+                  return (
+                    <tr key={c.id}>
+                      <td>{c.descricao}</td>
+                      <td>{almoxLabel}</td>
+                      <td className="num">{c.saldoSistema==null ? '—' : c.saldoSistema}</td>
+                      <td className="num">{c.qtdContada}</td>
+                      <td className="num" style={{color:c.diferenca===0?'var(--ok)':'var(--danger)'}}>{c.diferenca>0?'+':''}{c.diferenca==null?'—':c.diferenca}</td>
+                      <td className="num" style={{color:valorComSinal===0?'var(--ok)':'var(--danger)'}}>{valorComSinal>0?'+':''}{valorComSinal.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <button className="pnl-section-link" style={{marginTop:14}} onClick={()=>goto('divergentes')}>Ver todas as divergências <DIcon name="chevronRight" size={13} /></button>
+          </>
         )}
       </div>
     </div>
