@@ -132,7 +132,6 @@
   .field input[type=text],.field input[type=number],.field input[type=date],.field select,.field textarea{width:100%;background:var(--panel-raised);border:1px solid var(--line);color:var(--ink);padding:14px;border-radius:8px;font-size:16px;}
   .field input:focus,.field select:focus,.field textarea:focus{outline:2px solid var(--safety);outline-offset:0;}
   .field textarea{resize:vertical;min-height:70px;}
-  .field .qty-input{font-family:var(--font-mono);font-size:28px;font-weight:700;text-align:center;padding:18px;}
   .field-erro{color:var(--danger);font-size:12.5px;margin-top:6px;}
   .chip-input{display:flex;flex-wrap:wrap;align-items:center;gap:8px;width:100%;background:var(--panel-raised);border:1px solid var(--line);padding:9px 10px;border-radius:8px;}
   .chip-input:focus-within{outline:2px solid var(--safety);outline-offset:0;}
@@ -280,6 +279,71 @@
   .result-grid .rg .k{font-family:var(--font-mono);font-size:9.5px;text-transform:uppercase;color:var(--ink-dim);}
   .result-grid .rg .v{font-family:var(--font-mono);font-size:17px;font-weight:700;margin-top:2px;}
 
+  /* TELA DE CONTAGEM — "coletor industrial" (Zebra/Honeywell/WMS), pedido
+     do cliente: "esta é a tela mais importante... prioridade é velocidade
+     operacional". Ver CLAUDE.md "Recontar Item vira coletor industrial".
+     Cards com 16px de raio + sombra bem discreta (pedido explícito),
+     diferente do --radius:10px do resto do app — mesmo tipo de exceção já
+     documentada em .count-card acima, escopada só a esta tela. */
+  .cs-screen{display:flex;flex-direction:column;gap:14px;padding-bottom:88px;}
+  .cs-progress{display:flex;align-items:center;gap:12px;}
+  .cs-progress-track{flex:1;height:6px;border-radius:4px;background:var(--line);overflow:hidden;}
+  .cs-progress-fill{height:100%;background:var(--safety);border-radius:4px;transition:width .2s ease;}
+  .cs-progress-label{font-family:var(--font-mono);font-size:11px;color:var(--ink-dim);white-space:nowrap;}
+
+  .cs-top{display:flex;align-items:center;gap:16px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:0 1px 3px rgba(0,0,0,.04);padding:10px 16px;}
+  .cs-round-badge{font-family:var(--font-mono);font-size:11px;font-weight:700;letter-spacing:0.5px;color:#fff;background:var(--accent2);padding:5px 10px;border-radius:20px;white-space:nowrap;}
+  .cs-top-sep{width:1px;align-self:stretch;background:var(--line);}
+  .cs-top-block .cs-top-k{font-family:var(--font-mono);font-size:9.5px;text-transform:uppercase;color:var(--ink-dim);letter-spacing:0.4px;}
+  .cs-top-block .cs-top-v{font-size:13px;font-weight:600;margin-top:1px;}
+
+  .cs-material{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:0 1px 3px rgba(0,0,0,.04);padding:20px;}
+  .cs-material-tag{position:absolute;top:16px;right:20px;text-align:right;font-family:var(--font-mono);font-size:10.5px;line-height:1.5;color:var(--ink-dim);}
+  .cs-material-code-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-right:110px;}
+  .cs-code{font-family:var(--font-mono);font-size:clamp(30px,6vw,36px);font-weight:700;color:var(--ink);letter-spacing:0.5px;line-height:1;}
+  .cs-scan-btn{flex-shrink:0;width:40px;height:40px;border-radius:10px;border:1px solid var(--line);background:var(--panel-raised);color:var(--ink-dim);display:flex;align-items:center;justify-content:center;}
+  .cs-scan-btn:active{background:#FFF3E0;color:var(--safety);}
+  .cs-desc{font-family:var(--font-display);font-size:22px;font-weight:600;text-transform:uppercase;margin-top:8px;line-height:1.25;}
+  .cs-scan-feedback{margin-top:10px;font-size:12.5px;font-weight:600;border-radius:8px;padding:8px 12px;}
+  .cs-scan-feedback.ok{background:var(--ok-bg);color:var(--ok);}
+  .cs-scan-feedback.warn{background:var(--warn-bg);color:var(--warn);}
+
+  .cs-qty-label{text-align:center;font-family:var(--font-mono);font-size:12px;text-transform:uppercase;letter-spacing:0.6px;color:var(--ink-dim);}
+  .cs-qty-input{width:100%;height:90px;font-family:var(--font-mono);font-size:48px;font-weight:700;text-align:center;background:var(--panel);border:2px solid var(--line);border-radius:16px;color:var(--ink);}
+  .cs-qty-input:focus{outline:none;border-color:var(--accent2);}
+  .cs-qty-input.ok{border-color:var(--ok);}
+  .cs-qty-input.warn{border-color:var(--warn);}
+  .cs-qty-input.danger{border-color:var(--danger);}
+  .cs-shortcuts{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;}
+  .cs-shortcuts button{height:48px;border-radius:12px;border:1px solid var(--line);background:var(--panel-raised);color:var(--ink);font-weight:700;font-size:14px;font-family:var(--font-mono);}
+  .cs-shortcuts button:active{background:var(--line);}
+
+  .cs-compare{border-radius:16px;padding:16px;border:1px solid;}
+  .cs-compare.ok{background:var(--ok-bg);border-color:var(--ok);}
+  .cs-compare.warn{background:var(--warn-bg);border-color:var(--warn);}
+  .cs-compare.danger{background:var(--danger-bg);border-color:var(--danger);}
+  .cs-compare-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;text-align:center;}
+  .cs-compare-cell .k{font-family:var(--font-mono);font-size:9.5px;text-transform:uppercase;color:var(--ink-dim);letter-spacing:0.4px;}
+  .cs-compare-cell .v{font-family:var(--font-mono);font-size:20px;font-weight:700;margin-top:2px;}
+  .cs-feedback{display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:600;margin-top:12px;}
+  .cs-compare.ok .cs-feedback, .cs-compare.ok .cs-compare-cell .v{color:var(--ok);}
+  .cs-compare.warn .cs-feedback, .cs-compare.warn .cs-compare-cell .v{color:var(--warn);}
+  .cs-compare.danger .cs-feedback, .cs-compare.danger .cs-compare-cell .v{color:var(--danger);}
+  .cs-dot{width:9px;height:9px;border-radius:50%;background:currentColor;flex-shrink:0;}
+
+  .cs-mini-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
+  .cs-mini{background:var(--panel-raised);border-radius:10px;padding:8px 10px;}
+  .cs-mini .k{font-family:var(--font-mono);font-size:9px;text-transform:uppercase;color:var(--ink-dim);letter-spacing:0.4px;}
+  .cs-mini .v{font-size:12.5px;font-weight:600;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  @media (max-width:520px){ .cs-mini-grid{grid-template-columns:repeat(2,1fr);} }
+
+  .cs-footer{position:sticky;bottom:0;background:var(--panel);border:1px solid var(--line);border-radius:16px 16px 0 0;box-shadow:0 -2px 10px rgba(0,0,0,.06);padding:12px 16px;}
+  .cs-footer-row{display:flex;align-items:center;gap:14px;}
+  .cs-footer-qtywrap{flex-shrink:0;}
+  .cs-footer-label{font-family:var(--font-mono);font-size:9.5px;text-transform:uppercase;color:var(--ink-dim);letter-spacing:0.4px;}
+  .cs-footer-qty{font-family:var(--font-mono);font-size:20px;font-weight:700;}
+  .cs-footer-btn{flex:1;height:54px;font-size:16px;font-weight:700;margin:0;}
+
   /* LIST ROWS */
   .list-row{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:15px 16px;margin-bottom:10px;}
   .list-row:active{background:var(--panel-raised);}
@@ -381,9 +445,6 @@
   .empty-state .ic{font-size:40px;margin-bottom:12px;}
 
   .divergence-alert{background:var(--warn-bg);border:1px solid var(--warn);border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:13px;display:flex;gap:10px;align-items:flex-start;}
-
-  .photo-preview{width:100%;height:140px;border-radius:8px;object-fit:cover;margin-top:10px;border:1px solid var(--line);}
-  .photo-btn{border:1px dashed var(--line);background:var(--panel-raised);border-radius:8px;padding:16px;text-align:center;color:var(--ink-dim);font-size:13px;}
 
   .role-note{font-family:var(--font-mono);font-size:11px;color:var(--ink-dim);background:var(--panel-raised);border-radius:8px;padding:10px 12px;margin-bottom:16px;border-left:3px solid var(--accent2);}
 
@@ -2359,17 +2420,6 @@ function normalizarCodigoAlmox(v){
 // ao vivo do Supabase (produtos + estoque_saldo + enderecos), via
 // searchSupabaseCatalog/fetchContagemItensPrioritarios/fetchProdutosByCodigos/
 // fetchAnyAddressRegistered, abaixo.
-const MOTIVOS = [
-  'Material em endereço incorreto',
-  'Entrada não realizada',
-  'Saída não realizada',
-  'Devolução pendente',
-  'Material sem identificação',
-  'Perda/sucata',
-  'Erro operacional',
-  'Outros',
-];
-
 // Padrão fixo de endereço da Selgron: 3 números, traço, 1 letra, traço,
 // 1 número (ex: 035-A-1). Aplica a máscara enquanto o operador digita —
 // insere os traços automaticamente e só aceita dígito/letra na posição
@@ -5214,7 +5264,7 @@ function useCountQueue(items){
   return {current, idx, total:items.length, next, done};
 }
 
-function CountStep({product, user, onComplete, onAddressProposed, inv, expectAddressCheck=true, numeroContagem=1, contagemAnteriorId=null, counts=[]}){
+function CountStep({product, user, onComplete, onAddressProposed, inv, expectAddressCheck=true, numeroContagem=1, contagemAnteriorId=null, counts=[], previousCount=null, queueAtual=null, queueTotal=null}){
   // Bloqueia lançar uma contagem NOVA (1ª rodada) de um item que já tem um
   // documento em aberto em outro lugar do app (ex: contado numa lista de
   // inventário e ainda aguardando análise do líder, e alguém tenta contar o
@@ -5241,9 +5291,6 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
       </div>
     );
   }
-  // Foto e motivo da divergência são tarefas de análise do líder/admin —
-  // o operador só precisa contar e informar o endereço corretamente.
-  const isOperador = user.perfil === 'operador';
   // Itens sem endereço cadastrado (comum enquanto o cadastro de endereços
   // ainda não existe no Protheus) pulam o QR Code e vão direto para a etapa
   // em que o operador INFORMA onde encontrou o item fisicamente.
@@ -5254,12 +5301,27 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   const [addressOk, setAddressOk] = useState(null);
   const [enderecoInformado, setEnderecoInformado] = useState('');
   const [qty, setQty] = useState('');
-  const [photo, setPhoto] = useState(null);
-  const [obs, setObs] = useState('');
-  const [motivo, setMotivo] = useState('');
-  const fileRef = useRef();
 
   const [scanning, setScanning] = useState(false);
+  // Verificação opcional do item por câmera dentro da própria tela de
+  // contagem (botão 📷 ao lado do código) — só CONFIRMA que o código
+  // escaneado bate com o item já carregado nesta tela (protege contra
+  // contar o item errado por engano); não troca o item em exibição, isso
+  // exigiria plumbing de re-busca/fila em cada um dos 5 fluxos que usam
+  // este componente, fora do escopo deste redesenho.
+  const [scanningItem, setScanningItem] = useState(false);
+  const [itemScanFeedback, setItemScanFeedback] = useState(null);
+
+  function handleItemVerifyScan(text){
+    setScanningItem(false);
+    const clean = text.trim();
+    const bate = clean.toUpperCase() === String(product.codigo||'').toUpperCase();
+    setItemScanFeedback({ok:bate, text: bate ? 'Código confere com o item em contagem.' : `Código lido (${clean}) não bate com ${product.codigo}.`});
+  }
+
+  function bumpQty(n){
+    setQty(prev => String((Number(prev)||0) + n));
+  }
 
   function simulateScan(match){
     if(match){
@@ -5300,11 +5362,6 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
     setStep('count');
   }
 
-  function handlePhoto(e){
-    const f = e.target.files[0];
-    if(f){ setPhoto(URL.createObjectURL(f)); }
-  }
-
   const hasSaldoLocal = typeof product.saldoSistema === 'number';
   const diffAbs = (qty!=='' && hasSaldoLocal) ? Number(qty) - product.saldoSistema : 0;
   const diffPct = (qty!=='' && hasSaldoLocal) ? (product.saldoSistema===0 ? 100 : (diffAbs/product.saldoSistema)*100) : 0;
@@ -5336,9 +5393,15 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
       statusAprovacao,
       numeroContagem,
       contagemAnteriorId,
-      motivo: diffAbs!==0 ? motivo : '',
-      foto: !!photo,
-      observacao: obs,
+      // Captura de foto/motivo da divergência foi removida da tela de
+      // contagem (redesenho "coletor industrial" — pedido do cliente,
+      // ver CLAUDE.md): a análise da divergência passou a acontecer só
+      // depois, nos painéis de Recontagens/Itens Divergentes. Campos
+      // mantidos vazios/false pra não quebrar o formato de `count` já
+      // usado pelo Supabase/relatório Excel.
+      motivo: '',
+      foto: false,
+      observacao: '',
       // Armazém onde o item foi contado — cliente reportou que sem isso
       // recontagens não sabiam contra qual armazém comparar o saldo (item
       // com saldo em mais de um armazém nunca batia). Guardado na própria
@@ -5358,12 +5421,11 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   }
 
   // Cabeçalho compacto (código + descrição) fica em cima só pra confirmar
-  // qual item é. O resto da ficha (unidade/família/almoxarifado/endereço
-  // cadastrado/valor em estoque) é um card de referência — cada etapa
-  // renderiza esse mesmo bloco (`infoComplementar`) logo antes do seu botão
-  // de ação final, seguindo sempre a mesma ordem: campo(s) de entrada →
-  // leitor de câmera (quando existe) → aviso (quando existe) → dados de
-  // referência → botão de confirmar/continuar.
+  // qual item é, durante as etapas de endereço (que continuam exatamente
+  // como eram — ver CLAUDE.md "Recontar Item vira coletor industrial").
+  // A etapa 'count' (redesenhada) tem seu PRÓPRIO card de material, bem
+  // maior — não repete este cabeçalho compacto, senão o código apareceria
+  // duas vezes na mesma tela.
   const infoComplementar = (
     <div className="item-card">
       <div className="item-meta">
@@ -5381,16 +5443,30 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
     </div>
   );
 
+  // Mensagem de feedback ao vivo, assim que existe um número digitado —
+  // mesmos 3 níveis de `classifyDivergence` (ok/warn/danger), que já é a
+  // regra de negócio real (aprovação automática/segunda contagem/análise do
+  // líder) — não uma classificação nova só de exibição.
+  const feedbackTexto = !hasSaldoLocal
+    ? classification.rule
+    : classification.level==='ok' ? 'Contagem confere com o sistema.'
+    : classification.level==='warn' ? 'Diferença encontrada. Será enviada para conferência.'
+    : 'Diferença crítica. Necessária nova validação.';
+
+  const progressoPct = (queueAtual && queueTotal) ? Math.round((queueAtual/queueTotal)*100) : null;
+
   return (
     <div>
-      <div className="item-card" style={{marginBottom:14}}>
-        <div className="item-card-head" style={{borderBottom:'none'}}>
-          <div>
-            <div className="item-code">{product.codigo}</div>
-            <div className="item-desc">{product.descricao}</div>
+      {step!=='count' && (
+        <div className="item-card" style={{marginBottom:14}}>
+          <div className="item-card-head" style={{borderBottom:'none'}}>
+            <div>
+              <div className="item-code">{product.codigo}</div>
+              <div className="item-desc">{product.descricao}</div>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {needsAddressInput && step==='enderecoManual' && (
         <div>
@@ -5457,62 +5533,102 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
       )}
 
       {step==='count' && (
-        <div>
-          <div className="field">
-            <label>Quantidade encontrada ({product.unidade || 'un. não informada'})</label>
-            <input className="qty-input" type="number" inputMode="decimal" value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" autoFocus />
-          </div>
-          {infoComplementar}
-          <button className="btn btn-primary" disabled={qty===''} onClick={()=>setStep(isOperador ? 'result' : 'photo')}>Confirmar quantidade</button>
-        </div>
-      )}
-
-      {step==='photo' && (
-        <div>
-          <div className="field">
-            <label>Foto (opcional)</label>
-            {photo ? <img src={photo} className="photo-preview" /> : (
-              <button className="photo-btn" style={{width:'100%'}} onClick={()=>fileRef.current.click()}><Ic>📷</Ic> Toque para anexar foto</button>
-            )}
-            <input ref={fileRef} type="file" accept="image/*" capture="environment" style={{display:'none'}} onChange={handlePhoto} />
-          </div>
-          <div className="field">
-            <label>Observação (opcional)</label>
-            <textarea value={obs} onChange={e=>setObs(e.target.value)} placeholder="Ex: material próximo ao endereço, embalagem danificada..." />
-          </div>
-          {infoComplementar}
-          <button className="btn btn-primary" onClick={()=>setStep('result')}>Finalizar Contagem</button>
-        </div>
-      )}
-
-      {step==='result' && (
-        <div>
-          <div className={"result-banner "+classification.level}>
-            <div className="rb-title">
-              {classification.level==='ok' && <Ic>✅</Ic>}
-              {classification.level==='warn' && <Ic>⚠</Ic>}
-              {classification.level==='danger' && <Ic>⛔</Ic>}
-              &nbsp;{classification.label}{numeroContagem>1 && <span style={{fontWeight:400,fontSize:13}}> · {numeroContagem}ª contagem</span>}
-            </div>
-            <div className="rb-sub">{STATUS_INFO[statusAprovacao].text}</div>
-            <div className="result-grid">
-              <div className="rg"><div className="k">Saldo Sistema</div><div className="v">{hasSaldoLocal ? product.saldoSistema : '—'}</div></div>
-              <div className="rg"><div className="k">Qtd. Contada</div><div className="v">{qty}</div></div>
-              <div className="rg"><div className="k">Diferença</div><div className="v">{hasSaldoLocal ? (diffAbs>0?'+':'')+diffAbs : '—'}</div></div>
-              <div className="rg"><div className="k">Divergência</div><div className="v">{hasSaldoLocal ? diffPct.toFixed(1)+'%' : '—'}</div></div>
-            </div>
-          </div>
-          {!isOperador && (diffAbs!==0 || !hasSaldoLocal) && (
-            <div className="field">
-              <label>Motivo da divergência{!hasSaldoLocal && ' (opcional)'}</label>
-              <select value={motivo} onChange={e=>setMotivo(e.target.value)}>
-                <option value="">Selecione um motivo</option>
-                {MOTIVOS.map(m=><option key={m}>{m}</option>)}
-              </select>
+        <div className="cs-screen">
+          {progressoPct!=null && (
+            <div className="cs-progress">
+              <div className="cs-progress-track"><div className="cs-progress-fill" style={{width:progressoPct+'%'}}></div></div>
+              <div className="cs-progress-label">Item {queueAtual} de {queueTotal} · {progressoPct}%</div>
             </div>
           )}
-          {infoComplementar}
-          <button className="btn btn-primary" disabled={!isOperador && diffAbs!==0 && hasSaldoLocal && !motivo} onClick={finalize}>Registrar e continuar</button>
+
+          <div className="cs-top">
+            <span className="cs-round-badge">{numeroContagem}ª CONTAGEM</span>
+            {previousCount && (
+              <>
+                <div className="cs-top-sep"></div>
+                <div className="cs-top-block">
+                  <div className="cs-top-k">{previousCount.numeroContagem}ª contagem</div>
+                  <div className="cs-top-v">{previousCount.qtdContada} {product.unidade || 'un.'}</div>
+                </div>
+                <div className="cs-top-block">
+                  <div className="cs-top-k">Operador</div>
+                  <div className="cs-top-v">{previousCount.usuario}</div>
+                </div>
+                <div className="cs-top-block">
+                  <div className="cs-top-k">{previousCount.data}</div>
+                  <div className="cs-top-v">{previousCount.hora || ''}</div>
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="cs-material">
+            <div className="cs-material-tag">
+              {product.almoxarifado && product.almoxarifado!=='—' && <div>Almox {product.almoxarifado}</div>}
+              {product.corredor && <div>Corredor {product.corredor}{product.rua ? (' · Rua '+product.rua) : ''}</div>}
+              <div>{product.endereco || 'sem endereço'}</div>
+            </div>
+            <div className="cs-material-code-row">
+              <div className="cs-code">{product.codigo}</div>
+              <button type="button" className="cs-scan-btn" title="Escanear para conferir o item" onClick={()=>{setItemScanFeedback(null); setScanningItem(true);}}>
+                <DIcon name="camera" size={20} />
+              </button>
+            </div>
+            <div className="cs-desc">{product.descricao}</div>
+            {scanningItem && (
+              <div style={{marginTop:12}}>
+                <CameraScanner onDetected={handleItemVerifyScan} onCancel={()=>setScanningItem(false)} />
+              </div>
+            )}
+            {itemScanFeedback && (
+              <div className={"cs-scan-feedback "+(itemScanFeedback.ok ? 'ok' : 'warn')}>{itemScanFeedback.text}</div>
+            )}
+          </div>
+
+          <div className="cs-qty-label">Quantidade encontrada</div>
+          <input
+            className={"cs-qty-input"+(qty!=='' ? ' '+classification.level : '')}
+            type="number"
+            inputMode="decimal"
+            value={qty}
+            onChange={e=>setQty(e.target.value)}
+            placeholder="0"
+            autoFocus
+          />
+          <div className="cs-shortcuts">
+            <button type="button" onClick={()=>bumpQty(1)}>+1</button>
+            <button type="button" onClick={()=>bumpQty(5)}>+5</button>
+            <button type="button" onClick={()=>bumpQty(10)}>+10</button>
+            <button type="button" onClick={()=>setQty('')}>Limpar</button>
+          </div>
+
+          {qty!=='' && (
+            <div className={"cs-compare "+classification.level}>
+              <div className="cs-compare-grid">
+                <div className="cs-compare-cell"><div className="k">Sistema</div><div className="v">{hasSaldoLocal ? product.saldoSistema : '—'}</div></div>
+                <div className="cs-compare-cell"><div className="k">Você informou</div><div className="v">{qty}</div></div>
+                <div className="cs-compare-cell"><div className="k">Diferença</div><div className="v">{hasSaldoLocal ? (diffAbs>0?'+':'')+diffAbs : '—'}</div></div>
+              </div>
+              <div className="cs-feedback"><span className="cs-dot"></span>{feedbackTexto}</div>
+            </div>
+          )}
+
+          <div className="cs-mini-grid">
+            <div className="cs-mini"><div className="k">Unidade</div><div className="v">{product.unidade || '—'}</div></div>
+            <div className="cs-mini"><div className="k">Família</div><div className="v">{product.familia || '—'}</div></div>
+            <div className="cs-mini"><div className="k">Almox</div><div className="v">{product.almoxarifado || '—'}</div></div>
+            <div className="cs-mini"><div className="k">Endereço</div><div className="v">{product.endereco || 'não cadastrado'}</div></div>
+          </div>
+
+          <div className="cs-footer">
+            <div className="cs-footer-row">
+              <div className="cs-footer-qtywrap">
+                <div className="cs-footer-label">Quantidade</div>
+                <div className="cs-footer-qty">{qty===''?'0':qty}</div>
+              </div>
+              <button className="btn btn-primary cs-footer-btn" disabled={qty===''} onClick={finalize}>Confirmar Contagem</button>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -5609,12 +5725,14 @@ function RandomCountFlow({inv, user, onFinish, onAddressProposed, setInventories
 
   return (
     <div>
-      <div className="role-note">Item {jaContados+q.idx+1} de {allItems.length} · Armazém {almoxarifadosFiltro.map(a=>a.padStart(2,'0')).join(', ')} · Itens ainda não contados primeiro, depois por sequência de endereço{inv && inv.grupo ? (' · Grupo: ' + inv.grupo.split(',').filter(Boolean).map(formatGrupoLabel).join(', ')) : ''}</div>
+      <div className="role-note">Armazém {almoxarifadosFiltro.map(a=>a.padStart(2,'0')).join(', ')} · Itens ainda não contados primeiro, depois por sequência de endereço{inv && inv.grupo ? (' · Grupo: ' + inv.grupo.split(',').filter(Boolean).map(formatGrupoLabel).join(', ')) : ''}</div>
       <CountStep
         product={q.current}
         user={user}
         inv={inv}
         counts={counts}
+        queueAtual={jaContados+q.idx+1}
+        queueTotal={allItems.length}
         onAddressProposed={onAddressProposed}
         onComplete={(c)=>{
           if(inv && inv.id){ setInventories(prev=>prev.map(i=>i.id===inv.id?{...i, contados:i.contados+1}:i)); incrementContadosSupabase(inv.id); }
@@ -5911,12 +6029,14 @@ function ImportedListCountFlow({inv, user, onFinish, onAddressProposed, setInven
 
   return (
     <div>
-      <div className="role-note">Item {jaContados+q.idx+1} de {allItems.length} · Lista importada{inv?' de '+inv.nome:''} — ordem original da planilha</div>
+      <div className="role-note">Lista importada{inv?' de '+inv.nome:''} — ordem original da planilha</div>
       <CountStep
         product={q.current}
         user={user}
         inv={inv}
         counts={counts}
+        queueAtual={jaContados+q.idx+1}
+        queueTotal={allItems.length}
         onAddressProposed={onAddressProposed}
         onComplete={(c)=>{
           if(inv && inv.id){ setInventories(prev=>prev.map(i=>i.id===inv.id?{...i, contados:i.contados+1}:i)); incrementContadosSupabase(inv.id); }
@@ -5992,9 +6112,6 @@ function RecountFlow({original, user, onFinish, onAddressProposed}){
   const sameUser = user.nome === original.usuario;
   return (
     <div>
-      <div className="role-note">
-        {original.numeroContagem}ª contagem: {original.qtdContada} un. por {original.usuario} em {original.data} {original.hora||''} · agora registrando a {original.numeroContagem+1}ª contagem
-      </div>
       {sameUser && (
         <div className="divergence-alert">
           <Ic>⚠</Ic>
@@ -6008,6 +6125,7 @@ function RecountFlow({original, user, onFinish, onAddressProposed}){
         onComplete={onFinish}
         numeroContagem={original.numeroContagem+1}
         contagemAnteriorId={original.id}
+        previousCount={original}
         expectAddressCheck={!!product.enderecoCadastrado}
       />
     </div>

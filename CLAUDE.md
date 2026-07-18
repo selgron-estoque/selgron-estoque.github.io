@@ -4106,3 +4106,106 @@ TODAS as páginas, não só essa.
 - **Limitação de teste**: mesma de sempre (login via Supabase Auth real, não simulável no
   sandbox) — verificado aqui só que o arquivo transpila sem erro e que a regra CSS nova
   está dentro do bloco de media query certo (não vaza pro layout mobile abaixo de 360px).
+
+## Recontar Item vira "coletor industrial" — redesenho completo do motor de contagem
+
+Cliente pediu um redesenho completo da tela usada pra registrar a quantidade contada,
+com um brief bem detalhado: referência explícita a coletores Zebra/Honeywell e sistemas
+WMS modernos, "esta é a tela mais importante de toda a aplicação... será utilizada
+durante horas pelos operadores", prioridade em velocidade operacional, hierarquia de
+informação exata (código > descrição > quantidade > confirmar > 1ª contagem > cadastro),
+layout e tamanhos de fonte/altura pedidos com precisão de pixel, e uma lista explícita de
+"NÃO FAÇA" (nada de formulário tradicional, cards gigantes pra informação secundária,
+botão perdido no fim da página, espaços vazios grandes, ou acordeões escondendo dado).
+
+Confirmado com o cliente via `AskUserQuestion` (3 perguntas, já que o brief descrevia
+especificamente a tela de RECONTAGEM, mas o motor por trás é compartilhado):
+
+1. **Escopo**: aplicar no motor inteiro (`CountStep`), usado por TODOS os fluxos —
+   Aleatória, Manual, Rota, Lista Importada e Recontagem — não só a tela de recontar.
+2. **Etapa de leitura de endereço** (escanear QR do endereço cadastrado, ou informar
+   manualmente quando não há cadastro): manter exatamente como estava, como uma etapa
+   ANTES da nova tela — o mockup não cobre esse caso, só mostra o endereço já resolvido.
+3. **Foto/motivo da divergência** (etapa extra que só líder/admin viam, depois de
+   confirmar a quantidade): **removida** — a análise de divergência passa a acontecer só
+   depois, nos painéis de Recontagens/Itens Divergentes (que já existem e não pedem
+   foto/motivo pra aprovar ou encaminhar). Os campos `motivo`/`foto`/`observacao`
+   continuam existindo no objeto `count` (mantém compatibilidade com o Supabase/relatório
+   Excel), só ficam sempre vazios/`false` a partir de agora — nenhuma tela ainda os
+   preenche.
+
+### O que mudou em `CountStep`
+
+- **Unificação de 3 etapas em 1**: as antigas etapas `count` (só quantidade) → `photo`
+  (foto/observação, só líder/admin) → `result` (card de resultado + motivo, só depois de
+  confirmar) viraram uma ÚNICA etapa `count` redesenhada — sem gate por perfil
+  (`isOperador`, removido — não tem mais nenhuma diferença de fluxo entre operador e
+  líder/admin nesta tela). Quantidade, comparação com o sistema e feedback aparecem
+  juntos, AO VIVO, assim que o operador digita — não é mais preciso "confirmar" a
+  quantidade pra só então ver se bateu ou não. "Confirmar Contagem" já finaliza e avança
+  pro próximo item, sem tela extra depois.
+- **Cabeçalho compacto (código+descrição) que aparecia acima de TODA etapa** passou a
+  aparecer só nas etapas de endereço (`scan`/`scanResult`/`enderecoManual`, que
+  continuam com o visual de antes) — a nova etapa `count` tem seu próprio card de
+  material bem maior, então repetir o cabeçalho ali duplicaria o código na mesma tela
+  (mesmo problema de redundância visual já corrigido antes nesta sessão, ver seção
+  "Título da página repetido 3 vezes").
+- **Barra de progresso** (`queueAtual`/`queueTotal`, props novas): só aparece quando a
+  tela vem de uma fila de verdade (Aleatória/Curva ABC/Grupo via `RandomCountFlow`, Lista
+  Importada via `ImportedListCountFlow` — ambas já tinham essa posição calculada,
+  só não mostravam como barra visual, só como texto "Item X de Y" dentro do `role-note`
+  acima do `CountStep`; esse texto foi enxugado pra não repetir a mesma informação duas
+  vezes). Fica `null`/escondida pra Manual/Rota (escolha avulsa, sem fila sequencial) e
+  Recontagem (item único) — nenhuma dessas 3 tinha esse conceito antes, não foi inventado
+  agora.
+- **Card "Nª CONTAGEM" + dados da rodada anterior** (`previousCount`, prop nova — só
+  `RecountFlow` passa, com o próprio objeto da contagem original que ele já tinha em
+  mãos): substitui o texto corrido que existia antes acima do `CountStep`
+  ("2ª contagem: 10 un. por Fulano em 15/07/2026 09:53") por um card compacto
+  (badge + 3 blocos: quantidade anterior, operador, data/hora) — mesmo dado, exibido no
+  padrão pedido. O aviso do Módulo 7 (pedir pra outro operador recontar) continua como
+  antes, fora do `CountStep`, em `RecountFlow`.
+- **Card do material**: código enorme (`clamp(30-36px)`, peso 700, cor `--ink` — o mais
+  escuro/contrastante da tela, de propósito, "nada deve competir visualmente com o
+  código") + descrição abaixo (22px, pode quebrar linha) + etiqueta de localização no
+  canto (Almox/Corredor/Rua/Endereço — **só os campos que o produto realmente tem**; o
+  mockup pedia 4 campos fixos "Almox/Rua/Nível/Posição", mas o endereço da Selgron é um
+  código único tipo "035-A-1", sem essa decomposição em 4 partes — mostrado como está,
+  sem inventar "Nível"/"Posição" que não existem no dado real, mesmo critério de "não
+  fabricar dado" já seguido em todo o histórico deste projeto).
+- **Botão de câmera ao lado do código** — interpretação do pedido "permite escanear outro
+  item": em vez de trocar o item em exibição (exigiria alterar a lógica de fila/re-busca
+  dos 5 fluxos diferentes que usam este componente, escopo bem maior que um redesenho
+  visual), escaneia um código e CONFERE contra o item já carregado na tela — mostra "✅
+  confere" ou avisa que o código lido não bate com o item esperado. Protege contra o
+  erro mais caro (contar o item errado por engano), sem precisar desenhar troca de item
+  entre fluxos que hoje não sabem fazer isso.
+- **Quantidade**: campo único, 90px de altura, 48px/700 centralizado, `placeholder="0"`
+  (mostra "0" apagado quando vazio, como pedido). Atalhos +1/+5/+10/Limpar abaixo, 4
+  botões iguais numa linha só, tratam campo vazio como 0 pra soma. A borda do campo muda
+  de cor (verde/laranja/vermelho) assim que existe um número digitado — pista visual
+  rápida sem precisar ler o card de comparação abaixo.
+- **Card de comparação** (Sistema / Você informou / Diferença), com a mensagem de
+  feedback ("Contagem confere"/"Diferença encontrada, será enviada pra conferência"/
+  "Diferença crítica, necessária nova validação") — cor do card e da mensagem batem com
+  `classifyDivergence` (a MESMA função que já decide aprovação automática/segunda
+  contagem/análise do líder — não uma classificação nova só de exibição, os 3 níveis
+  batem exatamente com verde/laranja/vermelho pedidos).
+- **Informações técnicas** (Unidade/Família/Almox/Endereço) viraram 4 mini-cards
+  compactos (`.cs-mini`), não os 2 cards grandes de antes (`.item-meta`, ainda usado nas
+  etapas de endereço, sem mudança lá).
+- **Rodapé fixo** (`position:sticky;bottom:0`): quantidade + botão "Confirmar Contagem"
+  sempre visíveis, mesmo rolando a tela — nunca "perdido no final da página".
+- **CSS novo, escopado só a esta tela** (`.cs-*`, perto de `.result-grid`): cards com
+  16px de raio + sombra bem discreta, igual pedido — diferente do `--radius:10px` do
+  resto do app, de propósito (mesmo tipo de exceção documentada antes em `.count-card`,
+  não é regressão). `.qty-input`/`.photo-btn`/`.photo-preview` (CSS antigo, só usado nas
+  etapas removidas) e a constante `MOTIVOS` (só usada no select de motivo removido) foram
+  apagados por completo — nada mais os referencia.
+- Testado via scripts Node isolados (mesma técnica de sempre — login via Supabase Auth
+  real não é simulável no sandbox sem rede): `classifyDivergence` mapeando certo pra
+  verde/laranja/vermelho, os atalhos +1/+5/+10 somando certo a partir de vazio, e a
+  fórmula da barra de progresso batendo exatamente com o exemplo do pedido do cliente
+  ("Item 18 de 152 · 12%" → `round(18/152*100)=12`). Transpile Babel do arquivo inteiro
+  sem erro. **A verificação visual de ponta a ponta (o layout em si, nas 5 telas de
+  contagem) fica a cargo do cliente** — mesma limitação de sempre.
