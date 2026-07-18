@@ -4062,3 +4062,47 @@ as telas de operação no tablet, não só as telas corporativas.
   escopo (reconferido com o mesmo script de contagem), todo `EMOJI_TO_DICON` resolve pra
   uma entrada real de `DICON_PATHS` (conferido programaticamente, sem depender de rodar o
   app), e o arquivo inteiro continua transpilando sem erro no Babel.
+
+## Título da página repetido 3 vezes — "Recontagens Pendentes" (e outras telas)
+
+Cliente mandou print de "Recontagens Pendentes" mostrando o mesmo texto em 3 lugares
+empilhados: o título do `DesktopTopbar` (grande, navy, no topo), logo abaixo o `SubBar`
+("← Voltar RECONTAGENS PENDENTES", uppercase, numa barra cinza) e, dentro do conteúdo da
+própria tela, "151 Recontagens Pendentes" como card de progresso — pediu pra revisar
+TODAS as páginas, não só essa.
+
+- **Causa raiz, comum a toda tela não-Home**: `App()` sempre renderiza `DesktopTopbar` E
+  `SubBar` juntos (`{view!=='home' && <SubBar .../>}`, logo depois do `<DesktopTopbar
+  .../>`) — nenhuma regra de CSS nunca escondeu o `SubBar` no layout desktop. O `SubBar`
+  foi criado como navegação MOBILE (época em que só existia `TopBar`/`BottomNav`, antes do
+  layout com Sidebar) e nunca foi revisado depois que a Sidebar passou a cobrir 100% da
+  navegação — sobrou como uma segunda cópia do mesmo título, com um "← Voltar" que a
+  Sidebar já torna redundante (o item "Início" sempre está ali).
+- **Correção principal**: `.subbar{display:none;}` dentro do mesmo bloco `@media
+  (min-width:360px)` que já esconde `.mobile-topbar`/`.bottom-nav` no layout desktop — como
+  esse breakpoint cobre praticamente qualquer aparelho real hoje (ver seção "Dashboard novo
+  funciona em qualquer largura de tela"), isso remove a 2ª repetição em toda tela do app de
+  uma vez só, sem precisar tocar em cada componente. O `SubBar` continua existindo e
+  funcionando normalmente abaixo de 360px (o layout mobile antigo, praticamente inexistente
+  hoje, ainda precisa dele pra voltar — não tem Sidebar nesse modo).
+- **3ª repetição, específica de cada tela — reescrita, não removida à toa** (soft nunca
+  ficaram sem nenhum rótulo, só pararam de repetir o texto que o `DesktopTopbar` já diz):
+  - `RecountsPanel`/`DivergentItemsPanel` (`ListaProgressoHeader`): o `titulo` passado era
+    literalmente "Recontagens Pendentes"/"Itens Divergentes" — virou só `"pendentes"`
+    (minúsculo), lido como "151 pendentes" ao lado do número grande — o contexto (do que
+    são pendentes) já vem do `DesktopTopbar` acima.
+  - `ConcludedCountsPanel`: section-title "Contagens Concluídas" → **"Histórico"**.
+  - `AllDivergencesPanel` (view `todasDivergencias`): section-title "Todas as
+    Divergências" → **"Lista completa"**.
+  - `AddressValidationPanel`: section-title "Endereços Pendentes de Cadastro" →
+    **"Aguardando confirmação"**.
+  - `UserManagementPanel`: o section-title "Usuários" era um bloco solto, sem contador nem
+    outro conteúdo ao lado — **removido por completo** (não tinha nada além do texto
+    duplicado pra preservar).
+- **Fora de escopo, sem alteração**: `InventoryList`/`PickCountType`/`Dashboard`/
+  `ReportsScreen`/`Settings` não tinham esse padrão de 3ª repetição (vão direto pro
+  conteúdo, sem um section-title/card repetindo o próprio nome da tela) — só o `SubBar`
+  (2ª repetição, já coberta pela correção de CSS) se aplicava a elas.
+- **Limitação de teste**: mesma de sempre (login via Supabase Auth real, não simulável no
+  sandbox) — verificado aqui só que o arquivo transpila sem erro e que a regra CSS nova
+  está dentro do bloco de media query certo (não vaza pro layout mobile abaixo de 360px).
