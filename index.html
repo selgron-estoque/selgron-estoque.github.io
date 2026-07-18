@@ -2859,7 +2859,7 @@ function App(){
   // de `deleteInventory`: aguarda confirmação do Supabase antes de sumir da
   // tela, pra não "ressuscitar" via sincronização se a exclusão remota tiver
   // falhado. Usada por todas as telas que listam contagens individuais
-  // (Recontagens, Itens Divergentes, Minhas Contagens, Contagens Concluídas).
+  // (Recontagens, Itens Divergentes, Contagens Concluídas).
   async function deleteCount(id){
     const res = await deleteContagemFromSupabase(id);
     if(res.ok){
@@ -3179,7 +3179,6 @@ function App(){
         {view==='manualCount' && <ManualCountFlow user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('home');}} onAddressProposed={addAddressProposal} />}
         {view==='routeCount' && <RouteCountFlow inv={flowState} user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} />}
         {view==='importedListCount' && <ImportedListCountFlow inv={flowState} user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} />}
-        {view==='myCounts' && <MyCounts counts={counts} user={currentUser} role={role} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} />}
         {view==='recounts' && <RecountsPanel counts={counts} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} />}
         {view==='divergentes' && <DivergentItemsPanel counts={counts} role={role} goto={goto} onApprove={approveDivergence} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} />}
         {view==='concluidas' && <ConcludedCountsPanel counts={counts} historicoConcluidas={historicoConcluidas} onDeleteCount={role==='admin' ? deleteCount : undefined} onRefresh={refreshHistoricoConcluidas} />}
@@ -3596,7 +3595,6 @@ const VIEW_TITLES = {
   manualCount:'Contagem Manual',
   routeCount:'Contagem por Rota',
   importedListCount:'Lista Importada',
-  myCounts:'Minhas Contagens',
   recounts:'Recontagens Pendentes',
   divergentes:'Itens Divergentes',
   concluidas:'Contagens Concluídas',
@@ -3644,7 +3642,6 @@ function Sidebar({view, goto, role, user, collapsed, pendingSync=0}){
       {id:'recounts', ic:'repeat', label:'Recontagens Pendentes'},
       {id:'divergentes', ic:'alertTriangle', label:'Itens Divergentes'},
       {id:'concluidas', ic:'checkCircle', label:'Contagens Concluídas'},
-      {id:'myCounts', ic:'clipboardList', label:'Minhas Contagens'},
     ]},
     ...(podeValidarEnderecos ? [{ label: 'Cadastros', items: [
       {id:'enderecos', ic:'mapPin', label:'Endereços Pendentes'},
@@ -3730,7 +3727,7 @@ function BottomNav({view, goto, role}){
     {id:'home', ic:'⌂', label:'Início'},
     {id:'inventories', ic:'📦', label:'Inventários'},
     {id:'pickCountType', ic:'🔍', label:'Contar'},
-    {id:'myCounts', ic:'📋', label:'Minhas'},
+    {id:'concluidas', ic:'✅', label:'Concluídas'},
     {id:'dashboard', ic:'📊', label:'Dash'},
   ];
   return (
@@ -3840,7 +3837,7 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
 
   const acoes = [
     {icon:'search', label:'Nova Contagem', onClick:()=>goto('pickCountType')},
-    {icon:'clipboardList', label:'Minhas Contagens', onClick:()=>goto('myCounts')},
+    {icon:'checkCircle', label:'Contagens Concluídas', onClick:()=>goto('concluidas')},
     {icon:'repeat', label:'Recontagens', onClick:()=>goto('recounts')},
     {icon:'fileText', label:'Relatórios', onClick:()=>goto('relatorios')},
   ];
@@ -3884,7 +3881,7 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
           <div className="pnl-col-8 pnl-card">
             <div className="pnl-section-head">
               <div className="pnl-section-title">Últimas Atividades</div>
-              <button className="pnl-section-link" onClick={()=>goto('myCounts')}>Ver todas <DIcon name="chevronRight" size={13} /></button>
+              <button className="pnl-section-link" onClick={()=>goto('concluidas')}>Ver todas <DIcon name="chevronRight" size={13} /></button>
             </div>
             {atividades.length===0 ? (
               <div style={{color:'var(--gray-500)', fontSize:13, padding:'12px 4px'}}>Nenhuma atividade registrada ainda.</div>
@@ -3978,10 +3975,9 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
           <span className="icon"><Ic>🔍</Ic></span>
           <span className="label">Nova Contagem</span>
         </div>
-        <div className="home-card" onClick={()=>goto('myCounts')}>
-          {counts.length>0 && <span className="badge">{counts.length}</span>}
-          <span className="icon"><Ic>📋</Ic></span>
-          <span className="label">Minhas Contagens</span>
+        <div className="home-card" onClick={()=>goto('concluidas')}>
+          <span className="icon"><Ic>✅</Ic></span>
+          <span className="label">Contagens Concluídas</span>
         </div>
         <div className="home-card" onClick={()=>goto('recounts')}>
           {pendentesRecontagem>0 && <span className="badge">{pendentesRecontagem}</span>}
@@ -5473,81 +5469,6 @@ function ImportedListCountFlow({inv, user, onFinish, onAddressProposed, setInven
           q.next();
         }}
       />
-    </div>
-  );
-}
-
-/* ---------------- MÓDULO: MINHAS CONTAGENS ---------------- */
-
-function MyCounts({counts, user, role, goto, onDeleteCount}){
-  const mine = role==='operador' ? counts.filter(c=>c.usuario===user.nome) : counts;
-  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
-  const [excluindo, setExcluindo] = useState(false);
-  const [erroExclusao, setErroExclusao] = useState('');
-
-  async function handleConfirmDelete(id){
-    setExcluindo(true);
-    setErroExclusao('');
-    const res = await onDeleteCount(id);
-    setExcluindo(false);
-    if(res && res.ok){
-      setConfirmDeleteId(null);
-    } else {
-      setErroExclusao((res && res.erro) || 'Não foi possível excluir — tente novamente.');
-    }
-  }
-
-  if(mine.length===0){
-    return <div className="empty-state"><div className="ic"><Ic>📋</Ic></div>Nenhuma contagem registrada ainda.</div>;
-  }
-  return (
-    <div>
-      {mine.map(c=>{
-        const status = STATUS_INFO[c.statusAprovacao] || {level:c.classificacao.level, text:c.classificacao.rule};
-        const anterior = c.contagemAnteriorId ? counts.find(x=>x.id===c.contagemAnteriorId) : null;
-        return (
-          <div key={c.id} className="item-card">
-            <div className="item-card-head">
-              <div>
-                <div className="item-code">{c.id} · {c.productCode} {c.numeroContagem>1 && <span style={{color:'var(--accent2)'}}>· {c.numeroContagem}ª contagem</span>}</div>
-                <div className="item-desc" style={{fontSize:15}}>{c.descricao}</div>
-              </div>
-              <StatusTag status={status.level} text={c.classificacao.label} />
-            </div>
-            <div style={{padding:'14px 18px',display:'flex',flexWrap:'wrap',gap:8,fontSize:12,color:'var(--ink-dim)',fontFamily:'var(--font-mono)'}}>
-              <span>Endereço {c.endereco}</span>·<span>Qtd {c.qtdContada}</span>·<span>Diferença {c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</span>·<span>{c.data} {c.hora||''}</span>·<span>{c.usuario}</span>
-            </div>
-            {anterior && (
-              <div style={{padding:'0 18px 10px',fontSize:12,color:'var(--ink-dim)'}}>
-                1ª contagem: {anterior.qtdContada} un. por {anterior.usuario} em {anterior.data} {anterior.hora||''}
-              </div>
-            )}
-            {c.motivo && <div style={{padding:'0 18px 14px',fontSize:12.5}}>Motivo: <strong>{c.motivo}</strong></div>}
-            {c.enderecoPendenteValidacao && <div style={{padding:'0 18px 14px'}}><StatusTag status="warn" text="Endereço aguardando validação" /></div>}
-            <div style={{padding:'0 18px 16px'}}>
-              <StatusTag status={status.level} text={status.text} />
-            </div>
-            {onDeleteCount && (
-              confirmDeleteId===c.id ? (
-                <div style={{padding:'0 18px 16px'}}>
-                  <div className="divergence-alert" style={{marginBottom:10}}>
-                    <Ic>⚠</Ic><span>Excluir esta contagem de {c.productCode}? Essa ação não pode ser desfeita e não deixa rastro.</span>
-                  </div>
-                  {erroExclusao && <div className="divergence-alert" style={{marginBottom:10}}><Ic>⚠</Ic><span>{erroExclusao}</span></div>}
-                  <div className="btn-row">
-                    <button className="btn btn-secondary" disabled={excluindo} onClick={()=>{setConfirmDeleteId(null); setErroExclusao('');}}>Cancelar</button>
-                    <button className="btn btn-danger" disabled={excluindo} onClick={()=>handleConfirmDelete(c.id)}>{excluindo ? 'Excluindo…' : 'Confirmar exclusão'}</button>
-                  </div>
-                </div>
-              ) : (
-                <div style={{padding:'0 18px 16px'}}>
-                  <button className="btn btn-danger" onClick={()=>setConfirmDeleteId(c.id)}><Ic>🗑</Ic> Excluir contagem</button>
-                </div>
-              )
-            )}
-          </div>
-        );
-      })}
     </div>
   );
 }
