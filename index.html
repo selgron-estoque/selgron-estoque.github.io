@@ -1481,7 +1481,14 @@ function parseHistoricoContagensRows(matrix){
     // fetchContagensHistoricoConcluidas não bater com o valor esperado.
     const txt = v => v!=null && String(v).trim()!=='' ? String(v).trim() : null;
     linhas.push({
-      produto_codigo: String(codigoRaw).trim(),
+      // Mesma regra de reconstrução já usada pro catálogo (produtos) e pro
+      // saldo SB2 (reconstructNumericCode) — a planilha de análise antiga
+      // (BD_Contagens) tem o MESMO problema do Excel com código 100%
+      // numérico (perde zero à esquerda/pontos), que nunca tinha sido
+      // corrigido aqui. Achado ao investigar códigos aparecendo sem
+      // formatação ("22103300001" em vez de "221.033.00001") em telas que
+      // combinam contagens ao vivo com histórico importado.
+      produto_codigo: reconstructNumericCode(codigoRaw),
       descricao: idx.descricao>=0 ? String(row[idx.descricao]||'').trim() : '',
       endereco: idx.end>=0 ? txt(row[idx.end]) : null,
       saldo_sistema: idx.sistema>=0 ? num(row[idx.sistema]) : null,
@@ -5837,7 +5844,13 @@ function AllDivergencesPanel({counts, historicoConcluidas, goto}){
   const historicoComoContagem = useMemo(()=>historicoConcluidas.map(historicoRowToCountLike).filter(Boolean), [historicoConcluidas]);
   const divergentes = useMemo(()=>{
     const pool = [...counts, ...historicoComoContagem];
-    return pool
+    // Dedupe por id antes de filtrar — se a mesma contagem/linha de
+    // histórico acabar aparecendo mais de uma vez no pool (ex.: uma busca
+    // paginada que se sobrepôs), mantém só uma ocorrência em vez de mostrar
+    // o mesmo item repetido na lista.
+    const vistos = new Map();
+    pool.forEach(c=>{ if(c && c.id!=null && !vistos.has(c.id)) vistos.set(c.id, c); });
+    return Array.from(vistos.values())
       .filter(c=>c.diferenca!=null && c.diferenca!==0 && c.statusAprovacao!=='aguardando_segunda')
       .sort((a,b)=>Math.abs(b.diferenca||0)-Math.abs(a.diferenca||0));
   }, [counts, historicoComoContagem]);
@@ -5870,7 +5883,7 @@ function AllDivergencesPanel({counts, historicoConcluidas, goto}){
                 const valorComSinal = valorDivergenteComSinal(c);
                 return (
                   <tr key={c.id}>
-                    <td>{c.productCode} · {c.descricao}</td>
+                    <td>{reconstructNumericCode(c.productCode)} · {c.descricao}</td>
                     <td>{almoxLabel}</td>
                     <td className="num">{c.saldoSistema==null ? '—' : c.saldoSistema}</td>
                     <td className="num">{c.qtdContada}</td>
@@ -5963,7 +5976,10 @@ function historicoRowToCountLike(h){
     : null;
   return {
     id: 'HIST-CONCL-' + String(h.produto_codigo).replace(/[^A-Za-z0-9]/g,'') + '-' + (h.data||'sem-data') + '-' + (h.endereco||'sem-endereco'),
-    productCode: h.produto_codigo,
+    // reconstructNumericCode aqui (não só no parser do upload) corrige a
+    // exibição mesmo pra linhas JÁ importadas antes da correção do parser —
+    // sem isso, precisaria o cliente reimportar a planilha inteira de novo.
+    productCode: reconstructNumericCode(h.produto_codigo),
     descricao: h.descricao || '',
     endereco: h.endereco || null,
     enderecoContado: h.endereco || null,
