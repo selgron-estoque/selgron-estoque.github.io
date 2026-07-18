@@ -435,6 +435,21 @@
     color:var(--gray-500);font-family:var(--font-corp);font-size:13px;width:100%;padding:8px;}
   .login-back2:hover{color:var(--navy);}
 
+  /* Classes SEM o "2" (usadas fora da tela de login: UserForm, CameraScanner,
+     import de listas, telas de senha etc.) — não têm relação com o redesign
+     do login (que usa login-error2/success2/notice2 abaixo), mas ficaram
+     sem NENHUMA regra de estilo depois que o redesign as tratou como só
+     "seletor de compatibilidade de teste" (ver CLAUDE.md, seção "Login vira
+     redesign premium"). Resultado: mensagem de erro/sucesso nesses lugares
+     renderizava como texto puro, sem vermelho/verde nenhum — corrigido
+     restaurando o estilo original dessas classes aqui. */
+  .login-error{background:var(--danger-bg);border:1px solid var(--danger);color:var(--danger);
+    border-radius:8px;padding:12px 14px;font-size:13px;margin-bottom:16px;}
+  .login-success{background:var(--ok-bg);border:1px solid var(--ok);color:var(--ok);
+    border-radius:8px;padding:12px 14px;font-size:13px;margin-bottom:16px;}
+  .login-notice{background:var(--warn-bg);border:1px solid var(--warn);color:var(--warn);
+    border-radius:8px;padding:12px 14px;font-size:13px;margin-bottom:16px;}
+
   .login-error2{display:flex;align-items:center;gap:8px;background:#FEF2F2;border:1px solid #FECACA;
     color:#B91C1C;border-radius:10px;padding:12px 14px;font-size:13.5px;font-family:var(--font-corp);
     margin-bottom:14px;}
@@ -1132,7 +1147,23 @@ async function chamarUsuariosAdmin(acao, payload){
     const { data, error } = await supabaseClient.functions.invoke('usuarios-admin', {
       body: {acao, ...payload},
     });
-    if(error) return {ok:false, erro:error.message};
+    if(error){
+      // Quando a Edge Function responde com status != 2xx, o client do
+      // Supabase joga fora o corpo da resposta e só devolve uma mensagem
+      // genérica ("Edge Function returned a non-2xx status code") — a
+      // mensagem de verdade (ex: "e-mail já cadastrado") continua disponível
+      // no corpo bruto da resposta, em `error.context` (um Response). Sem
+      // isso, todo erro da função aparecia com o mesmo texto genérico,
+      // sem dizer o que realmente deu errado.
+      let erro = error.message;
+      if(error.context && typeof error.context.json==='function'){
+        try{
+          const corpo = await error.context.json();
+          if(corpo && corpo.erro) erro = corpo.erro;
+        }catch(_e){ /* corpo não era JSON — mantém a mensagem genérica */ }
+      }
+      return {ok:false, erro};
+    }
     return data;
   }catch(err){
     return {ok:false, erro:String(err && err.message || err)};
