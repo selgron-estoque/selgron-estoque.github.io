@@ -3807,8 +3807,19 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
   // antiga da Selgron. `historicoConcluidas` já tem os campos `data`/
   // `diferenca` com o mesmo nome/formato usado em `counts`, então dá pra
   // juntar os dois arrays direto no filtro, sem conversão.
+  //
+  // Bug real corrigido aqui: `c.data<=dataLimite` sozinho, com `c.data:null`
+  // (~460 linhas da planilha antiga sem data, ver CLAUDE.md), avalia
+  // `null<=dataLimite` como FALSE (JS converte null pra 0, e 0<=string vira
+  // NaN na comparação) — excluía silenciosamente todo item sem data do
+  // cálculo aqui, mesmo esses itens sendo contagens de verdade que
+  // aconteceram antes de hoje. O card "Acuracidade do Estoque" de
+  // Indicadores (Dashboard) não tem esse filtro de data — nunca excluía
+  // esses itens — e por isso os dois cards batiam número diferente mesmo
+  // depois do bug de null-como-divergência já ter sido corrigido. Item sem
+  // data conta igual nos dois agora (`!c.data ||` cobre esse caso).
   function acumuladoAte(dataLimite){
-    const relevantes = [...counts, ...historicoConcluidas].filter(c=>c.data<=dataLimite);
+    const relevantes = [...counts, ...historicoConcluidas].filter(c=>!c.data || c.data<=dataLimite);
     const divergentes = relevantes.filter(c=>c.diferenca!==0 && c.diferenca!==null);
     const acuracidade = relevantes.length ? ((relevantes.length-divergentes.length)/relevantes.length*100) : 100;
     return {total:relevantes.length, divergentes:divergentes.length, acuracidade};
