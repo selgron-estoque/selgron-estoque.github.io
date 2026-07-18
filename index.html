@@ -2775,30 +2775,36 @@ function App(){
   // acessos_extras — ver hasAccess/pode_gerenciar_usuarios no schema.sql,
   // que espelha exatamente essa mesma regra do lado do RLS).
   const podeGerenciarUsuarios = !!(currentUser && hasAccess(currentUser, 'usuarios'));
+  // Extraído do useEffect abaixo (que continua rodando a cada 30s) pra
+  // também poder ser chamado manualmente logo após criar/editar um usuário —
+  // sem isso, o usuário recém-criado só apareceria na lista no próximo ciclo
+  // de sincronização (até 30s de espera), dando a falsa impressão de que
+  // "não aconteceu nada" ao voltar pra tela de Usuários.
+  async function refreshUsuarios(){
+    const remoteUsers = await fetchUsuariosFromSupabase();
+    if(remoteUsers===null) return;
+    setUsers(prev=>{
+      const remoteIds = new Set(remoteUsers.map(u=>u.id));
+      const byId = new Map(prev.map(u=>[u.id, u]));
+      remoteUsers.forEach(ru=>{
+        const local = byId.get(ru.id);
+        if(!local){
+          byId.set(ru.id, ru);
+        } else {
+          const remoteTs = ru.atualizadoEm ? new Date(ru.atualizadoEm).getTime() : 0;
+          const localTs = local.atualizadoEm ? new Date(local.atualizadoEm).getTime() : 0;
+          if(remoteTs >= localTs) byId.set(ru.id, {...local, ...ru});
+        }
+      });
+      return Array.from(byId.values()).filter(u=>remoteIds.has(u.id));
+    });
+  }
   useEffect(()=>{
     if(!supabaseClient || !podeGerenciarUsuarios) return;
     let cancelled = false;
-    async function syncUsuarios(){
-      const remoteUsers = await fetchUsuariosFromSupabase();
-      if(cancelled || remoteUsers===null) return;
-      setUsers(prev=>{
-        const remoteIds = new Set(remoteUsers.map(u=>u.id));
-        const byId = new Map(prev.map(u=>[u.id, u]));
-        remoteUsers.forEach(ru=>{
-          const local = byId.get(ru.id);
-          if(!local){
-            byId.set(ru.id, ru);
-          } else {
-            const remoteTs = ru.atualizadoEm ? new Date(ru.atualizadoEm).getTime() : 0;
-            const localTs = local.atualizadoEm ? new Date(local.atualizadoEm).getTime() : 0;
-            if(remoteTs >= localTs) byId.set(ru.id, {...local, ...ru});
-          }
-        });
-        return Array.from(byId.values()).filter(u=>remoteIds.has(u.id));
-      });
-    }
-    syncUsuarios();
-    const interval = setInterval(syncUsuarios, 30000);
+    async function tick(){ if(!cancelled) await refreshUsuarios(); }
+    tick();
+    const interval = setInterval(tick, 30000);
     return ()=>{ cancelled = true; clearInterval(interval); };
   }, [podeGerenciarUsuarios]);
 
@@ -3045,10 +3051,12 @@ function App(){
   }
 
   async function createUser(data){
-    return await chamarUsuariosAdmin('criar_usuario', data);
-    // `users` é atualizado sozinho no próximo ciclo de sincronização (ver
-    // `podeGerenciarUsuarios` acima) — não precisa de patch otimista aqui,
-    // já que a Edge Function é quem decide o id real (uuid do auth.users).
+    const res = await chamarUsuariosAdmin('criar_usuario', data);
+    // Busca a lista de novo na hora (em vez de esperar o próximo ciclo de
+    // 30s) — sem isso, o usuário recém-criado só aparece na tela de
+    // Usuários depois de até 30s, dando a impressão de que nada aconteceu.
+    if(res.ok) await refreshUsuarios();
+    return res;
   }
 
   async function updateUser(userId, data){
@@ -3282,6 +3290,7 @@ function App(){
             users={users}
             currentUser={currentUser}
             goto={goto}
+            successMessage={flowState && flowState.successMessage}
             onToggleUserStatus={toggleUserStatus}
             onDeleteUser={deleteUser}
             onAdminPasswordAction={applyAdminPasswordAction}
@@ -3300,7 +3309,7 @@ function App(){
             users={users}
             onCreateUser={createUser}
             onUpdateUser={updateUser}
-            onSaved={()=>goto('usuarios')}
+            onSaved={(msg)=>goto('usuarios', msg ? {successMessage:msg} : null)}
             onCancel={()=>goto('usuarios')}
           />
         )}
@@ -7596,9 +7605,16 @@ function UserForm({mode, initialData, users, onCreateUser, onUpdateUser, onSaved
 
   async function submitForm(e){
     e.preventDefault();
-    if(!form.nome.trim() || !form.usuario.trim() || !form.email.trim()){ setFeedback('Nome, usuário de acesso e e-mail são obrigatórios.'); return; }
-    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())){ setFeedback('Informe um e-mail válido.'); return; }
-    if(isLoginDuplicado(users, form.usuario, isEdit ? mode : null)){
+    const nome = form.nome.trim();
+    const usuario = form.usuario.trim();
+    // E-mail sempre normalizado pra minúsculo — mesmo endereço digitado com
+    // maiúscula em lugares diferentes (ex: criação vs. login) não pode virar
+    // "duas contas diferentes" pro Supabase Auth, que já trata e-mail como
+    // case-insensitive por padrão.
+    const email = form.email.trim().toLowerCase();
+    if(!nome || !usuario || !email){ setFeedback('Nome, usuário de acesso e e-mail são obrigatórios.'); return; }
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ setFeedback('Informe um e-mail válido.'); return; }
+    if(isLoginDuplicado(users, usuario, isEdit ? mode : null)){
       setFeedback('Este login já está sendo utilizado por outro usuário.');
       return;
     }
@@ -7607,13 +7623,13 @@ function UserForm({mode, initialData, users, onCreateUser, onUpdateUser, onSaved
     let res;
     if(!isEdit){
       if(!form.senha || form.senha.length<6){ setFeedback('Defina uma senha inicial com pelo menos 6 caracteres.'); setSalvando(false); return; }
-      res = await onCreateUser({nome:form.nome.trim(), usuario:form.usuario.trim(), email:form.email.trim(), senha:form.senha, perfil:form.perfil, acessosExtras:form.acessosExtras});
+      res = await onCreateUser({nome, usuario, email, senha:form.senha, perfil:form.perfil, acessosExtras:form.acessosExtras});
     } else {
-      res = await onUpdateUser(mode, {nome:form.nome.trim(), usuario:form.usuario.trim(), email:form.email.trim(), perfil:form.perfil, acessosExtras:form.acessosExtras});
+      res = await onUpdateUser(mode, {nome, usuario, email, perfil:form.perfil, acessosExtras:form.acessosExtras});
     }
     setSalvando(false);
     if(res && res.ok){
-      onSaved();
+      onSaved(isEdit ? 'Alterações de "'+nome+'" salvas com sucesso.' : 'Usuário "'+nome+'" criado com sucesso.');
     } else {
       setFeedback((res && res.erro) || 'Não foi possível salvar — tente novamente.');
     }
@@ -7634,7 +7650,7 @@ function UserForm({mode, initialData, users, onCreateUser, onUpdateUser, onSaved
         </div>
         <div className="field">
           <label>E-mail</label>
-          <input type="email" value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))} placeholder="nome@empresa.com" />
+          <input type="email" value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))} placeholder="nome@empresa.com" autoCapitalize="none" autoCorrect="off" spellCheck="false" />
         </div>
         {!isEdit && (
           <div className="field">
@@ -8032,11 +8048,24 @@ function HistoricoImportPanel({onImported}){
 // Redefinição, Histórico de Alterações) — são bem ligados a usuário, mesmo
 // padrão de "extrair o bloco tal como está" já usado antes. Só admin
 // acessa, mesmo grupo que já tinha esse conteúdo dentro de Configurações.
-function UsuariosScreen({users, currentUser, goto, onToggleUserStatus, onDeleteUser, onAdminPasswordAction, passwordRequests=[], onResolvePasswordRequest, passwordHistory=[]}){
+function UsuariosScreen({users, currentUser, goto, successMessage, onToggleUserStatus, onDeleteUser, onAdminPasswordAction, passwordRequests=[], onResolvePasswordRequest, passwordHistory=[]}){
   const pendentesSenha = passwordRequests.filter(r=>r.status==='pendente');
+  // `successMessage` vem via flowState (ver App(), onSaved do UserForm) — só
+  // aparece logo depois de criar/editar um usuário com sucesso, some sozinho
+  // em qualquer navegação seguinte (flowState é sempre substituído por
+  // goto()). Sem isso, criar um usuário não dava nenhuma confirmação visível
+  // além de voltar pra esta tela — parecia que "nada tinha acontecido".
+  const [dismissed, setDismissed] = useState(false);
+  useEffect(()=>{ setDismissed(false); }, [successMessage]);
 
   return (
     <div>
+      {successMessage && !dismissed && (
+        <div className="result-banner ok" style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:12}}>
+          <span style={{fontSize:13,fontWeight:600,color:'var(--ok)'}}>{successMessage}</span>
+          <button type="button" className="btn btn-secondary" style={{width:'auto',padding:'6px 12px',fontSize:11.5}} onClick={()=>setDismissed(true)}>Fechar</button>
+        </div>
+      )}
       <UserManagementPanel
         users={users}
         currentUser={currentUser}
