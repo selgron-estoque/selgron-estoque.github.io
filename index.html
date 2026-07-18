@@ -3210,7 +3210,7 @@ function App(){
         {view==='divergentes' && <DivergentItemsPanel counts={counts} role={role} goto={goto} onApprove={approveDivergence} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} />}
         {view==='concluidas' && <ConcludedCountsPanel counts={counts} historicoConcluidas={historicoConcluidas} onDeleteCount={role==='admin' ? deleteCount : undefined} onRefresh={refreshHistoricoConcluidas} />}
         {view==='recount' && flowState && <RecountFlow original={flowState} user={currentUser} onAddressProposed={addAddressProposal} onFinish={(c)=>{registerFinishedCount(c); goto('recounts');}} />}
-        {view==='dashboard' && <Dashboard counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} historicoParaTendencia={historicoParaTendencia} />}
+        {view==='dashboard' && <Dashboard counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} historicoParaTendencia={historicoParaTendencia} goto={goto} />}
         {view==='relatorios' && <ReportsScreen counts={counts} inventories={inventories} currentUser={currentUser} sendHistory={reportSendHistory} onLogSend={logReportSend} role={role} onHistoricoImportado={refreshHistoricoConcluidas} />}
         {view==='settings' && (
           <Settings
@@ -6893,7 +6893,7 @@ function TrendFilterBar({trendFilter, setTrendFilter, dataInicioStr, dataFimStr,
   );
 }
 
-function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTendencia=[]}){
+function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTendencia=[], goto}){
   const planejados = inventories.reduce((s,i)=>s+i.qtdItens,0);
   const contados = counts.length;
   const pendentes = Math.max(planejados-contados,0);
