@@ -1736,14 +1736,15 @@ async function fetchContagemItensPrioritarios(limit, grupos){
 
 // Grupos que realmente têm algum item com saldo carregado (não os ~248
 // grupos possíveis do catálogo, a maioria ainda sem saldo importado) —
-// alimenta o seletor de grupo em "Contagem por Grupo". Cada item já vem com
-// a descrição resolvida (`describeGrupo`), pronta pra exibir num <select>.
+// alimenta o seletor de grupo em "Contagem por Grupo". `label` já vem
+// pronto no formato "01 - Chapas Inox" (número + descrição), pedido do
+// cliente pra sempre mostrar os dois juntos.
 async function fetchGruposComEstoque(){
   if(!supabaseClient) return [];
   try{
     const { data, error } = await supabaseClient.rpc('grupos_com_estoque');
     if(error || !data) return [];
-    return data.map(row => ({ grupo: row.grupo, descricao: describeGrupo(row.grupo), qtdItens: Number(row.qtd_itens) }));
+    return data.map(row => ({ grupo: row.grupo, descricao: describeGrupo(row.grupo), label: formatGrupoLabel(row.grupo), qtdItens: Number(row.qtd_itens) }));
   }catch(err){
     console.warn('Falha ao buscar grupos com estoque:', err);
     return [];
@@ -2106,6 +2107,17 @@ const GRUPO_DESCRICOES = {
 function describeGrupo(grupo){
   if(grupo==null) return '—';
   return GRUPO_DESCRICOES[String(grupo)] || ('Grupo ' + grupo);
+}
+
+// "01 - Chapas Inox" — pedido do cliente pra sempre mostrar o número do
+// grupo junto da descrição (não só a descrição sozinha), tanto no seletor de
+// "Contagem por Grupo" quanto no nome automático do inventário e no aviso da
+// fila de contagem. `padStart(2,'0')` casa com a mesma convenção já usada
+// pro código de armazém (chip "01" em vez de "1") — grupos com código de 3+
+// dígitos aparecem no tamanho natural, sem cortar nada.
+function formatGrupoLabel(grupo){
+  if(grupo==null) return '—';
+  return String(grupo).padStart(2,'0') + ' - ' + describeGrupo(grupo);
 }
 
 // O cache local estático de 300 SKUs (RAW_SB2_PRODUCTS/PRODUCTS) foi removido —
@@ -4132,7 +4144,10 @@ function GrupoMultiSelectField({grupos, selecionados, onToggle, onRemove}){
   const [busca, setBusca] = useState('');
   const buscaNorm = busca.trim().toLowerCase();
   const disponiveis = (grupos||[]).filter(g => !selecionados.includes(g.grupo));
-  const sugestoes = buscaNorm ? disponiveis.filter(g => g.descricao.toLowerCase().includes(buscaNorm)) : disponiveis;
+  // Busca casa tanto pelo número do grupo quanto pela descrição — `label`
+  // já junta os dois ("01 - Chapas Inox"), então buscar "01" ou "chapas"
+  // encontra o mesmo grupo.
+  const sugestoes = buscaNorm ? disponiveis.filter(g => g.label.toLowerCase().includes(buscaNorm)) : disponiveis;
   const selecionadosObjs = selecionados.map(cod => (grupos||[]).find(g=>g.grupo===cod)).filter(Boolean);
 
   return (
@@ -4140,8 +4155,8 @@ function GrupoMultiSelectField({grupos, selecionados, onToggle, onRemove}){
       <div className="chip-input">
         {selecionadosObjs.map(g=>(
           <span key={g.grupo} className="chip">
-            {g.descricao}
-            <button type="button" onClick={()=>onRemove(g.grupo)} aria-label={"Remover grupo "+g.descricao}>×</button>
+            {g.label}
+            <button type="button" onClick={()=>onRemove(g.grupo)} aria-label={"Remover grupo "+g.label}>×</button>
           </span>
         ))}
         <input
@@ -4162,7 +4177,7 @@ function GrupoMultiSelectField({grupos, selecionados, onToggle, onRemove}){
               className="grupo-suggestion-item"
               onClick={()=>{ onToggle(g.grupo); setBusca(''); }}
             >
-              {g.descricao} <span className="grupo-suggestion-count">({g.qtdItens} {g.qtdItens===1?'item':'itens'})</span>
+              {g.label} <span className="grupo-suggestion-count">({g.qtdItens} {g.qtdItens===1?'item':'itens'})</span>
             </button>
           ))}
         </div>
@@ -4269,7 +4284,7 @@ function NewInventory({onCreate, goto, inventories}){
   // absurdamente longo com vários grupos selecionados).
   const gruposLabel = useMemo(()=>{
     if(!isPorGrupo || gruposSelecionados.length===0) return null;
-    const nomes = gruposSelecionados.map(cod => (grupos||[]).find(g=>g.grupo===cod)).filter(Boolean).map(g=>g.descricao);
+    const nomes = gruposSelecionados.map(cod => (grupos||[]).find(g=>g.grupo===cod)).filter(Boolean).map(g=>g.label);
     if(nomes.length<=2) return nomes.join(' + ');
     return nomes.slice(0,2).join(' + ') + ' + ' + (nomes.length-2) + ' outro' + (nomes.length-2===1?'':'s');
   }, [isPorGrupo, gruposSelecionados, grupos]);
@@ -5068,7 +5083,7 @@ function RandomCountFlow({inv, user, onFinish, onAddressProposed, setInventories
 
   return (
     <div>
-      <div className="role-note">Item {jaContados+q.idx+1} de {allItems.length} · Itens ainda não contados primeiro, depois por sequência de endereço{inv && inv.grupo ? (' · Grupo: ' + inv.grupo.split(',').filter(Boolean).map(describeGrupo).join(', ')) : ''}</div>
+      <div className="role-note">Item {jaContados+q.idx+1} de {allItems.length} · Itens ainda não contados primeiro, depois por sequência de endereço{inv && inv.grupo ? (' · Grupo: ' + inv.grupo.split(',').filter(Boolean).map(formatGrupoLabel).join(', ')) : ''}</div>
       <CountStep
         product={q.current}
         user={user}
