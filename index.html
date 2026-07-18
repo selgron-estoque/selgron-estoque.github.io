@@ -1097,22 +1097,21 @@ async function fetchInventoriesFromSupabase(){
   }
 }
 
-// ---- Usuários — login via Supabase Auth de verdade ----
-// Senha não mora mais aqui (vive só em `auth.users`, gerenciada pela Edge
-// Function `usuarios-admin` via Admin API) — `usuarios` agora é só o
-// "perfil" de cada conta (nome, login, e-mail, perfil, status, acessos
-// extras, último acesso). Criar/editar/bloquear/redefinir senha/excluir só
-// funcionam através de `chamarUsuariosAdmin` (Edge Function, service role
-// do lado do servidor) — o client nunca mais escreve direto em `usuarios`
-// pra essas ações (ver RLS em backend/schema.sql, migração "LOGIN VIA
-// SUPABASE AUTH DE VERDADE"). O único write direto que sobra é o próprio
-// `ultimo_acesso` após login (coluna liberada por GRANT específico).
+// ---- Usuários — sync leve entre aparelhos (sem Supabase Auth) ----
+// Login continua autenticando 100% contra o `localStorage` (`attemptLogin`
+// em App(), instantâneo, funciona offline) — o Supabase aqui é só um espelho
+// da lista de usuários pra criar/editar/bloquear/excluir propagar entre
+// aparelhos, o que faltava até agora (ver CLAUDE.md, "Sincronizar usuários
+// entre aparelhos"). Mesmo padrão de `saveInventarioToSupabase`/
+// `deleteInventarioFromSupabase`: `await`adas por quem chama, só comprometem
+// o estado local depois de confirmar a gravação remota.
 function usuarioRowToLocal(row){
   return {
     id: row.id,
     nome: row.nome,
     usuario: row.usuario,
     email: row.email,
+    senha: row.senha,
     perfil: row.perfil,
     status: row.status,
     acessosExtras: row.acessos_extras || [],
@@ -1121,32 +1120,42 @@ function usuarioRowToLocal(row){
   };
 }
 
-// Chama a Edge Function `usuarios-admin` — ela decodifica o JWT de quem
-// está logado (anexado automaticamente por `functions.invoke`) e confirma
-// que é admin antes de fazer qualquer coisa privilegiada. `acao` é sempre
-// um dos valores tratados lá dentro (criar_usuario/atualizar_usuario/
-// definir_senha/alternar_bloqueio/excluir_usuario/auto_definir_senha).
-async function chamarUsuariosAdmin(acao, payload){
+async function saveUsuarioToSupabase(user){
   if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
   try{
-    const { data, error } = await supabaseClient.functions.invoke('usuarios-admin', {
-      body: {acao, ...payload},
+    const { error } = await supabaseClient.from('usuarios').insert({
+      id: user.id,
+      nome: user.nome,
+      usuario: user.usuario,
+      email: user.email || null,
+      senha: user.senha || null,
+      perfil: user.perfil,
+      status: user.status || 'ativo',
+      acessos_extras: user.acessosExtras || [],
+      ultimo_acesso: user.ultimoAcesso || null,
+      atualizado_em: new Date().toISOString(),
     });
     if(error) return {ok:false, erro:error.message};
-    return data;
+    return {ok:true};
   }catch(err){
     return {ok:false, erro:String(err && err.message || err)};
   }
 }
 
 // `patch` usa nomes de campo em camelCase (mesmo formato do objeto local) —
-// convertido pra snake_case aqui dentro. Único uso real que sobra hoje:
-// gravar `ultimoAcesso` (ver attemptLogin) — a coluna é a única liberada
-// por GRANT direto pro usuário autenticado escrever na própria linha.
+// convertido pra snake_case aqui dentro, então quem chama não precisa saber
+// o nome das colunas no banco.
 async function updateUsuarioToSupabase(id, patch){
   if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
   try{
-    const row = {};
+    const row = {atualizado_em: new Date().toISOString()};
+    if('nome' in patch) row.nome = patch.nome;
+    if('usuario' in patch) row.usuario = patch.usuario;
+    if('email' in patch) row.email = patch.email || null;
+    if('senha' in patch) row.senha = patch.senha;
+    if('perfil' in patch) row.perfil = patch.perfil;
+    if('status' in patch) row.status = patch.status;
+    if('acessosExtras' in patch) row.acessos_extras = patch.acessosExtras || [];
     if('ultimoAcesso' in patch) row.ultimo_acesso = patch.ultimoAcesso;
     const { error } = await supabaseClient.from('usuarios').update(row).eq('id', id);
     if(error) return {ok:false, erro:error.message};
@@ -1156,12 +1165,21 @@ async function updateUsuarioToSupabase(id, patch){
   }
 }
 
+async function deleteUsuarioFromSupabase(id){
+  if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
+  try{
+    const { error } = await supabaseClient.from('usuarios').delete().eq('id', id);
+    if(error) return {ok:false, erro:error.message};
+    return {ok:true};
+  }catch(err){
+    return {ok:false, erro:String(err && err.message || err)};
+  }
+}
+
 // Retorna `null` (não `[]`) quando a busca FALHA — mesma distinção já usada
-// em `fetchInventoriesFromSupabase`. Só chamada quando `currentUser` já
-// existe e tem acesso à tela "Usuários" (RLS agora só devolve a própria
-// linha, ou todas se `is_admin`, ver schema.sql) — não faz mais sentido
-// rodar isso pré-login, já que o login em si não depende mais de nenhum
-// cache local (toda tentativa bate direto no Supabase Auth).
+// em `fetchInventoriesFromSupabase`, essencial pra sincronização poder
+// remover localmente um usuário ausente remotamente (exclusão feita em outro
+// aparelho) sem confundir "sem usuário nenhum" com "a rede caiu".
 async function fetchUsuariosFromSupabase(){
   if(!supabaseClient) return null;
   try{
@@ -1903,16 +1921,27 @@ const SELGRON_LOGO_WHITE_URL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABX
 
 /* ---------------- MOCK DATA ---------------- */
 
-// Login agora é via Supabase Auth de verdade — a senha nunca mais trafega
-// nem fica em memória do lado do app (o Auth cuida do hash/comparação no
-// servidor, e criar/redefinir senha de outro usuário passa pela Edge
-// Function `usuarios-admin`, que usa a Admin API). `users` começa vazio e é
-// populado pelo fetch do próprio perfil (após login) + pela sincronização
-// completa quando quem está logado tem acesso à tela "Usuários" — os 4
-// usuários fixos que existiam aqui como mock (Carlos/Fernanda/Roberto/
-// Alisson) não fazem mais sentido como seed local, já que os ids de
-// verdade agora são os UUIDs gerados pelo Supabase Auth.
-const USERS_SEED = [];
+// SEGURANÇA — NOTA IMPORTANTE: este protótipo roda 100% no navegador, sem
+// backend. As "senhas" abaixo ficam em texto puro em memória só para permitir
+// testar o fluxo de login. Isso NUNCA deve ir para produção: no sistema real,
+// a senha nunca trafega nem fica visível para o admin — o Supabase Auth cuida
+// do hash (bcrypt) e da comparação no servidor. O botão "gerar senha
+// temporária" aqui mostra o valor em texto só para o protótipo simular o
+// admin repassando a senha ao operador; em produção isso seria exibido uma
+// única vez e nunca fica gravado em log.
+const USERS_SEED = [
+  {id:'u1', nome:'Carlos Mendes', usuario:'carlos.mendes', email:'carlos.mendes@empresa.com', senha:'operador123', perfil:'operador', status:'ativo'},
+  {id:'u2', nome:'Fernanda Lima', usuario:'fernanda.lima', email:'fernanda.lima@empresa.com', senha:'operador123', perfil:'operador', status:'ativo'},
+  {id:'u3', nome:'Roberto Alves', usuario:'roberto.alves', email:'roberto.alves@empresa.com', senha:'lider123', perfil:'lider', status:'ativo'},
+  {id:'u4', nome:'Alisson', usuario:'alisson', email:'alisson@empresa.com', senha:'admin123', perfil:'admin', status:'ativo'},
+];
+
+function generateTempPassword(){
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let out = '';
+  for(let i=0;i<8;i++) out += chars[Math.floor(Math.random()*chars.length)];
+  return out;
+}
 
 // Descrição de cada grupo de produto (SB2), código numérico -> nome — enviado
 // pelo cliente numa planilha à parte (Grupo_de_Produtos.xlsx, 248 grupos).
@@ -2592,25 +2621,40 @@ function usePersistedState(key, initialValue){
 
 const SESSION_TIMEOUT_MS = 15 * 60 * 1000; // 15 min de inatividade → logout automático
 
-// Quem está logado agora é responsabilidade do Supabase Auth (sessão real,
-// JWT — ver `supabaseClient.auth.getSession()`/`onAuthStateChange` em
-// App()), não mais deste localStorage. O que continua precisando de um
-// registro próprio é só o timestamp da ÚLTIMA ATIVIDADE, pro timer de
-// inatividade de 15 min conseguir retomar de onde parou depois de um
-// F5 (sem isso, recarregar resetaria o timer pra 15 min inteiros toda vez,
-// e a sessão nunca expiraria de verdade por inatividade real).
-const LAST_ACTIVITY_KEY = 'stock360:v1:lastActivity';
-function loadLastActivity(){
+// Sessão de login agora sobrevive a recarregar a página — pedido do cliente,
+// que reclamou de cair pro login toda vez que atualizava. Guardada à parte
+// de usePersistedState porque tem uma regra de expiração que o resto do
+// estado persistido não tem (ver SESSION_TIMEOUT_MS): só o id do usuário +
+// timestamp da última atividade, nunca senha nem nada sensível.
+// `loadSession`/`touchSession` são usados junto com o timer de inatividade
+// em App() pra calcular quanto tempo JÁ tinha passado antes do reload — sem
+// isso, um F5 repetido resetaria o timer pra 15 min de novo a cada vez e a
+// sessão nunca expiraria de verdade.
+const SESSION_STORAGE_KEY = 'stock360:v1:session';
+function loadSession(){
   try{
-    const raw = window.localStorage.getItem(LAST_ACTIVITY_KEY);
-    return raw ? Number(raw) : null;
+    const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
+    if(!raw) return null;
+    const parsed = JSON.parse(raw);
+    if(!parsed || !parsed.userId || !parsed.lastActivity) return null;
+    return parsed;
   }catch(err){ return null; }
 }
-function touchLastActivity(){
-  try{ window.localStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now())); }catch(err){}
+function saveSession(userId){
+  try{ window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({userId, lastActivity: Date.now()})); }catch(err){}
 }
-function clearLastActivity(){
-  try{ window.localStorage.removeItem(LAST_ACTIVITY_KEY); }catch(err){}
+function touchSession(){
+  try{
+    const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
+    if(!raw) return;
+    const parsed = JSON.parse(raw);
+    if(!parsed) return;
+    parsed.lastActivity = Date.now();
+    window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(parsed));
+  }catch(err){}
+}
+function clearSession(){
+  try{ window.localStorage.removeItem(SESSION_STORAGE_KEY); }catch(err){}
 }
 
 function App(){
@@ -2619,66 +2663,24 @@ function App(){
   // Navegação (view/flowState) continua só em memória de propósito — cada
   // recarregamento volta pra Home, não faz sentido reabrir no meio de um
   // fluxo de contagem sem o contexto todo. Sessão de login (currentUserId)
-  // agora é 100% governada pelo Supabase Auth — `getSession()`/
-  // `onAuthStateChange` logo abaixo — e sobrevive a recarregar a página
-  // exatamente como antes, só que via sessão real (JWT) em vez do
-  // localStorage caseiro. Só expira de verdade por inatividade real (15
-  // min, ver efeito mais abaixo) ou logout manual.
+  // AGORA persiste (ver SESSION_STORAGE_KEY acima) — só expira de verdade
+  // por inatividade real (15 min, ver efeito mais abaixo) ou logout manual.
   const [users, setUsers] = usePersistedState('users', USERS_SEED);
-  const [currentUserId, setCurrentUserId] = useState(null);
-  // Evita mostrar a tela de login por uma fração de segundo antes de
-  // `getSession()` (assíncrono) resolver se já existe uma sessão válida.
-  const [authReady, setAuthReady] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState(() => {
+    const session = loadSession();
+    if(!session) return null;
+    if(Date.now() - session.lastActivity > SESSION_TIMEOUT_MS){ clearSession(); return null; }
+    const user = users.find(u=>u.id===session.userId);
+    if(!user || user.status==='bloqueado' || user.status==='deve_definir_senha'){ clearSession(); return null; }
+    return session.userId;
+  });
   const [logoutNotice, setLogoutNotice] = useState('');
-
-  useEffect(()=>{
-    let cancelled = false;
-    supabaseClient.auth.getSession().then(({data:{session}})=>{
-      if(cancelled) return;
-      setCurrentUserId(session ? session.user.id : null);
-      setAuthReady(true);
-    });
-    const { data: sub } = supabaseClient.auth.onAuthStateChange((_event, session)=>{
-      setCurrentUserId(session ? session.user.id : null);
-    });
-    return ()=>{ cancelled = true; sub.subscription.unsubscribe(); };
-  }, []);
-
-  // Assim que sabemos quem está logado, busca o PRÓPRIO perfil (nome/
-  // perfil/status/acessos_extras/ultimo_acesso) — RLS libera essa leitura
-  // pra qualquer usuário autenticado sobre a própria linha (ver
-  // schema.sql, "leitura própria ou com acesso a usuários"), então isso
-  // funciona pra qualquer papel, não só admin. Faz merge (upsert por id) no array
-  // `users` em vez de substituir — a sincronização completa (mais abaixo,
-  // só pra quem tem acesso à tela "Usuários") pode já ter trazido outras
-  // linhas antes disso.
-  useEffect(()=>{
-    if(!currentUserId) return;
-    let cancelled = false;
-    supabaseClient.from('usuarios').select('*').eq('id', currentUserId).single().then(({data, error})=>{
-      if(cancelled) return;
-      if(error || !data){
-        // Sem o próprio perfil não dá pra saber perfil/status com segurança
-        // — desloga em vez de deixar a tela de "Carregando…" presa pra
-        // sempre (ver condição de loading em App(), mais abaixo).
-        console.warn('Falha ao buscar o próprio perfil:', error);
-        logout('Não foi possível carregar seu perfil. Tente entrar novamente.');
-        return;
-      }
-      const perfil = usuarioRowToLocal(data);
-      setUsers(prev=>{
-        const semEsse = prev.filter(u=>u.id!==perfil.id);
-        return [perfil, ...semEsse];
-      });
-    });
-    return ()=>{ cancelled = true; };
-  }, [currentUserId]);
 
   // Navegação (view/flowState) agora sobrevive a recarregar a página — pedido
   // do cliente, que estava sendo jogado de volta pra Home a cada F5 no meio
   // de uma análise (ex: na tela Indicadores). Mesmo padrão já usado pra
-  // sessão de login (Supabase Auth persiste a própria sessão sozinho) e pro
-  // resto do estado do app (`usePersistedState`) — `flowState` é sempre um objeto simples (o
+  // sessão de login (`SESSION_STORAGE_KEY`) e pro resto do estado do app
+  // (`usePersistedState`) — `flowState` é sempre um objeto simples (o
   // inventário sendo contado, a contagem original de uma recontagem, etc.),
   // serializa sem problema. `logout()` já força `view:'home'`/
   // `flowState:null` de volta, então isso não "vaza" contexto de um usuário
@@ -2764,23 +2766,38 @@ function App(){
   const countsRef = useRef(counts);
   useEffect(()=>{ countsRef.current = counts; }, [counts]);
 
-  // ---- Sincronização de usuários — só quando há alguém logado com acesso
-  // à tela "Usuários" ----
-  // Antes desta migração, esse fetch precisava rodar mesmo ANTES do login
-  // (senão um usuário excluído em outro aparelho continuava conseguindo
-  // logar aqui) — com o Supabase Auth de verdade, login nunca mais confia
-  // em cache local (toda tentativa bate direto no Auth), então esse
-  // problema não existe mais e o fetch só precisa acontecer pra quem vai
-  // de fato USAR a lista (admin, ou quem ganhou a exceção via
-  // acessos_extras — ver hasAccess/pode_gerenciar_usuarios no schema.sql,
-  // que espelha exatamente essa mesma regra do lado do RLS).
-  const podeGerenciarUsuarios = !!(currentUser && hasAccess(currentUser, 'usuarios'));
+  // Mesmo raciocínio de `countsRef`, mas pra `users` — precisa de leitura
+  // fresca dentro do efeito de sync de usuários logo abaixo (que roda com
+  // `[]` de dependência, closure fixo do mount).
+  const usersRef = useRef(users);
+  useEffect(()=>{ usersRef.current = users; }, [users]);
+
+  // ---- Sincronização de usuários — roda mesmo ANTES do login ----
+  // Diferente do ciclo de 30s "principal" (mais abaixo, só ativo depois de
+  // autenticar), este PRECISA rodar sem sessão nenhuma: se um usuário foi
+  // criado/editado/excluído em outro aparelho, este aparelho precisa saber
+  // ANTES de alguém tentar logar aqui — não dá pra esperar o login acontecer
+  // pra só então buscar. Era exatamente o bug relatado: excluir um usuário
+  // num tablet continuava permitindo login nos outros, porque a única
+  // sincronização existente só rodava depois de autenticado.
   useEffect(()=>{
-    if(!supabaseClient || !podeGerenciarUsuarios) return;
+    if(!supabaseClient) return;
     let cancelled = false;
     async function syncUsuarios(){
       const remoteUsers = await fetchUsuariosFromSupabase();
       if(cancelled || remoteUsers===null) return;
+      if(remoteUsers.length===0){
+        // Tabela `usuarios` existe mas está vazia — provavelmente o SQL
+        // acabou de ser aplicado no projeto real e nenhum aparelho
+        // sincronizou ainda. Bootstrap: empurra os usuários que já existem
+        // NESTE aparelho pro Supabase, sem remover nada localmente (um
+        // remoto genuinamente vazio não deve apagar usuário nenhum, só
+        // "ainda não populado"). Ids que colidirem com outro aparelho
+        // fazendo o mesmo bootstrap ao mesmo tempo (ex: USERS_SEED, idêntico
+        // em todo aparelho novo) só falham silenciosamente — inofensivo.
+        usersRef.current.forEach(u=>{ saveUsuarioToSupabase(u).catch(()=>{}); });
+        return;
+      }
       setUsers(prev=>{
         const remoteIds = new Set(remoteUsers.map(u=>u.id));
         const byId = new Map(prev.map(u=>[u.id, u]));
@@ -2800,7 +2817,7 @@ function App(){
     syncUsuarios();
     const interval = setInterval(syncUsuarios, 30000);
     return ()=>{ cancelled = true; clearInterval(interval); };
-  }, [podeGerenciarUsuarios]);
+  }, []);
 
   // Reflete `getPendingIncrements().length` (ver index.html perto de
   // incrementContadosSupabase) de forma reativa, só pro indicador visual —
@@ -2945,33 +2962,32 @@ function App(){
     }, ...prev]);
   }
 
-  // ---- Autenticação (Supabase Auth de verdade) ----
-  // A tela de login aceita "usuário ou e-mail" — como o Supabase Auth só
-  // autentica por e-mail, `resolver_login` (RPC, roda no servidor) resolve
-  // o identificador digitado pro e-mail real antes de chamar
-  // `signInWithPassword`. `currentUserId` não precisa ser setado aqui —
-  // `onAuthStateChange` (useEffect acima) já reage à sessão nova sozinho.
-  async function attemptLogin(identifier, senha){
+  // ---- Autenticação ----
+  function attemptLogin(identifier, senha){
     const id = identifier.trim().toLowerCase();
-    const { data: matches, error: rpcErr } = await supabaseClient.rpc('resolver_login', {p_identifier:id});
-    const match = matches && matches[0];
-    if(rpcErr || !match) return {ok:false, error:'Usuário ou senha inválidos.'};
-    if(match.status==='bloqueado') return {ok:false, error:'Usuário bloqueado. Contate o administrador.'};
-    if(match.status==='deve_definir_senha') return {ok:false, needsNewPassword:true, userId:match.id};
-    const { error } = await supabaseClient.auth.signInWithPassword({email:match.email, password:senha});
-    if(error) return {ok:false, error:'Usuário ou senha inválidos.'};
-    touchLastActivity();
+    const user = users.find(u => u.usuario.toLowerCase()===id || (u.email && u.email.toLowerCase()===id));
+    if(!user) return {ok:false, error:'Usuário ou senha inválidos.'};
+    if(user.status==='bloqueado') return {ok:false, error:'Usuário bloqueado. Contate o administrador.'};
+    if(user.status==='deve_definir_senha') return {ok:false, needsNewPassword:true, userId:user.id};
+    if(user.senha !== senha) return {ok:false, error:'Usuário ou senha inválidos.'};
+    setCurrentUserId(user.id);
+    saveSession(user.id);
     setView('home');
+    // "Último acesso" (pedido do cliente, tela Usuários) — login continua
+    // síncrono/instantâneo (não pode travar esperando rede), então grava
+    // local na hora e sincroniza fire-and-forget, mesmo padrão já usado em
+    // `addAddressProposal`.
     const agora = new Date().toISOString();
-    updateUsuarioToSupabase(match.id, {ultimoAcesso:agora}).then(res=>{
+    setUsers(prev=>prev.map(u=>u.id===user.id?{...u, ultimoAcesso:agora}:u));
+    updateUsuarioToSupabase(user.id, {ultimoAcesso:agora}).then(res=>{
       if(!res.ok) console.warn('Falha ao registrar último acesso:', res.erro);
     });
     return {ok:true};
   }
 
-  async function logout(notice){
-    await supabaseClient.auth.signOut();
-    clearLastActivity();
+  function logout(notice){
+    setCurrentUserId(null);
+    clearSession();
     setView('home');
     setFlowState(null);
     setLogoutNotice(notice || '');
@@ -3000,59 +3016,61 @@ function App(){
     return res;
   }
 
-  // Todas as ações abaixo passam pela Edge Function `usuarios-admin`
-  // (service role, só ela consegue mexer em `auth.users`) — nunca mais
-  // escrevem direto na tabela `usuarios`. Só atualizam o estado local
-  // depois de confirmar que a Edge Function respondeu `ok` — mesmo padrão
-  // já usado em `approveDivergence`/`deleteInventory`.
+  // Todas as ações abaixo (senha/criar/editar/bloquear/excluir) aguardam
+  // confirmação do Supabase ANTES de mudar o estado local — mesmo padrão já
+  // usado em approveDivergence/deleteInventory. Sem isso, uma ação num
+  // tablet nunca aparecia nos outros (foi exatamente o bug relatado: excluir
+  // um usuário num aparelho continuava aparecendo nos demais).
   async function applyAdminPasswordAction(userId, acao, novaSenhaDigitada){
     const target = users.find(u=>u.id===userId);
     if(!target || !currentUser) return {ok:false, erro:'Usuário não encontrado.'};
-    if(acao!=='temp' && acao!=='definir' && acao!=='liberar') return {ok:false, erro:'Ação inválida.'};
-    const res = await chamarUsuariosAdmin('definir_senha', {userId, modo:acao, novaSenha:novaSenhaDigitada});
+    let patch, acaoLabel;
+    if(acao==='temp'){
+      const temp = generateTempPassword();
+      patch = {senha:temp, status:'ativo'};
+      acaoLabel = `Senha temporária gerada (${temp}) — repassar ao usuário`;
+    } else if(acao==='definir'){
+      patch = {senha:novaSenhaDigitada, status:'ativo'};
+      acaoLabel = 'Nova senha definida pelo administrador';
+    } else if(acao==='liberar'){
+      patch = {senha:null, status:'deve_definir_senha'};
+      acaoLabel = 'Usuário liberado para criar nova senha';
+    } else {
+      return {ok:false, erro:'Ação inválida.'};
+    }
+    const res = await updateUsuarioToSupabase(userId, patch);
     if(res.ok){
-      const novoStatus = acao==='liberar' ? 'deve_definir_senha' : 'ativo';
-      setUsers(prev=>prev.map(u=>u.id===userId?{...u, status:novoStatus}:u));
-      const acaoLabel = acao==='temp' ? `Senha temporária gerada (${res.senhaTemporaria}) — repassar ao usuário`
-        : acao==='definir' ? 'Nova senha definida pelo administrador'
-        : 'Usuário liberado para criar nova senha';
+      setUsers(prev=>prev.map(u=>u.id===userId?{...u, ...patch}:u));
       logHistory(target.nome, acaoLabel, currentUser.nome);
     }
     return res;
   }
 
-  // Chamado pela tela "Nova senha" (usuário liberado pelo admin definindo a
-  // própria senha) — não exige admin logado (a própria Edge Function trata
-  // esse caso sem checar JWT, ver `auto_definir_senha`). Completa o login
-  // chamando `signInWithPassword` com a senha recém-definida.
   async function selfSetNewPassword(userId, novaSenha){
     const target = users.find(u=>u.id===userId);
-    const res = await chamarUsuariosAdmin('auto_definir_senha', {userId, novaSenha});
+    const agora = new Date().toISOString();
+    const res = await updateUsuarioToSupabase(userId, {senha:novaSenha, status:'ativo', ultimoAcesso:agora});
     if(res.ok){
-      if(target){
-        setUsers(prev=>prev.map(u=>u.id===userId?{...u, status:'ativo'}:u));
-        logHistory(target.nome, 'Senha definida pelo próprio usuário', '—');
-      }
-      const emailAlvo = target ? target.email : null;
-      if(emailAlvo){
-        const { error } = await supabaseClient.auth.signInWithPassword({email:emailAlvo, password:novaSenha});
-        if(error) return {ok:false, erro:'Senha salva, mas não foi possível entrar automaticamente — tente logar de novo.'};
-      }
-      touchLastActivity();
+      setUsers(prev=>prev.map(u=>u.id===userId?{...u, senha:novaSenha, status:'ativo', ultimoAcesso:agora}:u));
+      if(target) logHistory(target.nome, 'Senha definida pelo próprio usuário', '—');
+      setCurrentUserId(userId);
+      saveSession(userId);
       setView('home');
     }
     return res;
   }
 
   async function createUser(data){
-    return await chamarUsuariosAdmin('criar_usuario', data);
-    // `users` é atualizado sozinho no próximo ciclo de sincronização (ver
-    // `podeGerenciarUsuarios` acima) — não precisa de patch otimista aqui,
-    // já que a Edge Function é quem decide o id real (uuid do auth.users).
+    const novoUsuario = {...data, id:'u'+Math.random().toString(36).slice(2,7), status:'ativo'};
+    const res = await saveUsuarioToSupabase(novoUsuario);
+    if(res.ok){
+      setUsers(prev=>[novoUsuario, ...prev]);
+    }
+    return res;
   }
 
   async function updateUser(userId, data){
-    const res = await chamarUsuariosAdmin('atualizar_usuario', {userId, ...data});
+    const res = await updateUsuarioToSupabase(userId, data);
     if(res.ok){
       setUsers(prev=>prev.map(u=>u.id===userId?{...u, ...data}:u));
     }
@@ -3062,10 +3080,11 @@ function App(){
   async function toggleUserStatus(userId){
     const target = users.find(u=>u.id===userId);
     if(!target) return {ok:false, erro:'Usuário não encontrado.'};
-    const res = await chamarUsuariosAdmin('alternar_bloqueio', {userId});
+    const novoStatus = target.status==='bloqueado' ? 'ativo' : 'bloqueado';
+    const res = await updateUsuarioToSupabase(userId, {status:novoStatus});
     if(res.ok){
-      setUsers(prev=>prev.map(u=>u.id===userId?{...u, status:res.status}:u));
-      logHistory(target.nome, res.status==='bloqueado' ? 'Usuário bloqueado' : 'Usuário desbloqueado', currentUser?currentUser.nome:'—');
+      setUsers(prev=>prev.map(u=>u.id===userId?{...u, status:novoStatus}:u));
+      logHistory(target.nome, novoStatus==='bloqueado' ? 'Usuário bloqueado' : 'Usuário desbloqueado', currentUser?currentUser.nome:'—');
     }
     return res;
   }
@@ -3073,7 +3092,7 @@ function App(){
   async function deleteUser(userId){
     const target = users.find(u=>u.id===userId);
     if(!target || userId===currentUserId) return {ok:false, erro:'Não é possível excluir este usuário.'};
-    const res = await chamarUsuariosAdmin('excluir_usuario', {userId});
+    const res = await deleteUsuarioFromSupabase(userId);
     if(res.ok){
       setUsers(prev=>prev.filter(u=>u.id!==userId));
       logHistory(target.nome, 'Usuário excluído', currentUser?currentUser.nome:'—');
@@ -3082,20 +3101,20 @@ function App(){
   }
 
   // ---- Logout automático por inatividade ----
-  // Continua exatamente como antes — o Supabase Auth não tem timeout de
-  // inatividade nativo, então essa camada segue por cima da sessão real.
   useEffect(()=>{
     if(!currentUser) return;
-    // Se a sessão foi restaurada de um reload, o PRIMEIRO timer usa só o
-    // tempo que resta até completar 15 min desde a última atividade real —
-    // senão um F5 repetido reiniciaria o timer pra 15 min inteiros a cada
-    // vez e a sessão nunca expiraria de verdade por inatividade.
-    const ultimaAtividade = loadLastActivity();
-    const jaDecorrido = ultimaAtividade ? (Date.now() - ultimaAtividade) : 0;
+    // Se a sessão foi restaurada de um reload (ver loadSession no useState de
+    // currentUserId, acima), o PRIMEIRO timer usa só o tempo que resta até
+    // completar 15 min desde a última atividade real — senão um F5 repetido
+    // reiniciaria o timer pra 15 min inteiros a cada vez e a sessão nunca
+    // expiraria de verdade por inatividade.
+    const sessaoRestaurada = loadSession();
+    const jaDecorrido = sessaoRestaurada && sessaoRestaurada.userId===currentUser.id
+      ? (Date.now() - sessaoRestaurada.lastActivity) : 0;
     let timer = setTimeout(()=>logout('Sessão encerrada por inatividade.'), Math.max(0, SESSION_TIMEOUT_MS - jaDecorrido));
     function resetTimer(){
       clearTimeout(timer);
-      touchLastActivity();
+      touchSession();
       timer = setTimeout(()=>logout('Sessão encerrada por inatividade.'), SESSION_TIMEOUT_MS);
     }
     const events = ['click','keydown','touchstart','mousemove'];
@@ -3208,21 +3227,6 @@ function App(){
     const interval = setInterval(sync, 30000);
     return ()=>{ cancelled = true; clearInterval(interval); };
   }, [currentUser]);
-
-  // Evita mostrar a tela de login por uma fração de segundo pra quem já tem
-  // sessão válida — `getSession()` é assíncrono (ver useEffect acima), então
-  // sem essa checagem o primeiro render sempre cairia em "não logado" antes
-  // de saber a resposta de verdade. Também espera o fetch do PRÓPRIO perfil
-  // terminar quando já existe uma sessão (`currentUserId` setado mas
-  // `currentUser` ainda não resolveu em `users`) — se esse fetch falhar de
-  // vez, o efeito acima já desloga sozinho, então isso nunca fica preso.
-  if(!authReady || (currentUserId && !currentUser)){
-    return (
-      <div style={{display:'flex',alignItems:'center',justifyContent:'center',minHeight:'100vh',background:'var(--bg)',color:'var(--ink-dim)',fontFamily:'var(--font-body)',fontSize:14}}>
-        Carregando…
-      </div>
-    );
-  }
 
   if(!currentUser){
     return (
@@ -3348,6 +3352,14 @@ function EyeIcon({off}){
   );
 }
 
+function ShieldIcon(){
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 3.5l7 2.6v5.4c0 4.6-3 8.3-7 9-4-0.7-7-4.4-7-9V6.1l7-2.6Z"/>
+    </svg>
+  );
+}
+
 
 // Componente separado pra área da ilustração da coluna de marca — pedido
 // explícito do cliente: "não desenhe nenhuma ilustração, não utilize SVG".
@@ -3436,20 +3448,22 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
   const [novaSenha, setNovaSenha] = useState('');
   const [confirmaSenha, setConfirmaSenha] = useState('');
   const [salvandoSenha, setSalvandoSenha] = useState(false);
-  // Login agora é uma chamada de rede de verdade (Supabase Auth) em vez de
-  // uma checagem local instantânea — precisa de um estado de "enviando"
-  // pra desabilitar o botão e não deixar dois cliques dispararem duas
-  // tentativas de login em paralelo.
-  const [salvandoLogin, setSalvandoLogin] = useState(false);
   // Puramente visuais, sem lógica por trás (mockup do cliente pede esses
   // elementos, mas nenhum tem funcionalidade real hoje — ver CLAUDE.md
   // "Login vira redesign premium"): "Lembrar-me" é decorativo porque a
-  // sessão já persiste sozinha sempre (Supabase Auth); o seletor
+  // sessão já persiste sozinha sempre (ver SESSION_STORAGE_KEY); o seletor
   // de idioma não faz nada porque o app só existe em pt-BR; "código de
   // acesso" mostra uma nota honesta em vez de fingir um QR-login que não
   // existe (mesmo critério do sino de notificação no DesktopTopbar).
   const [lembrar, setLembrar] = useState(true);
   const [qrNote, setQrNote] = useState(false);
+  // Painel de credenciais de demonstração continua existindo (é
+  // funcionalidade real, útil pra QA — não fazia parte do pedido de
+  // redesign) mas fica recolhido por padrão, atrás de um link discreto: a
+  // imagem de referência não mostra esse bloco, e mantê-lo sempre aberto
+  // deixaria o card visivelmente mais alto/cheio do que o mockup. Colapsado
+  // por padrão bate com a imagem pixel a pixel sem remover a função.
+  const [showDemoCreds, setShowDemoCreds] = useState(false);
   const senhaRef = useRef(null);
 
   // Enter no campo "Usuário ou e-mail" pula pro campo "Senha" em vez de
@@ -3481,12 +3495,10 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
     setTimeout(()=>{ el.scrollIntoView({behavior:'smooth', block:'center'}); }, 300);
   }
 
-  async function submitLogin(e){
+  function submitLogin(e){
     e.preventDefault();
     setError('');
-    setSalvandoLogin(true);
-    const result = await onLogin(identifier, senha);
-    setSalvandoLogin(false);
+    const result = onLogin(identifier, senha);
     if(!result.ok){
       if(result.needsNewPassword){
         setPendingUserId(result.userId);
@@ -3557,13 +3569,37 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
                   <button type="button" className="login-forgot2" onClick={()=>{setMode('forgot'); setError(''); setForgotMsg('');}}>Esqueci minha senha</button>
                 </div>
 
-                <button className="login-btn2 login-btn" type="submit" disabled={salvandoLogin}><DIcon name="logIn" size={18} /> {salvandoLogin ? 'Entrando…' : 'Entrar'}</button>
+                <button className="login-btn2 login-btn" type="submit"><DIcon name="logIn" size={18} /> Entrar</button>
 
                 <div className="login-or2">ou</div>
                 <button type="button" className="login-btn-outline" onClick={()=>setQrNote(v=>!v)}>
                   <DIcon name="qrCode" size={18} /> Entrar com código de acesso
                 </button>
                 {qrNote && <div className="login-inline-note2">Login por código de acesso ainda não está disponível.</div>}
+
+                <button type="button" className="login-demo-toggle" onClick={()=>setShowDemoCreds(v=>!v)}>
+                  <ShieldIcon /> {showDemoCreds ? 'Ocultar' : 'Ver'} credenciais de demonstração
+                </button>
+                {showDemoCreds && (
+                  <div className="login-demo2">
+                    <div className="dc-sub2">Ambiente de demonstração (remover em produção)</div>
+                    <div className="dc-row2">
+                      <span className="dc-avatar2"><DIcon name="user" size={13} /></span>
+                      <span className="dc-cred2">alisson / admin123</span>
+                      <span className="dc-role-pill admin">Administrador</span>
+                    </div>
+                    <div className="dc-row2">
+                      <span className="dc-avatar2"><DIcon name="user" size={13} /></span>
+                      <span className="dc-cred2">roberto.alves / lider123</span>
+                      <span className="dc-role-pill lider">Líder de Estoque</span>
+                    </div>
+                    <div className="dc-row2">
+                      <span className="dc-avatar2"><DIcon name="user" size={13} /></span>
+                      <span className="dc-cred2">carlos.mendes / operador123</span>
+                      <span className="dc-role-pill operador">Operador</span>
+                    </div>
+                  </div>
+                )}
               </form>
             )}
 
@@ -7596,8 +7632,7 @@ function UserForm({mode, initialData, users, onCreateUser, onUpdateUser, onSaved
 
   async function submitForm(e){
     e.preventDefault();
-    if(!form.nome.trim() || !form.usuario.trim() || !form.email.trim()){ setFeedback('Nome, usuário de acesso e e-mail são obrigatórios.'); return; }
-    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())){ setFeedback('Informe um e-mail válido.'); return; }
+    if(!form.nome.trim() || !form.usuario.trim()){ setFeedback('Nome e usuário de acesso são obrigatórios.'); return; }
     if(isLoginDuplicado(users, form.usuario, isEdit ? mode : null)){
       setFeedback('Este login já está sendo utilizado por outro usuário.');
       return;
@@ -7633,8 +7668,8 @@ function UserForm({mode, initialData, users, onCreateUser, onUpdateUser, onSaved
           <input type="text" value={form.usuario} onChange={e=>setForm(f=>({...f,usuario:e.target.value}))} placeholder="nome.sobrenome" autoCapitalize="none" />
         </div>
         <div className="field">
-          <label>E-mail</label>
-          <input type="email" value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))} placeholder="nome@empresa.com" />
+          <label>E-mail (opcional)</label>
+          <input type="text" value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))} />
         </div>
         {!isEdit && (
           <div className="field">
