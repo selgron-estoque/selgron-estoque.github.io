@@ -6102,6 +6102,18 @@ function RecountsPanel({counts, inventories, goto, onDeleteCount, onRefresh}){
   const [menuAbertoId, setMenuAbertoId] = useState(null);
   const [detalhesAbertoId, setDetalhesAbertoId] = useState(null);
 
+  // Fecha o menu "⋮" ao clicar em qualquer lugar fora dele — sem isso, só
+  // clicar de novo no mesmo botão "⋮" fechava, então clicar em outro canto
+  // da tela deixava o menu aberto pra sempre (bug reportado pelo cliente).
+  useEffect(()=>{
+    if(!menuAbertoId) return;
+    function handleClickOutside(e){
+      if(!e.target.closest('.count-card-menu')) setMenuAbertoId(null);
+    }
+    document.addEventListener('click', handleClickOutside);
+    return ()=>document.removeEventListener('click', handleClickOutside);
+  }, [menuAbertoId]);
+
   async function handleConfirmDelete(id){
     setExcluindo(true);
     setErroExclusao('');
