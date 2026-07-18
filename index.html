@@ -6365,22 +6365,24 @@ function RecountsPanel({counts, inventories, goto, onDeleteCount, onRefresh}){
             ) : (
               <div className="count-card-main">
                 <div className="count-card-content">
-                  <div className="count-card-values">
-                    <div className="cv"><div className="k">Sistema</div><div className="v">{c.saldoSistema==null ? '—' : c.saldoSistema}</div></div>
-                    <div className="cv"><div className="k">1ª Contagem</div><div className="v">{c.qtdContada}</div></div>
-                    <div className="cv"><div className="k">Diferença</div><div className="v" style={{color:sev.color}}>{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div></div>
-                    <div className="cv"><div className="k">%</div><div className="v" style={{color:sev.color}}>{c.percentual==null ? '—' : c.percentual.toFixed(1)+'%'}</div></div>
-                  </div>
                   {detalhesAbertoId===c.id && (
-                    <div className="count-card-extra">
-                      {c.almoxarifado && <div>Armazém: <strong>{c.almoxarifado}</strong></div>}
-                      {c.enderecoContado && c.enderecoContado!==c.endereco && <div>Endereço contado: <strong>{c.enderecoContado}</strong></div>}
-                      {c.motivo && <div>Motivo: <strong>{c.motivo}</strong></div>}
-                      {c.observacao && <div>Observação: {c.observacao}</div>}
-                      {c.foto && <div>Foto anexada na contagem.</div>}
-                      {c.valorDivergente && Number(c.valorDivergente)!==0 && <div>Valor divergente: <strong>R$ {Number(c.valorDivergente).toFixed(2)}</strong></div>}
-                      <div>Contado por {c.usuario} em {c.data} {c.hora||''}</div>
-                    </div>
+                    <>
+                      <div className="count-card-values">
+                        <div className="cv"><div className="k">Sistema</div><div className="v">{c.saldoSistema==null ? '—' : c.saldoSistema}</div></div>
+                        <div className="cv"><div className="k">1ª Contagem</div><div className="v">{c.qtdContada}</div></div>
+                        <div className="cv"><div className="k">Diferença</div><div className="v" style={{color:sev.color}}>{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div></div>
+                        <div className="cv"><div className="k">%</div><div className="v" style={{color:sev.color}}>{c.percentual==null ? '—' : c.percentual.toFixed(1)+'%'}</div></div>
+                      </div>
+                      <div className="count-card-extra">
+                        {c.almoxarifado && <div>Armazém: <strong>{c.almoxarifado}</strong></div>}
+                        {c.enderecoContado && c.enderecoContado!==c.endereco && <div>Endereço contado: <strong>{c.enderecoContado}</strong></div>}
+                        {c.motivo && <div>Motivo: <strong>{c.motivo}</strong></div>}
+                        {c.observacao && <div>Observação: {c.observacao}</div>}
+                        {c.foto && <div>Foto anexada na contagem.</div>}
+                        {c.valorDivergente && Number(c.valorDivergente)!==0 && <div>Valor divergente: <strong>R$ {Number(c.valorDivergente).toFixed(2)}</strong></div>}
+                        <div>Contado por {c.usuario} em {c.data} {c.hora||''}</div>
+                      </div>
+                    </>
                   )}
                 </div>
                 <div className="count-card-actions-col">
