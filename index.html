@@ -675,7 +675,16 @@ const supabaseClient = window.supabase
 // sem saldo carregado ainda pro código, o produto sintético monta com
 // saldoSistema:null — CountStep já sabe tratar isso como "sem saldo pra
 // comparar" (ver hasSaldoLocal).
-async function searchSupabaseCatalog(query){
+//
+// `almoxarifado` (obrigatório na prática — `ManualCountFlow` sempre pede
+// pra escolher o armazém antes de liberar a busca) filtra o saldo pro
+// armazém EXATO onde a pessoa está contando. Bug real corrigido aqui: a
+// versão anterior somava o saldo de TODOS os armazéns onde o código
+// existia — um item com saldo em 2 armazéns nunca batia com a contagem
+// física, porque só existe saldo de UM armazém no local físico onde o item
+// está. Cada linha de `estoque_saldo` já é por armazém (não precisa somar
+// nada) — só faltava restringir a busca ao armazém certo.
+async function searchSupabaseCatalog(query, almoxarifado){
   if(!supabaseClient || !query || query.trim().length < 2) return [];
   const q = query.trim();
   const { data, error } = await supabaseClient
@@ -687,23 +696,21 @@ async function searchSupabaseCatalog(query){
 
   // Busca o saldo REAL (coluna "Saldo Atual" da planilha SB2, gravada em
   // estoque_saldo.saldo pelo upload manual — ver StockSyncPanel/
-  // parseSB2Rows) pros códigos encontrados, somando entre armazéns quando o
-  // item existe em mais de um (a busca aqui não é presa a um almoxarifado
-  // específico). Sem isso, TODO item fora do cache local de 300 SKUs ficava
-  // sem saldo pra comparar e ia direto pra análise do líder — na prática
-  // quase toda contagem via "Nova Contagem" virava recontagem, mesmo
-  // quando batia certinho com o saldo real. `estoque_saldo` não tem FK pra
-  // `produtos` (ver backend/schema.sql), então é uma consulta separada, não
-  // um join automático do PostgREST.
+  // parseSB2Rows) pros códigos encontrados, restrito ao armazém informado —
+  // no máximo 1 linha por código+armazém, então não precisa somar nada,
+  // só pegar o valor direto. `estoque_saldo` não tem FK pra `produtos` (ver
+  // backend/schema.sql), então é uma consulta separada, não um join
+  // automático do PostgREST.
   const codigos = data.map(row=>row.codigo);
   const saldoPorCodigo = {};
-  if(codigos.length>0){
+  if(codigos.length>0 && almoxarifado){
     const { data: saldoRows } = await supabaseClient
       .from('estoque_saldo')
-      .select('produto_codigo, saldo')
-      .in('produto_codigo', codigos);
+      .select('produto_codigo, saldo, almoxarifado')
+      .in('produto_codigo', codigos)
+      .eq('almoxarifado', almoxarifado);
     (saldoRows||[]).forEach(r=>{
-      saldoPorCodigo[r.produto_codigo] = (saldoPorCodigo[r.produto_codigo]||0) + Number(r.saldo||0);
+      saldoPorCodigo[r.produto_codigo] = Number(r.saldo||0);
     });
   }
 
@@ -716,9 +723,13 @@ async function searchSupabaseCatalog(query){
       familia: describeGrupo(row.grupo),
       endereco: enderecoRow ? enderecoRow.codigo : null,
       enderecoCadastrado: !!enderecoRow,
-      almoxarifado: '—',
+      almoxarifado: almoxarifado || '—',
       corredor: null,
       rua: null,
+      // Sem saldo pra ESTE armazém específico = sem saldo pra comparar (não
+      // é o mesmo que "código não existe no catálogo") — CountStep trata os
+      // dois casos igual (hasSaldoLocal), mas aqui é importante não fingir
+      // um saldo de outro armazém.
       saldoSistema: Object.prototype.hasOwnProperty.call(saldoPorCodigo, row.codigo) ? saldoPorCodigo[row.codigo] : null,
       custoUnit: 0,
       valorFinanceiro: 0,
@@ -762,6 +773,7 @@ async function saveContagemToSupabase(count){
       motivo: count.motivo,
       tem_foto: count.foto,
       observacao: count.observacao,
+      almoxarifado: count.almoxarifado || null,
       data: count.data,
       hora: count.hora,
     });
@@ -829,6 +841,7 @@ function contagemRowToLocal(row){
     motivo: row.motivo,
     foto: row.tem_foto,
     observacao: row.observacao,
+    almoxarifado: row.almoxarifado,
     data: row.data,
     hora: row.hora,
     inventario: row.inventario_id,
@@ -1720,12 +1733,21 @@ function estoqueRowToProduct(row){
 // (sem-movimento-recente primeiro, depois valor financeiro decrescente).
 // `grupos` (opcional, ARRAY de códigos) filtra só os itens de QUALQUER um
 // desses grupos/famílias de produto — usado por "Contagem por Grupo" (pode
-// selecionar mais de um grupo); os outros tipos chamam sem esse argumento,
-// mesmo comportamento de sempre.
-async function fetchContagemItensPrioritarios(limit, grupos){
+// selecionar mais de um grupo). `almoxarifados` (opcional, ARRAY de códigos)
+// filtra só os itens com saldo em QUALQUER um desses armazéns — cliente
+// reportou que um item com saldo em mais de um armazém nunca batia, porque a
+// contagem comparava contra saldo de qualquer armazém, não só o físico de
+// onde o item está sendo contado. Todo fluxo baseado nesta função (Aleatória,
+// Curva ABC, Rota, Grupo) precisa sempre passar o(s) armazém(ns) — seja do
+// inventário (`inv.almoxarifado`) ou escolhido na hora (contagem avulsa).
+async function fetchContagemItensPrioritarios(limit, grupos, almoxarifados){
   if(!supabaseClient) return [];
   try{
-    const { data, error } = await supabaseClient.rpc('contagem_itens_prioritarios', {p_limit: limit, p_grupos: (grupos && grupos.length) ? grupos : null});
+    const { data, error } = await supabaseClient.rpc('contagem_itens_prioritarios', {
+      p_limit: limit,
+      p_grupos: (grupos && grupos.length) ? grupos : null,
+      p_almoxarifados: (almoxarifados && almoxarifados.length) ? almoxarifados : null,
+    });
     if(error || !data) return [];
     return data.map(estoqueRowToProduct);
   }catch(err){
@@ -1772,7 +1794,16 @@ async function fetchAnyAddressRegistered(){
 // em searchSupabaseCatalog) pra uma lista de códigos — usada pra enriquecer
 // lista importada (Excel) e pela recontagem, quando o item não está mais
 // disponível no que já foi salvo localmente. Retorna um Map codigo→produto.
-async function fetchProdutosByCodigos(codigos){
+//
+// `almoxarifado` (opcional) filtra o saldo pro armazém exato, quando se sabe
+// qual é (mesmo raciocínio de searchSupabaseCatalog). Sem esse contexto (a
+// lista importada e a recontagem não guardam em qual armazém o item foi
+// contado — ver CLAUDE.md), NÃO soma mais o saldo de todos os armazéns como
+// antes (isso nunca batia com a contagem física de um único local): se o
+// código só existe num armazém, usa esse valor direto (seguro, sem
+// ambiguidade); se existe em mais de um, marca saldo como null (sem
+// comparação automática) em vez de arriscar um número errado.
+async function fetchProdutosByCodigos(codigos, almoxarifado){
   const mapa = new Map();
   if(!supabaseClient || !codigos || codigos.length===0) return mapa;
   try{
@@ -1782,28 +1813,32 @@ async function fetchProdutosByCodigos(codigos){
       .in('codigo', codigos);
     if(!produtosRows || produtosRows.length===0) return mapa;
 
-    const { data: saldoRows } = await supabaseClient
+    let saldoQuery = supabaseClient
       .from('estoque_saldo')
       .select('produto_codigo, almoxarifado, saldo, valor_financeiro, data_ultima_saida')
       .in('produto_codigo', codigos);
-    const saldoPorCodigo = {};
+    if(almoxarifado) saldoQuery = saldoQuery.eq('almoxarifado', almoxarifado);
+    const { data: saldoRows } = await saldoQuery;
+    const linhasPorCodigo = {};
     (saldoRows||[]).forEach(r=>{
-      const atual = saldoPorCodigo[r.produto_codigo] || {saldo:0, valor_financeiro:0, almoxarifado:r.almoxarifado, data_ultima_saida:r.data_ultima_saida};
-      atual.saldo += Number(r.saldo||0);
-      atual.valor_financeiro += Number(r.valor_financeiro||0);
-      saldoPorCodigo[r.produto_codigo] = atual;
+      (linhasPorCodigo[r.produto_codigo] = linhasPorCodigo[r.produto_codigo] || []).push(r);
     });
 
     produtosRows.forEach(p=>{
-      const s = saldoPorCodigo[p.codigo] || {};
+      const linhas = linhasPorCodigo[p.codigo] || [];
+      // Com armazém informado, no máximo 1 linha (já filtrado na query).
+      // Sem armazém: só usa o valor se for inequívoco (1 armazém só) —
+      // mais de um vira "sem saldo pra comparar" em vez de somado.
+      const unica = linhas.length===1 ? linhas[0] : null;
+      const s = unica || {};
       mapa.set(p.codigo, estoqueRowToProduct({
         codigo: p.codigo,
         descricao: p.descricao,
         grupo: p.grupo,
-        almoxarifado: s.almoxarifado || '—',
-        saldo: s.saldo,
-        valor_financeiro: s.valor_financeiro,
-        data_ultima_saida: s.data_ultima_saida,
+        almoxarifado: s.almoxarifado || (linhas.length>1 ? linhas.map(l=>l.almoxarifado).join('/') : '—'),
+        saldo: unica ? s.saldo : null,
+        valor_financeiro: unica ? s.valor_financeiro : 0,
+        data_ultima_saida: s.data_ultima_saida || null,
         sem_movimento_recente: false,
         endereco_codigo: null,
         corredor: null,
@@ -2118,6 +2153,18 @@ function describeGrupo(grupo){
 function formatGrupoLabel(grupo){
   if(grupo==null) return '—';
   return String(grupo).padStart(2,'0') + ' - ' + describeGrupo(grupo);
+}
+
+// Tira zero(s) à esquerda de um código de armazém ("01"→"1") — o campo
+// "Almoxarifado" (NewInventory) sempre re-preenche o código com 2 dígitos só
+// pra EXIBIÇÃO (chip "01"), mas `estoque_saldo.almoxarifado` guarda o código
+// CRU como veio da planilha SB2 (ex.: "1", não "01" — ver parseSB2Rows).
+// Sem normalizar antes de filtrar a busca por armazém, "01" nunca bateria
+// com "1" no banco (comparação de texto) e o filtro silenciosamente não
+// encontraria nada.
+function normalizarCodigoAlmox(v){
+  const semZeros = String(v).trim().replace(/^0+(?=\d)/, '');
+  return semZeros || '0';
 }
 
 // O cache local estático de 300 SKUs (RAW_SB2_PRODUCTS/PRODUCTS) foi removido —
@@ -4238,11 +4285,6 @@ function NewInventory({onCreate, goto, inventories}){
 
   const hojeStr = hojeLocalStr();
 
-  function normalizarCodigoAlmox(v){
-    const semZeros = v.replace(/^0+(?=\d)/, '');
-    return semZeros || '0';
-  }
-
   function addAlmoxCode(){
     const bruto = almoxInput.trim();
     if(!bruto) return;
@@ -4838,6 +4880,12 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
       motivo: diffAbs!==0 ? motivo : '',
       foto: !!photo,
       observacao: obs,
+      // Armazém onde o item foi contado — cliente reportou que sem isso
+      // recontagens não sabiam contra qual armazém comparar o saldo (item
+      // com saldo em mais de um armazém nunca batia). Guardado na própria
+      // contagem pra RecountFlow poder repetir a comparação no armazém
+      // certo, sem ambiguidade.
+      almoxarifado: product.almoxarifado && product.almoxarifado!=='—' ? product.almoxarifado : null,
       data: hojeLocalStr(),
       hora: new Date().toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'}),
       inventario: inv ? inv.id : '—',
@@ -5015,15 +5063,27 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
 /* ---------------- MÓDULO 2: CONTAGEM ALEATÓRIA ---------------- */
 
 function RandomCountFlow({inv, user, onFinish, onAddressProposed, setInventories, counts}){
+  // Armazém obrigatório em TODA contagem por este motor (pedido do
+  // cliente: item com saldo em mais de um armazém nunca batia, porque a
+  // busca não era presa a um armazém físico específico). Um inventário
+  // criado via NewInventory já tem `inv.almoxarifado` (campo obrigatório na
+  // criação) — só a versão AVULSA (Aleatória/Grupo escolhidos direto na
+  // tela rápida do operador, sem criar inventário) ainda não tem essa
+  // informação, e precisa perguntar aqui antes de buscar qualquer item.
+  const invAlmoxarifados = (inv && inv.almoxarifado) ? inv.almoxarifado.split(',').map(s=>normalizarCodigoAlmox(s)).filter(Boolean) : null;
+  const [armazemAdHoc, setArmazemAdHoc] = useState('');
+  const almoxarifadosFiltro = invAlmoxarifados || (armazemAdHoc ? [armazemAdHoc] : null);
+
   // Lista priorizada de itens vem do Supabase agora (RPC
   // contagem_itens_prioritarios — cache local estático removido, ver
   // CLAUDE.md "cache local removido"). Critério: item sem saída recente
   // primeiro, depois por valor financeiro decrescente (curva A) — calculado
-  // no banco, não mais no navegador. Busca uma vez ao montar; a fila
-  // (useCountQueue) e o retomar por "contados" continuam iguais assim que a
-  // lista chega.
+  // no banco, não mais no navegador. Busca uma vez ao montar (só depois do
+  // armazém definido); a fila (useCountQueue) e o retomar por "contados"
+  // continuam iguais assim que a lista chega.
   const [allItems, setAllItems] = useState(null); // null = carregando
   useEffect(()=>{
+    if(!almoxarifadosFiltro) return; // esperando o armazém ser escolhido (avulso)
     let cancelado = false;
     const qtd = (inv && inv.qtdItens) || 5;
     // "Contagem por Grupo" filtra a busca pelos grupos salvos no inventário
@@ -5031,7 +5091,7 @@ function RandomCountFlow({inv, user, onFinish, onAddressProposed, setInventories
     // de um) — os outros tipos passam `undefined`, sem filtro, mesmo
     // comportamento de sempre.
     const gruposFiltro = (inv && inv.grupo) ? inv.grupo.split(',').filter(Boolean) : undefined;
-    fetchContagemItensPrioritarios(Math.max(qtd, 25), gruposFiltro).then(itens=>{
+    fetchContagemItensPrioritarios(Math.max(qtd, 25), gruposFiltro, almoxarifadosFiltro).then(itens=>{
       if(cancelado) return;
       // Sequência de endereço: itens com endereço cadastrado vêm primeiro,
       // ordenados por corredor → rua → endereço (deslocamento físico menor);
@@ -5058,7 +5118,10 @@ function RandomCountFlow({inv, user, onFinish, onAddressProposed, setInventories
       setAllItems([...ordenarPorEndereco(naoContados), ...ordenarPorEndereco(jaContados)].slice(0, qtd));
     });
     return ()=>{ cancelado = true; };
-  }, [inv]);
+    // `almoxarifadosFiltro` é um array recriado a cada render — usa a versão
+    // "achatada" em texto como dependência (join), senão o efeito refaria a
+    // busca em TODO render só por causa da identidade do array mudar.
+  }, [inv, almoxarifadosFiltro ? almoxarifadosFiltro.join(',') : null]);
 
   // Ao voltar para este inventário no meio da fila, retoma a partir de
   // "contados" — mesmo padrão usado em ImportedListCountFlow — em vez de
@@ -5066,6 +5129,10 @@ function RandomCountFlow({inv, user, onFinish, onAddressProposed, setInventories
   const jaContados = inv ? (inv.contados || 0) : 0;
   const pendentes = useMemo(()=> allItems ? allItems.slice(jaContados) : [], [allItems, jaContados]);
   const q = useCountQueue(pendentes);
+
+  if(!almoxarifadosFiltro){
+    return <ArmazemGate onSelected={setArmazemAdHoc} />;
+  }
 
   if(allItems===null){
     return <div className="empty-state" style={{padding:20}}>Carregando itens para contagem…</div>;
@@ -5083,7 +5150,7 @@ function RandomCountFlow({inv, user, onFinish, onAddressProposed, setInventories
 
   return (
     <div>
-      <div className="role-note">Item {jaContados+q.idx+1} de {allItems.length} · Itens ainda não contados primeiro, depois por sequência de endereço{inv && inv.grupo ? (' · Grupo: ' + inv.grupo.split(',').filter(Boolean).map(formatGrupoLabel).join(', ')) : ''}</div>
+      <div className="role-note">Item {jaContados+q.idx+1} de {allItems.length} · Armazém {almoxarifadosFiltro.map(a=>a.padStart(2,'0')).join(', ')} · Itens ainda não contados primeiro, depois por sequência de endereço{inv && inv.grupo ? (' · Grupo: ' + inv.grupo.split(',').filter(Boolean).map(formatGrupoLabel).join(', ')) : ''}</div>
       <CountStep
         product={q.current}
         user={user}
@@ -5102,7 +5169,49 @@ function RandomCountFlow({inv, user, onFinish, onAddressProposed, setInventories
 
 /* ---------------- MÓDULO 3: CONTAGEM MANUAL ---------------- */
 
+// Escolha de armazém, compartilhada pelos fluxos avulsos (Manual, Aleatória/
+// Grupo/Rota quando não vêm de um inventário já criado com almoxarifado
+// definido) — cliente reportou que um item com saldo em mais de um armazém
+// nunca batia na contagem, porque a comparação não sabia em qual armazém a
+// pessoa estava fisicamente. Cada fluxo guarda o armazém escolhido no
+// próprio estado local (não precisa criar inventário nenhum pra isso).
+function ArmazemGate({onSelected, titulo}){
+  const [armazens, setArmazens] = useState(null); // null = carregando
+  useEffect(()=>{
+    let cancelado = false;
+    fetchEstoqueValorPorAlmoxarifado().then(rows=>{
+      if(cancelado) return;
+      setArmazens((rows||[]).map(r=>String(r.almoxarifado)).sort());
+    });
+    return ()=>{ cancelado = true; };
+  }, []);
+  const [valor, setValor] = useState('');
+
+  return (
+    <div>
+      <div className="role-note" style={{marginBottom:16}}>{titulo || 'Antes de buscar um item, informe em qual armazém você está fisicamente — o saldo do sistema só compara certo com o armazém certo.'}</div>
+      <div className="field">
+        <label>Armazém</label>
+        {armazens===null ? (
+          <div className="empty-state" style={{padding:14}}>Carregando armazéns…</div>
+        ) : armazens.length===0 ? (
+          <div className="empty-state" style={{padding:14}}>Nenhum armazém com saldo carregado ainda.</div>
+        ) : (
+          <select value={valor} onChange={e=>setValor(e.target.value)}>
+            <option value="">Selecione o armazém…</option>
+            {armazens.map(a=>(
+              <option key={a} value={a}>Armazém {a.padStart(2,'0')}</option>
+            ))}
+          </select>
+        )}
+      </div>
+      <button className="btn btn-primary" disabled={!valor} onClick={()=>onSelected(valor)}>Confirmar armazém</button>
+    </div>
+  );
+}
+
 function ManualCountFlow({user, onFinish, onAddressProposed, counts}){
+  const [armazem, setArmazem] = useState('');
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState(null);
   const [scanning, setScanning] = useState(false);
@@ -5113,17 +5222,22 @@ function ManualCountFlow({user, onFinish, onAddressProposed, counts}){
   // estoque_enderecos, ver searchSupabaseCatalog) — o cache local estático
   // de 300 SKUs foi removido (ver CLAUDE.md "cache local removido"), o
   // Supabase é a única fonte agora. Debounce de 350ms pra não disparar uma
-  // requisição a cada tecla.
+  // requisição a cada tecla. Só dispara depois do armazém escolhido — a
+  // busca precisa saber em qual armazém comparar o saldo.
   useEffect(()=>{
-    if(!query){ setResults([]); setLoading(false); return; }
+    if(!armazem || !query){ setResults([]); setLoading(false); return; }
     let cancelado = false;
     setLoading(true);
     const timer = setTimeout(async ()=>{
-      const found = await searchSupabaseCatalog(query);
+      const found = await searchSupabaseCatalog(query, armazem);
       if(!cancelado){ setResults(found); setLoading(false); }
     }, 350);
     return ()=>{ cancelado = true; clearTimeout(timer); };
-  }, [query]);
+  }, [query, armazem]);
+
+  if(!armazem){
+    return <ArmazemGate onSelected={setArmazem} />;
+  }
 
   if(selected){
     return <CountStep product={selected} user={user} counts={counts} onAddressProposed={onAddressProposed} onComplete={(c)=>onFinish(c)} expectAddressCheck={true} />;
@@ -5136,6 +5250,10 @@ function ManualCountFlow({user, onFinish, onAddressProposed, counts}){
 
   return (
     <div>
+      <div className="role-note" style={{marginBottom:14,display:'flex',justifyContent:'space-between',alignItems:'center',gap:10}}>
+        <span>Contando no <strong>Armazém {armazem.padStart(2,'0')}</strong></span>
+        <button type="button" className="back-btn" style={{marginBottom:0}} onClick={()=>{ setArmazem(''); setQuery(''); setResults([]); }}>Trocar armazém</button>
+      </div>
       {scanning ? (
         <CameraScanner onDetected={handleScanDetected} onCancel={()=>setScanning(false)} />
       ) : (
@@ -5163,6 +5281,14 @@ function ManualCountFlow({user, onFinish, onAddressProposed, counts}){
 /* ---------------- MÓDULO 4: CONTAGEM POR ROTA ---------------- */
 
 function RouteCountFlow({inv, user, onFinish, onAddressProposed, setInventories, counts}){
+  // Armazém obrigatório (mesmo motivo do RandomCountFlow) — Rota é sempre
+  // avulsa hoje (nunca chega aqui vinda de um inventário já criado, ver
+  // InventoryList/App()), então sempre pergunta antes de buscar qualquer
+  // item.
+  const invAlmoxarifados = (inv && inv.almoxarifado) ? inv.almoxarifado.split(',').map(s=>normalizarCodigoAlmox(s)).filter(Boolean) : null;
+  const [armazemAdHoc, setArmazemAdHoc] = useState('');
+  const almoxarifadosFiltro = invAlmoxarifados || (armazemAdHoc ? [armazemAdHoc] : null);
+
   // Substitui o antigo agrupamento síncrono sobre o cache local (removido,
   // ver CLAUDE.md "cache local removido") — busca itens priorizados no
   // Supabase (mesma RPC do RandomCountFlow, com limite maior já que aqui
@@ -5171,12 +5297,13 @@ function RouteCountFlow({inv, user, onFinish, onAddressProposed, setInventories,
   const [anyAddress, setAnyAddress] = useState(null); // null = carregando
   const [grouped, setGrouped] = useState(null);
   useEffect(()=>{
+    if(!almoxarifadosFiltro) return; // esperando o armazém ser escolhido
     let cancelado = false;
     fetchAnyAddressRegistered().then(async (hasAny)=>{
       if(cancelado) return;
       setAnyAddress(hasAny);
       if(!hasAny) return;
-      const itens = await fetchContagemItensPrioritarios(200);
+      const itens = await fetchContagemItensPrioritarios(200, undefined, almoxarifadosFiltro);
       if(cancelado) return;
       const byCorredor = {};
       itens.filter(p=>p.enderecoCadastrado).forEach(p=>{
@@ -5187,9 +5314,13 @@ function RouteCountFlow({inv, user, onFinish, onAddressProposed, setInventories,
       setGrouped(byCorredor);
     });
     return ()=>{ cancelado = true; };
-  }, []);
+  }, [almoxarifadosFiltro ? almoxarifadosFiltro.join(',') : null]);
 
   const [active, setActive] = useState(null);
+
+  if(!almoxarifadosFiltro){
+    return <ArmazemGate onSelected={setArmazemAdHoc} />;
+  }
 
   if(anyAddress===null){
     return <div className="empty-state" style={{padding:20}}>Verificando endereços cadastrados…</div>;
@@ -5215,7 +5346,7 @@ function RouteCountFlow({inv, user, onFinish, onAddressProposed, setInventories,
 
   return (
     <div>
-      <div className="role-note">Rota otimizada por menor deslocamento — Almox 01</div>
+      <div className="role-note">Rota otimizada por menor deslocamento — Armazém {almoxarifadosFiltro.map(a=>a.padStart(2,'0')).join(', ')}</div>
       {Object.keys(grouped).sort().map(cor=>(
         <div key={cor} style={{marginBottom:18}}>
           <div className="section-title">Corredor {cor}</div>
@@ -5425,7 +5556,14 @@ function RecountFlow({original, user, onFinish, onAddressProposed}){
   const [produtoBase, setProdutoBase] = useState(null); // null = carregando
   useEffect(()=>{
     let cancelado = false;
-    fetchProdutosByCodigos([original.productCode]).then(catalogo=>{
+    // Recontagem repete a comparação no MESMO armazém da contagem original
+    // (`original.almoxarifado`, gravado desde CountStep.finalize) — sem
+    // isso, um item com saldo em mais de um armazém corria o risco de a
+    // recontagem comparar contra um armazém errado. Contagens antigas (de
+    // antes dessa coluna existir) não têm esse dado — `fetchProdutosByCodigos`
+    // já sabe se virar sozinho nesse caso (usa o saldo se o código só
+    // existir num armazém, senão marca como sem comparação automática).
+    fetchProdutosByCodigos([original.productCode], original.almoxarifado).then(catalogo=>{
       if(cancelado) return;
       setProdutoBase(catalogo.get(original.productCode) || {
         codigo: original.productCode,
@@ -5434,7 +5572,7 @@ function RecountFlow({original, user, onFinish, onAddressProposed}){
         familia: '—',
         endereco: null,
         enderecoCadastrado: false,
-        almoxarifado: '—',
+        almoxarifado: original.almoxarifado || '—',
         corredor: null,
         rua: null,
         saldoSistema: original.saldoSistema,
@@ -5446,7 +5584,7 @@ function RecountFlow({original, user, onFinish, onAddressProposed}){
       });
     });
     return ()=>{ cancelado = true; };
-  }, [original.productCode]);
+  }, [original.productCode, original.almoxarifado]);
 
   if(produtoBase===null){
     return <div className="empty-state" style={{padding:20}}>Carregando item…</div>;

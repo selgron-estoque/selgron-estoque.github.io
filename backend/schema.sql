@@ -168,12 +168,21 @@ $$ language sql stable;
 -- produto na lista (`grupo` em `produtos`, SB2 — permite selecionar mais de
 -- um grupo na mesma contagem, pedido do cliente), mantendo a mesma
 -- prioridade (sem movimento recente primeiro, depois valor financeiro).
+--
+-- `p_almoxarifados` (opcional, default null = sem filtro) — cliente
+-- reportou que um item com saldo em MAIS de um armazém nunca batia na
+-- contagem, porque o app comparava contra o saldo somado de todos os
+-- armazéns, e fisicamente só existe saldo de UM armazém no local onde o
+-- item está sendo contado. Cada linha de `estoque_saldo` já é por armazém
+-- (não precisa somar nada aqui) — só faltava poder RESTRINGIR a busca ao(s)
+-- armazém(ns) do inventário, em vez de trazer o item de qualquer armazém.
 -- `drop function` primeiro porque a assinatura mudou de `p_grupo text` (uma
 -- rodada anterior, texto único) pra `p_grupos text[]` (lista) — Postgres
 -- trata assinaturas diferentes como funções SOBRECARREGADAS distintas, não
 -- substitui sozinho; sem o drop, a versão antiga ficaria "fantasma" no banco.
 drop function if exists contagem_itens_prioritarios(int, text);
-create or replace function contagem_itens_prioritarios(p_limit int default 50, p_grupos text[] default null)
+drop function if exists contagem_itens_prioritarios(int, text[]);
+create or replace function contagem_itens_prioritarios(p_limit int default 50, p_grupos text[] default null, p_almoxarifados text[] default null)
 returns table(
   codigo text, descricao text, grupo text, almoxarifado text, saldo numeric,
   valor_financeiro numeric, data_ultima_saida date, sem_movimento_recente boolean,
@@ -189,6 +198,7 @@ returns table(
   left join estoque_enderecos ee on ee.produto_codigo = es.produto_codigo
   left join enderecos e on e.id = ee.endereco_id
   where (p_grupos is null or p.grupo = any(p_grupos))
+    and (p_almoxarifados is null or es.almoxarifado = any(p_almoxarifados))
   order by
     (es.data_ultima_saida is null or es.data_ultima_saida < current_date - interval '90 days') desc,
     es.valor_financeiro desc
@@ -350,6 +360,7 @@ create table contagens (
   motivo text,
   tem_foto boolean not null default false,
   observacao text,
+  almoxarifado text,                       -- armazém onde o item foi contado (null pra contagens antigas, de antes desta coluna)
   data date not null,
   hora text,
   aprovado_por text,                       -- nome de quem aprovou a divergência (líder/admin), se houver
@@ -532,6 +543,11 @@ create policy "exclusão pública" on contagens for delete using (true);
 -- Tipo de inventário novo "Contagem por Grupo" (ver CLAUDE.md) — grava o
 -- grupo/família escolhido pra filtrar a busca de itens.
 alter table inventarios add column if not exists grupo text;
+
+-- Armazém onde cada contagem foi feita (ver CLAUDE.md "considerar saldo de
+-- armazéns em separado") — sem isso, recontagem não sabia contra qual
+-- armazém comparar quando o item tem saldo em mais de um.
+alter table contagens add column if not exists almoxarifado text;
 
 -- USUÁRIOS — o projeto real já tem uma tabela `usuarios` desde a aplicação
 -- inicial do schema, mas com a estrutura ANTIGA (id uuid, sem coluna de
