@@ -185,6 +185,26 @@
   .item-meta .m .v{font-size:14.5px;font-weight:600;margin-top:3px;}
   .address-chip{font-family:var(--font-mono);font-size:20px;font-weight:700;letter-spacing:2px;background:var(--panel-raised);border:1px dashed var(--line);border-radius:8px;padding:14px;text-align:center;margin-bottom:14px;}
 
+  /* COUNT CARD (Recontagens/Itens Divergentes/Concluídas) — shell visual
+     compartilhado pelas 3 telas, ver CLAUDE.md "Redesign das telas de
+     Recontagens...". Reaproveita .item-code/.item-desc já existentes, só
+     acrescenta a faixa de severidade lateral + badges + linhas novas. */
+  .count-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;margin-bottom:14px;display:flex;}
+  .count-card-bar{width:5px;flex-shrink:0;}
+  .count-card-body{flex:1;min-width:0;}
+  .count-card-head{padding:14px 16px 0;display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;}
+  .count-card-badges{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
+  .severity-chip{display:inline-flex;align-items:center;gap:5px;font-family:var(--font-mono);font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;padding:4px 9px;border-radius:20px;}
+  .category-chip{font-family:var(--font-mono);font-size:10.5px;text-transform:uppercase;letter-spacing:0.3px;color:var(--ink-dim);background:var(--panel-raised);padding:4px 9px;border-radius:20px;}
+  .count-card-date{font-family:var(--font-mono);font-size:11px;color:var(--ink-dim);white-space:nowrap;}
+  .count-card-title{padding:10px 16px 0;}
+  .count-card-location{padding:8px 16px 0;font-size:12.5px;color:var(--ink-dim);display:flex;align-items:center;gap:5px;}
+  .count-card-values{display:flex;flex-wrap:wrap;gap:18px;padding:12px 16px;margin:10px 16px 0;background:var(--panel-raised);border-radius:8px;}
+  .count-card-values .cv{min-width:80px;}
+  .count-card-values .cv .k{font-family:var(--font-mono);font-size:9.5px;text-transform:uppercase;color:var(--ink-dim);letter-spacing:0.5px;}
+  .count-card-values .cv .v{font-size:15px;font-weight:700;margin-top:2px;}
+  .count-card-actions{padding:14px 16px 16px;}
+
   /* QR SCAN VISUAL */
   .scan-box{position:relative;background:#0A0B0D;border:1px solid var(--line);border-radius:var(--radius);height:180px;display:flex;align-items:center;justify-content:center;overflow:hidden;margin-bottom:14px;}
   .scan-frame{width:120px;height:120px;position:relative;}
@@ -2332,6 +2352,37 @@ function classifyDivergence(pct){
   return {level:'danger', label:'Divergência crítica', rule:'Enviado para análise do líder'};
 }
 
+// Classificação visual de 4 níveis — usada só nos cards de Recontagens/
+// Itens Divergentes/Contagens Concluídas (pedido do cliente, ver mockup
+// de referência). NÃO substitui `classifyDivergence` acima, que continua
+// sendo a regra de NEGÓCIO real (aprovação automática/segunda contagem/
+// análise do líder, limiares 5%/15%) — esta função só reclassifica o
+// MESMO `percentual` já calculado pra fins de exibição (cor/ícone/filtro),
+// com uma quebra a mais em 30% pra separar "alta" de "crítica" nos itens
+// que já passaram da 1ª contagem (Itens Divergentes/Concluídas podem ter
+// percentuais bem maiores que 15%, coisa que nunca acontece em
+// "Recontagens" — lá tudo já é "moderada" por definição).
+function classifySeverity4(pct){
+  if(pct==null) return {level:'sem_dado', label:'Sem saldo', color:'var(--ink-dim)', bg:'var(--panel-raised)', icon:'—'};
+  const abs = Math.abs(pct);
+  if(abs<=5) return {level:'baixa', label:'Baixa', color:'var(--ok)', bg:'var(--ok-bg)', icon:'✓'};
+  if(abs<=15) return {level:'media', label:'Média', color:'var(--warn)', bg:'var(--warn-bg)', icon:'—'};
+  if(abs<=30) return {level:'alta', label:'Alta', color:'var(--safety)', bg:'#FFF3E0', icon:'!'};
+  return {level:'critica', label:'Crítica', color:'var(--danger)', bg:'var(--danger-bg)', icon:'⚠'};
+}
+
+// Badge de categoria do card — de onde essa contagem veio, cruzando
+// `count.inventario` (id local, ou '—' pra contagem avulsa) com a lista de
+// inventários já carregada. Nunca inventa uma categoria: se o inventário
+// não for encontrado (ex: já foi excluído), cai em "Avulsa" também, mesmo
+// tratamento de uma contagem sem inventário associado.
+function categoriaDoInventario(count, inventories){
+  if(!count.inventario || count.inventario==='—') return 'Avulsa';
+  const inv = (inventories||[]).find(i=>i.id===count.inventario);
+  if(!inv) return 'Avulsa';
+  return inv.tipo==='Lista Importada (Excel)' ? 'Importação' : inv.tipo;
+}
+
 // MÓDULO 7 — regra de segunda contagem, aplicada sobre o resultado de CADA
 // contagem (a 1ª ou qualquer recontagem seguinte):
 //  ≤5%           → aprovado (automaticamente na 1ª, ou confirmado na recontagem)
@@ -2925,6 +2976,17 @@ function App(){
       fetchContagensHistoricoParaTendencia().then(setHistoricoParaTendencia),
     ]);
   }
+
+  // Botão "Atualizar" de Recontagens/Itens Divergentes — o Realtime já
+  // mantém `counts` atualizado sozinho (ver canais perto de countsRef),
+  // mas o botão continua útil pra forçar uma busca na hora (ex: dúvida se
+  // um evento específico chegou) sem depender de esperar. Mesma lógica de
+  // merge já usada no fetch de reconciliação dos canais Realtime.
+  function refreshContagens(){
+    return fetchContagensFromSupabase().then(remote=>{
+      if(remote.length) setCounts(prev=>mergeByIdComTimestamp(prev, remote, {timestampField:'atualizadoEm'}));
+    });
+  }
   useEffect(()=>{
     if(currentUser) refreshHistoricoConcluidas();
   }, [currentUser]);
@@ -3391,10 +3453,10 @@ function App(){
         {view==='manualCount' && <ManualCountFlow user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('home');}} onAddressProposed={addAddressProposal} />}
         {view==='routeCount' && <RouteCountFlow inv={flowState} user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} />}
         {view==='importedListCount' && <ImportedListCountFlow inv={flowState} user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} />}
-        {view==='recounts' && <RecountsPanel counts={counts} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} />}
-        {view==='divergentes' && <DivergentItemsPanel counts={counts} role={role} goto={goto} onApprove={approveDivergence} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} />}
+        {view==='recounts' && <RecountsPanel counts={counts} inventories={inventories} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} onRefresh={refreshContagens} />}
+        {view==='divergentes' && <DivergentItemsPanel counts={counts} inventories={inventories} role={role} goto={goto} onApprove={approveDivergence} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} onRefresh={refreshContagens} />}
         {view==='todasDivergencias' && <AllDivergencesPanel counts={counts} historicoConcluidas={historicoConcluidas} goto={goto} />}
-        {view==='concluidas' && <ConcludedCountsPanel counts={counts} historicoConcluidas={historicoConcluidas} onDeleteCount={role==='admin' ? deleteCount : undefined} onRefresh={refreshHistoricoConcluidas} />}
+        {view==='concluidas' && <ConcludedCountsPanel counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} onDeleteCount={role==='admin' ? deleteCount : undefined} onRefresh={refreshHistoricoConcluidas} />}
         {view==='recount' && flowState && <RecountFlow original={flowState} user={currentUser} onAddressProposed={addAddressProposal} onFinish={(c)=>{registerFinishedCount(c); goto('recounts');}} />}
         {view==='dashboard' && hasAccess(currentUser,'dashboard') && <Dashboard counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} historicoParaTendencia={historicoParaTendencia} goto={goto} />}
         {view==='relatorios' && hasAccess(currentUser,'relatorios') && <ReportsScreen counts={counts} inventories={inventories} currentUser={currentUser} sendHistory={reportSendHistory} onLogSend={logReportSend} role={role} onHistoricoImportado={refreshHistoricoConcluidas} />}
@@ -4348,7 +4410,7 @@ function KpiTrend({pct, invert, suffix, compareLabel}){
   );
 }
 
-function PnlDonut({segments, size=168, strokeWidth=22}){
+function PnlDonut({segments, size=168, strokeWidth=22, centerLabel='inventários'}){
   const r = (size - strokeWidth) / 2;
   const c = 2 * Math.PI * r;
   const total = segments.reduce((s, x) => s + x.value, 0);
@@ -4368,7 +4430,7 @@ function PnlDonut({segments, size=168, strokeWidth=22}){
         );
       })}
       <text x="50%" y="47%" textAnchor="middle" fontSize="24" fontWeight="700" fill="var(--navy)" fontFamily="Inter, sans-serif">{total}</text>
-      <text x="50%" y="63%" textAnchor="middle" fontSize="10.5" fill="var(--gray-500)" fontFamily="Inter, sans-serif">inventários</text>
+      <text x="50%" y="63%" textAnchor="middle" fontSize="10.5" fill="var(--gray-500)" fontFamily="Inter, sans-serif">{centerLabel}</text>
     </svg>
   );
 }
@@ -5872,7 +5934,79 @@ function RecountFlow({original, user, onFinish, onAddressProposed}){
 // divergência ANTES dela virar recontagem — assim que o líder decide
 // "Solicitar nova contagem" (ou a regra automática já cria o item aqui
 // direto), o item sai de lá e passa a aparecer só aqui.
-function RecountsPanel({counts, goto, onDeleteCount}){
+// Linha de chips de severidade (Todos/Críticas/Altas/Médias/Baixas) — filtro
+// client-side puro sobre a lista já carregada, reaproveitado pelas 3 telas
+// (Recontagens/Itens Divergentes/Concluídas). `counts` aqui é a lista JÁ
+// filtrada por busca/status da tela, só usada pra contar quantos itens caem
+// em cada nível (mostrado ao lado do rótulo do chip).
+function SeverityFilterRow({counts, value, onChange}){
+  const niveis = ['critica','alta','media','baixa'];
+  const porNivel = {};
+  niveis.forEach(n=>{ porNivel[n] = 0; });
+  counts.forEach(c=>{
+    const lvl = classifySeverity4(c.percentual).level;
+    if(porNivel[lvl]!==undefined) porNivel[lvl]++;
+  });
+  const LABELS = {critica:'Críticas', alta:'Altas', media:'Médias', baixa:'Baixas'};
+  return (
+    <div style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:14}}>
+      <button type="button" className={'btn '+(value==='todos'?'btn-primary':'btn-outline')} style={{width:'auto',padding:'8px 14px',fontSize:12}} onClick={()=>onChange('todos')}>Todos ({counts.length})</button>
+      {niveis.map(n=>(
+        <button key={n} type="button" className={'btn '+(value===n?'btn-primary':'btn-outline')} style={{width:'auto',padding:'8px 14px',fontSize:12}} onClick={()=>onChange(n)}>{LABELS[n]} ({porNivel[n]})</button>
+      ))}
+    </div>
+  );
+}
+
+// Barra de busca + botão "Scanner" (abre a câmera, ao detectar um código
+// preenche a busca — mesmo padrão já usado em ManualCountFlow/CountStep,
+// só reaproveitado aqui). Compartilhada pelas 3 telas.
+function SearchWithScanner({value, onChange, placeholder}){
+  const [scanning, setScanning] = useState(false);
+  if(scanning){
+    return <CameraScanner onDetected={text=>{ setScanning(false); onChange(text.trim()); }} onCancel={()=>setScanning(false)} />;
+  }
+  return (
+    <div style={{display:'flex',gap:8,alignItems:'flex-end',marginBottom:14}}>
+      <div className="field" style={{margin:0,flex:1}}>
+        <label>Buscar item</label>
+        <input type="text" value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} />
+      </div>
+      <button type="button" className="btn btn-secondary" style={{width:'auto',padding:'0 16px',height:44}} onClick={()=>setScanning(true)}><Ic>📷</Ic> Scanner</button>
+    </div>
+  );
+}
+
+// Cabeçalho de progresso (donut concluídas/restantes + botão Atualizar) —
+// compartilhado por Recontagens/Itens Divergentes. `total`/`restantes` são
+// sempre o estado ATUAL (não filtrado por período — pendência é pendência
+// agora, independente de quando foi aberta); `concluidas` já vem calculado
+// pelo chamador respeitando o período escolhido no TrendFilterBar.
+function ListaProgressoHeader({titulo, restantes, concluidas, onAtualizar, atualizando}){
+  const total = restantes + concluidas;
+  const pct = total>0 ? Math.round((concluidas/total)*100) : 0;
+  return (
+    <div className="panel" style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:16,marginBottom:16}}>
+      <div>
+        <div style={{fontFamily:'var(--font-display)',fontSize:26,fontWeight:700}}>{restantes} <span style={{fontSize:16,fontWeight:600,textTransform:'none'}}>{titulo}</span></div>
+        {onAtualizar && (
+          <button type="button" className="btn btn-outline" style={{width:'auto',padding:'6px 12px',fontSize:11,marginTop:8}} disabled={atualizando} onClick={onAtualizar}>
+            <Ic>🔄</Ic> {atualizando ? 'Atualizando…' : 'Atualizar'}
+          </button>
+        )}
+      </div>
+      <div style={{display:'flex',alignItems:'center',gap:16}}>
+        <PnlDonut segments={[{value:concluidas, color:'var(--ok)'}, {value:restantes, color:'var(--warn)'}]} size={100} strokeWidth={14} centerLabel={pct+'%'} />
+        <div style={{fontSize:12.5,color:'var(--ink-dim)'}}>
+          <div><strong style={{color:'var(--ok)'}}>{concluidas}</strong> concluídas</div>
+          <div><strong style={{color:'var(--warn)'}}>{restantes}</strong> restantes</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RecountsPanel({counts, inventories, goto, onDeleteCount, onRefresh}){
   const byOriginal = {};
   counts.forEach(c=>{ if(c.contagemAnteriorId) byOriginal[c.contagemAnteriorId]=c; });
 
@@ -5884,9 +6018,36 @@ function RecountsPanel({counts, goto, onDeleteCount}){
   // ManualCountFlow (case-insensitive, sem normalização de acento).
   const [busca, setBusca] = useState('');
   const buscaNorm = busca.trim().toLowerCase();
-  const listaFiltrada = buscaNorm
+  const porBusca = buscaNorm
     ? aguardandoSegunda.filter(c => c.productCode.toLowerCase().includes(buscaNorm) || (c.descricao||'').toLowerCase().includes(buscaNorm))
     : aguardandoSegunda;
+
+  const [severidade, setSeveridade] = useState('todos');
+  const listaFiltrada = severidade==='todos' ? porBusca : porBusca.filter(c=>classifySeverity4(c.percentual).level===severidade);
+
+  // Filtro de período — afeta só o contador "concluídas" do cabeçalho de
+  // progresso (a lista abaixo sempre mostra TODOS os pendentes atuais,
+  // independente de quando foram abertos — um item pendente de 3 meses
+  // atrás continua pendente hoje, filtrar por período esconderia isso sem
+  // necessidade). Mesmo padrão/componente já usado em Indicadores/
+  // Contagens Concluídas (TrendFilterBar/computeTrendRange), chave de
+  // persistência própria.
+  const [mostrarFiltroPeriodo, setMostrarFiltroPeriodo] = useState(false);
+  const [trendFilter, setTrendFilter] = usePersistedState('recontagensTrendFilter', {tipo:'30d', from:'', to:''});
+  const hojeStr = hojeLocalStr();
+  const { from: dataInicioStr, to: dataFimStr } = computeTrendRange(trendFilter.tipo, hojeStr, trendFilter.from, trendFilter.to);
+  const concluidas = counts.filter(c=>
+    c.numeroContagem>=2 &&
+    (c.statusAprovacao==='aprovado_segunda' || c.statusAprovacao==='aprovado_lider') &&
+    c.data>=dataInicioStr && c.data<=dataFimStr
+  ).length;
+
+  const [atualizando, setAtualizando] = useState(false);
+  async function handleAtualizar(){
+    if(!onRefresh) return;
+    setAtualizando(true);
+    try{ await onRefresh(); } finally { setAtualizando(false); }
+  }
 
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [excluindo, setExcluindo] = useState(false);
@@ -5906,58 +6067,78 @@ function RecountsPanel({counts, goto, onDeleteCount}){
 
   return (
     <div>
-      <div className="field">
-        <label>Buscar item</label>
-        <input type="text" value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Código ou descrição do material" />
-      </div>
+      <ListaProgressoHeader titulo="Recontagens Pendentes" restantes={aguardandoSegunda.length} concluidas={concluidas} onAtualizar={onRefresh ? handleAtualizar : null} atualizando={atualizando} />
 
-      <div className="section-title" style={{marginTop:0}}>
-        Aguardando Segunda Contagem
-        {aguardandoSegunda.length>0 && <span className="badge" style={{position:'static',marginLeft:8}}>{aguardandoSegunda.length}</span>}
+      <SearchWithScanner value={busca} onChange={setBusca} placeholder="Código ou descrição do material" />
+
+      <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+        <SeverityFilterRow counts={porBusca} value={severidade} onChange={setSeveridade} />
+        <button type="button" className={'btn '+(mostrarFiltroPeriodo?'btn-primary':'btn-outline')} style={{width:'auto',padding:'8px 14px',fontSize:12,marginBottom:14}} onClick={()=>setMostrarFiltroPeriodo(v=>!v)}><Ic>📅</Ic> Filtros</button>
       </div>
+      {mostrarFiltroPeriodo && (
+        <TrendFilterBar trendFilter={trendFilter} setTrendFilter={setTrendFilter} dataInicioStr={dataInicioStr} dataFimStr={dataFimStr} hojeStr={hojeStr} subtitle="Período considerado pra contar quantas recontagens já foram concluídas" />
+      )}
+
       {listaFiltrada.length===0 ? (
         <div className="empty-state" style={{padding:20}}>
-          {aguardandoSegunda.length===0 ? 'Nenhum item aguardando recontagem no momento.' : 'Nenhum item encontrado para essa busca.'}
+          {aguardandoSegunda.length===0 ? 'Nenhum item aguardando recontagem no momento.' : 'Nenhum item encontrado para esse filtro.'}
         </div>
-      ) : listaFiltrada.map(c=>(
-        <div key={c.id} className="item-card" style={c.recontagemSolicitadaPeloLider ? {borderLeft:'3px solid var(--danger)'} : undefined}>
-          <div className="item-card-head">
-            <div>
+      ) : listaFiltrada.map(c=>{
+        const sev = classifySeverity4(c.percentual);
+        return (
+        <div key={c.id} className="count-card">
+          <div className="count-card-bar" style={{background:sev.color}}></div>
+          <div className="count-card-body">
+            <div className="count-card-head">
+              <div className="count-card-badges">
+                {c.recontagemSolicitadaPeloLider
+                  ? <span className="severity-chip" style={{background:'var(--danger-bg)',color:'var(--danger)'}}>⚠ Rejeitada</span>
+                  : <span className="severity-chip" style={{background:sev.bg,color:sev.color}}>{sev.icon} {sev.label}</span>}
+                <span className="category-chip">{categoriaDoInventario(c, inventories)}</span>
+              </div>
+              <span className="count-card-date">{c.data}</span>
+            </div>
+            <div className="count-card-title">
               <div className="item-code">{c.productCode}</div>
               <div className="item-desc" style={{fontSize:15}}>{c.descricao}</div>
             </div>
-            {c.recontagemSolicitadaPeloLider
-              ? <StatusTag status="danger" text="Divergência rejeitada" />
-              : <StatusTag status="warn" text={c.classificacao.label} />}
-          </div>
-          {c.recontagemSolicitadaPeloLider && (
-            <div className="divergence-alert" style={{margin:'0 18px 10px'}}>
-              <Ic>⚠</Ic>
-              <span>{c.recontagemSolicitadaPor || 'O líder'} não aceitou a divergência da 1ª contagem e solicitou uma nova contagem em {c.recontagemSolicitadaEm}.</span>
-            </div>
-          )}
-          <div style={{padding:'14px 18px',display:'flex',flexWrap:'wrap',gap:8,fontSize:12,color:'var(--ink-dim)',fontFamily:'var(--font-mono)'}}>
-            <span>1ª contagem: {c.qtdContada} un.</span>·<span>Diferença {c.diferenca==null ? '— (sem saldo local)' : (c.diferenca>0?'+':'')+c.diferenca+(c.percentual==null?'':' ('+c.percentual.toFixed(1)+'%)')}</span>·<span>{c.usuario}</span>·<span>{c.data} {c.hora||''}</span>
-          </div>
-          {confirmDeleteId===c.id ? (
-            <div style={{padding:'0 18px 16px'}}>
-              <div className="divergence-alert" style={{marginBottom:10}}>
-                <Ic>⚠</Ic><span>Excluir esta contagem de {c.productCode}? Essa ação não pode ser desfeita e não deixa rastro.</span>
+            <div className="count-card-location"><Ic>📍</Ic> {c.endereco || 'não cadastrado'}</div>
+            {c.recontagemSolicitadaPeloLider && (
+              <div className="divergence-alert" style={{margin:'10px 16px 0'}}>
+                <Ic>⚠</Ic>
+                <span>{c.recontagemSolicitadaPor || 'O líder'} não aceitou a divergência da 1ª contagem e solicitou uma nova contagem em {c.recontagemSolicitadaEm}.</span>
               </div>
-              {erroExclusao && <div className="divergence-alert" style={{marginBottom:10}}><Ic>⚠</Ic><span>{erroExclusao}</span></div>}
-              <div className="btn-row">
-                <button className="btn btn-secondary" disabled={excluindo} onClick={()=>{setConfirmDeleteId(null); setErroExclusao('');}}>Cancelar</button>
-                <button className="btn btn-danger" disabled={excluindo} onClick={()=>handleConfirmDelete(c.id)}>{excluindo ? 'Excluindo…' : 'Confirmar exclusão'}</button>
+            )}
+            <div className="count-card-values">
+              <div className="cv"><div className="k">Sistema</div><div className="v">{c.saldoSistema==null ? '—' : c.saldoSistema}</div></div>
+              <div className="cv"><div className="k">1ª Contagem</div><div className="v">{c.qtdContada}</div></div>
+              <div className="cv">
+                <div className="k">Diferença</div>
+                <div className="v" style={{color:sev.color}}>{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div>
+                {c.percentual!=null && <div style={{fontSize:11,color:'var(--ink-dim)'}}>{c.percentual.toFixed(1)}%</div>}
               </div>
             </div>
-          ) : (
-            <div className="btn-row" style={{padding:'0 18px 16px'}}>
-              <button className="btn btn-primary" onClick={()=>goto('recount', c)}><Ic>🔁</Ic> Recontar este item</button>
-              {onDeleteCount && <button className="btn btn-danger" onClick={()=>setConfirmDeleteId(c.id)}><Ic>🗑</Ic></button>}
-            </div>
-          )}
+            {confirmDeleteId===c.id ? (
+              <div className="count-card-actions">
+                <div className="divergence-alert" style={{marginBottom:10}}>
+                  <Ic>⚠</Ic><span>Excluir esta contagem de {c.productCode}? Essa ação não pode ser desfeita e não deixa rastro.</span>
+                </div>
+                {erroExclusao && <div className="divergence-alert" style={{marginBottom:10}}><Ic>⚠</Ic><span>{erroExclusao}</span></div>}
+                <div className="btn-row">
+                  <button className="btn btn-secondary" disabled={excluindo} onClick={()=>{setConfirmDeleteId(null); setErroExclusao('');}}>Cancelar</button>
+                  <button className="btn btn-danger" disabled={excluindo} onClick={()=>handleConfirmDelete(c.id)}>{excluindo ? 'Excluindo…' : 'Confirmar exclusão'}</button>
+                </div>
+              </div>
+            ) : (
+              <div className="btn-row count-card-actions">
+                <button className="btn btn-primary" onClick={()=>goto('recount', c)}><Ic>🔁</Ic> Recontar</button>
+                {onDeleteCount && <button className="btn btn-danger" onClick={()=>setConfirmDeleteId(c.id)}><Ic>🗑</Ic></button>}
+              </div>
+            )}
+          </div>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -5970,7 +6151,7 @@ function RecountsPanel({counts, goto, onDeleteCount}){
 // aparecer só em "Recontagens". Visível pra todos os papéis (antes ficava
 // escondida inteira do operador) — mas as ações (aprovar/solicitar
 // recontagem) continuam só pra líder/admin, operador vê em modo leitura.
-function DivergentItemsPanel({counts, role, goto, onApprove, onRequestRecount, onDeleteCount}){
+function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequestRecount, onDeleteCount, onRefresh}){
   const aguardandoAnalise = counts.filter(c=>c.statusAprovacao==='aguardando_analise_lider');
   const canApprove = role==='lider' || role==='admin';
 
@@ -5980,6 +6161,30 @@ function DivergentItemsPanel({counts, role, goto, onApprove, onRequestRecount, o
   const [busyId, setBusyId] = useState(null);
   const [erros, setErros] = useState({});
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+
+  const [busca, setBusca] = useState('');
+  const buscaNorm = busca.trim().toLowerCase();
+  const porBusca = buscaNorm
+    ? aguardandoAnalise.filter(c => c.productCode.toLowerCase().includes(buscaNorm) || (c.descricao||'').toLowerCase().includes(buscaNorm))
+    : aguardandoAnalise;
+
+  const [severidade, setSeveridade] = useState('todos');
+  const listaFiltrada = severidade==='todos' ? porBusca : porBusca.filter(c=>classifySeverity4(c.percentual).level===severidade);
+
+  const [mostrarFiltroPeriodo, setMostrarFiltroPeriodo] = useState(false);
+  const [trendFilter, setTrendFilter] = usePersistedState('divergentesTrendFilter', {tipo:'30d', from:'', to:''});
+  const hojeStr = hojeLocalStr();
+  const { from: dataInicioStr, to: dataFimStr } = computeTrendRange(trendFilter.tipo, hojeStr, trendFilter.from, trendFilter.to);
+  const concluidas = counts.filter(c=>
+    c.statusAprovacao==='aprovado_lider' && c.data>=dataInicioStr && c.data<=dataFimStr
+  ).length;
+
+  const [atualizando, setAtualizando] = useState(false);
+  async function handleAtualizar(){
+    if(!onRefresh) return;
+    setAtualizando(true);
+    try{ await onRefresh(); } finally { setAtualizando(false); }
+  }
 
   async function handleApprove(countId){
     setBusyId(countId);
@@ -6011,55 +6216,81 @@ function DivergentItemsPanel({counts, role, goto, onApprove, onRequestRecount, o
 
   return (
     <div>
-      <div className="section-title" style={{marginTop:0}}>
-        Aguardando Análise do Líder
-        {aguardandoAnalise.length>0 && <span className="badge" style={{position:'static',marginLeft:8}}>{aguardandoAnalise.length}</span>}
+      <ListaProgressoHeader titulo="Itens Divergentes" restantes={aguardandoAnalise.length} concluidas={concluidas} onAtualizar={onRefresh ? handleAtualizar : null} atualizando={atualizando} />
+
+      <SearchWithScanner value={busca} onChange={setBusca} placeholder="Código ou descrição do material" />
+
+      <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+        <SeverityFilterRow counts={porBusca} value={severidade} onChange={setSeveridade} />
+        <button type="button" className={'btn '+(mostrarFiltroPeriodo?'btn-primary':'btn-outline')} style={{width:'auto',padding:'8px 14px',fontSize:12,marginBottom:14}} onClick={()=>setMostrarFiltroPeriodo(v=>!v)}><Ic>📅</Ic> Filtros</button>
       </div>
-      {aguardandoAnalise.length===0 ? (
-        <div className="empty-state" style={{padding:20}}>Nenhuma divergência aguardando análise no momento.</div>
-      ) : aguardandoAnalise.map(c=>{
+      {mostrarFiltroPeriodo && (
+        <TrendFilterBar trendFilter={trendFilter} setTrendFilter={setTrendFilter} dataInicioStr={dataInicioStr} dataFimStr={dataFimStr} hojeStr={hojeStr} subtitle="Período considerado pra contar quantas divergências já foram decididas" />
+      )}
+
+      {listaFiltrada.length===0 ? (
+        <div className="empty-state" style={{padding:20}}>
+          {aguardandoAnalise.length===0 ? 'Nenhuma divergência aguardando análise no momento.' : 'Nenhum item encontrado para esse filtro.'}
+        </div>
+      ) : listaFiltrada.map(c=>{
         const anterior = c.contagemAnteriorId ? counts.find(x=>x.id===c.contagemAnteriorId) : null;
+        const sev = classifySeverity4(c.percentual);
         return (
-          <div key={c.id} className="item-card">
-            <div className="item-card-head">
-              <div>
-                <div className="item-code">{c.productCode} {c.numeroContagem>1 && <span style={{color:'var(--accent2)'}}>· {c.numeroContagem}ª contagem</span>}</div>
+          <div key={c.id} className="count-card">
+            <div className="count-card-bar" style={{background:sev.color}}></div>
+            <div className="count-card-body">
+              <div className="count-card-head">
+                <div className="count-card-badges">
+                  <span className="severity-chip" style={{background:sev.bg,color:sev.color}}>{sev.icon} {sev.label}</span>
+                  <span className="category-chip">{categoriaDoInventario(c, inventories)}</span>
+                  {c.numeroContagem>1 && <span className="category-chip">{c.numeroContagem}ª contagem</span>}
+                </div>
+                <span className="count-card-date">{c.data}</span>
+              </div>
+              <div className="count-card-title">
+                <div className="item-code">{c.productCode}</div>
                 <div className="item-desc" style={{fontSize:15}}>{c.descricao}</div>
               </div>
-              <StatusTag status="danger" text={c.classificacao.label} />
-            </div>
-            <div style={{padding:'14px 18px',display:'flex',flexWrap:'wrap',gap:8,fontSize:12,color:'var(--ink-dim)',fontFamily:'var(--font-mono)'}}>
-              <span>Qtd. contada: {c.qtdContada} un.</span>·<span>Diferença {c.diferenca==null ? '— (sem saldo local)' : (c.diferenca>0?'+':'')+c.diferenca+(c.percentual==null?'':' ('+c.percentual.toFixed(1)+'%)')}</span>·<span>{c.usuario}</span>·<span>{c.data} {c.hora||''}</span>
-            </div>
-            {anterior && (
-              <div style={{padding:'0 18px 10px',fontSize:12,color:'var(--ink-dim)'}}>
-                1ª contagem: {anterior.qtdContada} un. por {anterior.usuario} em {anterior.data} {anterior.hora||''}
-              </div>
-            )}
-            {c.motivo && <div style={{padding:'0 18px 14px',fontSize:12.5}}>Motivo: <strong>{c.motivo}</strong></div>}
-            {erros[c.id] && (
-              <div className="divergence-alert" style={{margin:'0 18px 10px'}}><Ic>⚠</Ic><span>{erros[c.id]}</span></div>
-            )}
-            {confirmDeleteId===c.id ? (
-              <div style={{padding:'0 18px 16px'}}>
-                <div className="divergence-alert" style={{marginBottom:10}}>
-                  <Ic>⚠</Ic><span>Excluir esta contagem de {c.productCode}? Essa ação não pode ser desfeita e não deixa rastro.</span>
+              <div className="count-card-location"><Ic>📍</Ic> {c.endereco || 'não cadastrado'}</div>
+              {anterior && (
+                <div style={{padding:'8px 16px 0',fontSize:12,color:'var(--ink-dim)'}}>
+                  1ª contagem: {anterior.qtdContada} un. por {anterior.usuario} em {anterior.data} {anterior.hora||''}
                 </div>
-                <div className="btn-row">
-                  <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>setConfirmDeleteId(null)}>Cancelar</button>
-                  <button className="btn btn-danger" disabled={busyId===c.id} onClick={()=>handleConfirmDelete(c.id)}>{busyId===c.id ? 'Excluindo…' : 'Confirmar exclusão'}</button>
+              )}
+              <div className="count-card-values">
+                <div className="cv"><div className="k">Sistema</div><div className="v">{c.saldoSistema==null ? '—' : c.saldoSistema}</div></div>
+                <div className="cv"><div className="k">Qtd. Contada</div><div className="v">{c.qtdContada}</div></div>
+                <div className="cv">
+                  <div className="k">Diferença</div>
+                  <div className="v" style={{color:sev.color}}>{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div>
+                  {c.percentual!=null && <div style={{fontSize:11,color:'var(--ink-dim)'}}>{c.percentual.toFixed(1)}%</div>}
                 </div>
               </div>
-            ) : canApprove ? (
-              <div className="btn-row" style={{padding:'0 18px 16px'}}>
-                <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>handleRequestRecount(c.id)}>{busyId===c.id ? 'Enviando…' : 'Solicitar nova contagem'}</button>
-                <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>goto('recount', c)}><Ic>🔁</Ic> Recontar</button>
-                <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>handleApprove(c.id)}>{busyId===c.id ? 'Enviando…' : 'Aprovar divergência'}</button>
-                {onDeleteCount && <button className="btn btn-danger" disabled={busyId===c.id} onClick={()=>setConfirmDeleteId(c.id)}><Ic>🗑</Ic></button>}
-              </div>
-            ) : (
-              <div style={{padding:'0 18px 16px',fontSize:12,color:'var(--ink-dim)'}}>Aguardando decisão do líder de estoque.</div>
-            )}
+              {c.motivo && <div style={{padding:'10px 16px 0',fontSize:12.5}}>Motivo: <strong>{c.motivo}</strong></div>}
+              {erros[c.id] && (
+                <div className="divergence-alert" style={{margin:'10px 16px 0'}}><Ic>⚠</Ic><span>{erros[c.id]}</span></div>
+              )}
+              {confirmDeleteId===c.id ? (
+                <div className="count-card-actions">
+                  <div className="divergence-alert" style={{marginBottom:10}}>
+                    <Ic>⚠</Ic><span>Excluir esta contagem de {c.productCode}? Essa ação não pode ser desfeita e não deixa rastro.</span>
+                  </div>
+                  <div className="btn-row">
+                    <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>setConfirmDeleteId(null)}>Cancelar</button>
+                    <button className="btn btn-danger" disabled={busyId===c.id} onClick={()=>handleConfirmDelete(c.id)}>{busyId===c.id ? 'Excluindo…' : 'Confirmar exclusão'}</button>
+                  </div>
+                </div>
+              ) : canApprove ? (
+                <div className="btn-row count-card-actions">
+                  <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>handleRequestRecount(c.id)}>{busyId===c.id ? 'Enviando…' : 'Solicitar nova contagem'}</button>
+                  <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>goto('recount', c)}><Ic>🔁</Ic> Recontar</button>
+                  <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>handleApprove(c.id)}>{busyId===c.id ? 'Enviando…' : 'Aprovar divergência'}</button>
+                  {onDeleteCount && <button className="btn btn-danger" disabled={busyId===c.id} onClick={()=>setConfirmDeleteId(c.id)}><Ic>🗑</Ic></button>}
+                </div>
+              ) : (
+                <div className="count-card-actions" style={{fontSize:12,color:'var(--ink-dim)'}}>Aguardando decisão do líder de estoque.</div>
+              )}
+            </div>
           </div>
         );
       })}
@@ -6268,7 +6499,7 @@ function historicoRowToConcludedChain(h){
   return { chaveId: tip.id, tip, rodadas: [tip], houveAjuste };
 }
 
-function ConcludedCountsPanel({counts, historicoConcluidas=[], onDeleteCount, onRefresh}){
+function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDeleteCount, onRefresh}){
   const [busca, setBusca] = useState('');
   const [selecionado, setSelecionado] = useState(null); // chaveId da cadeia aberta em detalhe
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
@@ -6317,9 +6548,12 @@ function ConcludedCountsPanel({counts, historicoConcluidas=[], onDeleteCount, on
   [cadeias, dataInicioStr, dataFimStr]);
 
   const buscaNorm = busca.trim().toLowerCase();
-  const cadeiasFiltradas = buscaNorm
+  const cadeiasPorBusca = buscaNorm
     ? cadeiasNoPeriodo.filter(cd => cd.tip.productCode.toLowerCase().includes(buscaNorm) || (cd.tip.descricao||'').toLowerCase().includes(buscaNorm))
     : cadeiasNoPeriodo;
+
+  const [severidade, setSeveridade] = useState('todos');
+  const cadeiasFiltradas = severidade==='todos' ? cadeiasPorBusca : cadeiasPorBusca.filter(cd=>classifySeverity4(cd.tip.percentual).level===severidade);
 
   const aberta = selecionado ? cadeias.find(cd=>cd.chaveId===selecionado) : null;
 
@@ -6425,9 +6659,10 @@ function ConcludedCountsPanel({counts, historicoConcluidas=[], onDeleteCount, on
         subtitle="Selecione o período para filtrar as contagens concluídas"
       />
 
-      <div className="field">
-        <label>Buscar item</label>
-        <input type="text" value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Código ou descrição do material" />
+      <SearchWithScanner value={busca} onChange={setBusca} placeholder="Código ou descrição do material" />
+
+      <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+        <SeverityFilterRow counts={cadeiasPorBusca.map(cd=>cd.tip)} value={severidade} onChange={setSeveridade} />
       </div>
 
       <div className="section-title" style={{marginTop:0}}>
@@ -6436,24 +6671,37 @@ function ConcludedCountsPanel({counts, historicoConcluidas=[], onDeleteCount, on
       </div>
       {cadeiasFiltradas.length===0 ? (
         <div className="empty-state" style={{padding:20}}>
-          {cadeiasNoPeriodo.length===0 ? 'Nenhuma contagem concluída nesse período.' : 'Nenhum item encontrado para essa busca.'}
+          {cadeiasNoPeriodo.length===0 ? 'Nenhuma contagem concluída nesse período.' : 'Nenhum item encontrado para esse filtro.'}
         </div>
       ) : cadeiasFiltradas.map(cd=>{
         const tip = cd.tip;
         const info = tip._statusDisplay || STATUS_INFO[tip.statusAprovacao] || {};
+        const sev = classifySeverity4(tip.percentual);
         return (
-          <div key={cd.chaveId} className="item-card" style={{cursor:'pointer'}} onClick={()=>setSelecionado(cd.chaveId)}>
-            <div className="item-card-head">
-              <div>
-                <div className="item-code">{tip.productCode}{tip._fromHistorico && <span style={{color:'var(--ink-dim)',fontWeight:400,fontSize:12}}> · histórico importado</span>}</div>
+          <div key={cd.chaveId} className="count-card" style={{cursor:'pointer'}} onClick={()=>setSelecionado(cd.chaveId)}>
+            <div className="count-card-bar" style={{background:sev.color}}></div>
+            <div className="count-card-body">
+              <div className="count-card-head">
+                <div className="count-card-badges">
+                  <span className="severity-chip" style={{background:sev.bg,color:sev.color}}>{sev.icon} {sev.label}</span>
+                  <span className="category-chip">{categoriaDoInventario(tip, inventories)}</span>
+                  {tip._fromHistorico && <span className="category-chip">histórico importado</span>}
+                </div>
+                <span className="count-card-date">{tip.data ? tip.data+(tip.hora?' '+tip.hora:'') : 'Sem data registrada'}</span>
+              </div>
+              <div className="count-card-title">
+                <div className="item-code">{tip.productCode}</div>
                 <div className="item-desc" style={{fontSize:15}}>{tip.descricao}</div>
               </div>
-              <StatusTag status={info.level||'ok'} text={info.text||'—'} />
+              <div className="count-card-location"><Ic>📍</Ic> {tip.endereco || tip.enderecoContado || 'não cadastrado'}</div>
+              <div className="count-card-values">
+                <div className="cv"><div className="k">Sistema</div><div className="v">{tip.saldoSistema==null ? '—' : tip.saldoSistema}</div></div>
+                <div className="cv"><div className="k">Qtd. Final</div><div className="v">{tip.qtdContada}</div></div>
+                <div className="cv"><div className="k">Contagens</div><div className="v">{tip.numeroContagem}</div></div>
+                <div className="cv"><div className="k">Ajuste</div><div className="v" style={{fontSize:12.5}}>{cd.houveAjuste ? 'Necessário' : (tip.diferenca==null?'Sem saldo local':'Não necessário')}</div></div>
+              </div>
+              <div style={{padding:'10px 16px 14px',fontSize:12,color:'var(--accent2)'}}>Ver detalhes →</div>
             </div>
-            <div style={{padding:'14px 18px',display:'flex',flexWrap:'wrap',gap:8,fontSize:12,color:'var(--ink-dim)',fontFamily:'var(--font-mono)'}}>
-              <span>Qtd. final: {tip.qtdContada}</span>·<span>{tip.numeroContagem} {tip.numeroContagem===1?'contagem':'contagens'}</span>·<span>{cd.houveAjuste ? 'Ajuste necessário' : (tip.diferenca==null?'Sem saldo local':'Sem ajuste necessário')}</span>·<span>{tip.data ? tip.data+(tip.hora?' '+tip.hora:'') : 'Sem data registrada'}</span>
-            </div>
-            <div style={{padding:'0 18px 14px',fontSize:12,color:'var(--accent2)'}}>Ver histórico completo →</div>
           </div>
         );
       })}
