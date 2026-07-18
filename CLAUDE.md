@@ -2893,9 +2893,10 @@ checagem de permissão da Edge Function (`admin` OU `acessos_extras` contém `'u
 contra 8 cenários incluindo usuário bloqueado e exceção concedida a perfis não-admin;
 type-check do TypeScript da Edge Function via `tsc` (com um shim pros globais do Deno,
 já que o ambiente de teste não tem Deno instalado). Transpile Babel do `index.html`
-inteiro, como sempre. **Não testado contra o Supabase real** — falta o cliente rodar a
-migração completa (SQL, criar os 4 usuários no Auth, deploy da Edge Function) seguindo o
-passo a passo em `backend/README.md`, seção "Migrar login pro Supabase Auth".
+inteiro, como sempre. **Atualização: migração rodada e confirmada em produção** — ver
+seção "Migração pro Supabase Auth confirmada em produção + bugs reais corrigidos no
+caminho" mais abaixo, que também documenta os bugs reais achados só nesse teste ao vivo
+(não pegos pelo teste mockado local).
 
 ## Login vira redesign premium (Fiori/M365/Power BI) — terceira identidade da tela de login
 
@@ -3565,6 +3566,95 @@ estreito do que a coluna (56% do card, até 728px) permitia, sobrando um respiro
   o CSS declarado) em duas larguras (1050px, a mesma do print do cliente, e 1600px) —
   confirma a redução na prática, não só na intenção do CSS. Sem rolagem nova em nenhuma
   largura testada (900/390px). `verify_login_flows.js` sem quebrar nada.
+
+## Migração pro Supabase Auth confirmada em produção + bugs reais corrigidos no caminho
+
+O cliente rodou a migração completa (`backend/README.md`, seção 9) ao vivo, comigo
+orientando passo a passo em tempo real — ele só migrou a própria conta (admin) por
+enquanto, decisão confirmada via `AskUserQuestion`: "sim, só minha conta por enquanto"
+(as contas de Carlos Mendes e Lucas Melo Nasato ficaram de fora, dado explicitamente
+como "pode excluir a conta dos dois e manter apenas a minha"). O deploy da Edge Function
+`usuarios-admin` foi feito pelo próprio cliente via `npx supabase functions deploy` (guiei
+instalação do Node.js, política de execução do PowerShell, `supabase login`/`link`/
+`deploy` — tudo em texto simples, sem nenhum termo técnico sem explicação, já que o
+cliente é leigo em terminal). O passo 9.9 (RLS restritiva em `contagens`/`inventarios`/
+`enderecos_propostos`/`estoque_saldo`) também já foi aplicado, confirmado com uma consulta
+de introspecção (`pg_policies`) antes de rodar os `drop policy`, mesma cautela já usada em
+migrações anteriores — os nomes bateram exatamente com o `schema.sql` (só uma policy extra
+"leitura autenticada" já existente em `estoque_saldo`, redundante mas inofensiva).
+
+Durante os testes reais em produção (não no sandbox), apareceram 4 bugs genuínos que o
+teste mockado local não tinha pego — todos corrigidos no mesmo dia:
+
+**1. Nenhum feedback visível ao criar/editar usuário** — `onSaved()` navegava de volta pra
+"Usuários" em silêncio, e a lista só reaparecia com o usuário novo depois de até 30s
+(esperando o ciclo de sincronização) — parecia que o clique não tinha feito nada.
+Corrigido: `refreshUsuarios()` (extraído do `useEffect` de sync, agora reutilizável) é
+chamado na hora após `createUser` bem-sucedido, e um banner verde de confirmação
+(`successMessage` via `flowState`) aparece na tela de Usuários ao voltar.
+
+**2. Campo de e-mail com estilo "fora do padrão"** — `type="email"` tem estilo de
+placeholder que varia por navegador (itálico, cor diferente do resto dos campos). Trocado
+por `type="text"` em todos os campos de e-mail do app (a validação de formato já era feita
+via regex em JS, então não muda nada funcionalmente).
+
+**3. Mensagens de erro sem cor nenhuma** (`.login-error`/`.login-success`/`.login-notice`,
+usadas fora da tela de login) — ficaram com ZERO regra de CSS depois que o redesign do
+login migrou pras versões "-2" (ver seção "Login vira redesign premium" acima), tratando as
+versões sem "2" como só "seletor de compatibilidade de teste". Resultado: erro em
+`UserForm`, no leitor de câmera, na importação de lista — tudo aparecia como texto puro,
+sem vermelho. Restaurado o estilo original dessas 3 classes. Junto disso, corrigido que o
+cliente do Supabase mostra "Edge Function returned a non-2xx status code" (mensagem
+genérica) em vez do erro real devolvido pela function — `chamarUsuariosAdmin` agora lê
+`error.context.json()` pra recuperar a mensagem verdadeira.
+
+**4. Bug crítico — admin conseguia bloquear a própria conta e ficar trancado fora do
+sistema**: o cliente clicou "Bloquear" na própria linha (sem querer, testando a
+funcionalidade) e não conseguiu se desbloquear — porque TODA ação de admin na Edge
+Function exige que quem chama não esteja bloqueado (checagem correta em princípio), mas
+`alternar_bloqueio` não tinha a mesma proteção que `excluir_usuario` já tinha (impedir a
+ação sobre a própria conta). Como só existe uma conta admin migrada até agora, isso travou
+o sistema inteiro — só corrigido via SQL direto (`update usuarios set status='ativo'...` +
+`update auth.users set banned_until=null...`, já que o `ban_duration` que bloqueia de
+verdade é uma coluna nativa do GoTrue, separada do nosso `status`). Corrigido na Edge
+Function (mesma proteção do `excluir_usuario`: `if(userId===chamador.id) return erro`) e
+o botão "Bloquear" deixou de aparecer na própria linha na tela de Usuários (raciocínio já
+usado no "Excluir"). **Redeploy da Edge Function corrigida também já foi confirmado** —
+o cliente baixou o `index.ts` atualizado do GitHub e rodou `npx supabase functions deploy`
+de novo.
+
+**5. Achado (não é bug do app) — conta de teste suspensa automaticamente pelo próprio
+Supabase**: durante os testes de redefinição de senha (gerar temporária, liberar, definir
+manual, tudo em sequência rápida no mesmo usuário de teste em poucos minutos), a conta
+ficou com `banned_until` setado no `auth.users` sem que nenhuma chamada nossa de bloqueio
+tivesse acontecido (confirmado pelos logs de autenticação do painel — só apareciam
+chamadas de troca de senha, nenhuma de `alternar_bloqueio`). Conclusão: foi uma proteção
+automática do próprio Supabase contra volume incomum de trocas de senha/tentativas de
+login num intervalo curto — não deve acontecer em uso real (uma pessoa não troca a
+própria senha várias vezes em minutos). Resolvido com a mesma query de desbloqueio direto
+por UID.
+
+**Fluxo de teste completo confirmado, com o cliente, em produção**: login com a conta
+real; criar usuário de teste; bloquear/desbloquear (depois de corrigido o bug #4);
+redefinir senha nos 3 modos (temporária, liberar, manual — incluindo login de fato bem-
+sucedido depois de resolvido o bug #5); excluir o usuário de teste. Todos os 5 bugs acima
+foram encontrados e corrigidos NO MESMO DIA da migração, com o cliente testando ao vivo —
+nenhum deles tinha aparecido nos testes mockados anteriores (sandbox sem rede real,
+sem o comportamento genuíno do GoTrue).
+
+**Pendência de limpeza, sem pressa** (passo 9.10 do README): `usuarios_pre_auth_backup`
+continua existindo no banco (as 4 linhas antigas, incluindo Carlos/Lucas que não foram
+migrados) — o cliente pediu explicitamente pra não guardar dado antigo
+("não é para guardar nada de dados antigos"), então isso deve ser dropado assim que ele
+confirmar que não precisa mais de nada de lá: `drop table usuarios_pre_auth_backup;`.
+
+**Nota sobre o processo de deploy em si**: como o cliente é leigo em terminal/Node/git,
+todo o processo (instalar Node.js, criar a pasta de trabalho, rodar
+`Set-ExecutionPolicy` pra liberar scripts do PowerShell, `npx supabase login/link/
+functions deploy`, e depois baixar o `index.ts` atualizado do GitHub pra redeploy) foi
+guiado comando a comando, sem pressupor nenhum conhecimento prévio — inclusive corrigindo
+no meio do caminho um erro de path (a pasta "Documentos" no Windows em português, não
+"Documents") e confirmando "y" em vez de "s" num prompt do npm em inglês.
 
 ## Convenções de design (não quebrar ao continuar)
 
