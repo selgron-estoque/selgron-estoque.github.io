@@ -658,6 +658,10 @@ alter table usuarios add column if not exists ultimo_acesso timestamptz;
 -- confirmado o Passo 0 acima.
 -- =============================================================================
 alter table usuarios rename to usuarios_pre_auth_backup;
+-- Renomear a TABELA não renomeia o ÍNDICE junto (Postgres mantém o nome
+-- original do índice) — sem isso, o `create unique index idx_usuarios_login`
+-- da tabela nova colide com o nome que já existe na tabela renomeada.
+alter index idx_usuarios_login rename to idx_usuarios_pre_auth_backup_login;
 
 create table usuarios (
   id uuid primary key references auth.users(id) on delete cascade,
