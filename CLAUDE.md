@@ -3889,6 +3889,69 @@ inteiro. **A verificação visual/funcional de ponta a ponta (cards, filtros,
 scanner, donut) fica a cargo do cliente**, mesmo handoff já usado pra
 outras mudanças pós-migração de Auth.
 
+## "Recontagens Pendentes" — segunda rodada, fidelidade exata ao mockup
+
+Depois do redesign geral das 3 telas (seção anterior), o cliente mandou um
+briefing bem mais detalhado e prescritivo, pedindo fidelidade pixel-a-pixel
+com o mockup pra especificamente "Recontagens Pendentes" — reforçando "NÃO
+é para criar um novo design... é para reproduzir a estrutura visual da
+referência". Pontos que a primeira rodada não tinha acertado:
+
+- **Botões empilhados à DIREITA do card** (não embaixo, em telas largas) —
+  a primeira versão colocava "Recontar" + excluir como uma fileira
+  horizontal abaixo do conteúdo. Novo layout: `.count-card-main` (flex row)
+  divide `.count-card-content` (indicadores, flex:1) de
+  `.count-card-actions-col` (coluna de botões, 150px fixos) — só empilha
+  abaixo em telas estreitas (`@media max-width:640px`).
+- **Indicadores em 4 blocos**, não 3 — "%" virou um bloco próprio
+  (`Sistema | 1ª Contagem | Diferença | %`), antes o percentual aparecia
+  como sub-linha dentro do bloco "Diferença".
+- **Menu "⋮"** no canto superior direito do card (ao lado do badge de
+  categoria e da data) — substitui o botão vermelho grande de excluir que
+  a primeira versão tinha; ao clicar, abre um dropdown pequeno com
+  "Excluir contagem" (só quando `onDeleteCount` existe, admin). O fluxo de
+  confirmação (`confirmDeleteId`) continua o mesmo de antes.
+- **Botão "Detalhes" novo** (segundo botão, mesmo tamanho de "Recontar") —
+  não existia antes (só tinha "Recontar" + excluir). Ao clicar, expande
+  inline (`detalhesAbertoId`) um bloco `.count-card-extra` com campos que a
+  contagem já coleta mas não eram mostrados no card: armazém, endereço
+  contado (quando diverge do cadastrado), motivo, observação, indicador de
+  foto anexada, valor divergente e quem/quando contou — tudo dado real já
+  salvo em `count`, nada novo capturado.
+- **Raio de 16px e sombra leve, próprios deste card** — diferente do
+  `--radius:10px` usado no resto do app; decisão consciente (pedido
+  explícito do cliente pra bater com a referência), não é inconsistência.
+- **Espaçamento mais denso**: `.count-card-body` virou um único container
+  flex-column com padding 16px/20px e gap 8-10px, substituindo os paddings
+  individuais por elemento que a primeira versão tinha (cada linha com seu
+  próprio `padding:'Npx 16px 0'`) — mesmo efeito visual, menos repetição.
+
+**Bug de CSS real encontrado e corrigido no caminho**: `DivergentItemsPanel`
+combina `className="btn-row count-card-actions"` no MESMO elemento pra
+enfileirar até 4 botões (Solicitar/Recontar/Aprovar/Excluir) — a nova regra
+de `.count-card-actions{flex-direction:column}` (criada pro estado de
+"confirmar exclusão" do RecountsPanel, que usa a classe como wrapper
+separado, nunca combinada direto com `.btn-row`) teria quebrado essa
+fileira, empilhando os 4 botões verticalmente por engano. Corrigido
+criando uma classe irmã, `.count-card-actions-row` (regra
+`.count-card-actions-row.btn-row .btn{...}`), usada só nesse caso
+específico — as duas classes não colidem mais porque nunca se
+sobrescrevem uma à outra.
+
+**Escopo consciente**: essa rodada de fidelidade extrema focou só em
+"Recontagens Pendentes" (o pedido do cliente citou essa tela
+especificamente) — "Itens Divergentes" manteve as 4 ações que já tinha
+(só com botões mais compactos, `.count-card-actions-row`) e "Contagens
+Concluídas" manteve o "Ver detalhes →" de texto simples que já existia
+(clique no card inteiro abre o drill-down já existente) — nenhuma das
+duas ganhou o layout de botões empilhados à direita nem o botão
+"Detalhes" novo, que são específicos do pedido desta rodada.
+
+Mesma limitação de teste da rodada anterior: login exige Supabase Auth
+real, então a verificação de ponta a ponta (comparar visualmente com o
+mockup) fica a cargo do cliente — só o transpile Babel e o balanceamento
+de chaves do CSS foram conferidos aqui.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase
