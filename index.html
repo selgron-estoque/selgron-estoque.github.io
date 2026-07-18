@@ -6447,7 +6447,7 @@ function ReportsScreen({counts, inventories, currentUser, sendHistory, onLogSend
         <form onSubmit={handleSendEmail}>
           <div className="field">
             <label>Destinatário</label>
-            <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="controladoria@empresa.com" />
+            <input type="text" value={email} onChange={e=>setEmail(e.target.value)} placeholder="controladoria@empresa.com" autoCapitalize="none" autoCorrect="off" spellCheck="false" />
           </div>
           <div className="field">
             <label>Assunto</label>
@@ -7650,7 +7650,7 @@ function UserForm({mode, initialData, users, onCreateUser, onUpdateUser, onSaved
         </div>
         <div className="field">
           <label>E-mail</label>
-          <input type="email" value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))} placeholder="nome@empresa.com" autoCapitalize="none" autoCorrect="off" spellCheck="false" />
+          <input type="text" value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))} placeholder="nome@empresa.com" autoCapitalize="none" autoCorrect="off" spellCheck="false" />
         </div>
         {!isEdit && (
           <div className="field">
