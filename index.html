@@ -2730,7 +2730,29 @@ async function computeImportSummaryExtras(itens){
 }
 
 /* ---------------- ICONS (inline, no external icon lib) ---------------- */
-const Ic = ({children}) => <span aria-hidden="true">{children}</span>;
+// Unificação de ícones: todo <Ic>emoji</Ic> do app (telas de operação,
+// alertas, formulários — não só Sidebar/Dashboard) passou a renderizar o
+// mesmo estilo linear "Lucide-ish" já usado no menu principal
+// (DIcon/DICON_PATHS), traduzindo o emoji pra um ícone SVG equivalente.
+// Emoji sem entrada mapeada cai pro comportamento antigo (span cru) —
+// rede de segurança, nunca quebra por um emoji esquecido no mapeamento.
+const EMOJI_TO_DICON = {
+  '⚠':'alertTriangle', '📍':'mapPin', '🔁':'repeat', '📷':'camera',
+  '📄':'fileText', '🗑':'trash', '📦':'box', '⬇':'arrowDown',
+  '✅':'checkCircle', '←':'chevronLeft', 'ℹ':'info', '🗺':'map',
+  '📅':'calendar', '🎉':'checkCircle', '⬆':'arrowUp', '⏳':'clock',
+  '›':'chevronRight', '🔒':'lock', '🔍':'search', '🔄':'repeat',
+  '📤':'upload', '📋':'clipboardList', '📊':'barChart', '👤':'user',
+  '🏷':'tag', '🎲':'shuffle', '➕':'plus', '✉':'mail', '⛔':'ban',
+  '⚙':'settings', '⏻':'logOut', '⌨':'keyboard', '⌂':'home',
+  '🏢':'building', '🏭':'building', '✓':'checkCircle', '—':'minus',
+  '!':'alertTriangle',
+};
+const Ic = ({children, size=16}) => {
+  const name = EMOJI_TO_DICON[children];
+  if(name && DICON_PATHS[name]) return <DIcon name={name} size={size} style={{verticalAlign:-3}} />;
+  return <span aria-hidden="true">{children}</span>;
+};
 
 /* ---------------- PERSISTÊNCIA (localStorage) ---------------- */
 // Primeiro passo pra sair do protótipo 100% em memória: os dados que o app
@@ -3644,6 +3666,20 @@ const DICON_PATHS = {
   globe: <><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14.5 14.5 0 0 1 0 18a14.5 14.5 0 0 1 0-18Z"/></>,
   qrCode: <><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3z"/><path d="M20 14h1v1h-1z"/><path d="M14 20h1v1h-1z"/><path d="M20 20h1v1h-1z"/><path d="M17.5 17.5h.01"/></>,
   logIn: <><path d="M11 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6"/><path d="m15 8 4 4-4 4"/><path d="M19 12H8"/></>,
+  camera: <><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3Z"/><circle cx="12" cy="13" r="3.2"/></>,
+  trash: <><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/></>,
+  arrowDown: <><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></>,
+  arrowUp: <><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></>,
+  info: <><circle cx="12" cy="12" r="9.5"/><path d="M12 16v-4.5"/><path d="M12 8h.01"/></>,
+  map: <><path d="M3 6 9 3l6 3 6-3v15l-6 3-6-3-6 3Z"/><path d="M9 3v15"/><path d="M15 6v15"/></>,
+  calendar: <><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></>,
+  upload: <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 8 5-5 5 5"/><path d="M12 3v12"/></>,
+  tag: <><path d="M12.6 2.6a2 2 0 0 0-1.4-.6H4a2 2 0 0 0-2 2v7.2c0 .53.21 1.04.6 1.4l8.7 8.7a2.4 2.4 0 0 0 3.4 0l6.6-6.6a2.4 2.4 0 0 0 0-3.4Z"/><circle cx="7.5" cy="7.5" r="1.5"/></>,
+  shuffle: <><path d="m18 4 4 4-4 4"/><path d="m18 20 4-4-4-4"/><path d="M2 7h3a4 4 0 0 1 3.3 1.7l7.4 10.6a4 4 0 0 0 3.3 1.7h3"/><path d="M2 17h3a4 4 0 0 0 3.3-1.7l1-1.4"/><path d="M14.7 8.3 15.7 6.9A4 4 0 0 1 19 5.2h3"/></>,
+  mail: <><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m2 7 8.97 5.7a2 2 0 0 0 2.06 0L22 7"/></>,
+  ban: <><circle cx="12" cy="12" r="9.5"/><path d="m4.9 4.9 14.2 14.2"/></>,
+  keyboard: <><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01"/><path d="M10 8h.01"/><path d="M14 8h.01"/><path d="M18 8h.01"/><path d="M8 12h.01"/><path d="M12 12h.01"/><path d="M16 12h.01"/><path d="M7 16h10"/></>,
+  building: <><path d="M6 22V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v18Z"/><path d="M9 9h1"/><path d="M9 13h1"/><path d="M14 9h1"/><path d="M14 13h1"/><path d="M9 17h1"/><path d="M14 17h1"/><path d="M2 22h20"/></>,
 };
 
 function DIcon({name, size=18, strokeWidth=1.8, style}){
@@ -4065,7 +4101,7 @@ function BottomNav({view, goto, role}){
     <div className="bottom-nav">
       {items.map(it=>(
         <button key={it.id} className={"nav-btn"+(view===it.id?' active':'')} onClick={()=>goto(it.id)}>
-          <span className="ic"><Ic>{it.ic}</Ic></span>
+          <span className="ic"><Ic size={19}>{it.ic}</Ic></span>
           {it.label}
         </button>
       ))}
@@ -4377,43 +4413,43 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
       <div className="grid-cards">
         <div className="home-card" onClick={()=>goto('inventories')}>
           {pendentes>0 && <span className="badge">{pendentes}</span>}
-          <span className="icon"><Ic>📦</Ic></span>
+          <span className="icon"><Ic size={26}>📦</Ic></span>
           <span className="label">Inventários Pendentes</span>
         </div>
         <div className="home-card" onClick={()=>goto('pickCountType')}>
-          <span className="icon"><Ic>🔍</Ic></span>
+          <span className="icon"><Ic size={26}>🔍</Ic></span>
           <span className="label">Nova Contagem</span>
         </div>
         <div className="home-card" onClick={()=>goto('concluidas')}>
-          <span className="icon"><Ic>✅</Ic></span>
+          <span className="icon"><Ic size={26}>✅</Ic></span>
           <span className="label">Contagens Concluídas</span>
         </div>
         <div className="home-card" onClick={()=>goto('recounts')}>
           {pendentesRecontagem>0 && <span className="badge">{pendentesRecontagem}</span>}
-          <span className="icon"><Ic>🔁</Ic></span>
+          <span className="icon"><Ic size={26}>🔁</Ic></span>
           <span className="label">Recontagens Pendentes</span>
         </div>
         {podeGerir && (
           <div className="home-card" onClick={()=>goto('enderecos')}>
             {pendentesEnderecos>0 && <span className="badge">{pendentesEnderecos}</span>}
-            <span className="icon"><Ic>📍</Ic></span>
+            <span className="icon"><Ic size={26}>📍</Ic></span>
             <span className="label">Endereços Pendentes</span>
           </div>
         )}
         {hasAccess(user,'dashboard') && (
           <div className="home-card" onClick={()=>goto('dashboard')}>
-            <span className="icon"><Ic>📊</Ic></span>
+            <span className="icon"><Ic size={26}>📊</Ic></span>
             <span className="label">Indicadores</span>
           </div>
         )}
         {hasAccess(user,'relatorios') && (
           <div className="home-card" onClick={()=>goto('relatorios')}>
-            <span className="icon"><Ic>📄</Ic></span>
+            <span className="icon"><Ic size={26}>📄</Ic></span>
             <span className="label">Relatórios</span>
           </div>
         )}
         <div className="home-card" onClick={()=>goto('settings')}>
-          <span className="icon"><Ic>⚙</Ic></span>
+          <span className="icon"><Ic size={26}>⚙</Ic></span>
           <span className="label">Configurações</span>
         </div>
       </div>
@@ -4490,7 +4526,7 @@ function InventoryList({inventories, goto, role, counts, onDelete}){
   const [erroExclusao, setErroExclusao] = useState('');
 
   if(inventories.length===0){
-    return <div className="empty-state"><div className="ic"><Ic>📦</Ic></div>Nenhum inventário programado.</div>;
+    return <div className="empty-state"><div className="ic"><Ic size={40}>📦</Ic></div>Nenhum inventário programado.</div>;
   }
 
   function handleDownload(inv){
@@ -5184,7 +5220,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
     const info = STATUS_INFO[openDoc.statusAprovacao] || {};
     return (
       <div className="empty-state">
-        <div className="ic"><Ic>🔒</Ic></div>
+        <div className="ic"><Ic size={40}>🔒</Ic></div>
         <div style={{fontWeight:700,marginBottom:6}}>{product.codigo} já tem uma contagem em aberto</div>
         <div style={{maxWidth:420,margin:'0 auto'}}>
           {openDoc.recontagemSolicitadaPeloLider
@@ -5558,7 +5594,7 @@ function RandomCountFlow({inv, user, onFinish, onAddressProposed, setInventories
   if(q.done){
     return (
       <div className="empty-state">
-        <div className="ic"><Ic>🎉</Ic></div>
+        <div className="ic"><Ic size={40}>🎉</Ic></div>
         Fila de contagem concluída.
         <div style={{marginTop:16}}><button className="btn btn-primary" onClick={()=>onFinish(null)}>Voltar aos inventários</button></div>
       </div>
@@ -5746,7 +5782,7 @@ function RouteCountFlow({inv, user, onFinish, onAddressProposed, setInventories,
   if(!anyAddress || !grouped){
     return (
       <div className="empty-state">
-        <div className="ic"><Ic>🗺</Ic></div>
+        <div className="ic"><Ic size={40}>🗺</Ic></div>
         Nenhum endereço cadastrado ainda neste almoxarifado.<br/>
         A contagem por rota é liberada assim que o líder validar os primeiros endereços informados pelos operadores (veja "Endereços Pendentes" em Configurações).
       </div>
@@ -5854,13 +5890,13 @@ function ImportedListCountFlow({inv, user, onFinish, onAddressProposed, setInven
   }
 
   if(allItems.length===0){
-    return <div className="empty-state"><div className="ic"><Ic>📄</Ic></div>Esta lista importada não tem itens válidos.</div>;
+    return <div className="empty-state"><div className="ic"><Ic size={40}>📄</Ic></div>Esta lista importada não tem itens válidos.</div>;
   }
 
   if(q.done){
     return (
       <div className="empty-state">
-        <div className="ic"><Ic>🎉</Ic></div>
+        <div className="ic"><Ic size={40}>🎉</Ic></div>
         Lista importada concluída — todos os {allItems.length} itens foram contados.
         <div style={{marginTop:16}}><button className="btn btn-primary" onClick={()=>onFinish(null)}>Voltar aos inventários</button></div>
       </div>
@@ -6154,8 +6190,8 @@ function RecountsPanel({counts, inventories, goto, onDeleteCount, onRefresh}){
             <div className="count-card-head">
               <div className="count-card-badges">
                 {c.recontagemSolicitadaPeloLider
-                  ? <span className="severity-chip" style={{background:'var(--danger-bg)',color:'var(--danger)'}}>⚠ Rejeitada</span>
-                  : <span className="severity-chip" style={{background:sev.bg,color:sev.color}}>{sev.icon} {sev.label}</span>}
+                  ? <span className="severity-chip" style={{background:'var(--danger-bg)',color:'var(--danger)'}}><Ic>⚠</Ic> Rejeitada</span>
+                  : <span className="severity-chip" style={{background:sev.bg,color:sev.color}}><Ic>{sev.icon}</Ic> {sev.label}</span>}
               </div>
               <div className="count-card-head-right">
                 <span className="category-chip">{categoriaDoInventario(c, inventories)}</span>
@@ -6165,7 +6201,7 @@ function RecountsPanel({counts, inventories, goto, onDeleteCount, onRefresh}){
                     <button type="button" className="count-card-menu-btn" onClick={()=>setMenuAbertoId(menuAbertoId===c.id ? null : c.id)}>⋮</button>
                     {menuAbertoId===c.id && (
                       <div className="count-card-menu-dropdown">
-                        <button type="button" onClick={()=>{ setConfirmDeleteId(c.id); setMenuAbertoId(null); }}>🗑 Excluir contagem</button>
+                        <button type="button" onClick={()=>{ setConfirmDeleteId(c.id); setMenuAbertoId(null); }}><Ic>🗑</Ic> Excluir contagem</button>
                       </div>
                     )}
                   </div>
@@ -6326,7 +6362,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequ
             <div className="count-card-body">
               <div className="count-card-head">
                 <div className="count-card-badges">
-                  <span className="severity-chip" style={{background:sev.bg,color:sev.color}}>{sev.icon} {sev.label}</span>
+                  <span className="severity-chip" style={{background:sev.bg,color:sev.color}}><Ic>{sev.icon}</Ic> {sev.label}</span>
                   <span className="category-chip">{categoriaDoInventario(c, inventories)}</span>
                   {c.numeroContagem>1 && <span className="category-chip">{c.numeroContagem}ª contagem</span>}
                 </div>
@@ -6768,7 +6804,7 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
             <div className="count-card-body">
               <div className="count-card-head">
                 <div className="count-card-badges">
-                  <span className="severity-chip" style={{background:sev.bg,color:sev.color}}>{sev.icon} {sev.label}</span>
+                  <span className="severity-chip" style={{background:sev.bg,color:sev.color}}><Ic>{sev.icon}</Ic> {sev.label}</span>
                   <span className="category-chip">{categoriaDoInventario(tip, inventories)}</span>
                   {tip._fromHistorico && <span className="category-chip">histórico importado</span>}
                 </div>
@@ -6812,7 +6848,7 @@ function ReportsScreen({counts, inventories, currentUser, sendHistory, onLogSend
 
   function downloadWorkbook(){
     if(!window.XLSX){
-      setFeedback('⚠ A biblioteca de exportação não carregou (verifique a conexão com a internet).');
+      setFeedback('A biblioteca de exportação não carregou (verifique a conexão com a internet).');
       return false;
     }
     const wb = generateReportWorkbook(countsFiltrados, inventories);
@@ -7712,7 +7748,7 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
 
       <div style={{display:'grid',gridTemplateColumns:'minmax(220px,340px) 1fr',gap:14,marginBottom:14}}>
         <div className="panel" style={{display:'flex',alignItems:'center',gap:14,margin:0}}>
-          <div style={{width:44,height:44,borderRadius:12,background:'rgba(246,162,0,0.12)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>📦</div>
+          <div style={{width:44,height:44,borderRadius:12,background:'rgba(246,162,0,0.12)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><DIcon name="box" size={20}/></div>
           <div>
             <div style={{fontSize:11,color:'var(--ink-dim)',textTransform:'uppercase',letterSpacing:'0.6px',fontFamily:'var(--font-mono)'}}>Valor Total em Estoque</div>
             <div style={{fontSize:24,fontWeight:800,fontFamily:'var(--font-mono)'}}>{fmtReais(valorTotalEstoque)}</div>
@@ -7720,12 +7756,12 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
         </div>
         <div className="panel" style={{display:'flex',flexWrap:'wrap',gap:18,alignItems:'center',margin:0}}>
           {[
-            {ic:'🏢', label:'Armazéns ativos', value:armazensAtivos},
-            {ic:'📦', label:'Itens distintos', value:itensDistintos.toLocaleString('pt-BR')},
-            {ic:'📊', label:'Cobertura do catálogo', value: coberturaPct!=null ? coberturaPct.toFixed(1)+'%' : '—'},
+            {ic:'building', label:'Armazéns ativos', value:armazensAtivos},
+            {ic:'box', label:'Itens distintos', value:itensDistintos.toLocaleString('pt-BR')},
+            {ic:'barChart', label:'Cobertura do catálogo', value: coberturaPct!=null ? coberturaPct.toFixed(1)+'%' : '—'},
           ].map(t=>(
             <div key={t.label} style={{display:'flex',alignItems:'center',gap:10,minWidth:150}}>
-              <div style={{width:34,height:34,borderRadius:9,background:'var(--panel-raised)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:15,flexShrink:0}}>{t.ic}</div>
+              <div style={{width:34,height:34,borderRadius:9,background:'var(--panel-raised)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><DIcon name={t.ic} size={15}/></div>
               <div>
                 <div style={{fontSize:16,fontWeight:700,fontFamily:'var(--font-mono)'}}>{t.value}</div>
                 <div style={{fontSize:10.5,color:'var(--ink-dim)'}}>{t.label}</div>
@@ -7737,7 +7773,7 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
 
       {armazens.length===0 && (
         <div className="empty-state" style={{padding:20,marginBottom:14}}>
-          <div className="ic"><Ic>📦</Ic></div>
+          <div className="ic"><Ic size={40}>📦</Ic></div>
           Nenhum saldo carregado ainda. Envie a planilha SB2 em Configurações pra ver o valor em estoque por armazém.
         </div>
       )}
@@ -7757,7 +7793,7 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
           {armazens.map((a,i)=>(
             <div key={a} className="bar-row">
               <div style={{display:'flex',alignItems:'center',gap:8,width:130,flexShrink:0}}>
-                <div style={{width:24,height:24,borderRadius:7,background:ARMAZEM_COLORS[i%ARMAZEM_COLORS.length],display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,flexShrink:0}}>🏭</div>
+                <div style={{width:24,height:24,borderRadius:7,background:ARMAZEM_COLORS[i%ARMAZEM_COLORS.length],display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><DIcon name="building" size={13} style={{color:'#fff'}}/></div>
                 <div style={{fontSize:12,color:'var(--ink-dim)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{formatArmazemLabel(a)}</div>
               </div>
               <div className="bar-track"><div className="bar-fill" style={{width:(porArmazem[a]/maxArmazemValor*100)+'%', background:ARMAZEM_COLORS[i%ARMAZEM_COLORS.length]}}></div></div>

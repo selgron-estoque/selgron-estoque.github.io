@@ -3996,3 +3996,69 @@ Inventário 360" e demais menções ao nome antigo ao longo do texto) continuam 
 ser reescritas. Também não mexi em comentários de código nem no texto histórico da tela de
 importação de contagens antigas (que menciona "antes do Inventário 360") — fora do escopo
 pedido.
+
+## Unificação de ícones — todo o app passa a usar o padrão linear do menu (DIcon)
+
+O app tinha DOIS sistemas de ícone coexistindo por decisão consciente (documentada em
+várias seções acima): emoji, via um componente trivial `Ic` (`({children}) =>
+<span>{children}</span>`), usado em quase toda tela de conteúdo/operação (contagem,
+alertas, formulários, menu mobile); e SVG linear "Lucide-ish" (`DIcon`/`DICON_PATHS`),
+reservado só pra Sidebar/DesktopTopbar/Dashboard. O cliente pediu pra unificar tudo —
+"revise todos os ícones de todas as paginas, quero todos no mesmo padrão do menu
+principal" — confirmado via `AskUserQuestion` como **"tudo, o app inteiro"**, incluindo
+as telas de operação no tablet, não só as telas corporativas.
+
+- **Levantamento**: um script Node contou cada emoji usado como ÍCONE de verdade em todo
+  o `index.html` — 31 emoji distintos, ~70 pontos de chamada. Setas tipográficas dentro
+  de frase (`"Ver detalhes →"`, `"← Voltar ao login"`, `"‹ Anterior"`/`"Próxima ›"`) foram
+  identificadas à parte e mantidas como estão — são pontuação de texto corrido, não
+  ícones (mesmo critério que já era aplicado no resto do app).
+- **Estratégia de baixo risco**: em vez de editar ~70 pontos de chamada um por um, o
+  próprio `Ic` virou uma tabela de tradução (`EMOJI_TO_DICON`, perto da definição de
+  `Ic`) — recebe o emoji de sempre como filho, procura na tabela e renderiza
+  `<DIcon name={...} size={size}/>` no lugar (novo prop `size`, default 16, pra telas que
+  precisam de um ícone maior — ver abaixo). Emoji sem entrada mapeada cai pro
+  comportamento antigo (`<span>{children}</span>`) — rede de segurança, nada quebra
+  mesmo se algum emoji ficar de fora do mapeamento. Isso cobriu de graça TODOS os
+  `<Ic>emoji</Ic>` do app, incluindo o `BottomNav` (menu inferior mobile, que já passava
+  o ícone de cada item por `<Ic>{it.ic}</Ic>`) — sem precisar tocar no componente em si.
+- **14 ícones novos desenhados em `DICON_PATHS`** (mesmo estilo já usado nos 30
+  existentes — stroke 1.8-2px, viewBox 24×24, à mão): `camera`, `trash`, `arrowDown`,
+  `arrowUp`, `info`, `map`, `calendar`, `upload`, `tag`, `shuffle`, `mail`, `ban`,
+  `keyboard`, `building`. Os outros ~17 emoji já mapeavam pra entradas que já existiam.
+- **Bug de regressão visual pego antes de commitar**: um `size` fixo de 16px pra TODO
+  ícone quebraria os poucos lugares onde o emoji era deliberadamente grande — `.empty-
+  state .ic{font-size:40px}` (telas de "nenhum item"/"tudo concluído"/"sem rota
+  cadastrada" no meio dos fluxos de contagem), `.icon{font-size:26px}` (cards do menu
+  mobile legado, `<360px`) e `.nav-btn .ic{font-size:19px}` (BottomNav). Como CSS
+  `font-size` não afeta as dimensões de um `<svg width/height>` fixo (diferente de um
+  glyph de emoji, que escala com a fonte), esses ~16 pontos de chamada precisaram passar
+  o `size` explícito (`<Ic size={40}>`/`<Ic size={26}>`/`<Ic size={19}>`) pra preservar o
+  tamanho visual original — só o resto do app (a maioria, ~50 pontos), sem CSS de
+  tamanho customizado pro `.ic`/`.icon`, usa o `size=16` padrão.
+- **~5 casos de emoji "solto"** (fora do `Ic`, direto no JSX) corrigidos individualmente:
+  badge "Valor Total em Estoque" e os 3 mini-cards de resumo (Armazéns ativos/Itens
+  distintos/Cobertura do catálogo) no Dashboard, e o badge circular colorido por
+  armazém — todos trocados por `<DIcon name="..."/>` direto.
+  Um botão de menu ("🗑 Excluir contagem", dentro do "⋮" novo do `RecountsPanel`) também
+  usava o emoji cru fora do `Ic` — corrigido pra `<Ic>🗑</Ic>`, mesmo padrão dos outros
+  botões de excluir do app.
+  Uma mensagem de erro (`ReportsScreen`, biblioteca de exportação não carregada) tinha um
+  `⚠` embutido dentro da própria string — removido (o banner que exibe essa mensagem
+  também é usado pra mensagens de sucesso, então prefixar com ícone de aviso ali
+  incondicionalmente teria sido errado; a string ficou só com o texto, mesmo padrão das
+  outras mensagens desse mesmo banner).
+- **Chip de severidade** (`classifySeverity4`, usado em Recontagens/Itens Divergentes/
+  Concluídas) já guardava `icon` como caractere solto (`✓`/`—`/`!`/`⚠`) renderizado direto
+  — sem passar pelo `Ic`. Trocado pra `<Ic>{sev.icon}</Ic>` nos 3 pontos de chamada
+  (mesmos 3 painéis), reaproveitando a mesma tabela de tradução sem lógica nova.
+- **Fora de escopo, sem mudança**: `buildSidebarGroups`/`Sidebar` (já usava `DIcon` com
+  nomes, não emoji); setas tipográficas em frase corrida; `CalendarIcon`/`FilterIcon`/
+  `RefreshIcon`/`ScanIcon` (componentes SVG avulsos já existentes, já no padrão linear).
+- **Limitação de teste**: login exige Supabase Auth real (não simulável no sandbox sem
+  rede), então a verificação de ponta a ponta (visual, em todas as telas) fica a cargo do
+  cliente, mesma limitação documentada nas rodadas anteriores. Verificado aqui: nenhum
+  dos 31 emoji do levantamento inicial sobrou renderizado fora do `Ic`/dos casos fora de
+  escopo (reconferido com o mesmo script de contagem), todo `EMOJI_TO_DICON` resolve pra
+  uma entrada real de `DICON_PATHS` (conferido programaticamente, sem depender de rodar o
+  app), e o arquivo inteiro continua transpilando sem erro no Babel.
