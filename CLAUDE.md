@@ -4225,8 +4225,30 @@ endereço ter mais destaque ali, "primeira coisa que bate o olho".
 - Aplicado nos 3 lugares que compartilham esse shell de card (`RecountsPanel`/
   `DivergentItemsPanel`/`ConcludedCountsPanel`) — mesmo padrão de "um shell visual só,
   reaproveitado nas 3 telas" já estabelecido nessas telas.
-- `@media (max-width:640px)`: a linha vira coluna (endereço abaixo do título) — em vez
-  de espremer o badge junto do código numa tela estreita.
+- **Atualização**: a 1ª versão empilhava o badge abaixo do título em telas estreitas
+  (`@media max-width:640px`), mas o cliente testou no celular e viu o endereço "cair"
+  pro rodapé do bloco, deixando vazio o espaço à direita que era justamente o objetivo
+  do pedido original — regra removida, o badge fica ao lado do código/descrição em
+  qualquer largura de tela.
 - Testado só com transpile Babel + balanceamento de chaves do CSS (mesma limitação de
   sempre, login via Supabase Auth real não é simulável no sandbox) — verificação visual
   fica a cargo do cliente.
+
+## "Recontagens Pendentes" — Sistema/1ª Contagem/Diferença/% só dentro de "Detalhes"
+
+Cliente pediu pra esconder esses 4 números por padrão (mostrando só depois de clicar em
+"Detalhes", junto do resto que já ficava ali) — motivo: mostrar o resultado da 1ª
+contagem tão em evidência antes de recontar tinha risco de influenciar quem vai
+recontar (viés de ancoragem — em vez de contar de forma independente, a pessoa pode só
+confirmar o número que já está vendo na tela).
+
+- `.count-card-values` (bloco Sistema/1ª Contagem/Diferença/%) saiu de sempre visível e
+  entrou pra dentro do mesmo `{detalhesAbertoId===c.id && (...)}` que já escondia
+  `.count-card-extra` (armazém/endereço contado/motivo/observação/foto/valor
+  divergente/quem contou) — os dois agora aparecem juntos, só depois do clique em
+  "Detalhes". Escopado só ao `RecountsPanel` (única das 3 telas de listagem que tem
+  esse toggle "Detalhes"/"Ocultar" — `DivergentItemsPanel` não tem esse padrão de
+  card, `ConcludedCountsPanel` já abre um drill-down à parte, nenhuma das duas foi
+  tocada).
+- Testado só com transpile Babel (mesma limitação de sempre) — verificação visual fica
+  a cargo do cliente.
