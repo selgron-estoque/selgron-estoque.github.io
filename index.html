@@ -3852,9 +3852,29 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
     },
   ];
 
-  const atividades = [...counts]
-    .sort((a,b)=> (b.data+b.hora).localeCompare(a.data+a.hora))
-    .slice(0,7);
+  // "Últimas Contagens" — pedido do cliente com imagem de referência:
+  // agrupa contagens individuais por SESSÃO (mesmo usuário + mesma data +
+  // mesmo armazém), não uma linha por item contado. "Itens" = quantos
+  // itens essa sessão cobriu; "Acuracidade" = média contínua (mesma fórmula
+  // de itemAcuracidade já usada no card "Saúde do Inventário"), não a taxa
+  // binária de acerto exato. Sessões sem `almoxarifado` (contagens feitas
+  // antes do armazém virar obrigatório) caem sob "—", não quebram o
+  // agrupamento.
+  const sessoesPorChave = {};
+  counts.forEach(c=>{
+    const almox = c.almoxarifado || '—';
+    const key = c.usuario+'|'+c.data+'|'+almox;
+    if(!sessoesPorChave[key]) sessoesPorChave[key] = {usuario:c.usuario, data:c.data, almoxarifado:almox, itens:0, somaAcc:0, comAcc:0, ultimaHora:c.hora||''};
+    const s = sessoesPorChave[key];
+    s.itens += 1;
+    const acc = itemAcuracidade(c);
+    if(acc!=null){ s.somaAcc += acc; s.comAcc += 1; }
+    if((c.hora||'') > s.ultimaHora) s.ultimaHora = c.hora||'';
+  });
+  const atividades = Object.values(sessoesPorChave)
+    .map(s=>({...s, acuracidade: s.comAcc>0 ? (s.somaAcc/s.comAcc)*100 : null}))
+    .sort((a,b)=> (b.data+b.ultimaHora).localeCompare(a.data+a.ultimaHora))
+    .slice(0,5);
 
   const acoes = [
     {icon:'search', label:'Nova Contagem', onClick:()=>goto('pickCountType')},
@@ -3901,24 +3921,25 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
         <div className="pnl-row">
           <div className="pnl-col-8 pnl-card">
             <div className="pnl-section-head">
-              <div className="pnl-section-title">Últimas Atividades</div>
+              <div className="pnl-section-title">Últimas Contagens</div>
               <button className="pnl-section-link" onClick={()=>goto('concluidas')}>Ver todas <DIcon name="chevronRight" size={13} /></button>
             </div>
             {atividades.length===0 ? (
               <div style={{color:'var(--gray-500)', fontSize:13, padding:'12px 4px'}}>Nenhuma atividade registrada ainda.</div>
             ) : (
               <table className="pnl-table">
-                <thead><tr><th>Status</th><th>Descrição</th><th>Usuário</th><th>Data</th><th>Hora</th></tr></thead>
+                <thead><tr><th>Data</th><th>Usuário</th><th>Almoxarifado</th><th>Itens</th><th>Acuracidade</th></tr></thead>
                 <tbody>
-                  {atividades.map(c=>{
-                    const st = STATUS_INFO[c.statusAprovacao] || {level:c.classificacao.level, text:c.classificacao.rule};
+                  {atividades.map(s=>{
+                    const almoxLabel = s.almoxarifado==='—' ? '—' : ('Almox ' + (/^[0-9]+$/.test(s.almoxarifado) ? s.almoxarifado.padStart(2,'0') : s.almoxarifado));
+                    const accColor = s.acuracidade==null ? 'var(--gray-500)' : s.acuracidade>=85 ? 'var(--ok)' : s.acuracidade>=70 ? 'var(--warn)' : 'var(--danger)';
                     return (
-                      <tr key={c.id}>
-                        <td><span className={"pnl-status "+st.level}><span className="dot"></span>{st.level==='ok'?'Conforme':st.level==='warn'?'Em análise':'Divergente'}</span></td>
-                        <td>{c.descricao}</td>
-                        <td>{c.usuario}</td>
-                        <td>{c.data}</td>
-                        <td>{c.hora}</td>
+                      <tr key={s.usuario+'|'+s.data+'|'+s.almoxarifado}>
+                        <td>{fmtDataBR(s.data)}</td>
+                        <td>{s.usuario}</td>
+                        <td>{almoxLabel}</td>
+                        <td>{s.itens}</td>
+                        <td style={{color:accColor, fontWeight:700}}>{s.acuracidade==null ? '—' : s.acuracidade.toFixed(0)+'%'}</td>
                       </tr>
                     );
                   })}
