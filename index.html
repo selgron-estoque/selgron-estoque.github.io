@@ -215,7 +215,14 @@
      muda .item-code/.item-desc em nenhum outro lugar do app. */
   .count-card-title .item-code{font-size:20px;font-weight:700;letter-spacing:0.3px;}
   .count-card-title .item-desc{font-size:12.5px;font-weight:600;margin-top:2px;}
-  .count-card-location{font-size:12.5px;color:var(--ink-dim);display:flex;align-items:center;gap:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  /* Endereço virou o elemento de MAIOR destaque do cabeçalho do card —
+     cliente marcou com print que o espaço vazio ao lado do código deveria
+     mostrar o endereço em bem mais evidência ("primeira coisa que bate o
+     olho"), já que é a informação que o operador mais precisa pra
+     localizar o item fisicamente antes de recontar. */
+  .count-card-toprow{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;}
+  .count-card-toprow .count-card-title{flex:1;min-width:0;}
+  .count-card-address-badge{display:flex;align-items:center;gap:6px;flex-shrink:0;font-family:var(--font-mono);font-size:16px;font-weight:700;color:var(--safety-ink);background:#FFF3E0;border:1.5px solid var(--safety);border-radius:10px;padding:8px 14px;white-space:nowrap;}
   .count-card-main{display:flex;gap:16px;align-items:stretch;flex:1;}
   .count-card-content{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px;justify-content:center;}
   .count-card-values{display:flex;gap:18px;}
@@ -233,6 +240,8 @@
   @media (max-width:640px){
     .count-card-main{flex-direction:column;}
     .count-card-actions-col{width:100%;flex-direction:row;}
+    .count-card-toprow{flex-direction:column;align-items:stretch;}
+    .count-card-address-badge{align-self:flex-start;}
   }
   /* .count-card-actions — usado pelo estado de "confirmar exclusão"
      (empilha alerta + botões Cancelar/Confirmar), sempre um wrapper
@@ -6332,11 +6341,13 @@ function RecountsPanel({counts, inventories, goto, onDeleteCount, onRefresh}){
                 )}
               </div>
             </div>
-            <div className="count-card-title">
-              <div className="item-code">{c.productCode}</div>
-              <div className="item-desc">{c.descricao}</div>
+            <div className="count-card-toprow">
+              <div className="count-card-title">
+                <div className="item-code">{c.productCode}</div>
+                <div className="item-desc">{c.descricao}</div>
+              </div>
+              <div className="count-card-address-badge"><DIcon name="mapPin" size={16} /> {c.endereco || 'não cadastrado'}</div>
             </div>
-            <div className="count-card-location"><Ic>📍</Ic> {c.endereco || 'não cadastrado'}</div>
             {c.recontagemSolicitadaPeloLider && (
               <div className="divergence-alert"><Ic>⚠</Ic>
                 <span>{c.recontagemSolicitadaPor || 'O líder'} não aceitou a divergência da 1ª contagem e solicitou uma nova contagem em {c.recontagemSolicitadaEm}.</span>
@@ -6492,11 +6503,13 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequ
                 </div>
                 <span className="count-card-date">{c.data}</span>
               </div>
-              <div className="count-card-title">
-                <div className="item-code">{c.productCode}</div>
-                <div className="item-desc">{c.descricao}</div>
+              <div className="count-card-toprow">
+                <div className="count-card-title">
+                  <div className="item-code">{c.productCode}</div>
+                  <div className="item-desc">{c.descricao}</div>
+                </div>
+                <div className="count-card-address-badge"><DIcon name="mapPin" size={16} /> {c.endereco || 'não cadastrado'}</div>
               </div>
-              <div className="count-card-location"><Ic>📍</Ic> {c.endereco || 'não cadastrado'}</div>
               {anterior && (
                 <div style={{padding:'8px 16px 0',fontSize:12,color:'var(--ink-dim)'}}>
                   1ª contagem: {anterior.qtdContada} un. por {anterior.usuario} em {anterior.data} {anterior.hora||''}
@@ -6934,11 +6947,13 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
                 </div>
                 <span className="count-card-date">{tip.data ? tip.data+(tip.hora?' '+tip.hora:'') : 'Sem data registrada'}</span>
               </div>
-              <div className="count-card-title">
-                <div className="item-code">{tip.productCode}</div>
-                <div className="item-desc">{tip.descricao}</div>
+              <div className="count-card-toprow">
+                <div className="count-card-title">
+                  <div className="item-code">{tip.productCode}</div>
+                  <div className="item-desc">{tip.descricao}</div>
+                </div>
+                <div className="count-card-address-badge"><DIcon name="mapPin" size={16} /> {tip.endereco || tip.enderecoContado || 'não cadastrado'}</div>
               </div>
-              <div className="count-card-location"><Ic>📍</Ic> {tip.endereco || tip.enderecoContado || 'não cadastrado'}</div>
               <div className="count-card-values">
                 <div className="cv"><div className="k">Sistema</div><div className="v">{tip.saldoSistema==null ? '—' : tip.saldoSistema}</div></div>
                 <div className="cv"><div className="k">Qtd. Final</div><div className="v">{tip.qtdContada}</div></div>
