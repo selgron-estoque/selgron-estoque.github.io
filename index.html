@@ -1100,6 +1100,7 @@ function usuarioRowToLocal(row){
     senha: row.senha,
     perfil: row.perfil,
     status: row.status,
+    acessosExtras: row.acessos_extras || [],
     atualizadoEm: row.atualizado_em,
   };
 }
@@ -1115,6 +1116,7 @@ async function saveUsuarioToSupabase(user){
       senha: user.senha || null,
       perfil: user.perfil,
       status: user.status || 'ativo',
+      acessos_extras: user.acessosExtras || [],
       atualizado_em: new Date().toISOString(),
     });
     if(error) return {ok:false, erro:error.message};
@@ -1137,6 +1139,7 @@ async function updateUsuarioToSupabase(id, patch){
     if('senha' in patch) row.senha = patch.senha;
     if('perfil' in patch) row.perfil = patch.perfil;
     if('status' in patch) row.status = patch.status;
+    if('acessosExtras' in patch) row.acessos_extras = patch.acessosExtras || [];
     const { error } = await supabaseClient.from('usuarios').update(row).eq('id', id);
     if(error) return {ok:false, erro:error.message};
     return {ok:true};
@@ -2710,6 +2713,20 @@ function App(){
 
   function goto(v, params){ setFlowState(params||null); setView(v); window.scrollTo(0,0); }
 
+  // A navegação (view) sobrevive a recarregar a página — se o usuário
+  // perdeu acesso à tela em que estava (perfil trocado, exceção de acesso
+  // removida, ou simplesmente a navegação persistida de antes desta
+  // funcionalidade existir ainda aponta pra uma tela hoje restrita, ex.:
+  // Indicadores/Relatórios que passaram a exigir líder/admin), volta pra
+  // Home em vez de deixar a tela em branco (nenhuma rota bate a condição de
+  // acesso, `.content` renderiza vazio).
+  useEffect(()=>{
+    if(currentUser && ACESSOS_RESTRITOS[view] && !hasAccess(currentUser, view)){
+      setView('home');
+      setFlowState(null);
+    }
+  }, [currentUser, view]);
+
   function addAddressProposal(p){
     const proposta = {...p, id:'END-'+Math.random().toString(36).slice(2,7).toUpperCase(), status:'pendente'};
     setEnderecosPropostos(prev=>[proposta, ...prev]);
@@ -3234,10 +3251,10 @@ function App(){
         {view==='todasDivergencias' && <AllDivergencesPanel counts={counts} historicoConcluidas={historicoConcluidas} goto={goto} />}
         {view==='concluidas' && <ConcludedCountsPanel counts={counts} historicoConcluidas={historicoConcluidas} onDeleteCount={role==='admin' ? deleteCount : undefined} onRefresh={refreshHistoricoConcluidas} />}
         {view==='recount' && flowState && <RecountFlow original={flowState} user={currentUser} onAddressProposed={addAddressProposal} onFinish={(c)=>{registerFinishedCount(c); goto('recounts');}} />}
-        {view==='dashboard' && <Dashboard counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} historicoParaTendencia={historicoParaTendencia} goto={goto} />}
-        {view==='relatorios' && <ReportsScreen counts={counts} inventories={inventories} currentUser={currentUser} sendHistory={reportSendHistory} onLogSend={logReportSend} role={role} onHistoricoImportado={refreshHistoricoConcluidas} />}
+        {view==='dashboard' && hasAccess(currentUser,'dashboard') && <Dashboard counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} historicoParaTendencia={historicoParaTendencia} goto={goto} />}
+        {view==='relatorios' && hasAccess(currentUser,'relatorios') && <ReportsScreen counts={counts} inventories={inventories} currentUser={currentUser} sendHistory={reportSendHistory} onLogSend={logReportSend} role={role} onHistoricoImportado={refreshHistoricoConcluidas} />}
         {view==='settings' && <Settings role={role} currentUser={currentUser} />}
-        {view==='usuarios' && role==='admin' && (
+        {view==='usuarios' && hasAccess(currentUser,'usuarios') && (
           <UsuariosScreen
             users={users}
             currentUser={currentUser}
@@ -3250,10 +3267,10 @@ function App(){
             passwordHistory={passwordHistory}
           />
         )}
-        {view==='enderecos' && (role==='lider'||role==='admin') && (
+        {view==='enderecos' && hasAccess(currentUser,'enderecos') && (
           <AddressValidationPanel enderecosPropostos={enderecosPropostos} onResolve={resolveAddressProposal} />
         )}
-        {view==='userForm' && role==='admin' && flowState && (
+        {view==='userForm' && hasAccess(currentUser,'usuarios') && flowState && (
           <UserForm
             mode={flowState.mode}
             initialData={flowState.initialData}
@@ -3620,6 +3637,28 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
 
 const ROLE_LABELS = {operador:'Operador', lider:'Líder de Estoque', admin:'Administrador'};
 
+// Telas restritas por perfil, com possibilidade de exceção por usuário —
+// pedido do cliente: "posso dar acesso a abas diferentes pra qualquer
+// operador independente do perfil cadastrado". `hasAccess` centraliza a
+// checagem (perfil já libera OU o usuário está na lista de exceção dele,
+// `acessosExtras`) — usado tanto pelos menus (Sidebar/MobileHomeMenu, via
+// buildSidebarGroups) quanto pela guarda de rota em App(), mesma dupla
+// checagem que o resto do app já faz (visibilidade do link + guarda da
+// rota). Telas fora deste mapa não têm restrição nenhuma (sempre liberado).
+const ACESSOS_RESTRITOS = {
+  dashboard: ['lider','admin'],
+  relatorios: ['lider','admin'],
+  enderecos: ['lider','admin'],
+  usuarios: ['admin'],
+};
+function hasAccess(user, viewId){
+  if(!user) return false;
+  const perfisPadrao = ACESSOS_RESTRITOS[viewId];
+  if(!perfisPadrao) return true;
+  if(perfisPadrao.includes(user.perfil)) return true;
+  return (user.acessosExtras||[]).includes(viewId);
+}
+
 function TopBar({user, role, onHome, onLogout}){
   return (
     <div className="topbar mobile-topbar">
@@ -3686,18 +3725,24 @@ function SubBar({view, goto}){
 // Extraída de `Sidebar` pra ser reaproveitada também por `MobileHomeMenu`
 // (o menu que vira a própria tela inicial no celular) — mesma lista de
 // destinos nos dois lugares, sem duplicar manutenção.
-function buildSidebarGroups(role){
-  const podeValidarEnderecos = role==='lider'||role==='admin';
-  const isAdmin = role==='admin';
+// Recebe o usuário inteiro (não só o perfil) porque a visibilidade de
+// "Endereços"/"Usuários"/"Indicadores"/"Relatórios" agora depende também de
+// `acessosExtras` (exceção concedida por usuário, ver ACESSOS_RESTRITOS/
+// hasAccess) — o perfil sozinho não é mais suficiente pra decidir.
+function buildSidebarGroups(user){
+  const podeVer = viewId => hasAccess(user, viewId);
   // "Usuários" saiu de dentro de Configurações e entrou aqui (pedido do
   // cliente: fazia mais sentido como cadastro do que como configuração do
   // sistema) — mesmo grupo que já tinha "Endereços Pendentes" por razão
-  // parecida. Cada item aparece só pra quem já tinha acesso ao conteúdo
-  // antes (Usuários era admin-only dentro de Configurações; Endereços já
-  // era lider/admin) — o grupo inteiro só existe se sobrar pelo menos 1 item.
+  // parecida. Cada item aparece só pra quem tem acesso (perfil padrão OU
+  // exceção concedida) — o grupo inteiro só existe se sobrar pelo menos 1 item.
   const cadastrosItems = [
-    ...(isAdmin ? [{id:'usuarios', ic:'user', label:'Usuários'}] : []),
-    ...(podeValidarEnderecos ? [{id:'enderecos', ic:'mapPin', label:'Endereços Pendentes'}] : []),
+    ...(podeVer('usuarios') ? [{id:'usuarios', ic:'user', label:'Usuários'}] : []),
+    ...(podeVer('enderecos') ? [{id:'enderecos', ic:'mapPin', label:'Endereços Pendentes'}] : []),
+  ];
+  const analiseItems = [
+    ...(podeVer('dashboard') ? [{id:'dashboard', ic:'barChart', label:'Indicadores'}] : []),
+    ...(podeVer('relatorios') ? [{id:'relatorios', ic:'fileText', label:'Relatórios'}] : []),
   ];
   return [
     { label: null, items: [
@@ -3711,10 +3756,7 @@ function buildSidebarGroups(role){
       {id:'concluidas', ic:'checkCircle', label:'Contagens Concluídas'},
     ]},
     ...(cadastrosItems.length>0 ? [{ label: 'Cadastros', items: cadastrosItems }] : []),
-    { label: 'Análise', items: [
-      {id:'dashboard', ic:'barChart', label:'Indicadores'},
-      {id:'relatorios', ic:'fileText', label:'Relatórios'},
-    ]},
+    ...(analiseItems.length>0 ? [{ label: 'Análise', items: analiseItems }] : []),
     { label: 'Sistema', items: [
       {id:'settings', ic:'settings', label:'Configurações'},
     ]},
@@ -3722,7 +3764,7 @@ function buildSidebarGroups(role){
 }
 
 function Sidebar({view, goto, role, user, collapsed, pendingSync=0}){
-  const groups = buildSidebarGroups(role);
+  const groups = buildSidebarGroups(user);
   return (
     <div className={"sidebar"+(collapsed?' collapsed':'')}>
       <div className="sidebar-brand">
@@ -3820,8 +3862,8 @@ function BottomNav({view, goto, role}){
 // que já se está. `badges` é um mapa {viewId: contador} pros mesmos avisos
 // que já existiam no grid de atalhos antigo (Inventários/Recontagens/
 // Divergentes/Endereços pendentes).
-function MobileHomeMenu({role, goto, badges={}}){
-  const groups = buildSidebarGroups(role);
+function MobileHomeMenu({user, goto, badges={}}){
+  const groups = buildSidebarGroups(user);
   return (
     <div className="mobile-home-menu">
       {groups.map((g,gi)=>(
@@ -3862,7 +3904,7 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
   // divergência que AINDA não entrou em processo de recontagem. Assim que o
   // item vira aguardando_segunda, some daqui (mesma regra da tela).
   const itensDivergentesPendentes = counts.filter(c=>c.statusAprovacao==='aguardando_analise_lider').length;
-  const podeGerir = role==='lider'||role==='admin';
+  const podeGerir = hasAccess(user,'enderecos');
   const pendentesEnderecos = enderecosPropostos.filter(e=>e.status==='pendente').length;
 
   // ---- Dashboard desktop: KPIs, atividades, ações rápidas, situação dos inventários ----
@@ -3937,7 +3979,10 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
       key:'acuracidade', icon:'percent', bg:'#F1E9FB', color:'#7B3FC4',
       label:'Acuracidade do Estoque', value:hoje.acuracidade.toFixed(1)+'%',
       trend:<KpiTrend pct={acuracidadePontos} suffix=" pts" />,
-      onClick:()=>goto('dashboard'),
+      // Sem acesso a Indicadores (perfil não libera nem tem exceção
+      // concedida, ver ACESSOS_RESTRITOS), o card continua mostrando o
+      // número mas não navega pra lugar nenhum.
+      onClick: hasAccess(user,'dashboard') ? ()=>goto('dashboard') : undefined,
     },
   ];
 
@@ -3969,7 +4014,10 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
     {icon:'search', label:'Nova Contagem', onClick:()=>goto('pickCountType')},
     {icon:'checkCircle', label:'Contagens Concluídas', onClick:()=>goto('concluidas')},
     {icon:'repeat', label:'Recontagens', onClick:()=>goto('recounts')},
-    {icon:'fileText', label:'Relatórios', onClick:()=>goto('relatorios')},
+    // Some da lista (não só desabilita) quando o usuário não tem acesso a
+    // Relatórios — mesmo critério de "não deixar link morto" já aplicado no
+    // KPI de Indicadores acima.
+    ...(hasAccess(user,'relatorios') ? [{icon:'fileText', label:'Relatórios', onClick:()=>goto('relatorios')}] : []),
   ];
 
   const planejados = inventories.filter(i=>i.contados===0 && i.status!=='cancelado').length;
@@ -4096,7 +4144,7 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
       </div>
 
       {/* Celular: menu de destinos em vez do Dashboard (ver MobileHomeMenu) */}
-      <MobileHomeMenu role={role} goto={goto} badges={{
+      <MobileHomeMenu user={user} goto={goto} badges={{
         inventories: pendentes,
         recounts: pendentesRecontagem,
         divergentes: itensDivergentesPendentes,
@@ -4132,14 +4180,18 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
             <span className="label">Endereços Pendentes</span>
           </div>
         )}
-        <div className="home-card" onClick={()=>goto('dashboard')}>
-          <span className="icon"><Ic>📊</Ic></span>
-          <span className="label">Indicadores</span>
-        </div>
-        <div className="home-card" onClick={()=>goto('relatorios')}>
-          <span className="icon"><Ic>📄</Ic></span>
-          <span className="label">Relatórios</span>
-        </div>
+        {hasAccess(user,'dashboard') && (
+          <div className="home-card" onClick={()=>goto('dashboard')}>
+            <span className="icon"><Ic>📊</Ic></span>
+            <span className="label">Indicadores</span>
+          </div>
+        )}
+        {hasAccess(user,'relatorios') && (
+          <div className="home-card" onClick={()=>goto('relatorios')}>
+            <span className="icon"><Ic>📄</Ic></span>
+            <span className="label">Relatórios</span>
+          </div>
+        )}
         <div className="home-card" onClick={()=>goto('settings')}>
           <span className="icon"><Ic>⚙</Ic></span>
           <span className="label">Configurações</span>
@@ -7378,8 +7430,17 @@ const PERFIL_OPTIONS = [
 ];
 
 function emptyUserForm(){
-  return {nome:'', usuario:'', email:'', senha:'', perfil:'operador'};
+  return {nome:'', usuario:'', email:'', senha:'', perfil:'operador', acessosExtras:[]};
 }
+
+// Rótulo curto de cada tela restrita, pros checkboxes de "Acessos extras" no
+// UserForm — mesmos ids usados em ACESSOS_RESTRITOS/buildSidebarGroups.
+const ACESSOS_EXTRAS_LABELS = {
+  dashboard: 'Indicadores',
+  relatorios: 'Relatórios',
+  enderecos: 'Endereços Pendentes',
+  usuarios: 'Usuários',
+};
 
 // Verifica se o login já está em uso por OUTRO usuário (case-insensitive,
 // mesma normalização usada no login real). Na edição, exclui o próprio
@@ -7528,10 +7589,16 @@ function UserManagementPanel({users, currentUser, goto, onToggleUserStatus, onDe
 function UserForm({mode, initialData, users, onCreateUser, onUpdateUser, onSaved, onCancel}){
   const isEdit = mode!=='new';
   const [form, setForm] = useState(isEdit && initialData
-    ? {nome:initialData.nome, usuario:initialData.usuario, email:initialData.email||'', senha:'', perfil:initialData.perfil}
+    ? {nome:initialData.nome, usuario:initialData.usuario, email:initialData.email||'', senha:'', perfil:initialData.perfil, acessosExtras:initialData.acessosExtras||[]}
     : emptyUserForm());
   const [feedback, setFeedback] = useState('');
   const [salvando, setSalvando] = useState(false);
+
+  function toggleAcessoExtra(viewId){
+    setForm(f=>({...f, acessosExtras: f.acessosExtras.includes(viewId)
+      ? f.acessosExtras.filter(v=>v!==viewId)
+      : [...f.acessosExtras, viewId]}));
+  }
 
   async function submitForm(e){
     e.preventDefault();
@@ -7545,9 +7612,9 @@ function UserForm({mode, initialData, users, onCreateUser, onUpdateUser, onSaved
     let res;
     if(!isEdit){
       if(!form.senha || form.senha.length<6){ setFeedback('Defina uma senha inicial com pelo menos 6 caracteres.'); setSalvando(false); return; }
-      res = await onCreateUser({nome:form.nome.trim(), usuario:form.usuario.trim(), email:form.email.trim(), senha:form.senha, perfil:form.perfil});
+      res = await onCreateUser({nome:form.nome.trim(), usuario:form.usuario.trim(), email:form.email.trim(), senha:form.senha, perfil:form.perfil, acessosExtras:form.acessosExtras});
     } else {
-      res = await onUpdateUser(mode, {nome:form.nome.trim(), usuario:form.usuario.trim(), email:form.email.trim(), perfil:form.perfil});
+      res = await onUpdateUser(mode, {nome:form.nome.trim(), usuario:form.usuario.trim(), email:form.email.trim(), perfil:form.perfil, acessosExtras:form.acessosExtras});
     }
     setSalvando(false);
     if(res && res.ok){
@@ -7585,6 +7652,26 @@ function UserForm({mode, initialData, users, onCreateUser, onUpdateUser, onSaved
           <select value={form.perfil} onChange={e=>setForm(f=>({...f,perfil:e.target.value}))}>
             {PERFIL_OPTIONS.map(p=><option key={p.v} value={p.v}>{p.label}</option>)}
           </select>
+        </div>
+        <div className="field">
+          <label>Acessos extras (além do que o perfil já libera)</label>
+          <div style={{display:'flex',flexDirection:'column',gap:8}}>
+            {Object.keys(ACESSOS_EXTRAS_LABELS).map(viewId=>{
+              const jaIncluso = ACESSOS_RESTRITOS[viewId].includes(form.perfil);
+              return (
+                <label key={viewId} style={{display:'flex',alignItems:'center',gap:8,fontSize:13,color: jaIncluso ? 'var(--ink-dim)' : 'var(--ink)'}}>
+                  <input
+                    type="checkbox"
+                    checked={jaIncluso || form.acessosExtras.includes(viewId)}
+                    disabled={jaIncluso}
+                    onChange={()=>toggleAcessoExtra(viewId)}
+                  />
+                  {ACESSOS_EXTRAS_LABELS[viewId]}
+                  {jaIncluso && <span style={{fontSize:11.5}}> (já incluso no perfil selecionado)</span>}
+                </label>
+              );
+            })}
+          </div>
         </div>
         <div className="btn-row">
           <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={salvando}>Cancelar</button>

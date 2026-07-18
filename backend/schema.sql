@@ -43,6 +43,11 @@ create table usuarios (
   senha text,                       -- texto puro, mesma limitação já documentada no README
   perfil text not null check (perfil in ('operador','lider','admin')),
   status text not null default 'ativo' check (status in ('ativo','bloqueado','deve_definir_senha')),
+  -- Exceção de acesso por usuário, independente do perfil cadastrado (ex.:
+  -- dar acesso a "Indicadores"/"Relatórios" pra um operador específico sem
+  -- promovê-lo a líder) — ver ACESSOS_RESTRITOS/hasAccess no index.html.
+  -- Só ADICIONA acesso além do que o perfil já libera, nunca remove.
+  acessos_extras jsonb not null default '[]'::jsonb,
   criado_em timestamptz not null default now(),
   atualizado_em timestamptz not null default now()
 );
@@ -597,3 +602,10 @@ create policy "exclusão pública" on usuarios for delete using (true);
 -- ENDEREÇOS PROPOSTOS — tabela nova, não existia antes (com este nome); só o
 -- `create table enderecos_propostos` de verdade (mais acima neste arquivo,
 -- junto das RLS logo depois) precisa ser rodado — nada mais pra migrar aqui.
+
+-- ACESSOS EXTRAS POR USUÁRIO — pedido do cliente: "posso dar acesso a abas
+-- diferentes pra qualquer operador independente do perfil cadastrado". A
+-- tabela `usuarios` do projeto real já existe e está populada (migração
+-- acima já foi aplicada) — `add column if not exists` em vez de recriar,
+-- mesmo padrão já usado pra `inventarios.grupo`/`contagens.almoxarifado`.
+alter table usuarios add column if not exists acessos_extras jsonb not null default '[]'::jsonb;
