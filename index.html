@@ -140,6 +140,20 @@
   .chip-input .chip button{background:none;border:none;color:inherit;font-size:16px;line-height:1;cursor:pointer;padding:0 2px;}
   .chip-input input{flex:1;min-width:90px;border:none;background:none;padding:6px 4px;font-size:16px;color:var(--ink);}
   .chip-input input:focus{outline:none;}
+
+  /* Botão de liga/desliga (toggle switch) — usado em "Acessos extras" no
+     UserForm, preferido pelo cliente em vez de checkbox simples. Estrutura
+     clássica: input checkbox escondido + track/thumb desenhados via CSS. */
+  .toggle-switch-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:10px 0;border-bottom:1px solid var(--line);}
+  .toggle-switch-row:last-child{border-bottom:none;}
+  .toggle-switch{position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0;cursor:pointer;}
+  .toggle-switch input{opacity:0;width:0;height:0;position:absolute;}
+  .toggle-switch-track{position:absolute;inset:0;background:var(--line);border-radius:999px;transition:background .15s ease;}
+  .toggle-switch-track::before{content:'';position:absolute;top:2px;left:2px;width:20px;height:20px;background:#fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:transform .15s ease;}
+  .toggle-switch input:checked + .toggle-switch-track{background:var(--safety);}
+  .toggle-switch input:checked + .toggle-switch-track::before{transform:translateX(20px);}
+  .toggle-switch input:disabled + .toggle-switch-track{opacity:.55;cursor:not-allowed;}
+  .toggle-switch input:focus-visible + .toggle-switch-track{outline:2px solid var(--accent2);outline-offset:2px;}
   .grupo-suggestions{margin-top:6px;max-height:260px;overflow-y:auto;background:var(--panel-raised);border:1px solid var(--line);border-radius:8px;}
   .grupo-suggestion-item{display:block;width:100%;text-align:left;background:none;border:none;border-bottom:1px solid var(--line);color:var(--ink);padding:11px 14px;font-size:14px;cursor:pointer;}
   .grupo-suggestion-item:last-child{border-bottom:none;}
@@ -7655,20 +7669,26 @@ function UserForm({mode, initialData, users, onCreateUser, onUpdateUser, onSaved
         </div>
         <div className="field">
           <label>Acessos extras (além do que o perfil já libera)</label>
-          <div style={{display:'flex',flexDirection:'column',gap:8}}>
+          <div>
             {Object.keys(ACESSOS_EXTRAS_LABELS).map(viewId=>{
               const jaIncluso = ACESSOS_RESTRITOS[viewId].includes(form.perfil);
+              const ligado = jaIncluso || form.acessosExtras.includes(viewId);
               return (
-                <label key={viewId} style={{display:'flex',alignItems:'center',gap:8,fontSize:13,color: jaIncluso ? 'var(--ink-dim)' : 'var(--ink)'}}>
-                  <input
-                    type="checkbox"
-                    checked={jaIncluso || form.acessosExtras.includes(viewId)}
-                    disabled={jaIncluso}
-                    onChange={()=>toggleAcessoExtra(viewId)}
-                  />
-                  {ACESSOS_EXTRAS_LABELS[viewId]}
-                  {jaIncluso && <span style={{fontSize:11.5}}> (já incluso no perfil selecionado)</span>}
-                </label>
+                <div key={viewId} className="toggle-switch-row">
+                  <span style={{fontSize:13,color: jaIncluso ? 'var(--ink-dim)' : 'var(--ink)'}}>
+                    {ACESSOS_EXTRAS_LABELS[viewId]}
+                    {jaIncluso && <span style={{fontSize:11.5}}> (já incluso no perfil selecionado)</span>}
+                  </span>
+                  <label className="toggle-switch">
+                    <input
+                      type="checkbox"
+                      checked={ligado}
+                      disabled={jaIncluso}
+                      onChange={()=>toggleAcessoExtra(viewId)}
+                    />
+                    <span className="toggle-switch-track"></span>
+                  </label>
+                </div>
               );
             })}
           </div>
