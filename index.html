@@ -505,12 +505,7 @@
     .sidebar-nav-item:hover{background:rgba(255,255,255,0.07);}
     .sidebar-nav-item.active{background:var(--safety);color:var(--safety-ink);font-weight:600;}
     .sidebar-nav-item .ic{width:18px;height:18px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
-    .sidebar-shortcuts{padding:16px 20px 18px;border-top:1px solid rgba(255,255,255,0.08);margin-top:auto;width:264px;flex-shrink:0;box-sizing:border-box;}
-    .sidebar-section-title{font-family:var(--font-mono);font-size:10px;text-transform:uppercase;letter-spacing:1px;color:rgba(255,255,255,0.45);margin-bottom:10px;}
-    .sidebar-shortcut{display:flex;align-items:center;justify-content:space-between;width:100%;background:none;border:none;color:rgba(255,255,255,0.75);font-size:12.5px;padding:8px 2px;text-align:left;}
-    .sidebar-shortcut:hover{color:#fff;}
-    .sidebar-shortcut span{color:var(--safety);font-weight:700;}
-    .sidebar-footer{padding:14px 20px 20px;border-top:1px solid rgba(255,255,255,0.08);font-family:var(--font-corp);font-size:11px;color:rgba(255,255,255,0.45);display:flex;flex-direction:column;gap:6px;width:264px;flex-shrink:0;box-sizing:border-box;}
+    .sidebar-footer{padding:14px 20px 20px;border-top:1px solid rgba(255,255,255,0.08);margin-top:auto;font-family:var(--font-corp);font-size:11px;color:rgba(255,255,255,0.45);display:flex;flex-direction:column;gap:6px;width:264px;flex-shrink:0;box-sizing:border-box;}
     .sidebar-footer .status{display:flex;align-items:center;gap:6px;color:rgba(255,255,255,0.6);}
     .sidebar-footer .status .dot{width:6px;height:6px;border-radius:50%;background:var(--ok);flex-shrink:0;}
     .sidebar-footer .sf-user{display:flex;align-items:center;gap:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.08);color:rgba(255,255,255,0.72);font-weight:600;}
@@ -3641,13 +3636,6 @@ function Sidebar({view, goto, role, user, collapsed, pendingSync=0}){
     {id:'relatorios', ic:'fileText', label:'Relatórios'},
     {id:'settings', ic:'settings', label:'Configurações'},
   ];
-  const shortcuts = [
-    {id:'pickCountType', label:'Nova contagem'},
-    {id:'myCounts', label:'Minhas contagens'},
-    {id:'recounts', label:'Recontagens pendentes'},
-    {id:'divergentes', label:'Itens divergentes'},
-    ...(podeValidarEnderecos ? [{id:'enderecos', label:'Endereços pendentes'}] : []),
-  ];
   return (
     <div className={"sidebar"+(collapsed?' collapsed':'')}>
       <div className="sidebar-brand">
@@ -3662,12 +3650,6 @@ function Sidebar({view, goto, role, user, collapsed, pendingSync=0}){
           </button>
         ))}
       </nav>
-      <div className="sidebar-shortcuts">
-        <div className="sidebar-section-title">Atalhos rápidos</div>
-        {shortcuts.map(s=>(
-          <button key={s.id+s.label} className="sidebar-shortcut" onClick={()=>goto(s.id)}>{s.label}<span>+</span></button>
-        ))}
-      </div>
       <div className="sidebar-footer">
         <div className="status"><span className="dot"></span>Sistema operacional</div>
         <div>Versão 1.0.0</div>
