@@ -203,3 +203,42 @@ que a migração foi bem.
   `index.html`, sem precisar mexer no banco.
 - **9.9 é o único passo que pode travar tráfego de verdade** se rodado cedo
   demais — por isso é sempre o último, e só depois do 9.8 confirmado.
+
+## 10. Sincronização em tempo real (Supabase Realtime)
+
+Depois da migração de login, o app trocou o polling de 30s (cada aparelho
+perguntando "tem algo novo?" de tempos em tempos) por sincronização
+instantânea via Supabase Realtime — contagens, inventários, endereços
+propostos e usuários agora aparecem em outros aparelhos na hora, sem
+esperar.
+
+**10.1 — Confirmar o estado da publicação de Realtime** (SQL Editor):
+
+```sql
+select schemaname, tablename from pg_publication_tables where pubname = 'supabase_realtime';
+```
+
+Se alguma das 4 tabelas (`contagens`, `inventarios`, `enderecos_propostos`,
+`usuarios`) já aparecer na lista, remova-a do comando do passo 10.2 antes
+de rodar (evita erro de "already member of publication").
+
+**10.2 — Habilitar a replicação** (SQL Editor):
+
+```sql
+alter publication supabase_realtime add table contagens, inventarios, enderecos_propostos, usuarios;
+```
+
+Não precisa de nenhuma policy de RLS nova — o Realtime já respeita as
+policies `auth.role() = 'authenticated'` que essas tabelas já têm (seção 9.9
+acima).
+
+**10.3 — Publicar o novo `index.html`** (o commit/push já entrega isso) —
+sem risco de travar login/contagem: se o Realtime não conseguir conectar
+por algum motivo, a carga inicial de dados (fetch normal, mesmo de sempre)
+continua funcionando, só a atualização instantânea entre aparelhos que
+fica comprometida até resolver.
+
+**10.4 — Testar com dois aparelhos (ou duas abas do navegador)**: logado
+nos dois ao mesmo tempo, crie/edite algo num (uma contagem, um inventário,
+um usuário) e confirme que aparece no outro em poucos segundos, sem
+precisar recarregar a página.

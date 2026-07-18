@@ -797,3 +797,25 @@ create policy "atualização autenticada" on enderecos_propostos for update usin
 
 drop policy "escrita pública" on estoque_saldo;
 create policy "escrita autenticada" on estoque_saldo for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+
+-- =============================================================================
+-- SINCRONIZAÇÃO EM TEMPO REAL (Supabase Realtime) — substitui o polling de
+-- 30s que o front-end usava antes pra saber que outro aparelho gravou algo
+-- novo. Cliente confirmou que prefere sincronização instantânea (próximo
+-- passo do produto é um inventário geral, com mais aparelhos contando ao
+-- mesmo tempo — 30s de atraso vira um problema real nesse cenário: dois
+-- operadores podem pegar o mesmo item "na vez" antes do outro aparelho
+-- saber que já foi contado).
+--
+-- Só precisa habilitar a REPLICAÇÃO dessas 4 tabelas na publicação padrão
+-- do Supabase (`supabase_realtime`) — nenhuma policy de RLS nova, o
+-- Realtime já respeita as policies `auth.role() = 'authenticated'` (ver
+-- bloco "ENDURECIMENTO DE RLS" logo acima) pra decidir o que cada cliente
+-- conectado pode receber.
+--
+-- Rodar a introspecção abaixo ANTES, pra confirmar que a publicação já
+-- existe e nenhuma dessas tabelas já está nela (evita erro de "already
+-- member of publication" se alguém já tiver habilitado antes):
+--   select schemaname, tablename from pg_publication_tables where pubname = 'supabase_realtime';
+-- =============================================================================
+alter publication supabase_realtime add table contagens, inventarios, enderecos_propostos, usuarios;

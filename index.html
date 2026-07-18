@@ -1075,6 +1075,35 @@ async function incrementContadosSupabase(invId){
   }
 }
 
+// Merge genérico por `id`, com desempate por um campo de timestamp — a
+// mesma lógica que já existia repetida quase igual em cada ciclo de
+// sincronização (contagens, endereços propostos, usuários). Usado tanto
+// pelo fetch de reconciliação (na carga inicial e sempre que um canal do
+// Realtime reconecta, ver assinatura dos canais em App()) quanto pelos
+// handlers de evento INSERT/UPDATE do próprio Realtime.
+// `removeMissing:true` só faz sentido chamando com a lista REMOTA COMPLETA
+// (fetch de reconciliação) — nunca passar isso ao processar um único
+// evento do Realtime, ou tudo que não for aquele um registro seria removido
+// por engano.
+function mergeByIdComTimestamp(prev, incoming, {timestampField, removeMissing=false}={}){
+  const byId = new Map(prev.map(item=>[item.id, item]));
+  incoming.forEach(inc=>{
+    const local = byId.get(inc.id);
+    if(!local){
+      byId.set(inc.id, inc);
+    } else {
+      const remoteTs = inc[timestampField] ? new Date(inc[timestampField]).getTime() : 0;
+      const localTs = local[timestampField] ? new Date(local[timestampField]).getTime() : 0;
+      if(remoteTs >= localTs) byId.set(inc.id, {...local, ...inc});
+    }
+  });
+  if(removeMissing){
+    const incomingIds = new Set(incoming.map(i=>i.id));
+    return Array.from(byId.values()).filter(item=>incomingIds.has(item.id));
+  }
+  return Array.from(byId.values());
+}
+
 // Busca inventários gravados em QUALQUER aparelho — mesma lógica de
 // fetchContagensFromSupabase, usada pra mesclar progresso feito em outros
 // aparelhos no mesmo inventário.
@@ -1084,6 +1113,27 @@ async function incrementContadosSupabase(invId){
 // App()) poder remover localmente um inventário ausente no Supabase com
 // segurança: se tratasse falha de rede como "lista vazia", uma queda de
 // conexão apagaria todos os inventários locais por engano.
+// Extraído do corpo de `fetchInventoriesFromSupabase` (mesmo padrão dos
+// outros 3 mappers `*RowToLocal` deste arquivo) — precisa existir como
+// função nomeada porque o handler de Realtime de `inventarios` (ver
+// assinatura dos canais, perto de `countsRef`) também mapeia uma linha
+// isolada vinda de `payload.new`, não só o array inteiro de um fetch.
+function inventarioRowToLocal(row){
+  return {
+    id: row.id,
+    nome: row.nome,
+    almoxarifado: row.almoxarifado,
+    responsavel: row.responsavel,
+    data: row.data,
+    tipo: row.tipo,
+    qtdItens: row.qtd_itens,
+    status: row.status,
+    contados: row.contados,
+    ...(row.itens_importados ? {itensImportados: row.itens_importados} : {}),
+    ...(row.grupo ? {grupo: row.grupo} : {}),
+  };
+}
+
 async function fetchInventoriesFromSupabase(){
   if(!supabaseClient) return null;
   try{
@@ -1093,19 +1143,7 @@ async function fetchInventoriesFromSupabase(){
       .order('criado_em', {ascending:false})
       .limit(200);
     if(error || !data) return null;
-    return data.map(row=>({
-      id: row.id,
-      nome: row.nome,
-      almoxarifado: row.almoxarifado,
-      responsavel: row.responsavel,
-      data: row.data,
-      tipo: row.tipo,
-      qtdItens: row.qtd_itens,
-      status: row.status,
-      contados: row.contados,
-      ...(row.itens_importados ? {itensImportados: row.itens_importados} : {}),
-      ...(row.grupo ? {grupo: row.grupo} : {}),
-    }));
+    return data.map(inventarioRowToLocal);
   }catch(err){
     console.warn('Falha ao buscar inventários do Supabase:', err);
     return null;
@@ -2814,29 +2852,32 @@ function App(){
   async function refreshUsuarios(){
     const remoteUsers = await fetchUsuariosFromSupabase();
     if(remoteUsers===null) return;
-    setUsers(prev=>{
-      const remoteIds = new Set(remoteUsers.map(u=>u.id));
-      const byId = new Map(prev.map(u=>[u.id, u]));
-      remoteUsers.forEach(ru=>{
-        const local = byId.get(ru.id);
-        if(!local){
-          byId.set(ru.id, ru);
-        } else {
-          const remoteTs = ru.atualizadoEm ? new Date(ru.atualizadoEm).getTime() : 0;
-          const localTs = local.atualizadoEm ? new Date(local.atualizadoEm).getTime() : 0;
-          if(remoteTs >= localTs) byId.set(ru.id, {...local, ...ru});
-        }
-      });
-      return Array.from(byId.values()).filter(u=>remoteIds.has(u.id));
-    });
+    setUsers(prev=>mergeByIdComTimestamp(prev, remoteUsers, {timestampField:'atualizadoEm', removeMissing:true}));
   }
+  // Sincronização em tempo real (Supabase Realtime) — substitui o polling de
+  // 30s que existia aqui antes. Um evento INSERT/UPDATE atualiza só a linha
+  // afetada (via `usuarioRowToLocal`, mesmo mapper do fetch); DELETE remove
+  // localmente (propaga exclusão feita em outro aparelho, mesmo
+  // comportamento que o polling antigo já tinha). O fetch completo
+  // (`refreshUsuarios`) só roda quando o canal conecta/reconecta
+  // (`status==='SUBSCRIBED'`, dispara na conexão inicial e em toda
+  // reconexão automática) — cobre qualquer mudança perdida enquanto o canal
+  // estava desconectado, já que o Realtime não garante reentrega de eventos
+  // de quando o cliente não estava ouvindo.
   useEffect(()=>{
     if(!supabaseClient || !podeGerenciarUsuarios) return;
-    let cancelled = false;
-    async function tick(){ if(!cancelled) await refreshUsuarios(); }
-    tick();
-    const interval = setInterval(tick, 30000);
-    return ()=>{ cancelled = true; clearInterval(interval); };
+    const channel = supabaseClient
+      .channel('realtime:usuarios')
+      .on('postgres_changes', {event:'*', schema:'public', table:'usuarios'}, payload=>{
+        if(payload.eventType==='DELETE'){
+          setUsers(prev=>prev.filter(u=>u.id!==payload.old.id));
+        } else {
+          const row = usuarioRowToLocal(payload.new);
+          setUsers(prev=>mergeByIdComTimestamp(prev, [row], {timestampField:'atualizadoEm'}));
+        }
+      })
+      .subscribe(status=>{ if(status==='SUBSCRIBED') refreshUsuarios(); });
+    return ()=>{ supabaseClient.removeChannel(channel); };
   }, [podeGerenciarUsuarios]);
 
   // Reflete `getPendingIncrements().length` (ver index.html perto de
@@ -3143,39 +3184,23 @@ function App(){
   }, [currentUser]);
 
   // ---- Sincronização de inventários/contagens com o Supabase ----
-  // localStorage continua sendo a fonte imediata (funciona offline, mostra na
-  // hora o que o próprio aparelho fez); a cada 30s este ciclo faz DUAS coisas:
+  // localStorage continua sendo a fonte imediata (mostra na hora o que o
+  // próprio aparelho fez) — os dois efeitos abaixo cobrem duas coisas
+  // DIFERENTES: este primeiro é só a fila de retry de GRAVAÇÕES que
+  // falharam; o segundo (logo abaixo) é a sincronização de LEITURA com
+  // outros aparelhos, agora via Realtime em vez de polling.
   //
-  // 1) RETRY: reenvia qualquer contagem ainda marcada `_syncPendente` (ver
-  //    registerFinishedCount) e qualquer incremento de inventário que tenha
-  //    falhado antes (ver getPendingIncrements/incrementContadosSupabase) —
-  //    é o que garante que um aparelho que ficou offline no meio de uma
-  //    contagem sinconiza sozinho assim que a rede voltar, sem precisar
-  //    ninguém abrir aquele tablet especificamente.
-  // 2) RECONCILIA com o que veio do Supabase:
-  //    - Contagens: além de ADICIONAR as que não existem localmente ainda,
-  //      agora também ATUALIZA uma já conhecida quando o `atualizadoEm`
-  //      remoto for igual ou mais novo que o local — é o que faz a decisão
-  //      do líder (aprovar/rejeitar divergência) aparecer nos outros
-  //      aparelhos, já que essas ações agora gravam no Supabase de verdade
-  //      (ver approveDivergence/requestRecountFromOperator).
-  //    - Inventários: mantém a lógica de "só sobrescreve se `contados`
-  //      remoto for >= local" (evita voltar atrás um progresso que acabou
-  //      de ser incrementado localmente), e AGORA TAMBÉM remove localmente
-  //      um inventário ausente da busca remota — a exclusão feita em outro
-  //      aparelho se propaga. Só é seguro remover porque `fetchInventories
-  //      FromSupabase` retorna `null` (não `[]`) quando a busca FALHA, então
-  //      uma queda de rede nunca é confundida com "lista vazia de verdade".
-  //    - Endereços propostos: só aditivo + atualiza por `atualizadoEm`,
-  //      igual contagens — nunca remove (proposta nunca é deletada, só muda
-  //      de status). `users` NÃO entra aqui — tem seu próprio ciclo de sync
-  //      independente, que roda mesmo antes do login (ver useEffect logo
-  //      acima de `countsRef`).
+  // Fila de retry de GRAVAÇÕES que falharam — contagens marcadas
+  // `_syncPendente` (ver registerFinishedCount) e incrementos de inventário
+  // que falharam antes (ver getPendingIncrements/incrementContadosSupabase).
+  // Independente da sincronização de LEITURA logo abaixo (que agora é via
+  // Realtime, não polling) — é o que garante que um aparelho que ficou
+  // offline no meio de uma contagem sincroniza sozinho assim que a rede
+  // voltar, sem precisar ninguém abrir aquele tablet especificamente.
   useEffect(()=>{
     if(!currentUser || !supabaseClient) return;
     let cancelled = false;
-    async function sync(){
-      // --- 1) retry de gravações pendentes ---
+    async function retry(){
       const contagensPendentes = countsRef.current.filter(c=>c._syncPendente);
       for(const c of contagensPendentes){
         if(cancelled) return;
@@ -3188,64 +3213,105 @@ function App(){
         await incrementContadosSupabase(invId); // já cuida de add/remove da fila sozinho
       }
       if(!cancelled) setPendingIncrementsCount(getPendingIncrements().length);
-
-      // --- 2) reconciliação com o Supabase ---
-      const [remoteInv, remoteCounts, remoteEnderecos] = await Promise.all([
-        fetchInventoriesFromSupabase(),
-        fetchContagensFromSupabase(),
-        fetchEnderecosPropostosFromSupabase(),
-      ]);
-      if(cancelled) return;
-      if(remoteInv !== null){
-        setInventories(prev=>{
-          const remoteIds = new Set(remoteInv.map(i=>i.id));
-          const byId = new Map(prev.map(i=>[i.id, i]));
-          remoteInv.forEach(ri=>{
-            const local = byId.get(ri.id);
-            if(!local || ri.contados >= local.contados) byId.set(ri.id, {...local, ...ri});
-          });
-          return Array.from(byId.values()).filter(i=>remoteIds.has(i.id));
-        });
-      }
-      if(remoteCounts.length){
-        setCounts(prev=>{
-          const byId = new Map(prev.map(c=>[c.id, c]));
-          remoteCounts.forEach(rc=>{
-            const local = byId.get(rc.id);
-            if(!local){
-              byId.set(rc.id, rc);
-            } else {
-              const remoteTs = rc.atualizadoEm ? new Date(rc.atualizadoEm).getTime() : 0;
-              const localTs = local.atualizadoEm ? new Date(local.atualizadoEm).getTime() : 0;
-              if(remoteTs >= localTs) byId.set(rc.id, {...local, ...rc});
-            }
-          });
-          return Array.from(byId.values());
-        });
-      }
-      // Endereços propostos: só aditivo + atualiza por `atualizadoEm`, nunca
-      // remove — a proposta nunca é deletada no app, só muda de status (ver
-      // AddressValidationPanel/resolveAddressProposal).
-      if(remoteEnderecos.length){
-        setEnderecosPropostos(prev=>{
-          const byId = new Map(prev.map(e=>[e.id, e]));
-          remoteEnderecos.forEach(re=>{
-            const local = byId.get(re.id);
-            if(!local){
-              byId.set(re.id, re);
-            } else {
-              const remoteTs = re.atualizadoEm ? new Date(re.atualizadoEm).getTime() : 0;
-              const localTs = local.atualizadoEm ? new Date(local.atualizadoEm).getTime() : 0;
-              if(remoteTs >= localTs) byId.set(re.id, {...local, ...re});
-            }
-          });
-          return Array.from(byId.values());
-        });
-      }
     }
-    sync();
-    const interval = setInterval(sync, 30000);
+    retry();
+    const interval = setInterval(retry, 30000);
     return ()=>{ cancelled = true; clearInterval(interval); };
+  }, [currentUser]);
+
+  // ---- Sincronização em tempo real (Supabase Realtime) — contagens,
+  // inventários e endereços propostos ----
+  // Substitui o polling de 30s que existia aqui antes (o cliente confirmou
+  // que prefere sincronização instantânea entre aparelhos, aceitando que o
+  // app dependa de conexão pro caso comum — ver CLAUDE.md). Cada canal
+  // recebe um evento assim que OUTRO aparelho grava/atualiza/exclui uma
+  // linha — não precisa mais esperar até 30s pra um tablet ver o progresso
+  // de outro no mesmo inventário. `users` tem seu próprio canal
+  // independente (ver useEffect logo acima de `countsRef`).
+  //
+  // Cada canal aplica a MESMA regra de merge que o polling antigo já
+  // usava: contagens/endereços por `atualizadoEm` (`mergeByIdComTimestamp`),
+  // inventários por `contados >= local.contados` (não tem coluna de
+  // timestamp, então mantém a lógica própria). DELETE remove localmente
+  // (contagens/inventários podem ser excluídos — deleteCount/
+  // deleteInventory; endereços propostos nunca são deletados, só mudam de
+  // status, então não trata DELETE ali).
+  //
+  // Um evento isolado do Realtime só atualiza a LINHA daquele evento — o
+  // fetch completo (mesma reconciliação de sempre) só roda quando cada
+  // canal conecta/reconecta (`status==='SUBSCRIBED'`, dispara na conexão
+  // inicial e em toda reconexão automática), pra cobrir qualquer mudança
+  // perdida enquanto o canal estava desconectado (o Realtime não garante
+  // reentrega de eventos de quando o cliente não estava ouvindo).
+  useEffect(()=>{
+    if(!currentUser || !supabaseClient) return;
+
+    const canalContagens = supabaseClient
+      .channel('realtime:contagens')
+      .on('postgres_changes', {event:'*', schema:'public', table:'contagens'}, payload=>{
+        if(payload.eventType==='DELETE'){
+          setCounts(prev=>prev.filter(c=>c.id!==payload.old.id));
+        } else {
+          const row = contagemRowToLocal(payload.new);
+          setCounts(prev=>mergeByIdComTimestamp(prev, [row], {timestampField:'atualizadoEm'}));
+        }
+      })
+      .subscribe(status=>{
+        if(status!=='SUBSCRIBED') return;
+        fetchContagensFromSupabase().then(remote=>{
+          if(remote.length) setCounts(prev=>mergeByIdComTimestamp(prev, remote, {timestampField:'atualizadoEm'}));
+        });
+      });
+
+    const canalInventarios = supabaseClient
+      .channel('realtime:inventarios')
+      .on('postgres_changes', {event:'*', schema:'public', table:'inventarios'}, payload=>{
+        if(payload.eventType==='DELETE'){
+          setInventories(prev=>prev.filter(i=>i.id!==payload.old.id));
+        } else {
+          const row = inventarioRowToLocal(payload.new);
+          setInventories(prev=>{
+            const byId = new Map(prev.map(i=>[i.id, i]));
+            const local = byId.get(row.id);
+            if(!local || row.contados >= local.contados) byId.set(row.id, {...local, ...row});
+            return Array.from(byId.values());
+          });
+        }
+      })
+      .subscribe(status=>{
+        if(status!=='SUBSCRIBED') return;
+        fetchInventoriesFromSupabase().then(remoteInv=>{
+          if(remoteInv===null) return;
+          setInventories(prev=>{
+            const remoteIds = new Set(remoteInv.map(i=>i.id));
+            const byId = new Map(prev.map(i=>[i.id, i]));
+            remoteInv.forEach(ri=>{
+              const local = byId.get(ri.id);
+              if(!local || ri.contados >= local.contados) byId.set(ri.id, {...local, ...ri});
+            });
+            return Array.from(byId.values()).filter(i=>remoteIds.has(i.id));
+          });
+        });
+      });
+
+    const canalEnderecos = supabaseClient
+      .channel('realtime:enderecos_propostos')
+      .on('postgres_changes', {event:'*', schema:'public', table:'enderecos_propostos'}, payload=>{
+        const row = enderecoPropostoRowToLocal(payload.new);
+        setEnderecosPropostos(prev=>mergeByIdComTimestamp(prev, [row], {timestampField:'atualizadoEm'}));
+      })
+      .subscribe(status=>{
+        if(status!=='SUBSCRIBED') return;
+        fetchEnderecosPropostosFromSupabase().then(remote=>{
+          if(remote.length) setEnderecosPropostos(prev=>mergeByIdComTimestamp(prev, remote, {timestampField:'atualizadoEm'}));
+        });
+      });
+
+    return ()=>{
+      supabaseClient.removeChannel(canalContagens);
+      supabaseClient.removeChannel(canalInventarios);
+      supabaseClient.removeChannel(canalEnderecos);
+    };
   }, [currentUser]);
 
   // Evita mostrar a tela de login por uma fração de segundo pra quem já tem
