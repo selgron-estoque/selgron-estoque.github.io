@@ -732,6 +732,21 @@ const supabaseClient = window.supabase
   ? window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY)
   : null;
 
+// Garante que o socket do Realtime carregue o JWT de quem está logado —
+// sem isso, os canais de postgres_changes (ver App(), perto de countsRef)
+// silenciosamente não recebem NENHUM evento, porque a policy de RLS
+// `auth.role() = 'authenticated'` das 4 tabelas nunca é satisfeita do lado
+// de quem RECEBE o evento (a conexão do socket fica anônima por padrão até
+// alguém anexar o token). Chamado sempre que a sessão muda (ver App(),
+// getSession()/onAuthStateChange) — não custa nada chamar de novo com o
+// mesmo token, e cobre o caso de o supabase-js não sincronizar isso sozinho
+// automaticamente a tempo do primeiro canal ser assinado.
+function sincronizarAuthRealtime(session){
+  if(supabaseClient && supabaseClient.realtime && typeof supabaseClient.realtime.setAuth==='function'){
+    supabaseClient.realtime.setAuth(session ? session.access_token : null);
+  }
+}
+
 // Busca no catálogo real (85 mil+ produtos) por código ou descrição — única
 // fonte de busca do app (o cache local de 300 SKUs foi removido, ver
 // CLAUDE.md "Remoção do cache local de 300 SKUs"). Enriquece com saldo
@@ -2706,9 +2721,11 @@ function App(){
       if(cancelled) return;
       setCurrentUserId(session ? session.user.id : null);
       setAuthReady(true);
+      sincronizarAuthRealtime(session);
     });
     const { data: sub } = supabaseClient.auth.onAuthStateChange((_event, session)=>{
       setCurrentUserId(session ? session.user.id : null);
+      sincronizarAuthRealtime(session);
     });
     return ()=>{ cancelled = true; sub.subscription.unsubscribe(); };
   }, []);
