@@ -602,6 +602,12 @@
   @media (min-width:360px){
     .app{max-width:none;flex-direction:row;align-items:flex-start;position:relative;}
     .mobile-topbar, .bottom-nav{display:none;}
+    /* SubBar (← Voltar + título) existia pra navegação mobile — no layout
+       desktop ela só repetia o MESMO título que o DesktopTopbar já mostra
+       (e às vezes uma 3ª vez dentro do próprio conteúdo da tela), sem
+       nenhuma função que a Sidebar não cubra. Cliente reportou a
+       redundância visual ("3 campos com a mesma informação"). */
+    .subbar{display:none;}
     .app-main{flex:1;display:flex;flex-direction:column;min-width:0;}
     .content{padding:32px 40px 48px;max-width:1400px;margin:0 auto;width:100%;}
 
@@ -6164,7 +6170,7 @@ function RecountsPanel({counts, inventories, goto, onDeleteCount, onRefresh}){
 
   return (
     <div>
-      <ListaProgressoHeader titulo="Recontagens Pendentes" restantes={aguardandoSegunda.length} concluidas={concluidas} onAtualizar={onRefresh ? handleAtualizar : null} atualizando={atualizando} />
+      <ListaProgressoHeader titulo="pendentes" restantes={aguardandoSegunda.length} concluidas={concluidas} onAtualizar={onRefresh ? handleAtualizar : null} atualizando={atualizando} />
 
       <SearchWithScanner value={busca} onChange={setBusca} placeholder="Buscar por código ou descrição do material" />
 
@@ -6337,7 +6343,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequ
 
   return (
     <div>
-      <ListaProgressoHeader titulo="Itens Divergentes" restantes={aguardandoAnalise.length} concluidas={concluidas} onAtualizar={onRefresh ? handleAtualizar : null} atualizando={atualizando} />
+      <ListaProgressoHeader titulo="pendentes" restantes={aguardandoAnalise.length} concluidas={concluidas} onAtualizar={onRefresh ? handleAtualizar : null} atualizando={atualizando} />
 
       <SearchWithScanner value={busca} onChange={setBusca} placeholder="Código ou descrição do material" />
 
@@ -6459,7 +6465,7 @@ function AllDivergencesPanel({counts, historicoConcluidas, goto}){
       </div>
 
       <div className="section-title" style={{marginTop:0}}>
-        Todas as Divergências
+        Lista completa
         {filtrados.length>0 && <span className="badge" style={{position:'static',marginLeft:8}}>{filtrados.length}</span>}
       </div>
       <div className="panel">
@@ -6787,7 +6793,7 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
       </div>
 
       <div className="section-title" style={{marginTop:0}}>
-        Contagens Concluídas
+        Histórico
         {cadeiasNoPeriodo.length>0 && <span className="badge" style={{position:'static',marginLeft:8}}>{cadeiasNoPeriodo.length}</span>}
       </div>
       {cadeiasFiltradas.length===0 ? (
@@ -8028,8 +8034,6 @@ function UserManagementPanel({users, currentUser, goto, onToggleUserStatus, onDe
 
   return (
     <div className="panel">
-      <div className="section-title" style={{marginTop:0}}>Usuários</div>
-
       <div className="field">
         <label>Buscar usuário</label>
         <input type="text" value={search} onChange={e=>handleSearchChange(e.target.value)} placeholder="Nome completo, login ou e-mail" />
@@ -8287,7 +8291,7 @@ function AddressValidationPanel({enderecosPropostos=[], onResolve}){
   return (
     <div className="panel">
       <div className="section-title" style={{marginTop:0}}>
-        Endereços Pendentes de Cadastro
+        Aguardando confirmação
         {pendentes.length>0 && <span className="badge" style={{position:'static',marginLeft:8}}>{pendentes.length}</span>}
       </div>
       {enderecosPropostos.length===0 ? (
