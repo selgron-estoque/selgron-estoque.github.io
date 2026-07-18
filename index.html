@@ -3208,6 +3208,7 @@ function App(){
         {view==='importedListCount' && <ImportedListCountFlow inv={flowState} user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} />}
         {view==='recounts' && <RecountsPanel counts={counts} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} />}
         {view==='divergentes' && <DivergentItemsPanel counts={counts} role={role} goto={goto} onApprove={approveDivergence} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} />}
+        {view==='todasDivergencias' && <AllDivergencesPanel counts={counts} historicoConcluidas={historicoConcluidas} goto={goto} />}
         {view==='concluidas' && <ConcludedCountsPanel counts={counts} historicoConcluidas={historicoConcluidas} onDeleteCount={role==='admin' ? deleteCount : undefined} onRefresh={refreshHistoricoConcluidas} />}
         {view==='recount' && flowState && <RecountFlow original={flowState} user={currentUser} onAddressProposed={addAddressProposal} onFinish={(c)=>{registerFinishedCount(c); goto('recounts');}} />}
         {view==='dashboard' && <Dashboard counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} historicoParaTendencia={historicoParaTendencia} goto={goto} />}
@@ -3624,6 +3625,7 @@ const VIEW_TITLES = {
   importedListCount:'Lista Importada',
   recounts:'Recontagens Pendentes',
   divergentes:'Itens Divergentes',
+  todasDivergencias:'Todas as Divergências',
   concluidas:'Contagens Concluídas',
   enderecos:'Endereços Pendentes',
   recount:'Recontar Item',
@@ -5819,6 +5821,72 @@ function DivergentItemsPanel({counts, role, goto, onApprove, onRequestRecount, o
   );
 }
 
+// "Todas as Divergências" — tela nova e separada, só alcançável pelo link
+// "Ver todas as divergências" do Dashboard ("Top 5 Maiores Divergências").
+// Pedido do cliente: esse link abria "Itens Divergentes" (acima), mas essa
+// tela é escopada de propósito só pra `aguardando_analise_lider` (o KPI da
+// Home/atalho da Sidebar sempre significou isso, não pode mudar). O link do
+// Dashboard precisa mostrar QUALQUER item com divergência real, não importa o
+// status (pendente, já aprovado pelo líder, etc.), com uma única exceção: os
+// que estão na fila de recontagem (`aguardando_segunda`) já têm tela própria
+// (`RecountsPanel`) e sairiam duplicados aqui. Combina contagens ao vivo +
+// histórico importado (mesmo pool já usado em "Top 5 Maiores Divergências"),
+// então nenhum item "some" entre as duas telas por vir de uma fonte diferente.
+function AllDivergencesPanel({counts, historicoConcluidas, goto}){
+  const [busca, setBusca] = useState('');
+  const historicoComoContagem = useMemo(()=>historicoConcluidas.map(historicoRowToCountLike).filter(Boolean), [historicoConcluidas]);
+  const divergentes = useMemo(()=>{
+    const pool = [...counts, ...historicoComoContagem];
+    return pool
+      .filter(c=>c.diferenca!=null && c.diferenca!==0 && c.statusAprovacao!=='aguardando_segunda')
+      .sort((a,b)=>Math.abs(b.diferenca||0)-Math.abs(a.diferenca||0));
+  }, [counts, historicoComoContagem]);
+
+  const termo = busca.trim().toLowerCase();
+  const filtrados = termo
+    ? divergentes.filter(c=>(c.productCode||'').toLowerCase().includes(termo) || (c.descricao||'').toLowerCase().includes(termo))
+    : divergentes;
+
+  return (
+    <div>
+      <div className="field">
+        <label>Buscar item</label>
+        <input type="text" value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Código ou descrição do material" />
+      </div>
+
+      <div className="section-title" style={{marginTop:0}}>
+        Todas as Divergências
+        {filtrados.length>0 && <span className="badge" style={{position:'static',marginLeft:8}}>{filtrados.length}</span>}
+      </div>
+      <div className="panel">
+        {filtrados.length===0 ? (
+          <div className="empty-state" style={{padding:20}}>{termo ? 'Nenhum item encontrado para essa busca.' : 'Nenhuma divergência registrada no momento.'}</div>
+        ) : (
+          <table className="rank-table">
+            <thead><tr><th>Produto</th><th>Almox.</th><th className="num">Esperado</th><th className="num">Encontrado</th><th className="num">Diferença</th><th className="num">Valor (R$)</th></tr></thead>
+            <tbody>
+              {filtrados.map(c=>{
+                const almoxLabel = c.almoxarifado ? ('Almox ' + (/^[0-9]+$/.test(c.almoxarifado) ? c.almoxarifado.padStart(2,'0') : c.almoxarifado)) : '—';
+                const valorComSinal = valorDivergenteComSinal(c);
+                return (
+                  <tr key={c.id}>
+                    <td>{c.productCode} · {c.descricao}</td>
+                    <td>{almoxLabel}</td>
+                    <td className="num">{c.saldoSistema==null ? '—' : c.saldoSistema}</td>
+                    <td className="num">{c.qtdContada}</td>
+                    <td className="num" style={{color:'var(--danger)'}}>{c.diferenca>0?'+':''}{c.diferenca}</td>
+                    <td className="num" style={{color:valorComSinal===0?'var(--ok)':'var(--danger)'}}>{valorComSinal>0?'+':''}{valorComSinal.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ---------------- CONTAGENS CONCLUÍDAS (painel de auditoria) ---------------- */
 
 // "Contagens Concluídas" deixou de ser um atalho pra MyCounts e virou um
@@ -7202,7 +7270,7 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
                 })}
               </tbody>
             </table>
-            <button className="pnl-section-link" style={{marginTop:14}} onClick={()=>goto('divergentes')}>Ver todas as divergências <DIcon name="chevronRight" size={13} /></button>
+            <button className="pnl-section-link" style={{marginTop:14}} onClick={()=>goto('todasDivergencias')}>Ver todas as divergências <DIcon name="chevronRight" size={13} /></button>
           </>
         )}
       </div>
