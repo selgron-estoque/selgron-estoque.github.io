@@ -3734,14 +3734,14 @@ em vez de preservar o modo 100% offline como prioridade.
   quando remoto é mais antigo — proteção contra evento fora de ordem,
   `removeMissing` remove item ausente da lista remota completa, e evento
   isolado sem `removeMissing` nunca apaga outros itens locais). Transpile
-  Babel do `index.html` inteiro. **Não testado contra o Supabase real** —
-  diferente de testes anteriores (mockáveis via Playwright/`page.route`
-  porque são chamadas REST simples), o Realtime usa WebSocket, que o
-  sandbox não tem como simular fielmente — falta o cliente rodar o
-  `alter publication` no projeto real (seção 10 do `backend/README.md`) e
-  testar com dois aparelhos/duas abas, confirmando que uma contagem/
-  inventário/usuário criado num aparece no outro em poucos segundos sem
-  precisar recarregar a página.
+  Babel do `index.html` inteiro. Diferente de testes anteriores (mockáveis
+  via Playwright/`page.route` porque são chamadas REST simples), o
+  Realtime usa WebSocket, que o sandbox não tem como simular fielmente —
+  a verificação de ponta a ponta ficou a cargo do cliente. **Confirmado em
+  produção**: o cliente rodou o `alter publication` no projeto real (seção
+  10 do `backend/README.md`) e testou com duas abas do navegador logadas
+  ao mesmo tempo — uma mudança feita numa aba aparece na outra em poucos
+  segundos, sem precisar recarregar a página.
 
 ## Convenções de design (não quebrar ao continuar)
 
