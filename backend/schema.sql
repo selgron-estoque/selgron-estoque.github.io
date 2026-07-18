@@ -628,7 +628,7 @@ alter table usuarios add column if not exists ultimo_acesso timestamptz;
 -- OUTRO usuário (criar, redefinir senha, bloquear, excluir) exige a Admin
 -- API do Supabase Auth, que só funciona com a service role key — uma chave
 -- que nunca pode existir no navegador. A partir de agora essas ações vivem
--- na Edge Function `usuarios-admin` (backend/functions/usuarios-admin/
+-- na Edge Function `usuarios-admin` (supabase/functions/usuarios-admin/
 -- index.ts), que guarda essa chave só no servidor.
 --
 -- PASSO 0 — RODAR ANTES DE QUALQUER COISA ABAIXO: confirmar que não sobrou

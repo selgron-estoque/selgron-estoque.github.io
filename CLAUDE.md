@@ -87,7 +87,7 @@ aplicado/deployado ainda** — é um projeto Supabase que precisa ser criado do 
   inventários com snapshot de saldo congelado, contagens). Ler os comentários no topo do
   arquivo — explicam por que saldo e endereço têm tratamento diferente (saldo vem do
   Protheus e é só cache; endereço é dado nativo do Inventário 360).
-- `backend/functions/sync-saldo-protheus/index.ts` — Edge Function (Deno) que puxa saldo
+- `supabase/functions/sync-saldo-protheus/index.ts` — Edge Function (Deno) que puxa saldo
   do Protheus e atualiza o cache. Ainda não testada contra uma API real do Protheus (o
   cliente ainda não confirmou o endpoint exato).
 - `backend/README.md` — passo a passo de deploy.
@@ -2827,8 +2827,12 @@ opcional).
   editar perfil/senha/acessos_extras, bloquear e excluir usuário passam a ser só a Edge
   Function (roda com a service role key, ignora RLS).
 - **Edge Function nova, a primeira de fato publicada neste projeto**:
-  `backend/functions/usuarios-admin/index.ts` (a `sync-saldo-protheus` já existia como
-  código, mas nunca foi deployada). Uma função só, roteada por `{acao, ...}` — todas as
+  `supabase/functions/usuarios-admin/index.ts` (a `sync-saldo-protheus` já existia como
+  código, mas nunca foi deployada — as duas foram movidas de `backend/functions/` pra
+  `supabase/functions/` nesta rodada, porque é onde o Supabase CLI de fato procura as
+  functions na hora do deploy; a pasta antiga nunca tinha sido testada de verdade com o
+  CLI, só existia como convenção documentada no README). Uma função só, roteada por
+  `{acao, ...}` — todas as
   ações privilegiadas (`criar_usuario`/`atualizar_usuario`/`definir_senha`/
   `alternar_bloqueio`/`excluir_usuario`) compartilham a mesma checagem "quem chama é
   admin OU tem a exceção 'usuarios'" logo no início. Uma exceção de propósito:

@@ -149,14 +149,31 @@ senha temporária). Anote o UUID de cada um (aparece na lista, ou rode
 reconciliação (modelo no mesmo bloco de migração do 9.2) uma vez pra cada
 pessoa, colando o UUID do 9.4 e o login antigo dela.
 
-**9.6 — Deploy da Edge Function nova**:
+**9.6 — Deploy da Edge Function nova**: essa é a primeira vez que uma Edge
+Function deste projeto é de fato publicada (a `sync-saldo-protheus`, de uma
+etapa anterior, nunca chegou a ser deployada) — então é a primeira vez
+rodando o Supabase CLI de verdade neste repositório. Passo a passo, num
+terminal, dentro da pasta onde o repositório está clonado no seu
+computador (se ainda não tiver clonado, `git clone
+https://github.com/selgron-estoque/selgron-estoque.github.io.git` e entre
+na pasta):
 
 ```bash
+# Só na primeira vez (se ainda não tiver feito login no CLI):
+npx supabase login
+
+# Liga esta pasta ao projeto Supabase real (project ref = o trecho antes de
+# ".supabase.co" na URL do projeto, ex: geeqfpzamexmeketcecu):
+npx supabase link --project-ref geeqfpzamexmeketcecu
+
+# Publica a função (o código já está em supabase/functions/usuarios-admin/):
 npx supabase functions deploy usuarios-admin
 ```
 
-(`SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` já ficam disponíveis
-automaticamente, nada a configurar — mesmo aviso do passo 3 acima.)
+Precisa ter o Node.js instalado (o `npx` vem junto) — se o terminal disser
+que não conhece o comando `npx`, é isso que falta instalar primeiro.
+`SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` já ficam disponíveis
+automaticamente pra função, nada a configurar à parte.
 
 **9.7 — Publicar o novo `index.html`** (o commit/push já entrega isso).
 
