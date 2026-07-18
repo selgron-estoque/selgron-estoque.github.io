@@ -4209,3 +4209,24 @@ especificamente a tela de RECONTAGEM, mas o motor por trás é compartilhado):
   ("Item 18 de 152 · 12%" → `round(18/152*100)=12`). Transpile Babel do arquivo inteiro
   sem erro. **A verificação visual de ponta a ponta (o layout em si, nas 5 telas de
   contagem) fica a cargo do cliente** — mesma limitação de sempre.
+
+## Endereço vira badge de destaque nos cards de Recontagens/Divergentes/Concluídas
+
+Cliente mandou print marcando (retângulo vermelho) um espaço vazio ao lado do
+código/descrição em cada card das 3 telas de listagem de contagem — pediu pra o
+endereço ter mais destaque ali, "primeira coisa que bate o olho".
+
+- `.count-card-title` (código+descrição) e o antigo `.count-card-location` (endereço,
+  texto pequeno cinza abaixo do código) viraram uma linha só (`.count-card-toprow`,
+  flex row) — título à esquerda (`flex:1`), endereço à direita como
+  `.count-card-address-badge`: fundo laranja claro (`#FFF3E0`), borda e texto na cor da
+  marca (`--safety`/`--safety-ink`), 16px negrito com ícone de localização (`DIcon
+  name="mapPin"`) — ocupa exatamente o espaço que estava vazio no print do cliente.
+- Aplicado nos 3 lugares que compartilham esse shell de card (`RecountsPanel`/
+  `DivergentItemsPanel`/`ConcludedCountsPanel`) — mesmo padrão de "um shell visual só,
+  reaproveitado nas 3 telas" já estabelecido nessas telas.
+- `@media (max-width:640px)`: a linha vira coluna (endereço abaixo do título) — em vez
+  de espremer o badge junto do código numa tela estreita.
+- Testado só com transpile Babel + balanceamento de chaves do CSS (mesma limitação de
+  sempre, login via Supabase Auth real não é simulável no sandbox) — verificação visual
+  fica a cargo do cliente.
