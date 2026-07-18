@@ -219,6 +219,27 @@
   @media (min-width:900px){.weekly-charts-grid{display:grid;grid-template-columns:1fr 1fr;}}
   .chart-meta-badge{font-family:var(--font-mono);font-size:11px;font-weight:700;color:#0D9488;background:rgba(13,148,136,0.12);border-radius:6px;padding:3px 8px;white-space:nowrap;}
 
+  /* Card "Saúde do Inventário" — pedido do cliente com imagem de referência
+     (selo + variação vs. período anterior + mini gráfico + acuracidade
+     atual em destaque). Cor de fundo/destaque muda por faixa de status
+     (Excelente/Bom/Atenção/Crítico), calculada em InventoryHealthCard. */
+  .health-card{display:flex;align-items:center;gap:24px;border-radius:18px;padding:22px 26px;margin-bottom:18px;flex-wrap:wrap;}
+  .health-left{display:flex;align-items:flex-start;gap:14px;flex:1;min-width:220px;}
+  .health-icon{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .health-eyebrow{font-family:var(--font-mono);font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--ink-dim);margin-bottom:2px;}
+  .health-status{font-family:var(--font-display);font-size:22px;font-weight:700;line-height:1.2;}
+  .health-sub{font-size:13px;font-weight:600;margin-top:1px;}
+  .health-desc{font-size:12.5px;color:var(--ink-dim);margin-top:6px;max-width:340px;}
+  .health-chart{flex:1.4;min-width:220px;max-width:360px;}
+  .health-current{background:#fff;border-radius:14px;padding:14px 22px;text-align:center;box-shadow:0 2px 10px rgba(0,0,0,.06);flex-shrink:0;}
+  .health-current-value{font-family:var(--font-display);font-size:26px;font-weight:700;}
+  .health-current-label{font-size:11px;color:var(--ink-dim);margin-top:2px;white-space:nowrap;}
+  @media (max-width:640px){
+    .health-card{flex-direction:column;align-items:stretch;}
+    .health-chart{max-width:none;order:3;}
+    .health-current{order:2;}
+  }
+
   /* Painel "Filtros" do Dashboard — card premium estilo Power BI/Stripe
      Dashboard/Vercel (ver CLAUDE.md "Filtro de período vira painel Filtros
      estilo SaaS"). Cor de destaque (--tfb-teal) é a mesma já usada nos
@@ -6633,6 +6654,86 @@ function MonthlyAccuracyBarChart({months, meta=META_ACURACIDADE_SEMANAL}){
   );
 }
 
+// Mini gráfico de linha, mais enxuto que WeeklyLineChart (sem meta, sem
+// rótulo "Sem N" em cima da data, sem % grande em cada ponto) — pensado pra
+// caber dentro do card "Saúde do Inventário", não como painel próprio.
+function HealthSparkline({pontos, color}){
+  const W = 320, H = 92, padL = 30, padR = 8, padT = 8, padB = 18;
+  const chartW = W-padL-padR, chartH = H-padT-padB;
+  const n = pontos.length;
+  const x = i => padL + (n>1 ? (i/(n-1))*chartW : chartW/2);
+  const y = v => padT + chartH - (v/100)*chartH;
+  const pts = pontos.map((p,i)=>`${x(i)},${y(p.acuracidade)}`).join(' ');
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'auto',display:'block'}} role="img" aria-label="Tendência recente de acuracidade">
+      {[0,25,50,75,100].map(t=>(
+        <text key={t} x={padL-6} y={y(t)+3} textAnchor="end" fontSize={9} fill="var(--ink-dim)" fontFamily="var(--font-mono)">{t}%</text>
+      ))}
+      <polyline points={pts} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+      {pontos.map((p,i)=>(
+        <circle key={p.key} cx={x(i)} cy={y(p.acuracidade)} r={3.5} fill={color} stroke="#fff" strokeWidth={1.5}>
+          <title>{p.sublabel}: {p.acuracidade.toFixed(1)}%</title>
+        </circle>
+      ))}
+      {pontos.map((p,i)=>(
+        <text key={p.key+'-lbl'} x={x(i)} y={H-4} textAnchor="middle" fontSize={9} fill="var(--ink-dim)" fontFamily="var(--font-mono)">{p.sublabel}</text>
+      ))}
+    </svg>
+  );
+}
+
+// Card "Saúde do Inventário" — pedido do cliente (mandou uma imagem de
+// referência: selo de status + variação vs. período anterior + mini
+// gráfico + acuracidade atual em destaque). Implementado 100% em cima de
+// dado real já calculado por `computeWeeklyStats` — sem inventar nenhuma
+// métrica nova: "atual" é a última semana com contagem de verdade dentro do
+// período filtrado, "variação" compara contra a semana anterior a essa
+// (também só entre semanas com dado real). Se ainda não existe nenhuma
+// semana com contagem no período escolhido, não renderiza nada (mesmo
+// critério de "não fabricar dado" já usado no resto do Dashboard) — quem
+// chama decide o que mostrar no lugar.
+function InventoryHealthCard({weeklyStats, meta=META_ACURACIDADE_SEMANAL}){
+  const comDado = weeklyStats.filter(w=>w.acuracidade!=null);
+  if(comDado.length===0) return null;
+  const atual = comDado[comDado.length-1];
+  const anterior = comDado.length>1 ? comDado[comDado.length-2] : null;
+  const variacao = anterior ? (atual.acuracidade - anterior.acuracidade) : null;
+
+  // 4 faixas de status, relativas à META (não valores fixos) — assim o
+  // rótulo continua fazendo sentido se o cliente um dia mudar a meta de 95%.
+  let tier;
+  if(atual.acuracidade >= meta) tier = {status:'Excelente', sub:'Você está dentro da meta!', color:'#0D9488', bg:'#E7F6F3'};
+  else if(atual.acuracidade >= meta-10) tier = {status:'Bom', sub:'Perto da meta', color:'#2563EB', bg:'#EAF1FD'};
+  else if(atual.acuracidade >= meta-25) tier = {status:'Atenção', sub:'Abaixo da meta', color:'#B7791F', bg:'#FDF3E3'};
+  else tier = {status:'Crítico', sub:'Bem abaixo da meta', color:'#C4291B', bg:'#FBEAE8'};
+
+  const pontos = comDado.slice(-6);
+
+  return (
+    <div className="health-card" style={{background:tier.bg}}>
+      <div className="health-left">
+        <div className="health-icon" style={{background:tier.color}}><DIcon name="shieldCheck" size={22} style={{color:'#fff'}} /></div>
+        <div className="health-text">
+          <div className="health-eyebrow">Saúde do Inventário</div>
+          <div className="health-status" style={{color:tier.color}}>{tier.status}</div>
+          <div className="health-sub" style={{color:tier.color}}>{tier.sub}</div>
+          {variacao!=null && (
+            <div className="health-desc">
+              A acuracidade está {Math.abs(variacao).toFixed(1)}% {variacao>=0?'acima':'abaixo'} do período anterior.
+              {variacao>=0 ? ' Continue assim.' : ''}
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="health-chart"><HealthSparkline pontos={pontos} color={tier.color} /></div>
+      <div className="health-current">
+        <div className="health-current-value" style={{color:tier.color}}>{atual.acuracidade.toFixed(1)}%</div>
+        <div className="health-current-label">Acuracidade atual</div>
+      </div>
+    </div>
+  );
+}
+
 // Ícone linear (mesmo estilo Lucide-ish já usado no restante da moldura
 // corp) só pra identificar visualmente o controle de intervalo de datas —
 // desenhado à mão em vez de puxar de DICON_PATHS porque esse conjunto é
@@ -6960,6 +7061,8 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
         <div className="kpi"><div className="kv" style={{color:'var(--danger)'}}>R$ {valorDivergente.toFixed(0)}</div><div className="kl">Valor Divergente</div></div>
         <div className="kpi"><div className="kv">{inventories.length}</div><div className="kl">Inventários Ativos</div></div>
       </div>
+
+      <InventoryHealthCard weeklyStats={weeklyStats} />
 
       <TrendFilterBar
         trendFilter={trendFilter}
