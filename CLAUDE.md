@@ -4337,3 +4337,34 @@ celular (não ficar como alternativa).
   balanceamento de chaves do CSS conferidos. **A verificação visual de ponta a ponta
   (o rodapé em si, nos vários tamanhos de tela) fica a cargo do cliente** — mesma
   limitação de sempre (login via Supabase Auth real não é simulável no sandbox).
+
+## Calculadora inline na tela de contagem
+
+Cliente pediu uma calculadora dentro da tela de contagem: "em casos de itens que eu
+preciso de calculadora eu somo ali mesmo e aperto um botão da calculadora que manda o
+resultado para o campo de quantidade contada" — cenário real é contar o mesmo item
+espalhado em mais de um lugar (paletes/prateleiras diferentes) e precisar somar antes de
+lançar a quantidade final, sem trocar de app pra usar a calculadora do aparelho.
+
+- **Botão pequeno** (`.cs-calc-btn`, ícone novo `calculator` em `DICON_PATHS`) ao lado do
+  rótulo "Informe a quantidade"/"Quantidade encontrada" — não entrou na fileira de
+  atalhos `+1/+5/+10/Limpar` de propósito (essa fileira já é "4 botões iguais", pedido
+  explícito de uma rodada anterior; um 5º botão ali quebraria essa regra).
+  `.cs-qty-label-row` (novo) vira o container flex que posiciona os dois.
+- **Painel inline** (`.cs-calc-panel`, mesmo padrão visual já usado pro `CameraScanner` —
+  aparece embaixo do campo, não é modal/popup) — calculadora básica de 4 operações
+  (`calcApply`/`calcDigit`/`calcOperator`/`calcEquals`/`calcClear`/`calcBackspace`, estado
+  novo em `CountStep`: `calcCurrent`/`calcAcc`/`calcOp`). Sempre um operador pendente por
+  vez, sem precedência — mesmo comportamento de uma calculadora de bolso comum, não uma
+  calculadora científica. Divisão por zero retorna `0` em vez de `Infinity`/`NaN`
+  (protege contra o campo de quantidade receber um valor inválido se o operador digitar
+  errado).
+- **"Usar valor na quantidade"** (`calcUsarValor`) — copia `calcCurrent` pro campo `qty`
+  (o mesmo estado que os atalhos +1/+5/+10 já usam) e fecha o painel, já limpando a
+  calculadora pra próxima vez que for aberta.
+- Testado via script Node isolado (réplica exata da lógica, mesma técnica de sempre):
+  soma de 3 valores (12+15+8=35, o cenário exato descrito pelo cliente), subtração,
+  multiplicação, divisão por zero não quebrando, backspace, ponto decimal e limpar —
+  todos batendo. Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  conferidos. **A verificação visual de ponta a ponta fica a cargo do cliente** — mesma
+  limitação de sempre.

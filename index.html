@@ -334,7 +334,20 @@
   .cs-sistema-ref .cs-sistema-k{font-family:var(--font-mono);font-size:10px;text-transform:uppercase;color:var(--ink-dim);letter-spacing:0.5px;}
   .cs-sistema-ref .cs-sistema-v{font-family:var(--font-mono);font-size:20px;font-weight:700;margin-top:2px;}
   .cs-sistema-arrow{display:flex;justify-content:center;color:var(--ink-dim);margin:-6px 0;}
+  .cs-qty-label-row{display:flex;align-items:center;justify-content:center;position:relative;}
   .cs-qty-label{text-align:center;font-family:var(--font-mono);font-size:12px;text-transform:uppercase;letter-spacing:0.6px;color:var(--ink-dim);}
+  /* Calculadora inline — pedido do cliente: somar itens contados em mais de
+     um lugar sem precisar sair do app pra usar a calculadora do aparelho. */
+  .cs-calc-btn{position:absolute;right:0;width:28px;height:28px;border-radius:8px;border:1px solid var(--line);background:var(--panel-raised);color:var(--ink-dim);display:flex;align-items:center;justify-content:center;}
+  .cs-calc-btn:active{background:var(--safety);color:#fff;border-color:var(--safety);}
+  .cs-calc-panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:0 1px 3px rgba(0,0,0,.04);padding:14px;}
+  .cs-calc-display{text-align:right;font-family:var(--font-mono);font-size:28px;font-weight:700;padding:6px 8px 10px;overflow-x:auto;white-space:nowrap;}
+  .cs-calc-history{display:block;font-size:13px;font-weight:600;color:var(--ink-dim);}
+  .cs-calc-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
+  .cs-calc-key{height:48px;border-radius:10px;border:1px solid var(--line);background:var(--panel-raised);color:var(--ink);font-family:var(--font-mono);font-size:18px;font-weight:700;}
+  .cs-calc-key:active{background:var(--line);}
+  .cs-calc-key.op{background:#EAF2F8;color:var(--accent2);}
+  .cs-calc-key.equals{background:var(--safety);color:#fff;}
   .cs-qty-input{width:100%;height:90px;font-family:var(--font-mono);font-size:48px;font-weight:700;text-align:center;background:var(--panel);border:2px solid var(--line);border-radius:16px;color:var(--ink);}
   .cs-qty-input:focus{outline:none;border-color:var(--accent2);}
   .cs-qty-input.ok{border-color:var(--ok);}
@@ -3796,6 +3809,7 @@ const DICON_PATHS = {
   ban: <><circle cx="12" cy="12" r="9.5"/><path d="m4.9 4.9 14.2 14.2"/></>,
   keyboard: <><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01"/><path d="M10 8h.01"/><path d="M14 8h.01"/><path d="M18 8h.01"/><path d="M8 12h.01"/><path d="M12 12h.01"/><path d="M16 12h.01"/><path d="M7 16h10"/></>,
   building: <><path d="M6 22V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v18Z"/><path d="M9 9h1"/><path d="M9 13h1"/><path d="M14 9h1"/><path d="M14 13h1"/><path d="M9 17h1"/><path d="M14 17h1"/><path d="M2 22h20"/></>,
+  calculator: <><rect x="4" y="2" width="16" height="20" rx="2"/><rect x="7" y="5" width="10" height="4" rx="0.5"/><path d="M7 13h.01"/><path d="M12 13h.01"/><path d="M17 13h.01"/><path d="M7 17h.01"/><path d="M12 17h.01"/><path d="M17 17h.01"/></>,
 };
 
 function DIcon({name, size=18, strokeWidth=1.8, style}){
@@ -5415,6 +5429,58 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
     setQty(prev => String((Number(prev)||0) + n));
   }
 
+  // Calculadora inline — pedido do cliente: itens contados em mais de um
+  // lugar (ex: paletes/prateleiras diferentes) exigem somar antes de
+  // lançar a quantidade final; em vez de fazer conta de cabeça ou trocar
+  // de app pra usar a calculadora do aparelho, o operador soma aqui mesmo
+  // e manda o resultado direto pro campo com um toque. Calculadora básica
+  // de 4 operações (sempre um operador pendente por vez, sem precedência —
+  // mesmo comportamento de uma calculadora de bolso comum).
+  const [calcOpen, setCalcOpen] = useState(false);
+  const [calcCurrent, setCalcCurrent] = useState('0');
+  const [calcAcc, setCalcAcc] = useState(null);
+  const [calcOp, setCalcOp] = useState(null);
+
+  function calcApply(a, op, b){
+    const x = parseFloat(a) || 0, y = parseFloat(b) || 0;
+    if(op==='+') return x + y;
+    if(op==='-') return x - y;
+    if(op==='×') return x * y;
+    if(op==='÷') return y===0 ? 0 : x / y;
+    return y;
+  }
+
+  function calcDigit(d){
+    setCalcCurrent(prev => (prev==='0' ? String(d) : prev + String(d)));
+  }
+  function calcDot(){
+    setCalcCurrent(prev => prev.includes('.') ? prev : prev + '.');
+  }
+  function calcBackspace(){
+    setCalcCurrent(prev => prev.length>1 ? prev.slice(0,-1) : '0');
+  }
+  function calcOperator(op){
+    setCalcAcc(prev => String(prev==null ? calcCurrent : calcApply(prev, calcOp, calcCurrent)));
+    setCalcOp(op);
+    setCalcCurrent('0');
+  }
+  function calcEquals(){
+    if(calcOp==null) return;
+    setCalcCurrent(String(calcApply(calcAcc, calcOp, calcCurrent)));
+    setCalcAcc(null);
+    setCalcOp(null);
+  }
+  function calcClear(){
+    setCalcAcc(null);
+    setCalcOp(null);
+    setCalcCurrent('0');
+  }
+  function calcUsarValor(){
+    setQty(calcCurrent);
+    setCalcOpen(false);
+    calcClear();
+  }
+
   function simulateScan(match){
     if(match){
       setScannedCode(product.endereco);
@@ -5676,7 +5742,12 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
             </div>
           )}
           {hasSaldoLocal && <div className="cs-sistema-arrow"><DIcon name="arrowDown" size={18} /></div>}
-          <div className="cs-qty-label">{hasSaldoLocal ? 'Informe a quantidade' : 'Quantidade encontrada'}</div>
+          <div className="cs-qty-label-row">
+            <div className="cs-qty-label">{hasSaldoLocal ? 'Informe a quantidade' : 'Quantidade encontrada'}</div>
+            <button type="button" className="cs-calc-btn" title="Calculadora" aria-label="Calculadora" onClick={()=>{calcClear(); setCalcOpen(o=>!o);}}>
+              <DIcon name="calculator" size={16} />
+            </button>
+          </div>
           <input
             className={"cs-qty-input"+(qty!=='' ? ' '+classification.level : '')}
             type="number"
@@ -5686,6 +5757,35 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
             placeholder="0"
             autoFocus
           />
+          {calcOpen && (
+            <div className="cs-calc-panel">
+              <div className="cs-calc-display">
+                {calcAcc!=null && <span className="cs-calc-history">{calcAcc} {calcOp}</span>}
+                {calcCurrent}
+              </div>
+              <div className="cs-calc-grid">
+                <button type="button" className="cs-calc-key op" onClick={calcClear}>C</button>
+                <button type="button" className="cs-calc-key op" onClick={calcBackspace}>⌫</button>
+                <button type="button" className="cs-calc-key op" onClick={()=>calcOperator('÷')}>÷</button>
+                <button type="button" className="cs-calc-key op" onClick={()=>calcOperator('×')}>×</button>
+                <button type="button" className="cs-calc-key" onClick={()=>calcDigit(7)}>7</button>
+                <button type="button" className="cs-calc-key" onClick={()=>calcDigit(8)}>8</button>
+                <button type="button" className="cs-calc-key" onClick={()=>calcDigit(9)}>9</button>
+                <button type="button" className="cs-calc-key op" onClick={()=>calcOperator('-')}>−</button>
+                <button type="button" className="cs-calc-key" onClick={()=>calcDigit(4)}>4</button>
+                <button type="button" className="cs-calc-key" onClick={()=>calcDigit(5)}>5</button>
+                <button type="button" className="cs-calc-key" onClick={()=>calcDigit(6)}>6</button>
+                <button type="button" className="cs-calc-key op" onClick={()=>calcOperator('+')}>+</button>
+                <button type="button" className="cs-calc-key" onClick={()=>calcDigit(1)}>1</button>
+                <button type="button" className="cs-calc-key" onClick={()=>calcDigit(2)}>2</button>
+                <button type="button" className="cs-calc-key" onClick={()=>calcDigit(3)}>3</button>
+                <button type="button" className="cs-calc-key equals" style={{gridRow:'span 2'}} onClick={calcEquals}>=</button>
+                <button type="button" className="cs-calc-key" style={{gridColumn:'span 2'}} onClick={()=>calcDigit(0)}>0</button>
+                <button type="button" className="cs-calc-key" onClick={calcDot}>.</button>
+              </div>
+              <button type="button" className="btn btn-primary" style={{width:'100%',marginTop:10}} onClick={calcUsarValor}>Usar valor na quantidade</button>
+            </div>
+          )}
           <div className="cs-shortcuts">
             <button type="button" onClick={()=>bumpQty(1)}>+1</button>
             <button type="button" onClick={()=>bumpQty(5)}>+5</button>
