@@ -188,28 +188,57 @@
   /* COUNT CARD (Recontagens/Itens Divergentes/Concluídas) — shell visual
      compartilhado pelas 3 telas, ver CLAUDE.md "Redesign das telas de
      Recontagens...". Reaproveita .item-code/.item-desc já existentes, só
-     acrescenta a faixa de severidade lateral + badges + linhas novas. */
-  .count-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;margin-bottom:14px;display:flex;}
+     acrescenta a faixa de severidade lateral + badges + linhas novas.
+     Raio (16px) e sombra são PRÓPRIOS deste card (pedido explícito do
+     cliente pra bater com o mockup de referência) — diferentes do
+     --radius:10px usado no resto do app, de propósito, não é regressão. */
+  .count-card{background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden;margin-bottom:16px;display:flex;box-shadow:0 1px 3px rgba(0,0,0,.04);}
   .count-card-bar{width:5px;flex-shrink:0;}
-  .count-card-body{flex:1;min-width:0;}
-  .count-card-head{padding:14px 16px 0;display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;}
+  .count-card-body{flex:1;min-width:0;padding:16px 20px;display:flex;flex-direction:column;gap:10px;}
+  .count-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
   .count-card-badges{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
   .severity-chip{display:inline-flex;align-items:center;gap:5px;font-family:var(--font-mono);font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;padding:4px 9px;border-radius:20px;}
   .category-chip{font-family:var(--font-mono);font-size:10.5px;text-transform:uppercase;letter-spacing:0.3px;color:var(--ink-dim);background:var(--panel-raised);padding:4px 9px;border-radius:20px;}
+  .count-card-head-right{display:flex;align-items:center;gap:8px;flex-shrink:0;}
   .count-card-date{font-family:var(--font-mono);font-size:11px;color:var(--ink-dim);white-space:nowrap;}
-  .count-card-title{padding:10px 16px 0;}
-  .count-card-location{padding:8px 16px 0;font-size:12.5px;color:var(--ink-dim);display:flex;align-items:center;gap:5px;}
-  .count-card-values{display:flex;flex-wrap:wrap;gap:18px;padding:12px 16px;margin:10px 16px 0;background:var(--panel-raised);border-radius:8px;}
-  .count-card-values .cv{min-width:80px;}
+  .count-card-menu-btn{background:none;border:none;color:var(--ink-dim);font-size:16px;line-height:1;padding:2px 4px;cursor:pointer;}
+  .count-card-menu{position:relative;}
+  .count-card-menu-dropdown{position:absolute;right:0;top:100%;margin-top:4px;background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,.12);z-index:5;overflow:hidden;white-space:nowrap;}
+  .count-card-menu-dropdown button{display:block;width:100%;padding:9px 16px;background:none;border:none;text-align:left;font-size:12.5px;color:var(--danger);cursor:pointer;}
+  .count-card-menu-dropdown button:hover{background:var(--danger-bg);}
+  .count-card-title{line-height:1.15;}
+  .count-card-location{font-size:12.5px;color:var(--ink-dim);display:flex;align-items:center;gap:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .count-card-main{display:flex;gap:16px;align-items:stretch;flex:1;}
+  .count-card-content{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px;justify-content:center;}
+  .count-card-values{display:flex;gap:18px;}
+  .count-card-values .cv{min-width:60px;}
   .count-card-values .cv .k{font-family:var(--font-mono);font-size:9.5px;text-transform:uppercase;color:var(--ink-dim);letter-spacing:0.5px;}
   .count-card-values .cv .v{font-size:15px;font-weight:700;margin-top:2px;}
-  .count-card-actions{padding:14px 16px 16px;}
-  /* Botões dentro do card compacto novo usam o mesmo .btn/.btn-primary/
-     .btn-danger do resto do app (não criei classe nova), mas o tamanho
-     padrão (pensado pro card espaçado antigo) fica desproporcional aqui —
-     reduzido só neste contexto, sem mudar o botão em nenhum outro lugar. */
-  .count-card-actions .btn{padding:11px 14px;font-size:12px;width:auto;flex:1 1 auto;}
-  .count-card-actions .btn-danger{flex:0 0 auto;}
+  .count-card-actions-col{display:flex;flex-direction:column;gap:8px;width:150px;flex-shrink:0;justify-content:center;}
+  /* Botões empilhados à direita usam o mesmo .btn/.btn-primary/.btn-outline
+     do resto do app (não criei classe nova), mas o tamanho padrão (pensado
+     pro card espaçado antigo) fica desproporcional aqui — reduzido só
+     neste contexto, sem mudar o botão em nenhum outro lugar. */
+  .count-card-actions-col .btn{width:100%;padding:11px 14px;font-size:12px;}
+  .count-card-extra{border-top:1px solid var(--line);padding-top:8px;font-size:12.5px;color:var(--ink-dim);}
+  .count-card-extra strong{color:var(--ink);}
+  @media (max-width:640px){
+    .count-card-main{flex-direction:column;}
+    .count-card-actions-col{width:100%;flex-direction:row;}
+  }
+  /* .count-card-actions — usado pelo estado de "confirmar exclusão"
+     (empilha alerta + botões Cancelar/Confirmar), sempre um wrapper
+     isolado, nunca combinado direto com .btn-row no mesmo elemento (ver
+     .count-card-actions-row abaixo pra esse outro caso). */
+  .count-card-actions{padding:0;display:flex;flex-direction:column;gap:8px;width:100%;}
+  .count-card-actions .btn{width:100%;padding:11px 14px;font-size:12px;}
+  /* .count-card-actions-row — fileira de botões lado a lado (Itens
+     Divergentes pode ter até 4 ações) — classe SEPARADA de
+     .count-card-actions de propósito, pra não colidir com o
+     flex-direction:column acima quando combinada com .btn-row no mesmo
+     elemento. */
+  .count-card-actions-row.btn-row .btn{width:auto;padding:11px 14px;font-size:11.5px;flex:1 1 auto;}
+  .count-card-actions-row.btn-row .btn-danger{flex:0 0 auto;}
 
   /* QR SCAN VISUAL */
   .scan-box{position:relative;background:#0A0B0D;border:1px solid var(--line);border-radius:var(--radius);height:180px;display:flex;align-items:center;justify-content:center;overflow:hidden;margin-bottom:14px;}
@@ -6058,6 +6087,11 @@ function RecountsPanel({counts, inventories, goto, onDeleteCount, onRefresh}){
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [excluindo, setExcluindo] = useState(false);
   const [erroExclusao, setErroExclusao] = useState('');
+  // Menu "⋮" (só existe a ação Excluir hoje, admin) e o expandir de
+  // "Detalhes" — ambos guardam só o id do card aberto no momento, um card
+  // aberto por vez.
+  const [menuAbertoId, setMenuAbertoId] = useState(null);
+  const [detalhesAbertoId, setDetalhesAbertoId] = useState(null);
 
   async function handleConfirmDelete(id){
     setExcluindo(true);
@@ -6075,7 +6109,7 @@ function RecountsPanel({counts, inventories, goto, onDeleteCount, onRefresh}){
     <div>
       <ListaProgressoHeader titulo="Recontagens Pendentes" restantes={aguardandoSegunda.length} concluidas={concluidas} onAtualizar={onRefresh ? handleAtualizar : null} atualizando={atualizando} />
 
-      <SearchWithScanner value={busca} onChange={setBusca} placeholder="Código ou descrição do material" />
+      <SearchWithScanner value={busca} onChange={setBusca} placeholder="Buscar por código ou descrição do material" />
 
       <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
         <SeverityFilterRow counts={porBusca} value={severidade} onChange={setSeveridade} />
@@ -6091,6 +6125,7 @@ function RecountsPanel({counts, inventories, goto, onDeleteCount, onRefresh}){
         </div>
       ) : listaFiltrada.map(c=>{
         const sev = classifySeverity4(c.percentual);
+        const temExtra = c.motivo || c.observacao || c.foto || c.almoxarifado || (c.enderecoContado && c.enderecoContado!==c.endereco) || (c.valorDivergente && Number(c.valorDivergente)!==0);
         return (
         <div key={c.id} className="count-card">
           <div className="count-card-bar" style={{background:sev.color}}></div>
@@ -6100,9 +6135,21 @@ function RecountsPanel({counts, inventories, goto, onDeleteCount, onRefresh}){
                 {c.recontagemSolicitadaPeloLider
                   ? <span className="severity-chip" style={{background:'var(--danger-bg)',color:'var(--danger)'}}>⚠ Rejeitada</span>
                   : <span className="severity-chip" style={{background:sev.bg,color:sev.color}}>{sev.icon} {sev.label}</span>}
-                <span className="category-chip">{categoriaDoInventario(c, inventories)}</span>
               </div>
-              <span className="count-card-date">{c.data}</span>
+              <div className="count-card-head-right">
+                <span className="category-chip">{categoriaDoInventario(c, inventories)}</span>
+                <span className="count-card-date">{c.data}</span>
+                {onDeleteCount && (
+                  <div className="count-card-menu">
+                    <button type="button" className="count-card-menu-btn" onClick={()=>setMenuAbertoId(menuAbertoId===c.id ? null : c.id)}>⋮</button>
+                    {menuAbertoId===c.id && (
+                      <div className="count-card-menu-dropdown">
+                        <button type="button" onClick={()=>{ setConfirmDeleteId(c.id); setMenuAbertoId(null); }}>🗑 Excluir contagem</button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
             <div className="count-card-title">
               <div className="item-code">{c.productCode}</div>
@@ -6110,20 +6157,10 @@ function RecountsPanel({counts, inventories, goto, onDeleteCount, onRefresh}){
             </div>
             <div className="count-card-location"><Ic>📍</Ic> {c.endereco || 'não cadastrado'}</div>
             {c.recontagemSolicitadaPeloLider && (
-              <div className="divergence-alert" style={{margin:'10px 16px 0'}}>
-                <Ic>⚠</Ic>
+              <div className="divergence-alert"><Ic>⚠</Ic>
                 <span>{c.recontagemSolicitadaPor || 'O líder'} não aceitou a divergência da 1ª contagem e solicitou uma nova contagem em {c.recontagemSolicitadaEm}.</span>
               </div>
             )}
-            <div className="count-card-values">
-              <div className="cv"><div className="k">Sistema</div><div className="v">{c.saldoSistema==null ? '—' : c.saldoSistema}</div></div>
-              <div className="cv"><div className="k">1ª Contagem</div><div className="v">{c.qtdContada}</div></div>
-              <div className="cv">
-                <div className="k">Diferença</div>
-                <div className="v" style={{color:sev.color}}>{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div>
-                {c.percentual!=null && <div style={{fontSize:11,color:'var(--ink-dim)'}}>{c.percentual.toFixed(1)}%</div>}
-              </div>
-            </div>
             {confirmDeleteId===c.id ? (
               <div className="count-card-actions">
                 <div className="divergence-alert" style={{marginBottom:10}}>
@@ -6136,9 +6173,30 @@ function RecountsPanel({counts, inventories, goto, onDeleteCount, onRefresh}){
                 </div>
               </div>
             ) : (
-              <div className="btn-row count-card-actions">
-                <button className="btn btn-primary" onClick={()=>goto('recount', c)}><Ic>🔁</Ic> Recontar</button>
-                {onDeleteCount && <button className="btn btn-danger" onClick={()=>setConfirmDeleteId(c.id)}><Ic>🗑</Ic></button>}
+              <div className="count-card-main">
+                <div className="count-card-content">
+                  <div className="count-card-values">
+                    <div className="cv"><div className="k">Sistema</div><div className="v">{c.saldoSistema==null ? '—' : c.saldoSistema}</div></div>
+                    <div className="cv"><div className="k">1ª Contagem</div><div className="v">{c.qtdContada}</div></div>
+                    <div className="cv"><div className="k">Diferença</div><div className="v" style={{color:sev.color}}>{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div></div>
+                    <div className="cv"><div className="k">%</div><div className="v" style={{color:sev.color}}>{c.percentual==null ? '—' : c.percentual.toFixed(1)+'%'}</div></div>
+                  </div>
+                  {detalhesAbertoId===c.id && (
+                    <div className="count-card-extra">
+                      {c.almoxarifado && <div>Armazém: <strong>{c.almoxarifado}</strong></div>}
+                      {c.enderecoContado && c.enderecoContado!==c.endereco && <div>Endereço contado: <strong>{c.enderecoContado}</strong></div>}
+                      {c.motivo && <div>Motivo: <strong>{c.motivo}</strong></div>}
+                      {c.observacao && <div>Observação: {c.observacao}</div>}
+                      {c.foto && <div>Foto anexada na contagem.</div>}
+                      {c.valorDivergente && Number(c.valorDivergente)!==0 && <div>Valor divergente: <strong>R$ {Number(c.valorDivergente).toFixed(2)}</strong></div>}
+                      <div>Contado por {c.usuario} em {c.data} {c.hora||''}</div>
+                    </div>
+                  )}
+                </div>
+                <div className="count-card-actions-col">
+                  <button className="btn btn-primary" onClick={()=>goto('recount', c)}><Ic>🔁</Ic> Recontar</button>
+                  <button className="btn btn-outline" onClick={()=>setDetalhesAbertoId(detalhesAbertoId===c.id ? null : c.id)}><Ic>📋</Ic> {detalhesAbertoId===c.id ? 'Ocultar' : 'Detalhes'}</button>
+                </div>
               </div>
             )}
           </div>
@@ -6287,14 +6345,14 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequ
                   </div>
                 </div>
               ) : canApprove ? (
-                <div className="btn-row count-card-actions">
+                <div className="btn-row count-card-actions-row">
                   <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>handleRequestRecount(c.id)}>{busyId===c.id ? 'Enviando…' : 'Solicitar nova contagem'}</button>
                   <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>goto('recount', c)}><Ic>🔁</Ic> Recontar</button>
                   <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>handleApprove(c.id)}>{busyId===c.id ? 'Enviando…' : 'Aprovar divergência'}</button>
                   {onDeleteCount && <button className="btn btn-danger" disabled={busyId===c.id} onClick={()=>setConfirmDeleteId(c.id)}><Ic>🗑</Ic></button>}
                 </div>
               ) : (
-                <div className="count-card-actions" style={{fontSize:12,color:'var(--ink-dim)'}}>Aguardando decisão do líder de estoque.</div>
+                <div style={{fontSize:12,color:'var(--ink-dim)'}}>Aguardando decisão do líder de estoque.</div>
               )}
             </div>
           </div>
