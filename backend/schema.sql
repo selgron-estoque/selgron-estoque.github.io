@@ -162,12 +162,18 @@ $$ language sql stable;
 -- INNER JOIN esconderia quase tudo. `corredor`/`rua`/`endereco_codigo` vêm
 -- null até o cadastro de endereços avançar de verdade.
 --
--- `p_grupo` (opcional, default null = comportamento de sempre, sem filtro)
+-- `p_grupos` (opcional, default null = comportamento de sempre, sem filtro)
 -- foi acrescentado pro tipo de inventário "Contagem por Grupo" — quando
--- informado, filtra só os itens daquele grupo/família de produto (`grupo`
--- em `produtos`, SB2), mantendo a mesma prioridade (sem movimento recente
--- primeiro, depois valor financeiro).
-create or replace function contagem_itens_prioritarios(p_limit int default 50, p_grupo text default null)
+-- informado, filtra só os itens de QUALQUER um dos grupos/famílias de
+-- produto na lista (`grupo` em `produtos`, SB2 — permite selecionar mais de
+-- um grupo na mesma contagem, pedido do cliente), mantendo a mesma
+-- prioridade (sem movimento recente primeiro, depois valor financeiro).
+-- `drop function` primeiro porque a assinatura mudou de `p_grupo text` (uma
+-- rodada anterior, texto único) pra `p_grupos text[]` (lista) — Postgres
+-- trata assinaturas diferentes como funções SOBRECARREGADAS distintas, não
+-- substitui sozinho; sem o drop, a versão antiga ficaria "fantasma" no banco.
+drop function if exists contagem_itens_prioritarios(int, text);
+create or replace function contagem_itens_prioritarios(p_limit int default 50, p_grupos text[] default null)
 returns table(
   codigo text, descricao text, grupo text, almoxarifado text, saldo numeric,
   valor_financeiro numeric, data_ultima_saida date, sem_movimento_recente boolean,
@@ -182,7 +188,7 @@ returns table(
   join produtos p on p.codigo = es.produto_codigo
   left join estoque_enderecos ee on ee.produto_codigo = es.produto_codigo
   left join enderecos e on e.id = ee.endereco_id
-  where (p_grupo is null or p.grupo = p_grupo)
+  where (p_grupos is null or p.grupo = any(p_grupos))
   order by
     (es.data_ultima_saida is null or es.data_ultima_saida < current_date - interval '90 days') desc,
     es.valor_financeiro desc

@@ -140,6 +140,12 @@
   .chip-input .chip button{background:none;border:none;color:inherit;font-size:16px;line-height:1;cursor:pointer;padding:0 2px;}
   .chip-input input{flex:1;min-width:90px;border:none;background:none;padding:6px 4px;font-size:16px;color:var(--ink);}
   .chip-input input:focus{outline:none;}
+  .grupo-suggestions{margin-top:6px;max-height:260px;overflow-y:auto;background:var(--panel-raised);border:1px solid var(--line);border-radius:8px;}
+  .grupo-suggestion-item{display:block;width:100%;text-align:left;background:none;border:none;border-bottom:1px solid var(--line);color:var(--ink);padding:11px 14px;font-size:14px;cursor:pointer;}
+  .grupo-suggestion-item:last-child{border-bottom:none;}
+  .grupo-suggestion-item:hover{background:var(--panel);}
+  .grupo-suggestion-count{color:var(--ink-dim);font-family:var(--font-mono);font-size:12px;}
+  .grupo-suggestion-empty{padding:14px;color:var(--ink-dim);font-size:13px;}
   .radio-group{display:flex;flex-direction:column;gap:10px;}
   .radio-opt{display:flex;align-items:center;gap:12px;background:var(--panel-raised);border:1px solid var(--line);padding:14px;border-radius:8px;}
   .radio-opt.active{border-color:var(--safety);background:#FFF4E0;}
@@ -1712,13 +1718,14 @@ function estoqueRowToProduct(row){
 // Endereço" e "Contagem por Grupo" — substitui o cache local estático de 300
 // SKUs (removido, ver CLAUDE.md). Chama a RPC `contagem_itens_prioritarios`
 // (sem-movimento-recente primeiro, depois valor financeiro decrescente).
-// `grupo` (opcional) filtra só os itens daquele grupo/família de produto —
-// usado por "Contagem por Grupo" (`inv.grupo`); os outros tipos chamam sem
-// esse argumento, mesmo comportamento de sempre.
-async function fetchContagemItensPrioritarios(limit, grupo){
+// `grupos` (opcional, ARRAY de códigos) filtra só os itens de QUALQUER um
+// desses grupos/famílias de produto — usado por "Contagem por Grupo" (pode
+// selecionar mais de um grupo); os outros tipos chamam sem esse argumento,
+// mesmo comportamento de sempre.
+async function fetchContagemItensPrioritarios(limit, grupos){
   if(!supabaseClient) return [];
   try{
-    const { data, error } = await supabaseClient.rpc('contagem_itens_prioritarios', {p_limit: limit, p_grupo: grupo || null});
+    const { data, error } = await supabaseClient.rpc('contagem_itens_prioritarios', {p_limit: limit, p_grupos: (grupos && grupos.length) ? grupos : null});
     if(error || !data) return [];
     return data.map(estoqueRowToProduct);
   }catch(err){
@@ -4113,6 +4120,57 @@ function gerarNomeAutomaticoInventario(tipo, almoxCodes, data, nomesExistentes, 
   return base + ' #' + n;
 }
 
+// Campo de busca com chips pra selecionar mais de um grupo/família de
+// produto — pedido do cliente: "conforme eu for digitando for filtrando na
+// lista" + "ter a opção de selecionar mais de um grupo". Reaproveita o
+// mesmo visual de chip do Almoxarifado (`.chip-input`/`.chip`), mas aqui a
+// busca é por TEXTO livre na descrição (não código exato), então a lista de
+// sugestões abaixo do campo filtra em tempo real por `.includes()` — usado
+// tanto em NewInventory (líder/admin) quanto na versão avulsa do operador em
+// PickCountType, ambos só passam `grupos`/`selecionados`/callbacks.
+function GrupoMultiSelectField({grupos, selecionados, onToggle, onRemove}){
+  const [busca, setBusca] = useState('');
+  const buscaNorm = busca.trim().toLowerCase();
+  const disponiveis = (grupos||[]).filter(g => !selecionados.includes(g.grupo));
+  const sugestoes = buscaNorm ? disponiveis.filter(g => g.descricao.toLowerCase().includes(buscaNorm)) : disponiveis;
+  const selecionadosObjs = selecionados.map(cod => (grupos||[]).find(g=>g.grupo===cod)).filter(Boolean);
+
+  return (
+    <div>
+      <div className="chip-input">
+        {selecionadosObjs.map(g=>(
+          <span key={g.grupo} className="chip">
+            {g.descricao}
+            <button type="button" onClick={()=>onRemove(g.grupo)} aria-label={"Remover grupo "+g.descricao}>×</button>
+          </span>
+        ))}
+        <input
+          type="text"
+          value={busca}
+          onChange={e=>setBusca(e.target.value)}
+          placeholder={selecionados.length ? 'Adicionar outro grupo…' : 'Digite pra buscar um grupo…'}
+        />
+      </div>
+      {busca.trim() && (
+        <div className="grupo-suggestions">
+          {sugestoes.length===0 ? (
+            <div className="grupo-suggestion-empty">Nenhum grupo encontrado para "{busca}".</div>
+          ) : sugestoes.slice(0,30).map(g=>(
+            <button
+              key={g.grupo}
+              type="button"
+              className="grupo-suggestion-item"
+              onClick={()=>{ onToggle(g.grupo); setBusca(''); }}
+            >
+              {g.descricao} <span className="grupo-suggestion-count">({g.qtdItens} {g.qtdItens===1?'item':'itens'})</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function NewInventory({onCreate, goto, inventories}){
   const [nome, setNome] = useState('');
   // Almoxarifado virou multi-seleção (chips) — começa com "01" pré-adicionado,
@@ -4135,7 +4193,9 @@ function NewInventory({onCreate, goto, inventories}){
   // grupos_com_estoque, que já filtra pros grupos com saldo carregado (evita
   // listar os ~248 grupos possíveis do catálogo, a maioria ainda vazia).
   const [grupos, setGrupos] = useState(null); // null = ainda não carregou
-  const [grupoSelecionado, setGrupoSelecionado] = useState('');
+  // Vira array — pedido do cliente pra poder selecionar mais de um grupo na
+  // mesma contagem, não só um.
+  const [gruposSelecionados, setGruposSelecionados] = useState([]);
 
   const [arquivoNome, setArquivoNome] = useState('');
   const [itensImportados, setItensImportados] = useState(null);
@@ -4204,7 +4264,15 @@ function NewInventory({onCreate, goto, inventories}){
 
   const isImportado = tipo==='Lista Importada (Excel)';
   const isPorGrupo = tipo==='Contagem por Grupo';
-  const grupoDescricao = isPorGrupo ? (grupos||[]).find(g=>g.grupo===grupoSelecionado) : null;
+  // Rótulo pro nome automático: 1 grupo mostra a descrição inteira; mais de
+  // um mostra os 2 primeiros + "e mais N" (senão o nome do inventário ficaria
+  // absurdamente longo com vários grupos selecionados).
+  const gruposLabel = useMemo(()=>{
+    if(!isPorGrupo || gruposSelecionados.length===0) return null;
+    const nomes = gruposSelecionados.map(cod => (grupos||[]).find(g=>g.grupo===cod)).filter(Boolean).map(g=>g.descricao);
+    if(nomes.length<=2) return nomes.join(' + ');
+    return nomes.slice(0,2).join(' + ') + ' + ' + (nomes.length-2) + ' outro' + (nomes.length-2===1?'':'s');
+  }, [isPorGrupo, gruposSelecionados, grupos]);
 
   // Nome do inventário: pra "Lista Importada" continua saindo do nome do
   // arquivo (setNome em handleFileUpload); pros outros tipos que ainda
@@ -4214,11 +4282,11 @@ function NewInventory({onCreate, goto, inventories}){
   // inventários já criados.
   const nomeAuto = useMemo(()=>{
     if(!tipo || isImportado) return '';
-    return gerarNomeAutomaticoInventario(tipo, almoxCodes, data, (inventories||[]).map(i=>i.nome), grupoDescricao ? grupoDescricao.descricao : null);
-  }, [tipo, isImportado, almoxCodes, data, inventories, grupoDescricao]);
+    return gerarNomeAutomaticoInventario(tipo, almoxCodes, data, (inventories||[]).map(i=>i.nome), gruposLabel);
+  }, [tipo, isImportado, almoxCodes, data, inventories, gruposLabel]);
   const nomeFinal = isImportado ? nome : nomeAuto;
 
-  const camposBasicosOk = nomeFinal.trim() && almoxCodes.length>0 && data && data>=hojeStr && (isImportado || Number(qtd)>0) && (!isPorGrupo || !!grupoSelecionado);
+  const camposBasicosOk = nomeFinal.trim() && almoxCodes.length>0 && data && data>=hojeStr && (isImportado || Number(qtd)>0) && (!isPorGrupo || gruposSelecionados.length>0);
   const canCreate = camposBasicosOk && (isImportado ? !!(itensImportados && itensImportados.length>0) : true);
 
   function handleDownloadTemplate(){
@@ -4277,7 +4345,7 @@ function NewInventory({onCreate, goto, inventories}){
       id:'INV-'+Math.floor(Math.random()*900+100), nome:nomeFinal, almoxarifado, data, tipo,
       qtdItens: isImportado ? itensImportados.length : Number(qtd), status:'pendente', contados:0,
       ...(isImportado ? {itensImportados} : {}),
-      ...(isPorGrupo ? {grupo: grupoSelecionado} : {}),
+      ...(isPorGrupo ? {grupo: gruposSelecionados.join(',')} : {}),
     });
     setSalvando(false);
     if(res && !res.ok) setErroCriacao(res.erro || 'Não foi possível criar o inventário — tente novamente.');
@@ -4327,18 +4395,18 @@ function NewInventory({onCreate, goto, inventories}){
             </div>
             {isPorGrupo && (
               <div className="field">
-                <label>Grupo</label>
+                <label>Grupo (pode selecionar mais de um)</label>
                 {grupos===null ? (
                   <div className="empty-state" style={{padding:14}}>Carregando grupos disponíveis…</div>
                 ) : grupos.length===0 ? (
                   <div className="empty-state" style={{padding:14}}>Nenhum grupo com saldo carregado ainda.</div>
                 ) : (
-                  <select value={grupoSelecionado} onChange={e=>setGrupoSelecionado(e.target.value)}>
-                    <option value="">Selecione um grupo…</option>
-                    {grupos.map(g=>(
-                      <option key={g.grupo} value={g.grupo}>{g.descricao} ({g.qtdItens} {g.qtdItens===1?'item':'itens'})</option>
-                    ))}
-                  </select>
+                  <GrupoMultiSelectField
+                    grupos={grupos}
+                    selecionados={gruposSelecionados}
+                    onToggle={cod=>setGruposSelecionados(prev=>[...prev, cod])}
+                    onRemove={cod=>setGruposSelecionados(prev=>prev.filter(c=>c!==cod))}
+                  />
                 )}
               </div>
             )}
@@ -4453,7 +4521,7 @@ function PickCountType({role, goto, onCreate, inventories}){
   // nenhum tratamento especial extra aqui).
   const [grupoAvulsoAberto, setGrupoAvulsoAberto] = useState(false);
   const [gruposAvulso, setGruposAvulso] = useState(null);
-  const [grupoAvulsoSelecionado, setGrupoAvulsoSelecionado] = useState('');
+  const [gruposAvulsoSelecionados, setGruposAvulsoSelecionados] = useState([]);
   useEffect(()=>{
     if(podeGerir || !grupoAvulsoAberto || gruposAvulso!==null) return;
     let cancelado = false;
@@ -4497,17 +4565,17 @@ function PickCountType({role, goto, onCreate, inventories}){
               <div className="empty-state" style={{padding:14}}>Nenhum grupo com saldo carregado ainda.</div>
             ) : (
               <>
-                <select value={grupoAvulsoSelecionado} onChange={e=>setGrupoAvulsoSelecionado(e.target.value)}>
-                  <option value="">Selecione um grupo…</option>
-                  {gruposAvulso.map(g=>(
-                    <option key={g.grupo} value={g.grupo}>{g.descricao} ({g.qtdItens} {g.qtdItens===1?'item':'itens'})</option>
-                  ))}
-                </select>
+                <GrupoMultiSelectField
+                  grupos={gruposAvulso}
+                  selecionados={gruposAvulsoSelecionados}
+                  onToggle={cod=>setGruposAvulsoSelecionados(prev=>[...prev, cod])}
+                  onRemove={cod=>setGruposAvulsoSelecionados(prev=>prev.filter(c=>c!==cod))}
+                />
                 <button
                   className="btn btn-primary"
                   style={{marginTop:10}}
-                  disabled={!grupoAvulsoSelecionado}
-                  onClick={()=>goto('randomCount', {grupo: grupoAvulsoSelecionado})}
+                  disabled={gruposAvulsoSelecionados.length===0}
+                  onClick={()=>goto('randomCount', {grupo: gruposAvulsoSelecionados.join(',')})}
                 >Iniciar contagem</button>
               </>
             )}
@@ -4918,10 +4986,12 @@ function RandomCountFlow({inv, user, onFinish, onAddressProposed, setInventories
   useEffect(()=>{
     let cancelado = false;
     const qtd = (inv && inv.qtdItens) || 5;
-    // "Contagem por Grupo" filtra a busca pelo grupo salvo no inventário
-    // (`inv.grupo`) — os outros tipos passam `undefined`, sem filtro, mesmo
+    // "Contagem por Grupo" filtra a busca pelos grupos salvos no inventário
+    // (`inv.grupo`, texto com códigos separados por vírgula — pode ser mais
+    // de um) — os outros tipos passam `undefined`, sem filtro, mesmo
     // comportamento de sempre.
-    fetchContagemItensPrioritarios(Math.max(qtd, 25), inv && inv.grupo).then(itens=>{
+    const gruposFiltro = (inv && inv.grupo) ? inv.grupo.split(',').filter(Boolean) : undefined;
+    fetchContagemItensPrioritarios(Math.max(qtd, 25), gruposFiltro).then(itens=>{
       if(cancelado) return;
       // Sequência de endereço: itens com endereço cadastrado vêm primeiro,
       // ordenados por corredor → rua → endereço (deslocamento físico menor);
@@ -4973,7 +5043,7 @@ function RandomCountFlow({inv, user, onFinish, onAddressProposed, setInventories
 
   return (
     <div>
-      <div className="role-note">Item {jaContados+q.idx+1} de {allItems.length} · Itens ainda não contados primeiro, depois por sequência de endereço{inv && inv.grupo ? (' · Grupo: ' + describeGrupo(inv.grupo)) : ''}</div>
+      <div className="role-note">Item {jaContados+q.idx+1} de {allItems.length} · Itens ainda não contados primeiro, depois por sequência de endereço{inv && inv.grupo ? (' · Grupo: ' + inv.grupo.split(',').filter(Boolean).map(describeGrupo).join(', ')) : ''}</div>
       <CountStep
         product={q.current}
         user={user}
