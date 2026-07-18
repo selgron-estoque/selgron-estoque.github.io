@@ -3743,6 +3743,57 @@ em vez de preservar o modo 100% offline como prioridade.
   ao mesmo tempo — uma mudança feita numa aba aparece na outra em poucos
   segundos, sem precisar recarregar a página.
 
+## Bug real: Realtime não entregava eventos ao vivo (só reload atualizava) +
+## decisão consciente de não reservar item durante a contagem
+
+Depois de habilitado o Realtime, o cliente testou com duas abas e reportou:
+"ele não atualiza sem recarregar a página" — o reload sempre mostrava dado
+fresco (o fetch que roda quando o canal conecta cobre isso, ver seção
+anterior), mas uma aba já aberta não recebia os eventos ao vivo dos outros
+aparelhos.
+
+- **Causa provável**: o socket do Realtime precisa carregar o JWT de quem
+  está logado pra a policy de RLS `auth.role() = 'authenticated'` (das 4
+  tabelas habilitadas) ser satisfeita do lado de QUEM RECEBE o evento — sem
+  isso, a conexão fica anônima por padrão e nenhum evento é entregue,
+  silenciosamente (a assinatura do canal em si continua "SUBSCRIBED" com
+  sucesso, só os eventos individuais que nunca chegam). Corrigido com
+  `sincronizarAuthRealtime(session)` — chamada sempre que a sessão resolve
+  ou muda (`getSession()`/`onAuthStateChange`, mesmo lugar de sempre),
+  chama `supabaseClient.realtime.setAuth(session.access_token)` pra
+  garantir que o token esteja anexado ao socket antes de qualquer canal
+  ser assinado. Confirmado pelo cliente que passou a atualizar ao vivo,
+  sem precisar recarregar.
+
+**Segunda pergunta do cliente, mais profunda**: mesmo com Realtime
+funcionando, ele perguntou se isso garante que duas pessoas nunca abrem o
+mesmo item pra contar ao mesmo tempo. A resposta honesta é não — Realtime
+resolve "avisar mais rápido que algo mudou", não "impedir que dois
+aparelhos abram o mesmo item antes de qualquer um terminar". Um item só é
+marcado como contado no banco depois de FINALIZADO (não quando é ABERTO),
+então a janela de colisão continua existindo (só ficou bem menor: de até
+30s de atraso do polling antigo pra frações de segundo hoje) — mesma
+limitação já documentada antes ("o 'próximo item' é um índice, não uma
+reserva por item").
+
+- Perguntei via `AskUserQuestion` se o cliente queria um mecanismo de
+  RESERVA de verdade (travar o item no banco no momento em que é ABERTO
+  pra contar, liberando sozinho depois de um tempo se abandonado) — ele
+  decidiu que **não**, por enquanto: vai resolver por **processo/
+  treinamento**, orientando o operador a ir fisicamente até o endereço
+  antes de clicar em "Recontar"/abrir o item. Isso não elimina o risco de
+  verdade, mas espaça naturalmente o tempo entre "abrir o item" e "estar de
+  fato contando", dando mais chance da sincronização instantânea avisar o
+  outro aparelho antes de alguém mais tentar pegar o mesmo item.
+- **Nenhuma mudança de código veio dessa decisão** — registrado aqui só
+  pra não perder o contexto de "por que a reserva não foi implementada",
+  caso o cliente peça isso de novo no futuro (ex: se o volume de
+  inventário geral tornar as colisões mais frequentes na prática). Se
+  pedir, o desenho já foi esboçado na conversa: reservar o item no
+  servidor (não só localmente) no momento da abertura, com expiração
+  automática (tempo a definir) e aviso explícito de "já sendo contado por
+  fulano" pro segundo operador.
+
 ## Convenções de design (não quebrar ao continuar)
 
 - Tema claro, alto contraste (fundo cinza-claro `#EEF0F3`, painéis brancos, texto quase
