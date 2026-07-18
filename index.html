@@ -5453,6 +5453,11 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   function calcDigit(d){
     setCalcCurrent(prev => (prev==='0' ? String(d) : prev + String(d)));
   }
+  // O botão mostra "," (separador decimal em pt-BR), mas o estado interno
+  // continua usando "." — é o formato que `parseFloat`/`calcApply` esperam
+  // e o mesmo que o campo `qty` (input type="number") exige, não importa o
+  // idioma. A troca "." → "," acontece só na hora de EXIBIR (`.replace`,
+  // no display da calculadora), nunca no valor guardado.
   function calcDot(){
     setCalcCurrent(prev => prev.includes('.') ? prev : prev + '.');
   }
@@ -5760,8 +5765,8 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
           {calcOpen && (
             <div className="cs-calc-panel">
               <div className="cs-calc-display">
-                {calcAcc!=null && <span className="cs-calc-history">{calcAcc} {calcOp}</span>}
-                {calcCurrent}
+                {calcAcc!=null && <span className="cs-calc-history">{calcAcc.replace('.', ',')} {calcOp}</span>}
+                {calcCurrent.replace('.', ',')}
               </div>
               <div className="cs-calc-grid">
                 <button type="button" className="cs-calc-key op" onClick={calcClear}>C</button>
@@ -5781,7 +5786,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
                 <button type="button" className="cs-calc-key" onClick={()=>calcDigit(3)}>3</button>
                 <button type="button" className="cs-calc-key equals" style={{gridRow:'span 2'}} onClick={calcEquals}>=</button>
                 <button type="button" className="cs-calc-key" style={{gridColumn:'span 2'}} onClick={()=>calcDigit(0)}>0</button>
-                <button type="button" className="cs-calc-key" onClick={calcDot}>.</button>
+                <button type="button" className="cs-calc-key" onClick={calcDot}>,</button>
               </div>
               <button type="button" className="btn btn-primary" style={{width:'100%',marginTop:10}} onClick={calcUsarValor}>Usar valor na quantidade</button>
             </div>
