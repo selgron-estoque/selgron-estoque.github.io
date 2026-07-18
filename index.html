@@ -3679,8 +3679,8 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
   const emAndamento = inventories.filter(i=>i.contados>0 && i.contados<i.qtdItens).length;
   const pendentesInicio = inventories.filter(i=>i.contados===0).length;
 
-  const hojeStr = new Date().toISOString().slice(0,10);
-  const ontemStr = new Date(Date.now()-86400000).toISOString().slice(0,10);
+  const hojeStr = hojeLocalStr();
+  const ontemStr = localDateStr(new Date(Date.now()-86400000));
 
   // Acuracidade cumulativa inclui o histórico importado (contagens_historico,
   // status já concluídos) além das contagens ao vivo do app — sem isso, a
@@ -4097,7 +4097,7 @@ function NewInventory({onCreate, goto, inventories}){
   const [almoxInput, setAlmoxInput] = useState('');
   const [almoxErro, setAlmoxErro] = useState('');
   const [armazensValidos, setArmazensValidos] = useState(null); // null = ainda não carregou (não bloqueia validação nesse meio-tempo)
-  const [data, setData] = useState(()=> new Date().toISOString().slice(0,10));
+  const [data, setData] = useState(()=> hojeLocalStr());
   const [qtd, setQtd] = useState('');
   // Fluxo em 2 passos, pedido do cliente: primeiro escolhe o tipo de
   // inventário, só depois configura o resto (nome, almoxarifado, data,
@@ -4121,7 +4121,7 @@ function NewInventory({onCreate, goto, inventories}){
     return ()=>{ cancelado = true; };
   }, []);
 
-  const hojeStr = new Date().toISOString().slice(0,10);
+  const hojeStr = hojeLocalStr();
 
   function normalizarCodigoAlmox(v){
     const semZeros = v.replace(/^0+(?=\d)/, '');
@@ -4579,7 +4579,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
         descricao: product.descricao,
         enderecoInformado,
         usuario: user.nome,
-        data: new Date().toISOString().slice(0,10),
+        data: hojeLocalStr(),
       });
     }
     setStep('count');
@@ -4624,7 +4624,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
       motivo: diffAbs!==0 ? motivo : '',
       foto: !!photo,
       observacao: obs,
-      data: new Date().toISOString().slice(0,10),
+      data: hojeLocalStr(),
       hora: new Date().toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'}),
       inventario: inv ? inv.id : '—',
       // Marca como "ainda não confirmado no Supabase" — App() (via
@@ -5612,7 +5612,7 @@ function ConcludedCountsPanel({counts, historicoConcluidas=[], onDeleteCount, on
   // chave de persistência própria (`concluidasTrendFilter`), não compartilha
   // estado com o filtro do Dashboard, são telas independentes.
   const [trendFilter, setTrendFilter] = usePersistedState('concluidasTrendFilter', {tipo:'30d', from:'', to:''});
-  const hojeStr = new Date().toISOString().slice(0,10);
+  const hojeStr = hojeLocalStr();
   const { from: dataInicioStr, to: dataFimStr } = computeTrendRange(trendFilter.tipo, hojeStr, trendFilter.from, trendFilter.to);
 
   async function handleRefresh(){
@@ -5815,7 +5815,7 @@ function ReportsScreen({counts, inventories, currentUser, sendHistory, onLogSend
       return false;
     }
     const wb = generateReportWorkbook(countsFiltrados, inventories);
-    const sufixo = filtroData || new Date().toISOString().slice(0,10);
+    const sufixo = filtroData || hojeLocalStr();
     const filename = `GestaoEstoques_Relatorio_${sufixo}.xlsx`;
     window.XLSX.writeFile(wb, filename);
     return filename;
@@ -6053,6 +6053,25 @@ function fmtDataBR(dataStr){
   if(!dataStr) return '—';
   const [ano,mes,dia] = dataStr.split('-');
   return dia+'/'+mes+'/'+ano;
+}
+
+// Data de HOJE no formato YYYY-MM-DD, sempre pelo horário LOCAL do aparelho
+// — bug real corrigido aqui: `new Date().toISOString().slice(0,10)` converte
+// pra UTC antes de cortar a data, e o Brasil é UTC-3. Qualquer contagem feita
+// entre ~21h e meia-noite (horário local) cai no dia SEGUINTE em UTC — uma
+// contagem às 22h30 do dia 17 gravava `data:'2026-07-18'` (errado) junto com
+// `hora:'22:30'` (certo, já que esse campo já usava horário local) — cliente
+// reportou o mesmo sintoma no filtro "Hoje" de Contagens Concluídas, que
+// também usava esse padrão. `hojeLocalStr`/`localDateStr` usam
+// getFullYear/getMonth/getDate (sempre horário local do navegador, nunca
+// UTC) — substitui todo `new Date().toISOString().slice(0,10)` que tentava
+// representar "agora"/"hoje" (não os que só reformatam uma data JÁ fixada,
+// como o `fmt` de computeTrendRange, que não sofre desse problema).
+function localDateStr(d){
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function hojeLocalStr(){
+  return localDateStr(new Date());
 }
 
 // Janela por INTERVALO DE DATAS explícito (`dataInicioStr`/`dataFimStr`,
@@ -6556,7 +6575,7 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   // par `dataInicioStr`/`dataFimStr`, usado tanto por `computeWeeklyStats`
   // quanto por `computeMonthlyStats` — os dois recebem intervalo de data
   // agora, não mais "quantidade de semanas".
-  const hojeStr = new Date().toISOString().slice(0,10);
+  const hojeStr = hojeLocalStr();
   const trendRange = computeTrendRange(trendFilter.tipo, hojeStr, trendFilter.from, trendFilter.to);
   let dataInicioStr = trendRange.from, dataFimStr = trendRange.to;
   if(dataInicioStr > dataFimStr) dataInicioStr = dataFimStr; // evita intervalo invertido se o usuário escolher datas fora de ordem
