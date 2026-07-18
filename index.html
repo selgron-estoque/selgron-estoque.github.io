@@ -504,7 +504,7 @@
      novo funciona em qualquer largura de tela"). Abaixo de 768px a sidebar vira um
      painel sobreposto (overlay) que desliza por cima do conteúdo em vez de empurrá-lo,
      já que não cabe um menu fixo de 264px numa tela de celular. */
-  .desktop-topbar, .sidebar, .sidebar-toggle, .sidebar-backdrop, .desktop-kpi-grid, .desktop-quick-grid, .desktop-cta-row, .pnl-wrap{display:none;}
+  .desktop-topbar, .sidebar, .sidebar-toggle, .sidebar-backdrop, .desktop-kpi-grid, .desktop-quick-grid, .desktop-cta-row, .pnl-wrap, .mobile-home-menu{display:none;}
 
   @media (min-width:360px){
     .app{max-width:none;flex-direction:row;align-items:flex-start;position:relative;}
@@ -586,6 +586,7 @@
     /* ---- Dashboard novo ("painel") — design system corporativo/ERP (Inter,
        navy, laranja Selgron, grid de 12 colunas, espaçamento em múltiplos de 8) ---- */
     .pnl-wrap{display:block;font-family:var(--font-corp);color:var(--navy);}
+    .mobile-home-menu{display:none;}
     .pnl-kpi-row{display:grid;grid-template-columns:repeat(5,1fr);gap:16px;margin-bottom:24px;}
     .pnl-kpi{display:block;width:100%;text-align:left;font:inherit;background:#fff;border:1px solid var(--gray-200);border-radius:10px;padding:18px;box-shadow:0 1px 2px rgba(15,23,42,.03);transition:box-shadow .15s, transform .15s;}
     .pnl-kpi:hover{box-shadow:0 6px 16px rgba(15,23,42,.08);transform:translateY(-1px);}
@@ -663,6 +664,21 @@
       .pnl-kpi-row{grid-template-columns:repeat(2,1fr);gap:12px;}
       .pnl-row{gap:14px;}
       .pnl-card{padding:14px;overflow-x:auto;}
+
+      /* Início no celular: só o menu, não o Dashboard completo (pedido do
+         cliente — "no celular mostra apenas o menu... se quiser ver
+         indicador ou lançar contagem precisa selecionar a opção no menu").
+         `.pnl-wrap` (KPIs/tabelas/donut, pensado pra tela grande) some;
+         `.mobile-home-menu` (ver MobileHomeMenu) vira o conteúdo da Início. */
+      .pnl-wrap{display:none;}
+      .mobile-home-menu{display:block;}
+      .mhm-group{margin-bottom:20px;}
+      .mhm-group-title{font-family:var(--font-mono);font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--gray-500);padding:0 2px 8px;}
+      .mhm-item{display:flex;align-items:center;gap:14px;width:100%;background:#fff;border:1px solid var(--gray-200);border-radius:10px;padding:16px;margin-bottom:10px;text-align:left;font-family:var(--font-corp);box-shadow:0 1px 2px rgba(15,23,42,.03);position:relative;}
+      .mhm-item:active{background:var(--gray-50);}
+      .mhm-ic{width:38px;height:38px;border-radius:10px;background:var(--gray-100);color:var(--navy);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+      .mhm-label{flex:1;font-size:14.5px;font-weight:600;color:var(--navy);}
+      .mhm-badge{background:var(--safety);color:var(--safety-ink);font-family:var(--font-mono);font-weight:700;font-size:11px;padding:2px 7px;border-radius:20px;flex-shrink:0;}
     }
   }
 </style>
@@ -3657,18 +3673,21 @@ function SubBar({view, goto}){
   );
 }
 
-function Sidebar({view, goto, role, user, collapsed, pendingSync=0}){
+// Agrupado por categoria (pedido do cliente: "revise esses nomes, deixar
+// intuitivo... pode fazer também categoria e subcategorias") — a lista
+// flat de 10+ itens misturava "ações de contagem" com "análise"/"sistema"
+// sem nenhuma hierarquia visual. Rótulos também alinhados com o título
+// que a própria tela usa (VIEW_TITLES) — "Contagens" virou "Nova
+// Contagem" (é isso que a tela faz: começa uma contagem, não lista as já
+// feitas — nome antigo confundia com "Minhas Contagens"/"Contagens
+// Concluídas" logo ao lado); "Recontagens"/"Endereços" ganharam o mesmo
+// sufixo "Pendentes" que o cabeçalho da própria tela já mostra.
+// Extraída de `Sidebar` pra ser reaproveitada também por `MobileHomeMenu`
+// (o menu que vira a própria tela inicial no celular) — mesma lista de
+// destinos nos dois lugares, sem duplicar manutenção.
+function buildSidebarGroups(role){
   const podeValidarEnderecos = role==='lider'||role==='admin';
-  // Agrupado por categoria (pedido do cliente: "revise esses nomes, deixar
-  // intuitivo... pode fazer também categoria e subcategorias") — a lista
-  // flat de 10+ itens misturava "ações de contagem" com "análise"/"sistema"
-  // sem nenhuma hierarquia visual. Rótulos também alinhados com o título
-  // que a própria tela usa (VIEW_TITLES) — "Contagens" virou "Nova
-  // Contagem" (é isso que a tela faz: começa uma contagem, não lista as já
-  // feitas — nome antigo confundia com "Minhas Contagens"/"Contagens
-  // Concluídas" logo ao lado); "Recontagens"/"Endereços" ganharam o mesmo
-  // sufixo "Pendentes" que o cabeçalho da própria tela já mostra.
-  const groups = [
+  return [
     { label: null, items: [
       {id:'home', ic:'home', label:'Início'},
     ]},
@@ -3690,6 +3709,10 @@ function Sidebar({view, goto, role, user, collapsed, pendingSync=0}){
       {id:'settings', ic:'settings', label:'Configurações'},
     ]},
   ];
+}
+
+function Sidebar({view, goto, role, user, collapsed, pendingSync=0}){
+  const groups = buildSidebarGroups(role);
   return (
     <div className={"sidebar"+(collapsed?' collapsed':'')}>
       <div className="sidebar-brand">
@@ -3773,6 +3796,36 @@ function BottomNav({view, goto, role}){
           <span className="ic"><Ic>{it.ic}</Ic></span>
           {it.label}
         </button>
+      ))}
+    </div>
+  );
+}
+
+// Celular: em vez de tentar encaixar o Dashboard completo (KPIs, tabelas,
+// donut — pensados pra tela grande) numa tela estreita, a Início no celular
+// vira só o menu (pedido do cliente: "mostrar apenas o menu lateral... se
+// quiser ver indicador ou lançar contagem precisa selecionar a opção no
+// menu"). Reaproveita a MESMA lista de destinos da Sidebar (buildSidebarGroups)
+// — "Início" sai da lista aqui porque não faz sentido navegar pra tela em
+// que já se está. `badges` é um mapa {viewId: contador} pros mesmos avisos
+// que já existiam no grid de atalhos antigo (Inventários/Recontagens/
+// Divergentes/Endereços pendentes).
+function MobileHomeMenu({role, goto, badges={}}){
+  const groups = buildSidebarGroups(role);
+  return (
+    <div className="mobile-home-menu">
+      {groups.map((g,gi)=>(
+        <div key={gi} className="mhm-group">
+          {g.label && <div className="mhm-group-title">{g.label}</div>}
+          {g.items.filter(it=>it.id!=='home').map(it=>(
+            <button key={it.id} className="mhm-item" onClick={()=>goto(it.id)}>
+              <span className="mhm-ic"><DIcon name={it.ic} size={18} /></span>
+              <span className="mhm-label">{it.label}</span>
+              {badges[it.id]>0 && <span className="mhm-badge">{badges[it.id]}</span>}
+              <DIcon name="chevronRight" size={16} style={{color:'var(--gray-400)', flexShrink:0}} />
+            </button>
+          ))}
+        </div>
       ))}
     </div>
   );
@@ -4032,7 +4085,17 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
         </div>
       </div>
 
-      {/* Tablet/celular (padrão atual, chão de fábrica) */}
+      {/* Celular: menu de destinos em vez do Dashboard (ver MobileHomeMenu) */}
+      <MobileHomeMenu role={role} goto={goto} badges={{
+        inventories: pendentes,
+        recounts: pendentesRecontagem,
+        divergentes: itensDivergentesPendentes,
+        enderecos: pendentesEnderecos,
+      }} />
+
+      {/* Legado — só aparece em telas menores que 360px (praticamente
+          inexistentes hoje), ver CLAUDE.md "Dashboard novo funciona em
+          qualquer largura de tela" */}
       <div className="grid-cards">
         <div className="home-card" onClick={()=>goto('inventories')}>
           {pendentes>0 && <span className="badge">{pendentes}</span>}
