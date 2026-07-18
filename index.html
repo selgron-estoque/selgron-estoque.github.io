@@ -500,7 +500,9 @@
     .sidebar-brand-divider{position:relative;height:1px;background:linear-gradient(90deg, transparent, var(--safety) 20%, var(--safety) 80%, transparent);margin:14px auto;width:70%;}
     .sidebar-brand-divider::after{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:5px;height:5px;border-radius:50%;background:var(--safety);box-shadow:0 0 0 3px var(--navy);}
     .sidebar-brand .product{font-family:var(--font-display);font-size:12px;font-weight:600;letter-spacing:0.4px;text-transform:uppercase;color:#fff;}
-    .sidebar-nav{padding:14px 12px;display:flex;flex-direction:column;gap:2px;width:264px;flex-shrink:0;box-sizing:border-box;}
+    .sidebar-nav{padding:14px 12px;display:flex;flex-direction:column;gap:10px;width:264px;flex-shrink:0;box-sizing:border-box;}
+    .sidebar-group{display:flex;flex-direction:column;gap:2px;}
+    .sidebar-group-title{font-family:var(--font-mono);font-size:10px;text-transform:uppercase;letter-spacing:1px;color:rgba(255,255,255,0.4);padding:6px 12px 4px;}
     .sidebar-nav-item{display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:8px;background:none;border:none;color:rgba(255,255,255,0.72);font-size:13.5px;font-weight:500;text-align:left;width:100%;}
     .sidebar-nav-item:hover{background:rgba(255,255,255,0.07);}
     .sidebar-nav-item.active{background:var(--safety);color:var(--safety-ink);font-weight:600;}
@@ -3623,18 +3625,37 @@ function SubBar({view, goto}){
 
 function Sidebar({view, goto, role, user, collapsed, pendingSync=0}){
   const podeValidarEnderecos = role==='lider'||role==='admin';
-  const items = [
-    {id:'home', ic:'home', label:'Início'},
-    {id:'inventories', ic:'box', label:'Inventários'},
-    {id:'pickCountType', ic:'search', label:'Contagens'},
-    {id:'recounts', ic:'repeat', label:'Recontagens'},
-    {id:'divergentes', ic:'alertTriangle', label:'Itens Divergentes'},
-    {id:'concluidas', ic:'checkCircle', label:'Contagens Concluídas'},
-    {id:'myCounts', ic:'clipboardList', label:'Minhas Contagens'},
-    ...(podeValidarEnderecos ? [{id:'enderecos', ic:'mapPin', label:'Endereços'}] : []),
-    {id:'dashboard', ic:'barChart', label:'Indicadores'},
-    {id:'relatorios', ic:'fileText', label:'Relatórios'},
-    {id:'settings', ic:'settings', label:'Configurações'},
+  // Agrupado por categoria (pedido do cliente: "revise esses nomes, deixar
+  // intuitivo... pode fazer também categoria e subcategorias") — a lista
+  // flat de 10+ itens misturava "ações de contagem" com "análise"/"sistema"
+  // sem nenhuma hierarquia visual. Rótulos também alinhados com o título
+  // que a própria tela usa (VIEW_TITLES) — "Contagens" virou "Nova
+  // Contagem" (é isso que a tela faz: começa uma contagem, não lista as já
+  // feitas — nome antigo confundia com "Minhas Contagens"/"Contagens
+  // Concluídas" logo ao lado); "Recontagens"/"Endereços" ganharam o mesmo
+  // sufixo "Pendentes" que o cabeçalho da própria tela já mostra.
+  const groups = [
+    { label: null, items: [
+      {id:'home', ic:'home', label:'Início'},
+    ]},
+    { label: 'Contagem', items: [
+      {id:'inventories', ic:'box', label:'Inventários'},
+      {id:'pickCountType', ic:'search', label:'Nova Contagem'},
+      {id:'recounts', ic:'repeat', label:'Recontagens Pendentes'},
+      {id:'divergentes', ic:'alertTriangle', label:'Itens Divergentes'},
+      {id:'concluidas', ic:'checkCircle', label:'Contagens Concluídas'},
+      {id:'myCounts', ic:'clipboardList', label:'Minhas Contagens'},
+    ]},
+    ...(podeValidarEnderecos ? [{ label: 'Cadastros', items: [
+      {id:'enderecos', ic:'mapPin', label:'Endereços Pendentes'},
+    ]}] : []),
+    { label: 'Análise', items: [
+      {id:'dashboard', ic:'barChart', label:'Indicadores'},
+      {id:'relatorios', ic:'fileText', label:'Relatórios'},
+    ]},
+    { label: 'Sistema', items: [
+      {id:'settings', ic:'settings', label:'Configurações'},
+    ]},
   ];
   return (
     <div className={"sidebar"+(collapsed?' collapsed':'')}>
@@ -3644,10 +3665,15 @@ function Sidebar({view, goto, role, user, collapsed, pendingSync=0}){
         <div className="product">Gestão de Estoques</div>
       </div>
       <nav className="sidebar-nav">
-        {items.map(it=>(
-          <button key={it.id} className={"sidebar-nav-item"+(view===it.id?' active':'')} onClick={()=>goto(it.id)}>
-            <span className="ic"><DIcon name={it.ic} size={16} /></span>{it.label}
-          </button>
+        {groups.map((g,gi)=>(
+          <div key={gi} className="sidebar-group">
+            {g.label && <div className="sidebar-group-title">{g.label}</div>}
+            {g.items.map(it=>(
+              <button key={it.id} className={"sidebar-nav-item"+(view===it.id?' active':'')} onClick={()=>goto(it.id)}>
+                <span className="ic"><DIcon name={it.ic} size={16} /></span>{it.label}
+              </button>
+            ))}
+          </div>
         ))}
       </nav>
       <div className="sidebar-footer">
