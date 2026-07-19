@@ -5290,3 +5290,12 @@ pro botão "ocupar" de forma desproporcional.
   se ajusta ao próprio texto "Ver Detalhes".
 - Testado via transpile Babel do arquivo inteiro. **Verificação visual fica a cargo do
   cliente** — mesma limitação de sempre.
+
+## "Ver Detalhes" (Contagens Concluídas) volta pra btn-outline, não btn-primary
+
+Cliente apontou: "o padrão deste botão específico não é desta cor" — usei
+`btn-primary` (laranja `--safety`, cor reservada pra AÇÃO principal do card, ex.
+"Recontar") por engano. "Ver Detalhes" é navegação/visualização, não uma ação de
+workflow — o padrão certo, já usado pro botão análogo "Detalhes" em `RecountsPanel`, é
+`btn-outline` (neutro, contornado). Trocado só a classe do botão, sem mexer em mais
+nada.
