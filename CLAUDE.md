@@ -5128,3 +5128,35 @@ explicitamente) — decisões importantes que mudaram no caminho:
   `Artifact` estático (réplica fiel dos tokens de cor/fonte/CSS do app), com o cliente
   aprovando cada ajuste (contraste, texto do banner, ícones, ausência de casa decimal no
   %) antes da implementação real no `index.html`.
+
+## "Recontagens Pendentes": detalhes abertos por padrão + oculta pro operador
+
+Cliente pediu, olhando o card real em produção: "deixar como padrão mostrar os
+detalhes, e quero ter opção de ocultar essa visualização para operação" — o quadro
+Sistema/Físico/Diferença/% (+ armazém/motivo/observação/valor divergente/quem contou)
+exigia clicar em "Detalhes" a cada card pra aparecer, e não tinha nenhum controle de
+quem podia ver isso.
+
+- **Detalhes agora vêm abertos por padrão** — a lógica virou o INVERSO de antes:
+  `detalhesOcultosIds` (era `detalhesAbertoId`) guarda um **conjunto** dos cards que o
+  usuário explicitamente OCULTOU (clicando "Ocultar"), não qual card está aberto — todo
+  card fora desse conjunto já nasce visível, e mais de um card pode ficar oculto ao
+  mesmo tempo (antes só 1 card podia ficar "aberto" por vez, o que fazia sentido quando
+  o padrão era fechado, mas não faz mais sentido agora).
+- **Oculto pro operador, reaproveitando `operadorVeSaldo`** — em vez de criar uma
+  configuração nova só pra esta tela, `podeVerDetalhes = role!=='operador' ||
+  operadorVeSaldo` reaproveita o MESMO toggle já usado em `CountStep`
+  ("Visibilidade do Saldo na Contagem", Configurações → admin) — mesmo raciocínio:
+  operador não vê o saldo do sistema/comparação durante a contagem, então também não
+  vê aqui, a menos que o admin libere. Líder/admin sempre veem, e sempre com o botão
+  "Detalhes"/"Ocultar" disponível pra recolher se quiser; quando `podeVerDetalhes` é
+  `false` (operador sem a liberação), o botão nem aparece — não tem o que "ocultar" se
+  já está sempre invisível pra esse perfil.
+  - Descrição do painel em Configurações atualizada pra mencionar as duas telas que
+    esse toggle agora controla (contagem ao vivo + Recontagens Pendentes).
+- **Escopo consciente**: mudança só em `RecountsPanel` (a tela do print do cliente).
+  `DivergentItemsPanel` já mostra Sistema/Físico/Diferença/% sempre, sem toggle de
+  "Detalhes" nenhum — não foi mexido, não foi pedido.
+- Testado via transpile Babel do arquivo inteiro. **Verificação visual/funcional de
+  ponta a ponta fica a cargo do cliente** — mesma limitação de sempre (login exige
+  Supabase Auth real, não simulável no sandbox sem rede).

@@ -4000,7 +4000,7 @@ function App(){
         {view==='manualCount' && <ManualCountFlow user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('home');}} onAddressProposed={addAddressProposal} operadorVeSaldo={operadorVeSaldo} />}
         {view==='routeCount' && <RouteCountFlow inv={flowState} user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} gruposExcluidos={gruposExcluidos} />}
         {view==='importedListCount' && <ImportedListCountFlow inv={flowState} user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} />}
-        {view==='recounts' && <RecountsPanel counts={counts} inventories={inventories} role={role} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onRefresh={refreshContagens} />}
+        {view==='recounts' && <RecountsPanel counts={counts} inventories={inventories} role={role} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onRefresh={refreshContagens} operadorVeSaldo={operadorVeSaldo} />}
         {view==='divergentes' && <DivergentItemsPanel counts={counts} inventories={inventories} role={role} goto={goto} onApprove={approveDivergence} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onRefresh={refreshContagens} />}
         {view==='todasDivergencias' && <AllDivergencesPanel counts={counts} historicoConcluidas={historicoConcluidas} goto={goto} />}
         {view==='concluidas' && <ConcludedCountsPanel counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} onDeleteCount={role==='admin' ? deleteCount : undefined} onRefresh={refreshHistoricoConcluidas} />}
@@ -6830,8 +6830,15 @@ function ListaProgressoHeader({titulo, restantes, concluidas, onAtualizar, atual
   );
 }
 
-function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggleUrgente, onRefresh}){
+function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggleUrgente, onRefresh, operadorVeSaldo}){
   const canMark = role==='lider' || role==='admin';
+  // Sistema/Físico/Diferença/% (e o resto dos detalhes) ficam visíveis por
+  // padrão pra líder/admin, sem precisar clicar em nada — mesmo critério já
+  // usado em CountStep (`mostrarSaldo`): operador só vê se o admin liberou
+  // essa configuração em Configurações ("Visibilidade do Saldo na
+  // Contagem"), reaproveitando o MESMO toggle que já existe, em vez de criar
+  // uma configuração nova só pra esta tela.
+  const podeVerDetalhes = role!=='operador' || operadorVeSaldo;
   const byOriginal = {};
   counts.forEach(c=>{ if(c.contagemAnteriorId) byOriginal[c.contagemAnteriorId]=c; });
 
@@ -6891,11 +6898,23 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [excluindo, setExcluindo] = useState(false);
   const [erroExclusao, setErroExclusao] = useState('');
-  // Menu "⋮" (Marcar urgente, líder/admin; Excluir, só admin) e o expandir
-  // de "Detalhes" — ambos guardam só o id do card aberto no momento, um
-  // card aberto por vez.
+  // Menu "⋮" (Marcar urgente, líder/admin; Excluir, só admin) — guarda só o
+  // id do card com o menu aberto no momento, um card por vez.
   const [menuAbertoId, setMenuAbertoId] = useState(null);
-  const [detalhesAbertoId, setDetalhesAbertoId] = useState(null);
+  // Detalhes agora vêm ABERTOS por padrão (pedido do cliente — antes exigia
+  // clicar em "Detalhes" pra ver Sistema/Físico/Diferença/%). Por isso a
+  // lógica virou o INVERSO de antes: em vez de guardar qual card está
+  // aberto (só 1 por vez), guarda um conjunto dos cards que o usuário
+  // explicitamente OCULTOU — qualquer card fora desse conjunto já nasce
+  // visível, e mais de um card pode ficar oculto ao mesmo tempo.
+  const [detalhesOcultosIds, setDetalhesOcultosIds] = useState(()=>new Set());
+  function toggleDetalhes(id){
+    setDetalhesOcultosIds(prev=>{
+      const next = new Set(prev);
+      if(next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
 
   // Fecha o menu "⋮" ao clicar em qualquer lugar fora dele — sem isso, só
   // clicar de novo no mesmo botão "⋮" fechava, então clicar em outro canto
@@ -6999,7 +7018,7 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
             ) : (
               <div className="count-card-main">
                 <div className="count-card-content">
-                  {detalhesAbertoId===c.id && (
+                  {podeVerDetalhes && !detalhesOcultosIds.has(c.id) && (
                     <>
                       <div className="result-grid result-grid-4col" style={{marginTop:0,gridTemplateColumns:'repeat(4,1fr)'}}>
                         <div className="rg"><div className="k">Sistema</div><div className="v">{c.saldoSistema==null ? '—' : c.saldoSistema}</div></div>
@@ -7021,7 +7040,9 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
                 </div>
                 <div className="count-card-actions-col">
                   <button className="btn btn-primary" onClick={()=>goto('recount', c)}><Ic>🔁</Ic> Recontar</button>
-                  <button className="btn btn-outline" onClick={()=>setDetalhesAbertoId(detalhesAbertoId===c.id ? null : c.id)}><Ic>📋</Ic> {detalhesAbertoId===c.id ? 'Ocultar' : 'Detalhes'}</button>
+                  {podeVerDetalhes && (
+                    <button className="btn btn-outline" onClick={()=>toggleDetalhes(c.id)}><Ic>📋</Ic> {detalhesOcultosIds.has(c.id) ? 'Detalhes' : 'Ocultar'}</button>
+                  )}
                 </div>
               </div>
             )}
@@ -9560,11 +9581,13 @@ function Settings({role, currentUser, operadorVeSaldo, onSetOperadorVeSaldo, gru
           <div style={{fontSize:13,color:'var(--ink-dim)',lineHeight:1.6,marginBottom:12}}>
             Controla se o operador vê o saldo do sistema (referência antes de digitar,
             card de comparação ao vivo) durante a contagem, em todos os modos
-            (Aleatória, Manual, Rota, Lista Importada, Recontagem). Com a opção
-            desligada, o operador conta "às cegas" — a comparação com o sistema só
-            aparece depois, na análise do líder. Líder e administrador sempre veem o
-            saldo, independente desta configuração. Isso não muda a regra de aprovação
-            automática/segunda contagem/análise do líder, só o que aparece na tela.
+            (Aleatória, Manual, Rota, Lista Importada, Recontagem) — e também os
+            detalhes (Sistema/Físico/Diferença/%) em "Recontagens Pendentes". Com a
+            opção desligada, o operador conta "às cegas" e não vê esses números na fila
+            de recontagem — a comparação com o sistema só aparece depois, na análise do
+            líder. Líder e administrador sempre veem o saldo e os detalhes, independente
+            desta configuração. Isso não muda a regra de aprovação automática/segunda
+            contagem/análise do líder, só o que aparece na tela.
           </div>
           <label style={{display:'flex',alignItems:'center',gap:10,cursor:salvandoSaldo?'wait':'pointer',opacity:salvandoSaldo?0.7:1}}>
             <input
