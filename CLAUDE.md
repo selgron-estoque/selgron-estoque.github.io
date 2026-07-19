@@ -4368,3 +4368,39 @@ lançar a quantidade final, sem trocar de app pra usar a calculadora do aparelho
   todos batendo. Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
   conferidos. **A verificação visual de ponta a ponta fica a cargo do cliente** — mesma
   limitação de sempre.
+
+## "Lembrar-me" da tela de login vira funcional de verdade
+
+Cliente reportou "o checkbox 'Lembrar-me' não está funcionando" — não era bug, era um
+elemento deliberadamente decorativo desde o redesign do login (documentado em "Login
+vira redesign premium": a sessão sempre persistia sozinha via Supabase Auth,
+independente do checkbox). Perguntei o que fazer (`AskUserQuestion`: tornar funcional,
+remover, ou manter decorativo com texto mais claro) — escolheu tornar funcional.
+
+- **`supabaseAuthStorage`** (storage adapter customizado, passado em
+  `createClient(URL, KEY, {auth:{storage:...}})`) — decide ENTRE `localStorage`
+  (sobrevive a fechar o navegador — mesmo comportamento de sempre) e `sessionStorage`
+  (não sobrevive a fechar a aba/navegador, mas sobrevive a um F5 normal — comportamento
+  padrão de "lembrar-me" em praticamente qualquer site) pra gravar/ler o token de sessão
+  que o supabase-js gerencia. A decisão em si (`sessaoDeveSerPersistente()`) lê uma
+  preferência (`SESSION_PERSIST_PREF_KEY`) que fica **sempre** no `localStorage` — é só
+  um booleano, não o token, não faz sentido ela mesma desaparecer ao fechar o navegador.
+- **`attemptLogin(identifier, senha, lembrar=true)`** ganhou o 3º parâmetro — grava a
+  preferência (`setLembrarSessaoPref(lembrar)`) ANTES de chamar `signInWithPassword`,
+  pra o storage adapter já saber onde gravar o token que está prestes a ser criado.
+  `LoginScreen.submitLogin` passa o estado `lembrar` (já existia, só não fazia nada) na
+  chamada de `onLogin`.
+- **`selfSetNewPassword`** (tela "Nova senha", sem o checkbox) força
+  `setLembrarSessaoPref(true)` antes do próprio `signInWithPassword` — sem isso, uma
+  preferência `false` deixada por um login anterior "vazaria" pra essa sessão nova sem o
+  usuário nunca ter escolhido isso ali.
+- Tooltip do checkbox atualizado pra refletir o efeito real (antes dizia "sua sessão já
+  é mantida automaticamente", texto que passou a ser só meia verdade); `cursor:default`
+  virou `cursor:pointer` (agora é uma ação de verdade, não só visual).
+- Testado via script Node isolado (simulação de `localStorage`/`sessionStorage` em
+  memória, mesma técnica de sempre): marcado grava no localStorage e sobrevive a uma
+  "sessão nova" simulada; desmarcado grava no sessionStorage e NÃO sobrevive; e
+  `removeItem` limpa dos dois storages independente de qual guardava o token. Transpile
+  Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos. **A verificação
+  de ponta a ponta contra o Supabase Auth real (login de verdade, fechar/reabrir o
+  navegador) fica a cargo do cliente** — mesma limitação de sempre.

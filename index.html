@@ -570,7 +570,7 @@
 
   .login-row-between{display:flex;align-items:center;justify-content:space-between;margin:2px 0 10px;
     font-family:var(--font-corp);font-size:13.5px;}
-  .login-remember{display:flex;align-items:center;gap:9px;color:var(--navy);cursor:default;
+  .login-remember{display:flex;align-items:center;gap:9px;color:var(--navy);cursor:pointer;
     background:none;border:none;padding:0;font:inherit;}
   .login-remember .cb-box{width:20px;height:20px;border-radius:6px;border:1.5px solid var(--gray-200);
     background:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .15s, border-color .15s;}
@@ -902,8 +902,47 @@ const {useState, useMemo, useRef, useEffect} = React;
    localStorage por enquanto — essa migração é a próxima etapa, não esta. */
 const SUPABASE_URL = 'https://geeqfpzamexmeketcecu.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_Wx-oyRE86XWz4bTSPWBe5A_8tXRpHJr';
+
+// "Lembrar-me" (tela de login) virou funcional de verdade: em vez de deixar
+// o supabase-js sempre gravar a sessão no localStorage (sobrevive a fechar o
+// navegador), um storage adapter próprio decide ENTRE localStorage (marcado
+// — mesmo comportamento de sempre) e sessionStorage (desmarcado — a sessão
+// não sobrevive a fechar a aba/navegador, só a um F5 normal, que é o
+// comportamento padrão de "lembrar-me" em praticamente qualquer site). A
+// preferência em si (`SESSION_PERSIST_PREF_KEY`) fica sempre no localStorage
+// — é só um booleano, não o token de sessão, não tem por que ela mesma
+// desaparecer ao fechar o navegador (senão o app "esqueceria de lembrar que
+// não deveria lembrar"). `attemptLogin` grava essa preferência ANTES de
+// chamar `signInWithPassword`, pra o adapter já saber onde gravar o token
+// que o Supabase Auth cria na hora do login.
+const SESSION_PERSIST_PREF_KEY = 'stock360:v1:lembrarSessao';
+function setLembrarSessaoPref(lembrar){
+  try { localStorage.setItem(SESSION_PERSIST_PREF_KEY, lembrar ? 'true' : 'false'); } catch(e){}
+}
+function sessaoDeveSerPersistente(){
+  try { return localStorage.getItem(SESSION_PERSIST_PREF_KEY) !== 'false'; } catch(e){ return true; }
+}
+const supabaseAuthStorage = {
+  getItem(key){
+    const store = sessaoDeveSerPersistente() ? localStorage : sessionStorage;
+    return store.getItem(key);
+  },
+  setItem(key, value){
+    const store = sessaoDeveSerPersistente() ? localStorage : sessionStorage;
+    store.setItem(key, value);
+  },
+  removeItem(key){
+    // Limpa dos dois — não sabemos com certeza em qual dos dois o token
+    // acabou (a preferência pode ter mudado entre logins), então remover
+    // dos dois é o único jeito de garantir que não sobra token velho.
+    localStorage.removeItem(key);
+    sessionStorage.removeItem(key);
+  },
+};
 const supabaseClient = window.supabase
-  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY)
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+      auth: { storage: supabaseAuthStorage },
+    })
   : null;
 
 // Garante que o socket do Realtime carregue o JWT de quem está logado —
@@ -3297,13 +3336,18 @@ function App(){
   // o identificador digitado pro e-mail real antes de chamar
   // `signInWithPassword`. `currentUserId` não precisa ser setado aqui —
   // `onAuthStateChange` (useEffect acima) já reage à sessão nova sozinho.
-  async function attemptLogin(identifier, senha){
+  async function attemptLogin(identifier, senha, lembrar=true){
     const id = identifier.trim().toLowerCase();
     const { data: matches, error: rpcErr } = await supabaseClient.rpc('resolver_login', {p_identifier:id});
     const match = matches && matches[0];
     if(rpcErr || !match) return {ok:false, error:'Usuário ou senha inválidos.'};
     if(match.status==='bloqueado') return {ok:false, error:'Usuário bloqueado. Contate o administrador.'};
     if(match.status==='deve_definir_senha') return {ok:false, needsNewPassword:true, userId:match.id};
+    // Precisa ser gravada ANTES do signInWithPassword — é o que o
+    // `supabaseAuthStorage` lê pra decidir em qual storage (localStorage
+    // sobrevive a fechar o navegador, sessionStorage não) o supabase-js vai
+    // gravar o token de sessão que está prestes a ser criado.
+    setLembrarSessaoPref(lembrar);
     const { error } = await supabaseClient.auth.signInWithPassword({email:match.email, password:senha});
     if(error) return {ok:false, error:'Usuário ou senha inválidos.'};
     touchLastActivity();
@@ -3382,6 +3426,12 @@ function App(){
       }
       const emailAlvo = target ? target.email : null;
       if(emailAlvo){
+        // Essa tela não tem o checkbox "Lembrar-me" (só existe no login
+        // normal) — persiste por padrão, mesmo comportamento de sempre
+        // antes dessa funcionalidade existir. Sem isso, se a preferência
+        // tivesse ficado 'false' de um login anterior (sessão só na aba),
+        // essa sessão nova herdaria isso sem o usuário nunca ter escolhido.
+        setLembrarSessaoPref(true);
         const { error } = await supabaseClient.auth.signInWithPassword({email:emailAlvo, password:novaSenha});
         if(error) return {ok:false, erro:'Senha salva, mas não foi possível entrar automaticamente — tente logar de novo.'};
       }
@@ -3836,13 +3886,14 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
   // pra desabilitar o botão e não deixar dois cliques dispararem duas
   // tentativas de login em paralelo.
   const [salvandoLogin, setSalvandoLogin] = useState(false);
-  // Puramente visuais, sem lógica por trás (mockup do cliente pede esses
-  // elementos, mas nenhum tem funcionalidade real hoje — ver CLAUDE.md
-  // "Login vira redesign premium"): "Lembrar-me" é decorativo porque a
-  // sessão já persiste sozinha sempre (Supabase Auth); o seletor
-  // de idioma não faz nada porque o app só existe em pt-BR; "código de
-  // acesso" mostra uma nota honesta em vez de fingir um QR-login que não
-  // existe (mesmo critério do sino de notificação no DesktopTopbar).
+  // "Lembrar-me" virou funcional de verdade (ver `supabaseAuthStorage`/
+  // `attemptLogin`) — desmarcado, a sessão só vive em sessionStorage (não
+  // sobrevive a fechar o navegador/aba). Os outros dois continuam
+  // puramente visuais (mockup do cliente pede, mas sem funcionalidade real
+  // — ver CLAUDE.md "Login vira redesign premium"): o seletor de idioma
+  // não faz nada porque o app só existe em pt-BR; "código de acesso" mostra
+  // uma nota honesta em vez de fingir um QR-login que não existe (mesmo
+  // critério do sino de notificação no DesktopTopbar).
   const [lembrar, setLembrar] = useState(true);
   const [qrNote, setQrNote] = useState(false);
   const senhaRef = useRef(null);
@@ -3880,7 +3931,7 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
     e.preventDefault();
     setError('');
     setSalvandoLogin(true);
-    const result = await onLogin(identifier, senha);
+    const result = await onLogin(identifier, senha, lembrar);
     setSalvandoLogin(false);
     if(!result.ok){
       if(result.needsNewPassword){
@@ -3945,7 +3996,7 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
                 </div>
 
                 <div className="login-row-between">
-                  <button type="button" className="login-remember" onClick={()=>setLembrar(l=>!l)} title="Sua sessão já é mantida automaticamente neste aparelho">
+                  <button type="button" className="login-remember" onClick={()=>setLembrar(l=>!l)} title={lembrar ? 'Sua sessão continua neste aparelho mesmo depois de fechar o navegador' : 'Sua sessão será encerrada ao fechar o navegador ou a aba'}>
                     <span className={'cb-box'+(lembrar?' checked':'')}>{lembrar && <DIcon name="checkCircle" size={13} style={{marginTop:0}} />}</span>
                     Lembrar-me
                   </button>
