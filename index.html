@@ -6972,7 +6972,7 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
                 <div className="count-card-content">
                   {detalhesAbertoId===c.id && (
                     <>
-                      <div className="result-grid" style={{marginTop:0}}>
+                      <div className="result-grid" style={{marginTop:0,gridTemplateColumns:'repeat(4,1fr)'}}>
                         <div className="rg"><div className="k">Sistema</div><div className="v">{c.saldoSistema==null ? '—' : c.saldoSistema}</div></div>
                         <div className="rg"><div className="k">1ª Contagem</div><div className="v">{c.qtdContada}</div></div>
                         <div className="rg"><div className="k">Diferença</div><div className="v" style={{color:sev.color}}>{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div></div>
@@ -7161,7 +7161,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequ
                   1ª contagem: {anterior.qtdContada} un. por {anterior.usuario} em {anterior.data} {anterior.hora||''}
                 </div>
               )}
-              <div className="result-grid">
+              <div className="result-grid" style={{gridTemplateColumns:'repeat(4,1fr)'}}>
                 <div className="rg"><div className="k">Sistema</div><div className="v">{c.saldoSistema==null ? '—' : c.saldoSistema}</div></div>
                 <div className="rg"><div className="k">Qtd. Contada</div><div className="v">{c.qtdContada}</div></div>
                 <div className="rg"><div className="k">Diferença</div><div className="v" style={{color:sev.color}}>{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div></div>
@@ -7605,7 +7605,7 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
                 </div>
                 <div className="count-card-address-badge"><DIcon name="mapPin" size={16} /> {tip.endereco || tip.enderecoContado || 'não cadastrado'}</div>
               </div>
-              <div className="result-grid">
+              <div className="result-grid" style={{gridTemplateColumns:'repeat(4,1fr)'}}>
                 <div className="rg"><div className="k">Sistema</div><div className="v">{tip.saldoSistema==null ? '—' : tip.saldoSistema}</div></div>
                 <div className="rg"><div className="k">Qtd. Final</div><div className="v">{tip.qtdContada}</div></div>
                 <div className="rg"><div className="k">Contagens</div><div className="v">{tip.numeroContagem}</div></div>

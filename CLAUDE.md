@@ -5011,3 +5011,21 @@ Mesmo erro de modelagem, mesma solução já aplicada antes pro Status "Recontar
   reimportação da planilha Base pelo cliente já deve popular "Itens Divergentes" com
   esses itens, sem precisar de nenhuma mudança de schema (mesma tabela `contagens`,
   mesmas colunas de sempre).
+
+## Sistema/1ª Contagem/Diferença/% numa única linha (4 colunas em vez de 2)
+
+Cliente mandou print marcando o bloco Sistema/1ª Contagem/Diferença/% (o `.result-grid`
+unificado na rodada anterior) pedindo pra caber tudo numa linha só — o padrão de
+`.result-grid` (2 colunas) empilhava em 2 linhas de 2.
+
+- Escopado só aos 3 usos que têm exatamente 4 campos com valor curto (número/%): o
+  "Detalhes" de `RecountsPanel`, o bloco sempre-visível de `DivergentItemsPanel`, e o
+  card da lista de `ConcludedCountsPanel` — todos ganharam
+  `style={{gridTemplateColumns:'repeat(4,1fr)'}}` por cima da classe `.result-grid`
+  (override pontual, não mudei a classe base).
+- **Não mudei** os outros 2 usos de `.result-grid` (o resumo da cadeia e o detalhe de
+  cada rodada em `ConcludedCountsPanel`) — esses têm 5-6 campos com rótulos mais longos
+  ("Quantidade Final Validada", "Recontagens Realizadas"), forçar 4-6 colunas ali
+  apertaria demais num tablet. Ficaram como estavam (2 colunas).
+- Testado via transpile Babel do arquivo inteiro. **Verificação visual fica a cargo do
+  cliente** — mesma limitação de sempre.
