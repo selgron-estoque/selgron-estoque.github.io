@@ -829,6 +829,13 @@
     .pnl-wrap{display:block;font-family:var(--font-corp);color:var(--navy);}
     .mobile-home-menu{display:none;}
     .pnl-kpi-row{display:grid;grid-template-columns:repeat(5,1fr);gap:16px;margin-bottom:24px;}
+    /* Variante de 4 cards (Indicadores → "Resumo da Operação", ver
+       CLAUDE.md) — mesmo componente/CSS de sempre, só com 1 coluna a menos
+       que o de 5 da Home. Precisa de override próprio nos 2 breakpoints
+       abaixo (não só aqui), senão a maior especificidade de ".cols-4"
+       (2 classes) venceria as regras de 3/2 colunas lá dentro por engano,
+       mantendo 4 colunas espremidas até em tela de celular. */
+    .pnl-kpi-row.cols-4{grid-template-columns:repeat(4,1fr);}
     .pnl-kpi{display:block;width:100%;text-align:left;font:inherit;background:#fff;border:1px solid var(--gray-200);border-radius:10px;padding:18px;box-shadow:0 1px 2px rgba(15,23,42,.03);transition:box-shadow .15s, transform .15s;}
     .pnl-kpi:hover{box-shadow:0 6px 16px rgba(15,23,42,.08);transform:translateY(-1px);}
     .pnl-kpi-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;}
@@ -839,6 +846,7 @@
     .pnl-kpi-trend.good{background:#ECFDF5;color:#15803D;}
     .pnl-kpi-trend.bad{background:#FEF2F2;color:#B91C1C;}
     .pnl-kpi-trend.flat{background:var(--gray-100);color:var(--gray-500);}
+    .pnl-kpi-meta{font-size:11px;color:var(--gray-500);margin-top:8px;}
 
     .pnl-section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
     .pnl-section-title{font-size:16px;font-weight:700;color:var(--navy);}
@@ -885,6 +893,7 @@
 
     @media (max-width:1360px){
       .pnl-kpi-row{grid-template-columns:repeat(3,1fr);}
+      .pnl-kpi-row.cols-4{grid-template-columns:repeat(3,1fr);}
       .pnl-col-8,.pnl-col-4,.pnl-col-5,.pnl-col-7{grid-column:span 12;}
     }
 
@@ -907,6 +916,7 @@
       .content{padding:18px 14px 88px;}
       .cs-footer{bottom:56px;}
       .pnl-kpi-row{grid-template-columns:repeat(2,1fr);gap:12px;}
+      .pnl-kpi-row.cols-4{grid-template-columns:repeat(2,1fr);gap:12px;}
       .pnl-row{gap:14px;}
       .pnl-card{padding:14px;overflow-x:auto;}
 
@@ -8564,6 +8574,25 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   const divergentes = todasParaQualidade.filter(c=>c.diferenca!==0 && c.diferenca!==null);
   const acuracidade = todasParaQualidade.length>0 ? (((todasParaQualidade.length-divergentes.length)/todasParaQualidade.length)*100).toFixed(1) : '100.0';
   const valorDivergente = todasParaQualidade.reduce((s,c)=>s+Number(c.valorDivergente||0),0);
+  // Tendência da Acuracidade Geral (card "Resumo da Operação") — mesmo
+  // padrão dia-a-dia já usado em Home (`acumuladoAte`/`acuracidadePontos`),
+  // reaplicado aqui sobre `todasParaQualidade` (contagens ao vivo +
+  // histórico concluído) em vez de só `counts`, já que essa é a mesma base
+  // usada pro resto da seção "Qualidade". `null` quando não há nada
+  // registrado até ontem — sem isso a tendência apareceria fabricada.
+  const ontemStrQualidade = localDateStr(new Date(Date.now()-86400000));
+  function acumuladoQualidadeAte(dataLimite){
+    const relevantes = todasParaQualidade.filter(c=>!c.data || c.data<=dataLimite);
+    const div = relevantes.filter(c=>c.diferenca!==0 && c.diferenca!==null);
+    return {total:relevantes.length, acuracidade: relevantes.length ? ((relevantes.length-div.length)/relevantes.length*100) : 100};
+  }
+  const qualidadeHoje = acumuladoQualidadeAte(hojeLocalStr());
+  const qualidadeOntem = acumuladoQualidadeAte(ontemStrQualidade);
+  const acuracidadeTrendPts = qualidadeOntem.total>0 ? (qualidadeHoje.acuracidade-qualidadeOntem.acuracidade) : null;
+  // "Planejados" no card "Inventários Ativos" — mesma definição já usada no
+  // donut "Situação Geral dos Inventários" da Home (contados===0, exclui
+  // cancelado), não um conceito novo.
+  const inventariosPlanejados = inventories.filter(i=>i.contados===0 && i.status!=='cancelado').length;
 
   // Valor em estoque por armazém — vem do Supabase (estoque_saldo,
   // atualizado via upload manual da planilha SB2 em Configurações, ver
@@ -8644,6 +8673,14 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   let dataInicioStr = trendRange.from, dataFimStr = trendRange.to;
   if(dataInicioStr > dataFimStr) dataInicioStr = dataFimStr; // evita intervalo invertido se o usuário escolher datas fora de ordem
   const weeklyStats = computeWeeklyStats(poolTendencia, dataInicioStr, dataFimStr);
+  // "Contagens na Semana" (card "Resumo da Operação") — INDEPENDENTE do
+  // filtro "Filtros" de tendência acima, de propósito: esse KPI precisa
+  // sempre significar "a semana atual", não import qual janela o usuário
+  // escolheu pra olhar os gráficos de tendência embaixo. `computeWeeklyStats`
+  // com início=fim=hoje gera 1 balde só (a semana corrente) e já soma certo
+  // qualquer contagem do pool cuja data caia nessa mesma semana civil.
+  const semanaAtualStats = computeWeeklyStats(poolTendencia, hojeStr, hojeStr);
+  const contagensSemanaAtual = semanaAtualStats[0]?.total || 0;
   // "Acuracidade Mensal" é INDEPENDENTE do filtro de período acima —
   // deliberado, cliente pediu "mostrar todos os meses com dados do ano".
   // Um mês é um balde grande de mais pro filtro de "10/26 semanas" fazer
@@ -8731,12 +8768,33 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
         </div>
       )}
 
-      <div className="section-title">Qualidade</div>
-      <div className="kpi-grid">
-        <div className="kpi"><div className="kv" style={{color:'var(--ok)'}}>{acuracidade}%</div><div className="kl">Acuracidade do Estoque</div></div>
-        <div className="kpi"><div className="kv" style={{color:'var(--warn)'}}>{divergentes.length}</div><div className="kl">Divergências</div></div>
-        <div className="kpi"><div className="kv" style={{color:'var(--danger)'}}>R$ {valorDivergente.toFixed(0)}</div><div className="kl">Valor Divergente</div></div>
-        <div className="kpi"><div className="kv">{inventories.length}</div><div className="kl">Inventários Ativos</div></div>
+      <div className="section-title">Resumo da Operação</div>
+      <div className="pnl-kpi-row cols-4">
+        <div className="pnl-kpi">
+          <div className="pnl-kpi-top"><span className="pnl-kpi-icon" style={{background:'#F1E9FB', color:'#7B3FC4'}}><DIcon name="percent" size={17} /></span></div>
+          <div className="pnl-kpi-value">{acuracidade}%</div>
+          <div className="pnl-kpi-label">Acuracidade Geral</div>
+          <KpiTrend pct={acuracidadeTrendPts} suffix=" p.p." />
+          <div className="pnl-kpi-meta">Meta: {META_ACURACIDADE_SEMANAL}%</div>
+        </div>
+        <div className="pnl-kpi">
+          <div className="pnl-kpi-top"><span className="pnl-kpi-icon" style={{background:'#FFF1D6', color:'#A35F00'}}><DIcon name="barChart" size={17} /></span></div>
+          <div className="pnl-kpi-value">{contagensSemanaAtual.toLocaleString('pt-BR')}</div>
+          <div className="pnl-kpi-label">Contagens na Semana</div>
+          <div className="pnl-kpi-meta">Meta: {META_CONTAGENS_SEMANAL}</div>
+        </div>
+        <div className="pnl-kpi">
+          <div className="pnl-kpi-top"><span className="pnl-kpi-icon" style={{background:'#FBE6E3', color:'#C4291B'}}><DIcon name="alertTriangle" size={17} /></span></div>
+          <div className="pnl-kpi-value">{divergentes.length}</div>
+          <div className="pnl-kpi-label">Divergências</div>
+          <div className="pnl-kpi-meta">Valor divergente {fmtReais(valorDivergente)}</div>
+        </div>
+        <div className="pnl-kpi">
+          <div className="pnl-kpi-top"><span className="pnl-kpi-icon" style={{background:'#E3EEFC', color:'#2A6FD6'}}><DIcon name="box" size={17} /></span></div>
+          <div className="pnl-kpi-value">{inventories.length}</div>
+          <div className="pnl-kpi-label">Inventários Ativos</div>
+          <div className="pnl-kpi-meta">Planejados: {inventariosPlanejados}</div>
+        </div>
       </div>
 
       <InventoryHealthCard weeklyStats={weeklyStats} />

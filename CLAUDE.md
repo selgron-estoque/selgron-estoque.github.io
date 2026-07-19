@@ -5361,3 +5361,58 @@ EXATA, sem custo, continua aprovando sozinho normalmente, mesma exceção de sem
 Testado via script Node isolado: diferença de 1 unidade só (sem custo) já vai pro
 líder, igual uma diferença de bilhões; contagem exata sem custo continua aprovando
 sozinha; item com custo cadastrado não mudou nada. Transpile Babel conferido.
+## "Indicadores" ganha o padrão SaaS B2B dos KPIs (mesmo modelo da Home)
+
+Cliente mandou print de referência (4 cards: Acuracidade Geral/Contagens na Semana/
+Divergências/Inventários Ativos, cada um com ícone colorido, valor grande, tendência
+com seta e "Meta: X") pedindo pra aplicar "nesse modelo" em todos os cards. A tela
+"Indicadores" (`Dashboard`) ainda usava o card antigo e simples (`.kpi`/`.kv`/`.kl` —
+só número + rótulo, sem ícone/tendência/meta) na seção "Qualidade", enquanto a Home já
+tinha migrado pra esse padrão rico (`.pnl-kpi`) faz tempo — a referência do cliente é
+exatamente esse mesmo componente já usado na Home, só que a seção "Qualidade" nunca
+tinha sido atualizada junto.
+
+- **Seção renomeada "Qualidade" → "Resumo da Operação"**, consolidando 4 cards que
+  antes eram 4 `.kpi` simples e separados (Acuracidade do Estoque, Divergências, Valor
+  Divergente, Inventários Ativos) em 4 `.pnl-kpi` ricos — o mesmo componente reutilizado
+  da Home, só com `Meta`/subtítulo no lugar do texto de comparação "vs. ontem" onde fazia
+  mais sentido.
+- **`.pnl-kpi-row.cols-4`** (CSS novo) — variante de 4 colunas do grid que a Home usa com
+  5. Precisou de override PRÓPRIO nos 2 breakpoints que já reduzem `.pnl-kpi-row` pra
+  3/2 colunas (1360px/767px) — sem isso, a maior especificidade de `.cols-4` (2 classes)
+  venceria essas regras por engano, mantendo 4 colunas espremidas até em celular.
+- **`.pnl-kpi-meta`** (CSS novo, texto pequeno cinza) — mostra "Meta: X" ou um subtítulo
+  complementar (valor divergente em R$, quantos inventários estão planejados) abaixo do
+  chip de tendência — nenhum dos 4 cards da Home precisava disso antes (só tinham
+  trend, sem meta fixa), mas o componente já suportava um filho extra sem conflito.
+- **Nenhum dado fabricado** (mesmo critério de sempre, ver "KPIs — só dado real"):
+  - **Acuracidade Geral**: mesmo valor que já existia (`acuracidade`, cumulativo sobre
+    `todasParaQualidade` = contagens ao vivo + histórico concluído), com Meta = a MESMA
+    constante `META_ACURACIDADE_SEMANAL` (95%) já usada no gráfico "Acuracidade Semanal"
+    — não inventei uma meta nova só pro card. Tendência (setinha) é NOVA aqui — dia atual
+    vs. ontem, mesmo padrão `acumuladoAte`/`KpiTrend` já usado na Home, só reaplicado
+    sobre o pool de "Qualidade" (`acumuladoQualidadeAte`) em vez do pool da Home.
+  - **Contagens na Semana**: total real da semana CORRENTE (`computeWeeklyStats` com
+    início=fim=hoje, que soma certo qualquer contagem cuja data caia nessa semana civil),
+    Meta = `META_CONTAGENS_SEMANAL` (250) já usada no gráfico de mesmo nome. Cálculo
+    **independente** do filtro "Filtros" da seção de Tendência — esse KPI sempre
+    significa "semana atual", não deve mudar se o usuário trocar o filtro dos gráficos
+    de tendência mais abaixo (que podem mostrar qualquer período).
+  - **Divergências**: mesmo `divergentes.length` de antes, com "Valor divergente
+    {R$}" como subtítulo (mesmo `valorDivergente` que antes era um 3º card `.kpi`
+    separado, "Valor Divergente" — agora consolidado dentro do card de Divergências,
+    já que são o mesmo conceito visto de dois ângulos).
+  - **Inventários Ativos**: mesmo `inventories.length` de antes, com "Planejados: X"
+    como subtítulo — usando a MESMA definição de "planejado" já usada no donut
+    "Situação Geral dos Inventários" da Home (`contados===0 && status!=='cancelado'`),
+    não um conceito novo.
+- Ícones (`percent`/`barChart`/`alertTriangle`/`box`) reaproveitam os MESMOS já
+  escolhidos na Home pros conceitos equivalentes — consistência visual entre as duas
+  telas pro mesmo dado.
+- Testado via script Node isolado (réplica da lógica de `acumuladoQualidadeAte`/
+  tendência): confirma acuracidade cumulativa subindo de 66,7% (ontem) pra 75% (hoje)
+  gera tendência de +8,3 p.p., batendo com o esperado. Balanceamento de chaves do CSS
+  conferido (558 aberturas/558 fechamentos). Transpile Babel do arquivo inteiro
+  conferido. **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma
+  limitação de sempre (login exige Supabase Auth real, não simulável no sandbox sem
+  rede).
