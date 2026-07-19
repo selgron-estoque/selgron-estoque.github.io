@@ -4926,3 +4926,43 @@ formatação "em todo o site".
   não simulável no sandbox sem rede) — mas a causa raiz (fundo `rgba(255,255,255,0.04)`
   invisível em tema claro) foi confirmada matematicamente: 4% de branco sobre branco não
   produz contraste perceptível nenhum.
+
+## Bug real: código do produto sem formatação em itens vindos do histórico
+
+O cliente insistiu no mesmo print de antes ("Recontagens") e esclareceu que o problema
+nunca foi visual/CSS — era o CÓDIGO DO PRODUTO aparecendo cru, sem pontuação
+(`12403100020`, `2403100007`...) em vez do formato combinado (`000.000.00000` ou
+`000.00000`). Investigando de novo com esse contexto certo, achei o bug de verdade.
+
+- **Causa raiz**: `reconstructNumericCode` (a função que já existe há tempos — repõe
+  zero à esquerda e pontuação em código 100% numérico que o Excel corrompeu) é chamada
+  no parser do upload (`parseHistoricoContagensRows`) E, defensivamente, em
+  `historicoRowToCountLike` (usado por "Contagens Concluídas"/Indicadores) — mas
+  **nunca tinha sido aplicada em `contagemRowToLocal`**, a função que lê a tabela `contagens`
+  AO VIVO (usada por `fetchContagensFromSupabase` e pelo canal Realtime, ou seja,
+  alimenta Recontagens/Itens Divergentes/Concluídas quando o dado vem da tabela viva,
+  não do histórico só-leitura). Os itens "Recontar" semeados na tabela `contagens` (ver
+  `buildRecontarSeedsFromHistorico`) foram inseridos com código CRU numa importação
+  anterior a uma correção de parser — e como o upsert dessas linhas usa
+  `ignoreDuplicates:true` (nunca sobrescreve), reimportar a planilha de novo com o
+  parser já corrigido NÃO consertava essas linhas antigas: o código errado ficou
+  permanentemente gravado no banco, e `contagemRowToLocal` lia e mostrava exatamente
+  esse valor cru, sem nenhuma correção na leitura.
+- **Correção**: `contagemRowToLocal` agora chama `reconstructNumericCode(row.produto_codigo)`
+  ao montar `productCode` — mesmo padrão defensivo já usado em `historicoRowToCountLike`,
+  comentado lá desde então ("corrige a exibição mesmo pra linhas JÁ importadas antes da
+  correção do parser — sem isso, precisaria o cliente reimportar a planilha inteira de
+  novo"). Como a correção acontece na LEITURA (não precisa tocar no dado gravado no
+  banco), os códigos já existentes na tabela `contagens` passam a exibir formatados
+  imediatamente, sem precisar de nenhuma limpeza manual de SQL.
+- **Efeito colateral bom**: isso também corrige comparação de código entre telas — um
+  item com código cru numa tela e formatado em outra (ex: `getOpenCountForProduct`,
+  `codigosJaContados`) podia deixar de "casar" como o mesmo produto; com a leitura
+  sempre normalizada, a comparação de string volta a bater.
+- Testado via script Node isolado com os 4 códigos exatos do print do cliente
+  (`12403100020`→`124.031.00020`, `2403100007`/`2403100008`/`2403100015`→
+  `024.031.0000N`) — todos reconstruídos corretamente. Transpile Babel do arquivo
+  inteiro conferido. **Não testado contra o Supabase real** (mesma limitação de
+  sempre) — mas como a correção é só na LEITURA, não depende de nenhuma migração de
+  SQL nem de o cliente reimportar nada — só recarregar a página já deve mostrar os
+  códigos certos.

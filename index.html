@@ -1098,7 +1098,16 @@ async function updateContagemStatusToSupabase(id, patch){
 function contagemRowToLocal(row){
   return {
     id: row.id,
-    productCode: row.produto_codigo,
+    // `reconstructNumericCode` aqui (não só no parser do upload) — mesmo
+    // raciocínio já aplicado em `historicoRowToCountLike`: linhas semeadas
+    // na tabela `contagens` ANTES da correção do parser de histórico (ver
+    // `buildRecontarSeedsFromHistorico`) ficaram gravadas com o código cru,
+    // sem pontuação (ex.: "12403100020" em vez de "124.031.00020") — e como
+    // o upsert de recontagem usa `ignoreDuplicates:true`, reimportar a
+    // mesma planilha depois do parser corrigido NÃO conserta essas linhas
+    // já existentes. Reconstruir aqui, na leitura, corrige a exibição sem
+    // precisar de nenhuma limpeza manual no banco.
+    productCode: reconstructNumericCode(row.produto_codigo),
     descricao: row.descricao,
     endereco: row.endereco,
     enderecoContado: row.endereco_contado,
