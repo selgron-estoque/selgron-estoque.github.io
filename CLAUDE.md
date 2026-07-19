@@ -4404,3 +4404,65 @@ remover, ou manter decorativo com texto mais claro) — escolheu tornar funciona
   Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos. **A verificação
   de ponta a ponta contra o Supabase Auth real (login de verdade, fechar/reabrir o
   navegador) fica a cargo do cliente** — mesma limitação de sempre.
+
+## Configuração do admin: operador pode (ou não) ver o saldo do sistema durante a contagem
+
+Cliente mandou print do card de comparação ao vivo (`.cs-compare`, do redesenho
+"coletor industrial" da tela de contagem — Sistema/Informado/Diferença + mensagem de
+divergência) e pediu: "configurar para que eu posso decidir se operador pode ter visão
+do saldo do sistema durante as contagens. Essa função da imagem pode ser excluída, de
+todos os modos de contagem" — ou seja, um controle do admin (não uma remoção definitiva)
+que esconde essa informação especificamente do operador, em qualquer um dos 5 fluxos de
+contagem (Aleatória, Manual, Rota, Lista Importada, Recontagem — todos compartilham o
+mesmo motor `CountStep`).
+
+- **`operadorVeSaldo`** (`usePersistedState('operadorVeSaldo', false)`, em `App()`) —
+  novo, padrão **desligado** (contagem cega por padrão) — decisão consciente: como o
+  cliente pediu a opção de excluir essa visão, faz mais sentido começar restritivo e o
+  admin ligar depois se quiser, do que expor por padrão e exigir uma ação pra esconder.
+  Passado como prop pros 5 `*CountFlow` e pra `Settings` (novo toggle, ver abaixo).
+- **`mostrarSaldo`** (dentro de `CountStep`, logo depois de `hasSaldoLocal`) —
+  `hasSaldoLocal && (user.perfil !== 'operador' || operadorVeSaldo)`. Controla SÓ o que
+  aparece na tela (referência "Sistema: X un." antes de digitar, seta, card de
+  comparação ao vivo, cor da borda do campo de quantidade) — a regra de NEGÓCIO real
+  (`classifyDivergence`/`computeStatus`, que decide aprovação automática/segunda
+  contagem/análise do líder) continua sendo calculada exatamente do mesmo jeito,
+  independente disso: o operador conta "às cegas" na tela, mas o roteamento por
+  divergência funciona normalmente por trás. Líder/admin sempre veem, não importa a
+  configuração — só o operador fica sujeito a ela.
+- **Bug pego antes de commitar, no meio da própria implementação**: a 1ª versão gatava
+  o card de comparação e a cor da borda direto em `mostrarSaldo`, mas `mostrarSaldo`
+  exige `hasSaldoLocal===true` como pré-condição — então qualquer item SEM saldo nenhum
+  pra comparar (`!hasSaldoLocal`, ex. código fora do catálogo) deixava de mostrar o
+  card "sem saldo pra comparar" (que sempre existiu, pra TODO mundo, independente de
+  perfil — não tem nada sensível a esconder quando não há dado nenhum) e a cor de borda
+  correspondente — um efeito colateral não pedido, que teria escondido essa informação
+  de líder/admin também, não só do operador. Corrigido com um terceiro ramo (JSX)
+  disparado por `!hasSaldoLocal && qty!==''`, mostrado incondicionalmente pra qualquer
+  perfil (mesmo card "sem saldo pra comparar" de sempre, com "—" no lugar do Sistema/
+  Diferença e `classification.rule` como mensagem) — e a mesma correção replicada na
+  condição da cor da borda do campo (`(mostrarSaldo || !hasSaldoLocal) && qty!==''`).
+  As três condições (`mostrarSaldo`/`!hasSaldoLocal`/"contagem cega" pro operador com
+  saldo oculto) são mutuamente exclusivas por construção, sem sobreposição de card.
+- **Toggle no admin**: `Settings` (tela "Configurações", `view==='settings'`) ganhou o
+  painel "Visibilidade do Saldo na Contagem" — só visível pra `role==='admin'` (a tela
+  antes não tinha nenhuma configuração de verdade, só um texto fixo "Nenhuma
+  configuração disponível no momento." pra líder/operador, que continua existindo pra
+  quem não é admin). Um único checkbox, "Operador pode ver o saldo do sistema durante a
+  contagem", ligado direto a `operadorVeSaldo`/`onSetOperadorVeSaldo` (prop já recebida
+  de `App()`).
+- **Achado no caminho, sem relação com o pedido em si**: o comentário original (escrito
+  antes de eu confirmar onde as coisas realmente vivem) dizia "Settings → 'Regras de
+  Divergência'" — só que esse painel ("≤5% → aprovação automática" etc.) na verdade mora
+  dentro de `ReportsScreen` (tela "Relatórios"), não em `Settings` — são duas telas
+  diferentes. Corrigido só o texto do comentário (`Configurações → "Visibilidade do
+  Saldo na Contagem"`, a nova seção de verdade), nenhuma mudança de código por causa
+  disso.
+- Testado via script Node isolado (mesma técnica de sempre): `mostrarSaldo` calculado
+  certo nos 6 cenários relevantes (líder com saldo → true; admin com saldo → true;
+  operador com saldo e configuração desligada → false, é o padrão; operador com saldo e
+  configuração ligada → true; operador sem saldo nenhum → false, independente da
+  configuração; líder sem saldo → false). Transpile Babel do arquivo inteiro conferido
+  depois de cada edit. **A verificação visual de ponta a ponta (as 5 telas de contagem
+  + o toggle em Configurações) fica a cargo do cliente** — mesma limitação de sempre
+  (login exige Supabase Auth real, não simulável no sandbox sem rede).

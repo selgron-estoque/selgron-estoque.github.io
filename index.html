@@ -3064,6 +3064,15 @@ function App(){
   const [passwordRequests, setPasswordRequests] = usePersistedState('passwordRequests', []); // solicitações de "esqueci minha senha"
   const [passwordHistory, setPasswordHistory] = usePersistedState('passwordHistory', []); // histórico de alterações de senha
   const [reportSendHistory, setReportSendHistory] = usePersistedState('reportSendHistory', []); // histórico de envios de relatório por e-mail
+  // Configuração do admin (Configurações → "Visibilidade do Saldo na
+  // Contagem"): se o operador vê o saldo do sistema (referência antes de
+  // digitar + card de
+  // comparação Sistema/Informado/Diferença ao vivo) durante a contagem, ou
+  // conta "às cegas" — cliente pediu essa opção pra poder decidir, com o
+  // padrão sendo NÃO mostrar (mesmo espírito de contagem cega já usado em
+  // outras partes do processo). Líder/admin sempre veem, independente
+  // dessa configuração — é só o operador que fica sujeito a ela.
+  const [operadorVeSaldo, setOperadorVeSaldo] = usePersistedState('operadorVeSaldo', false);
 
   function logReportSend(entry){
     setReportSendHistory(prev=>[entry, ...prev]);
@@ -3699,18 +3708,18 @@ function App(){
           if(res.ok){ setInventories(prev=>[inv,...prev]); goto('inventories'); }
           return res;
         }} />}
-        {view==='randomCount' && <RandomCountFlow inv={flowState} user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} />}
-        {view==='manualCount' && <ManualCountFlow user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('home');}} onAddressProposed={addAddressProposal} />}
-        {view==='routeCount' && <RouteCountFlow inv={flowState} user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} />}
-        {view==='importedListCount' && <ImportedListCountFlow inv={flowState} user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} />}
+        {view==='randomCount' && <RandomCountFlow inv={flowState} user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} />}
+        {view==='manualCount' && <ManualCountFlow user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('home');}} onAddressProposed={addAddressProposal} operadorVeSaldo={operadorVeSaldo} />}
+        {view==='routeCount' && <RouteCountFlow inv={flowState} user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} />}
+        {view==='importedListCount' && <ImportedListCountFlow inv={flowState} user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} />}
         {view==='recounts' && <RecountsPanel counts={counts} inventories={inventories} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} onRefresh={refreshContagens} />}
         {view==='divergentes' && <DivergentItemsPanel counts={counts} inventories={inventories} role={role} goto={goto} onApprove={approveDivergence} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} onRefresh={refreshContagens} />}
         {view==='todasDivergencias' && <AllDivergencesPanel counts={counts} historicoConcluidas={historicoConcluidas} goto={goto} />}
         {view==='concluidas' && <ConcludedCountsPanel counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} onDeleteCount={role==='admin' ? deleteCount : undefined} onRefresh={refreshHistoricoConcluidas} />}
-        {view==='recount' && flowState && <RecountFlow original={flowState} user={currentUser} onAddressProposed={addAddressProposal} onFinish={(c)=>{registerFinishedCount(c); goto('recounts');}} />}
+        {view==='recount' && flowState && <RecountFlow original={flowState} user={currentUser} onAddressProposed={addAddressProposal} onFinish={(c)=>{registerFinishedCount(c); goto('recounts');}} operadorVeSaldo={operadorVeSaldo} />}
         {view==='dashboard' && hasAccess(currentUser,'dashboard') && <Dashboard counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} historicoParaTendencia={historicoParaTendencia} goto={goto} />}
         {view==='relatorios' && hasAccess(currentUser,'relatorios') && <ReportsScreen counts={counts} inventories={inventories} currentUser={currentUser} sendHistory={reportSendHistory} onLogSend={logReportSend} role={role} onHistoricoImportado={refreshHistoricoConcluidas} />}
-        {view==='settings' && <Settings role={role} currentUser={currentUser} />}
+        {view==='settings' && <Settings role={role} currentUser={currentUser} operadorVeSaldo={operadorVeSaldo} onSetOperadorVeSaldo={setOperadorVeSaldo} />}
         {view==='usuarios' && hasAccess(currentUser,'usuarios') && (
           <UsuariosScreen
             users={users}
@@ -5428,7 +5437,7 @@ function useCountQueue(items){
   return {current, idx, total:items.length, next, done};
 }
 
-function CountStep({product, user, onComplete, onAddressProposed, inv, expectAddressCheck=true, numeroContagem=1, contagemAnteriorId=null, counts=[], previousCount=null, queueAtual=null, queueTotal=null}){
+function CountStep({product, user, onComplete, onAddressProposed, inv, expectAddressCheck=true, numeroContagem=1, contagemAnteriorId=null, counts=[], previousCount=null, queueAtual=null, queueTotal=null, operadorVeSaldo=false}){
   // Bloqueia lançar uma contagem NOVA (1ª rodada) de um item que já tem um
   // documento em aberto em outro lugar do app (ex: contado numa lista de
   // inventário e ainda aguardando análise do líder, e alguém tenta contar o
@@ -5584,6 +5593,17 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   }
 
   const hasSaldoLocal = typeof product.saldoSistema === 'number';
+  // Controla só o que aparece NA TELA (referência antes de digitar, card de
+  // comparação ao vivo, cor da borda do campo) — a regra de negócio real
+  // (classifyDivergence/computeStatus, abaixo) continua sendo calculada do
+  // mesmo jeito independente disso, então aprovação automática/segunda
+  // contagem/análise do líder funcionam normalmente mesmo com a contagem
+  // "às cegas". Líder/admin sempre veem; só o operador fica sujeito à
+  // configuração `operadorVeSaldo` (Configurações → "Visibilidade do Saldo
+  // na Contagem"). Quando não há saldo nenhum pra comparar (`!hasSaldoLocal`,
+  // ex. item fora do catálogo), o fallback "sem saldo" sempre aparece pra
+  // todo mundo — não há nada sensível a esconder nesse caso.
+  const mostrarSaldo = hasSaldoLocal && (user.perfil !== 'operador' || operadorVeSaldo);
   const diffAbs = (qty!=='' && hasSaldoLocal) ? Number(qty) - product.saldoSistema : 0;
   const diffPct = (qty!=='' && hasSaldoLocal) ? (product.saldoSistema===0 ? 100 : (diffAbs/product.saldoSistema)*100) : 0;
   const classification = hasSaldoLocal
@@ -5798,21 +5818,21 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
             <div className={"cs-scan-feedback "+(itemScanFeedback.ok ? 'ok' : 'warn')}>{itemScanFeedback.text}</div>
           )}
 
-          {hasSaldoLocal && (
+          {mostrarSaldo && (
             <div className="cs-sistema-ref">
               <div className="cs-sistema-k">Sistema</div>
               <div className="cs-sistema-v">{product.saldoSistema} {product.unidade || 'un.'}</div>
             </div>
           )}
-          {hasSaldoLocal && <div className="cs-sistema-arrow"><DIcon name="arrowDown" size={18} /></div>}
+          {mostrarSaldo && <div className="cs-sistema-arrow"><DIcon name="arrowDown" size={18} /></div>}
           <div className="cs-qty-label-row">
-            <div className="cs-qty-label">{hasSaldoLocal ? 'Informe a quantidade' : 'Quantidade encontrada'}</div>
+            <div className="cs-qty-label">{mostrarSaldo ? 'Informe a quantidade' : 'Quantidade encontrada'}</div>
             <button type="button" className="cs-calc-btn" title="Calculadora" aria-label="Calculadora" onClick={()=>{calcClear(); setCalcOpen(o=>!o);}}>
               <DIcon name="calculator" size={16} />
             </button>
           </div>
           <input
-            className={"cs-qty-input"+(qty!=='' ? ' '+classification.level : '')}
+            className={"cs-qty-input"+(((mostrarSaldo || !hasSaldoLocal) && qty!=='') ? ' '+classification.level : '')}
             type="number"
             inputMode="decimal"
             value={qty}
@@ -5856,15 +5876,28 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
             <button type="button" onClick={()=>setQty('')}>Limpar</button>
           </div>
 
-          {qty!=='' && (
+          {mostrarSaldo && qty!=='' && (
             <div className={"cs-compare "+classification.level}>
               <div className="cs-compare-grid">
-                <div className="cs-compare-cell"><div className="k">Sistema</div><div className="v">{hasSaldoLocal ? product.saldoSistema : '—'}</div></div>
+                <div className="cs-compare-cell"><div className="k">Sistema</div><div className="v">{product.saldoSistema}</div></div>
                 <div className="cs-compare-cell"><div className="k">Informado</div><div className="v">{qty}</div></div>
-                <div className="cs-compare-cell"><div className="k">Diferença</div><div className="v">{hasSaldoLocal ? (diffAbs>0?'+':'')+diffAbs : '—'}</div></div>
+                <div className="cs-compare-cell"><div className="k">Diferença</div><div className="v">{(diffAbs>0?'+':'')+diffAbs}</div></div>
               </div>
               <div className="cs-feedback"><span className="cs-dot"></span>{feedbackTexto}</div>
             </div>
+          )}
+          {!hasSaldoLocal && qty!=='' && (
+            <div className={"cs-compare "+classification.level}>
+              <div className="cs-compare-grid">
+                <div className="cs-compare-cell"><div className="k">Sistema</div><div className="v">—</div></div>
+                <div className="cs-compare-cell"><div className="k">Informado</div><div className="v">{qty}</div></div>
+                <div className="cs-compare-cell"><div className="k">Diferença</div><div className="v">—</div></div>
+              </div>
+              <div className="cs-feedback"><span className="cs-dot"></span>{feedbackTexto}</div>
+            </div>
+          )}
+          {mostrarSaldo===false && hasSaldoLocal && user.perfil==='operador' && qty!=='' && (
+            <div className="role-note" style={{marginBottom:0}}>Contagem cega — o saldo do sistema fica oculto pra você durante a contagem.</div>
           )}
 
           <div className="cs-mini-grid">
@@ -5910,7 +5943,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
 
 /* ---------------- MÓDULO 2: CONTAGEM ALEATÓRIA ---------------- */
 
-function RandomCountFlow({inv, user, onFinish, onAddressProposed, setInventories, counts}){
+function RandomCountFlow({inv, user, onFinish, onAddressProposed, setInventories, counts, operadorVeSaldo}){
   // Armazém obrigatório em TODA contagem por este motor (pedido do
   // cliente: item com saldo em mais de um armazém nunca batia, porque a
   // busca não era presa a um armazém físico específico). Um inventário
@@ -6007,6 +6040,7 @@ function RandomCountFlow({inv, user, onFinish, onAddressProposed, setInventories
         queueAtual={jaContados+q.idx+1}
         queueTotal={allItems.length}
         onAddressProposed={onAddressProposed}
+        operadorVeSaldo={operadorVeSaldo}
         onComplete={(c)=>{
           if(inv && inv.id){ setInventories(prev=>prev.map(i=>i.id===inv.id?{...i, contados:i.contados+1}:i)); incrementContadosSupabase(inv.id); }
           onFinish(c);
@@ -6060,7 +6094,7 @@ function ArmazemGate({onSelected, titulo}){
   );
 }
 
-function ManualCountFlow({user, onFinish, onAddressProposed, counts}){
+function ManualCountFlow({user, onFinish, onAddressProposed, counts, operadorVeSaldo}){
   const [armazem, setArmazem] = useState('');
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState(null);
@@ -6090,7 +6124,7 @@ function ManualCountFlow({user, onFinish, onAddressProposed, counts}){
   }
 
   if(selected){
-    return <CountStep product={selected} user={user} counts={counts} onAddressProposed={onAddressProposed} onComplete={(c)=>onFinish(c)} expectAddressCheck={true} />;
+    return <CountStep product={selected} user={user} counts={counts} onAddressProposed={onAddressProposed} onComplete={(c)=>onFinish(c)} expectAddressCheck={true} operadorVeSaldo={operadorVeSaldo} />;
   }
 
   function handleScanDetected(text){
@@ -6130,7 +6164,7 @@ function ManualCountFlow({user, onFinish, onAddressProposed, counts}){
 
 /* ---------------- MÓDULO 4: CONTAGEM POR ROTA ---------------- */
 
-function RouteCountFlow({inv, user, onFinish, onAddressProposed, setInventories, counts}){
+function RouteCountFlow({inv, user, onFinish, onAddressProposed, setInventories, counts, operadorVeSaldo}){
   // Armazém obrigatório (mesmo motivo do RandomCountFlow) — Rota é sempre
   // avulsa hoje (nunca chega aqui vinda de um inventário já criado, ver
   // InventoryList/App()), então sempre pergunta antes de buscar qualquer
@@ -6187,7 +6221,7 @@ function RouteCountFlow({inv, user, onFinish, onAddressProposed, setInventories,
   }
 
   if(active){
-    return <CountStep product={active} user={user} inv={inv} counts={counts} onAddressProposed={onAddressProposed} onComplete={(c)=>{
+    return <CountStep product={active} user={user} inv={inv} counts={counts} onAddressProposed={onAddressProposed} operadorVeSaldo={operadorVeSaldo} onComplete={(c)=>{
       if(inv && inv.id){ setInventories(prev=>prev.map(i=>i.id===inv.id?{...i, contados:i.contados+1}:i)); incrementContadosSupabase(inv.id); }
       onFinish(c);
       setActive(null);
@@ -6222,7 +6256,7 @@ function RouteCountFlow({inv, user, onFinish, onAddressProposed, setInventories,
 
 /* ---------------- MÓDULO 1B: CONTAGEM POR LISTA IMPORTADA (Excel) ---------------- */
 
-function ImportedListCountFlow({inv, user, onFinish, onAddressProposed, setInventories, counts}){
+function ImportedListCountFlow({inv, user, onFinish, onAddressProposed, setInventories, counts, operadorVeSaldo}){
   // Enriquece a lista importada com o catálogo real do Supabase (busca em
   // lote, uma requisição só pra todos os códigos da planilha — cache local
   // estático removido, ver CLAUDE.md "cache local removido"). Roda uma vez
@@ -6311,6 +6345,7 @@ function ImportedListCountFlow({inv, user, onFinish, onAddressProposed, setInven
         queueAtual={jaContados+q.idx+1}
         queueTotal={allItems.length}
         onAddressProposed={onAddressProposed}
+        operadorVeSaldo={operadorVeSaldo}
         onComplete={(c)=>{
           if(inv && inv.id){ setInventories(prev=>prev.map(i=>i.id===inv.id?{...i, contados:i.contados+1}:i)); incrementContadosSupabase(inv.id); }
           onFinish(c);
@@ -6323,7 +6358,7 @@ function ImportedListCountFlow({inv, user, onFinish, onAddressProposed, setInven
 
 /* ---------------- MÓDULO 7: RECONTAGEM E ANÁLISE DE DIVERGÊNCIAS ---------------- */
 
-function RecountFlow({original, user, onFinish, onAddressProposed}){
+function RecountFlow({original, user, onFinish, onAddressProposed, operadorVeSaldo}){
   // Busca ao vivo no catálogo real (cache local estático removido, ver
   // CLAUDE.md "cache local removido"). Se não encontrar ou a rede falhar,
   // cai pro MESMO fallback sintético de sempre, montado a partir do que a
@@ -6400,6 +6435,7 @@ function RecountFlow({original, user, onFinish, onAddressProposed}){
         contagemAnteriorId={original.id}
         previousCount={original}
         expectAddressCheck={!!product.enderecoCadastrado}
+        operadorVeSaldo={operadorVeSaldo}
       />
     </div>
   );
@@ -9044,13 +9080,39 @@ function UsuariosScreen({users, currentUser, goto, successMessage, onToggleUserS
 // tela própria em Cadastros. Cliente pediu pra manter a tela no menu mesmo
 // vazia ("pode surgir ideias pra colocarmos lá dentro"), em vez de remover o
 // item de navegação — placeholder simples até aparecer algo real pra ir aqui.
-function Settings({role, currentUser}){
+function Settings({role, currentUser, operadorVeSaldo, onSetOperadorVeSaldo}){
+  const isAdmin = role==='admin';
   return (
     <div>
       <div className="role-note">Perfil atual: {ROLE_LABELS[role]} · {currentUser.nome}</div>
-      <div className="panel">
-        <div style={{fontSize:13,color:'var(--ink-dim)'}}>Nenhuma configuração disponível no momento.</div>
-      </div>
+      {isAdmin && (
+        <div className="panel">
+          <div className="section-title" style={{marginTop:0}}>Visibilidade do Saldo na Contagem</div>
+          <div style={{fontSize:13,color:'var(--ink-dim)',lineHeight:1.6,marginBottom:12}}>
+            Controla se o operador vê o saldo do sistema (referência antes de digitar,
+            card de comparação ao vivo) durante a contagem, em todos os modos
+            (Aleatória, Manual, Rota, Lista Importada, Recontagem). Com a opção
+            desligada, o operador conta "às cegas" — a comparação com o sistema só
+            aparece depois, na análise do líder. Líder e administrador sempre veem o
+            saldo, independente desta configuração. Isso não muda a regra de aprovação
+            automática/segunda contagem/análise do líder, só o que aparece na tela.
+          </div>
+          <label style={{display:'flex',alignItems:'center',gap:10,cursor:'pointer'}}>
+            <input
+              type="checkbox"
+              checked={!!operadorVeSaldo}
+              onChange={e=>onSetOperadorVeSaldo(e.target.checked)}
+              style={{width:18,height:18}}
+            />
+            <span style={{fontSize:14}}>Operador pode ver o saldo do sistema durante a contagem</span>
+          </label>
+        </div>
+      )}
+      {!isAdmin && (
+        <div className="panel">
+          <div style={{fontSize:13,color:'var(--ink-dim)'}}>Nenhuma configuração disponível no momento.</div>
+        </div>
+      )}
     </div>
   );
 }
