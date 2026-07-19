@@ -1514,6 +1514,7 @@ async function fetchAppConfig(){
     if(error || !data) return null;
     return {
       operadorVeSaldo: !!data.operador_ve_saldo,
+      operadorVeValoresRecontagem: !!data.operador_ve_valores_recontagem,
       gruposExcluidos: data.grupos_excluidos || [],
       sessionTimeoutMin: data.session_timeout_min || DEFAULT_SESSION_TIMEOUT_MIN,
     };
@@ -1532,6 +1533,7 @@ async function updateAppConfig(patch, nomeAdmin){
   try{
     const row = { atualizado_em: new Date().toISOString(), atualizado_por: nomeAdmin || null };
     if('operadorVeSaldo' in patch) row.operador_ve_saldo = patch.operadorVeSaldo;
+    if('operadorVeValoresRecontagem' in patch) row.operador_ve_valores_recontagem = patch.operadorVeValoresRecontagem;
     if('gruposExcluidos' in patch) row.grupos_excluidos = patch.gruposExcluidos;
     if('sessionTimeoutMin' in patch) row.session_timeout_min = patch.sessionTimeoutMin;
     const { error } = await supabaseClient.from('app_config').update(row).eq('id', 1);
@@ -3279,6 +3281,13 @@ function App(){
   // `refreshAppConfig()` no login/reconexão e mantido em dia pelo canal
   // Realtime logo abaixo.
   const [operadorVeSaldo, setOperadorVeSaldo] = useState(false);
+  // Configuração SEPARADA de `operadorVeSaldo` — pedido explícito do
+  // cliente ("a Diretoria não quer que a operação tenha acesso a
+  // valores"): controla só as telas de REVISÃO (Recontagens Pendentes/
+  // Itens Divergentes), independente de como `operadorVeSaldo` (a
+  // visibilidade durante a CONTAGEM em si) estiver configurado — são
+  // políticas distintas, não reaproveita a mesma trava.
+  const [operadorVeValoresRecontagem, setOperadorVeValoresRecontagem] = useState(false);
   const [gruposExcluidos, setGruposExcluidos] = useState([]);
   const [sessionTimeoutMin, setSessionTimeoutMin] = useState(DEFAULT_SESSION_TIMEOUT_MIN);
 
@@ -3286,6 +3295,7 @@ function App(){
     const cfg = await fetchAppConfig();
     if(!cfg) return;
     setOperadorVeSaldo(cfg.operadorVeSaldo);
+    setOperadorVeValoresRecontagem(cfg.operadorVeValoresRecontagem);
     setGruposExcluidos(cfg.gruposExcluidos);
     setSessionTimeoutMin(cfg.sessionTimeoutMin);
   }
@@ -3300,6 +3310,11 @@ function App(){
   async function updateOperadorVeSaldo(v){
     const res = await updateAppConfig({operadorVeSaldo:v}, currentUser?currentUser.nome:null);
     if(res.ok) setOperadorVeSaldo(v);
+    return res;
+  }
+  async function updateOperadorVeValoresRecontagem(v){
+    const res = await updateAppConfig({operadorVeValoresRecontagem:v}, currentUser?currentUser.nome:null);
+    if(res.ok) setOperadorVeValoresRecontagem(v);
     return res;
   }
   async function updateGruposExcluidos(lista){
@@ -3336,6 +3351,7 @@ function App(){
       .on('postgres_changes', {event:'*', schema:'public', table:'app_config'}, payload=>{
         if(!payload.new) return;
         setOperadorVeSaldo(!!payload.new.operador_ve_saldo);
+        setOperadorVeValoresRecontagem(!!payload.new.operador_ve_valores_recontagem);
         setGruposExcluidos(payload.new.grupos_excluidos || []);
         setSessionTimeoutMin(payload.new.session_timeout_min || DEFAULT_SESSION_TIMEOUT_MIN);
       })
@@ -4000,14 +4016,14 @@ function App(){
         {view==='manualCount' && <ManualCountFlow user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('home');}} onAddressProposed={addAddressProposal} operadorVeSaldo={operadorVeSaldo} />}
         {view==='routeCount' && <RouteCountFlow inv={flowState} user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} gruposExcluidos={gruposExcluidos} />}
         {view==='importedListCount' && <ImportedListCountFlow inv={flowState} user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} />}
-        {view==='recounts' && <RecountsPanel counts={counts} inventories={inventories} role={role} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onRefresh={refreshContagens} operadorVeSaldo={operadorVeSaldo} />}
-        {view==='divergentes' && <DivergentItemsPanel counts={counts} inventories={inventories} role={role} goto={goto} onApprove={approveDivergence} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onRefresh={refreshContagens} operadorVeSaldo={operadorVeSaldo} />}
+        {view==='recounts' && <RecountsPanel counts={counts} inventories={inventories} role={role} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onRefresh={refreshContagens} operadorVeValoresRecontagem={operadorVeValoresRecontagem} />}
+        {view==='divergentes' && <DivergentItemsPanel counts={counts} inventories={inventories} role={role} goto={goto} onApprove={approveDivergence} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onRefresh={refreshContagens} operadorVeValoresRecontagem={operadorVeValoresRecontagem} />}
         {view==='todasDivergencias' && <AllDivergencesPanel counts={counts} historicoConcluidas={historicoConcluidas} goto={goto} />}
         {view==='concluidas' && <ConcludedCountsPanel counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} onDeleteCount={role==='admin' ? deleteCount : undefined} onRefresh={refreshHistoricoConcluidas} />}
         {view==='recount' && flowState && <RecountFlow original={flowState} user={currentUser} onAddressProposed={addAddressProposal} onFinish={(c)=>{registerFinishedCount(c); goto('recounts');}} operadorVeSaldo={operadorVeSaldo} />}
         {view==='dashboard' && hasAccess(currentUser,'dashboard') && <Dashboard counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} historicoParaTendencia={historicoParaTendencia} goto={goto} />}
         {view==='relatorios' && hasAccess(currentUser,'relatorios') && <ReportsScreen counts={counts} inventories={inventories} currentUser={currentUser} sendHistory={reportSendHistory} onLogSend={logReportSend} role={role} onHistoricoImportado={refreshHistoricoConcluidas} />}
-        {view==='settings' && <Settings role={role} currentUser={currentUser} operadorVeSaldo={operadorVeSaldo} onSetOperadorVeSaldo={updateOperadorVeSaldo} gruposExcluidos={gruposExcluidos} onSetGruposExcluidos={updateGruposExcluidos} sessionTimeoutMin={sessionTimeoutMin} onSetSessionTimeoutMin={updateSessionTimeoutMin} />}
+        {view==='settings' && <Settings role={role} currentUser={currentUser} operadorVeSaldo={operadorVeSaldo} onSetOperadorVeSaldo={updateOperadorVeSaldo} operadorVeValoresRecontagem={operadorVeValoresRecontagem} onSetOperadorVeValoresRecontagem={updateOperadorVeValoresRecontagem} gruposExcluidos={gruposExcluidos} onSetGruposExcluidos={updateGruposExcluidos} sessionTimeoutMin={sessionTimeoutMin} onSetSessionTimeoutMin={updateSessionTimeoutMin} />}
         {view==='usuarios' && hasAccess(currentUser,'usuarios') && (
           <UsuariosScreen
             users={users}
@@ -6830,15 +6846,14 @@ function ListaProgressoHeader({titulo, restantes, concluidas, onAtualizar, atual
   );
 }
 
-function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggleUrgente, onRefresh, operadorVeSaldo}){
+function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggleUrgente, onRefresh, operadorVeValoresRecontagem}){
   const canMark = role==='lider' || role==='admin';
   // Sistema/Físico/Diferença/% (e o resto dos detalhes) ficam visíveis por
-  // padrão pra líder/admin, sem precisar clicar em nada — mesmo critério já
-  // usado em CountStep (`mostrarSaldo`): operador só vê se o admin liberou
-  // essa configuração em Configurações ("Visibilidade do Saldo na
-  // Contagem"), reaproveitando o MESMO toggle que já existe, em vez de criar
-  // uma configuração nova só pra esta tela.
-  const podeVerDetalhes = role!=='operador' || operadorVeSaldo;
+  // padrão pra líder/admin, sem precisar clicar em nada — operador só vê se
+  // o admin liberou `operadorVeValoresRecontagem` em Configurações. Trava
+  // SEPARADA de `operadorVeSaldo` (que só controla a tela de CONTAGEM) —
+  // pedido explícito da Diretoria, ver CLAUDE.md.
+  const podeVerDetalhes = role!=='operador' || operadorVeValoresRecontagem;
   const byOriginal = {};
   counts.forEach(c=>{ if(c.contagemAnteriorId) byOriginal[c.contagemAnteriorId]=c; });
 
@@ -7065,14 +7080,14 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
 // aparecer só em "Recontagens". Visível pra todos os papéis (antes ficava
 // escondida inteira do operador) — mas as ações (aprovar/solicitar
 // recontagem) continuam só pra líder/admin, operador vê em modo leitura.
-function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequestRecount, onDeleteCount, onToggleUrgente, onRefresh, operadorVeSaldo}){
+function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequestRecount, onDeleteCount, onToggleUrgente, onRefresh, operadorVeValoresRecontagem}){
   const aguardandoAnalise = counts.filter(c=>c.statusAprovacao==='aguardando_analise_lider');
   const canApprove = role==='lider' || role==='admin';
-  // Mesmo raciocínio/toggle de RecountsPanel: operador só vê Sistema/Físico/
-  // Diferença/% aqui se o admin liberou "Visibilidade do Saldo na Contagem"
-  // — essa tela também é uma decisão AINDA aberta (aguardando o líder), não
-  // um histórico já resolvido, então o mesmo cuidado contra viés se aplica.
-  const podeVerDetalhes = role!=='operador' || operadorVeSaldo;
+  // Mesma trava de RecountsPanel (`operadorVeValoresRecontagem`, SEPARADA de
+  // `operadorVeSaldo`) — essa tela também é uma decisão AINDA aberta
+  // (aguardando o líder), não um histórico já resolvido, mesmo cuidado
+  // contra a operação ver valores se aplica.
+  const podeVerDetalhes = role!=='operador' || operadorVeValoresRecontagem;
 
   // `onApprove`/`onRequestRecount`/`onToggleUrgente` aguardam confirmação do
   // Supabase — `busyId` desabilita só o card em ação (não a tela inteira),
@@ -9525,7 +9540,7 @@ function UsuariosScreen({users, currentUser, goto, successMessage, onToggleUserS
 // tela própria em Cadastros. Cliente pediu pra manter a tela no menu mesmo
 // vazia ("pode surgir ideias pra colocarmos lá dentro"), em vez de remover o
 // item de navegação — placeholder simples até aparecer algo real pra ir aqui.
-function Settings({role, currentUser, operadorVeSaldo, onSetOperadorVeSaldo, gruposExcluidos, onSetGruposExcluidos, sessionTimeoutMin, onSetSessionTimeoutMin}){
+function Settings({role, currentUser, operadorVeSaldo, onSetOperadorVeSaldo, operadorVeValoresRecontagem, onSetOperadorVeValoresRecontagem, gruposExcluidos, onSetGruposExcluidos, sessionTimeoutMin, onSetSessionTimeoutMin}){
   const isAdmin = role==='admin';
 
   // Lista COMPLETA de grupos com saldo (sem aplicar a própria exclusão) —
@@ -9552,6 +9567,19 @@ function Settings({role, currentUser, operadorVeSaldo, onSetOperadorVeSaldo, gru
     const res = await onSetOperadorVeSaldo(checked);
     setSalvandoSaldo(false);
     if(!res.ok) setErroSaldo(res.erro || 'Falha ao salvar — tente novamente.');
+  }
+
+  // Trava SEPARADA da acima — pedido explícito da Diretoria (ver
+  // CLAUDE.md): operação não pode ter acesso a valores nas telas de
+  // revisão (Recontagens Pendentes/Itens Divergentes), independente de como
+  // "Visibilidade do Saldo na Contagem" estiver configurada.
+  const [salvandoValoresRecontagem, setSalvandoValoresRecontagem] = useState(false);
+  const [erroValoresRecontagem, setErroValoresRecontagem] = useState(null);
+  async function toggleOperadorVeValoresRecontagem(checked){
+    setSalvandoValoresRecontagem(true); setErroValoresRecontagem(null);
+    const res = await onSetOperadorVeValoresRecontagem(checked);
+    setSalvandoValoresRecontagem(false);
+    if(!res.ok) setErroValoresRecontagem(res.erro || 'Falha ao salvar — tente novamente.');
   }
 
   const [salvandoGrupo, setSalvandoGrupo] = useState(false);
@@ -9591,13 +9619,10 @@ function Settings({role, currentUser, operadorVeSaldo, onSetOperadorVeSaldo, gru
           <div style={{fontSize:13,color:'var(--ink-dim)',lineHeight:1.6,marginBottom:12}}>
             Controla se o operador vê o saldo do sistema (referência antes de digitar,
             card de comparação ao vivo) durante a contagem, em todos os modos
-            (Aleatória, Manual, Rota, Lista Importada, Recontagem) — e também os
-            detalhes (Sistema/Físico/Diferença/%) em "Recontagens Pendentes" e "Itens
-            Divergentes" (as duas telas de decisão ainda EM ABERTO, antes do líder
-            decidir). Com a opção desligada, o operador conta "às cegas" e não vê esses
-            números nessas filas — a comparação com o sistema só aparece depois, na
-            análise do líder. Líder e administrador sempre veem o saldo e os detalhes,
-            independente desta configuração. Isso não muda a regra de aprovação
+            (Aleatória, Manual, Rota, Lista Importada, Recontagem). Com a opção
+            desligada, o operador conta "às cegas" — a comparação com o sistema só
+            aparece depois, na análise do líder. Líder e administrador sempre veem o
+            saldo, independente desta configuração. Isso não muda a regra de aprovação
             automática/segunda contagem/análise do líder, só o que aparece na tela.
           </div>
           <label style={{display:'flex',alignItems:'center',gap:10,cursor:salvandoSaldo?'wait':'pointer',opacity:salvandoSaldo?0.7:1}}>
@@ -9611,6 +9636,30 @@ function Settings({role, currentUser, operadorVeSaldo, onSetOperadorVeSaldo, gru
             <span style={{fontSize:14}}>Operador pode ver o saldo do sistema durante a contagem</span>
           </label>
           {erroSaldo && <div className="login-error" style={{marginTop:10}}>{erroSaldo}</div>}
+        </div>
+      )}
+      {isAdmin && (
+        <div className="panel">
+          <div className="section-title" style={{marginTop:0}}>Visibilidade de Valores em Recontagens/Divergentes</div>
+          <div style={{fontSize:13,color:'var(--ink-dim)',lineHeight:1.6,marginBottom:12}}>
+            Configuração separada da acima — controla se o operador vê o quadro
+            Sistema/Físico/Diferença/% (e a faixa "Diferença confirmada") nas telas
+            "Recontagens Pendentes" e "Itens Divergentes", independente de como a
+            visibilidade durante a contagem estiver configurada. Com a opção desligada
+            (padrão), a operação não tem acesso a esses valores nessas duas telas —
+            líder e administrador sempre veem, sem essa restrição.
+          </div>
+          <label style={{display:'flex',alignItems:'center',gap:10,cursor:salvandoValoresRecontagem?'wait':'pointer',opacity:salvandoValoresRecontagem?0.7:1}}>
+            <input
+              type="checkbox"
+              checked={!!operadorVeValoresRecontagem}
+              disabled={salvandoValoresRecontagem}
+              onChange={e=>toggleOperadorVeValoresRecontagem(e.target.checked)}
+              style={{width:18,height:18}}
+            />
+            <span style={{fontSize:14}}>Operador pode ver valores em Recontagens/Divergentes</span>
+          </label>
+          {erroValoresRecontagem && <div className="login-error" style={{marginTop:10}}>{erroValoresRecontagem}</div>}
         </div>
       )}
       {isAdmin && (

@@ -901,3 +901,18 @@ alter table contagens add column if not exists urgente boolean not null default 
 --   select column_name from information_schema.columns where table_name = 'contagens' and column_name = 'diferenca_confirmada';
 -- =============================================================================
 alter table contagens add column if not exists diferenca_confirmada boolean not null default false;
+
+-- =============================================================================
+-- VISIBILIDADE DE VALORES EM RECONTAGENS/DIVERGENTES — configuração SEPARADA
+-- de `operador_ve_saldo`. Essa última controla só a tela de CONTAGEM em si
+-- (CountStep); a Diretoria pediu explicitamente que a operação não tenha
+-- acesso a valores nas telas de REVISÃO ("Recontagens Pendentes"/"Itens
+-- Divergentes") como política própria, independente de como
+-- `operador_ve_saldo` estiver configurado — por isso não reaproveita a
+-- mesma coluna, precisa de uma trava independente. Default `false` (oculto
+-- pra operação), mesmo critério já usado em `operador_ve_saldo`: começar
+-- restritivo, admin libera se quiser.
+-- Introspecção antes de rodar:
+--   select column_name from information_schema.columns where table_name = 'app_config' and column_name = 'operador_ve_valores_recontagem';
+-- =============================================================================
+alter table app_config add column if not exists operador_ve_valores_recontagem boolean not null default false;

@@ -5185,3 +5185,28 @@ resolvido — mesmo raciocínio de viés que já valia pra `RecountsPanel`.
   (contagem ao vivo + Recontagens Pendentes + Itens Divergentes).
 - Testado via transpile Babel do arquivo inteiro. **Verificação visual/funcional fica a
   cargo do cliente** — mesma limitação de sempre.
+
+**Correção: virou configuração SEPARADA, não reaproveita `operadorVeSaldo`**. Cliente
+esclareceu: "preciso que seja separado, pois a Diretoria não quer que a operação tenha
+acesso a valores" — reaproveitar o mesmo toggle de "Visibilidade do Saldo na Contagem"
+juntava duas políticas distintas (o que o operador vê DURANTE a contagem vs. o que vê
+nas telas de REVISÃO depois) numa única trava, quando a Diretoria quer decidir as duas
+coisas de forma independente.
+
+- **`operador_ve_valores_recontagem`** — coluna nova em `app_config` (mesma tabela
+  singleton de sempre, `backend/schema.sql`), default `false` (oculto pra operação por
+  padrão, mesmo critério já usado em `operador_ve_saldo`: começar restritivo). Mesmo
+  mecanismo de sincronização de tudo que já mora em `app_config` (RLS leitura
+  autenticada/escrita só admin, Realtime, `fetchAppConfig`/`updateAppConfig` mapeando a
+  coluna nova).
+- **`RecountsPanel`/`DivergentItemsPanel`** trocaram o prop `operadorVeSaldo` por
+  `operadorVeValoresRecontagem` — `podeVerDetalhes` agora depende só dessa trava nova,
+  não mais da visibilidade de saldo durante a contagem.
+- **`Settings`** ganhou um painel PRÓPRIO ("Visibilidade de Valores em Recontagens/
+  Divergentes"), com seu próprio checkbox/busy/erro (`salvandoValoresRecontagem`/
+  `erroValoresRecontagem`), sem misturar com o painel de "Visibilidade do Saldo na
+  Contagem" — a descrição deste último voltou ao texto original (só fala da contagem em
+  si, sem mencionar Recontagens/Divergentes, que agora é responsabilidade do painel novo).
+- Testado via transpile Babel do arquivo inteiro. **Falta o cliente rodar o SQL novo**
+  (`alter table app_config add column if not exists operador_ve_valores_recontagem...`)
+  no projeto real e confirmar que o toggle novo funciona independente do outro.
