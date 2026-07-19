@@ -5530,3 +5530,68 @@ tinha a mesma altura do campo de busca.
   (558 aberturas/558 fechamentos). **Verificação visual de ponta a ponta fica a cargo
   do cliente** — mesma limitação de sempre (login exige Supabase Auth real, não
   simulável no sandbox sem rede).
+
+## Item ativo do menu vira faixa lateral + fundo tingido (referência por imagem)
+
+Cliente mandou um recorte da `Sidebar` (grupo "Análise", "Indicadores" selecionado)
+pedindo pra aplicar aquele estilo de seleção — antes o item ativo era um preenchimento
+sólido laranja (`background:var(--safety)`, texto escuro em cima); a referência mostra
+uma faixa fina na borda esquerda + fundo com leve tingimento laranja + texto/ícone na
+cor da marca (não mais fundo sólido).
+
+- `.sidebar-nav-item` ganhou `border-left:3px solid transparent` (reservado em TODOS os
+  itens, não só o ativo — evita qualquer deslocamento de 3px quando um item vira ativo)
+  e o padding-left caiu de 12px pra 9px (compensa exatamente os 3px do border, mesma
+  largura total de antes).
+- `.sidebar-nav-item.active` trocou de `background:var(--safety);color:var(--safety-ink)`
+  pra `background:rgba(246,162,0,0.14);color:var(--safety);border-left-color:var(--safety)`
+  — o ícone (`DIcon`, `stroke="currentColor"`) acompanha a cor do texto automaticamente,
+  sem precisar de nenhuma mudança no componente de ícone em si.
+- Testado via balanceamento de chaves do CSS. **Verificação visual fica a cargo do
+  cliente** — mesma limitação de sempre (login exige Supabase Auth real).
+
+## Cards "Resumo da Operação" (Indicadores) — redesenho por imagem de referência
+
+Cliente mandou um recorte de 4 cards (Acuracidade Geral com barra de progresso e "Meta:
+95%"; Valor Divergente com % em vermelho; Itens Divergentes com % em cinza; Valor em
+Estoque com "N armazéns ativos") pedindo pra deixar os cards do topo "assim", reduzindo
+a altura e evitando amontoamento no celular.
+
+- **Conjunto de métricas trocou**: o card antigo tinha Acuracidade Geral / Contagens na
+  Semana / Divergências (contagem, com "Valor divergente R$X" como subtítulo) /
+  Inventários Ativos. O novo bate exatamente com a imagem: Acuracidade Geral / **Valor
+  Divergente** (R$, próprio) / **Itens Divergentes** (contagem, próprio) / **Valor em
+  Estoque** (R$, reaproveitando `valorTotalEstoque`/`armazensAtivos`, os mesmos dados já
+  calculados pra seção "Estoque" mais abaixo na mesma tela — nenhum dado novo). Isso
+  removeu "Contagens na Semana"/"Inventários Ativos" do topo — o código morto que só
+  existia pra alimentar esses dois (`acumuladoQualidadeAte`/`qualidadeHoje`/
+  `qualidadeOntem`/`acuracidadeTrendPts`, `semanaAtualStats`/`contagensSemanaAtual`,
+  `inventariosPlanejados`) foi removido junto, não deixado como código morto.
+- **Shell novo, separado de `.pnl-kpi`** (que a Home continua usando nos 5 cards com
+  trend/badge, sem nenhuma mudança lá) — `.ops-kpi-row`/`.ops-kpi-card`/`.ops-kpi-head`/
+  `.ops-kpi-label`/`.ops-kpi-icon`/`.ops-kpi-value`/`.ops-kpi-meta`/`.ops-kpi-bar-track`.
+  Layout bate com a imagem: rótulo maiúsculo pequeno + ícone circular (`border-radius:
+  50%`, era quadrado arredondado 8px no `.pnl-kpi-icon`) na mesma linha do topo, valor
+  grande logo abaixo, e uma linha de contexto por último (% em vermelho só no card de
+  Valor Divergente, via `.ops-kpi-meta.danger`) — a Acuracidade Geral também ganhou uma
+  barra de progresso (`.ops-kpi-bar-track`/`.ops-kpi-bar-fill`, gradiente roxo→azul)
+  mostrando `acuracidade` em relação a 100%, no lugar do badge de tendência (`KpiTrend`)
+  que existia antes — a imagem não tem esse badge, só a barra.
+- **Altura reduzida**: padding 18px→14px/16px, fonte do valor 28px→23px, ícone
+  36px→30px — bate com o pedido "pode diminuir a altura".
+- **Não amontoa no celular**: em vez de forçar 2 colunas espremidas abaixo de 767px
+  (como o `.pnl-kpi-row.cols-4` fazia antes), `.ops-kpi-row` vira 2 colunas até 1360px e
+  **1 coluna (empilhado)** abaixo de 640px — como cada card agora carrega mais conteúdo
+  (rótulo+ícone+valor+meta+, num caso, barra), 1 coluna é o que garante que nada fique
+  espremido/cortado em tela de celular.
+- **`circleDollar`** (ícone novo em `DICON_PATHS`, mesmo estilo Lucide-ish dos outros 30)
+  — não existia nenhum ícone de "cifrão" no conjunto antes; usado só no card "Valor
+  Divergente".
+- `.pnl-kpi-row.cols-4` (CSS órfão depois da troca de shell, incluindo as 2 regras de
+  media query que a acompanhavam) foi removido — nenhum outro lugar do app usava essa
+  variante além deste card.
+- Testado via transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  (569 aberturas/569 fechamentos). **Verificação visual de ponta a ponta (as 4 métricas,
+  a barra de progresso, o comportamento em 1/2/4 colunas) fica a cargo do cliente** —
+  mesma limitação de sempre (login exige Supabase Auth real, não simulável no sandbox
+  sem rede).
