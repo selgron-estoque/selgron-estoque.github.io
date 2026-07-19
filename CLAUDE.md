@@ -5058,3 +5058,9 @@ podia quebrar linha, dependendo da largura exata do aparelho.
 - Testado via transpile Babel do arquivo inteiro. **Verificação visual num celular real
   fica a cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth
   real, não simulável no sandbox sem rede).
+
+**Atualização**: com `nowrap`+reticências garantindo que o rótulo nunca quebra linha
+(item acima), o cliente pediu pra voltar "1ª Cont." pra **"1ª Contagem"** por extenso —
+a abreviação não era mais necessária pra evitar quebra, só existia por causa do bug já
+corrigido. Revertido só o texto do rótulo em `RecountsPanel`; na pior hipótese (tela bem
+estreita) ele trunca com reticências, nunca quebra ou estoura o card.

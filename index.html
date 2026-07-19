@@ -293,7 +293,7 @@
   .result-grid .rg{background:var(--panel-raised);border-radius:8px;padding:10px 12px;min-width:0;}
   .result-grid .rg .k{font-family:var(--font-mono);font-size:9.5px;text-transform:uppercase;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .result-grid .rg .v{font-family:var(--font-mono);font-size:17px;font-weight:700;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  /* Grids de 4 colunas numa linha só (Sistema/1ª Cont./Diferença/%, ver
+  /* Grids de 4 colunas numa linha só (Sistema/1ª Contagem/Diferença/%, ver
      CLAUDE.md) — em telas de celular estreitas (~360-390px), mesmo com
      nowrap, "DIFERENÇA" ainda não cabia no espaço de 1/4 da largura do
      card. Aperta padding/fonte só nessa variante (classe result-grid-4col),
@@ -6985,7 +6985,7 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
                     <>
                       <div className="result-grid result-grid-4col" style={{marginTop:0,gridTemplateColumns:'repeat(4,1fr)'}}>
                         <div className="rg"><div className="k">Sistema</div><div className="v">{c.saldoSistema==null ? '—' : c.saldoSistema}</div></div>
-                        <div className="rg"><div className="k">1ª Cont.</div><div className="v">{c.qtdContada}</div></div>
+                        <div className="rg"><div className="k">1ª Contagem</div><div className="v">{c.qtdContada}</div></div>
                         <div className="rg"><div className="k">Diferença</div><div className="v" style={{color:sev.color}}>{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div></div>
                         <div className="rg"><div className="k">%</div><div className="v" style={{color:sev.color}}>{c.percentual==null ? '—' : c.percentual.toFixed(1)+'%'}</div></div>
                       </div>
