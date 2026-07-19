@@ -4773,3 +4773,31 @@ líder OU admin (mesmo grupo que já aprova divergência/gerencia recontagem hoj
   limitação de sempre, login exige Supabase Auth real) — falta o cliente rodar o SQL
   novo (`alter table contagens add column if not exists urgente...`) e confirmar visual/
   funcionalmente nas duas telas.
+
+## Urgente: contorno vermelho mais grosso + ação movida pro menu "⋮"
+
+Cliente pediu dois ajustes na rodada anterior: "o contorno pode ser em vermelho com a
+linha mais grossa" e "o botão de marcar colocar dentro dos 3 pontos, junto de excluir".
+
+- **Contorno**: `.count-card.urgente` trocou de `--accent2` (azul, 2px) pra `--danger`
+  (vermelho, 3px) — `.urgente-chip` acompanhou a mesma cor, pra chip e contorno baterem.
+- **Ação movida pro menu "⋮"**: em `RecountsPanel`, "Marcar urgente"/"Remover urgência"
+  saiu da coluna de botões (`count-card-actions-col`) e entrou no MESMO dropdown que já
+  tinha "Excluir contagem" — o botão "⋮" agora aparece pra líder OU admin (antes só
+  aparecia se `onDeleteCount` existisse, ou seja só admin); dentro do dropdown, cada
+  opção aparece condicionada à permissão certa (`canMark` pra urgente, `onDeleteCount`
+  pra excluir) — um líder sem permissão de excluir ainda vê o "⋮" com só a opção de
+  urgência.
+- **`DivergentItemsPanel` ganhou um menu "⋮" que não existia antes** — essa tela tinha
+  o botão de excluir solto na fileira de ações (ícone de lixeira sozinho), sem menu
+  nenhum. Pra "junto de excluir" fazer sentido aqui também, criei a MESMA estrutura de
+  menu do `RecountsPanel` (`menuAbertoId`, fecha ao clicar fora, dropdown com as duas
+  opções) e removi tanto o botão de urgência quanto o de excluir da fileira de botões
+  (que ficou só com Solicitar nova contagem/Recontar/Aprovar divergência).
+- **CSS do dropdown deixou de ser sempre vermelho**: antes `.count-card-menu-dropdown
+  button` tinha `color:var(--danger)` fixo (fazia sentido quando só tinha "Excluir"
+  dentro) — virou cor neutra (`var(--ink)`) por padrão, com uma classe nova
+  `.menu-item-danger` aplicada só no botão de excluir, pra continuar vermelho só onde
+  faz sentido (ação destrutiva) sem pintar "Marcar urgente" de vermelho também.
+- Testado via transpile Babel do arquivo inteiro. **Verificação visual fica a cargo do
+  cliente** — mesma limitação de sempre.

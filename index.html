@@ -194,13 +194,10 @@
   .count-card{background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden;margin-bottom:16px;display:flex;box-shadow:0 1px 3px rgba(0,0,0,.04);}
   /* Item marcado como urgente (líder/admin, Recontagens/Itens Divergentes) —
      destaque visual pra ele se sobressair na lista, além de vir ordenado
-     primeiro (ver RecountsPanel/DivergentItemsPanel). Cor própria
-     (--accent2, azul já usado em links) de propósito, pra não se confundir
-     com a faixa de severidade (ok/warn/safety/danger) que já colore
-     .count-card-bar — são dois conceitos diferentes (severidade calculada
-     vs. prioridade manual do líder). */
-  .count-card.urgente{box-shadow:0 0 0 2px var(--accent2), 0 1px 3px rgba(0,0,0,.04);}
-  .urgente-chip{display:inline-flex;align-items:center;gap:5px;font-family:var(--font-mono);font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;padding:4px 9px;border-radius:20px;background:var(--accent2);color:#fff;}
+     primeiro (ver RecountsPanel/DivergentItemsPanel). Contorno vermelho e
+     grosso, pedido explícito do cliente (1ª versão era azul/fino demais). */
+  .count-card.urgente{box-shadow:0 0 0 3px var(--danger), 0 1px 3px rgba(0,0,0,.04);}
+  .urgente-chip{display:inline-flex;align-items:center;gap:5px;font-family:var(--font-mono);font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;padding:4px 9px;border-radius:20px;background:var(--danger);color:#fff;}
   .count-card-bar{width:5px;flex-shrink:0;}
   .count-card-body{flex:1;min-width:0;padding:16px 20px;display:flex;flex-direction:column;gap:10px;}
   .count-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
@@ -212,8 +209,10 @@
   .count-card-menu-btn{background:none;border:none;color:var(--ink-dim);font-size:16px;line-height:1;padding:2px 4px;cursor:pointer;}
   .count-card-menu{position:relative;}
   .count-card-menu-dropdown{position:absolute;right:0;top:100%;margin-top:4px;background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,.12);z-index:5;overflow:hidden;white-space:nowrap;}
-  .count-card-menu-dropdown button{display:block;width:100%;padding:9px 16px;background:none;border:none;text-align:left;font-size:12.5px;color:var(--danger);cursor:pointer;}
-  .count-card-menu-dropdown button:hover{background:var(--danger-bg);}
+  .count-card-menu-dropdown button{display:block;width:100%;padding:9px 16px;background:none;border:none;text-align:left;font-size:12.5px;color:var(--ink);cursor:pointer;}
+  .count-card-menu-dropdown button:hover{background:var(--panel-raised);}
+  .count-card-menu-dropdown button.menu-item-danger{color:var(--danger);}
+  .count-card-menu-dropdown button.menu-item-danger:hover{background:var(--danger-bg);}
   .count-card-title{line-height:1.15;}
   /* Destaque invertido em relação ao .item-code/.item-desc padrão do resto
      do app (lá a descrição é maior) — pedido do cliente pensando em
@@ -6752,9 +6751,9 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [excluindo, setExcluindo] = useState(false);
   const [erroExclusao, setErroExclusao] = useState('');
-  // Menu "⋮" (só existe a ação Excluir hoje, admin) e o expandir de
-  // "Detalhes" — ambos guardam só o id do card aberto no momento, um card
-  // aberto por vez.
+  // Menu "⋮" (Marcar urgente, líder/admin; Excluir, só admin) e o expandir
+  // de "Detalhes" — ambos guardam só o id do card aberto no momento, um
+  // card aberto por vez.
   const [menuAbertoId, setMenuAbertoId] = useState(null);
   const [detalhesAbertoId, setDetalhesAbertoId] = useState(null);
 
@@ -6817,12 +6816,17 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
               <div className="count-card-head-right">
                 <span className="category-chip">{categoriaDoInventario(c, inventories)}</span>
                 <span className="count-card-date">{c.data}</span>
-                {onDeleteCount && (
+                {(canMark || onDeleteCount) && (
                   <div className="count-card-menu">
                     <button type="button" className="count-card-menu-btn" onClick={()=>setMenuAbertoId(menuAbertoId===c.id ? null : c.id)}>⋮</button>
                     {menuAbertoId===c.id && (
                       <div className="count-card-menu-dropdown">
-                        <button type="button" onClick={()=>{ setConfirmDeleteId(c.id); setMenuAbertoId(null); }}><Ic>🗑</Ic> Excluir contagem</button>
+                        {canMark && (
+                          <button type="button" disabled={urgenteBusyId===c.id} onClick={()=>{ handleToggleUrgente(c); setMenuAbertoId(null); }}><Ic>🔥</Ic> {urgenteBusyId===c.id ? 'Salvando…' : (c.urgente ? 'Remover urgência' : 'Marcar urgente')}</button>
+                        )}
+                        {onDeleteCount && (
+                          <button type="button" className="menu-item-danger" onClick={()=>{ setConfirmDeleteId(c.id); setMenuAbertoId(null); }}><Ic>🗑</Ic> Excluir contagem</button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -6878,11 +6882,6 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
                 <div className="count-card-actions-col">
                   <button className="btn btn-primary" onClick={()=>goto('recount', c)}><Ic>🔁</Ic> Recontar</button>
                   <button className="btn btn-outline" onClick={()=>setDetalhesAbertoId(detalhesAbertoId===c.id ? null : c.id)}><Ic>📋</Ic> {detalhesAbertoId===c.id ? 'Ocultar' : 'Detalhes'}</button>
-                  {canMark && (
-                    <button className="btn btn-outline" disabled={urgenteBusyId===c.id} onClick={()=>handleToggleUrgente(c)}>
-                      <Ic>🔥</Ic> {urgenteBusyId===c.id ? 'Salvando…' : (c.urgente ? 'Remover urgência' : 'Marcar urgente')}
-                    </button>
-                  )}
                 </div>
               </div>
             )}
@@ -6915,6 +6914,17 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequ
   const [busyId, setBusyId] = useState(null);
   const [erros, setErros] = useState({});
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  // Menu "⋮" (Marcar urgente + Excluir, mesmo padrão do RecountsPanel) —
+  // guarda só o id do card com o menu aberto no momento.
+  const [menuAbertoId, setMenuAbertoId] = useState(null);
+  useEffect(()=>{
+    if(!menuAbertoId) return;
+    function handleClickOutside(e){
+      if(!e.target.closest('.count-card-menu')) setMenuAbertoId(null);
+    }
+    document.addEventListener('click', handleClickOutside);
+    return ()=>document.removeEventListener('click', handleClickOutside);
+  }, [menuAbertoId]);
 
   const [busca, setBusca] = useState('');
   const buscaNorm = busca.trim().toLowerCase();
@@ -7011,7 +7021,22 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequ
                   <span className="category-chip">{categoriaDoInventario(c, inventories)}</span>
                   {c.numeroContagem>1 && <span className="category-chip">{c.numeroContagem}ª contagem</span>}
                 </div>
-                <span className="count-card-date">{c.data}</span>
+                <div className="count-card-head-right">
+                  <span className="count-card-date">{c.data}</span>
+                  {canApprove && (
+                    <div className="count-card-menu">
+                      <button type="button" className="count-card-menu-btn" onClick={()=>setMenuAbertoId(menuAbertoId===c.id ? null : c.id)}>⋮</button>
+                      {menuAbertoId===c.id && (
+                        <div className="count-card-menu-dropdown">
+                          <button type="button" disabled={busyId===c.id} onClick={()=>{ handleToggleUrgente(c); setMenuAbertoId(null); }}><Ic>🔥</Ic> {busyId===c.id ? 'Salvando…' : (c.urgente ? 'Remover urgência' : 'Marcar urgente')}</button>
+                          {onDeleteCount && (
+                            <button type="button" className="menu-item-danger" onClick={()=>{ setConfirmDeleteId(c.id); setMenuAbertoId(null); }}><Ic>🗑</Ic> Excluir contagem</button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="count-card-toprow">
                 <div className="count-card-title">
@@ -7053,8 +7078,6 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequ
                   <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>handleRequestRecount(c.id)}>{busyId===c.id ? 'Enviando…' : 'Solicitar nova contagem'}</button>
                   <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>goto('recount', c)}><Ic>🔁</Ic> Recontar</button>
                   <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>handleApprove(c.id)}>{busyId===c.id ? 'Enviando…' : 'Aprovar divergência'}</button>
-                  <button className="btn btn-outline" disabled={busyId===c.id} onClick={()=>handleToggleUrgente(c)}><Ic>🔥</Ic> {c.urgente ? 'Remover urgência' : 'Marcar urgente'}</button>
-                  {onDeleteCount && <button className="btn btn-danger" disabled={busyId===c.id} onClick={()=>setConfirmDeleteId(c.id)}><Ic>🗑</Ic></button>}
                 </div>
               ) : (
                 <div style={{fontSize:12,color:'var(--ink-dim)'}}>Aguardando decisão do líder de estoque.</div>
