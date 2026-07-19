@@ -2703,15 +2703,12 @@ function classifyDivergence(valorDivergente){
 // automaticamente, sem ninguém analisar, não importa o tamanho real da
 // diferença (chegou a acontecer com uma diferença de bilhões de unidades
 // marcada como "confere com o sistema"). Esta função é a rede de segurança:
-// quando não há custo confiável pra calcular um valor em R$, cai pro
-// critério ANTIGO por percentual (o mesmo usado antes da migração pra R$) —
-// ≤5% aprovado, 5-15% segunda contagem, >15% direto pro líder — em vez de
-// silenciosamente tratar como "sem divergência".
-function classifyDivergenceSemCusto(percentual){
-  const p = Math.abs(Number(percentual));
-  if(p <= 5) return {level:'ok', label:'Sem divergência significativa', rule:'Aprovado automaticamente (sem custo cadastrado)'};
-  if(p <= 15) return {level:'warn', label:'Diferença percentual moderada', rule:'Segunda contagem solicitada (sem custo cadastrado)'};
-  return {level:'danger', label:'Diferença percentual alta', rule:'Enviado para análise do líder (sem custo cadastrado)'};
+// sem custo cadastrado pra confirmar que a diferença é pequena em valor,
+// qualquer diferença de quantidade (por menor que seja) vai direto pra
+// análise do líder — pedido explícito do cliente, sem régua de percentual
+// nenhuma aqui (diferente da regra por R$, que tem 2 patamares).
+function classifyDivergenceSemCusto(){
+  return {level:'danger', label:'Diferença sem custo cadastrado', rule:'Enviado para análise do líder (sem custo cadastrado)'};
 }
 
 // Classificação visual de 4 níveis — usada só nos cards de Recontagens/
@@ -5947,7 +5944,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   // diferença de QUANTIDADE também é zero (contagem bateu exata de verdade).
   const custoConhecido = Number(product.custoUnit) > 0;
   const classification = hasSaldoLocal
-    ? (diffAbs !== 0 && !custoConhecido ? classifyDivergenceSemCusto(diffPct) : classifyDivergence(diffValor))
+    ? (diffAbs !== 0 && !custoConhecido ? classifyDivergenceSemCusto() : classifyDivergence(diffValor))
     : {level:'warn', label:'Sem saldo para comparar', rule:'Nenhum saldo carregado para este código — revisão manual necessária'};
   const statusAprovacao = hasSaldoLocal ? computeStatus(numeroContagem, classification.level) : 'aguardando_analise_lider';
   // Recontagem (numeroContagem>=2) cuja diferença bate EXATAMENTE com a da

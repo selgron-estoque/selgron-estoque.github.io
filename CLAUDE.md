@@ -5348,3 +5348,16 @@ deixa de ser por %, passa a ser por valor"):
   comportamento ali). Transpile Babel do arquivo inteiro conferido. **Verificação
   visual/funcional de ponta a ponta fica a cargo do cliente** — mesma limitação de
   sempre (login exige Supabase Auth real, não simulável no sandbox sem rede).
+
+## Ajuste: sem custo cadastrado, QUALQUER diferença vai direto pro líder
+
+Cliente esclareceu logo depois da correção anterior: "qualquer diferença que não
+contém custo precisa ir para aprovação" — a rede de segurança por percentual
+(≤5%/5-15%/>15%) que eu tinha implementado ainda deixava passar automaticamente uma
+diferença pequena (≤5%) em item sem custo cadastrado. Simplificado:
+`classifyDivergenceSemCusto()` agora não recebe percentual nenhum e sempre retorna
+`danger`/"Enviado para análise do líder" — chamada só quando `diffAbs !== 0` (contagem
+EXATA, sem custo, continua aprovando sozinho normalmente, mesma exceção de sempre).
+Testado via script Node isolado: diferença de 1 unidade só (sem custo) já vai pro
+líder, igual uma diferença de bilhões; contagem exata sem custo continua aprovando
+sozinha; item com custo cadastrado não mudou nada. Transpile Babel conferido.
