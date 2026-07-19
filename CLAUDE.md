@@ -5154,9 +5154,34 @@ quem podia ver isso.
   já está sempre invisível pra esse perfil.
   - Descrição do painel em Configurações atualizada pra mencionar as duas telas que
     esse toggle agora controla (contagem ao vivo + Recontagens Pendentes).
-- **Escopo consciente**: mudança só em `RecountsPanel` (a tela do print do cliente).
-  `DivergentItemsPanel` já mostra Sistema/Físico/Diferença/% sempre, sem toggle de
-  "Detalhes" nenhum — não foi mexido, não foi pedido.
+- **Escopo original: só `RecountsPanel`** (a tela do print do cliente) —
+  `DivergentItemsPanel` tinha ficado de fora nessa 1ª rodada.
 - Testado via transpile Babel do arquivo inteiro. **Verificação visual/funcional de
   ponta a ponta fica a cargo do cliente** — mesma limitação de sempre (login exige
   Supabase Auth real, não simulável no sandbox sem rede).
+
+**Extensão pra "Itens Divergentes"**: cliente pediu ("por favor", em resposta à oferta de
+revisar outros lugares com o mesmo padrão) pra estender o mesmo cuidado — essa tela
+também mostra Sistema/Físico/Diferença/% sempre visível, sem toggle nenhum, e é
+igualmente uma decisão AINDA EM ABERTO (aguardando o líder), não um histórico já
+resolvido — mesmo raciocínio de viés que já valia pra `RecountsPanel`.
+
+- **`podeVerDetalhes`** replicado em `DivergentItemsPanel` (mesma fórmula:
+  `role!=='operador' || operadorVeSaldo`) — quando `false`, todo o bloco
+  Sistema/Físico/Diferença/% (tanto a versão com 1ª/2ª contagem empilhadas quanto a
+  versão de rodada única) vira uma nota discreta ("Detalhes de Sistema/Físico/Diferença
+  ocultos pra este perfil..."), e a faixa "Diferença confirmada" (que revelaria o mesmo
+  número por outro caminho) também fica condicionada ao mesmo `podeVerDetalhes`. Líder/
+  admin continuam vendo tudo, sempre, sem toggle nenhum pra recolher (essa tela nunca
+  teve um botão "Detalhes"/"Ocultar" — só ganhou o gate por perfil, não um toggle novo).
+- **`ConcludedCountsPanel` ficou de fora, de propósito** — é um painel de AUDITORIA de
+  histórico já resolvido (documentado no próprio código: "um dia bata uma auditoria,
+  preciso de toda informação necessária ali"), não uma decisão ainda em aberto — o viés
+  que `operadorVeSaldo` existe pra evitar (influenciar uma contagem/decisão que ainda vai
+  acontecer) não se aplica a um item já concluído. Esconder dado de auditoria de um perfil
+  iria contra o motivo dessa tela existir. Se o cliente quiser esconder ali também, é uma
+  decisão separada — não assumi que "revisar outros lugares" incluía isso.
+- Descrição do painel em Configurações atualizada de novo, agora citando as 3 telas
+  (contagem ao vivo + Recontagens Pendentes + Itens Divergentes).
+- Testado via transpile Babel do arquivo inteiro. **Verificação visual/funcional fica a
+  cargo do cliente** — mesma limitação de sempre.

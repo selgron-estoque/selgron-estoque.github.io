@@ -4001,7 +4001,7 @@ function App(){
         {view==='routeCount' && <RouteCountFlow inv={flowState} user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} gruposExcluidos={gruposExcluidos} />}
         {view==='importedListCount' && <ImportedListCountFlow inv={flowState} user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} />}
         {view==='recounts' && <RecountsPanel counts={counts} inventories={inventories} role={role} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onRefresh={refreshContagens} operadorVeSaldo={operadorVeSaldo} />}
-        {view==='divergentes' && <DivergentItemsPanel counts={counts} inventories={inventories} role={role} goto={goto} onApprove={approveDivergence} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onRefresh={refreshContagens} />}
+        {view==='divergentes' && <DivergentItemsPanel counts={counts} inventories={inventories} role={role} goto={goto} onApprove={approveDivergence} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onRefresh={refreshContagens} operadorVeSaldo={operadorVeSaldo} />}
         {view==='todasDivergencias' && <AllDivergencesPanel counts={counts} historicoConcluidas={historicoConcluidas} goto={goto} />}
         {view==='concluidas' && <ConcludedCountsPanel counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} onDeleteCount={role==='admin' ? deleteCount : undefined} onRefresh={refreshHistoricoConcluidas} />}
         {view==='recount' && flowState && <RecountFlow original={flowState} user={currentUser} onAddressProposed={addAddressProposal} onFinish={(c)=>{registerFinishedCount(c); goto('recounts');}} operadorVeSaldo={operadorVeSaldo} />}
@@ -7065,9 +7065,14 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
 // aparecer só em "Recontagens". Visível pra todos os papéis (antes ficava
 // escondida inteira do operador) — mas as ações (aprovar/solicitar
 // recontagem) continuam só pra líder/admin, operador vê em modo leitura.
-function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequestRecount, onDeleteCount, onToggleUrgente, onRefresh}){
+function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequestRecount, onDeleteCount, onToggleUrgente, onRefresh, operadorVeSaldo}){
   const aguardandoAnalise = counts.filter(c=>c.statusAprovacao==='aguardando_analise_lider');
   const canApprove = role==='lider' || role==='admin';
+  // Mesmo raciocínio/toggle de RecountsPanel: operador só vê Sistema/Físico/
+  // Diferença/% aqui se o admin liberou "Visibilidade do Saldo na Contagem"
+  // — essa tela também é uma decisão AINDA aberta (aguardando o líder), não
+  // um histórico já resolvido, então o mesmo cuidado contra viés se aplica.
+  const podeVerDetalhes = role!=='operador' || operadorVeSaldo;
 
   // `onApprove`/`onRequestRecount`/`onToggleUrgente` aguardam confirmação do
   // Supabase — `busyId` desabilita só o card em ação (não a tela inteira),
@@ -7206,7 +7211,12 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequ
                 </div>
                 <div className="count-card-address-badge"><DIcon name="mapPin" size={16} /> {c.endereco || 'não cadastrado'}</div>
               </div>
-              {anterior ? (
+              {!podeVerDetalhes ? (
+                <div style={{padding:'8px 16px 0',fontSize:12,color:'var(--ink-dim)'}}>
+                  Detalhes de Sistema/Físico/Diferença ocultos pra este perfil (ver
+                  Configurações → "Visibilidade do Saldo na Contagem").
+                </div>
+              ) : anterior ? (
                 <div className="rounds-stack" style={{padding:'8px 16px 0'}}>
                   <div className="round-panel previous">
                     <div className="round-eyebrow">
@@ -7242,7 +7252,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequ
                 </div>
               )}
               {c.motivo && <div style={{padding:'10px 16px 0',fontSize:12.5}}>Motivo: <strong>{c.motivo}</strong></div>}
-              {c.diferencaConfirmada && (
+              {podeVerDetalhes && c.diferencaConfirmada && (
                 <div className="divergence-alert" style={{margin:'10px 16px 0'}}>
                   <Ic>⚠</Ic><span>Diferença confirmada: <strong>{c.diferenca>0?'+':''}{c.diferenca}</strong> nas duas rodadas.</span>
                 </div>
@@ -9582,12 +9592,13 @@ function Settings({role, currentUser, operadorVeSaldo, onSetOperadorVeSaldo, gru
             Controla se o operador vê o saldo do sistema (referência antes de digitar,
             card de comparação ao vivo) durante a contagem, em todos os modos
             (Aleatória, Manual, Rota, Lista Importada, Recontagem) — e também os
-            detalhes (Sistema/Físico/Diferença/%) em "Recontagens Pendentes". Com a
-            opção desligada, o operador conta "às cegas" e não vê esses números na fila
-            de recontagem — a comparação com o sistema só aparece depois, na análise do
-            líder. Líder e administrador sempre veem o saldo e os detalhes, independente
-            desta configuração. Isso não muda a regra de aprovação automática/segunda
-            contagem/análise do líder, só o que aparece na tela.
+            detalhes (Sistema/Físico/Diferença/%) em "Recontagens Pendentes" e "Itens
+            Divergentes" (as duas telas de decisão ainda EM ABERTO, antes do líder
+            decidir). Com a opção desligada, o operador conta "às cegas" e não vê esses
+            números nessas filas — a comparação com o sistema só aparece depois, na
+            análise do líder. Líder e administrador sempre veem o saldo e os detalhes,
+            independente desta configuração. Isso não muda a regra de aprovação
+            automática/segunda contagem/análise do líder, só o que aparece na tela.
           </div>
           <label style={{display:'flex',alignItems:'center',gap:10,cursor:salvandoSaldo?'wait':'pointer',opacity:salvandoSaldo?0.7:1}}>
             <input
