@@ -259,6 +259,24 @@
   .count-card-actions-row.btn-row .btn{width:auto;padding:11px 14px;font-size:11.5px;flex:1 1 auto;}
   .count-card-actions-row.btn-row .btn-danger{flex:0 0 auto;}
 
+  /* Comparativo 1ª/2ª contagem (item que já tem uma rodada anterior, ver
+     "anterior" em DivergentItemsPanel) — as duas rodadas empilhadas, cada
+     uma no mesmo .result-grid de sempre, com destaque visual pra qual é a
+     rodada ATUAL (borda laranja) vs. a anterior (neutra). Aprovado com o
+     cliente via prévia de artifact antes de subir — ver CLAUDE.md. */
+  .rounds-stack{display:flex;flex-direction:column;gap:10px;}
+  .round-panel{border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:10px;min-width:0;}
+  /* Fundo branco (não --panel-raised) — precisa contrastar com o fundo
+     cinza das células .rg dentro dele, senão painel e célula se fundem
+     num bloco só sem nenhum contraste pro texto dos rótulos. */
+  .round-panel.previous{background:var(--panel);border:1px solid var(--line);}
+  .round-panel.current{background:#fff;border:2px solid var(--safety);}
+  .round-eyebrow{display:flex;align-items:center;flex-wrap:wrap;gap:8px;}
+  .round-eyebrow .label{font-family:var(--font-mono);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;color:var(--ink-dim);}
+  .round-panel.current .round-eyebrow .label{color:var(--safety-ink);}
+  .round-eyebrow .badge{font-family:var(--font-mono);font-size:9.5px;font-weight:700;text-transform:uppercase;padding:2px 8px;border-radius:10px;background:var(--safety);color:#fff;}
+  .round-who{font-size:11.5px;color:var(--ink-dim);margin-left:auto;}
+
   /* QR SCAN VISUAL */
   .scan-box{position:relative;background:#0A0B0D;border:1px solid var(--line);border-radius:var(--radius);height:180px;display:flex;align-items:center;justify-content:center;overflow:hidden;margin-bottom:14px;}
   .scan-frame{width:120px;height:120px;position:relative;}
@@ -293,7 +311,7 @@
   .result-grid .rg{background:var(--panel-raised);border-radius:8px;padding:10px 12px;min-width:0;}
   .result-grid .rg .k{font-family:var(--font-mono);font-size:9.5px;text-transform:uppercase;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .result-grid .rg .v{font-family:var(--font-mono);font-size:17px;font-weight:700;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  /* Grids de 4 colunas numa linha só (Sistema/1ª Contagem/Diferença/%, ver
+  /* Grids de 4 colunas numa linha só (Sistema/Físico/Diferença/%, ver
      CLAUDE.md) — em telas de celular estreitas (~360-390px), mesmo com
      nowrap, "DIFERENÇA" ainda não cabia no espaço de 1/4 da largura do
      card. Aperta padding/fonte só nessa variante (classe result-grid-4col),
@@ -6985,9 +7003,9 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
                     <>
                       <div className="result-grid result-grid-4col" style={{marginTop:0,gridTemplateColumns:'repeat(4,1fr)'}}>
                         <div className="rg"><div className="k">Sistema</div><div className="v">{c.saldoSistema==null ? '—' : c.saldoSistema}</div></div>
-                        <div className="rg"><div className="k">1ª Contagem</div><div className="v">{c.qtdContada}</div></div>
+                        <div className="rg"><div className="k">Físico</div><div className="v">{c.qtdContada}</div></div>
                         <div className="rg"><div className="k">Diferença</div><div className="v" style={{color:sev.color}}>{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div></div>
-                        <div className="rg"><div className="k">%</div><div className="v" style={{color:sev.color}}>{c.percentual==null ? '—' : c.percentual.toFixed(1)+'%'}</div></div>
+                        <div className="rg"><div className="k">%</div><div className="v" style={{color:sev.color}}>{c.percentual==null ? '—' : Math.round(c.percentual)+'%'}</div></div>
                       </div>
                       <div className="count-card-extra">
                         {c.almoxarifado && <div>Armazém: <strong>{c.almoxarifado}</strong></div>}
@@ -7167,21 +7185,45 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequ
                 </div>
                 <div className="count-card-address-badge"><DIcon name="mapPin" size={16} /> {c.endereco || 'não cadastrado'}</div>
               </div>
-              {anterior && (
-                <div style={{padding:'8px 16px 0',fontSize:12,color:'var(--ink-dim)'}}>
-                  1ª contagem: {anterior.qtdContada} un. por {anterior.usuario} em {anterior.data} {anterior.hora||''}
+              {anterior ? (
+                <div className="rounds-stack" style={{padding:'8px 16px 0'}}>
+                  <div className="round-panel previous">
+                    <div className="round-eyebrow">
+                      <span className="label">{anterior.numeroContagem}ª Contagem</span>
+                      <span className="round-who">{anterior.usuario} · {anterior.data} {anterior.hora||''}</span>
+                    </div>
+                    <div className="result-grid" style={{marginTop:0,gridTemplateColumns:'repeat(4,1fr)'}}>
+                      <div className="rg"><div className="k">Sistema</div><div className="v">{anterior.saldoSistema==null ? '—' : anterior.saldoSistema}</div></div>
+                      <div className="rg"><div className="k">Físico</div><div className="v">{anterior.qtdContada}</div></div>
+                      <div className="rg"><div className="k">Diferença</div><div className="v">{anterior.diferenca==null ? '—' : (anterior.diferenca>0?'+':'')+anterior.diferenca}</div></div>
+                      <div className="rg"><div className="k">%</div><div className="v">{anterior.percentual==null ? '—' : Math.round(anterior.percentual)+'%'}</div></div>
+                    </div>
+                  </div>
+                  <div className="round-panel current">
+                    <div className="round-eyebrow">
+                      <span className="label">{c.numeroContagem}ª Contagem</span><span className="badge">Atual</span>
+                      <span className="round-who">{c.usuario} · {c.data} {c.hora||''}</span>
+                    </div>
+                    <div className="result-grid" style={{marginTop:0,gridTemplateColumns:'repeat(4,1fr)'}}>
+                      <div className="rg"><div className="k">Sistema</div><div className="v">{c.saldoSistema==null ? '—' : c.saldoSistema}</div></div>
+                      <div className="rg"><div className="k">Físico</div><div className="v">{c.qtdContada}</div></div>
+                      <div className="rg"><div className="k">Diferença</div><div className="v" style={{color:sev.color}}>{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div></div>
+                      <div className="rg"><div className="k">%</div><div className="v" style={{color:sev.color}}>{c.percentual==null ? '—' : Math.round(c.percentual)+'%'}</div></div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="result-grid result-grid-4col" style={{gridTemplateColumns:'repeat(4,1fr)'}}>
+                  <div className="rg"><div className="k">Sistema</div><div className="v">{c.saldoSistema==null ? '—' : c.saldoSistema}</div></div>
+                  <div className="rg"><div className="k">Físico</div><div className="v">{c.qtdContada}</div></div>
+                  <div className="rg"><div className="k">Diferença</div><div className="v" style={{color:sev.color}}>{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div></div>
+                  <div className="rg"><div className="k">%</div><div className="v" style={{color:sev.color}}>{c.percentual==null ? '—' : Math.round(c.percentual)+'%'}</div></div>
                 </div>
               )}
-              <div className="result-grid result-grid-4col" style={{gridTemplateColumns:'repeat(4,1fr)'}}>
-                <div className="rg"><div className="k">Sistema</div><div className="v">{c.saldoSistema==null ? '—' : c.saldoSistema}</div></div>
-                <div className="rg"><div className="k">Qtd. Contada</div><div className="v">{c.qtdContada}</div></div>
-                <div className="rg"><div className="k">Diferença</div><div className="v" style={{color:sev.color}}>{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div></div>
-                <div className="rg"><div className="k">%</div><div className="v" style={{color:sev.color}}>{c.percentual==null ? '—' : c.percentual.toFixed(1)+'%'}</div></div>
-              </div>
               {c.motivo && <div style={{padding:'10px 16px 0',fontSize:12.5}}>Motivo: <strong>{c.motivo}</strong></div>}
               {c.diferencaConfirmada && (
                 <div className="divergence-alert" style={{margin:'10px 16px 0'}}>
-                  <Ic>⚠</Ic><span>Diferença confirmada, seguir com ajuste — a recontagem encontrou exatamente a mesma diferença da rodada anterior.</span>
+                  <Ic>⚠</Ic><span>Diferença confirmada: <strong>{c.diferenca>0?'+':''}{c.diferenca}</strong> nas duas rodadas.</span>
                 </div>
               )}
               {erros[c.id] && (
@@ -7524,8 +7566,8 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
                 <div className="rg"><div className="k">Usuário</div><div className="v">{r.usuario||'—'}</div></div>
                 <div className="rg"><div className="k">Endereço</div><div className="v">{r.endereco || r.enderecoContado || '—'}</div></div>
                 <div className="rg"><div className="k">Saldo Sistema</div><div className="v">{r.saldoSistema==null ? '—' : r.saldoSistema}</div></div>
-                <div className="rg"><div className="k">Qtd. Contada</div><div className="v">{r.qtdContada}</div></div>
-                <div className="rg"><div className="k">Diferença</div><div className="v">{r.diferenca==null ? '— (sem saldo local)' : (r.diferenca>0?'+':'')+r.diferenca+(r.percentual==null?'':' ('+r.percentual.toFixed(1)+'%)')}</div></div>
+                <div className="rg"><div className="k">Físico</div><div className="v">{r.qtdContada}</div></div>
+                <div className="rg"><div className="k">Diferença</div><div className="v">{r.diferenca==null ? '— (sem saldo local)' : (r.diferenca>0?'+':'')+r.diferenca+(r.percentual==null?'':' ('+Math.round(r.percentual)+'%)')}</div></div>
                 <div className="rg"><div className="k">Valor Divergente</div><div className="v">{r.valorDivergente!=null && r.valorDivergente!==0 ? 'R$ '+Number(r.valorDivergente).toFixed(2) : '—'}</div></div>
               </div>
               {r.motivo && <div style={{padding:'0 18px 10px',fontSize:12.5}}>Motivo: <strong>{r.motivo}</strong></div>}

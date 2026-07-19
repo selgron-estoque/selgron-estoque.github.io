@@ -5064,3 +5064,67 @@ podia quebrar linha, dependendo da largura exata do aparelho.
 a abreviação não era mais necessária pra evitar quebra, só existia por causa do bug já
 corrigido. Revertido só o texto do rótulo em `RecountsPanel`; na pior hipótese (tela bem
 estreita) ele trunca com reticências, nunca quebra ou estoura o card.
+
+## "Itens Divergentes" mostra a 1ª e a 2ª contagem lado a lado (comparativo)
+
+Cliente perguntou "como você pretende mostrar a 1ª e a 2ª contagem?" — hoje, quando um
+item já tinha passado por recontagem e ainda divergia (chegando em "Itens Divergentes"),
+a 1ª contagem aparecia só como uma linha de texto cinza pequena ("1ª contagem: X un. por
+Fulano em DD/MM") acima do quadro de números, que só mostrava a rodada MAIS RECENTE —
+não dava pra comparar as duas sem fazer conta de cabeça. Pedido de melhorar isso passou
+por várias rodadas de prévia via `Artifact` antes de subir (o cliente pediu prévia
+explicitamente) — decisões importantes que mudaram no caminho:
+
+- **Sistema NÃO é um valor fixo compartilhado entre as rodadas** — é vivo, pode mudar
+  entre uma contagem e outra por movimentação real no Protheus no intervalo. A 1ª versão
+  da prévia mostrava um "Sistema (referência)" único acima das duas rodadas — o cliente
+  corrigiu: cada rodada precisa mostrar o Sistema que ELA MESMA capturou (já é assim que
+  o dado é salvo, `saldoSistema` por `count`, nunca foi um valor único). O que de fato se
+  compara entre rodadas é a **Diferença**: se ela se repetir mesmo com o Sistema tendo
+  mudado, é sinal forte de discrepância real — é exatamente o que `diferencaConfirmada`
+  já calculava (ver seção "Aprovação automática..." acima), só ganhou mais destaque
+  visual agora.
+- **"Qtd. Contada" virou "Físico"** em todos os lugares que mostram o valor bruto contado
+  numa rodada específica (`RecountsPanel`, `DivergentItemsPanel`, `ConcludedCountsPanel`
+  per-round) — sugestão do próprio cliente, e bate exatamente com a coluna "Fisico" que a
+  planilha de importação/exportação do app já usa (`IMPORT_TEMPLATE_COLUMNS`,
+  `buildPlanilhaPadraoRows`) — não é nome novo, é terminologia que já existia em outro
+  lugar do app, só nunca tinha chegado na UI de contagem. **Não renomeado** onde o
+  conceito é outro: "Qtd. Final"/"Quantidade Final Validada" em `ConcludedCountsPanel`
+  (resumo da cadeia inteira, não uma rodada específica).
+- **% perdeu a casa decimal** (`Math.round(...)+'%'` em vez de `.toFixed(1)+'%'`) nos
+  mesmos 3 lugares — pedido do cliente ("apenas duas casas", esclarecido como "sem casa
+  decimal") pra encurtar o valor e reduzir o risco de estourar a largura da célula. Só
+  esses 3 lugares (contagem por rodada) — não mexi nas outras 3 ocorrências de
+  `.toFixed(1)+'%'` no arquivo (Acuracidade do Estoque na Home, Cobertura do catálogo,
+  barra de valor por armazém), que são conceitos diferentes (KPI cumulativo, não
+  percentual de divergência de uma rodada).
+- **`.rounds-stack`/`.round-panel`** (CSS novo, perto de `.count-card-actions-row`) — só
+  em `DivergentItemsPanel`, e só quando `anterior` existe (item que JÁ passou por uma
+  recontagem e ainda diverge) — o mesmo `.result-grid` de sempre, repetido duas vezes
+  (rodada anterior em cima, atual embaixo), cada uma com seu próprio eyebrow ("Nª
+  Contagem · Quem · Quando"). A rodada atual ganha borda laranja (`.round-panel.current`)
+  pra se destacar como a que decide o status; a anterior fica neutra
+  (`.round-panel.previous`, fundo branco — **não** `--panel-raised`, que é a MESMA cor de
+  fundo das células `.rg` dentro dela; um bug pego durante a prévia: painel e célula com
+  o mesmo cinza se fundiam num bloco só, sem contraste nenhum pro texto dos rótulos
+  "SISTEMA"/"FÍSICO" se destacar). Quando NÃO há `anterior` (divergência direto na 1ª
+  contagem, sem recontagem ainda), continua mostrando só o quadro único de sempre — sem
+  empilhar nada, não tem o que comparar.
+- **Mensagem de "Diferença confirmada" simplificada**: era um parágrafo explicando o
+  motivo ("...a recontagem encontrou exatamente a mesma diferença da rodada anterior"),
+  virou só "Diferença confirmada: **{valor}** nas duas rodadas." — pedido do cliente
+  durante a prévia, o contexto já fica claro pelos dois quadros logo acima.
+- **Ícones**: a prévia (feita como HTML estático fora do app, sem acesso ao componente
+  `Ic`/`DIcon`) tinha usado emoji cru (⚠ 📍 🔁) por engano — o cliente notou ("atenção aos
+  ícones, lembra que já falamos sobre este padrão??", referência à unificação de ícones
+  documentada acima) e a prévia foi corrigida pra usar SVG linear equivalente. A produção
+  em si nunca teve esse problema — já usa `<Ic>⚠</Ic>`/`<DIcon name="mapPin"/>` desde a
+  unificação de ícones, então nenhuma mudança de ícone foi necessária no `index.html`
+  além do que já existia.
+- **Testado apenas via transpile Babel do arquivo inteiro** — mesma limitação de sempre
+  (login exige Supabase Auth real, não simulável no sandbox sem rede). A verificação
+  visual de ponta a ponta foi feita ANTES de subir, via várias rodadas de prévia num
+  `Artifact` estático (réplica fiel dos tokens de cor/fonte/CSS do app), com o cliente
+  aprovando cada ajuste (contraste, texto do banner, ícones, ausência de casa decimal no
+  %) antes da implementação real no `index.html`.
