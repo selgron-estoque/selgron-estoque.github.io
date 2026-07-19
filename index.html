@@ -347,7 +347,12 @@
   .cs-calc-key{height:48px;border-radius:10px;border:1px solid var(--line);background:var(--panel-raised);color:var(--ink);font-family:var(--font-mono);font-size:18px;font-weight:700;}
   .cs-calc-key:active{background:var(--line);}
   .cs-calc-key.op{background:#EAF2F8;color:var(--accent2);}
-  .cs-calc-key.equals{background:var(--safety);color:#fff;}
+  /* "=" ocupa 2 linhas no grid (gridRow:'span 2'), mas a altura FIXA de
+     .cs-calc-key acima (48px) sempre vence o esticamento automático do
+     grid — sem esse override, o botão ficava com metade da área reservada
+     pra ele em branco, por baixo. height:100% deixa ele de fato preencher
+     as 2 linhas + o gap entre elas. */
+  .cs-calc-key.equals{height:100%;background:var(--safety);color:#fff;font-size:26px;}
   .cs-qty-input{width:100%;height:90px;font-family:var(--font-mono);font-size:48px;font-weight:700;text-align:center;background:var(--panel);border:2px solid var(--line);border-radius:16px;color:var(--ink);}
   .cs-qty-input:focus{outline:none;border-color:var(--accent2);}
   .cs-qty-input.ok{border-color:var(--ok);}
