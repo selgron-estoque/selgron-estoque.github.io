@@ -5416,3 +5416,42 @@ tinha sido atualizada junto.
   conferido. **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma
   limitação de sempre (login exige Supabase Auth real, não simulável no sandbox sem
   rede).
+
+## Cabeçalho de progresso (Recontagens/Itens Divergentes) — novo modelo de donut+barra
+
+Cliente mandou duas imagens — um modelo de referência (donut com "43%"/"Concluídas" em
+destaque à esquerda, "43 concluídas"/"108 restantes" ao lado, barra laranja horizontal
+embaixo) e um print do `ListaProgressoHeader` atual (título "151 pendentes" + botão
+Atualizar à esquerda, donut com o número bruto "151"/"0%" à direita, contadores
+verde/âmbar empilhados) — e pediu: "nos cards de contagens, substitua por este modelo,
+pode apagar o atual".
+
+- **`PnlDonut` ganhou uma prop opcional `centerValue`** — por padrão o componente
+  mostra `total` (soma dos segmentos) como o número grande central; agora, se
+  `centerValue` for passado, ele sobrescreve esse número (usado só aqui, pra mostrar a
+  % em vez da soma bruta). O uso na Home ("Situação Geral dos Inventários") não passa
+  essa prop, então continua mostrando `total` exatamente como antes — mudança
+  aditiva, sem efeito colateral no outro lugar que usa o mesmo componente.
+- **`ListaProgressoHeader` reescrito**: donut à esquerda (`centerValue={pct+'%'}`,
+  `centerLabel="Concluídas"`, cor única `--safety` pro segmento concluído, faixa
+  cinza-clara `--gray-100` pro restante — troca do par verde/âmbar de antes, bate com
+  a referência que usa só laranja), contadores "{concluidas} concluídas"/"{restantes}
+  {titulo}" ao lado do donut (não mais empilhados com cor própria por linha), e uma
+  barra horizontal nova (`.lph-bar-track`/`.lph-bar-fill`, laranja, cantos
+  arredondados) ocupando a largura toda do card, abaixo do bloco donut+contadores.
+- **Botão "Atualizar" não tinha equivalente na imagem de referência** (que não mostra
+  cabeçalho/ações, só o bloco de progresso) — mantido por ser funcionalmente
+  necessário (dispara o mesmo re-fetch pontual de sempre), reposicionado como um botão
+  pequeno no canto superior direito do card (`.lph-refresh-btn`, `position:absolute`)
+  em vez de ficar abaixo do título antigo (que deixou de existir nesse redesenho).
+  `.lph-card{padding-top:52px}` só abaixo de 480px, pra esse botão não colidir com o
+  donut em telas bem estreitas.
+- Escopado só a este componente (`.lph-*`, CSS novo perto de `.count-card-actions-row`)
+  — não mexe em `.pnl-*` (usado pelo Dashboard/Home) nem em `.count-card*` (o shell dos
+  cards de item, que não muda). Os 2 pontos de uso (`RecountsPanel`/`DivergentItemsPanel`)
+  não precisaram de nenhuma mudança nas props que já passavam — `titulo`/`restantes`/
+  `concluidas`/`onAtualizar`/`atualizando` continuam os mesmos.
+- Testado via transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  (568 aberturas/568 fechamentos). **Verificação visual de ponta a ponta fica a cargo
+  do cliente** — mesma limitação de sempre (login exige Supabase Auth real, não
+  simulável no sandbox sem rede).
