@@ -4637,3 +4637,46 @@ também (ver "Convenções de design" acima, onde essa regra ficou registrada).
   sandbox sem rede) — falta o cliente rodar o SQL novo (`backend/schema.sql`, bloco
   "CONFIGURAÇÕES DO APP COMPARTILHADAS ENTRE APARELHOS") e testar com dois aparelhos,
   passo a passo em `backend/README.md` seção 11.
+
+## Bug real: "Lembrar-me" marcado ainda deslogava sozinho ao reabrir o navegador
+
+Cliente reportou duas vezes ("acho que não funcionou", depois "ainda não está
+funcionando") que "Lembrar-me" não tinha efeito. Na 1ª vez eu levantei hipótese de
+comportamento de plataforma (app switcher do celular suspendendo em vez de fechar de
+verdade a aba) sem achar bug — mas na 2ª reclamação investiguei o timer de logout por
+inatividade a fundo e achei a causa real, sem relação com o storage adapter em si (esse
+estava correto).
+
+- **Causa**: `lastActivity` (o timestamp usado pelo timer de logout por inatividade,
+  15 min por padrão) fica em `localStorage` — sobrevive a fechar o navegador, exatamente
+  como "Lembrar-me" pede. Só que o timer de inatividade usa o tempo DECORRIDO desde essa
+  marca (`jaDecorrido = Date.now() - ultimaAtividade`) pra decidir se já devia deslogar
+  na hora, mesmo se a sessão do Supabase Auth (o token de login em si) ainda estivesse
+  perfeitamente válida. Resultado: qualquer pessoa que marcasse "Lembrar-me", fechasse o
+  navegador, e voltasse depois de mais que `sessionTimeoutMin` (15 min por padrão, ou o
+  que o admin tiver configurado) era deslogada IMEDIATAMENTE ao reabrir — o app tratava
+  "o navegador ficou fechado por um tempo" exatamente igual a "a pessoa ficou parada
+  olhando pra tela logada sem tocar em nada", que é o cenário que esse timer deveria
+  proteger (tablet compartilhado esquecido logado no chão de fábrica) — não o cenário de
+  reabrir o app depois de um tempo, que é presença de verdade, não inatividade.
+- **Correção — `TAB_ABERTA_KEY`** (`sessionStorage`, perto de `LAST_ACTIVITY_KEY`):
+  diferente do `localStorage` (sobrevive a fechar o navegador) e diferente do
+  `lastActivity` puro (não sabe distinguir "F5" de "reabriu depois de fechado"),
+  `sessionStorage` tem exatamente a propriedade que faltava — sobrevive a um F5 dentro
+  da MESMA aba, mas é apagado quando a aba/janela fecha de verdade. O efeito de logout
+  por inatividade agora checa esse marcador antes de calcular `jaDecorrido`:
+  - Marcador presente (F5/remontagem na mesma aba) → comportamento de sempre, conta o
+    tempo real parado desde a última atividade (continua protegendo o tablet
+    compartilhado esquecido logado — não regride essa proteção).
+  - Marcador ausente (aba nova — reabriu o navegador com "Lembrar-me" marcado, ou é a
+    primeira vez nesta aba) → trata como atividade fresca: chama `touchLastActivity()`
+    na hora e dá o prazo configurado INTEIRO a partir de agora, em vez de descontar o
+    tempo que o navegador ficou fechado.
+- Testado via script Node isolado (mesma técnica de sempre, `localStorage`/
+  `sessionStorage` simulados em memória): reabrir depois de 2h com o marcador de aba
+  ausente NÃO desloga na hora (dá o prazo cheio); F5 na mesma aba depois de 20 min
+  parado (>15 min configurados) desloga corretamente; F5 na mesma aba depois de só 5 min
+  continua logado. Transpile Babel do arquivo inteiro conferido. **Não testado contra o
+  Supabase Auth real fechando/reabrindo um navegador de verdade** (mesma limitação de
+  sempre, sandbox sem rede) — fica a cargo do cliente confirmar que "Lembrar-me" agora
+  sobrevive a fechar o navegador por mais de 15 minutos.

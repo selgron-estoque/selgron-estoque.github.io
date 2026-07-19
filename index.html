@@ -3019,6 +3019,24 @@ function clearLastActivity(){
   try{ window.localStorage.removeItem(LAST_ACTIVITY_KEY); }catch(err){}
 }
 
+// Bug real corrigido aqui — achado ao investigar "Lembrar-me ainda não
+// funciona": `lastActivity` fica em localStorage, então sobrevive a fechar
+// o navegador (igual "Lembrar-me" pede) — mas o timer de inatividade (logo
+// abaixo) usava o tempo decorrido desde essa marca pra decidir se já devia
+// deslogar. Resultado: quem marcava "Lembrar-me", fechava o navegador, e
+// voltava depois de mais que `sessionTimeoutMin` (15 min por padrão) era
+// deslogado NA HORA ao reabrir — mesmo com a sessão do Supabase Auth ainda
+// válida — porque o app tratava "o navegador ficou fechado" como se fosse
+// "a pessoa ficou parada olhando pra tela logada". `sessionStorage` (ao
+// contrário do localStorage) é apagado quando a ABA/JANELA fecha de
+// verdade, mas sobrevive a um F5 — exatamente a distinção que faltava:
+// aba que já estava aberta (F5) → conta o tempo parado normalmente
+// (protege o tablet compartilhado, esquecido logado, que é o objetivo
+// original deste timer); aba nova (reabriu o navegador, ou é a primeira
+// vez) → reabrir o app é presença de verdade, não inatividade — trata como
+// atividade fresca e dá o prazo cheio a partir de agora.
+const TAB_ABERTA_KEY = 'stock360:v1:tabAberta';
+
 function App(){
   // Dados que o app gera ficam salvos no localStorage (ver usePersistedState
   // acima) — sobrevivem a recarregar/fechar o navegador neste aparelho.
@@ -3618,20 +3636,38 @@ function App(){
   }
 
   // ---- Logout automático por inatividade ----
-  // Continua exatamente como antes — o Supabase Auth não tem timeout de
-  // inatividade nativo, então essa camada segue por cima da sessão real.
+  // O Supabase Auth não tem timeout de inatividade nativo, então essa
+  // camada segue por cima da sessão real.
   useEffect(()=>{
     if(!currentUser) return;
     // Minutos configurados pelo admin (Configurações → "Tempo de
     // Inatividade") — cai pro padrão de fábrica se por algum motivo vier
     // vazio/inválido do localStorage (ex.: campo zerado sem querer).
     const timeoutMs = (Number(sessionTimeoutMin) > 0 ? Number(sessionTimeoutMin) : DEFAULT_SESSION_TIMEOUT_MIN) * 60 * 1000;
-    // Se a sessão foi restaurada de um reload, o PRIMEIRO timer usa só o
-    // tempo que resta até completar o prazo configurado desde a última
-    // atividade real — senão um F5 repetido reiniciaria o timer do zero a
-    // cada vez e a sessão nunca expiraria de verdade por inatividade.
-    const ultimaAtividade = loadLastActivity();
-    const jaDecorrido = ultimaAtividade ? (Date.now() - ultimaAtividade) : 0;
+    // `sessionStorage` sobrevive a um F5 mas é apagado quando a ABA/JANELA
+    // fecha de verdade — é exatamente essa distinção que separa os dois
+    // cenários (ver comentário perto de `TAB_ABERTA_KEY`, acima):
+    let jaDecorrido = 0;
+    try{
+      const abaJaEstavaAberta = sessionStorage.getItem(TAB_ABERTA_KEY)==='1';
+      if(abaJaEstavaAberta){
+        // F5/remontagem dentro da MESMA aba — usa o tempo real decorrido
+        // desde a última atividade (protege o tablet compartilhado
+        // esquecido logado, que é o motivo deste timer existir).
+        const ultimaAtividade = loadLastActivity();
+        jaDecorrido = ultimaAtividade ? (Date.now() - ultimaAtividade) : 0;
+      } else {
+        // Aba nova — reabriu o navegador (com "Lembrar-me" marcado) ou é a
+        // primeira vez nesta aba. Reabrir o app é presença de verdade, não
+        // inatividade acumulada enquanto estava fechado — trata como
+        // atividade fresca (prazo cheio a partir de agora), senão quem
+        // marca "Lembrar-me" e volta depois de mais de `sessionTimeoutMin`
+        // seria deslogado NA HORA ao reabrir, mesmo com a sessão do
+        // Supabase Auth ainda válida.
+        touchLastActivity();
+        sessionStorage.setItem(TAB_ABERTA_KEY, '1');
+      }
+    }catch(err){}
     let timer = setTimeout(()=>logout('Sessão encerrada por inatividade.'), Math.max(0, timeoutMs - jaDecorrido));
     function resetTimer(){
       clearTimeout(timer);
