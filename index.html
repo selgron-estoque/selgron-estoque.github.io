@@ -766,9 +766,13 @@
     .sidebar-nav{padding:14px 12px;display:flex;flex-direction:column;gap:10px;width:264px;flex-shrink:0;box-sizing:border-box;}
     .sidebar-group{display:flex;flex-direction:column;gap:2px;}
     .sidebar-group-title{font-family:var(--font-mono);font-size:10px;text-transform:uppercase;letter-spacing:1px;color:rgba(255,255,255,0.4);padding:6px 12px 4px;}
-    .sidebar-nav-item{display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:8px;background:none;border:none;color:rgba(255,255,255,0.72);font-size:13.5px;font-weight:500;text-align:left;width:100%;}
+    .sidebar-nav-item{display:flex;align-items:center;gap:12px;padding:11px 12px 11px 9px;border-radius:8px;background:none;border:none;border-left:3px solid transparent;color:rgba(255,255,255,0.72);font-size:13.5px;font-weight:500;text-align:left;width:100%;}
     .sidebar-nav-item:hover{background:rgba(255,255,255,0.07);}
-    .sidebar-nav-item.active{background:var(--safety);color:var(--safety-ink);font-weight:600;}
+    /* Item ativo — faixa laranja fina na borda esquerda + fundo com leve
+       tingimento laranja + ícone/texto na cor da marca (currentColor no
+       ícone SVG, ver DIcon), em vez do preenchimento sólido laranja de
+       antes (referência de imagem enviada pelo cliente). */
+    .sidebar-nav-item.active{background:rgba(246,162,0,0.14);color:var(--safety);font-weight:600;border-left-color:var(--safety);}
     .sidebar-nav-item .ic{width:18px;height:18px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
     .sidebar-footer{padding:14px 20px 20px;border-top:1px solid rgba(255,255,255,0.08);margin-top:auto;font-family:var(--font-corp);font-size:11px;color:rgba(255,255,255,0.45);display:flex;flex-direction:column;gap:6px;width:264px;flex-shrink:0;box-sizing:border-box;}
     .sidebar-footer .status{display:flex;align-items:center;gap:6px;color:rgba(255,255,255,0.6);}
