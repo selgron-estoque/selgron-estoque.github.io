@@ -5210,3 +5210,34 @@ coisas de forma independente.
 - Testado via transpile Babel do arquivo inteiro. **Falta o cliente rodar o SQL novo**
   (`alter table app_config add column if not exists operador_ve_valores_recontagem...`)
   no projeto real e confirmar que o toggle novo funciona independente do outro.
+
+## "Contagens Concluídas" ganha o mesmo layout de card (coluna de botões à direita)
+
+Cliente reportou "o layout dos cards estão mostrando diferente do que desenhamos" —
+sem contexto no início, então pedi print pra identificar o que exatamente estava
+diferente. Depois de eu confirmar visualmente que o card batia com o código (e ainda
+assim o cliente achar diferente), ele mandou o print do card de **Recontagens
+Pendentes** (com "RECONTAR"/"OCULTAR" empilhados à direita) rotulado "novo modelo que
+desenhamos" — o card de `ConcludedCountsPanel` ("Contagens Concluídas") ainda usava o
+formato ANTIGO (`result-grid-4col` + link de texto "Ver detalhes →" solto embaixo, sem
+coluna de ações), nunca tinha recebido a atualização estrutural de layout que
+`RecountsPanel`/`DivergentItemsPanel` já tinham ("Recontagens Pendentes — segunda
+rodada, fidelidade exata ao mockup", ver acima) — meu erro ter deixado essa tela de fora
+daquela rodada sem avisar explicitamente que ela ficaria com um modelo diferente.
+
+- **`count-card-main`/`count-card-content`/`count-card-actions-col`** (mesmas classes
+  já usadas em `RecountsPanel`) — o quadro `Sistema/Qtd. Final/Contagens/Ajuste` virou o
+  `count-card-content` (conteúdo à esquerda), e "Ver detalhes →" (texto solto) virou um
+  botão de verdade (`btn btn-primary`, ícone `📋`, texto "Ver Detalhes") na
+  `count-card-actions-col` à direita — mesmo padrão visual/estrutural dos outros dois
+  painéis.
+- **Removido `onClick` no card inteiro** (`cursor:pointer` + clique em qualquer lugar
+  abrindo o detalhe) — agora só o botão "Ver Detalhes" abre o drill-down, mesmo critério
+  já usado em `RecountsPanel`/`DivergentItemsPanel` (nenhum dos dois tem o card inteiro
+  clicável, só botões específicos).
+- **Campos do quadro não mudaram** (`Sistema`/`Qtd. Final`/`Contagens`/`Ajuste`) — o
+  pedido era sobre a ESTRUTURA do card (coluna de botões), não sobre trocar os dados
+  mostrados por Sistema/Físico/Diferença/% (que são conceitos de uma RODADA específica,
+  diferente do resumo da CADEIA inteira que este card mostra).
+- Testado via transpile Babel do arquivo inteiro. **Verificação visual fica a cargo do
+  cliente** — mesma limitação de sempre (login exige Supabase Auth real).

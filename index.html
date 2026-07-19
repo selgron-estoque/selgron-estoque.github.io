@@ -7686,7 +7686,7 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
         const info = tip._statusDisplay || STATUS_INFO[tip.statusAprovacao] || {};
         const sev = classifySeverity4(severidadeDe(tip));
         return (
-          <div key={cd.chaveId} className="count-card" style={{cursor:'pointer'}} onClick={()=>setSelecionado(cd.chaveId)}>
+          <div key={cd.chaveId} className="count-card">
             <div className="count-card-bar" style={{background:sev.color}}></div>
             <div className="count-card-body">
               <div className="count-card-head">
@@ -7704,13 +7704,19 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
                 </div>
                 <div className="count-card-address-badge"><DIcon name="mapPin" size={16} /> {tip.endereco || tip.enderecoContado || 'não cadastrado'}</div>
               </div>
-              <div className="result-grid result-grid-4col" style={{gridTemplateColumns:'repeat(4,1fr)'}}>
-                <div className="rg"><div className="k">Sistema</div><div className="v">{tip.saldoSistema==null ? '—' : tip.saldoSistema}</div></div>
-                <div className="rg"><div className="k">Qtd. Final</div><div className="v">{tip.qtdContada}</div></div>
-                <div className="rg"><div className="k">Contagens</div><div className="v">{tip.numeroContagem}</div></div>
-                <div className="rg"><div className="k">Ajuste</div><div className="v" style={{fontSize:12.5}}>{cd.houveAjuste ? 'Necessário' : (tip.diferenca==null?'Sem saldo local':'Não necessário')}</div></div>
+              <div className="count-card-main">
+                <div className="count-card-content">
+                  <div className="result-grid result-grid-4col" style={{marginTop:0,gridTemplateColumns:'repeat(4,1fr)'}}>
+                    <div className="rg"><div className="k">Sistema</div><div className="v">{tip.saldoSistema==null ? '—' : tip.saldoSistema}</div></div>
+                    <div className="rg"><div className="k">Qtd. Final</div><div className="v">{tip.qtdContada}</div></div>
+                    <div className="rg"><div className="k">Contagens</div><div className="v">{tip.numeroContagem}</div></div>
+                    <div className="rg"><div className="k">Ajuste</div><div className="v" style={{fontSize:12.5}}>{cd.houveAjuste ? 'Necessário' : (tip.diferenca==null?'Sem saldo local':'Não necessário')}</div></div>
+                  </div>
+                </div>
+                <div className="count-card-actions-col">
+                  <button className="btn btn-primary" onClick={()=>setSelecionado(cd.chaveId)}><Ic>📋</Ic> Ver Detalhes</button>
+                </div>
               </div>
-              <div style={{padding:'10px 16px 14px',fontSize:12,color:'var(--accent2)'}}>Ver detalhes →</div>
             </div>
           </div>
         );
