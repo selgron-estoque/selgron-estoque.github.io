@@ -7702,7 +7702,7 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
                 </div>
                 <div className="count-card-address-badge"><DIcon name="mapPin" size={16} /> {tip.endereco || tip.enderecoContado || 'não cadastrado'}</div>
               </div>
-              <div className="count-card-main">
+              <div className="count-card-main" style={{alignItems:'center'}}>
                 <div className="count-card-content">
                   <div className="result-grid result-grid-4col" style={{marginTop:0,gridTemplateColumns:'repeat(4,1fr)'}}>
                     <div className="rg"><div className="k">Sistema</div><div className="v">{tip.saldoSistema==null ? '—' : tip.saldoSistema}</div></div>
@@ -7711,7 +7711,7 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
                     <div className="rg"><div className="k">Ajuste</div><div className="v" style={{fontSize:12.5}}>{cd.houveAjuste ? 'Necessário' : (tip.diferenca==null?'Sem saldo local':'Não necessário')}</div></div>
                   </div>
                 </div>
-                <div className="count-card-actions-col">
+                <div className="count-card-actions-col" style={{width:'auto'}}>
                   <button className="btn btn-primary" onClick={()=>setSelecionado(cd.chaveId)}><Ic>📋</Ic> Ver Detalhes</button>
                 </div>
               </div>

@@ -5272,3 +5272,21 @@ quantidade/percentual, não um valor em R$.
   checkbox também ajustado: "Operador pode ver detalhes extras em Recontagens Pendentes".
 - Testado via transpile Babel do arquivo inteiro. **Verificação visual fica a cargo do
   cliente** — mesma limitação de sempre.
+
+## "Ver Detalhes" (Contagens Concluídas) esticando — só 1 botão na coluna de ações
+
+Cliente reportou o botão "VER DETALHES" com aparência esticada, ocupando a altura toda
+da linha — diferente do padrão em `RecountsPanel`/`DivergentItemsPanel`, onde a coluna de
+ações tem 2 botões (não 1) preenchendo naturalmente o espaço. `.count-card-main{align-
+items:stretch}` (regra padrão, pensada pra 2 botões) faz `.count-card-actions-col` esticar
+pra bater com a altura do quadro ao lado; com só 1 botão, isso deixava mais espaço vazio
+pro botão "ocupar" de forma desproporcional.
+
+- **Corrigido só neste card** (`style={{alignItems:'center'}}` no `count-card-main` deste
+  componente) — não mexi na classe compartilhada `.count-card-main`, que continua com
+  `stretch` por padrão pros outros 2 painéis (onde faz sentido, 2 botões preenchem bem o
+  espaço). `count-card-actions-col` também ganhou `width:'auto'` aqui (em vez do 150px
+  fixo, pensado pra caber "Recontar"/"Ocultar" lado a lado) — com um botão só, o tamanho
+  se ajusta ao próprio texto "Ver Detalhes".
+- Testado via transpile Babel do arquivo inteiro. **Verificação visual fica a cargo do
+  cliente** — mesma limitação de sempre.
