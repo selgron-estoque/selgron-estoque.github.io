@@ -3525,16 +3525,6 @@ function App(){
     ]);
   }
 
-  // Botão "Atualizar" de Recontagens/Itens Divergentes — o Realtime já
-  // mantém `counts` atualizado sozinho (ver canais perto de countsRef),
-  // mas o botão continua útil pra forçar uma busca na hora (ex: dúvida se
-  // um evento específico chegou) sem depender de esperar. Mesma lógica de
-  // merge já usada no fetch de reconciliação dos canais Realtime.
-  function refreshContagens(){
-    return fetchContagensFromSupabase().then(remote=>{
-      if(remote.length) setCounts(prev=>mergeByIdComTimestamp(prev, remote, {timestampField:'atualizadoEm'}));
-    });
-  }
   useEffect(()=>{
     if(currentUser) refreshHistoricoConcluidas();
   }, [currentUser]);
@@ -4044,8 +4034,8 @@ function App(){
         {view==='manualCount' && <ManualCountFlow user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('home');}} onAddressProposed={addAddressProposal} operadorVeSaldo={operadorVeSaldo} />}
         {view==='routeCount' && <RouteCountFlow inv={flowState} user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} gruposExcluidos={gruposExcluidos} />}
         {view==='importedListCount' && <ImportedListCountFlow inv={flowState} user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} />}
-        {view==='recounts' && <RecountsPanel counts={counts} inventories={inventories} role={role} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onRefresh={refreshContagens} operadorVeValoresRecontagem={operadorVeValoresRecontagem} />}
-        {view==='divergentes' && <DivergentItemsPanel counts={counts} inventories={inventories} role={role} goto={goto} onApprove={approveDivergence} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onRefresh={refreshContagens} />}
+        {view==='recounts' && <RecountsPanel counts={counts} inventories={inventories} role={role} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} operadorVeValoresRecontagem={operadorVeValoresRecontagem} />}
+        {view==='divergentes' && <DivergentItemsPanel counts={counts} inventories={inventories} role={role} goto={goto} onApprove={approveDivergence} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} />}
         {view==='todasDivergencias' && <AllDivergencesPanel counts={counts} historicoConcluidas={historicoConcluidas} goto={goto} />}
         {view==='concluidas' && <ConcludedCountsPanel counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} onDeleteCount={role==='admin' ? deleteCount : undefined} onRefresh={refreshHistoricoConcluidas} />}
         {view==='recount' && flowState && <RecountFlow original={flowState} user={currentUser} onAddressProposed={addAddressProposal} onFinish={(c)=>{registerFinishedCount(c); goto('recounts');}} operadorVeSaldo={operadorVeSaldo} />}
@@ -6845,17 +6835,22 @@ function SearchWithScanner({value, onChange, placeholder}){
     return <CameraScanner onDetected={text=>{ setScanning(false); onChange(text.trim()); }} onCancel={()=>setScanning(false)} />;
   }
   return (
-    <div style={{display:'flex',gap:8,alignItems:'flex-end',marginBottom:14}}>
-      <div className="field" style={{margin:0,flex:1}}>
-        <label>Buscar item</label>
-        <input type="text" value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} />
+    <div className="field" style={{marginBottom:14}}>
+      <label>Buscar item</label>
+      {/* Botão de scanner e input são irmãos diretos nesta linha, sem
+          nenhuma altura fixa no botão — o `align-items:stretch` padrão do
+          flex row faz o botão automaticamente assumir a MESMA altura
+          renderizada do input (que varia com padding/fonte), em vez de um
+          valor fixo (44px) que ficava mais baixo que o input de verdade. */}
+      <div style={{display:'flex',gap:8}}>
+        <input type="text" value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} style={{flex:1}} />
+        <button type="button" className="btn btn-secondary" title="Scanner" style={{width:48,padding:0,flexShrink:0}} onClick={()=>setScanning(true)}><ScanIcon /></button>
       </div>
-      <button type="button" className="btn btn-secondary" title="Scanner" style={{width:44,padding:0,height:44,flexShrink:0}} onClick={()=>setScanning(true)}><ScanIcon /></button>
     </div>
   );
 }
 
-function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggleUrgente, onRefresh, operadorVeValoresRecontagem}){
+function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggleUrgente, operadorVeValoresRecontagem}){
   const canMark = role==='lider' || role==='admin';
   // Escopo AJUSTADO (cliente pediu pra restringir depois de ver o resultado
   // inicial): o quadro Sistema/Físico/Diferença/% fica visível pra QUALQUER
@@ -6896,13 +6891,6 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
     const res = await onToggleUrgente(c.id, !c.urgente);
     setUrgenteBusyId(null);
     if(!res || !res.ok) setUrgenteErro(prev=>({...prev, [c.id]: (res && res.erro) || 'Não foi possível salvar — tente novamente.'}));
-  }
-
-  const [atualizando, setAtualizando] = useState(false);
-  async function handleAtualizar(){
-    if(!onRefresh) return;
-    setAtualizando(true);
-    try{ await onRefresh(); } finally { setAtualizando(false); }
   }
 
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
@@ -6952,16 +6940,11 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
 
   return (
     <div>
-      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:12,marginBottom:16}}>
-        <div style={{fontFamily:'var(--font-display)',fontSize:22,fontWeight:700}}>{aguardandoSegunda.length} <span style={{fontSize:14,fontWeight:600,textTransform:'none',color:'var(--ink-dim)'}}>pendentes</span></div>
-        {onRefresh && (
-          <button type="button" className="btn btn-outline" style={{width:'auto',padding:'6px 12px',fontSize:11}} disabled={atualizando} onClick={handleAtualizar}>
-            <Ic>🔄</Ic> {atualizando ? 'Atualizando…' : 'Atualizar'}
-          </button>
-        )}
-      </div>
-
       <SearchWithScanner value={busca} onChange={setBusca} placeholder="Buscar por código ou descrição do material" />
+
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8,marginBottom:10}}>
+        <span style={{fontSize:12.5,color:'var(--ink-dim)'}}><strong style={{color:'var(--ink)'}}>{aguardandoSegunda.length}</strong> pendentes</span>
+      </div>
 
       <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
         <SeverityFilterRow counts={porBusca} value={severidade} onChange={setSeveridade} />
@@ -7078,7 +7061,7 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
 // aparecer só em "Recontagens". Visível pra todos os papéis (antes ficava
 // escondida inteira do operador) — mas as ações (aprovar/solicitar
 // recontagem) continuam só pra líder/admin, operador vê em modo leitura.
-function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequestRecount, onDeleteCount, onToggleUrgente, onRefresh}){
+function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequestRecount, onDeleteCount, onToggleUrgente}){
   const aguardandoAnalise = counts.filter(c=>c.statusAprovacao==='aguardando_analise_lider');
   const canApprove = role==='lider' || role==='admin';
   // Revertido: essa tela não tem nenhum "valor" (R$) exibido — só quadro de
@@ -7116,13 +7099,6 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequ
   // Itens marcados como urgentes sempre aparecem primeiro — mesmo critério
   // já usado em RecountsPanel.
   const listaFiltrada = [...listaFiltradaSemOrdenar].sort((a,b)=>(b.urgente?1:0)-(a.urgente?1:0));
-
-  const [atualizando, setAtualizando] = useState(false);
-  async function handleAtualizar(){
-    if(!onRefresh) return;
-    setAtualizando(true);
-    try{ await onRefresh(); } finally { setAtualizando(false); }
-  }
 
   async function handleApprove(countId){
     setBusyId(countId);
@@ -7162,16 +7138,11 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequ
 
   return (
     <div>
-      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:12,marginBottom:16}}>
-        <div style={{fontFamily:'var(--font-display)',fontSize:22,fontWeight:700}}>{aguardandoAnalise.length} <span style={{fontSize:14,fontWeight:600,textTransform:'none',color:'var(--ink-dim)'}}>pendentes</span></div>
-        {onRefresh && (
-          <button type="button" className="btn btn-outline" style={{width:'auto',padding:'6px 12px',fontSize:11}} disabled={atualizando} onClick={handleAtualizar}>
-            <Ic>🔄</Ic> {atualizando ? 'Atualizando…' : 'Atualizar'}
-          </button>
-        )}
-      </div>
-
       <SearchWithScanner value={busca} onChange={setBusca} placeholder="Código ou descrição do material" />
+
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8,marginBottom:10}}>
+        <span style={{fontSize:12.5,color:'var(--ink-dim)'}}><strong style={{color:'var(--ink)'}}>{aguardandoAnalise.length}</strong> pendentes</span>
+      </div>
 
       <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
         <SeverityFilterRow counts={porBusca} value={severidade} onChange={setSeveridade} />

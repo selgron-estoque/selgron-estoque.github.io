@@ -5491,3 +5491,42 @@ itens saem pra outro lugar e novos itens entram a qualquer momento.
   (558 aberturas/558 fechamentos). **Verificação visual de ponta a ponta fica a cargo
   do cliente** — mesma limitação de sempre (login exige Supabase Auth real, não
   simulável no sandbox sem rede).
+
+## Botão "Atualizar" removido de vez + contador de pendentes reposicionado + scanner na altura do campo
+
+Cliente mandou print marcando 3 pontos no cabeçalho simplificado de "Recontagens
+Pendentes"/"Itens Divergentes" (o que sobrou depois da remoção do donut, ver seção
+acima): (1) remover o botão "Atualizar" de vez; (2) mudar o lugar do contador "N
+pendentes"; (3) o botão de scanner (ícone de mira, ao lado do campo de busca) não
+tinha a mesma altura do campo de busca.
+
+- **"Atualizar" removido por completo**, não só escondido — como o Realtime já mantém
+  `counts` sincronizado sozinho (canal `postgres_changes` de `contagens`, existente há
+  várias rodadas), o botão só servia pra forçar uma busca pontual manualmente; o
+  cliente decidiu que nem isso vale a pena manter. Removido: o botão em si, `atualizando`/
+  `handleAtualizar` (estado e função que só serviam a ele) nos dois componentes, a prop
+  `onRefresh` das assinaturas de `RecountsPanel`/`DivergentItemsPanel`, o
+  `onRefresh={refreshContagens}` nos 2 pontos de instanciação em `App()`, e a própria
+  função `refreshContagens` (ficou sem nenhum consumidor depois disso — removida em vez
+  de deixada como código morto).
+- **Contador "N pendentes" reposicionado**: saiu do topo (linha isolada, alinhada à
+  esquerda, com bastante vazio à direita depois que "Atualizar" saiu) e desceu pra
+  logo ABAIXO do campo de busca, como uma linha discreta (texto pequeno, cinza) logo
+  acima da fileira de chips de severidade — fica mais integrado ao fluxo de filtro
+  (busca → contador → chips → lista) em vez de soar como um título solto no topo da
+  tela.
+- **Botão de scanner na mesma altura do campo de busca** — a causa do descompasso: o
+  botão tinha `height:44` fixo, enquanto o campo de texto (`.field input[type=text]`,
+  `padding:14px` + `font-size:16px` + borda) renderiza mais alto que isso na prática
+  (~49px). `SearchWithScanner` foi reestruturado: o `<label>` saiu de dentro de uma
+  `<div className="field">` que embrulhava só o input, e passou a ficar acima de uma
+  linha `flex` com o input e o botão como IRMÃOS diretos — sem altura fixa no botão,
+  o `align-items:stretch` padrão do flexbox faz o botão assumir automaticamente a
+  MESMA altura renderizada do input (calculada pelo navegador), em vez de um valor
+  chutado que ficava sempre um pouco menor. Resolve "mesma altura" e "centralizado"
+  ao mesmo tempo — o botão preenche a altura toda do input, sem precisar de nenhum
+  ajuste manual de margem/padding vertical.
+- Testado via transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  (558 aberturas/558 fechamentos). **Verificação visual de ponta a ponta fica a cargo
+  do cliente** — mesma limitação de sempre (login exige Supabase Auth real, não
+  simulável no sandbox sem rede).
