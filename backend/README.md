@@ -242,3 +242,39 @@ fica comprometida até resolver.
 nos dois ao mesmo tempo, crie/edite algo num (uma contagem, um inventário,
 um usuário) e confirme que aparece no outro em poucos segundos, sem
 precisar recarregar a página.
+
+## 11. Configurações do app compartilhadas entre aparelhos (`app_config`)
+
+Antes desta seção, 3 configurações da tela "Configurações" (Visibilidade do
+Saldo na Contagem, Grupos Excluídos da Contagem Automática, Tempo de
+Inatividade) ficavam salvas só no `localStorage` do aparelho onde o admin
+mexeu — não tinham efeito nenhum nos tablets dos operadores. O cliente
+pediu que qualquer configuração reflita em todos os aparelhos de imediato,
+então elas passaram a morar numa única linha (`app_config`, `id` fixo = 1)
+no banco, sincronizada por Realtime — mesmo mecanismo da seção 10.
+
+**11.1 — Rodar o SQL novo** (SQL Editor, se ainda não aplicado): a criação
+da tabela `app_config`, a função `eh_admin`, as policies e o
+`alter publication` já estão no `backend/schema.sql` atualizado, no bloco
+logo depois da seção "SINCRONIZAÇÃO EM TEMPO REAL" — cole e rode esse
+bloco inteiro.
+
+**11.2 — Confirmar a publicação de Realtime** (mesma introspecção da seção
+10.1, ela já cobre `app_config` se você rodou o SQL depois de atualizar o
+arquivo):
+
+```sql
+select schemaname, tablename from pg_publication_tables where pubname = 'supabase_realtime';
+```
+
+Se `app_config` não aparecer na lista, rode só essa linha:
+
+```sql
+alter publication supabase_realtime add table app_config;
+```
+
+**11.3 — Testar**: abra o app em dois aparelhos (ou duas abas), logado como
+admin num deles. Mude qualquer uma das 3 configurações e confirme que o
+outro aparelho (mesmo logado como operador) reflete a mudança em poucos
+segundos, sem recarregar a página — é exatamente esse o comportamento que
+motivou a migração.

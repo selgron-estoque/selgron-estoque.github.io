@@ -1479,6 +1479,50 @@ async function fetchUsuariosFromSupabase(){
   }
 }
 
+// ---- Configurações do app, compartilhadas entre TODOS os aparelhos ----
+// Linha única (`app_config`, id fixo = 1) — cliente pediu explicitamente que
+// qualquer configuração que ele mude reflita em todos os tablets de
+// imediato, sem repetir aparelho por aparelho (regra permanente, vale pra
+// configurações futuras também, não só as 3 de hoje). Substituiu o
+// `usePersistedState` (localStorage, por aparelho) que essas 3 configurações
+// usavam antes. Sincronizado por Realtime (canal em App(), mesmo padrão de
+// usuarios/contagens/inventarios) — este fetch cobre a carga inicial e a
+// reconciliação quando o canal (re)conecta.
+async function fetchAppConfig(){
+  if(!supabaseClient) return null;
+  try{
+    const { data, error } = await supabaseClient.from('app_config').select('*').eq('id', 1).single();
+    if(error || !data) return null;
+    return {
+      operadorVeSaldo: !!data.operador_ve_saldo,
+      gruposExcluidos: data.grupos_excluidos || [],
+      sessionTimeoutMin: data.session_timeout_min || DEFAULT_SESSION_TIMEOUT_MIN,
+    };
+  }catch(err){
+    console.warn('Falha ao buscar configuração do app:', err);
+    return null;
+  }
+}
+
+// `patch` só com as chaves que mudaram (mesmo padrão de `updateUsuarioToSupabase`
+// acima) — `await`ada (não fire-and-forget), porque é uma ação explícita do
+// admin que precisa de confirmação visível antes de considerar "salvo" (mesmo
+// critério já usado em `approveDivergence`/`deleteInventory`).
+async function updateAppConfig(patch, nomeAdmin){
+  if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
+  try{
+    const row = { atualizado_em: new Date().toISOString(), atualizado_por: nomeAdmin || null };
+    if('operadorVeSaldo' in patch) row.operador_ve_saldo = patch.operadorVeSaldo;
+    if('gruposExcluidos' in patch) row.grupos_excluidos = patch.gruposExcluidos;
+    if('sessionTimeoutMin' in patch) row.session_timeout_min = patch.sessionTimeoutMin;
+    const { error } = await supabaseClient.from('app_config').update(row).eq('id', 1);
+    if(error) return {ok:false, erro:error.message};
+    return {ok:true};
+  }catch(err){
+    return {ok:false, erro:String(err && err.message || err)};
+  }
+}
+
 // ---- Endereços propostos — fila de validação do líder (Módulo 5/6) ----
 // `addAddressProposal` (App()) continua instantânea/local (o operador não
 // pode travar esperando rede no meio de uma contagem) — a gravação no
@@ -3082,34 +3126,53 @@ function App(){
   const [passwordRequests, setPasswordRequests] = usePersistedState('passwordRequests', []); // solicitações de "esqueci minha senha"
   const [passwordHistory, setPasswordHistory] = usePersistedState('passwordHistory', []); // histórico de alterações de senha
   const [reportSendHistory, setReportSendHistory] = usePersistedState('reportSendHistory', []); // histórico de envios de relatório por e-mail
-  // Configuração do admin (Configurações → "Visibilidade do Saldo na
-  // Contagem"): se o operador vê o saldo do sistema (referência antes de
-  // digitar + card de
-  // comparação Sistema/Informado/Diferença ao vivo) durante a contagem, ou
-  // conta "às cegas" — cliente pediu essa opção pra poder decidir, com o
-  // padrão sendo NÃO mostrar (mesmo espírito de contagem cega já usado em
-  // outras partes do processo). Líder/admin sempre veem, independente
-  // dessa configuração — é só o operador que fica sujeito a ela.
-  const [operadorVeSaldo, setOperadorVeSaldo] = usePersistedState('operadorVeSaldo', false);
-  // Configuração do admin (Configurações → "Grupos Excluídos da Contagem
-  // Automática"): códigos de grupo/família que NUNCA devem cair sozinhos
-  // numa fila de contagem (Aleatória, Curva ABC, Rota de Endereço) nem
-  // aparecer no seletor de "Contagem por Grupo" — cliente relatou que
-  // existem grupos cujo material não existe fisicamente no almoxarifado
-  // (provavelmente saldo remanescente de um grupo administrativo/contábil
-  // no Protheus), então a Rota nunca deveria mandar contar um item de lá.
-  // Não afeta busca manual por código (ManualCountFlow) — se o operador
-  // digitar o código de um item de grupo excluído de propósito, ainda acha
-  // (decisão consciente: o pedido foi sobre geração automática de fila/
-  // rota, não sobre bloquear a busca deliberada de um código específico).
-  const [gruposExcluidos, setGruposExcluidos] = usePersistedState('gruposExcluidos', []);
-  // Configuração do admin (Configurações → "Tempo de Inatividade"): minutos
-  // sem nenhuma interação até o logout automático (era um valor fixo de 15
-  // min, `SESSION_TIMEOUT_MS`, direto no código — cliente pediu pra decidir
-  // isso ali, em minutos). Guardado em minutos (não em ms) porque é o que
-  // aparece no campo pro admin digitar; convertido pra ms só na hora de usar
-  // no timer, logo abaixo.
-  const [sessionTimeoutMin, setSessionTimeoutMin] = usePersistedState('sessionTimeoutMin', DEFAULT_SESSION_TIMEOUT_MIN);
+  // Configurações do admin (Configurações → "Visibilidade do Saldo na
+  // Contagem" / "Grupos Excluídos da Contagem Automática" / "Tempo de
+  // Inatividade") — moravam em `usePersistedState` (localStorage, por
+  // aparelho) até esta rodada. Cliente pediu, como regra permanente pra
+  // QUALQUER configuração (não só estas 3): "toda alteração que envolvam
+  // configuração... reflita em todos os aparelhos de imediato, não quero
+  // ter que ficar alterando manualmente em cada aparelho". Migrado pra uma
+  // linha única no Supabase (`app_config`, id fixo = 1), sincronizada por
+  // Realtime — mesmo padrão já usado pra usuarios/contagens/inventarios/
+  // enderecos_propostos (ver backend/schema.sql). Os 3 `useState` abaixo são
+  // só o CACHE local — nunca a fonte de verdade — hidratado por
+  // `refreshAppConfig()` no login/reconexão e mantido em dia pelo canal
+  // Realtime logo abaixo.
+  const [operadorVeSaldo, setOperadorVeSaldo] = useState(false);
+  const [gruposExcluidos, setGruposExcluidos] = useState([]);
+  const [sessionTimeoutMin, setSessionTimeoutMin] = useState(DEFAULT_SESSION_TIMEOUT_MIN);
+
+  async function refreshAppConfig(){
+    const cfg = await fetchAppConfig();
+    if(!cfg) return;
+    setOperadorVeSaldo(cfg.operadorVeSaldo);
+    setGruposExcluidos(cfg.gruposExcluidos);
+    setSessionTimeoutMin(cfg.sessionTimeoutMin);
+  }
+
+  // Setters assíncronos — aguardam confirmação do Supabase antes de
+  // atualizar o cache local (mesmo critério de `approveDivergence`/
+  // `deleteInventory`: uma ação de admin precisa de erro visível se falhar,
+  // não pode fingir sucesso). O Realtime acima também atualizaria o cache
+  // deste mesmo aparelho pouco depois, mas não dá pra depender só dele pro
+  // FEEDBACK imediato de quem clicou — daí o `setX(valor)` otimista aqui,
+  // assim que `res.ok`.
+  async function updateOperadorVeSaldo(v){
+    const res = await updateAppConfig({operadorVeSaldo:v}, currentUser?currentUser.nome:null);
+    if(res.ok) setOperadorVeSaldo(v);
+    return res;
+  }
+  async function updateGruposExcluidos(lista){
+    const res = await updateAppConfig({gruposExcluidos:lista}, currentUser?currentUser.nome:null);
+    if(res.ok) setGruposExcluidos(lista);
+    return res;
+  }
+  async function updateSessionTimeoutMin(min){
+    const res = await updateAppConfig({sessionTimeoutMin:min}, currentUser?currentUser.nome:null);
+    if(res.ok) setSessionTimeoutMin(min);
+    return res;
+  }
 
   function logReportSend(entry){
     setReportSendHistory(prev=>[entry, ...prev]);
@@ -3117,6 +3180,29 @@ function App(){
 
   const currentUser = users.find(u=>u.id===currentUserId) || null;
   const role = currentUser ? currentUser.perfil : null;
+
+  useEffect(()=>{
+    if(currentUser) refreshAppConfig();
+  }, [currentUser]);
+  // Realtime: qualquer admin mudando uma configuração em QUALQUER aparelho
+  // atualiza o cache local de TODOS os outros aparelhos logados em poucos
+  // segundos, sem precisar de reload nem de esperar um ciclo de polling —
+  // exatamente o comportamento pedido. `payload.new` já traz a linha
+  // inteira atualizada (é sempre a mesma linha, id=1), então não precisa de
+  // merge — só substitui o cache local direto.
+  useEffect(()=>{
+    if(!supabaseClient || !currentUser) return;
+    const channel = supabaseClient
+      .channel('realtime:app_config')
+      .on('postgres_changes', {event:'*', schema:'public', table:'app_config'}, payload=>{
+        if(!payload.new) return;
+        setOperadorVeSaldo(!!payload.new.operador_ve_saldo);
+        setGruposExcluidos(payload.new.grupos_excluidos || []);
+        setSessionTimeoutMin(payload.new.session_timeout_min || DEFAULT_SESSION_TIMEOUT_MIN);
+      })
+      .subscribe(status=>{ if(status==='SUBSCRIBED') refreshAppConfig(); });
+    return ()=>{ supabaseClient.removeChannel(channel); };
+  }, [currentUser]);
 
   // Histórico de navegação — pilha de {view, flowState} visitados, usada só
   // pelo botão "Voltar" do rodapé mobile (ver `MobileNavBar` abaixo).
@@ -3760,7 +3846,7 @@ function App(){
         {view==='recount' && flowState && <RecountFlow original={flowState} user={currentUser} onAddressProposed={addAddressProposal} onFinish={(c)=>{registerFinishedCount(c); goto('recounts');}} operadorVeSaldo={operadorVeSaldo} />}
         {view==='dashboard' && hasAccess(currentUser,'dashboard') && <Dashboard counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} historicoParaTendencia={historicoParaTendencia} goto={goto} />}
         {view==='relatorios' && hasAccess(currentUser,'relatorios') && <ReportsScreen counts={counts} inventories={inventories} currentUser={currentUser} sendHistory={reportSendHistory} onLogSend={logReportSend} role={role} onHistoricoImportado={refreshHistoricoConcluidas} />}
-        {view==='settings' && <Settings role={role} currentUser={currentUser} operadorVeSaldo={operadorVeSaldo} onSetOperadorVeSaldo={setOperadorVeSaldo} gruposExcluidos={gruposExcluidos} onSetGruposExcluidos={setGruposExcluidos} sessionTimeoutMin={sessionTimeoutMin} onSetSessionTimeoutMin={setSessionTimeoutMin} />}
+        {view==='settings' && <Settings role={role} currentUser={currentUser} operadorVeSaldo={operadorVeSaldo} onSetOperadorVeSaldo={updateOperadorVeSaldo} gruposExcluidos={gruposExcluidos} onSetGruposExcluidos={updateGruposExcluidos} sessionTimeoutMin={sessionTimeoutMin} onSetSessionTimeoutMin={updateSessionTimeoutMin} />}
         {view==='usuarios' && hasAccess(currentUser,'usuarios') && (
           <UsuariosScreen
             users={users}
@@ -9137,16 +9223,47 @@ function Settings({role, currentUser, operadorVeSaldo, onSetOperadorVeSaldo, gru
     return ()=>{ cancelado = true; };
   }, [isAdmin]);
 
+  // Os 3 `onSet*` recebidos de App() agora são assíncronos (gravam no
+  // Supabase, `app_config`) — cada painel tem seu próprio busy/erro, mesmo
+  // padrão já usado em RecountsPanel/UserManagementPanel: desabilita só o
+  // controle em uso, mostra erro inline se a gravação falhar, nunca finge
+  // sucesso.
+  const [salvandoSaldo, setSalvandoSaldo] = useState(false);
+  const [erroSaldo, setErroSaldo] = useState(null);
+  async function toggleOperadorVeSaldo(checked){
+    setSalvandoSaldo(true); setErroSaldo(null);
+    const res = await onSetOperadorVeSaldo(checked);
+    setSalvandoSaldo(false);
+    if(!res.ok) setErroSaldo(res.erro || 'Falha ao salvar — tente novamente.');
+  }
+
+  const [salvandoGrupo, setSalvandoGrupo] = useState(false);
+  const [erroGrupo, setErroGrupo] = useState(null);
+  async function alterarGruposExcluidos(novaLista){
+    setSalvandoGrupo(true); setErroGrupo(null);
+    const res = await onSetGruposExcluidos(novaLista);
+    setSalvandoGrupo(false);
+    if(!res.ok) setErroGrupo(res.erro || 'Falha ao salvar — tente novamente.');
+  }
+
   const [timeoutInput, setTimeoutInput] = useState(String(sessionTimeoutMin ?? DEFAULT_SESSION_TIMEOUT_MIN));
   const [timeoutSalvo, setTimeoutSalvo] = useState(false);
+  const [salvandoTimeout, setSalvandoTimeout] = useState(false);
+  const [erroTimeout, setErroTimeout] = useState(null);
   useEffect(()=>{ setTimeoutInput(String(sessionTimeoutMin ?? DEFAULT_SESSION_TIMEOUT_MIN)); }, [sessionTimeoutMin]);
 
-  function salvarTimeout(){
+  async function salvarTimeout(){
     const min = Number(timeoutInput);
     if(!Number.isFinite(min) || min <= 0) return;
-    onSetSessionTimeoutMin(Math.round(min));
-    setTimeoutSalvo(true);
-    setTimeout(()=>setTimeoutSalvo(false), 2500);
+    setSalvandoTimeout(true); setErroTimeout(null);
+    const res = await onSetSessionTimeoutMin(Math.round(min));
+    setSalvandoTimeout(false);
+    if(res.ok){
+      setTimeoutSalvo(true);
+      setTimeout(()=>setTimeoutSalvo(false), 2500);
+    } else {
+      setErroTimeout(res.erro || 'Falha ao salvar — tente novamente.');
+    }
   }
 
   return (
@@ -9154,8 +9271,8 @@ function Settings({role, currentUser, operadorVeSaldo, onSetOperadorVeSaldo, gru
       <div className="role-note">Perfil atual: {ROLE_LABELS[role]} · {currentUser.nome}</div>
       {isAdmin && (
         <div className="role-note" style={{marginBottom:16}}>
-          As configurações abaixo ficam salvas neste aparelho/navegador (mesmo critério
-          de login/usuários hoje) — pra valer em todos os tablets, ajuste em cada um.
+          As configurações abaixo valem em TODOS os aparelhos, de imediato — não precisa
+          repetir tablet por tablet.
         </div>
       )}
       {isAdmin && (
@@ -9170,15 +9287,17 @@ function Settings({role, currentUser, operadorVeSaldo, onSetOperadorVeSaldo, gru
             saldo, independente desta configuração. Isso não muda a regra de aprovação
             automática/segunda contagem/análise do líder, só o que aparece na tela.
           </div>
-          <label style={{display:'flex',alignItems:'center',gap:10,cursor:'pointer'}}>
+          <label style={{display:'flex',alignItems:'center',gap:10,cursor:salvandoSaldo?'wait':'pointer',opacity:salvandoSaldo?0.7:1}}>
             <input
               type="checkbox"
               checked={!!operadorVeSaldo}
-              onChange={e=>onSetOperadorVeSaldo(e.target.checked)}
+              disabled={salvandoSaldo}
+              onChange={e=>toggleOperadorVeSaldo(e.target.checked)}
               style={{width:18,height:18}}
             />
             <span style={{fontSize:14}}>Operador pode ver o saldo do sistema durante a contagem</span>
           </label>
+          {erroSaldo && <div className="login-error" style={{marginTop:10}}>{erroSaldo}</div>}
         </div>
       )}
       {isAdmin && (
@@ -9197,13 +9316,17 @@ function Settings({role, currentUser, operadorVeSaldo, onSetOperadorVeSaldo, gru
           ) : gruposDisponiveis.length===0 ? (
             <div className="empty-state" style={{padding:14}}>Nenhum grupo com saldo carregado ainda.</div>
           ) : (
-            <GrupoMultiSelectField
-              grupos={gruposDisponiveis}
-              selecionados={gruposExcluidos||[]}
-              onToggle={cod=>onSetGruposExcluidos(prev=>[...(prev||[]), cod])}
-              onRemove={cod=>onSetGruposExcluidos(prev=>(prev||[]).filter(c=>c!==cod))}
-            />
+            <div style={{opacity:salvandoGrupo?0.7:1}}>
+              <GrupoMultiSelectField
+                grupos={gruposDisponiveis}
+                selecionados={gruposExcluidos||[]}
+                onToggle={cod=>alterarGruposExcluidos([...(gruposExcluidos||[]), cod])}
+                onRemove={cod=>alterarGruposExcluidos((gruposExcluidos||[]).filter(c=>c!==cod))}
+              />
+            </div>
           )}
+          {salvandoGrupo && <div style={{fontSize:12,color:'var(--ink-dim)',marginTop:8}}>Salvando…</div>}
+          {erroGrupo && <div className="login-error" style={{marginTop:10}}>{erroGrupo}</div>}
         </div>
       )}
       {isAdmin && (
@@ -9220,13 +9343,15 @@ function Settings({role, currentUser, operadorVeSaldo, onSetOperadorVeSaldo, gru
               min="1"
               step="1"
               value={timeoutInput}
+              disabled={salvandoTimeout}
               onChange={e=>setTimeoutInput(e.target.value)}
               style={{width:90}}
             />
             <span style={{fontSize:13,color:'var(--ink-dim)'}}>minutos</span>
-            <button type="button" className="btn btn-primary" onClick={salvarTimeout} disabled={!Number.isFinite(Number(timeoutInput)) || Number(timeoutInput)<=0}>Salvar</button>
-            {timeoutSalvo && <span style={{fontSize:13,color:'var(--ok)'}}>Salvo — já vale a partir de agora, neste aparelho.</span>}
+            <button type="button" className="btn btn-primary" onClick={salvarTimeout} disabled={salvandoTimeout || !Number.isFinite(Number(timeoutInput)) || Number(timeoutInput)<=0}>{salvandoTimeout?'Salvando…':'Salvar'}</button>
+            {timeoutSalvo && <span style={{fontSize:13,color:'var(--ok)'}}>Salvo — já vale em todos os aparelhos.</span>}
           </div>
+          {erroTimeout && <div className="login-error" style={{marginTop:10}}>{erroTimeout}</div>}
         </div>
       )}
       {!isAdmin && (

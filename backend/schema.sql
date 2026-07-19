@@ -819,3 +819,60 @@ create policy "escrita autenticada" on estoque_saldo for all using (auth.role() 
 --   select schemaname, tablename from pg_publication_tables where pubname = 'supabase_realtime';
 -- =============================================================================
 alter publication supabase_realtime add table contagens, inventarios, enderecos_propostos, usuarios;
+
+-- =============================================================================
+-- CONFIGURAÇÕES DO APP COMPARTILHADAS ENTRE APARELHOS (`app_config`) —
+-- cliente pediu explicitamente: "toda alteração que envolva configuração...
+-- reflita em todos os aparelhos de imediato, não quero ter que alterar
+-- manualmente em cada aparelho" — e adotou isso como regra permanente pra
+-- qualquer configuração futura, não só as 3 de hoje. Antes disso,
+-- `operadorVeSaldo`/`gruposExcluidos`/`sessionTimeoutMin` moravam em
+-- `localStorage` (por aparelho, ver index.html `usePersistedState`) — um
+-- admin configurando no próprio tablet não tinha NENHUM efeito nos tablets
+-- dos operadores. Migrado pra uma linha ÚNICA (`id` fixo = 1, não é uma
+-- tabela de N linhas) sincronizada por Realtime, mesmo padrão já usado pra
+-- usuarios/contagens/inventarios/enderecos_propostos.
+create table app_config (
+  id int primary key default 1,
+  operador_ve_saldo boolean not null default false,
+  grupos_excluidos text[] not null default '{}',
+  session_timeout_min int not null default 15,
+  atualizado_em timestamptz not null default now(),
+  atualizado_por text,           -- nome de quem mexeu por último, só pra auditoria visual
+  constraint app_config_singleton check (id = 1)
+);
+insert into app_config (id) values (1);
+
+alter table app_config enable row level security;
+
+-- Helper de autorização — mesmo raciocínio do `pode_gerenciar_usuarios`
+-- acima (security definer evita RLS recursiva ao consultar `usuarios`
+-- dentro da policy de outra tabela). Aqui é só perfil admin mesmo, sem a
+-- exceção de `acessos_extras` — configuração de sistema (visibilidade de
+-- saldo, grupos excluídos, timeout de sessão) é mais sensível que
+-- gerenciar usuários, então não estende a mesma exceção.
+create or replace function public.eh_admin(p_uid uuid)
+returns boolean as $$
+  select exists(
+    select 1 from usuarios where id = p_uid and perfil = 'admin' and status <> 'bloqueado'
+  );
+$$ language sql stable security definer set search_path = public;
+revoke all on function public.eh_admin(uuid) from public;
+grant execute on function public.eh_admin(uuid) to authenticated;
+
+-- Leitura: qualquer autenticado — todo operador precisa ler
+-- operador_ve_saldo/grupos_excluidos/session_timeout_min no PRÓPRIO
+-- aparelho pra aplicar a regra, não só o admin que configurou.
+create policy "leitura autenticada" on app_config for select
+  using (auth.role() = 'authenticated');
+
+-- Escrita: só admin. Sem policy de INSERT/DELETE — a linha única já é
+-- inserida uma vez acima (`insert into app_config (id) values (1)`), nunca
+-- de novo.
+create policy "escrita só admin" on app_config for update
+  using (public.eh_admin(auth.uid()));
+
+-- Realtime — mesmo motivo/mecanismo da seção anterior: sem isso, a
+-- atualização só chegaria nos outros aparelhos no próximo fetch manual
+-- (login/reload), não "de imediato" como pedido.
+alter publication supabase_realtime add table app_config;
