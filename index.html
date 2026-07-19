@@ -3888,13 +3888,15 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
   const [salvandoLogin, setSalvandoLogin] = useState(false);
   // "Lembrar-me" virou funcional de verdade (ver `supabaseAuthStorage`/
   // `attemptLogin`) — desmarcado, a sessão só vive em sessionStorage (não
-  // sobrevive a fechar o navegador/aba). Os outros dois continuam
+  // sobrevive a fechar o navegador/aba). Começa DESMARCADO por padrão
+  // (pedido do cliente) — só marca se o próprio usuário decidir, em vez de
+  // assumir "lembrar" como comportamento padrão. Os outros dois continuam
   // puramente visuais (mockup do cliente pede, mas sem funcionalidade real
   // — ver CLAUDE.md "Login vira redesign premium"): o seletor de idioma
   // não faz nada porque o app só existe em pt-BR; "código de acesso" mostra
   // uma nota honesta em vez de fingir um QR-login que não existe (mesmo
   // critério do sino de notificação no DesktopTopbar).
-  const [lembrar, setLembrar] = useState(true);
+  const [lembrar, setLembrar] = useState(false);
   const [qrNote, setQrNote] = useState(false);
   const senhaRef = useRef(null);
 
