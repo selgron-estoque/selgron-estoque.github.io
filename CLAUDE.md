@@ -4893,3 +4893,36 @@ várias rodadas (`AskUserQuestion`) até fechar a regra exata:
   (login exige Supabase Auth real, não simulável no sandbox sem rede). Falta o cliente
   rodar o SQL novo (`backend/schema.sql`, `alter table contagens add column if not
   exists diferenca_confirmada...`).
+
+## Bug real de CSS: fundo do "result-grid" invisível no tema claro + estilo de detalhes unificado
+
+Cliente mandou print de "Recontagens" mostrando um card com "Sistema/1ª Contagem/
+Diferença/%" e o texto de observação/valor divergente/quem contou parecendo "solto",
+sem nenhum contorno separando os campos — visualmente destoante dos outros cards da
+mesma lista (que têm faixa colorida + contorno bem definidos). Pediu pra revisar essa
+formatação "em todo o site".
+
+- **Causa raiz encontrada**: `.result-grid .rg` (o grid de campos usado no drill-down de
+  "Contagens Concluídas") tinha `background:rgba(255,255,255,0.04)` — um branco a 4% de
+  opacidade, sobra do tema ESCURO anterior do app (ver "Convenções de design" — o app já
+  foi dark theme antes de virar claro). Em cima do fundo branco/quase-branco do tema
+  claro atual, isso é praticamente invisível — as células do grid nunca tiveram nenhum
+  contorno visível de verdade, só o app nunca tinha usado esse componente num lugar tão
+  visado quanto a tela de Recontagens. Corrigido pra `var(--panel-raised)` (o mesmo
+  cinza-claro sutil já usado em outros blocos de info do app).
+- **O card do print, especificamente, nem usava `.result-grid`** — usava um componente
+  MAIS ANTIGO e mais simples (`.count-card-values`/`.cv`, sem fundo nenhum nas células,
+  só texto com label pequeno em cima) que nunca tinha sido atualizado pro padrão visual
+  mais rico já usado em "Contagens Concluídas". Resultado: 3 lugares diferentes do site
+  mostravam a MESMA informação (Sistema/Qtd/Diferença/%) com dois visuais diferentes.
+  Unificado: `RecountsPanel` ("Detalhes"), `DivergentItemsPanel` (sempre visível) e o
+  card da LISTA de `ConcludedCountsPanel` (só o drill-down já usava `result-grid`) agora
+  usam todos o mesmo `.result-grid`/`.rg` — mesma célula com fundo cinza sutil, mesmo
+  tamanho de fonte mono pro valor, em qualquer uma das 3 telas.
+- **`.count-card-values`/`.cv` removidas do CSS** — ficaram órfãs depois da unificação,
+  nenhum outro lugar do app as usava mais.
+- Testado via transpile Babel do arquivo inteiro. **Verificação visual de ponta a ponta
+  fica a cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth real,
+  não simulável no sandbox sem rede) — mas a causa raiz (fundo `rgba(255,255,255,0.04)`
+  invisível em tema claro) foi confirmada matematicamente: 4% de branco sobre branco não
+  produz contraste perceptível nenhum.

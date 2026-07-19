@@ -233,10 +233,6 @@
   .count-card-address-badge{display:flex;align-items:center;gap:6px;flex-shrink:0;font-family:var(--font-mono);font-size:16px;font-weight:700;color:var(--safety-ink);background:#FFF3E0;border:1.5px solid var(--safety);border-radius:10px;padding:8px 14px;white-space:nowrap;}
   .count-card-main{display:flex;gap:16px;align-items:stretch;flex:1;}
   .count-card-content{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px;justify-content:center;}
-  .count-card-values{display:flex;gap:18px;}
-  .count-card-values .cv{min-width:60px;}
-  .count-card-values .cv .k{font-family:var(--font-mono);font-size:9.5px;text-transform:uppercase;color:var(--ink-dim);letter-spacing:0.5px;}
-  .count-card-values .cv .v{font-size:15px;font-weight:700;margin-top:2px;}
   .count-card-actions-col{display:flex;flex-direction:column;gap:8px;width:150px;flex-shrink:0;justify-content:center;}
   /* Botões empilhados à direita usam o mesmo .btn/.btn-primary/.btn-outline
      do resto do app (não criei classe nova), mas o tamanho padrão (pensado
@@ -290,7 +286,11 @@
   .result-banner .rb-title{font-family:var(--font-display);font-size:18px;font-weight:700;text-transform:uppercase;margin:0 0 6px 0;}
   .result-banner .rb-sub{font-size:13.5px;color:var(--ink-dim);}
   .result-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px;}
-  .result-grid .rg{background:rgba(255,255,255,0.04);border-radius:8px;padding:10px 12px;}
+  /* Era rgba(255,255,255,0.04) — sobra do tema escuro anterior (ver
+     "Convenções de design" no CLAUDE.md), praticamente invisível no tema
+     claro atual (branco em cima de branco). Corrigido pra --panel-raised,
+     o mesmo cinza-claro sutil já usado em outros blocos de info do app. */
+  .result-grid .rg{background:var(--panel-raised);border-radius:8px;padding:10px 12px;}
   .result-grid .rg .k{font-family:var(--font-mono);font-size:9.5px;text-transform:uppercase;color:var(--ink-dim);}
   .result-grid .rg .v{font-family:var(--font-mono);font-size:17px;font-weight:700;margin-top:2px;}
 
@@ -6906,11 +6906,11 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
                 <div className="count-card-content">
                   {detalhesAbertoId===c.id && (
                     <>
-                      <div className="count-card-values">
-                        <div className="cv"><div className="k">Sistema</div><div className="v">{c.saldoSistema==null ? '—' : c.saldoSistema}</div></div>
-                        <div className="cv"><div className="k">1ª Contagem</div><div className="v">{c.qtdContada}</div></div>
-                        <div className="cv"><div className="k">Diferença</div><div className="v" style={{color:sev.color}}>{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div></div>
-                        <div className="cv"><div className="k">%</div><div className="v" style={{color:sev.color}}>{c.percentual==null ? '—' : c.percentual.toFixed(1)+'%'}</div></div>
+                      <div className="result-grid" style={{marginTop:0}}>
+                        <div className="rg"><div className="k">Sistema</div><div className="v">{c.saldoSistema==null ? '—' : c.saldoSistema}</div></div>
+                        <div className="rg"><div className="k">1ª Contagem</div><div className="v">{c.qtdContada}</div></div>
+                        <div className="rg"><div className="k">Diferença</div><div className="v" style={{color:sev.color}}>{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div></div>
+                        <div className="rg"><div className="k">%</div><div className="v" style={{color:sev.color}}>{c.percentual==null ? '—' : c.percentual.toFixed(1)+'%'}</div></div>
                       </div>
                       <div className="count-card-extra">
                         {c.almoxarifado && <div>Armazém: <strong>{c.almoxarifado}</strong></div>}
@@ -7095,14 +7095,11 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequ
                   1ª contagem: {anterior.qtdContada} un. por {anterior.usuario} em {anterior.data} {anterior.hora||''}
                 </div>
               )}
-              <div className="count-card-values">
-                <div className="cv"><div className="k">Sistema</div><div className="v">{c.saldoSistema==null ? '—' : c.saldoSistema}</div></div>
-                <div className="cv"><div className="k">Qtd. Contada</div><div className="v">{c.qtdContada}</div></div>
-                <div className="cv">
-                  <div className="k">Diferença</div>
-                  <div className="v" style={{color:sev.color}}>{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div>
-                  {c.percentual!=null && <div style={{fontSize:11,color:'var(--ink-dim)'}}>{c.percentual.toFixed(1)}%</div>}
-                </div>
+              <div className="result-grid">
+                <div className="rg"><div className="k">Sistema</div><div className="v">{c.saldoSistema==null ? '—' : c.saldoSistema}</div></div>
+                <div className="rg"><div className="k">Qtd. Contada</div><div className="v">{c.qtdContada}</div></div>
+                <div className="rg"><div className="k">Diferença</div><div className="v" style={{color:sev.color}}>{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div></div>
+                <div className="rg"><div className="k">%</div><div className="v" style={{color:sev.color}}>{c.percentual==null ? '—' : c.percentual.toFixed(1)+'%'}</div></div>
               </div>
               {c.motivo && <div style={{padding:'10px 16px 0',fontSize:12.5}}>Motivo: <strong>{c.motivo}</strong></div>}
               {c.diferencaConfirmada && (
@@ -7538,11 +7535,11 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
                 </div>
                 <div className="count-card-address-badge"><DIcon name="mapPin" size={16} /> {tip.endereco || tip.enderecoContado || 'não cadastrado'}</div>
               </div>
-              <div className="count-card-values">
-                <div className="cv"><div className="k">Sistema</div><div className="v">{tip.saldoSistema==null ? '—' : tip.saldoSistema}</div></div>
-                <div className="cv"><div className="k">Qtd. Final</div><div className="v">{tip.qtdContada}</div></div>
-                <div className="cv"><div className="k">Contagens</div><div className="v">{tip.numeroContagem}</div></div>
-                <div className="cv"><div className="k">Ajuste</div><div className="v" style={{fontSize:12.5}}>{cd.houveAjuste ? 'Necessário' : (tip.diferenca==null?'Sem saldo local':'Não necessário')}</div></div>
+              <div className="result-grid">
+                <div className="rg"><div className="k">Sistema</div><div className="v">{tip.saldoSistema==null ? '—' : tip.saldoSistema}</div></div>
+                <div className="rg"><div className="k">Qtd. Final</div><div className="v">{tip.qtdContada}</div></div>
+                <div className="rg"><div className="k">Contagens</div><div className="v">{tip.numeroContagem}</div></div>
+                <div className="rg"><div className="k">Ajuste</div><div className="v" style={{fontSize:12.5}}>{cd.houveAjuste ? 'Necessário' : (tip.diferenca==null?'Sem saldo local':'Não necessário')}</div></div>
               </div>
               <div style={{padding:'10px 16px 14px',fontSize:12,color:'var(--accent2)'}}>Ver detalhes →</div>
             </div>
