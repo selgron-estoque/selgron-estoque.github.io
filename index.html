@@ -192,6 +192,15 @@
      cliente pra bater com o mockup de referência) — diferentes do
      --radius:10px usado no resto do app, de propósito, não é regressão. */
   .count-card{background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden;margin-bottom:16px;display:flex;box-shadow:0 1px 3px rgba(0,0,0,.04);}
+  /* Item marcado como urgente (líder/admin, Recontagens/Itens Divergentes) —
+     destaque visual pra ele se sobressair na lista, além de vir ordenado
+     primeiro (ver RecountsPanel/DivergentItemsPanel). Cor própria
+     (--accent2, azul já usado em links) de propósito, pra não se confundir
+     com a faixa de severidade (ok/warn/safety/danger) que já colore
+     .count-card-bar — são dois conceitos diferentes (severidade calculada
+     vs. prioridade manual do líder). */
+  .count-card.urgente{box-shadow:0 0 0 2px var(--accent2), 0 1px 3px rgba(0,0,0,.04);}
+  .urgente-chip{display:inline-flex;align-items:center;gap:5px;font-family:var(--font-mono);font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;padding:4px 9px;border-radius:20px;background:var(--accent2);color:#fff;}
   .count-card-bar{width:5px;flex-shrink:0;}
   .count-card-body{flex:1;min-width:0;padding:16px 20px;display:flex;flex-direction:column;gap:10px;}
   .count-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
@@ -1117,6 +1126,7 @@ function contagemRowToLocal(row){
     recontagemSolicitadaPeloLider: row.recontagem_solicitada_pelo_lider,
     recontagemSolicitadaPor: row.recontagem_solicitada_por,
     recontagemSolicitadaEm: row.recontagem_solicitada_em,
+    urgente: !!row.urgente,
     atualizadoEm: row.atualizado_em,
   };
 }
@@ -2921,7 +2931,7 @@ const EMOJI_TO_DICON = {
   '🏷':'tag', '🎲':'shuffle', '➕':'plus', '✉':'mail', '⛔':'ban',
   '⚙':'settings', '⏻':'logOut', '⌨':'keyboard', '⌂':'home',
   '🏢':'building', '🏭':'building', '✓':'checkCircle', '—':'minus',
-  '!':'alertTriangle',
+  '!':'alertTriangle', '🔥':'flame',
 };
 const Ic = ({children, size=16}) => {
   const name = EMOJI_TO_DICON[children];
@@ -3440,6 +3450,18 @@ function App(){
     return res;
   }
 
+  // Marca/desmarca um item pendente (Recontagens/Itens Divergentes) como
+  // urgente — líder/admin decidem quais itens furam a ordem normal da fila
+  // (as duas telas já ordenam urgentes primeiro, ver `RecountsPanel`/
+  // `DivergentItemsPanel`). Mesmo padrão de `approveDivergence`: aguarda
+  // confirmação do Supabase (a coluna já sincroniza via Realtime como o
+  // resto de `contagens`) antes de atualizar o cache local.
+  async function toggleUrgente(countId, urgente){
+    const res = await updateContagemStatusToSupabase(countId, {urgente});
+    if(res.ok) setCounts(prev=>prev.map(c=>c.id===countId ? {...c, urgente} : c));
+    return res;
+  }
+
   // Exclusão de inventário — mesmo padrão: aguarda confirmação do Supabase
   // antes de remover da tela, pra não sumir localmente e "ressuscitar"
   // depois via sincronização se a exclusão remota tiver falhado.
@@ -3856,8 +3878,8 @@ function App(){
         {view==='manualCount' && <ManualCountFlow user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('home');}} onAddressProposed={addAddressProposal} operadorVeSaldo={operadorVeSaldo} />}
         {view==='routeCount' && <RouteCountFlow inv={flowState} user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} gruposExcluidos={gruposExcluidos} />}
         {view==='importedListCount' && <ImportedListCountFlow inv={flowState} user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} />}
-        {view==='recounts' && <RecountsPanel counts={counts} inventories={inventories} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} onRefresh={refreshContagens} />}
-        {view==='divergentes' && <DivergentItemsPanel counts={counts} inventories={inventories} role={role} goto={goto} onApprove={approveDivergence} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} onRefresh={refreshContagens} />}
+        {view==='recounts' && <RecountsPanel counts={counts} inventories={inventories} role={role} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onRefresh={refreshContagens} />}
+        {view==='divergentes' && <DivergentItemsPanel counts={counts} inventories={inventories} role={role} goto={goto} onApprove={approveDivergence} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onRefresh={refreshContagens} />}
         {view==='todasDivergencias' && <AllDivergencesPanel counts={counts} historicoConcluidas={historicoConcluidas} goto={goto} />}
         {view==='concluidas' && <ConcludedCountsPanel counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} onDeleteCount={role==='admin' ? deleteCount : undefined} onRefresh={refreshHistoricoConcluidas} />}
         {view==='recount' && flowState && <RecountFlow original={flowState} user={currentUser} onAddressProposed={addAddressProposal} onFinish={(c)=>{registerFinishedCount(c); goto('recounts');}} operadorVeSaldo={operadorVeSaldo} />}
@@ -4018,6 +4040,7 @@ const DICON_PATHS = {
   keyboard: <><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01"/><path d="M10 8h.01"/><path d="M14 8h.01"/><path d="M18 8h.01"/><path d="M8 12h.01"/><path d="M12 12h.01"/><path d="M16 12h.01"/><path d="M7 16h10"/></>,
   building: <><path d="M6 22V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v18Z"/><path d="M9 9h1"/><path d="M9 13h1"/><path d="M14 9h1"/><path d="M14 13h1"/><path d="M9 17h1"/><path d="M14 17h1"/><path d="M2 22h20"/></>,
   calculator: <><rect x="4" y="2" width="16" height="20" rx="2"/><rect x="7" y="5" width="10" height="4" rx="0.5"/><path d="M7 13h.01"/><path d="M12 13h.01"/><path d="M17 13h.01"/><path d="M7 17h.01"/><path d="M12 17h.01"/><path d="M17 17h.01"/></>,
+  flame: <><path d="M12 22c4.4 0 7.5-3 7.5-7 0-3-1.7-5-3-6.7C15.8 10 15 11.3 14 11.3c-1 0-1-1.5-1-3 0-2.3-1.2-4.3-3-5.3C10.5 5 8 7.5 8 11c0-1 .3-2 .8-2.8C6.5 9.7 4.5 12.3 4.5 15c0 4 3.1 7 7.5 7Z"/></>,
 };
 
 function DIcon({name, size=18, strokeWidth=1.8, style}){
@@ -5797,6 +5820,9 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
       data: hojeLocalStr(),
       hora: new Date().toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'}),
       inventario: inv ? inv.id : '—',
+      // Marcação de urgência (Recontagens/Itens Divergentes) — sempre começa
+      // false; só é ligada depois, pelo líder/admin, direto nessas telas.
+      urgente: false,
       // Marca como "ainda não confirmado no Supabase" — App() (via
       // registerFinishedCount) tenta gravar assim que a contagem chega lá, e
       // o ciclo de sync de 30s reenvia sozinho enquanto continuar true (ver
@@ -6665,7 +6691,8 @@ function ListaProgressoHeader({titulo, restantes, concluidas, onAtualizar, atual
   );
 }
 
-function RecountsPanel({counts, inventories, goto, onDeleteCount, onRefresh}){
+function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggleUrgente, onRefresh}){
+  const canMark = role==='lider' || role==='admin';
   const byOriginal = {};
   counts.forEach(c=>{ if(c.contagemAnteriorId) byOriginal[c.contagemAnteriorId]=c; });
 
@@ -6682,7 +6709,21 @@ function RecountsPanel({counts, inventories, goto, onDeleteCount, onRefresh}){
     : aguardandoSegunda;
 
   const [severidade, setSeveridade] = useState('todos');
-  const listaFiltrada = severidade==='todos' ? porBusca : porBusca.filter(c=>classifySeverity4(c.percentual).level===severidade);
+  const listaFiltradaSemOrdenar = severidade==='todos' ? porBusca : porBusca.filter(c=>classifySeverity4(c.percentual).level===severidade);
+  // Itens marcados como urgentes (líder/admin, ver toggleUrgente em App())
+  // sempre aparecem primeiro — sort estável, preserva a ordem relativa entre
+  // itens com a mesma urgência (não embaralha o resto da fila).
+  const listaFiltrada = [...listaFiltradaSemOrdenar].sort((a,b)=>(b.urgente?1:0)-(a.urgente?1:0));
+
+  const [urgenteBusyId, setUrgenteBusyId] = useState(null);
+  const [urgenteErro, setUrgenteErro] = useState({});
+  async function handleToggleUrgente(c){
+    setUrgenteBusyId(c.id);
+    setUrgenteErro(prev=>({...prev, [c.id]: null}));
+    const res = await onToggleUrgente(c.id, !c.urgente);
+    setUrgenteBusyId(null);
+    if(!res || !res.ok) setUrgenteErro(prev=>({...prev, [c.id]: (res && res.erro) || 'Não foi possível salvar — tente novamente.'}));
+  }
 
   // Filtro de período — afeta só o contador "concluídas" do cabeçalho de
   // progresso (a lista abaixo sempre mostra TODOS os pendentes atuais,
@@ -6763,11 +6804,12 @@ function RecountsPanel({counts, inventories, goto, onDeleteCount, onRefresh}){
         const sev = classifySeverity4(c.percentual);
         const temExtra = c.motivo || c.observacao || c.foto || c.almoxarifado || (c.enderecoContado && c.enderecoContado!==c.endereco) || (c.valorDivergente && Number(c.valorDivergente)!==0);
         return (
-        <div key={c.id} className="count-card">
+        <div key={c.id} className={"count-card"+(c.urgente?' urgente':'')}>
           <div className="count-card-bar" style={{background:sev.color}}></div>
           <div className="count-card-body">
             <div className="count-card-head">
               <div className="count-card-badges">
+                {c.urgente && <span className="urgente-chip"><Ic>🔥</Ic> Urgente</span>}
                 {c.recontagemSolicitadaPeloLider
                   ? <span className="severity-chip" style={{background:'var(--danger-bg)',color:'var(--danger)'}}><Ic>⚠</Ic> Rejeitada</span>
                   : <span className="severity-chip" style={{background:sev.bg,color:sev.color}}><Ic>{sev.icon}</Ic> {sev.label}</span>}
@@ -6836,8 +6878,16 @@ function RecountsPanel({counts, inventories, goto, onDeleteCount, onRefresh}){
                 <div className="count-card-actions-col">
                   <button className="btn btn-primary" onClick={()=>goto('recount', c)}><Ic>🔁</Ic> Recontar</button>
                   <button className="btn btn-outline" onClick={()=>setDetalhesAbertoId(detalhesAbertoId===c.id ? null : c.id)}><Ic>📋</Ic> {detalhesAbertoId===c.id ? 'Ocultar' : 'Detalhes'}</button>
+                  {canMark && (
+                    <button className="btn btn-outline" disabled={urgenteBusyId===c.id} onClick={()=>handleToggleUrgente(c)}>
+                      <Ic>🔥</Ic> {urgenteBusyId===c.id ? 'Salvando…' : (c.urgente ? 'Remover urgência' : 'Marcar urgente')}
+                    </button>
+                  )}
                 </div>
               </div>
+            )}
+            {urgenteErro[c.id] && (
+              <div className="divergence-alert"><Ic>⚠</Ic><span>{urgenteErro[c.id]}</span></div>
             )}
           </div>
         </div>
@@ -6855,13 +6905,13 @@ function RecountsPanel({counts, inventories, goto, onDeleteCount, onRefresh}){
 // aparecer só em "Recontagens". Visível pra todos os papéis (antes ficava
 // escondida inteira do operador) — mas as ações (aprovar/solicitar
 // recontagem) continuam só pra líder/admin, operador vê em modo leitura.
-function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequestRecount, onDeleteCount, onRefresh}){
+function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequestRecount, onDeleteCount, onToggleUrgente, onRefresh}){
   const aguardandoAnalise = counts.filter(c=>c.statusAprovacao==='aguardando_analise_lider');
   const canApprove = role==='lider' || role==='admin';
 
-  // `onApprove`/`onRequestRecount` aguardam confirmação do Supabase — `busyId`
-  // desabilita só o card em ação (não a tela inteira), `erros` guarda uma
-  // mensagem por id de contagem se a chamada falhar.
+  // `onApprove`/`onRequestRecount`/`onToggleUrgente` aguardam confirmação do
+  // Supabase — `busyId` desabilita só o card em ação (não a tela inteira),
+  // `erros` guarda uma mensagem por id de contagem se a chamada falhar.
   const [busyId, setBusyId] = useState(null);
   const [erros, setErros] = useState({});
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
@@ -6873,7 +6923,10 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequ
     : aguardandoAnalise;
 
   const [severidade, setSeveridade] = useState('todos');
-  const listaFiltrada = severidade==='todos' ? porBusca : porBusca.filter(c=>classifySeverity4(c.percentual).level===severidade);
+  const listaFiltradaSemOrdenar = severidade==='todos' ? porBusca : porBusca.filter(c=>classifySeverity4(c.percentual).level===severidade);
+  // Itens marcados como urgentes sempre aparecem primeiro — mesmo critério
+  // já usado em RecountsPanel.
+  const listaFiltrada = [...listaFiltradaSemOrdenar].sort((a,b)=>(b.urgente?1:0)-(a.urgente?1:0));
 
   const [mostrarFiltroPeriodo, setMostrarFiltroPeriodo] = useState(false);
   const [trendFilter, setTrendFilter] = usePersistedState('divergentesTrendFilter', {tipo:'30d', from:'', to:''});
@@ -6918,6 +6971,14 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequ
     }
   }
 
+  async function handleToggleUrgente(c){
+    setBusyId(c.id);
+    setErros(prev=>({...prev, [c.id]: null}));
+    const res = await onToggleUrgente(c.id, !c.urgente);
+    setBusyId(null);
+    if(!res || !res.ok) setErros(prev=>({...prev, [c.id]: (res && res.erro) || 'Não foi possível salvar — tente novamente.'}));
+  }
+
   return (
     <div>
       <ListaProgressoHeader titulo="pendentes" restantes={aguardandoAnalise.length} concluidas={concluidas} onAtualizar={onRefresh ? handleAtualizar : null} atualizando={atualizando} />
@@ -6940,11 +7001,12 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequ
         const anterior = c.contagemAnteriorId ? counts.find(x=>x.id===c.contagemAnteriorId) : null;
         const sev = classifySeverity4(c.percentual);
         return (
-          <div key={c.id} className="count-card">
+          <div key={c.id} className={"count-card"+(c.urgente?' urgente':'')}>
             <div className="count-card-bar" style={{background:sev.color}}></div>
             <div className="count-card-body">
               <div className="count-card-head">
                 <div className="count-card-badges">
+                  {c.urgente && <span className="urgente-chip"><Ic>🔥</Ic> Urgente</span>}
                   <span className="severity-chip" style={{background:sev.bg,color:sev.color}}><Ic>{sev.icon}</Ic> {sev.label}</span>
                   <span className="category-chip">{categoriaDoInventario(c, inventories)}</span>
                   {c.numeroContagem>1 && <span className="category-chip">{c.numeroContagem}ª contagem</span>}
@@ -6991,6 +7053,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequ
                   <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>handleRequestRecount(c.id)}>{busyId===c.id ? 'Enviando…' : 'Solicitar nova contagem'}</button>
                   <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>goto('recount', c)}><Ic>🔁</Ic> Recontar</button>
                   <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>handleApprove(c.id)}>{busyId===c.id ? 'Enviando…' : 'Aprovar divergência'}</button>
+                  <button className="btn btn-outline" disabled={busyId===c.id} onClick={()=>handleToggleUrgente(c)}><Ic>🔥</Ic> {c.urgente ? 'Remover urgência' : 'Marcar urgente'}</button>
                   {onDeleteCount && <button className="btn btn-danger" disabled={busyId===c.id} onClick={()=>setConfirmDeleteId(c.id)}><Ic>🗑</Ic></button>}
                 </div>
               ) : (

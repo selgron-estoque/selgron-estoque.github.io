@@ -876,3 +876,14 @@ create policy "escrita só admin" on app_config for update
 -- atualização só chegaria nos outros aparelhos no próximo fetch manual
 -- (login/reload), não "de imediato" como pedido.
 alter publication supabase_realtime add table app_config;
+
+-- =============================================================================
+-- MARCAR ITEM COMO URGENTE (Recontagens / Itens Divergentes) — cliente pediu
+-- pra destacar itens marcados como urgentes e que apareçam primeiro nas duas
+-- filas de recontagem/divergência pendente. Só mais uma coluna em `contagens`
+-- (a tabela já existe, já sincroniza por Realtime) — nenhuma tabela nova.
+-- Rodar só se ainda não tiver rodado (introspecção antes evita erro de coluna
+-- já existente):
+--   select column_name from information_schema.columns where table_name = 'contagens' and column_name = 'urgente';
+-- =============================================================================
+alter table contagens add column if not exists urgente boolean not null default false;

@@ -4728,3 +4728,48 @@ login: manter o campo preenchido a próxima vez, pra não precisar digitar de no
   salvo; reabrir depois disso mostra tudo vazio/desmarcado. Transpile Babel do arquivo
   inteiro conferido. **A verificação de ponta a ponta contra o Supabase Auth real fica a
   cargo do cliente** — mesma limitação de sempre.
+
+## Marcar item como urgente (Recontagens / Itens Divergentes)
+
+Cliente pediu: "preciso que destaque os itens que marco como urgentes para contagem ou
+recontagem e que estes sejam os primeiros a aparecer." Confirmado via `AskUserQuestion`
+(2 perguntas): escopo só nas 2 telas de recontagem pendente (Recontagens/"Aguardando
+Segunda Contagem" e Itens Divergentes/"Aguardando Análise do Líder") — não um mecanismo
+pra marcar item ainda não contado nenhuma vez (isso exigiria buscar/marcar um código do
+catálogo antes de existir qualquer contagem, escopo maior, não pedido); e quem marca é
+líder OU admin (mesmo grupo que já aprova divergência/gerencia recontagem hoje).
+
+- **`urgente boolean`** (nova coluna em `contagens`, `backend/schema.sql`) — sem tabela
+  nova, é só mais um campo na tabela que já existe e já sincroniza por Realtime (mesmo
+  mecanismo de `aprovado_por`/`recontagem_solicitada_*`, adicionados antes pro mesmo
+  motivo: decisão do líder precisa aparecer nos outros aparelhos). Migração via
+  `alter table ... add column if not exists`, com introspecção sugerida antes (mesmo
+  padrão de cautela já usado nas migrações anteriores).
+- **`toggleUrgente(countId, urgente)`** (`App()`, perto de `approveDivergence`) — `async`,
+  aguarda confirmação do Supabase (`updateContagemStatusToSupabase`, já existente) antes
+  de atualizar o cache local; mesmo critério de erro visível já usado em
+  `approveDivergence`/`requestRecountFromOperator`.
+- **Ordenação**: as duas telas (`RecountsPanel`/`DivergentItemsPanel`) já filtravam por
+  busca/severidade antes de renderizar — um `.sort((a,b)=>(b.urgente?1:0)-(a.urgente?1:0))`
+  final (estável, preserva a ordem relativa entre itens com a mesma urgência) põe os
+  marcados sempre no topo da lista, por cima de qualquer outro critério.
+- **Destaque visual**: `.count-card.urgente` (contorno azul, `var(--accent2)`) + chip
+  `.urgente-chip` ("🔥 Urgente", mesmo azul) no topo do card, ANTES do chip de
+  severidade. Cor deliberadamente diferente da escala de severidade (que já usa
+  ok/warn/safety/danger na faixa lateral do card) — são dois conceitos diferentes
+  (severidade é calculada a partir do percentual de divergência; urgência é uma decisão
+  manual do líder), não deveriam competir pela mesma paleta de cor.
+- **Botão "Marcar urgente"/"Remover urgência"** — em `RecountsPanel`, entra na coluna de
+  ações ao lado de "Recontar"/"Detalhes", só quando `role` é líder/admin (prop nova,
+  `RecountsPanel` tinha perdido `role` numa rodada anterior por não ter mais ação
+  restrita — voltou a receber só pra isso). Em `DivergentItemsPanel`, entra na fileira
+  de ações que já existia (Solicitar nova contagem/Recontar/Aprovar/Excluir), reaproveita
+  o mesmo `busyId`/`erros` que as outras ações dali já usavam.
+- **`flame`** (ícone novo em `DICON_PATHS`) + `'🔥':'flame'` em `EMOJI_TO_DICON` — segue o
+  mesmo padrão de unificação de ícones já estabelecido (SVG linear em vez de emoji cru).
+- Testado via script Node isolado (mesma técnica de sempre): sort coloca urgentes
+  primeiro preservando ordem relativa entre os demais. Transpile Babel do arquivo
+  inteiro conferido. **Não testado contra o Supabase real nem visualmente** (mesma
+  limitação de sempre, login exige Supabase Auth real) — falta o cliente rodar o SQL
+  novo (`alter table contagens add column if not exists urgente...`) e confirmar visual/
+  funcionalmente nas duas telas.
