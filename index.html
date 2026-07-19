@@ -4017,7 +4017,7 @@ function App(){
         {view==='routeCount' && <RouteCountFlow inv={flowState} user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} gruposExcluidos={gruposExcluidos} />}
         {view==='importedListCount' && <ImportedListCountFlow inv={flowState} user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} />}
         {view==='recounts' && <RecountsPanel counts={counts} inventories={inventories} role={role} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onRefresh={refreshContagens} operadorVeValoresRecontagem={operadorVeValoresRecontagem} />}
-        {view==='divergentes' && <DivergentItemsPanel counts={counts} inventories={inventories} role={role} goto={goto} onApprove={approveDivergence} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onRefresh={refreshContagens} operadorVeValoresRecontagem={operadorVeValoresRecontagem} />}
+        {view==='divergentes' && <DivergentItemsPanel counts={counts} inventories={inventories} role={role} goto={goto} onApprove={approveDivergence} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onRefresh={refreshContagens} />}
         {view==='todasDivergencias' && <AllDivergencesPanel counts={counts} historicoConcluidas={historicoConcluidas} goto={goto} />}
         {view==='concluidas' && <ConcludedCountsPanel counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} onDeleteCount={role==='admin' ? deleteCount : undefined} onRefresh={refreshHistoricoConcluidas} />}
         {view==='recount' && flowState && <RecountFlow original={flowState} user={currentUser} onAddressProposed={addAddressProposal} onFinish={(c)=>{registerFinishedCount(c); goto('recounts');}} operadorVeSaldo={operadorVeSaldo} />}
@@ -6848,11 +6848,14 @@ function ListaProgressoHeader({titulo, restantes, concluidas, onAtualizar, atual
 
 function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggleUrgente, onRefresh, operadorVeValoresRecontagem}){
   const canMark = role==='lider' || role==='admin';
-  // Sistema/Físico/Diferença/% (e o resto dos detalhes) ficam visíveis por
-  // padrão pra líder/admin, sem precisar clicar em nada — operador só vê se
-  // o admin liberou `operadorVeValoresRecontagem` em Configurações. Trava
-  // SEPARADA de `operadorVeSaldo` (que só controla a tela de CONTAGEM) —
-  // pedido explícito da Diretoria, ver CLAUDE.md.
+  // Escopo AJUSTADO (cliente pediu pra restringir depois de ver o resultado
+  // inicial): o quadro Sistema/Físico/Diferença/% fica visível pra QUALQUER
+  // perfil, sempre — só o toggle "Detalhes"/"Ocultar" (pessoal, todo mundo
+  // pode recolher se quiser) controla se ele aparece. `podeVerDetalhes`
+  // passou a governar só o BLOCO EXTRA (Armazém/Endereço contado/Motivo/
+  // Observação/Foto/Valor divergente/Contado por) — é ali que mora o
+  // "valor" que a Diretoria não quer que a operação veja, não nas
+  // quantidades/percentual do quadro principal.
   const podeVerDetalhes = role!=='operador' || operadorVeValoresRecontagem;
   const byOriginal = {};
   counts.forEach(c=>{ if(c.contagemAnteriorId) byOriginal[c.contagemAnteriorId]=c; });
@@ -7033,7 +7036,7 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
             ) : (
               <div className="count-card-main">
                 <div className="count-card-content">
-                  {podeVerDetalhes && !detalhesOcultosIds.has(c.id) && (
+                  {!detalhesOcultosIds.has(c.id) && (
                     <>
                       <div className="result-grid result-grid-4col" style={{marginTop:0,gridTemplateColumns:'repeat(4,1fr)'}}>
                         <div className="rg"><div className="k">Sistema</div><div className="v">{c.saldoSistema==null ? '—' : c.saldoSistema}</div></div>
@@ -7041,23 +7044,23 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
                         <div className="rg"><div className="k">Diferença</div><div className="v" style={{color:sev.color}}>{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div></div>
                         <div className="rg"><div className="k">%</div><div className="v" style={{color:sev.color}}>{c.percentual==null ? '—' : Math.round(c.percentual)+'%'}</div></div>
                       </div>
-                      <div className="count-card-extra">
-                        {c.almoxarifado && <div>Armazém: <strong>{c.almoxarifado}</strong></div>}
-                        {c.enderecoContado && c.enderecoContado!==c.endereco && <div>Endereço contado: <strong>{c.enderecoContado}</strong></div>}
-                        {c.motivo && <div>Motivo: <strong>{c.motivo}</strong></div>}
-                        {c.observacao && <div>Observação: {c.observacao}</div>}
-                        {c.foto && <div>Foto anexada na contagem.</div>}
-                        {c.valorDivergente && Number(c.valorDivergente)!==0 && <div>Valor divergente: <strong>R$ {Number(c.valorDivergente).toFixed(2)}</strong></div>}
-                        <div>Contado por {c.usuario} em {c.data} {c.hora||''}</div>
-                      </div>
+                      {podeVerDetalhes && (
+                        <div className="count-card-extra">
+                          {c.almoxarifado && <div>Armazém: <strong>{c.almoxarifado}</strong></div>}
+                          {c.enderecoContado && c.enderecoContado!==c.endereco && <div>Endereço contado: <strong>{c.enderecoContado}</strong></div>}
+                          {c.motivo && <div>Motivo: <strong>{c.motivo}</strong></div>}
+                          {c.observacao && <div>Observação: {c.observacao}</div>}
+                          {c.foto && <div>Foto anexada na contagem.</div>}
+                          {c.valorDivergente && Number(c.valorDivergente)!==0 && <div>Valor divergente: <strong>R$ {Number(c.valorDivergente).toFixed(2)}</strong></div>}
+                          <div>Contado por {c.usuario} em {c.data} {c.hora||''}</div>
+                        </div>
+                      )}
                     </>
                   )}
                 </div>
                 <div className="count-card-actions-col">
                   <button className="btn btn-primary" onClick={()=>goto('recount', c)}><Ic>🔁</Ic> Recontar</button>
-                  {podeVerDetalhes && (
-                    <button className="btn btn-outline" onClick={()=>toggleDetalhes(c.id)}><Ic>📋</Ic> {detalhesOcultosIds.has(c.id) ? 'Detalhes' : 'Ocultar'}</button>
-                  )}
+                  <button className="btn btn-outline" onClick={()=>toggleDetalhes(c.id)}><Ic>📋</Ic> {detalhesOcultosIds.has(c.id) ? 'Detalhes' : 'Ocultar'}</button>
                 </div>
               </div>
             )}
@@ -7080,14 +7083,14 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
 // aparecer só em "Recontagens". Visível pra todos os papéis (antes ficava
 // escondida inteira do operador) — mas as ações (aprovar/solicitar
 // recontagem) continuam só pra líder/admin, operador vê em modo leitura.
-function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequestRecount, onDeleteCount, onToggleUrgente, onRefresh, operadorVeValoresRecontagem}){
+function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequestRecount, onDeleteCount, onToggleUrgente, onRefresh}){
   const aguardandoAnalise = counts.filter(c=>c.statusAprovacao==='aguardando_analise_lider');
   const canApprove = role==='lider' || role==='admin';
-  // Mesma trava de RecountsPanel (`operadorVeValoresRecontagem`, SEPARADA de
-  // `operadorVeSaldo`) — essa tela também é uma decisão AINDA aberta
-  // (aguardando o líder), não um histórico já resolvido, mesmo cuidado
-  // contra a operação ver valores se aplica.
-  const podeVerDetalhes = role!=='operador' || operadorVeValoresRecontagem;
+  // Revertido: essa tela não tem nenhum "valor" (R$) exibido — só quadro de
+  // quantidades/percentual e o Motivo — então não há o que restringir pra
+  // operação aqui. O toggle `operadorVeValoresRecontagem` (Diretoria) só
+  // se aplica ao bloco de detalhes extras de `RecountsPanel`, que É onde
+  // "Valor divergente" aparece.
 
   // `onApprove`/`onRequestRecount`/`onToggleUrgente` aguardam confirmação do
   // Supabase — `busyId` desabilita só o card em ação (não a tela inteira),
@@ -7226,12 +7229,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequ
                 </div>
                 <div className="count-card-address-badge"><DIcon name="mapPin" size={16} /> {c.endereco || 'não cadastrado'}</div>
               </div>
-              {!podeVerDetalhes ? (
-                <div style={{padding:'8px 16px 0',fontSize:12,color:'var(--ink-dim)'}}>
-                  Detalhes de Sistema/Físico/Diferença ocultos pra este perfil (ver
-                  Configurações → "Visibilidade do Saldo na Contagem").
-                </div>
-              ) : anterior ? (
+              {anterior ? (
                 <div className="rounds-stack" style={{padding:'8px 16px 0'}}>
                   <div className="round-panel previous">
                     <div className="round-eyebrow">
@@ -7267,7 +7265,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequ
                 </div>
               )}
               {c.motivo && <div style={{padding:'10px 16px 0',fontSize:12.5}}>Motivo: <strong>{c.motivo}</strong></div>}
-              {podeVerDetalhes && c.diferencaConfirmada && (
+              {c.diferencaConfirmada && (
                 <div className="divergence-alert" style={{margin:'10px 16px 0'}}>
                   <Ic>⚠</Ic><span>Diferença confirmada: <strong>{c.diferenca>0?'+':''}{c.diferenca}</strong> nas duas rodadas.</span>
                 </div>
@@ -9648,12 +9646,13 @@ function Settings({role, currentUser, operadorVeSaldo, onSetOperadorVeSaldo, ope
         <div className="panel">
           <div className="section-title" style={{marginTop:0}}>Visibilidade de Valores em Recontagens/Divergentes</div>
           <div style={{fontSize:13,color:'var(--ink-dim)',lineHeight:1.6,marginBottom:12}}>
-            Configuração separada da acima — controla se o operador vê o quadro
-            Sistema/Físico/Diferença/% (e a faixa "Diferença confirmada") nas telas
-            "Recontagens Pendentes" e "Itens Divergentes", independente de como a
-            visibilidade durante a contagem estiver configurada. Com a opção desligada
-            (padrão), a operação não tem acesso a esses valores nessas duas telas —
-            líder e administrador sempre veem, sem essa restrição.
+            Configuração separada da acima — controla só o BLOCO EXTRA de cada card em
+            "Recontagens Pendentes" (armazém, endereço contado, motivo, observação, foto,
+            valor divergente em R$ e quem contou). O quadro principal
+            (Sistema/Físico/Diferença/%) continua visível pra qualquer perfil — essa
+            configuração é só sobre o valor em R$ e os detalhes complementares. Com a
+            opção desligada (padrão), a operação não vê esse bloco extra — líder e
+            administrador sempre veem, sem essa restrição.
           </div>
           <label style={{display:'flex',alignItems:'center',gap:10,cursor:salvandoValoresRecontagem?'wait':'pointer',opacity:salvandoValoresRecontagem?0.7:1}}>
             <input
@@ -9663,7 +9662,7 @@ function Settings({role, currentUser, operadorVeSaldo, onSetOperadorVeSaldo, ope
               onChange={e=>toggleOperadorVeValoresRecontagem(e.target.checked)}
               style={{width:18,height:18}}
             />
-            <span style={{fontSize:14}}>Operador pode ver valores em Recontagens/Divergentes</span>
+            <span style={{fontSize:14}}>Operador pode ver detalhes extras em Recontagens Pendentes</span>
           </label>
           {erroValoresRecontagem && <div className="login-error" style={{marginTop:10}}>{erroValoresRecontagem}</div>}
         </div>

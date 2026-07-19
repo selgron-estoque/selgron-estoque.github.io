@@ -5241,3 +5241,34 @@ daquela rodada sem avisar explicitamente que ela ficaria com um modelo diferente
   diferente do resumo da CADEIA inteira que este card mostra).
 - Testado via transpile Babel do arquivo inteiro. **Verificação visual fica a cargo do
   cliente** — mesma limitação de sempre (login exige Supabase Auth real).
+
+## Escopo corrigido: "Visibilidade de Valores" só esconde o bloco extra, não o quadro
+
+Cliente mandou print do bloco "Observação/Valor divergente/Contado por" (o
+`count-card-extra` de `RecountsPanel`) e disse: "em 'Visibilidade de Valores em
+Recontagens/Divergentes', ocultar apenas este campo" — a implementação anterior
+escondia o quadro INTEIRO (Sistema/Físico/Diferença/%) junto com esse bloco, tanto em
+`RecountsPanel` quanto em `DivergentItemsPanel`. Fazia sentido em retrospecto: o nome da
+configuração é "Visibilidade de **Valores**" — e o único "valor" (R$) monetário exibido
+é a linha "Valor divergente" dentro do bloco extra; o quadro principal mostra só
+quantidade/percentual, não um valor em R$.
+
+- **`RecountsPanel`**: o quadro Sistema/Físico/Diferença/% virou SEMPRE visível pra
+  qualquer perfil — só o toggle pessoal "Detalhes"/"Ocultar" (agora sem gate de role)
+  controla se aparece, igual já era antes de qualquer trava por perfil existir.
+  `podeVerDetalhes` (`operadorVeValoresRecontagem`) passou a governar só o
+  `count-card-extra` (Armazém/Endereço contado/Motivo/Observação/Foto/Valor
+  divergente/Contado por) — que continua dentro do mesmo bloco condicional do toggle
+  "Detalhes", então só some se as duas condições baterem (não oculto manualmente E
+  perfil autorizado).
+- **`DivergentItemsPanel` teve a trava REMOVIDA por completo** — essa tela nunca teve um
+  bloco extra com "Valor divergente" nem nada parecido (só Motivo, que já era sempre
+  visível) — não havia o que restringir ali. O quadro Sistema/Físico/Diferença/% (e a
+  faixa "Diferença confirmada") voltaram a ser sempre visíveis, sem gate de perfil. Prop
+  `operadorVeValoresRecontagem` removida da assinatura do componente e da instanciação em
+  `App()` — sem uso nenhum ali agora.
+- Descrição do painel em Configurações reescrita pra refletir o escopo real (só o bloco
+  extra de "Recontagens Pendentes", não o quadro, não "Itens Divergentes"). Label do
+  checkbox também ajustado: "Operador pode ver detalhes extras em Recontagens Pendentes".
+- Testado via transpile Babel do arquivo inteiro. **Verificação visual fica a cargo do
+  cliente** — mesma limitação de sempre.
