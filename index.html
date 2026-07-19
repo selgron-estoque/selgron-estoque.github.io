@@ -9286,13 +9286,6 @@ function Settings({role, currentUser, operadorVeSaldo, onSetOperadorVeSaldo, gru
 
   return (
     <div>
-      <div className="role-note">Perfil atual: {ROLE_LABELS[role]} · {currentUser.nome}</div>
-      {isAdmin && (
-        <div className="role-note" style={{marginBottom:16}}>
-          As configurações abaixo valem em TODOS os aparelhos, de imediato — não precisa
-          repetir tablet por tablet.
-        </div>
-      )}
       {isAdmin && (
         <div className="panel">
           <div className="section-title" style={{marginTop:0}}>Visibilidade do Saldo na Contagem</div>
