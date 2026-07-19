@@ -4966,3 +4966,48 @@ nunca foi visual/CSS — era o CÓDIGO DO PRODUTO aparecendo cru, sem pontuaçã
   sempre) — mas como a correção é só na LEITURA, não depende de nenhuma migração de
   SQL nem de o cliente reimportar nada — só recarregar a página já deve mostrar os
   códigos certos.
+
+## Itens "Ajustar" do histórico entram em "Itens Divergentes" (mesmo tratamento do "Recontar")
+
+Cliente pediu: "todos os itens com status de ajustar na planilha Base precisam
+aparecer em 'Itens Divergentes' do site". Investigando, "Ajustar" estava classificado
+junto com "OK"/"Sem Ajuste"/"Ajustado" em `HISTORICO_STATUS_CONCLUIDOS` — tratado como
+histórico já RESOLVIDO, só visível em "Contagens Concluídas". Isso nunca fez sentido:
+diferente de "Ajustado" (ajuste JÁ aplicado no Protheus), "Ajustar" significa
+literalmente "ainda precisa ajustar" — não é um veredito concluído, é uma pendência.
+Mesmo erro de modelagem, mesma solução já aplicada antes pro Status "Recontar" (ver
+"Itens 'Recontar' do histórico entram de verdade na fila de recontagem").
+
+- **`buildAjustarSeedsFromHistorico(linhas)`** (novo, logo depois de
+  `buildRecontarSeedsFromHistorico`, mesmo padrão) — filtra
+  `status==='Ajustar' && produto_codigo && data` e semeia uma linha em `contagens` com
+  `status_aprovacao: 'aguardando_analise_lider'` (não `aguardando_segunda` — aqui não
+  falta uma recontagem física, falta uma DECISÃO do líder: aprovar o ajuste ou mandar
+  recontar). Isso faz o item aparecer normalmente em "Itens Divergentes"
+  (`DivergentItemsPanel`), com as mesmas ações que qualquer divergência ao vivo já tem.
+- **`id` com prefixo `CNT-HIST-ADJ-`** (diferente de `CNT-HIST-` do "Recontar") — evita
+  qualquer colisão teórica de id entre os dois conjuntos de seed pro mesmo código+data.
+- **`HISTORICO_STATUS_CONCLUIDOS`** perdeu `'Ajustar'` (agora só `['OK', 'Sem Ajuste',
+  'Ajustado']`) — não é mais buscado por `fetchContagensHistoricoConcluidas`, não aparece
+  mais em "Contagens Concluídas"/Indicadores como concluído.
+- **`HISTORICO_STATUS_DISPLAY`** também perdeu a entrada `'Ajustar'` — sem uso depois da
+  mudança acima (a função que a consome, `historicoRowToCountLike`, já filtra fora
+  qualquer status sem entrada no mapa).
+- **`fetchContagensHistoricoParaTendencia`** (pool usado só pra volume/acuracidade da
+  "Tendência" em Indicadores) passou a excluir `'Ajustar'` também, não só `'Recontar'`
+  — mesmo motivo: agora está representado em `counts` via o seed novo, incluir de novo
+  aqui duplicaria o volume contado.
+- **`HistoricoImportPanel`**: `handleConfirmar` agora constrói os dois conjuntos de seed
+  (`buildRecontarSeedsFromHistorico`/`buildAjustarSeedsFromHistorico`) e grava os dois
+  juntos num upsert só (`seedRecontarQueueFromHistorico` é genérica o suficiente — só
+  grava o que recebe em `contagens` — não precisou de uma função nova só pra isso). UI
+  ganhou uma 2ª linha de resumo ("N itens marcados 'Ajustar' vão entrar em Itens
+  Divergentes...") e o resultado final mostra os dois contadores separados.
+- Testado via script Node isolado (mesma técnica de sempre): `buildAjustarSeedsFromHistorico`
+  filtra corretamente só linhas `Ajustar` com data preenchida (uma linha sem data é
+  ignorada, igual ao "Recontar"), gera o id com o prefixo certo, e `status_aprovacao`
+  sai como `aguardando_analise_lider`. Transpile Babel do arquivo inteiro conferido.
+  **Não testado contra o Supabase real** (mesma limitação de sempre) — próxima
+  reimportação da planilha Base pelo cliente já deve popular "Itens Divergentes" com
+  esses itens, sem precisar de nenhuma mudança de schema (mesma tabela `contagens`,
+  mesmas colunas de sempre).

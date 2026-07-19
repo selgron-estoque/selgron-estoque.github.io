@@ -1938,11 +1938,16 @@ async function fetchUltimaImportacaoHistorico(){
 // só uma tabela de consulta/relatório, nenhuma tela do app lia dela (só os
 // itens "Recontar" eram replicados pra `contagens`, ver
 // buildRecontarSeedsFromHistorico logo abaixo). Essa busca traz só os
-// status já CONCLUÍDOS na planilha antiga — "OK"/"Sem Ajuste"/"Ajustado"/
-// "Ajustar" — pra alimentar o painel de auditoria e os indicadores (ver
-// ConcludedCountsPanel/Home/Dashboard). Exclui de propósito "Recontar" (já
-// vem pela rota separada acima, incluir aqui duplicaria) e "Pendente"
-// (fora de escopo por enquanto — decisão consciente, ver CLAUDE.md).
+// status já CONCLUÍDOS na planilha antiga — "OK"/"Sem Ajuste"/"Ajustado" —
+// pra alimentar o painel de auditoria e os indicadores (ver
+// ConcludedCountsPanel/Home/Dashboard). Exclui de propósito "Recontar" e
+// "Ajustar" (ambos replicados pra `contagens` de verdade, ver
+// buildRecontarSeedsFromHistorico/buildAjustarSeedsFromHistorico — incluir
+// aqui duplicaria) e "Pendente" (fora de escopo por enquanto — decisão
+// consciente, ver CLAUDE.md). "Ajustar" saiu daqui numa rodada posterior:
+// cliente apontou que esses itens NÃO estão resolvidos de verdade (o nome
+// já diz que falta ajustar) e precisam aparecer como pendente em "Itens
+// Divergentes", não arquivado como "concluído".
 // O filtro de status é feito NO CLIENTE (não via `.in()` do PostgREST) de
 // propósito: linhas importadas antes da correção de trim em
 // `parseHistoricoContagensRows` podem ter espaço sobrando no valor
@@ -1953,7 +1958,7 @@ async function fetchUltimaImportacaoHistorico(){
 // legado sujo e dado novo já limpo, sem precisar tocar no banco.
 // Paginado de verdade (ver fetchTodasPaginado) — nenhum teto fixo, nem do
 // código nem do projeto Supabase.
-const HISTORICO_STATUS_CONCLUIDOS = ['OK', 'Sem Ajuste', 'Ajustado', 'Ajustar'];
+const HISTORICO_STATUS_CONCLUIDOS = ['OK', 'Sem Ajuste', 'Ajustado'];
 async function fetchContagensHistoricoConcluidas(){
   if(!supabaseClient) return [];
   try{
@@ -1978,8 +1983,9 @@ async function fetchContagensHistoricoConcluidas(){
 // com Status="Pendente" (ainda aguardando decisão) eram excluídas de tudo,
 // mas pra fins de VOLUME/acuracidade semanal, um item pendente É uma
 // contagem real que aconteceu naquele dia, só ainda não foi decidido.
-// Só exclui "Recontar" — esses já estão representados em `counts` via
-// buildRecontarSeedsFromHistorico, incluir aqui duplicaria.
+// Exclui "Recontar" e "Ajustar" — os dois já estão representados em
+// `counts` via buildRecontarSeedsFromHistorico/buildAjustarSeedsFromHistorico,
+// incluir aqui duplicaria o volume.
 async function fetchContagensHistoricoParaTendencia(){
   if(!supabaseClient) return [];
   try{
@@ -1988,7 +1994,7 @@ async function fetchContagensHistoricoParaTendencia(){
       .select('id, produto_codigo, data, diferenca, saldo_sistema, acuracidade, status')
       .order('data', {ascending:false})
       .order('id', {ascending:true}));
-    return data.filter(row => String(row.status||'').trim()!=='Recontar');
+    return data.filter(row => !['Recontar','Ajustar'].includes(String(row.status||'').trim()));
   }catch(err){
     console.warn('Falha ao buscar histórico pra tendência semanal:', err);
     return [];
@@ -2045,6 +2051,57 @@ function buildRecontarSeedsFromHistorico(linhas){
         motivo: l.causa,
         tem_foto: false,
         observacao: (l.observacao ? l.observacao + ' — ' : '') + 'Importado do histórico da planilha de análise (ainda precisa de recontagem).',
+        data: l.data,
+        hora: null,
+      };
+    });
+}
+
+// Mesmo raciocínio de `buildRecontarSeedsFromHistorico`, agora pro Status
+// "Ajustar" — cliente confirmou que esses itens também NÃO estão resolvidos
+// de verdade (o nome já diz: falta ajustar). Diferença do "Recontar":
+// aqui não falta uma contagem física de novo, falta uma DECISÃO do líder
+// (aprovar o ajuste, ou mandar recontar) — por isso o status vira
+// `aguardando_analise_lider` (mesmo estado de qualquer outra divergência
+// aguardando o líder), não `aguardando_segunda`. Isso faz o item aparecer
+// em "Itens Divergentes" (DivergentItemsPanel), com as mesmas ações que
+// qualquer outra divergência ao vivo já tem (Aprovar/Solicitar nova
+// contagem/Recontar/Marcar urgente/Excluir).
+// `id` com prefixo diferente (`CNT-HIST-ADJ-`, não `CNT-HIST-`) — evita
+// qualquer colisão teórica com o id de um seed "Recontar" pro mesmo
+// código+data (não deveria acontecer, já que cada linha da planilha tem
+// um Status só, mas mantém os dois espaços de id claramente distintos).
+function buildAjustarSeedsFromHistorico(linhas){
+  return linhas
+    .filter(l => l.status==='Ajustar' && l.produto_codigo && l.data)
+    .map(l => {
+      const percentual = (l.saldo_sistema!=null && l.saldo_sistema!==0 && l.diferenca!=null)
+        ? (l.diferenca / l.saldo_sistema) * 100
+        : null;
+      const classificacao = l.valor_divergente!=null ? classifyDivergence(Math.abs(l.valor_divergente)).label : 'Divergência (importada do histórico)';
+      const idSeguro = 'CNT-HIST-ADJ-' + String(l.produto_codigo).replace(/[^A-Za-z0-9]/g,'') + '-' + l.data.replace(/-/g,'');
+      return {
+        id: idSeguro,
+        inventario_id: '—',
+        produto_codigo: l.produto_codigo,
+        descricao: l.descricao,
+        endereco: l.endereco,
+        endereco_contado: l.endereco,
+        endereco_pendente_validacao: false,
+        usuario: 'Importação Histórica',
+        numero_contagem: 1,
+        contagem_anterior_id: null,
+        qtd_contada: l.qtd_contada,
+        saldo_sistema: l.saldo_sistema,
+        diferenca: l.diferenca,
+        percentual,
+        valor_divergente: l.valor_divergente!=null ? Math.abs(l.valor_divergente) : 0,
+        fora_do_cache_local: true,
+        classificacao,
+        status_aprovacao: 'aguardando_analise_lider',
+        motivo: l.causa,
+        tem_foto: false,
+        observacao: (l.observacao ? l.observacao + ' — ' : '') + 'Importado do histórico da planilha de análise (marcado "Ajustar" — aguardando decisão do líder).',
         data: l.data,
         hora: null,
       };
@@ -7279,11 +7336,15 @@ function buildConcludedChains(counts){
 // app não tem (classe/SA/documento/dias sem movimento) — porque o cliente
 // pediu explicitamente que essa tela sirva de painel de auditoria: "um dia
 // bata uma auditoria, preciso de toda informação necessária ali".
+// "Ajustar" saiu daqui — não é um veredito CONCLUÍDO (o próprio nome já diz
+// que ainda precisa de ajuste), então não faz mais parte do histórico
+// "resolvido" mostrado em Contagens Concluídas. Ver `buildAjustarSeedsFromHistorico`
+// — esses itens agora entram na fila viva de "Itens Divergentes", mesmo
+// tratamento já dado a "Recontar" antes.
 const HISTORICO_STATUS_DISPLAY = {
   'OK': {level:'ok', text:'Aprovado (histórico importado)'},
   'Sem Ajuste': {level:'ok', text:'Aprovado — sem ajuste necessário (histórico importado)'},
   'Ajustado': {level:'ok', text:'Ajuste já aplicado no Protheus (histórico importado)'},
-  'Ajustar': {level:'warn', text:'Ajuste necessário no Protheus (histórico importado)'},
 };
 function historicoRowToCountLike(h){
   const statusNorm = String(h.status||'').trim();
@@ -9217,14 +9278,19 @@ function HistoricoImportPanel({onImported}){
       setStatus('error');
       return;
     }
-    // Itens com Status="Recontar" não estão resolvidos de verdade — além de
-    // ir pro histórico, também alimentam a fila real de "Aguardando Segunda
-    // Contagem" (ver buildRecontarSeedsFromHistorico), pra aparecerem pra
-    // recontar dentro do app normalmente.
-    const seeds = buildRecontarSeedsFromHistorico(parseResult.linhas);
-    const seedRes = await seedRecontarQueueFromHistorico(seeds);
+    // Itens com Status="Recontar" ou "Ajustar" não estão resolvidos de
+    // verdade — além de ir pro histórico, também alimentam a fila real do
+    // app (ver buildRecontarSeedsFromHistorico/buildAjustarSeedsFromHistorico):
+    // "Recontar" cai em "Recontagens"/Aguardando Segunda Contagem, "Ajustar"
+    // cai em "Itens Divergentes"/Aguardando Análise do Líder. Um upsert só,
+    // combinando os dois lotes — `seedRecontarQueueFromHistorico` é genérica
+    // o suficiente (só grava o que receber em `contagens`), não precisou de
+    // uma função separada só pra isso.
+    const seedsRecontar = buildRecontarSeedsFromHistorico(parseResult.linhas);
+    const seedsAjustar = buildAjustarSeedsFromHistorico(parseResult.linhas);
+    const seedRes = await seedRecontarQueueFromHistorico([...seedsRecontar, ...seedsAjustar]);
     const resFinal = seedRes.ok
-      ? {...res, recontarEnfileiradas: seedRes.inseridas}
+      ? {...res, recontarEnfileiradas: seedsRecontar.length, ajustarEnfileirados: seedsAjustar.length}
       : {...res, erroFilaRecontagem: seedRes.erro};
     setResultado(resFinal);
     setStatus('done');
@@ -9276,6 +9342,10 @@ function HistoricoImportPanel({onImported}){
             <Ic>🔁</Ic> {buildRecontarSeedsFromHistorico(parseResult.linhas).length} itens marcados "Recontar" vão entrar na fila de
             recontagem do app (tela "Recontagens" → Aguardando Segunda Contagem).
           </div>
+          <div style={{fontSize:13,color:'var(--ink-dim)',marginTop:4}}>
+            <Ic>⚠</Ic> {buildAjustarSeedsFromHistorico(parseResult.linhas).length} itens marcados "Ajustar" vão entrar em
+            "Itens Divergentes", aguardando decisão do líder de estoque.
+          </div>
           <button className="btn btn-primary" style={{marginTop:10}} onClick={handleConfirmar} disabled={status==='uploading'}>
             <Ic>⬆</Ic> {status==='uploading' ? 'Importando…' : 'Confirmar importação'}
           </button>
@@ -9291,7 +9361,8 @@ function HistoricoImportPanel({onImported}){
         <div className="login-success" style={{marginTop:14}}>
           Histórico importado: {resultado.inseridas} linhas gravadas (ou atualizadas) no Supabase.
           {resultado.recontarEnfileiradas!=null && <> {resultado.recontarEnfileiradas} itens entraram na fila de recontagem.</>}
-          {resultado.erroFilaRecontagem && <><br/><Ic>⚠</Ic> Histórico salvo, mas falhou ao enfileirar recontagens: {resultado.erroFilaRecontagem}</>}
+          {resultado.ajustarEnfileirados!=null && <> {resultado.ajustarEnfileirados} itens entraram em Itens Divergentes.</>}
+          {resultado.erroFilaRecontagem && <><br/><Ic>⚠</Ic> Histórico salvo, mas falhou ao enfileirar recontagens/ajustes: {resultado.erroFilaRecontagem}</>}
         </div>
       )}
       {resultado && !resultado.ok && (
