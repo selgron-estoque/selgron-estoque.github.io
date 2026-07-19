@@ -5455,3 +5455,39 @@ pode apagar o atual".
   (568 aberturas/568 fechamentos). **Verificação visual de ponta a ponta fica a cargo
   do cliente** — mesma limitação de sempre (login exige Supabase Auth real, não
   simulável no sandbox sem rede).
+
+## `ListaProgressoHeader` removido por completo — donut/barra de progresso não fazia sentido
+
+Logo depois de subir o redesign acima, o cliente testou e questionou o conceito em si
+("Faz sentido manter este card? visto que toda recontagem feita some desta tela e vai
+para outra") — pergunta certeira: assim que um item é resolvido (recontado/aprovado),
+ele sai da fila de "Recontagens"/"Itens Divergentes" e nunca mais volta a aparecer ali.
+Isso significa que **"restantes" e "concluídas" nunca foram do mesmo lote** —
+`restantes` é o estado ATUAL (sem recorte de tempo, sempre "tudo que está aberto agora")
+enquanto `concluidas` era filtrado por um período (`recontagensTrendFilter`/
+`divergentesTrendFilter`, 30 dias por padrão) — misturar os dois numa % de "progresso"
+é enganoso: dava pra mostrar "0% Concluídas" com 151 pendentes mesmo tendo havido
+centenas de recontagens resolvidas no passado, só que fora da janela de 30 dias
+escolhida. Não existe, e nunca existiu, um "lote fixo" sendo esvaziado nessas 2 telas —
+itens saem pra outro lugar e novos itens entram a qualquer momento.
+
+- **Removido por completo**: a função `ListaProgressoHeader`, seu uso nos 2 pontos
+  (`RecountsPanel`/`DivergentItemsPanel`), o CSS `.lph-*` inteiro (introduzido na rodada
+  anterior), e — por consequência — todo o bloco "Filtros"/`TrendFilterBar` que existia
+  nessas 2 telas, já que sua ÚNICA função era alimentar o `concluidas` que acabou de
+  sair (`mostrarFiltroPeriodo`/`trendFilter`/`dataInicioStr`/`dataFimStr`/`concluidas`,
+  removidos das 2 funções). `ConcludedCountsPanel`/Indicadores **não foram tocados** —
+  o filtro de período ali tem propósito de verdade (filtrar histórico/tendência por
+  data), diferente do uso que só existia aqui.
+- **`PnlDonut` voltou à forma original** — a prop `centerValue` (adicionada só pra esse
+  redesenho) foi removida por completo, já que ficou sem nenhum consumidor depois da
+  reversão; o uso na Home ("Situação Geral dos Inventários") nunca dependeu dela e
+  continua idêntico.
+- **Substituído por um cabeçalho simples**: só "{N} pendentes" (`aguardandoSegunda.
+  length`/`aguardandoAnalise.length`, mesmo dado real de sempre, sem nenhum recorte de
+  tempo) + o botão "Atualizar" (mantido — continua funcionalmente útil, dispara o mesmo
+  re-fetch pontual de antes) no canto oposto. Sem donut, sem barra, sem %.
+- Testado via transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  (558 aberturas/558 fechamentos). **Verificação visual de ponta a ponta fica a cargo
+  do cliente** — mesma limitação de sempre (login exige Supabase Auth real, não
+  simulável no sandbox sem rede).

@@ -258,23 +258,6 @@
      elemento. */
   .count-card-actions-row.btn-row .btn{width:auto;padding:11px 14px;font-size:11.5px;flex:1 1 auto;}
   .count-card-actions-row.btn-row .btn-danger{flex:0 0 auto;}
-  /* ListaProgressoHeader (cabeçalho de progresso de Recontagens/Itens
-     Divergentes) — modelo novo pedido pelo cliente por imagem de
-     referência: donut com a % em destaque à esquerda, contadores ao lado,
-     barra horizontal de progresso embaixo ocupando a largura toda do
-     card. Cor única laranja (--safety) pro segmento concluído/barra, em
-     vez do par verde/âmbar de antes — bate com a referência. */
-  .lph-card{position:relative;padding:20px 20px 18px;}
-  .lph-top{display:flex;align-items:center;gap:20px;}
-  .lph-stats{font-size:14px;color:var(--ink-dim);display:flex;flex-direction:column;gap:4px;}
-  .lph-stats strong{font-family:var(--font-display);font-size:20px;color:var(--ink);margin-right:5px;}
-  .lph-bar-track{height:10px;border-radius:6px;background:var(--gray-100);overflow:hidden;margin-top:16px;}
-  .lph-bar-fill{height:100%;background:var(--safety);border-radius:6px;transition:width .3s ease;}
-  .lph-refresh-btn{position:absolute;top:16px;right:16px;width:auto !important;padding:6px 12px !important;font-size:11px !important;}
-  @media (max-width:480px){
-    .lph-card{padding-top:52px;}
-    .lph-refresh-btn{top:12px;right:12px;}
-  }
 
   /* Comparativo 1ª/2ª contagem (item que já tem uma rodada anterior, ver
      "anterior" em DivergentItemsPanel) — as duas rodadas empilhadas, cada
@@ -5070,12 +5053,7 @@ function KpiTrend({pct, invert, suffix, compareLabel}){
   );
 }
 
-// `centerValue` (novo, opcional) — sobrescreve o número grande do centro
-// (por padrão é `total`, a soma dos segmentos). Só `ListaProgressoHeader`
-// usa isso (precisa mostrar a % ali, não a soma) — o uso na Home
-// (`Situação Geral dos Inventários`) não passa essa prop, então continua
-// mostrando `total` exatamente como antes.
-function PnlDonut({segments, size=168, strokeWidth=22, centerLabel='inventários', centerValue}){
+function PnlDonut({segments, size=168, strokeWidth=22, centerLabel='inventários'}){
   const r = (size - strokeWidth) / 2;
   const c = 2 * Math.PI * r;
   const total = segments.reduce((s, x) => s + x.value, 0);
@@ -5094,7 +5072,7 @@ function PnlDonut({segments, size=168, strokeWidth=22, centerLabel='inventários
             transform={`rotate(-90 ${size/2} ${size/2})`} />
         );
       })}
-      <text x="50%" y="47%" textAnchor="middle" fontSize="24" fontWeight="700" fill="var(--navy)" fontFamily="Inter, sans-serif">{centerValue!=null ? centerValue : total}</text>
+      <text x="50%" y="47%" textAnchor="middle" fontSize="24" fontWeight="700" fill="var(--navy)" fontFamily="Inter, sans-serif">{total}</text>
       <text x="50%" y="63%" textAnchor="middle" fontSize="10.5" fill="var(--gray-500)" fontFamily="Inter, sans-serif">{centerLabel}</text>
     </svg>
   );
@@ -6877,35 +6855,6 @@ function SearchWithScanner({value, onChange, placeholder}){
   );
 }
 
-// Cabeçalho de progresso (donut concluídas/restantes + botão Atualizar) —
-// compartilhado por Recontagens/Itens Divergentes. `total`/`restantes` são
-// sempre o estado ATUAL (não filtrado por período — pendência é pendência
-// agora, independente de quando foi aberta); `concluidas` já vem calculado
-// pelo chamador respeitando o período escolhido no TrendFilterBar.
-function ListaProgressoHeader({titulo, restantes, concluidas, onAtualizar, atualizando}){
-  const total = restantes + concluidas;
-  const pct = total>0 ? Math.round((concluidas/total)*100) : 0;
-  return (
-    <div className="panel lph-card" style={{marginBottom:16}}>
-      {onAtualizar && (
-        <button type="button" className="btn btn-outline lph-refresh-btn" disabled={atualizando} onClick={onAtualizar}>
-          <Ic>🔄</Ic> {atualizando ? 'Atualizando…' : 'Atualizar'}
-        </button>
-      )}
-      <div className="lph-top">
-        <PnlDonut segments={[{value:concluidas, color:'var(--safety)'}, {value:restantes, color:'var(--gray-100)'}]} size={92} strokeWidth={12} centerValue={pct+'%'} centerLabel="Concluídas" />
-        <div className="lph-stats">
-          <div><strong>{concluidas}</strong> concluídas</div>
-          <div><strong>{restantes}</strong> {titulo}</div>
-        </div>
-      </div>
-      <div className="lph-bar-track">
-        <div className="lph-bar-fill" style={{width:pct+'%'}} />
-      </div>
-    </div>
-  );
-}
-
 function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggleUrgente, onRefresh, operadorVeValoresRecontagem}){
   const canMark = role==='lider' || role==='admin';
   // Escopo AJUSTADO (cliente pediu pra restringir depois de ver o resultado
@@ -6948,23 +6897,6 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
     setUrgenteBusyId(null);
     if(!res || !res.ok) setUrgenteErro(prev=>({...prev, [c.id]: (res && res.erro) || 'Não foi possível salvar — tente novamente.'}));
   }
-
-  // Filtro de período — afeta só o contador "concluídas" do cabeçalho de
-  // progresso (a lista abaixo sempre mostra TODOS os pendentes atuais,
-  // independente de quando foram abertos — um item pendente de 3 meses
-  // atrás continua pendente hoje, filtrar por período esconderia isso sem
-  // necessidade). Mesmo padrão/componente já usado em Indicadores/
-  // Contagens Concluídas (TrendFilterBar/computeTrendRange), chave de
-  // persistência própria.
-  const [mostrarFiltroPeriodo, setMostrarFiltroPeriodo] = useState(false);
-  const [trendFilter, setTrendFilter] = usePersistedState('recontagensTrendFilter', {tipo:'30d', from:'', to:''});
-  const hojeStr = hojeLocalStr();
-  const { from: dataInicioStr, to: dataFimStr } = computeTrendRange(trendFilter.tipo, hojeStr, trendFilter.from, trendFilter.to);
-  const concluidas = counts.filter(c=>
-    c.numeroContagem>=2 &&
-    (c.statusAprovacao==='aprovado_segunda' || c.statusAprovacao==='aprovado_lider') &&
-    c.data>=dataInicioStr && c.data<=dataFimStr
-  ).length;
 
   const [atualizando, setAtualizando] = useState(false);
   async function handleAtualizar(){
@@ -7020,17 +6952,20 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
 
   return (
     <div>
-      <ListaProgressoHeader titulo="pendentes" restantes={aguardandoSegunda.length} concluidas={concluidas} onAtualizar={onRefresh ? handleAtualizar : null} atualizando={atualizando} />
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:12,marginBottom:16}}>
+        <div style={{fontFamily:'var(--font-display)',fontSize:22,fontWeight:700}}>{aguardandoSegunda.length} <span style={{fontSize:14,fontWeight:600,textTransform:'none',color:'var(--ink-dim)'}}>pendentes</span></div>
+        {onRefresh && (
+          <button type="button" className="btn btn-outline" style={{width:'auto',padding:'6px 12px',fontSize:11}} disabled={atualizando} onClick={handleAtualizar}>
+            <Ic>🔄</Ic> {atualizando ? 'Atualizando…' : 'Atualizar'}
+          </button>
+        )}
+      </div>
 
       <SearchWithScanner value={busca} onChange={setBusca} placeholder="Buscar por código ou descrição do material" />
 
       <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
         <SeverityFilterRow counts={porBusca} value={severidade} onChange={setSeveridade} />
-        <button type="button" className={'btn '+(mostrarFiltroPeriodo?'btn-primary':'btn-outline')} style={{width:'auto',padding:'8px 14px',fontSize:12,marginBottom:14}} onClick={()=>setMostrarFiltroPeriodo(v=>!v)}><Ic>📅</Ic> Filtros</button>
       </div>
-      {mostrarFiltroPeriodo && (
-        <TrendFilterBar trendFilter={trendFilter} setTrendFilter={setTrendFilter} dataInicioStr={dataInicioStr} dataFimStr={dataFimStr} hojeStr={hojeStr} subtitle="Período considerado pra contar quantas recontagens já foram concluídas" />
-      )}
 
       {listaFiltrada.length===0 ? (
         <div className="empty-state" style={{padding:20}}>
@@ -7182,14 +7117,6 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequ
   // já usado em RecountsPanel.
   const listaFiltrada = [...listaFiltradaSemOrdenar].sort((a,b)=>(b.urgente?1:0)-(a.urgente?1:0));
 
-  const [mostrarFiltroPeriodo, setMostrarFiltroPeriodo] = useState(false);
-  const [trendFilter, setTrendFilter] = usePersistedState('divergentesTrendFilter', {tipo:'30d', from:'', to:''});
-  const hojeStr = hojeLocalStr();
-  const { from: dataInicioStr, to: dataFimStr } = computeTrendRange(trendFilter.tipo, hojeStr, trendFilter.from, trendFilter.to);
-  const concluidas = counts.filter(c=>
-    c.statusAprovacao==='aprovado_lider' && c.data>=dataInicioStr && c.data<=dataFimStr
-  ).length;
-
   const [atualizando, setAtualizando] = useState(false);
   async function handleAtualizar(){
     if(!onRefresh) return;
@@ -7235,17 +7162,20 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequ
 
   return (
     <div>
-      <ListaProgressoHeader titulo="pendentes" restantes={aguardandoAnalise.length} concluidas={concluidas} onAtualizar={onRefresh ? handleAtualizar : null} atualizando={atualizando} />
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:12,marginBottom:16}}>
+        <div style={{fontFamily:'var(--font-display)',fontSize:22,fontWeight:700}}>{aguardandoAnalise.length} <span style={{fontSize:14,fontWeight:600,textTransform:'none',color:'var(--ink-dim)'}}>pendentes</span></div>
+        {onRefresh && (
+          <button type="button" className="btn btn-outline" style={{width:'auto',padding:'6px 12px',fontSize:11}} disabled={atualizando} onClick={handleAtualizar}>
+            <Ic>🔄</Ic> {atualizando ? 'Atualizando…' : 'Atualizar'}
+          </button>
+        )}
+      </div>
 
       <SearchWithScanner value={busca} onChange={setBusca} placeholder="Código ou descrição do material" />
 
       <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
         <SeverityFilterRow counts={porBusca} value={severidade} onChange={setSeveridade} />
-        <button type="button" className={'btn '+(mostrarFiltroPeriodo?'btn-primary':'btn-outline')} style={{width:'auto',padding:'8px 14px',fontSize:12,marginBottom:14}} onClick={()=>setMostrarFiltroPeriodo(v=>!v)}><Ic>📅</Ic> Filtros</button>
       </div>
-      {mostrarFiltroPeriodo && (
-        <TrendFilterBar trendFilter={trendFilter} setTrendFilter={setTrendFilter} dataInicioStr={dataInicioStr} dataFimStr={dataFimStr} hojeStr={hojeStr} subtitle="Período considerado pra contar quantas divergências já foram decididas" />
-      )}
 
       {listaFiltrada.length===0 ? (
         <div className="empty-state" style={{padding:20}}>
