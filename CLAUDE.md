@@ -4680,3 +4680,51 @@ estava correto).
   Supabase Auth real fechando/reabrindo um navegador de verdade** (mesma limitação de
   sempre, sandbox sem rede) — fica a cargo do cliente confirmar que "Lembrar-me" agora
   sobrevive a fechar o navegador por mais de 15 minutos.
+
+## "Lembrar-me" — escopo real era outro: manter os campos preenchidos, não a sessão
+
+Depois da correção acima, o cliente esclareceu que eu tinha entendido errado o pedido
+desde o início: **"o botão lembrar-me precisa manter os dados de login preenchidos,
+isso que estou pedindo"** — não tem nada a ver com a sessão sobreviver ou não a fechar o
+navegador (isso o app já fazia por padrão, sempre, desde a migração pro Supabase Auth).
+O pedido real sempre foi o comportamento mais comum de "lembrar-me" em formulários de
+login: manter o campo preenchido a próxima vez, pra não precisar digitar de novo.
+
+- **Revertido**: `supabaseAuthStorage` (o storage adapter que trocava entre localStorage/
+  sessionStorage pra controlar se a sessão sobrevivia ao fechar o navegador) foi
+  removido — `supabaseClient` voltou a usar a configuração padrão do supabase-js (sessão
+  sempre em localStorage, sempre sobrevive a fechar o navegador, comportamento de antes
+  de toda essa história começar). `SESSION_PERSIST_PREF_KEY`/`setLembrarSessaoPref`/
+  `sessaoDeveSerPersistente` foram removidos por completo, incluindo as chamadas em
+  `attemptLogin`/`selfSetNewPassword`.
+- **O bug real corrigido na seção anterior (`TAB_ABERTA_KEY`, timer de inatividade
+  tratando "navegador fechado" como "pessoa parada olhando a tela") continua válido e
+  foi MANTIDO** — é uma correção ortogonal ao que "Lembrar-me" significa: mesmo com a
+  sessão sempre persistindo (comportamento revertido acima), alguém que fecha o
+  navegador por mais de `sessionTimeoutMin` e reabre ainda precisa não ser deslogado na
+  hora só por causa do tempo que ficou fechado — esse bug existia mesmo ANTES de
+  "Lembrar-me" existir como pedido, só ficou mais fácil de notar quando o cliente testou
+  especificamente esse cenário.
+- **`LOGIN_LEMBRADO_KEY`** (`localStorage`, perto de `TAB_ABERTA_KEY`) — guarda só o
+  **identificador** digitado (usuário ou e-mail), nunca a senha. Decisão de segurança
+  deliberada: reintroduzir senha em texto puro no `localStorage` regrediria exatamente o
+  problema que a migração pro Supabase Auth resolveu (ver "Quinto pedaço do backend
+  real" — senha deixou de existir em qualquer tabela/storage do app, mora só no
+  `auth.users` gerenciado pelo Supabase).
+- **`LoginScreen`**: `identifier`/`lembrar` agora inicializam a partir de
+  `carregarLoginLembrado()` (`useState(()=>...)`, lazy initializer — só lê o
+  `localStorage` uma vez, na primeira montagem) — se já existe um identificador
+  lembrado de um login anterior, o campo já abre preenchido E o checkbox já abre
+  marcado (reflete o que está de fato acontecendo, em vez de mostrar desmarcado com o
+  campo já preenchido, que seria confuso). `attemptLogin` grava ou apaga o
+  identificador lembrado logo depois do login bem-sucedido, conforme o estado do
+  checkbox no momento do envio.
+- **Tooltip do checkbox** atualizado pra descrever o comportamento real ("o usuário/
+  e-mail digitado vai ficar preenchido na próxima vez" em vez do texto antigo sobre a
+  sessão sobreviver ao fechar o navegador).
+- Testado via script Node isolado (mesma técnica de sempre, `localStorage` simulado em
+  memória): marcar e logar grava o identificador; reabrir a tela depois disso mostra o
+  campo preenchido e o checkbox marcado; desmarcar e logar de novo apaga o identificador
+  salvo; reabrir depois disso mostra tudo vazio/desmarcado. Transpile Babel do arquivo
+  inteiro conferido. **A verificação de ponta a ponta contra o Supabase Auth real fica a
+  cargo do cliente** — mesma limitação de sempre.
