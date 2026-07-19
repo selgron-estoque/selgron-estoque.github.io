@@ -2693,6 +2693,27 @@ function classifyDivergence(valorDivergente){
   return {level:'warn', label:'Diferença de R$ 50 ou mais', rule:'Segunda contagem solicitada'};
 }
 
+// BUG REAL corrigido (visto em produção): `custoUnit` vale `0` tanto quando o
+// produto genuinamente não tem custo quanto quando o custo é DESCONHECIDO
+// (sem valor_financeiro/saldo cadastrado — ver `custoUnit:(temSaldo &&
+// saldo!==0) ? valorFinanceiro/saldo : 0` em `estoqueRowToProduct` e os
+// fallbacks `custoUnit:0` de produtos sintéticos). Isso fazia
+// `diffValor = diferença × custoUnit` sempre dar R$ 0 pra QUALQUER
+// diferença de quantidade nesses itens — e `classifyDivergence(0)` aprova
+// automaticamente, sem ninguém analisar, não importa o tamanho real da
+// diferença (chegou a acontecer com uma diferença de bilhões de unidades
+// marcada como "confere com o sistema"). Esta função é a rede de segurança:
+// quando não há custo confiável pra calcular um valor em R$, cai pro
+// critério ANTIGO por percentual (o mesmo usado antes da migração pra R$) —
+// ≤5% aprovado, 5-15% segunda contagem, >15% direto pro líder — em vez de
+// silenciosamente tratar como "sem divergência".
+function classifyDivergenceSemCusto(percentual){
+  const p = Math.abs(Number(percentual));
+  if(p <= 5) return {level:'ok', label:'Sem divergência significativa', rule:'Aprovado automaticamente (sem custo cadastrado)'};
+  if(p <= 15) return {level:'warn', label:'Diferença percentual moderada', rule:'Segunda contagem solicitada (sem custo cadastrado)'};
+  return {level:'danger', label:'Diferença percentual alta', rule:'Enviado para análise do líder (sem custo cadastrado)'};
+}
+
 // Classificação visual de 4 níveis — usada só nos cards de Recontagens/
 // Itens Divergentes/Contagens Concluídas (pedido do cliente, ver mockup
 // de referência). NÃO substitui `classifyDivergence` acima, que continua
@@ -5917,8 +5938,16 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   // calculados e salvos na contagem (usados em indicadores/tendência
   // semanal, que não mudaram), só pararam de decidir aprovação.
   const diffValor = (qty!=='' && hasSaldoLocal) ? Math.abs(diffAbs) * Number(product.custoUnit || 0) : 0;
+  // `custoConhecido`: `custoUnit` vale 0 tanto pra "produto sem custo" quanto
+  // pra "custo desconhecido" (sem valor_financeiro cadastrado) — os dois
+  // casos são indistinguíveis olhando só o número. Sem essa checagem,
+  // qualquer diferença de quantidade num item sem custo cadastrado dava
+  // `diffValor=0` e passava como "sem divergência" (bug real corrigido, ver
+  // `classifyDivergenceSemCusto`) — só entra na exceção de fato quando a
+  // diferença de QUANTIDADE também é zero (contagem bateu exata de verdade).
+  const custoConhecido = Number(product.custoUnit) > 0;
   const classification = hasSaldoLocal
-    ? classifyDivergence(diffValor)
+    ? (diffAbs !== 0 && !custoConhecido ? classifyDivergenceSemCusto(diffPct) : classifyDivergence(diffValor))
     : {level:'warn', label:'Sem saldo para comparar', rule:'Nenhum saldo carregado para este código — revisão manual necessária'};
   const statusAprovacao = hasSaldoLocal ? computeStatus(numeroContagem, classification.level) : 'aguardando_analise_lider';
   // Recontagem (numeroContagem>=2) cuja diferença bate EXATAMENTE com a da
@@ -6009,15 +6038,17 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   );
 
   // Mensagem de feedback ao vivo, assim que existe um número digitado —
-  // mesmos 3 níveis de `classifyDivergence` (ok/warn/danger, agora por
-  // valor R$ em vez de %), que já é a regra de negócio real (aprovação
+  // mesmos 3 níveis de `classifyDivergence`/`classifyDivergenceSemCusto`
+  // (ok/warn/danger), que já é a regra de negócio real (aprovação
   // automática/segunda contagem/análise do líder) — não uma classificação
-  // nova só de exibição.
+  // nova só de exibição. Usa `classification.rule` direto pros casos
+  // warn/danger (em vez de frase fixa assumindo sempre a regra por R$) —
+  // assim a mensagem fica certa tanto na regra normal quanto na rede de
+  // segurança por percentual (item sem custo cadastrado).
   const feedbackTexto = !hasSaldoLocal
     ? classification.rule
     : classification.level==='ok' ? 'Contagem confere com o sistema.'
-    : classification.level==='warn' ? 'Diferença de R$ 50 ou mais. Segunda contagem será solicitada.'
-    : 'Diferença encontrada. Enviada direto para análise do líder.';
+    : classification.rule;
 
   const progressoPct = (queueAtual && queueTotal) ? Math.round((queueAtual/queueTotal)*100) : null;
   const itensRestantes = (queueAtual && queueTotal) ? Math.max(queueTotal - queueAtual, 0) : null;

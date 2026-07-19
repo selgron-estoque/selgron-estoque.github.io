@@ -5299,3 +5299,52 @@ Cliente apontou: "o padrão deste botão específico não é desta cor" — usei
 workflow — o padrão certo, já usado pro botão análogo "Detalhes" em `RecountsPanel`, é
 `btn-outline` (neutro, contornado). Trocado só a classe do botão, sem mexer em mais
 nada.
+
+## Bug crítico real: item sem custo cadastrado nunca era classificado como divergente
+
+Cliente mandou print da tela de contagem mostrando uma diferença de **+5,25 bilhões de
+unidades** classificada como "Contagem confere com o sistema" (verde, aprovado
+automaticamente) — claramente errado. Investigação encontrou a causa raiz na regra de
+aprovação por valor (R$), implementada numa rodada anterior ("Aprovação automática
+deixa de ser por %, passa a ser por valor"):
+
+- **`diffValor = |diferença| × custoUnit`** decide a classificação hoje
+  (`classifyDivergence`). O problema: `custoUnit` vale **`0` tanto quando o produto
+  genuinamente não tem custo quanto quando o custo é DESCONHECIDO** (sem
+  `valor_financeiro` cadastrado no Supabase — ver `custoUnit:(temSaldo && saldo!==0) ?
+  valorFinanceiro/saldo : 0` em `estoqueRowToProduct`, e os vários fallbacks
+  `custoUnit:0` de produtos sintéticos ao longo do arquivo). Sem distinguir os dois
+  casos, `diffValor` sempre dava **R$ 0** pra qualquer item sem custo — e
+  `classifyDivergence(0)` trata R$0 como "sem divergência, aprovado automaticamente"
+  (a única exceção da regra), não importa o tamanho real da diferença de quantidade.
+  Um item com saldo financeiro zerado ou não cadastrado ficava, na prática, **imune a
+  qualquer detecção de divergência** — bug silencioso, sem erro nenhum no console,
+  só a classificação errada.
+- **`classifyDivergenceSemCusto(percentual)`** (função nova, perto de
+  `classifyDivergence`) — rede de segurança: usa o critério ANTIGO por percentual (o
+  que existia antes da migração pra R$) — ≤5% aprovado, 5-15% segunda contagem, >15%
+  direto pro líder — os níveis (`ok`/`warn`/`danger`) batem exatamente com o que
+  `computeStatus` já espera, sem precisar inverter nada (diferente da regra por R$,
+  que tem os níveis "invertidos" de propósito, ver comentário em `classifyDivergence`).
+- **`CountStep`**: `custoConhecido = Number(product.custoUnit) > 0`. Se
+  `diffAbs !== 0 && !custoConhecido` (há diferença de quantidade real, mas não tem
+  custo confiável pra precificar) → usa `classifyDivergenceSemCusto(diffPct)` em vez
+  de `classifyDivergence(diffValor)`. Quando `diffAbs===0` (contagem bateu exata de
+  verdade), continua indo por `classifyDivergence(0)` normalmente — a exceção de
+  "aprovado sozinho" só vale quando a QUANTIDADE bate, não quando o valor calculado
+  dá zero por falta de dado.
+- **`feedbackTexto`** (mensagem ao vivo na tela de contagem) parou de hardcodar frases
+  assumindo sempre a regra por R$ ("Diferença de R$ 50 ou mais...") — agora usa
+  `classification.rule` direto, que já vem certo pros dois casos (com ou sem custo
+  cadastrado).
+- Testado via script Node isolado (mesma técnica de sempre): reproduzi o cenário EXATO
+  do print do cliente (sistema 20.164, informado 5.255.555.555, sem custo) — antes da
+  correção isso classificaria como "ok"/aprovado automático; depois, cai corretamente
+  em "danger"/`aguardando_analise_lider` (diferença de +26 milhões de %). Também testei
+  itens sem custo com diferença pequena (2%, continua aprovando sozinho — não virou
+  hipersensível), moderada (10%, pede segunda contagem) e grande (30%, vai pro líder),
+  contagem exata sem custo (diferença 0, continua aprovando sozinho — a EXCEÇÃO real
+  não foi quebrada), e o caminho normal com custo cadastrado (sem nenhuma mudança de
+  comportamento ali). Transpile Babel do arquivo inteiro conferido. **Verificação
+  visual/funcional de ponta a ponta fica a cargo do cliente** — mesma limitação de
+  sempre (login exige Supabase Auth real, não simulável no sandbox sem rede).
