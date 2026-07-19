@@ -2584,19 +2584,31 @@ function classifyDivergence(pct){
 // Itens Divergentes/Contagens Concluídas (pedido do cliente, ver mockup
 // de referência). NÃO substitui `classifyDivergence` acima, que continua
 // sendo a regra de NEGÓCIO real (aprovação automática/segunda contagem/
-// análise do líder, limiares 5%/15%) — esta função só reclassifica o
-// MESMO `percentual` já calculado pra fins de exibição (cor/ícone/filtro),
-// com uma quebra a mais em 30% pra separar "alta" de "crítica" nos itens
-// que já passaram da 1ª contagem (Itens Divergentes/Concluídas podem ter
-// percentuais bem maiores que 15%, coisa que nunca acontece em
-// "Recontagens" — lá tudo já é "moderada" por definição).
-function classifySeverity4(pct){
-  if(pct==null) return {level:'sem_dado', label:'Sem saldo', color:'var(--ink-dim)', bg:'var(--panel-raised)', icon:'—'};
-  const abs = Math.abs(pct);
-  if(abs<=5) return {level:'baixa', label:'Baixa', color:'var(--ok)', bg:'var(--ok-bg)', icon:'✓'};
-  if(abs<=15) return {level:'media', label:'Média', color:'var(--warn)', bg:'var(--warn-bg)', icon:'—'};
-  if(abs<=30) return {level:'alta', label:'Alta', color:'var(--safety)', bg:'#FFF3E0', icon:'!'};
+// análise do líder, limiares 5%/15% de PERCENTUAL) — esta função é só
+// exibição/filtro. Recebe o VALOR (R$) da divergência, não mais o
+// percentual — cliente pediu explicitamente essa troca: uma divergência de
+// 90% num item de R$50 importa muito menos que uma de 5% num item de
+// R$50.000, então classificar por valor financeiro reflete melhor o que
+// precisa de atenção primeiro. Faixas confirmadas com o cliente: até R$100
+// Baixa, R$100–500 Média, R$500–2.000 Alta, acima de R$2.000 Crítica.
+// `null` continua reservado pro caso de item sem saldo do sistema pra
+// comparar (nenhum percentual/valor confiável pra calcular) — os call sites
+// passam `c.percentual==null ? null : c.valorDivergente`, preservando esse
+// estado "sem dado" mesmo com o eixo de classificação tendo mudado.
+function classifySeverity4(valorDivergente){
+  if(valorDivergente==null) return {level:'sem_dado', label:'Sem saldo', color:'var(--ink-dim)', bg:'var(--panel-raised)', icon:'—'};
+  const v = Math.abs(Number(valorDivergente));
+  if(v<=100) return {level:'baixa', label:'Baixa', color:'var(--ok)', bg:'var(--ok-bg)', icon:'✓'};
+  if(v<=500) return {level:'media', label:'Média', color:'var(--warn)', bg:'var(--warn-bg)', icon:'—'};
+  if(v<=2000) return {level:'alta', label:'Alta', color:'var(--safety)', bg:'#FFF3E0', icon:'!'};
   return {level:'critica', label:'Crítica', color:'var(--danger)', bg:'var(--danger-bg)', icon:'⚠'};
+}
+// Extrai o valor que `classifySeverity4` deve usar a partir de uma contagem —
+// pequeno helper pra não repetir o mesmo ternário em cada chamada (8 pontos
+// diferentes: RecountsPanel, DivergentItemsPanel, ConcludedCountsPanel,
+// SeverityFilterRow, RecountFlow).
+function severidadeDe(c){
+  return c.percentual==null ? null : c.valorDivergente;
 }
 
 // Badge de categoria do card — de onde essa contagem veio, cruzando
@@ -5867,10 +5879,11 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   const progressoPct = (queueAtual && queueTotal) ? Math.round((queueAtual/queueTotal)*100) : null;
   const itensRestantes = (queueAtual && queueTotal) ? Math.max(queueTotal - queueAtual, 0) : null;
   // Prioridade da recontagem — deriva da MESMA classificação de severidade
-  // já usada nos painéis de Recontagens/Itens Divergentes (classifySeverity4),
-  // aplicada sobre o percentual da rodada ANTERIOR (é ela que explica por que
-  // este item está sendo recontado). Só existe quando `previousCount` existe.
-  const previousSeverity = previousCount ? classifySeverity4(previousCount.percentual) : null;
+  // já usada nos painéis de Recontagens/Itens Divergentes (classifySeverity4,
+  // agora por valor de divergência), aplicada sobre a rodada ANTERIOR (é ela
+  // que explica por que este item está sendo recontado). Só existe quando
+  // `previousCount` existe.
+  const previousSeverity = previousCount ? classifySeverity4(severidadeDe(previousCount)) : null;
 
   return (
     <div>
@@ -6628,7 +6641,7 @@ function SeverityFilterRow({counts, value, onChange}){
   const porNivel = {};
   niveis.forEach(n=>{ porNivel[n] = 0; });
   counts.forEach(c=>{
-    const lvl = classifySeverity4(c.percentual).level;
+    const lvl = classifySeverity4(severidadeDe(c)).level;
     if(porNivel[lvl]!==undefined) porNivel[lvl]++;
   });
   const LABELS = {critica:'Críticas', alta:'Altas', media:'Médias', baixa:'Baixas'};
@@ -6708,7 +6721,7 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
     : aguardandoSegunda;
 
   const [severidade, setSeveridade] = useState('todos');
-  const listaFiltradaSemOrdenar = severidade==='todos' ? porBusca : porBusca.filter(c=>classifySeverity4(c.percentual).level===severidade);
+  const listaFiltradaSemOrdenar = severidade==='todos' ? porBusca : porBusca.filter(c=>classifySeverity4(severidadeDe(c)).level===severidade);
   // Itens marcados como urgentes (líder/admin, ver toggleUrgente em App())
   // sempre aparecem primeiro — sort estável, preserva a ordem relativa entre
   // itens com a mesma urgência (não embaralha o resto da fila).
@@ -6800,7 +6813,7 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
           {aguardandoSegunda.length===0 ? 'Nenhum item aguardando recontagem no momento.' : 'Nenhum item encontrado para esse filtro.'}
         </div>
       ) : listaFiltrada.map(c=>{
-        const sev = classifySeverity4(c.percentual);
+        const sev = classifySeverity4(severidadeDe(c));
         const temExtra = c.motivo || c.observacao || c.foto || c.almoxarifado || (c.enderecoContado && c.enderecoContado!==c.endereco) || (c.valorDivergente && Number(c.valorDivergente)!==0);
         return (
         <div key={c.id} className={"count-card"+(c.urgente?' urgente':'')}>
@@ -6933,7 +6946,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequ
     : aguardandoAnalise;
 
   const [severidade, setSeveridade] = useState('todos');
-  const listaFiltradaSemOrdenar = severidade==='todos' ? porBusca : porBusca.filter(c=>classifySeverity4(c.percentual).level===severidade);
+  const listaFiltradaSemOrdenar = severidade==='todos' ? porBusca : porBusca.filter(c=>classifySeverity4(severidadeDe(c)).level===severidade);
   // Itens marcados como urgentes sempre aparecem primeiro — mesmo critério
   // já usado em RecountsPanel.
   const listaFiltrada = [...listaFiltradaSemOrdenar].sort((a,b)=>(b.urgente?1:0)-(a.urgente?1:0));
@@ -7009,7 +7022,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequ
         </div>
       ) : listaFiltrada.map(c=>{
         const anterior = c.contagemAnteriorId ? counts.find(x=>x.id===c.contagemAnteriorId) : null;
-        const sev = classifySeverity4(c.percentual);
+        const sev = classifySeverity4(severidadeDe(c));
         return (
           <div key={c.id} className={"count-card"+(c.urgente?' urgente':'')}>
             <div className="count-card-bar" style={{background:sev.color}}></div>
@@ -7345,7 +7358,7 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
     : cadeiasNoPeriodo;
 
   const [severidade, setSeveridade] = useState('todos');
-  const cadeiasFiltradas = severidade==='todos' ? cadeiasPorBusca : cadeiasPorBusca.filter(cd=>classifySeverity4(cd.tip.percentual).level===severidade);
+  const cadeiasFiltradas = severidade==='todos' ? cadeiasPorBusca : cadeiasPorBusca.filter(cd=>classifySeverity4(severidadeDe(cd.tip)).level===severidade);
 
   const aberta = selecionado ? cadeias.find(cd=>cd.chaveId===selecionado) : null;
 
@@ -7468,7 +7481,7 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
       ) : cadeiasFiltradas.map(cd=>{
         const tip = cd.tip;
         const info = tip._statusDisplay || STATUS_INFO[tip.statusAprovacao] || {};
-        const sev = classifySeverity4(tip.percentual);
+        const sev = classifySeverity4(severidadeDe(tip));
         return (
           <div key={cd.chaveId} className="count-card" style={{cursor:'pointer'}} onClick={()=>setSelecionado(cd.chaveId)}>
             <div className="count-card-bar" style={{background:sev.color}}></div>

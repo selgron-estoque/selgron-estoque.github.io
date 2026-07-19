@@ -4801,3 +4801,35 @@ linha mais grossa" e "o botão de marcar colocar dentro dos 3 pontos, junto de e
   faz sentido (ação destrutiva) sem pintar "Marcar urgente" de vermelho também.
 - Testado via transpile Babel do arquivo inteiro. **Verificação visual fica a cargo do
   cliente** — mesma limitação de sempre.
+
+## Classificação de severidade (Críticas/Altas/Médias/Baixas) passa a ser por valor, não por %
+
+Cliente viu os chips de filtro ("CRÍTICAS (67)", "ALTAS (20)"...) e pediu: "essas
+classificações precisam ser medidas de acordo com o valor de divergência" — a escala de
+4 níveis (`classifySeverity4`, usada em Recontagens/Itens Divergentes/Contagens
+Concluídas) classificava pelo PERCENTUAL de divergência (≤5% Baixa, ≤15% Média, ≤30%
+Alta, acima Crítica); o problema real: uma divergência de 90% num item de R$50 é bem
+menos importante que uma de 5% num item de R$50.000, mas a classificação por % tratava
+a primeira como pior. Confirmado via `AskUserQuestion` as faixas exatas em R$: até R$100
+Baixa, R$100–500 Média, R$500–2.000 Alta, acima de R$2.000 Crítica.
+
+- **`classifySeverity4`** trocou o parâmetro de `pct` (percentual) pra `valorDivergente`
+  (R$) — mesma estrutura de retorno (`level`/`label`/`color`/`bg`/`icon`), só os limiares
+  e o que é comparado mudaram. `null` continua reservado pro caso "sem saldo do sistema
+  pra comparar" (mesmo estado de antes, "Sem saldo").
+- **`severidadeDe(c)`** (helper novo, logo abaixo de `classifySeverity4`) — resolve o que
+  passar pra função a partir de uma contagem: `c.percentual==null ? null : c.valorDivergente`.
+  Extraído porque são 8 pontos de chamada diferentes (RecountsPanel, DivergentItemsPanel,
+  ConcludedCountsPanel, SeverityFilterRow, RecountFlow) — sem o helper, repetiria o mesmo
+  ternário 8 vezes.
+- **Não muda `classifyDivergence`** (a regra de NEGÓCIO real — aprovação automática/
+  segunda contagem/análise do líder — que continua com os limiares de PERCENTUAL de
+  sempre, 5%/15%) — só a classificação visual de 4 níveis usada pra colorir/filtrar
+  essas 3 telas.
+- Testado via script Node isolado (mesma técnica de sempre): os limites exatos das 4
+  faixas (R$100/500/2000) caem no nível certo, incluindo os valores de fronteira (R$100
+  ainda é Baixa, R$100,01 já é Média, etc.), `null` continua "Sem saldo", e um valor
+  negativo (não deveria acontecer na prática, já que `valorDivergente` sempre é
+  calculado com `Math.abs`, mas testado por robustez) classifica pelo valor absoluto.
+  Transpile Babel do arquivo inteiro conferido. **Verificação visual fica a cargo do
+  cliente** — mesma limitação de sempre (login exige Supabase Auth real).
