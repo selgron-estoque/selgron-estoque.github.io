@@ -887,3 +887,17 @@ alter publication supabase_realtime add table app_config;
 --   select column_name from information_schema.columns where table_name = 'contagens' and column_name = 'urgente';
 -- =============================================================================
 alter table contagens add column if not exists urgente boolean not null default false;
+
+-- =============================================================================
+-- APROVAÇÃO POR VALOR (R$), NÃO MAIS POR % — cliente pediu pra remover a
+-- aprovação automática baseada em percentual: R$ 0 (contagem exata) continua
+-- aprovando sozinho; diferença até R$ 49,99 vai direto pra análise do líder;
+-- R$ 50 ou mais primeiro passa por segunda contagem. Regra em si é só
+-- código (`classifyDivergence`/`computeStatus` em index.html), não precisa
+-- de coluna nova pra isso — mas a recontagem cuja diferença bate EXATA com a
+-- rodada anterior ("Diferença confirmada, seguir com ajuste") precisa de um
+-- campo pra persistir esse sinal e sincronizar entre aparelhos.
+-- Mesma introspecção de sempre antes de rodar:
+--   select column_name from information_schema.columns where table_name = 'contagens' and column_name = 'diferenca_confirmada';
+-- =============================================================================
+alter table contagens add column if not exists diferenca_confirmada boolean not null default false;

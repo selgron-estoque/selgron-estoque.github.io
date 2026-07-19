@@ -4833,3 +4833,63 @@ Baixa, R$100–500 Média, R$500–2.000 Alta, acima de R$2.000 Crítica.
   calculado com `Math.abs`, mas testado por robustez) classifica pelo valor absoluto.
   Transpile Babel do arquivo inteiro conferido. **Verificação visual fica a cargo do
   cliente** — mesma limitação de sempre (login exige Supabase Auth real).
+
+## Aprovação automática deixa de ser por %, passa a ser por valor (R$) da diferença
+
+Cliente pediu "remover aprovação automática" — a regra de negócio real
+(`classifyDivergence`/`computeStatus`, o Módulo 7, que decide se o item é aprovado
+sozinho, vai pra segunda contagem, ou vai direto pro líder) sempre usou PERCENTUAL de
+diferença (≤5% aprovado sozinho, 5-15% segunda contagem, >15% líder). O problema (mesmo
+já identificado na mudança anterior da classificação visual): um item caro com pouca %
+de diferença passava aprovado sozinho sem ninguém ver, enquanto um item barato com %
+alta ia pra fila à toa. Passei pelo processo de esclarecer o pedido com o cliente em
+várias rodadas (`AskUserQuestion`) até fechar a regra exata:
+
+- **1ª contagem**: diferença de **R$ 0** (contagem bateu exata) → continua aprovada
+  sozinha, é a única exceção que sobrou — não tem o que analisar quando não existe
+  diferença nenhuma. Diferença de **R$ 0,01 até R$ 49,99** → vai direto pra análise do
+  líder (não compensa o esforço operacional de recontar fisicamente um valor tão baixo).
+  Diferença de **R$ 50 ou mais** → primeiro passa por segunda contagem, só depois escala
+  pro líder se ainda divergir.
+- **Recontagem** (2ª contagem em diante): continua indo pro líder sempre que ainda
+  houver diferença (comportamento que já existia, `computeStatus` não mudou nada aqui) —
+  mas se a diferença da recontagem bater **exatamente igual** à da rodada anterior, isso
+  agora é sinalizado com uma mensagem extra pro líder: **"Diferença confirmada, seguir
+  com ajuste"** — indica que já foi conferido duas vezes e chegou no mesmo número, então
+  não há motivo pra desconfiar de erro de contagem, só aplicar o ajuste.
+- **`classifyDivergence(valorDivergente)`** trocou de parâmetro (era `pct`) — mesma
+  estrutura de retorno (`level`/`label`/`rule`), só o critério mudou. **`computeStatus`
+  não precisou de NENHUMA mudança de código** — já decidia tudo a partir de `level`
+  ('ok'/'warn'/outro), só o que gera esse `level` que mudou de % pra R$. Importante:
+  `level==='danger'` deixou de significar "pior caso" (era o >15% antigo) e passou a
+  significar "diferença pequena, vai direto pro líder sem recontar" — e `level==='warn'`
+  deixou de ser "moderado" e virou "diferença grande, precisa conferir de novo antes" —
+  documentado com comentário extenso no código pra não confundir quem ler depois.
+- **`diffValor`** (`CountStep`, ao vivo, antes de finalizar) — `Math.abs(diffAbs) *
+  product.custoUnit`, mesma fórmula que `valorDivergente` já usava em `finalize()`, só
+  calculada um passo antes (durante a digitação) pra decidir a classificação/cor na tela
+  em tempo real, não só depois de confirmar.
+- **`diferencaConfirmada`** (novo campo em `contagens`, `backend/schema.sql`) — calculado
+  em `CountStep` comparando a QUANTIDADE (`diffAbs`, não o valor em R$, pra não depender
+  de arredondamento de multiplicação) desta rodada com a da rodada anterior
+  (`previousCount.diferenca`, só existe em recontagem via `RecountFlow`). Exibido em
+  `DivergentItemsPanel` como um aviso extra (`divergence-alert`) ao lado do motivo.
+- **`percentual`/`diffPct` continuam calculados e salvos** — não decidem mais aprovação,
+  mas continuam alimentando Indicadores/Tendência Semanal (que não foram tocados nesta
+  mudança) e aparecem como coluna informativa nos cards.
+- **`buildRecontarSeedsFromHistorico`** (import da planilha antiga) também trocou de
+  classificar por `percentual` pra `valor_divergente` — mesmo critério, mantém
+  consistência (esse `status_aprovacao` já era fixo em `'aguardando_segunda'`
+  independente da classificação, então só o RÓTULO exibido mudou, não o roteamento).
+- **"Regras de Divergência"** (painel em Relatórios) reescrito com as faixas novas em
+  R$ e uma nota sobre "Diferença confirmada".
+- Testado via scripts Node isolados (mesma técnica de sempre): as 8 combinações de
+  1ª contagem × valor (R$0/R$0,01/R$49,99/R$50/R$1000) e recontagem × nível confirmam
+  o status certo em cada caso; `diferencaConfirmada` calculado certo nos 4 cenários
+  (recontagem com mesma diferença → true; com diferença diferente → false; 1ª contagem →
+  false; sem saldo local → false). Transpile Babel do arquivo inteiro conferido. **A
+  verificação visual de ponta a ponta (as 5 telas de contagem, o painel de Relatórios, o
+  aviso "Diferença confirmada") fica a cargo do cliente** — mesma limitação de sempre
+  (login exige Supabase Auth real, não simulável no sandbox sem rede). Falta o cliente
+  rodar o SQL novo (`backend/schema.sql`, `alter table contagens add column if not
+  exists diferenca_confirmada...`).

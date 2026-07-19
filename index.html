@@ -1051,6 +1051,7 @@ async function saveContagemToSupabase(count){
       almoxarifado: count.almoxarifado || null,
       data: count.data,
       hora: count.hora,
+      diferenca_confirmada: !!count.diferencaConfirmada,
     });
     if(error){
       console.warn('Falha ao salvar contagem no Supabase (mantida no localStorage):', error.message);
@@ -1126,6 +1127,7 @@ function contagemRowToLocal(row){
     recontagemSolicitadaPor: row.recontagem_solicitada_por,
     recontagemSolicitadaEm: row.recontagem_solicitada_em,
     urgente: !!row.urgente,
+    diferencaConfirmada: !!row.diferenca_confirmada,
     atualizadoEm: row.atualizado_em,
   };
 }
@@ -2010,7 +2012,7 @@ function buildRecontarSeedsFromHistorico(linhas){
       const percentual = (l.saldo_sistema!=null && l.saldo_sistema!==0 && l.diferenca!=null)
         ? (l.diferenca / l.saldo_sistema) * 100
         : null;
-      const classificacao = percentual!=null ? classifyDivergence(percentual).label : 'Divergência (importada do histórico)';
+      const classificacao = l.valor_divergente!=null ? classifyDivergence(Math.abs(l.valor_divergente)).label : 'Divergência (importada do histórico)';
       const idSeguro = 'CNT-HIST-' + String(l.produto_codigo).replace(/[^A-Za-z0-9]/g,'') + '-' + l.data.replace(/-/g,'');
       return {
         id: idSeguro,
@@ -2572,12 +2574,26 @@ function formatEnderecoInput(value){
   return out;
 }
 
-function classifyDivergence(pct){
-  const abs = Math.abs(pct);
-  if(abs === 0) return {level:'ok', label:'Sem divergência', rule:'Aprovado automaticamente'};
-  if(abs <= 5) return {level:'ok', label:'Dentro da tolerância', rule:'Aprovação automática'};
-  if(abs <= 15) return {level:'warn', label:'Divergência moderada', rule:'Segunda contagem solicitada'};
-  return {level:'danger', label:'Divergência crítica', rule:'Enviado para análise do líder'};
+// MÓDULO 7 — regra de aprovação. Cliente pediu explicitamente pra remover a
+// aprovação automática "por %" (um item caro com pouca % de diferença
+// passava batido sem ninguém ver, um item barato com % alta ia pra fila à
+// toa) e passou a medir pelo VALOR (R$) da diferença, não mais percentual:
+//  R$ 0 (contagem bateu exata) → aprovado automaticamente (única exceção —
+//    não há divergência nenhuma pra alguém analisar)
+//  Até R$ 49,99            → direto pra análise do líder (não compensa o
+//    esforço de recontar fisicamente um valor tão baixo)
+//  A partir de R$ 50        → segunda contagem primeiro (só aqui vale a
+//    pena conferir de novo antes de escalar pro líder)
+// `computeStatus` (abaixo) não mudou nada — já decidia por `level`
+// ('ok'/'warn'/outro), só o critério que gera esse `level` mudou de % pra
+// R$. Ver também `diferencaConfirmada` em `CountStep`: numa recontagem, se
+// a diferença bater exatamente com a da rodada anterior, isso é sinalizado
+// à parte pro líder ("Diferença confirmada, seguir com ajuste").
+function classifyDivergence(valorDivergente){
+  const v = Math.abs(Number(valorDivergente));
+  if(v === 0) return {level:'ok', label:'Sem divergência', rule:'Aprovado automaticamente'};
+  if(v < 50) return {level:'danger', label:'Diferença abaixo de R$ 50', rule:'Enviado para análise do líder'};
+  return {level:'warn', label:'Diferença de R$ 50 ou mais', rule:'Segunda contagem solicitada'};
 }
 
 // Classificação visual de 4 níveis — usada só nos cards de Recontagens/
@@ -5785,10 +5801,22 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   const mostrarSaldo = hasSaldoLocal && (user.perfil !== 'operador' || operadorVeSaldo);
   const diffAbs = (qty!=='' && hasSaldoLocal) ? Number(qty) - product.saldoSistema : 0;
   const diffPct = (qty!=='' && hasSaldoLocal) ? (product.saldoSistema===0 ? 100 : (diffAbs/product.saldoSistema)*100) : 0;
+  // `diffValor` (R$) é o que decide a classificação agora, não mais
+  // `diffPct` — ver `classifyDivergence`. `diffPct`/`percentual` continuam
+  // calculados e salvos na contagem (usados em indicadores/tendência
+  // semanal, que não mudaram), só pararam de decidir aprovação.
+  const diffValor = (qty!=='' && hasSaldoLocal) ? Math.abs(diffAbs) * Number(product.custoUnit || 0) : 0;
   const classification = hasSaldoLocal
-    ? classifyDivergence(diffPct)
+    ? classifyDivergence(diffValor)
     : {level:'warn', label:'Sem saldo para comparar', rule:'Nenhum saldo carregado para este código — revisão manual necessária'};
   const statusAprovacao = hasSaldoLocal ? computeStatus(numeroContagem, classification.level) : 'aguardando_analise_lider';
+  // Recontagem (numeroContagem>=2) cuja diferença bate EXATAMENTE com a da
+  // rodada anterior — cliente pediu esse sinal à parte pro líder ("Diferença
+  // confirmada, seguir com ajuste"), distinto de uma recontagem que ainda
+  // diverge só que com outro número (também vai pro líder, mas sem essa
+  // mensagem). Compara a quantidade (`diffAbs`/`previousCount.diferenca`),
+  // não o valor em R$, pra não depender de arredondamento de multiplicação.
+  const diferencaConfirmada = !!(hasSaldoLocal && numeroContagem>=2 && previousCount && previousCount.diferenca===diffAbs);
 
   function finalize(){
     const count = {
@@ -5813,6 +5841,9 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
       statusAprovacao,
       numeroContagem,
       contagemAnteriorId,
+      // Recontagem cuja diferença bate exata com a rodada anterior — ver
+      // comentário perto de `diferencaConfirmada`, acima.
+      diferencaConfirmada,
       // Captura de foto/motivo da divergência foi removida da tela de
       // contagem (redesenho "coletor industrial" — pedido do cliente,
       // ver CLAUDE.md): a análise da divergência passou a acontecer só
@@ -5867,14 +5898,15 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   );
 
   // Mensagem de feedback ao vivo, assim que existe um número digitado —
-  // mesmos 3 níveis de `classifyDivergence` (ok/warn/danger), que já é a
-  // regra de negócio real (aprovação automática/segunda contagem/análise do
-  // líder) — não uma classificação nova só de exibição.
+  // mesmos 3 níveis de `classifyDivergence` (ok/warn/danger, agora por
+  // valor R$ em vez de %), que já é a regra de negócio real (aprovação
+  // automática/segunda contagem/análise do líder) — não uma classificação
+  // nova só de exibição.
   const feedbackTexto = !hasSaldoLocal
     ? classification.rule
     : classification.level==='ok' ? 'Contagem confere com o sistema.'
-    : classification.level==='warn' ? 'Diferença encontrada. Será enviada para conferência.'
-    : 'Diferença crítica. Necessária nova validação.';
+    : classification.level==='warn' ? 'Diferença de R$ 50 ou mais. Segunda contagem será solicitada.'
+    : 'Diferença encontrada. Enviada direto para análise do líder.';
 
   const progressoPct = (queueAtual && queueTotal) ? Math.round((queueAtual/queueTotal)*100) : null;
   const itensRestantes = (queueAtual && queueTotal) ? Math.max(queueTotal - queueAtual, 0) : null;
@@ -7073,6 +7105,11 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequ
                 </div>
               </div>
               {c.motivo && <div style={{padding:'10px 16px 0',fontSize:12.5}}>Motivo: <strong>{c.motivo}</strong></div>}
+              {c.diferencaConfirmada && (
+                <div className="divergence-alert" style={{margin:'10px 16px 0'}}>
+                  <Ic>⚠</Ic><span>Diferença confirmada, seguir com ajuste — a recontagem encontrou exatamente a mesma diferença da rodada anterior.</span>
+                </div>
+              )}
               {erros[c.id] && (
                 <div className="divergence-alert" style={{margin:'10px 16px 0'}}><Ic>⚠</Ic><span>{erros[c.id]}</span></div>
               )}
@@ -7652,9 +7689,11 @@ function ReportsScreen({counts, inventories, currentUser, sendHistory, onLogSend
       <div className="panel">
         <div className="section-title" style={{marginTop:0}}>Regras de Divergência</div>
         <div style={{fontSize:13,lineHeight:1.9,color:'var(--ink-dim)'}}>
-          <div>≤ 5% → <span style={{color:'var(--ok)'}}>Aprovação automática</span></div>
-          <div>5% – 15% → <span style={{color:'var(--warn)'}}>Segunda contagem obrigatória</span></div>
-          <div>&gt; 15% → <span style={{color:'var(--danger)'}}>Análise do líder de estoque</span></div>
+          <div>R$ 0 (contagem exata) → <span style={{color:'var(--ok)'}}>Aprovação automática</span></div>
+          <div>Até R$ 49,99 → <span style={{color:'var(--danger)'}}>Análise do líder de estoque</span></div>
+          <div>A partir de R$ 50 → <span style={{color:'var(--warn)'}}>Segunda contagem obrigatória</span></div>
+          <div style={{marginTop:8,fontSize:12}}>Na recontagem, se a diferença bater exata com a da 1ª contagem, vai
+          direto pro líder com o aviso "Diferença confirmada, seguir com ajuste".</div>
         </div>
       </div>
       <div className="panel">
