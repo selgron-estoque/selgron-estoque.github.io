@@ -6974,7 +6974,7 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
                     <>
                       <div className="result-grid" style={{marginTop:0,gridTemplateColumns:'repeat(4,1fr)'}}>
                         <div className="rg"><div className="k">Sistema</div><div className="v">{c.saldoSistema==null ? '—' : c.saldoSistema}</div></div>
-                        <div className="rg"><div className="k">1ª Contagem</div><div className="v">{c.qtdContada}</div></div>
+                        <div className="rg"><div className="k">1ª Cont.</div><div className="v">{c.qtdContada}</div></div>
                         <div className="rg"><div className="k">Diferença</div><div className="v" style={{color:sev.color}}>{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div></div>
                         <div className="rg"><div className="k">%</div><div className="v" style={{color:sev.color}}>{c.percentual==null ? '—' : c.percentual.toFixed(1)+'%'}</div></div>
                       </div>
