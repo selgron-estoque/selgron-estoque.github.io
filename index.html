@@ -290,9 +290,20 @@
      "Convenções de design" no CLAUDE.md), praticamente invisível no tema
      claro atual (branco em cima de branco). Corrigido pra --panel-raised,
      o mesmo cinza-claro sutil já usado em outros blocos de info do app. */
-  .result-grid .rg{background:var(--panel-raised);border-radius:8px;padding:10px 12px;}
-  .result-grid .rg .k{font-family:var(--font-mono);font-size:9.5px;text-transform:uppercase;color:var(--ink-dim);}
-  .result-grid .rg .v{font-family:var(--font-mono);font-size:17px;font-weight:700;margin-top:2px;}
+  .result-grid .rg{background:var(--panel-raised);border-radius:8px;padding:10px 12px;min-width:0;}
+  .result-grid .rg .k{font-family:var(--font-mono);font-size:9.5px;text-transform:uppercase;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .result-grid .rg .v{font-family:var(--font-mono);font-size:17px;font-weight:700;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  /* Grids de 4 colunas numa linha só (Sistema/1ª Cont./Diferença/%, ver
+     CLAUDE.md) — em telas de celular estreitas (~360-390px), mesmo com
+     nowrap, "DIFERENÇA" ainda não cabia no espaço de 1/4 da largura do
+     card. Aperta padding/fonte só nessa variante (classe result-grid-4col),
+     sem afetar os outros usos de 2 colunas com labels mais longos. */
+  @media (max-width:520px){
+    .result-grid.result-grid-4col{gap:5px;}
+    .result-grid.result-grid-4col .rg{padding:6px 4px;text-align:center;}
+    .result-grid.result-grid-4col .rg .k{font-size:7.2px;}
+    .result-grid.result-grid-4col .rg .v{font-size:13px;}
+  }
 
   /* TELA DE CONTAGEM — "coletor industrial" (Zebra/Honeywell/WMS), pedido
      do cliente: "esta é a tela mais importante... prioridade é velocidade
@@ -6972,7 +6983,7 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
                 <div className="count-card-content">
                   {detalhesAbertoId===c.id && (
                     <>
-                      <div className="result-grid" style={{marginTop:0,gridTemplateColumns:'repeat(4,1fr)'}}>
+                      <div className="result-grid result-grid-4col" style={{marginTop:0,gridTemplateColumns:'repeat(4,1fr)'}}>
                         <div className="rg"><div className="k">Sistema</div><div className="v">{c.saldoSistema==null ? '—' : c.saldoSistema}</div></div>
                         <div className="rg"><div className="k">1ª Cont.</div><div className="v">{c.qtdContada}</div></div>
                         <div className="rg"><div className="k">Diferença</div><div className="v" style={{color:sev.color}}>{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div></div>
@@ -7161,7 +7172,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequ
                   1ª contagem: {anterior.qtdContada} un. por {anterior.usuario} em {anterior.data} {anterior.hora||''}
                 </div>
               )}
-              <div className="result-grid" style={{gridTemplateColumns:'repeat(4,1fr)'}}>
+              <div className="result-grid result-grid-4col" style={{gridTemplateColumns:'repeat(4,1fr)'}}>
                 <div className="rg"><div className="k">Sistema</div><div className="v">{c.saldoSistema==null ? '—' : c.saldoSistema}</div></div>
                 <div className="rg"><div className="k">Qtd. Contada</div><div className="v">{c.qtdContada}</div></div>
                 <div className="rg"><div className="k">Diferença</div><div className="v" style={{color:sev.color}}>{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div></div>
@@ -7605,7 +7616,7 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
                 </div>
                 <div className="count-card-address-badge"><DIcon name="mapPin" size={16} /> {tip.endereco || tip.enderecoContado || 'não cadastrado'}</div>
               </div>
-              <div className="result-grid" style={{gridTemplateColumns:'repeat(4,1fr)'}}>
+              <div className="result-grid result-grid-4col" style={{gridTemplateColumns:'repeat(4,1fr)'}}>
                 <div className="rg"><div className="k">Sistema</div><div className="v">{tip.saldoSistema==null ? '—' : tip.saldoSistema}</div></div>
                 <div className="rg"><div className="k">Qtd. Final</div><div className="v">{tip.qtdContada}</div></div>
                 <div className="rg"><div className="k">Contagens</div><div className="v">{tip.numeroContagem}</div></div>

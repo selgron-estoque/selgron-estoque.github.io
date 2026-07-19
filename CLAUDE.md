@@ -5029,3 +5029,32 @@ unificado na rodada anterior) pedindo pra caber tudo numa linha só — o padrã
   apertaria demais num tablet. Ficaram como estavam (2 colunas).
 - Testado via transpile Babel do arquivo inteiro. **Verificação visual fica a cargo do
   cliente** — mesma limitação de sempre.
+
+## Bug real: label ainda quebrava linha no celular mesmo com a grid de 4 colunas
+
+Cliente testou a mudança anterior num celular de verdade e reportou que o título ainda
+quebrava linha — mesmo depois de já ter abreviado "1ª Contagem" pra "1ª Cont." numa
+correção anterior (feita só via commit, sem seção própria aqui). A abreviação sozinha
+não resolvia porque o problema era estrutural, não só de um rótulo específico:
+`.result-grid .rg .k` (o rótulo) nunca teve `white-space:nowrap` — em qualquer tela
+estreita o suficiente, QUALQUER um dos 4 rótulos (inclusive "DIFERENÇA", o mais longo)
+podia quebrar linha, dependendo da largura exata do aparelho.
+
+- **`.result-grid .rg .k`/`.rg .v`** ganharam `white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis` (mais `min-width:0` no `.rg`, necessário pra um item de grid
+  respeitar `overflow`/`text-overflow` em vez de estourar a coluna) — agora é
+  estruturalmente impossível qualquer rótulo/valor quebrar em 2 linhas, não importa a
+  largura da tela; na pior hipótese ele trunca com reticências antes de quebrar.
+- **Classe nova `result-grid-4col`** (adicionada às 3 grids de 4 colunas da rodada
+  anterior — `RecountsPanel`/`DivergentItemsPanel`/`ConcludedCountsPanel`, sem tocar nas
+  2 grids de 2 colunas que não fazem parte dessa variante) + um `@media
+  (max-width:520px)` (mesmo breakpoint já usado por `.cs-mini-grid` em outro lugar do
+  app) que aperta ainda mais o `.rg` nessa variante (padding 6px 4px, texto centralizado,
+  fonte do rótulo 7.2px, fonte do valor 13px, gap 5px) — só reduzir o rótulo pra "1ª
+  Cont." não bastava porque o ESPAÇO disponível por coluna num celular real (~360-390px)
+  é pequeno de mais mesmo pro texto já abreviado com o padding/fonte originais; a
+  combinação de nowrap+ellipsis (nunca quebra) com essa fonte/padding menor (o texto
+  cabe de verdade, não só trunca) resolve os dois lados do problema.
+- Testado via transpile Babel do arquivo inteiro. **Verificação visual num celular real
+  fica a cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth
+  real, não simulável no sandbox sem rede).
