@@ -4466,3 +4466,85 @@ mesmo motor `CountStep`).
   depois de cada edit. **A verificação visual de ponta a ponta (as 5 telas de contagem
   + o toggle em Configurações) fica a cargo do cliente** — mesma limitação de sempre
   (login exige Supabase Auth real, não simulável no sandbox sem rede).
+
+## Grupos excluídos da contagem automática + tempo de inatividade configurável
+
+Dois pedidos do cliente na sequência do anterior, ambos em Configurações: (1) "incluir
+uma opção que eu posso definir o grupo/familia que podem cair ou não em uma rota de
+inventário, existem grupos que o material não existe fisicamente" — alguns grupos têm
+saldo carregado no Supabase (provavelmente remanescente contábil/administrativo do
+Protheus) mas o material em si não existe fisicamente no almoxarifado, então a rota
+automática nunca deveria escolher um item de lá pra contar; (2) trocar o tempo de
+logout por inatividade (hoje fixo em 15 min, `SESSION_TIMEOUT_MS`) por um campo
+configurável em minutos.
+
+### Grupos Excluídos da Contagem Automática
+
+- **`gruposExcluidos`** (`usePersistedState('gruposExcluidos', [])`, em `App()`) — lista
+  de códigos de grupo. Reaproveita o mesmo `GrupoMultiSelectField` já usado em "Contagem
+  por Grupo" (`NewInventory`/`PickCountType`) pra escolher os grupos, alimentado pela
+  MESMA `fetchGruposComEstoque()` (sem aplicar a própria exclusão nessa chamada — o
+  admin precisa continuar vendo um grupo já excluído na lista pra poder desmarcá-lo,
+  senão ficaria sem jeito de reverter).
+- **Onde a exclusão é aplicada** — sempre client-side, dentro das duas funções que já
+  buscam itens/grupos do Supabase (`fetchContagemItensPrioritarios`/
+  `fetchGruposComEstoque`, ambas ganharam um parâmetro novo opcional
+  `gruposExcluidos`): a lista de itens prioritários (Aleatória/Curva ABC/Rota) filtra
+  fora qualquer item cujo `grupo` esteja na lista de exclusão, e o seletor de "Contagem
+  por Grupo" (`NewInventory`, líder/admin; `PickCountType`, operador avulso) para de
+  oferecer esses grupos pra escolha manual — não faz sentido deixar escolher à mão um
+  grupo marcado como "não existe fisicamente".
+- **Decisão consciente: filtro no CLIENTE, não na RPC do Supabase** — a alternativa
+  (adicionar um parâmetro `p_grupos_excluidos` na função SQL `contagem_itens_
+  prioritarios`) exigiria o cliente rodar uma migração de SQL antes da configuração
+  funcionar, com risco de a RPC simplesmente falhar nesse meio-tempo (PostgREST rejeita
+  parâmetro que a função ainda não conhece) — pior que uma correção mais simples e
+  imediata. Como a exclusão acontece DEPOIS do `limit` já aplicado pela RPC, a função
+  busca um "buffer" 4× maior (até um teto de 2000) quando há grupos excluídos
+  configurados, filtra, e só então corta pro tamanho pedido — evita devolver menos itens
+  do que o necessário só porque parte do buffer caiu num grupo excluído.
+- **Fora de escopo, de propósito**: busca manual por código (`ManualCountFlow`, via
+  `searchSupabaseCatalog`) não é afetada — o pedido foi sobre geração AUTOMÁTICA de fila/
+  rota, não sobre impedir a busca deliberada de um código específico que o operador já
+  sabe que precisa contar.
+
+### Tempo de Inatividade configurável
+
+- **`SESSION_TIMEOUT_MS`** (constante fixa de 15 min) virou **`DEFAULT_SESSION_TIMEOUT_
+  MIN = 15`** (só o valor de fábrica) + **`sessionTimeoutMin`**
+  (`usePersistedState('sessionTimeoutMin', DEFAULT_SESSION_TIMEOUT_MIN)`, guardado em
+  MINUTOS — é o que aparece no campo do admin, convertido pra ms só na hora de montar o
+  timer). O efeito de logout por inatividade em `App()` ganhou `sessionTimeoutMin` como
+  dependência — mudar o valor reinicia o timer com a duração nova imediatamente, sem
+  precisar de novo login.
+- Campo numérico simples (Configurações → "Tempo de Inatividade") com botão "Salvar" —
+  não salva a cada tecla digitada (evitaria salvar um valor incompleto no meio da
+  digitação, tipo "1" antes de completar "15"), só quando confirmado. Valor inválido
+  (vazio, zero, negativo) desabilita o botão em vez de aceitar e quebrar o timer.
+
+### Limitação importante, documentada na própria tela: estas 3 configurações são por aparelho
+
+`operadorVeSaldo`/`gruposExcluidos`/`sessionTimeoutMin` são todas `usePersistedState`
+(`localStorage`) — ou seja, cada configuração vale só no aparelho/navegador onde o admin
+mexeu nela, mesmo critério que login/usuários já tiveram antes de existir sincronização
+real (ver seção "Persistência local" no início deste histórico). Como o objetivo
+declarado é "eu decidir pelo operador" e o operador normalmente usa um tablet
+DIFERENTE do aparelho do admin, isso é uma limitação real, não cosmética — adicionada
+uma nota visível na própria tela de Configurações avisando isso, em vez de deixar o
+admin assumir (incorretamente) que a mudança já vale em todos os tablets. Se o cliente
+notar que outro aparelho não respeita a configuração (mesmo padrão de outras vezes neste
+projeto — ver "Terceiro pedaço do backend real", que resolveu exatamente esse tipo de
+lacuna pra inventários/contagens), o próximo passo seria migrar essas 3 configurações
+pra uma tabela nova no Supabase (ex. `app_config`, linha única, RLS de leitura pra todo
+autenticado e escrita só pra admin) em vez de `localStorage` — não fiz isso agora pra não
+converter um pedido de "2 configurações simples" numa migração de backend não pedida.
+
+- Testado via scripts Node isolados (mesma técnica de sempre): filtro de exclusão de
+  grupo (sem exclusão devolve tudo; excluindo um grupo remove só os itens dele; buffer +
+  corte pro limite pedido funciona mesmo com exclusão); cálculo de `timeoutMs` a partir
+  de minutos configurados, caindo pro padrão de 15 quando o valor é inválido/ausente/
+  zero/negativo. Transpile Babel do arquivo inteiro conferido depois de cada edit. **A
+  verificação visual de ponta a ponta (os 2 painéis novos em Configurações, o efeito
+  real na fila de contagem e no timer de logout) fica a cargo do cliente** — mesma
+  limitação de sempre (login exige Supabase Auth real, não simulável no sandbox sem
+  rede).
