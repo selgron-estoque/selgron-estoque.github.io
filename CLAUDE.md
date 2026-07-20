@@ -5595,3 +5595,33 @@ a altura e evitando amontoamento no celular.
   a barra de progresso, o comportamento em 1/2/4 colunas) fica a cargo do cliente** —
   mesma limitação de sempre (login exige Supabase Auth real, não simulável no sandbox
   sem rede).
+
+## Seção "Estoque" (título + card de total + mini-cards) removida de Indicadores
+
+Depois do redesenho dos cards "Resumo da Operação" (seção anterior), o card "Valor em
+Estoque" (R$ + "N armazéns ativos") passou a duplicar exatamente o que já aparecia mais
+abaixo na mesma tela, na seção "Estoque": o título "ESTOQUE (atualizado em...)", o card
+grande "Valor Total em Estoque" e os 3 mini-cards (Armazéns ativos/Itens distintos/
+Cobertura do catálogo). Cliente mandou print apontando pra essa seção e pediu a remoção
+— perguntei o escopo exato via `AskUserQuestion` (só o card de total / a seção inteira /
+só os mini-cards), já que "Itens distintos" e "Cobertura do catálogo" não aparecem em
+nenhum outro lugar da tela e a remoção total significa perder esses dois números.
+Cliente escolheu **a seção inteira**.
+
+- Removido do `Dashboard`: o `section-title` "Estoque" (com o aviso de fallback/data de
+  atualização) e o grid de 2 colunas com o card de total + os 3 mini-cards. O painel
+  "Valor por Armazém" (barras por armazém) **não foi tocado** — já tinha seu próprio
+  cabeçalho (`section-title` "Valor por Armazém" + subtítulo), então continua fazendo
+  sentido sozinho sem a seção "Estoque" acima dele. O empty-state ("Nenhum saldo
+  carregado ainda...") também continua, mostrado quando não há nenhum armazém com saldo.
+- **Limpeza de código morto**: `usandoSaldoReal`, `itensDistintos`, `coberturaPct` e o
+  estado `ultimaAtualizacaoEstoque` (só existiam pra alimentar o bloco removido) foram
+  apagados, incluindo a chamada a `fetchUltimaAtualizacaoEstoque()` dentro de
+  `carregarEstoque()` (não precisa mais buscar esse dado no Dashboard). A função
+  `fetchUltimaAtualizacaoEstoque` em si **não foi removida** — continua em uso pelo
+  `StockSyncPanel` (Configurações), que mostra a mesma informação em outro lugar,
+  independente do Dashboard. `armazensAtivos`/`resumoGeral` continuam (ainda alimentam o
+  card "Valor em Estoque" do "Resumo da Operação").
+- Testado via transpile Babel do arquivo inteiro, conferido que nenhuma das variáveis
+  removidas ficou referenciada em lugar nenhum. **Verificação visual fica a cargo do
+  cliente** — mesma limitação de sempre (login exige Supabase Auth real).

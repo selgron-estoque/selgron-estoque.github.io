@@ -8522,28 +8522,25 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   // "cache local removido") — se a tabela ainda estiver vazia, mostra um
   // empty-state honesto em vez de calcular a partir de dado estático.
   const [estoqueRemoto, setEstoqueRemoto] = useState(null); // null = ainda carregando/não tentado
-  const [ultimaAtualizacaoEstoque, setUltimaAtualizacaoEstoque] = useState(undefined);
   const [resumoGeral, setResumoGeral] = useState(null);
   const [modoValor, setModoValor] = useState('valor'); // 'valor' | 'percentual' — toggle do painel "Valor por Armazém"
   // "Atualizar" do painel de Filtros re-busca o saldo/resumo do Supabase —
   // ação de verdade (não decorativa): os gráficos de tendência já são
   // recalculados na hora a partir de `counts`/histórico (em memória, sem
-  // custo de rede), mas a seção "Estoque" depende de RPCs que só rodam no
-  // mount por padrão — esse botão dá ao usuário um jeito manual de puxar o
-  // saldo mais recente sem precisar recarregar a página inteira (útil se o
-  // líder subiu uma planilha SB2 nova em outro aparelho/aba enquanto essa
-  // tela já estava aberta).
+  // custo de rede), mas o painel "Valor por Armazém" depende de RPCs que só
+  // rodam no mount por padrão — esse botão dá ao usuário um jeito manual de
+  // puxar o saldo mais recente sem precisar recarregar a página inteira
+  // (útil se o líder subiu uma planilha SB2 nova em outro aparelho/aba
+  // enquanto essa tela já estava aberta).
   const [atualizando, setAtualizando] = useState(false);
   const carregarEstoque = async () => {
     setAtualizando(true);
     try {
-      const [rows, ultima, resumo] = await Promise.all([
+      const [rows, resumo] = await Promise.all([
         fetchEstoqueValorPorAlmoxarifado(),
-        fetchUltimaAtualizacaoEstoque(),
         fetchEstoqueResumoGeral(),
       ]);
       setEstoqueRemoto(rows);
-      setUltimaAtualizacaoEstoque(ultima);
       setResumoGeral(resumo);
     } finally {
       setAtualizando(false);
@@ -8553,14 +8550,11 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
 
   const porArmazem = {};
   (estoqueRemoto||[]).forEach(r=>{ porArmazem[r.almoxarifado || '—'] = Number(r.valor_total||0); });
-  const usandoSaldoReal = !!(estoqueRemoto && estoqueRemoto.length>0);
   const armazens = Object.keys(porArmazem).sort();
   const valorTotalEstoque = armazens.reduce((s,k)=>s+porArmazem[k],0);
   const maxArmazemValor = Math.max(1, ...armazens.map(a=>porArmazem[a]));
   const fmtReais = v => 'R$ ' + Number(v).toLocaleString('pt-BR',{maximumFractionDigits:0});
   const armazensAtivos = Number(resumoGeral?.armazens_ativos || armazens.length);
-  const itensDistintos = Number(resumoGeral?.itens_distintos || 0);
-  const coberturaPct = resumoGeral?.cobertura_pct!=null ? Number(resumoGeral.cobertura_pct) : null;
   const ARMAZEM_COLORS = ['#F6A200','#2563EB','#16A34A','#DB2777','#7C3AED','#0D9488','#64748B','#EA580C'];
 
   const porOperador = {};
@@ -8612,37 +8606,6 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
         <div className="kpi"><div className="kv">{contados}</div><div className="kl">Itens Contados</div></div>
         <div className="kpi"><div className="kv">{pendentes}</div><div className="kl">Itens Pendentes</div></div>
         <div className="kpi"><div className="kv">{counts.length ? '4.2min' : '—'}</div><div className="kl">Tempo Médio</div></div>
-      </div>
-
-      <div className="section-title">
-        Estoque
-        {!usandoSaldoReal && <span style={{fontSize:11,color:'var(--ink-dim)',textTransform:'none',letterSpacing:'normal',marginLeft:8}}>(nenhum saldo carregado ainda — envie a planilha SB2 em Configurações)</span>}
-        {usandoSaldoReal && ultimaAtualizacaoEstoque && <span style={{fontSize:11,color:'var(--ink-dim)',textTransform:'none',letterSpacing:'normal',marginLeft:8}}>(atualizado em {new Date(ultimaAtualizacaoEstoque).toLocaleString('pt-BR')})</span>}
-      </div>
-
-      <div style={{display:'grid',gridTemplateColumns:'minmax(220px,340px) 1fr',gap:14,marginBottom:14}}>
-        <div className="panel" style={{display:'flex',alignItems:'center',gap:14,margin:0}}>
-          <div style={{width:44,height:44,borderRadius:12,background:'rgba(246,162,0,0.12)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><DIcon name="box" size={20}/></div>
-          <div>
-            <div style={{fontSize:11,color:'var(--ink-dim)',textTransform:'uppercase',letterSpacing:'0.6px',fontFamily:'var(--font-mono)'}}>Valor Total em Estoque</div>
-            <div style={{fontSize:24,fontWeight:800,fontFamily:'var(--font-mono)'}}>{fmtReais(valorTotalEstoque)}</div>
-          </div>
-        </div>
-        <div className="panel" style={{display:'flex',flexWrap:'wrap',gap:18,alignItems:'center',margin:0}}>
-          {[
-            {ic:'building', label:'Armazéns ativos', value:armazensAtivos},
-            {ic:'box', label:'Itens distintos', value:itensDistintos.toLocaleString('pt-BR')},
-            {ic:'barChart', label:'Cobertura do catálogo', value: coberturaPct!=null ? coberturaPct.toFixed(1)+'%' : '—'},
-          ].map(t=>(
-            <div key={t.label} style={{display:'flex',alignItems:'center',gap:10,minWidth:150}}>
-              <div style={{width:34,height:34,borderRadius:9,background:'var(--panel-raised)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><DIcon name={t.ic} size={15}/></div>
-              <div>
-                <div style={{fontSize:16,fontWeight:700,fontFamily:'var(--font-mono)'}}>{t.value}</div>
-                <div style={{fontSize:10.5,color:'var(--ink-dim)'}}>{t.label}</div>
-              </div>
-            </div>
-          ))}
-        </div>
       </div>
 
       {armazens.length===0 && (
