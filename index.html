@@ -458,9 +458,9 @@
   .health-current-value{font-family:var(--font-display);font-size:26px;font-weight:700;}
   .health-current-label{font-size:11px;color:var(--ink-dim);margin-top:2px;white-space:nowrap;}
   @media (max-width:640px){
-    .health-card{flex-direction:column;align-items:stretch;}
-    .health-chart{max-width:none;order:3;}
-    .health-current{order:2;}
+    .health-card{flex-direction:column;align-items:stretch;margin-bottom:24px;}
+    .health-chart{max-width:none;order:3;margin-top:8px;}
+    .health-current{order:2;margin-top:14px;}
   }
 
   /* Painel "Filtros" do Dashboard — card premium estilo Power BI/Stripe
@@ -496,6 +496,7 @@
   .spin-icon{animation:tfb-spin 0.8s linear infinite;}
   @keyframes tfb-spin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
   @media (max-width:640px){
+    .trend-filter-bar{margin-bottom:24px;}
     .tfb-head-actions{margin-left:0;width:100%;justify-content:space-between;}
     .tfb-period-row{flex-direction:column;align-items:flex-start;}
     .tfb-custom-row{flex-direction:column;align-items:stretch;}
@@ -8279,9 +8280,18 @@ function HealthSparkline({pontos, color}){
           <title>{p.sublabel}: {p.acuracidade.toFixed(1)}%</title>
         </circle>
       ))}
-      {pontos.map((p,i)=>(
-        <text key={p.key+'-lbl'} x={x(i)} y={H-4} textAnchor="middle" fontSize={9} fill="var(--ink-dim)" fontFamily="var(--font-mono)">{p.sublabel}</text>
-      ))}
+      {pontos.map((p,i)=>{
+        // Rótulo do 1º/último ponto ancorado na PONTA (start/end) em vez de
+        // "middle" — com "middle" nesses dois, metade do texto (ex: "13/07")
+        // cai fora do viewBox (0-W), e o SVG recorta silenciosamente o que
+        // passa da borda (overflow implícito da raiz `<svg>`), cortando a
+        // data pela metade ("13/0"). Só os pontos do meio continuam
+        // centralizados, onde não há risco de estourar a borda.
+        const anchor = i===0 ? 'start' : (i===pontos.length-1 ? 'end' : 'middle');
+        return (
+          <text key={p.key+'-lbl'} x={x(i)} y={H-4} textAnchor={anchor} fontSize={9} fill="var(--ink-dim)" fontFamily="var(--font-mono)">{p.sublabel}</text>
+        );
+      })}
     </svg>
   );
 }

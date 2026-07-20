@@ -5625,3 +5625,35 @@ Cliente escolheu **a seção inteira**.
 - Testado via transpile Babel do arquivo inteiro, conferido que nenhuma das variáveis
   removidas ficou referenciada em lugar nenhum. **Verificação visual fica a cargo do
   cliente** — mesma limitação de sempre (login exige Supabase Auth real).
+
+## Bug real no celular: rótulo de data cortado no mini-gráfico "Saúde do Inventário" + mais respiro entre cards
+
+Cliente mandou print do celular mostrando o card "Saúde do Inventário" (rosa) com a
+última data do eixo cortada ("13/0" em vez de "13/07") e o painel "Filtros" logo abaixo
+parecendo colado/amontoado.
+
+- **Causa do corte, confirmada**: `HealthSparkline` (o mini-gráfico dentro do card) tem
+  `viewBox="0 0 320 92"` com `padR:8` — o rótulo do ÚLTIMO ponto era desenhado com
+  `textAnchor="middle"` centralizado bem perto da borda direita (x=312 de 320) — como o
+  texto "13/07" tem mais de 16px de largura (2×padR), metade dele ultrapassava x=320. O
+  elemento raiz `<svg>` tem overflow implícito `hidden` (comportamento padrão do
+  navegador), então esse excesso além do `viewBox` era recortado silenciosamente, sem
+  erro nenhum — sobrava só "13/0" visível. O mesmo risco existia pro PRIMEIRO ponto do
+  outro lado (nunca reproduzido no print, mas a mesma matemática se aplica).
+- **Correção**: o rótulo do primeiro ponto usa `textAnchor="start"`, o do último usa
+  `textAnchor="end"`, só os do meio continuam `"middle"` — ancorando cada rótulo de
+  ponta pro lado de DENTRO do gráfico, nenhum data-label mais arrisca ultrapassar os
+  limites do `viewBox`, não importa o texto. Os outros gráficos do Dashboard
+  (`WeeklyLineChart`/`WeeklyCountChart`) não tinham esse problema — o `viewBox` deles é
+  bem mais largo (760 contra 320) com `padR:30`, margem suficiente pro mesmo texto não
+  chegar perto da borda.
+- **Mais respiro entre os cards empilhados no celular** (`@media max-width:640px`):
+  `.health-card{margin-bottom:24px}` (era 18px, compartilhado com desktop),
+  `.health-chart`/`.health-current` ganharam `margin-top` (8px/14px) — no mobile eles são
+  reordenados pra ficar abaixo do texto principal via `order`, e sem uma margem própria
+  ficavam colados um no outro; `.trend-filter-bar{margin-bottom:24px}` (mesmo valor,
+  específico dessa faixa de tela) — o painel "Filtros" que vem logo depois do card rosa.
+- Testado via transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  (570 aberturas/570 fechamentos). **Verificação visual num celular real fica a cargo do
+  cliente** — mesma limitação de sempre (login exige Supabase Auth real, não simulável
+  no sandbox sem rede).
