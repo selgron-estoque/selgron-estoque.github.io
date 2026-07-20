@@ -7176,7 +7176,16 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
 // escondida inteira do operador) — mas as ações (aprovar/solicitar
 // recontagem) continuam só pra líder/admin, operador vê em modo leitura.
 function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequestRecount, onDeleteCount, onToggleUrgente}){
-  const aguardandoAnalise = counts.filter(c=>c.statusAprovacao==='aguardando_analise_lider');
+  // Bug real corrigido aqui: faltava a mesma checagem de "ponta da
+  // corrente" que RecountsPanel já tinha (`byOriginal`/`!byOriginal[c.id]`)
+  // — sem isso, uma linha com status 'aguardando_analise_lider' continuava
+  // aparecendo aqui MESMO DEPOIS de já existir uma rodada seguinte que
+  // resolveu a divergência (ex.: 2ª contagem ainda com o status antigo,
+  // mas a 3ª já bateu exato e foi auto-aprovada) — o item ficava "preso"
+  // pra sempre, exigindo decisão do líder sobre uma rodada já superada.
+  const byOriginal = {};
+  counts.forEach(c=>{ if(c.contagemAnteriorId) byOriginal[c.contagemAnteriorId]=c; });
+  const aguardandoAnalise = counts.filter(c=>c.statusAprovacao==='aguardando_analise_lider' && !byOriginal[c.id]);
   const canApprove = role==='lider' || role==='admin';
   // Revertido: essa tela não tem nenhum "valor" (R$) exibido — só quadro de
   // quantidades/percentual e o Motivo — então não há o que restringir pra

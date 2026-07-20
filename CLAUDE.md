@@ -6049,3 +6049,30 @@ focado assim que a tela abre, tornando esse comportamento fácil de disparar sem
 - Testado via transpile Babel do arquivo inteiro. **Verificação funcional (rolar o
   mouse sobre o campo sem mudar o valor) fica a cargo do cliente** — mesma limitação
   de sempre (login exige Supabase Auth real, não simulável no sandbox sem rede).
+
+## Bug real: item já resolvido continuava "preso" em Itens Divergentes
+
+Cliente reportou (com print + confirmando via consulta SQL direta em `contagens`): um
+item bateu exato na 3ª contagem (Sistema=19, Físico=19, diff=0, já auto-aprovado como
+`aprovado_segunda`) — mas a 2ª contagem (Leandro Oliane, Sistema=12/Físico=19/+7/58%,
+`status_aprovacao='aguardando_analise_lider'`) continuava aparecendo em "Itens
+Divergentes" pedindo decisão do líder, mesmo já superada pela 3ª.
+
+- **Causa raiz**: `DivergentItemsPanel` filtrava só por `statusAprovacao==='aguardando_
+  analise_lider'`, sem checar se aquela linha já tem uma rodada SEGUINTE
+  (`contagemAnteriorId` apontando pra ela) — diferente de `RecountsPanel`, que já fazia
+  essa checagem (`byOriginal`/`!byOriginal[c.id]`) desde que foi extraído como tela
+  própria. Como o status de uma rodada antiga nunca é atualizado quando surge uma nova
+  (mesmo padrão de "ponta da corrente" documentado em várias partes do app —
+  `buildConcludedChains`/`getOpenCountForProduct`), qualquer rodada intermediária cujo
+  status ainda fosse `aguardando_analise_lider` ficava "presa" pra sempre em Itens
+  Divergentes, mesmo depois de uma rodada seguinte já ter resolvido o caso (aprovada
+  automaticamente ou pelo líder).
+- **Correção**: `DivergentItemsPanel` ganhou o mesmo `byOriginal` que `RecountsPanel`
+  já tinha — `aguardandoAnalise` agora exclui qualquer linha que já tenha uma rodada
+  seguinte (`!byOriginal[c.id]`), mostrando só a PONTA real da cadeia. Correção é só de
+  leitura/filtro — não precisou de nenhuma mudança no banco nem de SQL de limpeza; a
+  linha antiga de Leandro simplesmente para de aparecer assim que o `index.html` novo
+  carregar, sem precisar reimportar nada.
+- Testado via transpile Babel do arquivo inteiro. **Verificação visual fica a cargo do
+  cliente** — mesma limitação de sempre (login exige Supabase Auth real).
