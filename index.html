@@ -8727,22 +8727,6 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
         </div>
       </div>
 
-      <div className="section-title">Divergência por Família/Grupo</div>
-      <div className="panel" style={{marginBottom:24}}>
-        {porFamilia.length===0 ? (
-          <div style={{color:'var(--ink-dim)',fontSize:13}}>
-            Ainda sem dado suficiente pra esse indicador — a família/grupo do produto só
-            é gravada em contagens feitas a partir de agora, aparece aqui conforme itens
-            divergentes forem sendo contados.
-          </div>
-        ) : porFamilia.map(([fam,n])=>(
-          <div key={fam} className="bar-row">
-            <div className="bl" style={{width:160}}>{fam}</div>
-            <div className="bar-track"><div className="bar-fill" style={{width:(n/maxFamilia*100)+'%', background:'#7B3FC4'}}><span style={{color:'#fff'}}>{n}</span></div></div>
-          </div>
-        ))}
-      </div>
-
       <InventoryHealthCard weeklyStats={weeklyStats} />
 
       <TrendFilterBar
@@ -8782,6 +8766,21 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
               <span className="chart-meta-badge">Meta: {META_ACURACIDADE_SEMANAL}%</span>
             </div>
             <MonthlyAccuracyBarChart months={monthlyStats} meta={META_ACURACIDADE_SEMANAL} />
+          </div>
+          <div className="panel" style={{margin:0}}>
+            <div style={{fontSize:13,fontWeight:700,marginBottom:16}}>Divergência por Família/Grupo</div>
+            {porFamilia.length===0 ? (
+              <div style={{color:'var(--ink-dim)',fontSize:13}}>
+                Ainda sem dado suficiente pra esse indicador — a família/grupo do produto
+                só é gravada em contagens feitas a partir de agora, aparece aqui conforme
+                itens divergentes forem sendo contados.
+              </div>
+            ) : porFamilia.map(([fam,n])=>(
+              <div key={fam} className="bar-row">
+                <div className="bl" style={{width:160}}>{fam}</div>
+                <div className="bar-track"><div className="bar-fill" style={{width:(n/maxFamilia*100)+'%', background:'#7B3FC4'}}><span style={{color:'#fff'}}>{n}</span></div></div>
+              </div>
+            ))}
           </div>
         </div>
       </div>

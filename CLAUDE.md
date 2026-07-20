@@ -5742,3 +5742,28 @@ contagem, toda vez que o indicador fosse calculado.
   projeto real — até lá, o painel mostra o empty-state (a coluna não existe ainda no
   banco, então `saveContagemToSupabase` vai falhar silenciosamente ao tentar gravar
   `familia` — mesmo tratamento "fire and forget" de sempre, não quebra a contagem).
+
+## "Divergência por Família/Grupo" muda de lugar — dentro do grid de gráficos, ao lado de "Acuracidade Mensal"
+
+Cliente pediu reposicionar o indicador novo: "colocar ao lado de acuracidade mensal na
+web/computador e nos móveis abaixo de acuracidade mensal" — antes ele era um painel
+solto logo abaixo dos 4 cards de KPI, acima de "Saúde do Inventário".
+
+- **Movido pra dentro do `weekly-charts-grid`** (o mesmo grid que já tem "Acuracidade
+  Semanal"/"Contagens na Semana"/"Acuracidade Mensal"), como o 4º item, logo depois do
+  painel "Acuracidade Mensal" no JSX — **nenhuma CSS nova precisou ser escrita**: esse
+  grid já é `display:flex;flex-direction:column` no celular (qualquer item novo entra
+  embaixo do anterior, na ordem do documento — exatamente "abaixo de Acuracidade
+  Mensal") e vira `display:grid;grid-template-columns:1fr 1fr` a partir de 900px — com
+  3 painéis antigos + este novo (4 no total), o grid de 2 colunas preenche
+  perfeitamente: linha 1 = Semanal + Contagens, linha 2 = Mensal + Família/Grupo (antes
+  a 2ª linha tinha só "Acuracidade Mensal" sozinho, com uma lacuna vazia ao lado — o
+  card novo preenche exatamente essa lacuna, "ao lado de Acuracidade Mensal" como
+  pedido).
+- Virou um painel com cabeçalho PRÓPRIO dentro do card (`fontSize:13,fontWeight:700`,
+  mesmo estilo dos outros 3 títulos de gráfico) em vez de um `section-title` de página —
+  mesmo padrão visual dos 3 vizinhos no grid, já que agora ele é mais um item da mesma
+  fileira, não uma seção separada.
+- Testado via transpile Babel do arquivo inteiro (CSS não mudou, sem novo balanceamento
+  necessário). **Verificação visual (lado a lado no desktop, empilhado no celular) fica
+  a cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth real).
