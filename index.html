@@ -7041,17 +7041,20 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
   const aguardandoSegunda = counts.filter(c=>c.statusAprovacao==='aguardando_segunda' && !byOriginal[c.id]);
 
   // Filtro de período ("Filtros"), mesmo componente já usado em Indicadores/
-  // Contagens Concluídas — chave própria (`recontagensTrendFilter`). Essa
-  // tela já teve um filtro de período antes, removido numa rodada anterior
-  // por só existir pra alimentar um contador de "concluídas" que não fazia
-  // sentido aqui (ver CLAUDE.md, "ListaProgressoHeader removido"). Desta
-  // vez o filtro tem um propósito diferente e honesto: estreitar a PRÓPRIA
-  // lista de pendentes por data, útil pra achar um item específico numa
-  // fila grande sem rolar tudo. O total real de pendentes
-  // (`aguardandoSegunda.length`, sem filtro nenhum) nunca é escondido — só
-  // a lista abaixo é que pode ficar mais curta, e a diferença é mostrada
-  // explicitamente no cabeçalho.
-  const [trendFilter, setTrendFilter] = usePersistedState('recontagensTrendFilter', {tipo:'30d', from:'', to:''});
+  // Contagens Concluídas. Essa tela já teve um filtro de período antes,
+  // removido numa rodada anterior por só existir pra alimentar um contador
+  // de "concluídas" que não fazia sentido aqui (ver CLAUDE.md,
+  // "ListaProgressoHeader removido"). Desta vez o filtro tem um propósito
+  // diferente e honesto: estreitar a PRÓPRIA lista de pendentes por data,
+  // útil pra achar um item específico numa fila grande sem rolar tudo. O
+  // total real de pendentes (`aguardandoSegunda.length`, sem filtro
+  // nenhum) nunca é escondido — só a lista abaixo é que pode ficar mais
+  // curta, e a diferença é mostrada explicitamente no cabeçalho.
+  // `useState` puro (não `usePersistedState`) — pedido do cliente: o
+  // filtro deve voltar ao padrão sempre que a tela recarregar, não ficar
+  // lembrado entre sessões (mesmo critério em Itens Divergentes/Contagens
+  // Concluídas, ver abaixo).
+  const [trendFilter, setTrendFilter] = useState({tipo:'30d', from:'', to:''});
   const hojeStr = hojeLocalStr();
   const { from: dataInicioStr, to: dataFimStr } = computeTrendRange(trendFilter.tipo, hojeStr, trendFilter.from, trendFilter.to);
   const aguardandoSegundaNoPeriodo = aguardandoSegunda.filter(c=>c.data && c.data>=dataInicioStr && c.data<=dataFimStr);
@@ -7302,8 +7305,9 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequ
   }, [menuAbertoId]);
 
   // Filtro de período ("Filtros"), mesmo critério e mesmo comentário já
-  // usado em RecountsPanel — chave própria (`divergentesTrendFilter`).
-  const [trendFilter, setTrendFilter] = usePersistedState('divergentesTrendFilter', {tipo:'30d', from:'', to:''});
+  // usado em RecountsPanel — `useState` puro, não `usePersistedState` (o
+  // filtro volta ao padrão sempre que a tela recarregar, pedido do cliente).
+  const [trendFilter, setTrendFilter] = useState({tipo:'30d', from:'', to:''});
   const hojeStr = hojeLocalStr();
   const { from: dataInicioStr, to: dataFimStr } = computeTrendRange(trendFilter.tipo, hojeStr, trendFilter.from, trendFilter.to);
   const aguardandoAnaliseNoPeriodo = aguardandoAnalise.filter(c=>c.data && c.data>=dataInicioStr && c.data<=dataFimStr);
@@ -7713,9 +7717,10 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
   const [atualizando, setAtualizando] = useState(false);
 
   // Mesmo painel "Filtros" (presets de calendário) já usado em Indicadores —
-  // chave de persistência própria (`concluidasTrendFilter`), não compartilha
-  // estado com o filtro do Dashboard, são telas independentes.
-  const [trendFilter, setTrendFilter] = usePersistedState('concluidasTrendFilter', {tipo:'30d', from:'', to:''});
+  // `useState` puro, não `usePersistedState` (pedido do cliente: o filtro
+  // volta ao padrão "Últimos 30 dias" sempre que a tela recarregar, em vez
+  // de continuar lembrando o período escolhido da última vez).
+  const [trendFilter, setTrendFilter] = useState({tipo:'30d', from:'', to:''});
   const hojeStr = hojeLocalStr();
   const { from: dataInicioStr, to: dataFimStr } = computeTrendRange(trendFilter.tipo, hojeStr, trendFilter.from, trendFilter.to);
 

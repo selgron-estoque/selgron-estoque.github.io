@@ -6167,3 +6167,24 @@ detecta erro de SINTAXE, não de ORDEM de declaração em tempo de execução).
   válido sintaticamente), só aparece em tempo de execução. Quando a mudança for de
   risco parecido (novo hook em componente extenso), vale a pena rodar um teste de
   render de verdade (jsdom+react-dom, não só transpile) antes de publicar.
+
+## Filtro de período (Recontagens/Itens Divergentes/Contagens Concluídas) deixa de persistir
+
+Cliente pediu, olhando o painel "Filtros" nessas 3 telas: "sempre que atualizar a tela
+limpar o filtro" — diferente do filtro de "Tendência" em Indicadores
+(`dashboardTrendFilter`), que o próprio cliente já tinha pedido explicitamente pra
+PERSISTIR entre sessões numa rodada anterior (ver "Painel 'Filtros' — redesign completo
+estilo SaaS premium", "persistir o último filtro utilizado no localStorage").
+
+- **`recontagensTrendFilter`/`divergentesTrendFilter`/`concluidasTrendFilter`
+  trocaram de `usePersistedState` pra `useState` puro** — os três voltam ao padrão
+  ("Últimos 30 dias") toda vez que a tela é montada de novo (recarregar a página,
+  ou só navegar pra outra tela e voltar), em vez de lembrar o período escolhido da
+  última vez. `dashboardTrendFilter` (Indicadores) **não foi tocado** — continua
+  persistindo, é uma tela diferente com um pedido oposto já confirmado antes.
+- Testado via harness real (jsdom + `react-dom/server`, mesma técnica usada na
+  investigação do bug crítico anterior): `RecountsPanel`/`DivergentItemsPanel`/
+  `ConcludedCountsPanel` renderizam sem erro com o novo `useState`. Transpile Babel do
+  arquivo inteiro e balanceamento de chaves do CSS conferidos (575/575, sem mudança).
+  **Verificação visual (o filtro realmente resetando ao recarregar) fica a cargo do
+  cliente** — mesma limitação de sempre (login exige Supabase Auth real).
