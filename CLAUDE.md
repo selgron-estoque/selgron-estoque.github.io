@@ -5695,3 +5695,50 @@ tudo com pouco respiro nessa faixa intermediária.
   largura real da tela em pixels CSS antes de mexer de novo — dessa vez a faixa coberta
   (até 1024px) já é bem generosa, então um relato repetido provavelmente indicaria outra
   causa, não breakpoint.
+
+## Indicador "Divergência por Família/Grupo" em "Resumo da Operação"
+
+Cliente pediu: "em 'resumo da operação', inclua um indicador de divergência por
+família/grupo". Investigando antes de implementar: o objeto `count` (gravado por
+`CountStep.finalize()`) nunca guardou a família/grupo do produto — só existia em
+`product.familia` (resolvido de `describeGrupo(grupo)` nas funções que montam produto a
+partir do catálogo Supabase, ex. `estoqueRowToProduct`/`searchSupabaseCatalog`), sem
+nunca ser copiado pra dentro da contagem em si. Sem isso, não dava pra saber "qual
+família esse item divergente pertence" sem uma consulta extra ao catálogo pra cada
+contagem, toda vez que o indicador fosse calculado.
+
+- **`CountStep.finalize()`** ganhou `familia: product.familia || null` no objeto
+  `count` — mesmo padrão já usado pra `almoxarifado` (gravar na própria contagem em vez
+  de re-consultar depois). Como todos os produtos vindos do catálogo Supabase (via
+  `estoqueRowToProduct`, usado por `fetchContagemItensPrioritarios`/
+  `fetchProdutosByCodigos`, e `searchSupabaseCatalog`) já resolvem `familia` há tempos,
+  a maioria dos itens contados a partir de agora já vem com esse dado — só produtos
+  totalmente fora do catálogo (fallback sintético de item não encontrado) ficam sem.
+- **`saveContagemToSupabase`/`contagemRowToLocal`** ganharam o mapeamento da coluna nova
+  (`familia`) — mesmo padrão de sempre pra campo novo em `contagens` (o Realtime já
+  cobre de graça, via `select('*')`).
+- **`backend/schema.sql`**: `contagens.familia text` (nullable) na definição da tabela +
+  bloco de migração `alter table contagens add column if not exists familia text;` pro
+  projeto já aplicado, com a mesma introspecção de sempre documentada no comentário.
+- **`porFamiliaObj`/`porFamilia`/`maxFamilia`** (Dashboard, perto de `porMotivo`) — soma
+  `divergentes` (mesmo pool já usado por "Principais Causas de Erro") por `c.familia`,
+  ignorando contagens sem esse campo (contagens antigas, de antes desta mudança, ou
+  itens fora do catálogo) — **não fabrica** uma família fictícia pra completar a soma.
+  Ordenado do maior pro menor.
+- **Painel novo** ("Divergência por Família/Grupo", dentro de "Resumo da Operação", logo
+  abaixo dos 4 cards de KPI e antes do card "Saúde do Inventário") — mesmo padrão visual
+  de barra já usado em "Principais Causas de Erro"/"Valor por Armazém"
+  (`.bar-row`/`.bar-track`/`.bar-fill`, sem CSS novo), cor roxa (`#7B3FC4`, a mesma já
+  usada no ícone do card "Acuracidade Geral" da mesma seção, mantém a paleta
+  consistente). **Empty-state explícito** quando `porFamilia` está vazio (típico logo
+  após o deploy, antes de qualquer contagem nova ser feita com o campo populado) —
+  avisa que o dado aparece conforme novas contagens forem registradas, em vez de
+  esconder o painel inteiro ou mostrar um gráfico vazio sem explicação.
+- Testado via transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  (571 aberturas/571 fechamentos, sem mudança — só JSX/JS foram tocados, nenhuma classe
+  CSS nova). **Verificação visual fica a cargo do cliente** — mesma limitação de sempre
+  (login exige Supabase Auth real, não simulável no sandbox sem rede). Falta o cliente
+  rodar o SQL novo (`alter table contagens add column if not exists familia text;`) no
+  projeto real — até lá, o painel mostra o empty-state (a coluna não existe ainda no
+  banco, então `saveContagemToSupabase` vai falhar silenciosamente ao tentar gravar
+  `familia` — mesmo tratamento "fire and forget" de sempre, não quebra a contagem).

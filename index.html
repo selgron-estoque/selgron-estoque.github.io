@@ -1122,6 +1122,7 @@ async function saveContagemToSupabase(count){
       tem_foto: count.foto,
       observacao: count.observacao,
       almoxarifado: count.almoxarifado || null,
+      familia: count.familia || null,
       data: count.data,
       hora: count.hora,
       diferenca_confirmada: !!count.diferencaConfirmada,
@@ -1200,6 +1201,7 @@ function contagemRowToLocal(row){
     foto: row.tem_foto,
     observacao: row.observacao,
     almoxarifado: row.almoxarifado,
+    familia: row.familia,
     data: row.data,
     hora: row.hora,
     inventario: row.inventario_id,
@@ -6031,6 +6033,11 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
       // contagem pra RecountFlow poder repetir a comparação no armazém
       // certo, sem ambiguidade.
       almoxarifado: product.almoxarifado && product.almoxarifado!=='—' ? product.almoxarifado : null,
+      // Família/grupo do produto (ex: "MAT EXPEDIENTE", ver describeGrupo) —
+      // guardado na própria contagem pra alimentar o indicador "Divergência
+      // por Família/Grupo" em Indicadores (Resumo da Operação) sem precisar
+      // de uma consulta extra ao catálogo na hora de montar esse indicador.
+      familia: product.familia || null,
       data: hojeLocalStr(),
       hora: new Date().toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'}),
       inventario: inv ? inv.id : '—',
@@ -8591,6 +8598,18 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   divergentes.forEach(c=>{ if(c.motivo) porMotivo[c.motivo] = (porMotivo[c.motivo]||0)+1; });
   const maxMotivo = Math.max(1, ...Object.values(porMotivo));
 
+  // Divergência por Família/Grupo (Resumo da Operação) — `familia` só existe
+  // em contagens registradas a partir do redesenho "coletor industrial" (ver
+  // CLAUDE.md, `CountStep.finalize`), que passou a gravar o campo junto da
+  // contagem; contagens antigas e itens do histórico importado (que nunca
+  // teve coluna de grupo/família na planilha) não têm esse dado — ficam de
+  // fora da soma em vez de aparecerem como "sem família" fabricado. Ordenado
+  // do maior pro menor, mesmo critério visual de "Principais Causas de Erro".
+  const porFamiliaObj = {};
+  divergentes.forEach(c=>{ if(c.familia) porFamiliaObj[c.familia] = (porFamiliaObj[c.familia]||0)+1; });
+  const porFamilia = Object.entries(porFamiliaObj).sort((a,b)=>b[1]-a[1]);
+  const maxFamilia = Math.max(1, ...porFamilia.map(([,n])=>n));
+
   const topDivergentes = [...todasParaQualidade].sort((a,b)=>Math.abs(b.diferenca||0)-Math.abs(a.diferenca||0)).slice(0,5);
   // "Tendência Semanal" usa um pool AINDA MAIS amplo que "Qualidade" — inclui
   // status "Pendente" do histórico (fora de escopo pro resto do app), porque
@@ -8706,6 +8725,22 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
           <div className="ops-kpi-value">{fmtReais(valorTotalEstoque)}</div>
           <div className="ops-kpi-meta">{armazensAtivos} armazéns ativos</div>
         </div>
+      </div>
+
+      <div className="section-title">Divergência por Família/Grupo</div>
+      <div className="panel" style={{marginBottom:24}}>
+        {porFamilia.length===0 ? (
+          <div style={{color:'var(--ink-dim)',fontSize:13}}>
+            Ainda sem dado suficiente pra esse indicador — a família/grupo do produto só
+            é gravada em contagens feitas a partir de agora, aparece aqui conforme itens
+            divergentes forem sendo contados.
+          </div>
+        ) : porFamilia.map(([fam,n])=>(
+          <div key={fam} className="bar-row">
+            <div className="bl" style={{width:160}}>{fam}</div>
+            <div className="bar-track"><div className="bar-fill" style={{width:(n/maxFamilia*100)+'%', background:'#7B3FC4'}}><span style={{color:'#fff'}}>{n}</span></div></div>
+          </div>
+        ))}
       </div>
 
       <InventoryHealthCard weeklyStats={weeklyStats} />

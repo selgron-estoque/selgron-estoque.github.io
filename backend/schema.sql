@@ -370,6 +370,7 @@ create table contagens (
   tem_foto boolean not null default false,
   observacao text,
   almoxarifado text,                       -- armazém onde o item foi contado (null pra contagens antigas, de antes desta coluna)
+  familia text,                            -- família/grupo do produto (ex: "MAT EXPEDIENTE"), null pra contagens antigas
   data date not null,
   hora text,
   aprovado_por text,                       -- nome de quem aprovou a divergência (líder/admin), se houver
@@ -916,3 +917,18 @@ alter table contagens add column if not exists diferenca_confirmada boolean not 
 --   select column_name from information_schema.columns where table_name = 'app_config' and column_name = 'operador_ve_valores_recontagem';
 -- =============================================================================
 alter table app_config add column if not exists operador_ve_valores_recontagem boolean not null default false;
+
+-- =============================================================================
+-- FAMÍLIA/GRUPO NA CONTAGEM — indicador "Divergência por Família/Grupo" em
+-- Indicadores ("Resumo da Operação"). O produto já tem `grupo` (código) em
+-- `produtos`, mas a CONTAGEM em si nunca guardava a família/descrição do
+-- grupo — precisava de uma consulta extra ao catálogo pra cruzar toda vez
+-- que o indicador fosse calculado. Grava direto na contagem (mesmo raciocínio
+-- já usado pra `almoxarifado`: evita ambiguidade/consulta extra depois),
+-- como texto legível (ex: "MAT EXPEDIENTE"), não o código cru do grupo.
+-- Contagens já existentes (antes desta coluna) ficam com `familia = null` —
+-- o indicador só soma o que tem esse dado, sem inventar família nenhuma.
+-- Introspecção antes de rodar:
+--   select column_name from information_schema.columns where table_name = 'contagens' and column_name = 'familia';
+-- =============================================================================
+alter table contagens add column if not exists familia text;
