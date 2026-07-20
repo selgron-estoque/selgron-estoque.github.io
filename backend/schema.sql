@@ -508,7 +508,11 @@ create table contagens_historico (
   id uuid primary key default gen_random_uuid(),
   produto_codigo text not null,
   descricao text,
-  endereco text,
+  endereco text,                          -- parser (index.html) grava "-" em vez de null quando a
+                                           -- planilha não traz endereço — Postgres trata NULL como
+                                           -- sempre distinto de outro NULL, então linha sem endereço
+                                           -- nunca conflitava com a unique abaixo e reimportação
+                                           -- duplicava. Ver comentário em parseHistoricoContagensRows.
   saldo_sistema numeric(14,3),
   qtd_contada numeric(14,3),
   diferenca numeric(14,3),

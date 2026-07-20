@@ -5807,3 +5807,49 @@ dupla no cálculo do KPI**.
 - Testado via transpile Babel do arquivo inteiro. **Confirmação de duplicidade real (ou
   não) no banco fica a cargo do cliente**, rodando a consulta SQL fornecida — o sandbox
   não tem acesso de rede ao Supabase pra verificar isso diretamente.
+
+## Causa raiz confirmada + corrigida: endereço vazio nunca travava reimportação duplicada
+
+Investigação da seção anterior confirmou (com o cliente rodando as consultas SQL): mais
+de 365 linhas duplicadas de verdade em `contagens_historico`, com o mesmo
+produto_codigo+data aparecendo repetido (em alguns casos até 4 vezes). Causa raiz: o
+parser (`parseHistoricoContagensRows`) gravava `endereco: null` quando a planilha não
+trazia esse dado — e a trava de duplicado da tabela é `unique(produto_codigo, data,
+endereco)`. Postgres trata `NULL` como sempre DIFERENTE de qualquer outro valor, mesmo de
+outro `NULL` — então uma linha sem endereço nunca colide com outra igual, mesmo que seja
+literalmente a mesma planilha (ou uma bem parecida) reimportada mais de uma vez. Cada
+reimportação criava cópias novas em vez de ser bloqueada como já existente. Cliente
+sugeriu a correção certa: obrigar o campo a vir preenchido, nem que seja com um valor
+fixo.
+
+- **`parseHistoricoContagensRows`**: `endereco` agora grava `"-"` em vez de `null`
+  quando a planilha não traz esse dado (`txt(row[idx.end]) || '-'`) — com um valor não-
+  nulo, a unique constraint volta a funcionar de verdade pra essas linhas, e o dedupe
+  DENTRO do próprio arquivo (que já existia, mas só rodava quando `data` E `endereco` não
+  eram nulos) passa a cobrir esses casos também. Só `data` continua podendo ficar nula
+  (as ~460 linhas "sem data" da planilha original, que continuam de fora do dedupe —
+  perderia histórico real descartar essas).
+- **"-" nunca aparece na tela** — é só um valor sentinela pro banco, não um endereço de
+  verdade. `historicoRowToCountLike` (usado por "Contagens Concluídas"/Indicadores) e os
+  dois construtores de seed pra fila de recontagem/divergentes
+  (`buildRecontarSeedsFromHistorico`/`buildAjustarSeedsFromHistorico`) foram ajustados
+  pra tratar `"-"` exatamente como "sem endereço" (volta a virar `null` na hora de montar
+  o objeto que a UI lê) — as telas continuam mostrando "não cadastrado"/"—" como sempre
+  mostraram pra item sem endereço, sem regressão visual.
+- **`backend/schema.sql`**: comentário adicionado na coluna `endereco` de
+  `contagens_historico` explicando a convenção, pra não se perder de vista se alguém
+  for mexer no schema depois.
+- **Limpeza dos dados já duplicados fica a cargo do cliente** (ação destrutiva, não
+  something a se automatizar sem confirmação) — passei uma consulta de PREVIEW (sem
+  apagar nada, `row_number() over (partition by produto_codigo, data order by
+  importado_em desc)`, mantém a linha mais recente de cada grupo) pra ele conferir antes,
+  seguida da consulta de `delete` de verdade só depois de ele confirmar que o preview
+  fazia sentido. Depois da limpeza, o próximo passo (não feito ainda, aguardando
+  confirmação do cliente) é rodar `update contagens_historico set endereco = '-' where
+  endereco is null;` — sem isso, um reimport futuro da mesma planilha ainda criaria
+  linhas novas (com endereco='-', pelo código já corrigido) que não colidem com as linhas
+  ANTIGAS que ainda têm endereco NULL no banco, reabrindo a mesma brecha pros dados já
+  existentes.
+- Testado via transpile Babel do arquivo inteiro. **Não testado contra o Supabase real**
+  (mesma limitação de sempre) — a correção do parser só vale a partir do próximo upload
+  feito pelo cliente; os dados já duplicados exigem a limpeza manual descrita acima.

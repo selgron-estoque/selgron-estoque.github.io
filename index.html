@@ -1921,7 +1921,19 @@ function parseHistoricoContagensRows(matrix){
       // combinam contagens ao vivo com histórico importado.
       produto_codigo: reconstructNumericCode(codigoRaw),
       descricao: idx.descricao>=0 ? String(row[idx.descricao]||'').trim() : '',
-      endereco: idx.end>=0 ? txt(row[idx.end]) : null,
+      // "-" no lugar de null quando a planilha não traz endereço — cliente
+      // confirmou que reimportar o mesmo arquivo (ou um arquivo parecido)
+      // mais de uma vez estava gerando linhas duplicadas de verdade em
+      // `contagens_historico`: o Postgres trata NULL como sempre diferente
+      // de qualquer outro valor, mesmo de outro NULL, então a trava de
+      // duplicado (unique produto_codigo+data+endereco) nunca pegava linha
+      // sem endereço — cada reimportação criava uma cópia nova em vez de
+      // ser bloqueada como já existente. Com um valor fixo no lugar do null,
+      // a MESMA linha reimportada duas vezes agora bate na trava de
+      // verdade. Não afeta nenhuma exibição — "-" nunca aparece em tela,
+      // já que os lugares que mostram endereço tratam ausência de dado
+      // (endereço não cadastrado) da mesma forma que sempre trataram.
+      endereco: idx.end>=0 ? (txt(row[idx.end]) || '-') : '-',
       saldo_sistema: idx.sistema>=0 ? num(row[idx.sistema]) : null,
       qtd_contada: idx.fisico>=0 ? num(row[idx.fisico]) : null,
       diferenca: idx.diferenca>=0 ? num(row[idx.diferenca]) : null,
@@ -1941,19 +1953,22 @@ function parseHistoricoContagensRows(matrix){
   // A planilha real do cliente tem linhas com a MESMA chave (produto_codigo,
   // data, endereco) repetida — vira erro no Postgres ("ON CONFLICT DO UPDATE
   // command cannot affect row a second time") se duas linhas com a mesma
-  // chave caem no mesmo lote de upsert. Dedupe só quando os TRÊS campos da
-  // chave são não-nulos e batem — mesma semântica da unique constraint do
-  // Postgres, que trata NULL como sempre distinto (mesmo de outro NULL), então
-  // uma linha com data ou endereço vazio NUNCA conflita de verdade no banco e
-  // não pode ser descartada aqui (perderia histórico real das ~460 linhas
-  // "sem data"). Mantém a ÚLTIMA ocorrência entre as que colidem (arquivo
+  // chave caem no mesmo lote de upsert. Dedupe só quando os campos da chave
+  // são não-nulos e batem — mesma semântica da unique constraint do
+  // Postgres, que trata NULL como sempre distinto (mesmo de outro NULL).
+  // `endereco` sozinho não fica mais nulo (vira "-" acima, ver comentário no
+  // campo) — cliente reportou reimportação duplicando linha sem endereço de
+  // verdade no banco, essa troca já resolve os dois lados (aqui no parser E
+  // na trava do banco). Só `data` ainda pode ficar nula (~460 linhas "sem
+  // data" da planilha original) e continua fora do dedupe, pra não perder
+  // histórico real. Mantém a ÚLTIMA ocorrência entre as que colidem (arquivo
   // master só cresce, a linha mais abaixo tende a ser a mais recente/
   // corrigida) — mesma chave da "linha 1500" do bug reportado.
   const porChave = new Map();
   const linhasDedup = [];
   let duplicadas = 0;
   linhas.forEach(l=>{
-    if(l.data==null || l.endereco==null){ linhasDedup.push(l); return; }
+    if(l.data==null){ linhasDedup.push(l); return; }
     const chave = l.produto_codigo+'|'+l.data+'|'+l.endereco;
     if(porChave.has(chave)){
       duplicadas++;
@@ -2111,8 +2126,11 @@ function buildRecontarSeedsFromHistorico(linhas){
         inventario_id: '—',
         produto_codigo: l.produto_codigo,
         descricao: l.descricao,
-        endereco: l.endereco,
-        endereco_contado: l.endereco,
+        // "-" é sentinela só pra trava de duplicado da importação (ver
+        // parseHistoricoContagensRows) — nunca deve aparecer na tela como
+        // se fosse um endereço de verdade, então volta a virar null aqui.
+        endereco: l.endereco==='-' ? null : l.endereco,
+        endereco_contado: l.endereco==='-' ? null : l.endereco,
         endereco_pendente_validacao: false,
         usuario: 'Importação Histórica',
         numero_contagem: 1,
@@ -2162,8 +2180,11 @@ function buildAjustarSeedsFromHistorico(linhas){
         inventario_id: '—',
         produto_codigo: l.produto_codigo,
         descricao: l.descricao,
-        endereco: l.endereco,
-        endereco_contado: l.endereco,
+        // "-" é sentinela só pra trava de duplicado da importação (ver
+        // parseHistoricoContagensRows) — nunca deve aparecer na tela como
+        // se fosse um endereço de verdade, então volta a virar null aqui.
+        endereco: l.endereco==='-' ? null : l.endereco,
+        endereco_contado: l.endereco==='-' ? null : l.endereco,
         endereco_pendente_validacao: false,
         usuario: 'Importação Histórica',
         numero_contagem: 1,
@@ -7473,8 +7494,12 @@ function historicoRowToCountLike(h){
     // sem isso, precisaria o cliente reimportar a planilha inteira de novo.
     productCode: reconstructNumericCode(h.produto_codigo),
     descricao: h.descricao || '',
-    endereco: h.endereco || null,
-    enderecoContado: h.endereco || null,
+    // "-" é só um valor sentinela gravado no banco (ver parseHistoricoContagensRows)
+    // pra trava de duplicado (unique produto_codigo+data+endereco) funcionar de
+    // verdade em linha sem endereço — na exibição, trata igual a "sem endereço"
+    // de sempre (cai no "não cadastrado"/"—" que as telas já mostram).
+    endereco: (h.endereco && h.endereco!=='-') ? h.endereco : null,
+    enderecoContado: (h.endereco && h.endereco!=='-') ? h.endereco : null,
     usuario: 'Importação Histórica',
     numeroContagem: 1,
     contagemAnteriorId: null,
