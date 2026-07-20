@@ -5963,3 +5963,14 @@ histórico + uma contagem ao vivo pro mesmo item).
   (574 aberturas/574 fechamentos). **Verificação visual fica a cargo do cliente** —
   mesma limitação de sempre (login exige Supabase Auth real, não simulável no sandbox
   sem rede).
+
+**Atualização — card ficou alto demais**: cliente reportou que as 3 linhas empilhadas
+deixaram o card "Itens Divergentes" visivelmente mais alto que os outros 3 da mesma
+fileira (o grid estica todos pra bater com o mais alto, então o desbalanço aparecia na
+fileira inteira, não só nesse card). Trocado `.ops-kpi-subrow` de coluna (3 linhas) pra
+uma única linha compacta, com os 3 números separados por "·" ("1.234 itens · 456
+códigos · 89 divergentes (cód.)") — cabe numa linha só na maioria das larguras, só
+quebra pra 2 linhas em cards bem estreitos (`flex-wrap`), reduzindo a altura extra do
+card de ~3 linhas pra 1 (ou no máximo 2), bem menos do que a metade do que era antes.
+Testado via transpile Babel e balanceamento de chaves do CSS (575 aberturas/575
+fechamentos).

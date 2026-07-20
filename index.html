@@ -884,8 +884,9 @@
     /* Detalhamento extra dentro de um card específico (ver "Itens
        Divergentes") — registros totais vs. códigos distintos, já que um
        mesmo produto pode ter mais de uma contagem/divergência registrada. */
-    .ops-kpi-subrow{margin-top:10px;padding-top:10px;border-top:1px solid var(--gray-100);display:flex;flex-direction:column;gap:4px;}
-    .ops-kpi-subrow span{font-family:var(--font-corp);font-size:10.5px;color:var(--gray-500);}
+    .ops-kpi-subrow{margin-top:8px;padding-top:8px;border-top:1px solid var(--gray-100);display:flex;flex-wrap:wrap;align-items:baseline;gap:4px;}
+    .ops-kpi-subrow span{font-family:var(--font-corp);font-size:10px;color:var(--gray-500);white-space:nowrap;}
+    .ops-kpi-subrow span.sep{color:var(--gray-200);}
     .ops-kpi-subrow strong{color:var(--navy);font-weight:700;}
     @media (max-width:1360px){ .ops-kpi-row{grid-template-columns:repeat(2,1fr);} }
     @media (max-width:640px){ .ops-kpi-row{grid-template-columns:1fr;gap:10px;} }
@@ -8770,9 +8771,11 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
           <div className="ops-kpi-value">{divergentes.length}</div>
           <div className="ops-kpi-meta">{todasParaQualidade.length>0 ? (divergentes.length/todasParaQualidade.length*100).toFixed(1).replace('.',',') : '0,0'}% do total de itens</div>
           <div className="ops-kpi-subrow">
-            <span>Itens contados: <strong>{todasParaQualidade.length}</strong></span>
-            <span>Códigos distintos: <strong>{codigosDistintosContados}</strong></span>
-            <span>Divergências (códigos distintos): <strong>{codigosDistintosDivergentes}</strong></span>
+            <span><strong>{todasParaQualidade.length}</strong> itens</span>
+            <span className="sep">·</span>
+            <span><strong>{codigosDistintosContados}</strong> códigos</span>
+            <span className="sep">·</span>
+            <span><strong>{codigosDistintosDivergentes}</strong> divergentes (cód.)</span>
           </div>
         </div>
         <div className="ops-kpi-card">
