@@ -6368,3 +6368,39 @@ barra de progresso ("Item 18 de 152") que só faz sentido se a fila avançar soz
   sem rede real), mas dessa vez o comportamento crítico (avançar sem navegar, sem
   herdar estado do item anterior) já foi confirmado com interação real de DOM, não só
   leitura de código.
+
+## Bug real: inventário 100% contado nunca saía de "Inventários Pendentes"
+
+Cliente mandou print de um inventário "Itens Específicos" com "2/2 itens contados
+(100%)" ainda listado em "Inventários Pendentes". Causa raiz: `inv.status` é gravado
+como `'pendente'` no momento da criação (`NewInventory.handleCreate`) e **nunca é
+atualizado depois** em lugar nenhum do código — o campo `'concluido'` nunca é
+escrito, é uma comparação morta. `InventoryList` mostrava TODOS os inventários sem
+filtro nenhum, e o `StatusTag` de cada card lia esse mesmo campo morto (por isso
+sempre mostrava "Pendente", nunca "Concluído", mesmo em 100%).
+
+- **`inventarioConcluido(inv)`** (função nova, perto de `InventoryList`) — deriva de
+  `contados`/`qtdItens` em vez do campo `status`, mesmo critério já usado em outros
+  lugares do app pra essa mesma decisão (`concluidosInv`/`emAndamento` no donut
+  "Situação Geral dos Inventários" do Dashboard, ver seção "Dashboard novo..." mais
+  acima) — esse bug já tinha sido evitado ali derivando corretamente, só
+  `InventoryList`/`Home.pendentes` é que ainda liam o campo morto.
+- **`InventoryList` agora separa dois grupos**: `pendentes` (não concluído) — os
+  cards de sempre, clicáveis, continuam navegando pro fluxo de contagem — e
+  `concluidos`, numa seção "Concluídos" logo abaixo, com o MESMO card (reaproveitado
+  via `renderCard`, extraído pra não duplicar o JSX inteiro), só que **sem
+  `onClick`/`cursor:pointer`** — continuar "contando" um inventário já 100% completo
+  não faz sentido (a fila já está vazia), então o card concluído só serve pra
+  Baixar/Excluir, não pra reabrir a contagem.
+- **`Home.pendentes`** (usado no badge mobile "Inventários Pendentes" e no
+  `MobileHomeMenu`) tinha o mesmo bug (`i.status!=='concluido'`, sempre contava TODO
+  mundo) — corrigido pra usar a mesma `inventarioConcluido`.
+- Testado via harness real (jsdom + `react-dom/client` + `act()`, mesma técnica das
+  últimas rodadas): `inventarioConcluido` retorna certo pros 3 casos (2/2 true, 1/2 e
+  0/2 false); `InventoryList` com 1 pendente + 1 concluído mostra "Concluídos" na
+  tela, separa os dois cards corretamente, o card concluído não tem `cursor:pointer`
+  e clicar nele não dispara navegação nenhuma (`goto` nunca chamado), enquanto o card
+  pendente navega normalmente pro fluxo de contagem. `Home` renderiza sem erro com os
+  mesmos dados mistos. Transpile Babel do arquivo inteiro e balanceamento de chaves
+  do CSS conferidos (575/575, sem mudança). **Verificação visual fica a cargo do
+  cliente** — mesma limitação de sempre (login exige Supabase Auth real).

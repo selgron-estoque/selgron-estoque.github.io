@@ -4923,7 +4923,13 @@ function saudacaoPorHorario(){
 }
 
 function Home({role, user, inventories, counts, historicoConcluidas=[], enderecosPropostos=[], goto}){
-  const pendentes = inventories.filter(i=>i.status!=='concluido').length;
+  // Bug real corrigido aqui: `i.status` é gravado como 'pendente' na criação
+  // do inventário e nunca é atualizado depois — nunca vira 'concluido' de
+  // verdade. Deriva de `contados`/`qtdItens` via `inventarioConcluido`
+  // (mesma função usada em `InventoryList`, mesmo critério do donut do
+  // Dashboard), não do campo morto — senão esse badge/contador nunca
+  // descontava um inventário 100% contado.
+  const pendentes = inventories.filter(i=>!inventarioConcluido(i)).length;
   const byOriginal = {};
   counts.forEach(c=>{ if(c.contagemAnteriorId) byOriginal[c.contagemAnteriorId]=true; });
   // Bug real corrigido aqui: este KPI ("Recontagens Pendentes", clica e vai
@@ -5301,6 +5307,18 @@ function PnlDonut({segments, size=168, strokeWidth=22, centerLabel='inventários
 
 /* ---------------- MÓDULO 1: INVENTÁRIOS ---------------- */
 
+// Um inventário é "concluído" quando todos os itens já foram contados —
+// derivado de `contados`/`qtdItens` (mesmo critério já usado no donut
+// "Situação Geral dos Inventários" do Dashboard, `concluidosInv` em Home),
+// nunca do campo `status`: esse campo é gravado como `'pendente'` na
+// criação e NUNCA é atualizado depois — bug real reportado pelo cliente
+// ("Inventários concluídos ainda estão ficando nesta tela"), porque esta
+// tela mostrava todo mundo sem filtro nenhum e o `StatusTag` de cada card
+// também lia esse mesmo campo morto (sempre "Pendente").
+function inventarioConcluido(inv){
+  return inv.qtdItens>0 && inv.contados>=inv.qtdItens;
+}
+
 function InventoryList({inventories, goto, role, counts, onDelete}){
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   // `onDelete` agora aguarda confirmação do Supabase antes de sumir com o
@@ -5333,6 +5351,55 @@ function InventoryList({inventories, goto, role, counts, onDelete}){
     }
   }
 
+  const pendentes = inventories.filter(inv=>!inventarioConcluido(inv));
+  const concluidos = inventories.filter(inventarioConcluido);
+
+  function renderCard(inv){
+    const pct = inv.qtdItens ? Math.round((inv.contados/inv.qtdItens)*100) : 0;
+    const concluido = inventarioConcluido(inv);
+    // Continuar contando um inventário já concluído não faz sentido (a fila
+    // já está vazia) — só os cards ainda pendentes navegam pro fluxo de
+    // contagem ao clicar; concluídos só têm as ações de Baixar/Excluir.
+    return (
+      <div key={inv.id} className="item-card" style={concluido ? {} : {cursor:'pointer'}} onClick={concluido ? undefined : ()=>goto((inv.tipo==='Lista Importada (Excel)' || inv.tipo==='Itens Específicos') ? 'importedListCount' : 'randomCount', inv)}>
+        <div className="item-card-head">
+          <div>
+            <div className="item-code">{inv.id} · {inv.almoxarifado}</div>
+            <div className="item-desc" style={{fontSize:16}}>{inv.nome}</div>
+          </div>
+          <StatusTag status={concluido ? 'ok' : 'warn'} text={concluido ? 'Concluído' : (inv.contados>0 ? 'Em andamento' : 'Pendente')} />
+        </div>
+        <div style={{padding:'14px 18px'}}>
+          <div style={{display:'flex',justifyContent:'space-between',fontSize:12.5,color:'var(--ink-dim)'}}>
+            <span>{inv.tipo}</span>
+            <span>{inv.data}</span>
+          </div>
+          <div className="progress-bar"><div className="fill" style={{width:pct+'%'}}></div></div>
+          <div style={{fontFamily:'var(--font-mono)',fontSize:11.5,color:'var(--ink-dim)',marginTop:6}}>{inv.contados}/{inv.qtdItens} itens contados ({pct}%)</div>
+        </div>
+        {role==='admin' && (
+          confirmDeleteId===inv.id ? (
+            <div style={{padding:'0 18px 16px'}} onClick={e=>e.stopPropagation()}>
+              <div className="divergence-alert" style={{marginBottom:10}}>
+                <Ic>⚠</Ic><span>Excluir "{inv.nome}"? Essa ação não pode ser desfeita.</span>
+              </div>
+              {erroExclusao && <div className="divergence-alert" style={{marginBottom:10}}><Ic>⚠</Ic><span>{erroExclusao}</span></div>}
+              <div className="btn-row">
+                <button className="btn btn-secondary" disabled={excluindo} onClick={()=>{setConfirmDeleteId(null); setErroExclusao('');}}>Cancelar</button>
+                <button className="btn btn-danger" disabled={excluindo} onClick={()=>handleConfirmDelete(inv.id)}>{excluindo ? 'Excluindo…' : 'Confirmar exclusão'}</button>
+              </div>
+            </div>
+          ) : (
+            <div className="btn-row" style={{padding:'0 18px 16px'}} onClick={e=>e.stopPropagation()}>
+              <button className="btn btn-secondary" onClick={()=>handleDownload(inv)}><Ic>⬇</Ic> Baixar</button>
+              <button className="btn btn-danger" onClick={()=>setConfirmDeleteId(inv.id)}><Ic>🗑</Ic> Excluir</button>
+            </div>
+          )
+        )}
+      </div>
+    );
+  }
+
   return (
     <div>
       {(role==='lider'||role==='admin') && (
@@ -5340,47 +5407,16 @@ function InventoryList({inventories, goto, role, counts, onDelete}){
           <Ic>➕</Ic> Criar Inventário
         </button>
       )}
-      {inventories.map(inv=>{
-        const pct = inv.qtdItens ? Math.round((inv.contados/inv.qtdItens)*100) : 0;
-        return (
-          <div key={inv.id} className="item-card" style={{cursor:'pointer'}} onClick={()=>goto((inv.tipo==='Lista Importada (Excel)' || inv.tipo==='Itens Específicos') ? 'importedListCount' : 'randomCount', inv)}>
-            <div className="item-card-head">
-              <div>
-                <div className="item-code">{inv.id} · {inv.almoxarifado}</div>
-                <div className="item-desc" style={{fontSize:16}}>{inv.nome}</div>
-              </div>
-              <StatusTag status={inv.status==='pendente' ? 'warn' : inv.status==='concluido' ? 'ok' : 'warn'} text={inv.status==='pendente'?'Pendente':inv.status==='concluido'?'Concluído':'Em andamento'} />
-            </div>
-            <div style={{padding:'14px 18px'}}>
-              <div style={{display:'flex',justifyContent:'space-between',fontSize:12.5,color:'var(--ink-dim)'}}>
-                <span>{inv.tipo}</span>
-                <span>{inv.data}</span>
-              </div>
-              <div className="progress-bar"><div className="fill" style={{width:pct+'%'}}></div></div>
-              <div style={{fontFamily:'var(--font-mono)',fontSize:11.5,color:'var(--ink-dim)',marginTop:6}}>{inv.contados}/{inv.qtdItens} itens contados ({pct}%)</div>
-            </div>
-            {role==='admin' && (
-              confirmDeleteId===inv.id ? (
-                <div style={{padding:'0 18px 16px'}} onClick={e=>e.stopPropagation()}>
-                  <div className="divergence-alert" style={{marginBottom:10}}>
-                    <Ic>⚠</Ic><span>Excluir "{inv.nome}"? Essa ação não pode ser desfeita.</span>
-                  </div>
-                  {erroExclusao && <div className="divergence-alert" style={{marginBottom:10}}><Ic>⚠</Ic><span>{erroExclusao}</span></div>}
-                  <div className="btn-row">
-                    <button className="btn btn-secondary" disabled={excluindo} onClick={()=>{setConfirmDeleteId(null); setErroExclusao('');}}>Cancelar</button>
-                    <button className="btn btn-danger" disabled={excluindo} onClick={()=>handleConfirmDelete(inv.id)}>{excluindo ? 'Excluindo…' : 'Confirmar exclusão'}</button>
-                  </div>
-                </div>
-              ) : (
-                <div className="btn-row" style={{padding:'0 18px 16px'}} onClick={e=>e.stopPropagation()}>
-                  <button className="btn btn-secondary" onClick={()=>handleDownload(inv)}><Ic>⬇</Ic> Baixar</button>
-                  <button className="btn btn-danger" onClick={()=>setConfirmDeleteId(inv.id)}><Ic>🗑</Ic> Excluir</button>
-                </div>
-              )
-            )}
-          </div>
-        );
-      })}
+      {pendentes.length===0 ? (
+        <div className="empty-state" style={{marginBottom:16}}>Nenhum inventário pendente no momento.</div>
+      ) : pendentes.map(renderCard)}
+
+      {concluidos.length>0 && (
+        <>
+          <div className="section-title">Concluídos</div>
+          {concluidos.map(renderCard)}
+        </>
+      )}
     </div>
   );
 }
