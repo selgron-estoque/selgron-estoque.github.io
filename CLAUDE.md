@@ -5657,3 +5657,41 @@ parecendo colado/amontoado.
   (570 aberturas/570 fechamentos). **Verificação visual num celular real fica a cargo do
   cliente** — mesma limitação de sempre (login exige Supabase Auth real, não simulável
   no sandbox sem rede).
+
+## Correção real: breakpoint estreito de mais deixava "Saúde do Inventário"/"Filtros" colados em tablet
+
+A correção anterior (`@media max-width:640px`, dando mais espaçamento aos dois cards)
+não resolveu de verdade — o cliente reportou de novo, agora explicitamente "celular E
+tablet", que o mini-gráfico ainda aparecia "em cima do filtro" e que o painel "Filtros"
+ficava desorganizado. Causa provável: o dispositivo de teste do cliente (mesmo padrão já
+visto antes nesta sessão, ver "Breakpoint do layout desktop baixou de 1024px pra 768px"
+e depois "pra 360px") tem uma largura CSS que cai FORA de `max-width:640px` — provável
+tablet em retrato, faixa 640-1024px — onde nenhuma das duas correções anteriores tinha
+efeito nenhum, e o `.health-card` ainda usava o layout em LINHA (`flex-wrap:wrap`, 3
+blocos tentando caber lado a lado: ícone+texto, gráfico, caixa de valor), espremendo
+tudo com pouco respiro nessa faixa intermediária.
+
+- **Mudança de estratégia**: em vez de mirar um breakpoint estreito específico de novo
+  (terceira tentativa arriscaria errar de novo), o layout empilhado (coluna) virou o
+  PADRÃO pra `.health-card` — só volta a ficar em linha a partir de `min-width:1024px`
+  (bem acima de qualquer largura de celular/tablet comum). Mesma lógica "mobile-first"
+  já usada em outras partes do app depois de bugs de breakpoint parecidos — resolve pra
+  qualquer tela intermediária de uma vez, sem depender de acertar o número exato.
+- **`.trend-filter-bar`/`.tfb-head-actions`/`.tfb-period-row`/`.tfb-custom-row`** — mesmo
+  tratamento: o chip de intervalo + botão "Atualizar" (`.tfb-head-actions`) e as fileiras
+  de período/data personalizada agora empilham em coluna por padrão, voltando ao layout
+  horizontal (chip+botão ao lado do título, pills numa linha só) só a partir de
+  `min-width:1024px` — mesmo breakpoint do `.health-card`, pra as duas peças da tela
+  (card rosa + painel Filtros) mudarem de comportamento juntas, sem uma delas ficar
+  "descompassada" da outra em alguma largura intermediária.
+- `margin-bottom` de `.health-card`/`.trend-filter-bar` (24px) também virou o padrão
+  (era só dentro do `max-width:640px` anterior, que nunca chegava a valer pra esse
+  cliente) — só cai pra 18px de volta a partir de 1024px, onde tem mais espaço sobrando.
+- Testado via transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  (571 aberturas/571 fechamentos). **Verificação visual num tablet/celular reais fica a
+  cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth real, não
+  simulável no sandbox sem rede). Se o cliente reportar de novo que "ainda não mudou",
+  o próximo passo (mesmo já documentado antes pra outro breakpoint) é perguntar a
+  largura real da tela em pixels CSS antes de mexer de novo — dessa vez a faixa coberta
+  (até 1024px) já é bem generosa, então um relato repetido provavelmente indicaria outra
+  causa, não breakpoint.

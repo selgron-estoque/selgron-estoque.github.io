@@ -445,22 +445,32 @@
   /* Card "Saúde do Inventário" — pedido do cliente com imagem de referência
      (selo + variação vs. período anterior + mini gráfico + acuracidade
      atual em destaque). Cor de fundo/destaque muda por faixa de status
-     (Excelente/Bom/Atenção/Crítico), calculada em InventoryHealthCard. */
-  .health-card{display:flex;align-items:center;gap:24px;border-radius:18px;padding:22px 26px;margin-bottom:18px;flex-wrap:wrap;}
-  .health-left{display:flex;align-items:flex-start;gap:14px;flex:1;min-width:220px;}
+     (Excelente/Bom/Atenção/Crítico), calculada em InventoryHealthCard.
+     Empilhado (coluna) é o padrão AGORA — cliente reportou (2x, com print de
+     tablet) o layout em linha (`flex-wrap:wrap`, breakpoint antigo só abaixo
+     de 640px) ficando espremido/colado no filtro "Filtros" logo abaixo em
+     larguras de tablet (640-1024px, onde a fileira ainda tentava caber tudo
+     lado a lado e sobrava pouco respiro). Empilhar por padrão e só voltar
+     pra lado a lado a partir de 1024px (mesmo raciocínio geral do resto do
+     app: card com bastante conteúdo, largura de tablet raramente sobra
+     espaço de sobra pra isso) resolve pra qualquer tela de celular/tablet
+     de uma vez, sem depender de acertar um breakpoint estreito específico. */
+  .health-card{display:flex;flex-direction:column;align-items:stretch;gap:16px;border-radius:18px;padding:22px 26px;margin-bottom:24px;}
+  .health-left{display:flex;align-items:flex-start;gap:14px;min-width:0;}
   .health-icon{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
   .health-eyebrow{font-family:var(--font-mono);font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--ink-dim);margin-bottom:2px;}
   .health-status{font-family:var(--font-display);font-size:22px;font-weight:700;line-height:1.2;}
   .health-sub{font-size:13px;font-weight:600;margin-top:1px;}
   .health-desc{font-size:12.5px;color:var(--ink-dim);margin-top:6px;max-width:340px;}
-  .health-chart{flex:1.4;min-width:220px;max-width:360px;}
-  .health-current{background:#fff;border-radius:14px;padding:14px 22px;text-align:center;box-shadow:0 2px 10px rgba(0,0,0,.06);flex-shrink:0;}
+  .health-chart{order:3;}
+  .health-current{background:#fff;border-radius:14px;padding:14px 22px;text-align:center;box-shadow:0 2px 10px rgba(0,0,0,.06);order:2;}
   .health-current-value{font-family:var(--font-display);font-size:26px;font-weight:700;}
   .health-current-label{font-size:11px;color:var(--ink-dim);margin-top:2px;white-space:nowrap;}
-  @media (max-width:640px){
-    .health-card{flex-direction:column;align-items:stretch;margin-bottom:24px;}
-    .health-chart{max-width:none;order:3;margin-top:8px;}
-    .health-current{order:2;margin-top:14px;}
+  @media (min-width:1024px){
+    .health-card{flex-direction:row;align-items:center;gap:24px;margin-bottom:18px;flex-wrap:wrap;}
+    .health-left{flex:1;min-width:220px;}
+    .health-chart{flex:1.4;min-width:220px;max-width:360px;order:0;}
+    .health-current{flex-shrink:0;order:0;}
   }
 
   /* Painel "Filtros" do Dashboard — card premium estilo Power BI/Stripe
@@ -469,25 +479,31 @@
      gráficos de tendência (WEEKLY_CHART_COLOR) — mantém os toggle buttons
      "verde/teal" pedidos alinhados com o resto da seção, em vez de
      introduzir mais uma cor de marca. */
-  .trend-filter-bar{background:#fff;border:1px solid #EAEAEA;border-radius:18px;padding:24px;box-shadow:0 8px 30px rgba(0,0,0,.05);margin-bottom:18px;}
+  .trend-filter-bar{background:#fff;border:1px solid #EAEAEA;border-radius:18px;padding:24px;box-shadow:0 8px 30px rgba(0,0,0,.05);margin-bottom:24px;}
   .tfb-head{display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap;}
   .tfb-icon-badge{width:40px;height:40px;border-radius:12px;background:rgba(13,148,136,0.12);color:#0D9488;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
   .tfb-icon-badge svg{margin:auto;}
   .tfb-head-text{min-width:0;}
   .tfb-title{font-family:var(--font-corp);font-size:15px;font-weight:700;color:var(--navy);}
   .tfb-subtitle{font-family:var(--font-corp);font-size:12px;color:var(--ink-dim);margin-top:2px;}
-  .tfb-head-actions{display:flex;align-items:center;gap:10px;margin-left:auto;flex-wrap:wrap;}
+  /* Empilhado por padrão (largura total, chip+botão lado a lado mas numa
+     linha PRÓPRIA abaixo do título) — mesmo raciocínio do `.health-card`
+     acima: só volta a ficar espremido ao lado do título (`margin-left:auto`)
+     a partir de telas realmente largas (≥1024px), ver media query no fim
+     deste bloco. Cliente reportou (print de tablet) essa fileira ficando
+     desorganizada/apertada em larguras intermediárias. */
+  .tfb-head-actions{display:flex;align-items:center;gap:10px;margin-left:0;width:100%;justify-content:space-between;flex-wrap:wrap;margin-top:14px;}
   .tfb-range-chip{display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:12px;font-weight:600;color:var(--navy);background:var(--gray-50);border:1px solid var(--gray-200);border-radius:10px;padding:9px 14px;white-space:nowrap;}
   .tfb-refresh-btn{display:flex;align-items:center;gap:8px;font-family:var(--font-corp);font-size:12.5px;font-weight:700;color:#fff;background:#0D9488;border:none;border-radius:10px;padding:9px 16px;cursor:pointer;transition:background 0.2s;white-space:nowrap;}
   .tfb-refresh-btn:hover:not(:disabled){background:#0b7a70;}
   .tfb-refresh-btn:disabled{opacity:0.7;cursor:default;}
-  .tfb-period-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:20px;}
+  .tfb-period-row{display:flex;flex-direction:column;align-items:flex-start;gap:14px;margin-top:20px;}
   .tfb-period-label{display:flex;align-items:center;gap:6px;font-family:var(--font-corp);font-size:12px;font-weight:700;color:var(--ink-dim);text-transform:uppercase;letter-spacing:0.4px;flex-shrink:0;}
   .tfb-quick-buttons{display:flex;flex-wrap:wrap;gap:8px;}
   .tfb-pill{font-family:var(--font-corp);font-size:12.5px;font-weight:600;color:var(--ink-dim);background:#fff;border:1px solid var(--gray-200);border-radius:10px;padding:8px 14px;cursor:pointer;white-space:nowrap;transition:background 0.2s,color 0.2s,border-color 0.2s,box-shadow 0.2s;}
   .tfb-pill:hover:not(.active){background:rgba(13,148,136,0.08);border-color:rgba(13,148,136,0.3);}
   .tfb-pill.active{background:#0D9488;color:#fff;border-color:#0D9488;box-shadow:0 4px 10px rgba(13,148,136,0.3);}
-  .tfb-custom-row{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-top:16px;padding-top:16px;border-top:1px solid var(--gray-100);}
+  .tfb-custom-row{display:flex;flex-direction:column;align-items:stretch;gap:16px;margin-top:16px;padding-top:16px;border-top:1px solid var(--gray-100);}
   .tfb-date-field{display:flex;flex-direction:column;gap:6px;}
   .tfb-date-field label{font-family:var(--font-corp);font-size:11px;font-weight:600;color:var(--ink-dim);}
   .tfb-date-input-wrap{display:flex;align-items:center;gap:8px;border:1px solid var(--gray-200);border-radius:10px;background:#fff;padding:8px 12px;color:var(--ink-dim);}
@@ -495,11 +511,11 @@
   .tfb-date-input-wrap input:focus{outline:none;}
   .spin-icon{animation:tfb-spin 0.8s linear infinite;}
   @keyframes tfb-spin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
-  @media (max-width:640px){
-    .trend-filter-bar{margin-bottom:24px;}
-    .tfb-head-actions{margin-left:0;width:100%;justify-content:space-between;}
-    .tfb-period-row{flex-direction:column;align-items:flex-start;}
-    .tfb-custom-row{flex-direction:column;align-items:stretch;}
+  @media (min-width:1024px){
+    .trend-filter-bar{margin-bottom:18px;}
+    .tfb-head-actions{margin-left:auto;width:auto;margin-top:0;}
+    .tfb-period-row{flex-direction:row;align-items:center;}
+    .tfb-custom-row{flex-direction:row;align-items:flex-end;}
   }
   .kpi{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;}
   .kpi .kv{font-family:var(--font-mono);font-size:26px;font-weight:700;}
