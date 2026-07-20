@@ -5767,3 +5767,43 @@ solto logo abaixo dos 4 cards de KPI, acima de "Saúde do Inventário".
 - Testado via transpile Babel do arquivo inteiro (CSS não mudou, sem novo balanceamento
   necessário). **Verificação visual (lado a lado no desktop, empilhado no celular) fica
   a cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth real).
+
+## Bug real: KPI "Recontagens Pendentes" (Home) contava divergência em dobro
+
+Cliente reportou um salto suspeito e pediu pra verificar se não havia documento
+duplicado: a tela "Recontagens Pendentes" mostrava "285 pendentes", mas o card de KPI
+da Home ("Recontagens Pendentes", que leva pra essa mesma tela ao clicar) mostrava 325
+— uma diferença de 40, exatamente o tipo de sintoma que levanta suspeita de duplicidade.
+Investigando o código (não o banco — não confirma duplicidade de dado real, só a lógica
+do card), achei a causa: **não era duplicidade de dado nenhuma, era um bug de contagem
+dupla no cálculo do KPI**.
+
+- `pendentesRecontagem` (`Home`, o valor por trás do card e do badge que leva à view
+  `recounts`/`RecountsPanel`) somava `aguardando_segunda` **E TAMBÉM**
+  `aguardando_analise_lider` — sobra de quando "Itens Divergentes" ainda era uma SEÇÃO
+  dentro do próprio `RecountsPanel`, antes de virar tela própria (`DivergentItemsPanel`,
+  ver "'Itens Divergentes' vira tela própria" no histórico acima). Depois dessa extração,
+  `RecountsPanel` passou a mostrar só `aguardando_segunda` (ver `aguardandoSegunda` lá
+  dentro), mas ninguém atualizou o cálculo do KPI da Home pra acompanhar — ele continuou
+  somando os dois status, embora só um deles ainda apareça na tela que o card abre.
+  Como a Home já tem um card separado "Itens Divergentes" contando exatamente
+  `aguardando_analise_lider` (`itensDivergentesPendentes`), esse status estava sendo
+  contado DUAS VEZES — uma vez sozinho no próprio card, e de novo escondido dentro do
+  card "Recontagens Pendentes".
+- **Corrigido**: `pendentesRecontagem` agora conta só `aguardando_segunda` (mesmo filtro
+  usado por `RecountsPanel`) — o card da Home volta a bater exatamente com o número que
+  a tela mostra ao clicar nele, e os dois KPIs ("Recontagens Pendentes"/"Itens
+  Divergentes") deixam de se sobrepor.
+- **O salto no gráfico "Contagens na Semana"** (349/322/291/276 numa sequência de
+  semanas, contra 39-168 nas vizinhas) é OUTRA pergunta, sem relação direta com esse bug
+  — é sobre VOLUME de contagens por semana, não sobre o status de recontagem. Não dá pra
+  confirmar ou descartar duplicidade de dado real (linha repetida em `contagens`) só
+  lendo o código aqui no sandbox (sem acesso de rede ao Supabase) — passei ao cliente uma
+  consulta SQL de conferência (`group by produto_codigo, inventario_id, numero_contagem,
+  data having count(*) > 1`) pra rodar no projeto real e confirmar se existe linha
+  repetida de verdade ou se o salto é só volume real de contagem concentrado nessas
+  semanas (plausível, já que o histórico importado tem datas reais de fev-jul/2026, não
+  distribuídas uniformemente).
+- Testado via transpile Babel do arquivo inteiro. **Confirmação de duplicidade real (ou
+  não) no banco fica a cargo do cliente**, rodando a consulta SQL fornecida — o sandbox
+  não tem acesso de rede ao Supabase pra verificar isso diretamente.

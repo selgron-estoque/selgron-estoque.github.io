@@ -4745,7 +4745,20 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
   const pendentes = inventories.filter(i=>i.status!=='concluido').length;
   const byOriginal = {};
   counts.forEach(c=>{ if(c.contagemAnteriorId) byOriginal[c.contagemAnteriorId]=true; });
-  const pendentesRecontagem = counts.filter(c=>(c.statusAprovacao==='aguardando_segunda' && !byOriginal[c.id]) || c.statusAprovacao==='aguardando_analise_lider').length;
+  // Bug real corrigido aqui: este KPI ("Recontagens Pendentes", clica e vai
+  // pra `recounts`/RecountsPanel) somava TAMBÉM `aguardando_analise_lider`
+  // — sobra de quando "Itens Divergentes" ainda era uma seção DENTRO de
+  // RecountsPanel, antes da extração pra tela própria (ver CLAUDE.md
+  // "'Itens Divergentes' vira tela própria"). Depois da extração,
+  // RecountsPanel passou a mostrar só `aguardando_segunda` (ver
+  // `aguardandoSegunda` ali), mas este cálculo nunca foi atualizado — o
+  // cliente notou o card mostrando um número (325) bem maior que a própria
+  // tela de Recontagens Pendentes (285), diferença batendo exatamente com
+  // `itensDivergentesPendentes` (que já tem seu próprio KPI "Itens
+  // Divergentes" logo ao lado, contando esse status separadamente — estava
+  // sendo contado duas vezes, uma em cada card). Corrigido pra contar só o
+  // que a tela `recounts` de fato mostra.
+  const pendentesRecontagem = counts.filter(c=>c.statusAprovacao==='aguardando_segunda' && !byOriginal[c.id]).length;
   // "Itens Divergentes" (KPI + tela própria, ver DivergentItemsPanel) — só
   // divergência que AINDA não entrou em processo de recontagem. Assim que o
   // item vira aguardando_segunda, some daqui (mesma regra da tela).
