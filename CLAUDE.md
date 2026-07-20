@@ -6076,3 +6076,47 @@ Divergentes" pedindo decisão do líder, mesmo já superada pela 3ª.
   carregar, sem precisar reimportar nada.
 - Testado via transpile Babel do arquivo inteiro. **Verificação visual fica a cargo do
   cliente** — mesma limitação de sempre (login exige Supabase Auth real).
+
+## Novo tipo de inventário: "Itens Específicos" — monta a fila digitando/buscando item por item
+
+Cliente pediu: "Quero que crie um tipo de contagem que eu posso digitar o item que eu
+quero contagem e ele manda para a fila." Confirmado via `AskUserQuestion` (2
+perguntas): vira um **6º tipo de inventário** dentro de "Novo Inventário" (ao lado de
+Aleatória/Curva ABC/Manual/Rota/Grupo/Lista Importada), não um atalho solto fora desse
+fluxo; e só **líder/admin** pode adicionar itens a essa fila (mesmo grupo que já cria
+qualquer outro inventário hoje).
+
+- **Reaproveita 100% o motor de "Lista Importada (Excel)"** — a única diferença real é
+  COMO a lista (`itensImportados`, array de `{codigo, descricao, endereco, almoxarifado,
+  saldoSistema}`) é montada: em vez de ler de uma planilha (`parseImportedListRows`), o
+  líder busca no catálogo real (`searchSupabaseCatalog`, mesma função/debounce de 350ms
+  já usados em `ManualCountFlow`) e clica "Adicionar" item por item, podendo remover
+  antes de confirmar. Como o campo que guarda a lista e o fluxo de contagem
+  (`ImportedListCountFlow`, que já enriquece cada item via `fetchProdutosByCodigos` na
+  hora de contar) são exatamente os mesmos, nenhum componente novo de contagem precisou
+  ser criado — só a UI de montagem da lista dentro de `NewInventory` e o roteamento em
+  `InventoryList` (que já decidia entre `importedListCount`/`randomCount` pelo `tipo`).
+- **`usaListaPropria = isImportado || isEspecificos`** — variável nova que substitui as
+  várias checagens que antes só olhavam `isImportado` (`nomeFinal`, `camposBasicosOk`,
+  `canCreate`, o payload de `handleCreate`) — os dois tipos exigem pelo menos 1 item na
+  lista antes de liberar "Criar Inventário", e os dois mandam `itensImportados` pro
+  `onCreate` em vez de `qtd`/parâmetros de grupo.
+- **Nome/Almoxarifado/Data/Quantidade ficam ocultos** (mesmo padrão já usado por Lista
+  Importada) — não faz sentido pedir um armazém único quando os itens escolhidos podem
+  vir de qualquer almoxarifado. `nomeEspecificos` gera um nome automático só a partir da
+  data (`"Itens Específicos — DD/MM/AAAA"`, com sufixo `#2`/`#3` se colidir com um nome
+  já usado) — não reaproveitei `gerarNomeAutomaticoInventario` porque essa função sempre
+  encaixa "Almox X" no nome, o que não faz sentido aqui.
+- **Sem resumo de importação** (diferente de Lista Importada, que mostra "N não
+  encontrados no catálogo" etc.) — cada item já vem DIRETO de uma busca no catálogo
+  (`searchSupabaseCatalog`), então nunca existe o caso de "código que não bate com nada"
+  que a Lista Importada precisa avisar.
+- **Nenhuma tabela/RPC nova no Supabase** — a busca já existente já resolve tudo; a
+  gravação do inventário usa exatamente `saveInventarioToSupabase`/`inventarios` de
+  sempre, com `itens_importados` preenchido do mesmo jeito que Lista Importada já grava.
+- Testado via transpile Babel do arquivo inteiro e balanceamento de chaves do CSS (575
+  aberturas/575 fechamentos, sem mudança — CSS não foi tocado, reaproveita
+  `.list-row`/`.lr-title`/`.lr-sub` já existentes). **Verificação visual/funcional de
+  ponta a ponta (buscar, adicionar, remover, criar o inventário e contá-lo) fica a cargo
+  do cliente** — mesma limitação de sempre (login exige Supabase Auth real, não
+  simulável no sandbox sem rede).
