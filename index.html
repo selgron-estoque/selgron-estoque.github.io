@@ -6949,6 +6949,22 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
 
   const aguardandoSegunda = counts.filter(c=>c.statusAprovacao==='aguardando_segunda' && !byOriginal[c.id]);
 
+  // Filtro de período ("Filtros"), mesmo componente já usado em Indicadores/
+  // Contagens Concluídas — chave própria (`recontagensTrendFilter`). Essa
+  // tela já teve um filtro de período antes, removido numa rodada anterior
+  // por só existir pra alimentar um contador de "concluídas" que não fazia
+  // sentido aqui (ver CLAUDE.md, "ListaProgressoHeader removido"). Desta
+  // vez o filtro tem um propósito diferente e honesto: estreitar a PRÓPRIA
+  // lista de pendentes por data, útil pra achar um item específico numa
+  // fila grande sem rolar tudo. O total real de pendentes
+  // (`aguardandoSegunda.length`, sem filtro nenhum) nunca é escondido — só
+  // a lista abaixo é que pode ficar mais curta, e a diferença é mostrada
+  // explicitamente no cabeçalho.
+  const [trendFilter, setTrendFilter] = usePersistedState('recontagensTrendFilter', {tipo:'30d', from:'', to:''});
+  const hojeStr = hojeLocalStr();
+  const { from: dataInicioStr, to: dataFimStr } = computeTrendRange(trendFilter.tipo, hojeStr, trendFilter.from, trendFilter.to);
+  const aguardandoSegundaNoPeriodo = aguardandoSegunda.filter(c=>c.data && c.data>=dataInicioStr && c.data<=dataFimStr);
+
   // Busca por código ou descrição — filtra a fila em tempo real, sem
   // depender de rolar a lista inteira pra achar um item específico (pedido
   // do cliente). Mesmo padrão simples já usado em UserManagementPanel/
@@ -6956,8 +6972,8 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
   const [busca, setBusca] = useState('');
   const buscaNorm = busca.trim().toLowerCase();
   const porBusca = buscaNorm
-    ? aguardandoSegunda.filter(c => c.productCode.toLowerCase().includes(buscaNorm) || (c.descricao||'').toLowerCase().includes(buscaNorm))
-    : aguardandoSegunda;
+    ? aguardandoSegundaNoPeriodo.filter(c => c.productCode.toLowerCase().includes(buscaNorm) || (c.descricao||'').toLowerCase().includes(buscaNorm))
+    : aguardandoSegundaNoPeriodo;
 
   const [severidade, setSeveridade] = useState('todos');
   const listaFiltradaSemOrdenar = severidade==='todos' ? porBusca : porBusca.filter(c=>classifySeverity4(severidadeDe(c)).level===severidade);
@@ -7023,10 +7039,22 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
 
   return (
     <div>
+      <TrendFilterBar
+        trendFilter={trendFilter}
+        setTrendFilter={setTrendFilter}
+        dataInicioStr={dataInicioStr}
+        dataFimStr={dataFimStr}
+        hojeStr={hojeStr}
+        subtitle="Selecione o período para filtrar a fila de recontagem"
+      />
+
       <SearchWithScanner value={busca} onChange={setBusca} placeholder="Buscar por código ou descrição do material" />
 
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8,marginBottom:10}}>
-        <span style={{fontSize:12.5,color:'var(--ink-dim)'}}><strong style={{color:'var(--ink)'}}>{aguardandoSegunda.length}</strong> pendentes</span>
+        <span style={{fontSize:12.5,color:'var(--ink-dim)'}}>
+          <strong style={{color:'var(--ink)'}}>{aguardandoSegunda.length}</strong> pendentes
+          {aguardandoSegundaNoPeriodo.length!==aguardandoSegunda.length && <> · <strong style={{color:'var(--ink)'}}>{aguardandoSegundaNoPeriodo.length}</strong> no período selecionado</>}
+        </span>
       </div>
 
       <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
@@ -7035,7 +7063,9 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
 
       {listaFiltrada.length===0 ? (
         <div className="empty-state" style={{padding:20}}>
-          {aguardandoSegunda.length===0 ? 'Nenhum item aguardando recontagem no momento.' : 'Nenhum item encontrado para esse filtro.'}
+          {aguardandoSegunda.length===0
+            ? 'Nenhum item aguardando recontagem no momento.'
+            : (aguardandoSegundaNoPeriodo.length===0 ? 'Nenhum item aguardando recontagem nesse período.' : 'Nenhum item encontrado para esse filtro.')}
         </div>
       ) : listaFiltrada.map(c=>{
         const sev = classifySeverity4(severidadeDe(c));
@@ -7171,11 +7201,18 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequ
     return ()=>document.removeEventListener('click', handleClickOutside);
   }, [menuAbertoId]);
 
+  // Filtro de período ("Filtros"), mesmo critério e mesmo comentário já
+  // usado em RecountsPanel — chave própria (`divergentesTrendFilter`).
+  const [trendFilter, setTrendFilter] = usePersistedState('divergentesTrendFilter', {tipo:'30d', from:'', to:''});
+  const hojeStr = hojeLocalStr();
+  const { from: dataInicioStr, to: dataFimStr } = computeTrendRange(trendFilter.tipo, hojeStr, trendFilter.from, trendFilter.to);
+  const aguardandoAnaliseNoPeriodo = aguardandoAnalise.filter(c=>c.data && c.data>=dataInicioStr && c.data<=dataFimStr);
+
   const [busca, setBusca] = useState('');
   const buscaNorm = busca.trim().toLowerCase();
   const porBusca = buscaNorm
-    ? aguardandoAnalise.filter(c => c.productCode.toLowerCase().includes(buscaNorm) || (c.descricao||'').toLowerCase().includes(buscaNorm))
-    : aguardandoAnalise;
+    ? aguardandoAnaliseNoPeriodo.filter(c => c.productCode.toLowerCase().includes(buscaNorm) || (c.descricao||'').toLowerCase().includes(buscaNorm))
+    : aguardandoAnaliseNoPeriodo;
 
   const [severidade, setSeveridade] = useState('todos');
   const listaFiltradaSemOrdenar = severidade==='todos' ? porBusca : porBusca.filter(c=>classifySeverity4(severidadeDe(c)).level===severidade);
@@ -7221,10 +7258,22 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequ
 
   return (
     <div>
+      <TrendFilterBar
+        trendFilter={trendFilter}
+        setTrendFilter={setTrendFilter}
+        dataInicioStr={dataInicioStr}
+        dataFimStr={dataFimStr}
+        hojeStr={hojeStr}
+        subtitle="Selecione o período para filtrar as divergências pendentes"
+      />
+
       <SearchWithScanner value={busca} onChange={setBusca} placeholder="Código ou descrição do material" />
 
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8,marginBottom:10}}>
-        <span style={{fontSize:12.5,color:'var(--ink-dim)'}}><strong style={{color:'var(--ink)'}}>{aguardandoAnalise.length}</strong> pendentes</span>
+        <span style={{fontSize:12.5,color:'var(--ink-dim)'}}>
+          <strong style={{color:'var(--ink)'}}>{aguardandoAnalise.length}</strong> pendentes
+          {aguardandoAnaliseNoPeriodo.length!==aguardandoAnalise.length && <> · <strong style={{color:'var(--ink)'}}>{aguardandoAnaliseNoPeriodo.length}</strong> no período selecionado</>}
+        </span>
       </div>
 
       <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
@@ -7233,7 +7282,9 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequ
 
       {listaFiltrada.length===0 ? (
         <div className="empty-state" style={{padding:20}}>
-          {aguardandoAnalise.length===0 ? 'Nenhuma divergência aguardando análise no momento.' : 'Nenhum item encontrado para esse filtro.'}
+          {aguardandoAnalise.length===0
+            ? 'Nenhuma divergência aguardando análise no momento.'
+            : (aguardandoAnaliseNoPeriodo.length===0 ? 'Nenhuma divergência aguardando análise nesse período.' : 'Nenhum item encontrado para esse filtro.')}
         </div>
       ) : listaFiltrada.map(c=>{
         const anterior = c.contagemAnteriorId ? counts.find(x=>x.id===c.contagemAnteriorId) : null;

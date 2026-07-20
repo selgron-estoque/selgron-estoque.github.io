@@ -5974,3 +5974,46 @@ quebra pra 2 linhas em cards bem estreitos (`flex-wrap`), reduzindo a altura ext
 card de ~3 linhas pra 1 (ou no máximo 2), bem menos do que a metade do que era antes.
 Testado via transpile Babel e balanceamento de chaves do CSS (575 aberturas/575
 fechamentos).
+
+## "Recontagens Pendentes"/"Itens Divergentes" ganham filtro de período ("Filtros")
+
+Cliente pediu: "em 'Recontagens Pendentes' e 'Itens Divergentes' incluir os filtros de
+data também" — o mesmo painel "Filtros" (`TrendFilterBar`, presets Hoje/Esta semana/
+Este mês/30/60/90 dias/Este ano/Personalizado) já usado em Indicadores e "Contagens
+Concluídas".
+
+- **Essas 2 telas já tiveram um filtro de período antes, removido numa rodada anterior**
+  (ver seção "`ListaProgressoHeader` removido por completo" acima) — na época, o único
+  propósito do filtro era alimentar um contador de "concluídas" dentro de um cabeçalho
+  de progresso (donut) que o próprio cliente pediu pra remover, por misturar um número
+  ESCOPADO por período com um "restantes" sempre SEM recorte de tempo (enganoso). Desta
+  vez o filtro tem um propósito diferente e honesto: estreitar a PRÓPRIA lista de itens
+  pendentes por data — útil pra achar um item específico dentro de uma fila grande sem
+  rolar tudo, ou revisar só o que entrou recentemente.
+- **O total real de pendentes nunca fica escondido**: `aguardandoSegunda.length`/
+  `aguardandoAnalise.length` (usado no cabeçalho "N pendentes" e em qualquer lugar que
+  precise do número de verdade, como o KPI da Home) continuam SEM filtro nenhum — só a
+  LISTA renderizada abaixo (`aguardandoSegundaNoPeriodo`/`aguardandoAnaliseNoPeriodo`,
+  filtradas por `c.data` dentro do intervalo escolhido) é que pode ficar mais curta. Se
+  o filtro de fato esconder algum item, o cabeçalho mostra os dois números lado a lado
+  ("151 pendentes · 42 no período selecionado") em vez de só trocar silenciosamente o
+  número — evita a impressão de que a fila real diminuiu quando só a visualização
+  mudou. Mesmo critério de honestidade já seguido no resto do app (nunca esconder
+  backlog real atrás de um filtro sem indicar isso).
+- **Chaves de persistência próprias** (`recontagensTrendFilter`/`divergentesTrendFilter`,
+  mesma convenção de nome já usada por `concluidasTrendFilter`/`dashboardTrendFilter`) —
+  cada tela guarda o próprio filtro escolhido, sem compartilhar estado entre elas nem
+  com Indicadores/Concluídas.
+- **Sem botão "Atualizar"** (`onRefresh` não passado ao `TrendFilterBar` — o componente
+  já esconde o botão quando essa prop não vem) — diferente de "Contagens Concluídas"
+  (que busca um payload grande do histórico só uma vez por login), essas 2 telas leem
+  `counts` direto do estado de `App()`, já mantido em dia pelo Realtime (ver "Sincronização
+  em tempo real"); não faz sentido reintroduzir um botão que o próprio cliente já pediu
+  pra remover dessas telas numa rodada anterior por ser redundante.
+- **Ordem na tela** (mesmo padrão de `ConcludedCountsPanel`): `TrendFilterBar` primeiro,
+  depois `SearchWithScanner`, depois o contador "N pendentes", depois `SeverityFilterRow`
+  — busca e severidade continuam operando em cima da lista JÁ filtrada por período.
+- Testado via transpile Babel do arquivo inteiro e balanceamento de chaves do CSS (575
+  aberturas/575 fechamentos, sem mudança — CSS não foi tocado). **Verificação visual/
+  funcional de ponta a ponta fica a cargo do cliente** — mesma limitação de sempre
+  (login exige Supabase Auth real, não simulável no sandbox sem rede).
