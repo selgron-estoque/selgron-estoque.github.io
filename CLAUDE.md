@@ -6017,3 +6017,35 @@ Concluídas".
   aberturas/575 fechamentos, sem mudança — CSS não foi tocado). **Verificação visual/
   funcional de ponta a ponta fica a cargo do cliente** — mesma limitação de sempre
   (login exige Supabase Auth real, não simulável no sandbox sem rede).
+
+## Bug real: rolagem do mouse mudava a quantidade contada sem querer
+
+Cliente reportou, junto de uma dúvida sobre como excluir uma 3ª contagem em "Itens
+Divergentes": "no botão de rolagem do mouse está mudando a contagem". Causa: é o
+comportamento nativo do Chrome/navegadores baseados em Chromium pra `<input
+type="number">` — girar a roda do mouse **enquanto o campo está focado** incrementa/
+decrementa o valor, em vez de rolar a página. O campo de quantidade em `CountStep` (o
+motor de contagem "coletor industrial") tem `autoFocus` — ou seja, ele já nasce
+focado assim que a tela abre, tornando esse comportamento fácil de disparar sem querer
+(qualquer rolagem da página nesse momento muda o número, sem o operador perceber).
+
+- **Correção**: `onWheel={e=>e.target.blur()}` no campo — ao girar a roda do mouse
+  sobre o campo, ele perde o foco imediatamente (antes do navegador aplicar o
+  incremento/decremento nativo), então a rolagem passa a rolar a página normalmente,
+  sem alterar o valor. Não usa `preventDefault` (isso bloquearia a rolagem da página
+  em vez de só desativar o incremento do campo).
+- **Aplicado nos 3 únicos `<input type="number">` do app** (mesma classe de bug,
+  mesma correção): o campo de quantidade em `CountStep` (o mais crítico, é onde o
+  cliente reportou), "Quantidade de itens" em `NewInventory` (criação de inventário) e
+  "Tempo de Inatividade" em Configurações — nenhum dos outros dois tinha `autoFocus`,
+  mas o mesmo risco existe em qualquer um se o usuário rolar a tela com o cursor sobre
+  o campo.
+- **Excluir uma contagem em "Itens Divergentes"**: já existe (não era bug) — o menu
+  "⋮" no canto superior direito do card (ao lado da data) abre um dropdown com
+  "Excluir contagem", disponível pra admin. Cada card da lista representa a rodada
+  MAIS RECENTE (a "3ª Contagem" no caso do cliente) — excluir ali remove exatamente
+  essa contagem, mesmo botão que já existe em "Recontagens Pendentes"/"Contagens
+  Concluídas" (`onDeleteCount`, só habilitado pro perfil admin).
+- Testado via transpile Babel do arquivo inteiro. **Verificação funcional (rolar o
+  mouse sobre o campo sem mudar o valor) fica a cargo do cliente** — mesma limitação
+  de sempre (login exige Supabase Auth real, não simulável no sandbox sem rede).

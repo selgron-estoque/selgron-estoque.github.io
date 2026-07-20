@@ -5592,7 +5592,7 @@ function NewInventory({onCreate, goto, inventories, gruposExcluidos}){
             {!isPorGrupo && (
               <div className="field">
                 <label>Quantidade de itens</label>
-                <input type="number" value={qtd} onChange={e=>setQtd(e.target.value)} placeholder="Ex.: 20" />
+                <input type="number" value={qtd} onChange={e=>setQtd(e.target.value)} onWheel={e=>e.target.blur()} placeholder="Ex.: 20" />
               </div>
             )}
           </>
@@ -6274,6 +6274,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
             inputMode="decimal"
             value={qty}
             onChange={e=>setQty(e.target.value)}
+            onWheel={e=>e.target.blur()}
             placeholder="0"
             autoFocus
           />
@@ -9855,6 +9856,7 @@ function Settings({role, currentUser, operadorVeSaldo, onSetOperadorVeSaldo, ope
               value={timeoutInput}
               disabled={salvandoTimeout}
               onChange={e=>setTimeoutInput(e.target.value)}
+              onWheel={e=>e.target.blur()}
               style={{width:90}}
             />
             <span style={{fontSize:13,color:'var(--ink-dim)'}}>minutos</span>
