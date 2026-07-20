@@ -6188,3 +6188,132 @@ estilo SaaS premium", "persistir o último filtro utilizado no localStorage").
   arquivo inteiro e balanceamento de chaves do CSS conferidos (575/575, sem mudança).
   **Verificação visual (o filtro realmente resetando ao recarregar) fica a cargo do
   cliente** — mesma limitação de sempre (login exige Supabase Auth real).
+
+## Catálogo ganha Unidade de Medida e Endereço em massa (painel novo)
+
+Cliente mandou uma planilha real ("Descrição de Produtos", export do Protheus/SB2,
+126.201 linhas) trazendo `Unidade` e `Localizacao` (endereço) por produto — o mesmo
+catálogo de 85.357 códigos já usado pelo app, só que agora com essas duas colunas a
+mais. Confirmado com o cliente via `AskUserQuestion` (3 perguntas): ele vai reenviar
+essa planilha de novo no futuro (mesmo padrão da SB2 de saldo) → ganhou painel de
+upload dedicado, não uma correção pontual via SQL; todos os endereços são do
+**Armazém 01** (a planilha não trouxe coluna de armazém, a tabela `enderecos` exige
+saber isso); e o padrão `10000-X-0` (~247 ocorrências, bem diferente do resto que vai
+de 001 a ~075) é **endereço real**, não um placeholder — mantido como veio.
+
+### Análise da planilha antes de mexer em qualquer coisa
+
+- 85.357 códigos únicos (depois de descartar 40.844 linhas duplicadas EXATAS — mesmo
+  padrão de sempre, sem conflito de valor entre as cópias) — bate exatamente com o
+  catálogo já importado.
+- **8.680 códigos (≈10%) vieram como número puro no Excel** (mesmo bug de sempre —
+  ver `reconstructNumericCode`), reconstruídos sem nenhuma colisão com os demais
+  85.357 códigos finais.
+- 11.382 produtos vieram com Unidade E Endereço preenchidos (sempre os dois juntos,
+  nunca um sem o outro) — o resto do catálogo continua sem essa informação, como
+  esperado (ninguém teria os 85 mil localizados ainda).
+- Dos 11.382 endereços: 11.280 já bateram exatamente com o formato `XXX-L-X` que o
+  app usa (`ENDERECO_REGEX`); 98 precisaram de correção mecânica de formato
+  (corredor com 1-2 dígitos, posição com 2 dígitos, traço faltando antes da posição,
+  traço duplicado); só **4 realmente não deram pra interpretar** com segurança
+  (`073-A`/`072-A`/`075-A`, sem nenhum dígito de posição) — ficam sem endereço
+  cadastrado em vez de arriscar um palpite errado.
+- 1.873 endereços distintos no total (vários produtos podem compartilhar a mesma
+  posição — faz sentido, uma prateleira pode guardar mais de um item pequeno).
+
+### `normalizeEnderecoCatalogo(raw)` (index.html, perto de `replaceEstoqueSaldoInSupabase`)
+
+Corrige as variações mecânicas encontradas no export real (zero-pad de corredor
+1-2 dígitos, remoção de zero à esquerda de posição de 2 dígitos, traço faltando
+antes da posição, traço duplicado) e devolve `null` pro que não dá pra interpretar
+com segurança — **exceção deliberada pro padrão `10000-X-0`**, mantido como veio por
+confirmação do cliente, mesmo fugindo completamente da numeração normal do resto da
+planilha.
+
+### `parseDescricaoProdutosRows(matrixRows)` — por POSIÇÃO, não por nome de coluna
+
+O arquivo real do cliente veio com o cabeçalho da coluna "Descrição" corrompido
+(mojibake, provavelmente um export de codepage diferente do esperado) — ler pela
+matriz crua (`sheet_to_json(sheet,{header:1})`) e casar as 5 colunas por posição
+fixa (Produto/Descrição/Grupo/Unidade/Localizacao) é imune a esse tipo de problema
+de encoding, diferente do padrão usado em outros parsers deste app (que casam por
+nome de cabeçalho normalizado).
+
+**Bug pego no teste antes de subir**: a 1ª versão contava `enderecosCorrigidos`/
+`enderecosIgnorados` durante o loop de LINHAS CRUAS (antes de deduplicar por
+código) — como a planilha real tem 40 mil+ linhas duplicadas, um código repetido
+4 vezes inflava a contagem em 4x por engano (98 virou 136 no teste contra o
+arquivo real). Corrigido pra computar os dois contadores DEPOIS de deduplicar por
+código (guarda `enderecoRaw` junto de cada entrada no Map, calcula os resumos a
+partir das entradas finais, não das linhas brutas).
+
+### `upsertCatalogoDescricao(produtos, onProgress)` — UPSERT em 3 etapas, não replace
+
+Diferente do saldo SB2 (que sempre REPLACE completo, porque é sempre um retrato
+"agora" do Protheus), aqui faz mais sentido **UPSERT por código** — perder uma
+linha por uma falha no meio de um upload de 85 mil produtos seria pior que só não
+atualizar aquele código desta vez, e o catálogo não tem o mesmo problema de "lixo
+de item que saiu do armazém" que o saldo tem.
+
+1. Upsert em `produtos` (codigo/descricao/grupo/unidade), batches de 500,
+   `onConflict:'codigo'`.
+2. Upsert dos endereços DISTINTOS em `enderecos` (sempre `almoxarifado:'01'`),
+   recuperando o `id` de cada um via `.select('id, codigo')` — precisa do id pra
+   montar os vínculos no passo seguinte.
+3. Upsert dos vínculos produto↔endereço em `estoque_enderecos`
+   (`produto_codigo`, `endereco_id` resolvido no passo 2),
+   `onConflict:'produto_codigo,endereco_id'`.
+
+### `CatalogoDescricaoSyncPanel` — painel novo em Configurações (admin)
+
+Mesmo padrão visual/fluxo de `StockSyncPanel` (upload → resumo → confirmar →
+progresso em 3 etapas → resultado) — mostra total de linhas, códigos únicos, quantos
+com unidade/endereço, quantos endereços precisaram de correção automática, e a lista
+dos que ficaram sem endereço por não dar pra interpretar (transparência, mesmo
+padrão dos outros painéis de import). Última atualização exibida a partir de
+`produtos.sincronizado_em` (`fetchUltimaAtualizacaoCatalogo`), atualizado em todo
+upsert.
+
+### `unidade` passa a ser exibida de verdade (existia na tabela, nunca era lida)
+
+`produtos.unidade` já existia no `backend/schema.sql` desde sempre, mas **nenhuma
+consulta do front-end selecionava essa coluna** — `searchSupabaseCatalog`,
+`fetchProdutosByCodigos` e `estoqueRowToProduct` hardcodavam `unidade: null`
+incondicionalmente, então o campo "Unidade" na tela de contagem sempre mostrava
+"não informado", mesmo que o dado existisse no banco (o que nunca tinha acontecido
+até este upload). Corrigido nos 3 lugares — os outros 2 pontos que também hardcodam
+`unidade: null` (`ImportedListCountFlow`/`RecountFlow`, fallback pra item que não
+está em NENHUM catálogo) foram **deixados como estão de propósito** — não tem
+unidade nenhuma pra buscar quando o código simplesmente não existe em `produtos`.
+
+`contagem_itens_prioritarios` (RPC usada por Aleatória/Curva ABC/Rota/Grupo)
+precisou mudar de assinatura de retorno (ganhou a coluna `unidade`) — `drop
+function` antes do `create or replace`, já que o Postgres não deixa mudar o
+formato de retorno de uma função existente sem isso (mesmo padrão já usado nas
+vezes anteriores que essa RPC mudou de forma).
+
+### RLS: `produtos`/`enderecos`/`estoque_enderecos` só tinham policy de SELECT
+
+Sem nenhuma policy de INSERT/UPDATE, o upload do painel novo bateria na parede do
+RLS (mesmo susto silencioso já documentado várias vezes neste projeto — RLS
+bloqueando sem erro visível). Adicionada policy `"escrita autenticada"` (`for all
+using/with check (auth.role() = 'authenticated')`) nas 3 tabelas, mesmo padrão já
+aplicado em `estoque_saldo`/`contagens`/`inventarios` na rodada de endurecimento de
+RLS pós-migração pro Supabase Auth.
+
+### Verificação
+
+Diferente de testes anteriores (mockáveis via Playwright), a verificação aqui foi
+mais rigorosa dado o bug crítico da rodada anterior: montei um harness real
+(jsdom + `react-dom/server` + a biblioteca `xlsx` real do Node, não só transpile)
+e rodei `parseDescricaoProdutosRows` **contra o arquivo `.xlsx` real que o cliente
+enviou** (não um mock) — confirmei os números exatos acima (85.357 códigos, 11.382
+com unidade/endereço, 98 corrigidos, 4 ignorados, 1.873 endereços distintos) e que
+`CatalogoDescricaoSyncPanel`/`Settings` renderizam sem erro. `normalizeEnderecoCatalogo`
+testado com os 8 casos reais encontrados na planilha (incluindo os 4 que ficam
+`null` de propósito). Transpile Babel do arquivo inteiro e balanceamento de chaves
+do CSS conferidos (575/575, sem mudança — CSS não foi tocado). **Falta o cliente**:
+rodar o SQL novo (`backend/schema.sql`, bloco "CATÁLOGO GANHA UNIDADE DE MEDIDA E
+ENDEREÇO EM MASSA") no projeto real e então usar o painel novo em Configurações pra
+fazer o primeiro upload de verdade — mesmo handoff de sempre (sandbox sem acesso de
+rede ao Supabase real).

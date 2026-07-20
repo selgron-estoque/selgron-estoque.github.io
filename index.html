@@ -1044,7 +1044,7 @@ async function searchSupabaseCatalog(query, almoxarifado){
   const q = query.trim();
   const { data, error } = await supabaseClient
     .from('produtos')
-    .select('codigo, descricao, grupo, estoque_enderecos(saldo_no_endereco, enderecos(codigo))')
+    .select('codigo, descricao, unidade, grupo, estoque_enderecos(saldo_no_endereco, enderecos(codigo))')
     .or(`codigo.ilike.%${q}%,descricao.ilike.%${q}%`)
     .limit(8);
   if(error || !data) return [];
@@ -1074,7 +1074,7 @@ async function searchSupabaseCatalog(query, almoxarifado){
     return {
       codigo: row.codigo,
       descricao: row.descricao,
-      unidade: null,
+      unidade: row.unidade || null,
       familia: describeGrupo(row.grupo),
       endereco: enderecoRow ? enderecoRow.codigo : null,
       enderecoCadastrado: !!enderecoRow,
@@ -1769,6 +1769,158 @@ async function replaceEstoqueSaldoInSupabase(linhas, onProgress){
   }
 }
 
+// Normaliza o endereço vindo da planilha "Descrição de Produtos" pro mesmo
+// formato usado no resto do app (3 dígitos-corredor, traço, letra, traço, 1
+// dígito de posição — ver ENDERECO_REGEX) — corrige as variações mecânicas
+// mais comuns encontradas no export real do cliente (corredor com 1-2
+// dígitos, posição com 2 dígitos, traço faltando antes da posição, traço
+// duplicado) e devolve `null` pros casos sem informação suficiente pra
+// interpretar com segurança (ex.: "073-A", sem posição nenhuma) — esses
+// ficam sem endereço cadastrado em vez de arriscar um palpite errado.
+// **Exceção deliberada**: o padrão "10000-X-0" (corredor sempre "10000",
+// posição sempre "0") foge completamente da numeração normal (001-075 no
+// resto da planilha), mas o cliente confirmou que é um endereço real —
+// mantido como veio, sem tentar encaixar no formato de 3 dígitos.
+function normalizeEnderecoCatalogo(raw){
+  if(!raw) return null;
+  const e = String(raw).trim().toUpperCase();
+  if(!e) return null;
+  if(/^\d{3}-[A-Z]-\d$/.test(e)) return e;
+  if(/^\d{5}-[A-Z]-\d+$/.test(e)) return e;
+  let m = e.match(/^(\d{1,2})-([A-Z])-(\d+)$/);
+  if(m) return m[1].padStart(3,'0')+'-'+m[2]+'-'+m[3];
+  m = e.match(/^(\d{3})-([A-Z])-0(\d)$/);
+  if(m) return m[1]+'-'+m[2]+'-'+m[3];
+  m = e.match(/^(\d{1,3})-([A-Z])(\d)$/);
+  if(m) return m[1].padStart(3,'0')+'-'+m[2]+'-'+m[3];
+  m = e.match(/^(\d{3})--([A-Z])-(\d)$/);
+  if(m) return m[1]+'-'+m[2]+'-'+m[3];
+  return null;
+}
+
+// Lê a planilha "Descrição de Produtos" (export SB2 do Protheus com Unidade
+// e Localização acrescentadas — mesmo catálogo de sempre, 85 mil+ códigos) —
+// via matriz crua (`sheet_to_json(sheet,{header:1})`), não por nome de
+// cabeçalho: o arquivo real do cliente veio com o cabeçalho da coluna
+// "Descrição" corrompido (mojibake, provavelmente um export de codepage
+// errado) — ler por POSIÇÃO (Produto/Descrição/Grupo/Unidade/Localizacao,
+// nessa ordem fixa) é imune a esse tipo de problema de encoding. Reaproveita
+// `reconstructNumericCode` (mesmo bug já visto no catálogo original e na
+// SB2 de saldo: código 100% numérico perde formatação no Excel).
+function parseDescricaoProdutosRows(matrixRows){
+  const linhas = matrixRows.slice(1); // pula cabeçalho
+  // Guarda o endereço original (cru) junto do já normalizado — a planilha
+  // real tem 40 mil+ linhas duplicadas (mesmo código repetido, ver
+  // CLAUDE.md) e o resumo (corrigidos/ignorados) precisa contar por CÓDIGO
+  // ÚNICO, não por linha crua — senão um código repetido 4x infla a
+  // contagem em 4x por engano (bug pego no teste antes de subir).
+  const porCodigo = new Map();
+
+  linhas.forEach(row=>{
+    if(!row || row[0]==null || String(row[0]).trim()==='') return;
+    const codigo = reconstructNumericCode(String(row[0]).trim());
+    const descricao = row[1]!=null ? String(row[1]).trim() : '';
+    const grupo = row[2]!=null && String(row[2]).trim()!=='' ? String(row[2]).trim() : null;
+    const unidadeRaw = row[3]!=null ? String(row[3]).trim() : '';
+    const unidade = unidadeRaw ? unidadeRaw.toUpperCase() : null;
+    const enderecoRaw = row[4]!=null ? String(row[4]).trim() : '';
+    const endereco = enderecoRaw ? normalizeEnderecoCatalogo(enderecoRaw) : null;
+    porCodigo.set(codigo, {codigo, descricao, grupo, unidade, endereco, enderecoRaw});
+  });
+
+  const entradas = Array.from(porCodigo.values());
+  const produtos = entradas.map(({codigo, descricao, grupo, unidade, endereco})=>({codigo, descricao, grupo, unidade, endereco}));
+  const comEndereco = entradas.filter(e=>e.endereco).length;
+  const enderecosDistintos = new Set(entradas.filter(e=>e.endereco).map(e=>e.endereco)).size;
+  const comUnidade = entradas.filter(e=>e.unidade).length;
+  const enderecosCorrigidos = entradas.filter(e=>e.endereco && e.endereco!==e.enderecoRaw.toUpperCase()).length;
+  const enderecosIgnorados = entradas.filter(e=>e.enderecoRaw && !e.endereco).map(e=>({codigo:e.codigo, enderecoOriginal:e.enderecoRaw}));
+
+  return {
+    produtos,
+    resumo: {
+      totalLinhas: linhas.length,
+      codigosUnicos: produtos.length,
+      comUnidade,
+      comEndereco,
+      enderecosDistintos,
+      enderecosCorrigidos,
+      enderecosIgnorados,
+    },
+  };
+}
+
+// Grava o catálogo atualizado no Supabase — UPSERT por código (não replace
+// completo como a SB2 de saldo: aqui não faz sentido apagar tudo, o
+// catálogo é fonte de descrição/unidade/endereço, perder uma linha por uma
+// falha no meio do upload seria pior que só não atualizar aquele código
+// desta vez). Três etapas: (1) upsert em `produtos`; (2) upsert dos
+// endereços DISTINTOS em `enderecos` (sempre Armazém 01, confirmado com o
+// cliente — a planilha não traz essa coluna), recuperando o `id` de cada
+// um via `.select()`; (3) upsert dos vínculos produto↔endereço em
+// `estoque_enderecos` usando os ids resolvidos no passo 2.
+async function upsertCatalogoDescricao(produtos, onProgress){
+  if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
+  const TAMANHO_LOTE = 500;
+  const agora = new Date().toISOString();
+  try{
+    // 1) produtos
+    const linhasProdutos = produtos.map(p=>({
+      codigo: p.codigo, descricao: p.descricao, grupo: p.grupo, unidade: p.unidade,
+      sincronizado_em: agora,
+    }));
+    for(let i=0; i<linhasProdutos.length; i+=TAMANHO_LOTE){
+      const lote = linhasProdutos.slice(i, i+TAMANHO_LOTE);
+      const { error } = await supabaseClient.from('produtos').upsert(lote, {onConflict:'codigo'});
+      if(error) return {ok:false, erro:'Falha ao gravar produtos (linha '+i+'): '+error.message};
+      if(onProgress) onProgress({etapa:'produtos', feito:Math.min(i+TAMANHO_LOTE, linhasProdutos.length), total:linhasProdutos.length});
+    }
+
+    // 2) endereços distintos
+    const comEndereco = produtos.filter(p=>p.endereco);
+    const codigosEnderecoDistintos = Array.from(new Set(comEndereco.map(p=>p.endereco)));
+    const idPorCodigoEndereco = new Map();
+    for(let i=0; i<codigosEnderecoDistintos.length; i+=TAMANHO_LOTE){
+      const lote = codigosEnderecoDistintos.slice(i, i+TAMANHO_LOTE).map(codigo=>({codigo, almoxarifado:'01'}));
+      const { data, error } = await supabaseClient.from('enderecos').upsert(lote, {onConflict:'codigo'}).select('id, codigo');
+      if(error) return {ok:false, erro:'Falha ao gravar endereços (linha '+i+'): '+error.message};
+      (data||[]).forEach(row=>idPorCodigoEndereco.set(row.codigo, row.id));
+      if(onProgress) onProgress({etapa:'enderecos', feito:Math.min(i+TAMANHO_LOTE, codigosEnderecoDistintos.length), total:codigosEnderecoDistintos.length});
+    }
+
+    // 3) vínculos produto↔endereço
+    const vinculos = comEndereco
+      .map(p=>({produto_codigo:p.codigo, endereco_id:idPorCodigoEndereco.get(p.endereco)}))
+      .filter(v=>v.endereco_id);
+    for(let i=0; i<vinculos.length; i+=TAMANHO_LOTE){
+      const lote = vinculos.slice(i, i+TAMANHO_LOTE);
+      const { error } = await supabaseClient.from('estoque_enderecos').upsert(lote, {onConflict:'produto_codigo,endereco_id'});
+      if(error) return {ok:false, erro:'Falha ao vincular endereços (linha '+i+'): '+error.message};
+      if(onProgress) onProgress({etapa:'vinculos', feito:Math.min(i+TAMANHO_LOTE, vinculos.length), total:vinculos.length});
+    }
+
+    return {ok:true, produtos: linhasProdutos.length, enderecos: codigosEnderecoDistintos.length, vinculos: vinculos.length};
+  }catch(err){
+    return {ok:false, erro:String(err && err.message || err)};
+  }
+}
+
+// Última atualização do catálogo (mesmo raciocínio de `fetchUltimaAtualizacaoEstoque`
+// pra SB2 de saldo) — só olha `produtos.sincronizado_em`, preenchido a cada
+// upsert de `upsertCatalogoDescricao`.
+async function fetchUltimaAtualizacaoCatalogo(){
+  if(!supabaseClient) return null;
+  try{
+    const { data, error } = await supabaseClient
+      .from('produtos').select('sincronizado_em')
+      .order('sincronizado_em', {ascending:false}).limit(1);
+    if(error || !data || data.length===0) return null;
+    return data[0].sincronizado_em;
+  }catch(err){
+    return null;
+  }
+}
+
 // Soma de valor/saldo por armazém, via função de banco (evita trazer 12 mil+
 // linhas pro navegador só pra somar) — usado pelos cards "Valor em Estoque"
 // do Dashboard. Retorna [] se a tabela ainda não foi populada ou a rede
@@ -2252,7 +2404,7 @@ function estoqueRowToProduct(row){
   return {
     codigo: row.codigo,
     descricao: row.descricao,
-    unidade: null,
+    unidade: row.unidade || null,
     familia: describeGrupo(row.grupo),
     grupo: row.grupo,
     endereco: row.endereco_codigo || null,
@@ -2369,7 +2521,7 @@ async function fetchProdutosByCodigos(codigos, almoxarifado){
   try{
     const { data: produtosRows } = await supabaseClient
       .from('produtos')
-      .select('codigo, descricao, grupo')
+      .select('codigo, descricao, unidade, grupo')
       .in('codigo', codigos);
     if(!produtosRows || produtosRows.length===0) return mapa;
 
@@ -2394,6 +2546,7 @@ async function fetchProdutosByCodigos(codigos, almoxarifado){
       mapa.set(p.codigo, estoqueRowToProduct({
         codigo: p.codigo,
         descricao: p.descricao,
+        unidade: p.unidade,
         grupo: p.grupo,
         almoxarifado: s.almoxarifado || (linhas.length>1 ? linhas.map(l=>l.almoxarifado).join('/') : '—'),
         saldo: unica ? s.saldo : null,
@@ -8058,6 +8211,7 @@ function ReportsScreen({counts, inventories, currentUser, sendHistory, onLogSend
       )}
 
       {isAdmin && <StockSyncPanel />}
+      {isAdmin && <CatalogoDescricaoSyncPanel />}
       {isAdmin && <HistoricoImportPanel onImported={onHistoricoImportado} />}
 
       <div className="panel">
@@ -9556,6 +9710,134 @@ function StockSyncPanel(){
       {resultado && resultado.ok && (
         <div className="login-success" style={{marginTop:14}}>
           Saldo atualizado: {resultado.inseridas} linhas gravadas no Supabase.
+        </div>
+      )}
+      {resultado && !resultado.ok && (
+        <div className="divergence-alert" style={{marginTop:14}}><Ic>⚠</Ic><span>{resultado.erro}</span></div>
+      )}
+    </div>
+  );
+}
+
+// Painel "Atualizar Catálogo (Unidade/Endereço)" — cliente confirmou que vai
+// reenviar essa planilha de novo no futuro (mesmo padrão da SB2 de saldo),
+// então ganhou upload dedicado em vez de uma correção pontual só desta vez.
+// Mesmo fluxo visual dos outros painéis de upload (StockSyncPanel/
+// HistoricoImportPanel): selecionar arquivo → resumo → confirmar → progresso
+// → resultado. Lê a planilha como MATRIZ crua (`header:1`), não por nome de
+// coluna — o arquivo real do cliente veio com o cabeçalho de "Descrição"
+// corrompido (mojibake), então casar por posição (Produto/Descrição/Grupo/
+// Unidade/Localizacao) é o único jeito robusto de não depender do texto do
+// cabeçalho.
+function CatalogoDescricaoSyncPanel(){
+  const [arquivoNome, setArquivoNome] = useState('');
+  const [parseResult, setParseResult] = useState(null);
+  const [erro, setErro] = useState('');
+  const [status, setStatus] = useState('idle'); // idle | uploading | done | error
+  const [progresso, setProgresso] = useState(null);
+  const [resultado, setResultado] = useState(null);
+  const [ultimaAtualizacao, setUltimaAtualizacao] = useState(undefined);
+  const fileRef = useRef();
+
+  useEffect(()=>{
+    let cancelado = false;
+    fetchUltimaAtualizacaoCatalogo().then(v=>{ if(!cancelado) setUltimaAtualizacao(v); });
+    return ()=>{ cancelado = true; };
+  }, []);
+
+  function handleFile(e){
+    const file = e.target.files[0];
+    if(!file) return;
+    setErro(''); setResultado(null); setParseResult(null); setStatus('idle');
+    setArquivoNome(file.name);
+    const reader = new FileReader();
+    reader.onload = (evt)=>{
+      try{
+        const data = new Uint8Array(evt.target.result);
+        const wb = window.XLSX.read(data, {type:'array'});
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const matrix = window.XLSX.utils.sheet_to_json(sheet, {header:1, defval:''});
+        const parsed = parseDescricaoProdutosRows(matrix);
+        if(parsed.produtos.length===0){
+          setErro('Nenhuma linha válida encontrada — verifique se a 1ª coluna (Produto) está preenchida.');
+          return;
+        }
+        setParseResult(parsed);
+      }catch(err){
+        setErro('Não foi possível ler o arquivo. Verifique se é um .xlsx válido.');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  async function handleConfirmar(){
+    if(!parseResult) return;
+    setStatus('uploading');
+    setProgresso({etapa:'produtos', feito:0, total:parseResult.produtos.length});
+    const res = await upsertCatalogoDescricao(parseResult.produtos, setProgresso);
+    setResultado(res);
+    setStatus(res.ok ? 'done' : 'error');
+    if(res.ok) fetchUltimaAtualizacaoCatalogo().then(setUltimaAtualizacao);
+  }
+
+  const ETAPA_LABEL = {produtos:'Gravando produtos', enderecos:'Gravando endereços', vinculos:'Vinculando produtos aos endereços'};
+
+  return (
+    <div className="panel">
+      <div className="section-title" style={{marginTop:0}}>Atualizar Catálogo (Unidade/Endereço)</div>
+      <div style={{fontSize:13,color:'var(--ink-dim)',marginBottom:14,lineHeight:1.6}}>
+        Suba aqui a planilha de descrição de produtos (export do Protheus: colunas
+        Produto, Descrição, Grupo, Unidade, Localizacao) sempre que tiver uma
+        atualização — pode reenviar quantas vezes precisar, cada envio atualiza os
+        códigos que trouxerem dado novo, sem apagar o resto do catálogo. Requer
+        conexão com a internet.
+      </div>
+      <div style={{fontSize:12.5,fontFamily:'var(--font-mono)',color:'var(--ink-dim)',marginBottom:14}}>
+        {ultimaAtualizacao===undefined
+          ? 'Verificando última atualização…'
+          : ultimaAtualizacao
+            ? <>Última atualização: {new Date(ultimaAtualizacao).toLocaleString('pt-BR')}</>
+            : 'Ainda sem catálogo carregado no Supabase.'}
+      </div>
+      <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{display:'none'}} onChange={handleFile} />
+      <button className="btn btn-secondary" onClick={()=>fileRef.current.click()}>
+        <Ic>📄</Ic> {arquivoNome || 'Selecionar planilha (.xlsx)'}
+      </button>
+
+      {erro && <div className="divergence-alert" style={{marginTop:14}}><Ic>⚠</Ic><span>{erro}</span></div>}
+
+      {parseResult && status!=='done' && (
+        <div style={{marginTop:14}}>
+          <div style={{fontSize:13,color:'var(--ink-dim)',lineHeight:1.8}}>
+            {parseResult.resumo.totalLinhas} linhas na planilha · {parseResult.resumo.codigosUnicos} códigos únicos ·{' '}
+            {parseResult.resumo.comUnidade} com unidade · {parseResult.resumo.comEndereco} com endereço
+            ({parseResult.resumo.enderecosDistintos} endereços distintos)
+            {parseResult.resumo.enderecosCorrigidos>0 && <> · {parseResult.resumo.enderecosCorrigidos} endereços com formato corrigido automaticamente</>}
+          </div>
+          {parseResult.resumo.enderecosIgnorados.length>0 && (
+            <div className="divergence-alert" style={{marginTop:10}}>
+              <Ic>ℹ</Ic>
+              <span>
+                {parseResult.resumo.enderecosIgnorados.length} endereço(s) não puderam ser interpretados e ficarão
+                sem endereço cadastrado: {parseResult.resumo.enderecosIgnorados.map(i=>i.codigo+' ('+i.enderecoOriginal+')').join(', ')}.
+              </span>
+            </div>
+          )}
+          <button className="btn btn-primary" style={{marginTop:10}} onClick={handleConfirmar} disabled={status==='uploading'}>
+            <Ic>⬆</Ic> {status==='uploading' ? 'Atualizando…' : 'Confirmar atualização'}
+          </button>
+          {status==='uploading' && progresso && (
+            <div style={{fontSize:12,color:'var(--ink-dim)',marginTop:8}}>
+              {ETAPA_LABEL[progresso.etapa]}: {progresso.feito} de {progresso.total}…
+            </div>
+          )}
+        </div>
+      )}
+
+      {resultado && resultado.ok && (
+        <div className="login-success" style={{marginTop:14}}>
+          Catálogo atualizado: {resultado.produtos} produtos, {resultado.enderecos} endereços,{' '}
+          {resultado.vinculos} vínculos produto-endereço gravados no Supabase.
         </div>
       )}
       {resultado && !resultado.ok && (

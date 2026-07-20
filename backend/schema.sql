@@ -936,3 +936,60 @@ alter table app_config add column if not exists operador_ve_valores_recontagem b
 --   select column_name from information_schema.columns where table_name = 'contagens' and column_name = 'familia';
 -- =============================================================================
 alter table contagens add column if not exists familia text;
+
+-- =============================================================================
+-- CATÁLOGO GANHA UNIDADE DE MEDIDA E ENDEREÇO EM MASSA — cliente mandou uma
+-- planilha "Descrição de Produtos" (export do Protheus, mesma base SB2 de
+-- sempre — 85.357 códigos, batendo com o catálogo já importado) trazendo
+-- Unidade e Localização (endereço) por produto, algo que ele vai reenviar
+-- de novo no futuro (mesmo padrão do saldo SB2/histórico de contagens) —
+-- por isso ganhou um painel de upload dedicado em Configurações
+-- (`CatalogoDescricaoSyncPanel`), não foi só uma correção pontual via SQL.
+--
+-- `produtos.unidade` JÁ EXISTIA no schema (linha da definição da tabela,
+-- bem acima) mas nunca tinha sido populada nem selecionada em NENHUMA
+-- consulta do front-end — ficava sempre null/"não informado" na tela. Não
+-- precisa de `alter table` pra essa coluna, só passou a ser preenchida e
+-- lida de verdade agora (ver index.html: searchSupabaseCatalog/
+-- fetchProdutosByCodigos/estoqueRowToProduct).
+--
+-- `contagem_itens_prioritarios` precisou mudar de assinatura de retorno
+-- (ganhou a coluna `unidade`) — mesmo padrão de sempre pra isso
+-- (`drop function` primeiro, já que o Postgres não deixa trocar o formato
+-- de retorno de uma função existente com `create or replace`).
+-- =============================================================================
+drop function if exists contagem_itens_prioritarios(int, text[], text[]);
+create or replace function contagem_itens_prioritarios(p_limit int default 50, p_grupos text[] default null, p_almoxarifados text[] default null)
+returns table(
+  codigo text, descricao text, unidade text, grupo text, almoxarifado text, saldo numeric,
+  valor_financeiro numeric, data_ultima_saida date, sem_movimento_recente boolean,
+  endereco_codigo text, corredor text, rua text
+) as $$
+  select
+    p.codigo, p.descricao, p.unidade, p.grupo, es.almoxarifado, es.saldo, es.valor_financeiro,
+    es.data_ultima_saida,
+    (es.data_ultima_saida is null or es.data_ultima_saida < current_date - interval '90 days'),
+    e.codigo, e.corredor, e.rua
+  from estoque_saldo es
+  join produtos p on p.codigo = es.produto_codigo
+  left join estoque_enderecos ee on ee.produto_codigo = es.produto_codigo
+  left join enderecos e on e.id = ee.endereco_id
+  where (p_grupos is null or p.grupo = any(p_grupos))
+    and (p_almoxarifados is null or es.almoxarifado = any(p_almoxarifados))
+  order by
+    (es.data_ultima_saida is null or es.data_ultima_saida < current_date - interval '90 days') desc,
+    es.valor_financeiro desc
+  limit p_limit;
+$$ language sql stable;
+
+-- `produtos`/`enderecos`/`estoque_enderecos` só tinham policy de SELECT até
+-- aqui (ver "leitura pública" mais acima) — o painel de upload roda com o
+-- usuário já autenticado (Supabase Auth, ver "Quinto pedaço do backend
+-- real"), então a escrita usa `auth.role()='authenticated'`, mesmo padrão
+-- já aplicado em `estoque_saldo`/`contagens`/`inventarios` na rodada de
+-- endurecimento de RLS — sem policy nenhuma de escrita, o INSERT/UPSERT do
+-- painel bateria na parede do RLS (mesmo susto silencioso já documentado
+-- várias vezes neste arquivo).
+create policy "escrita autenticada" on produtos for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+create policy "escrita autenticada" on enderecos for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+create policy "escrita autenticada" on estoque_enderecos for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
