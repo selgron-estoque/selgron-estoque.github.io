@@ -881,6 +881,12 @@
     .ops-kpi-meta.danger{color:var(--danger);font-weight:600;}
     .ops-kpi-bar-track{height:5px;border-radius:20px;background:var(--gray-100);overflow:hidden;margin-top:8px;}
     .ops-kpi-bar-fill{height:100%;border-radius:20px;background:linear-gradient(90deg,#6D5BD0,#2A6FD6);}
+    /* Detalhamento extra dentro de um card específico (ver "Itens
+       Divergentes") — registros totais vs. códigos distintos, já que um
+       mesmo produto pode ter mais de uma contagem/divergência registrada. */
+    .ops-kpi-subrow{margin-top:10px;padding-top:10px;border-top:1px solid var(--gray-100);display:flex;flex-direction:column;gap:4px;}
+    .ops-kpi-subrow span{font-family:var(--font-corp);font-size:10.5px;color:var(--gray-500);}
+    .ops-kpi-subrow strong{color:var(--navy);font-weight:700;}
     @media (max-width:1360px){ .ops-kpi-row{grid-template-columns:repeat(2,1fr);} }
     @media (max-width:640px){ .ops-kpi-row{grid-template-columns:1fr;gap:10px;} }
 
@@ -8586,6 +8592,15 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   const divergentes = todasParaQualidade.filter(c=>c.diferenca!==0 && c.diferenca!==null);
   const acuracidade = todasParaQualidade.length>0 ? (((todasParaQualidade.length-divergentes.length)/todasParaQualidade.length)*100).toFixed(1) : '100.0';
   const valorDivergente = todasParaQualidade.reduce((s,c)=>s+Number(c.valorDivergente||0),0);
+  // Card "Itens Divergentes" (Resumo da Operação) — cliente pediu pra
+  // mostrar, dentro do mesmo card, quantos registros de contagem existem no
+  // total e quantos CÓDIGOS distintos isso representa (um mesmo produto pode
+  // ter mais de um registro — 1ª contagem + recontagem, ou contagem ao vivo
+  // + linha do histórico — então "registros" e "códigos únicos" são números
+  // diferentes por natureza). Mesmo raciocínio pro "Divergências": 835
+  // registros divergentes não são necessariamente 835 PRODUTOS diferentes.
+  const codigosDistintosContados = new Set(todasParaQualidade.map(c=>c.productCode)).size;
+  const codigosDistintosDivergentes = new Set(divergentes.map(c=>c.productCode)).size;
 
   // Valor em estoque por armazém — vem do Supabase (estoque_saldo,
   // atualizado via upload manual da planilha SB2 em Configurações, ver
@@ -8754,6 +8769,11 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
           </div>
           <div className="ops-kpi-value">{divergentes.length}</div>
           <div className="ops-kpi-meta">{todasParaQualidade.length>0 ? (divergentes.length/todasParaQualidade.length*100).toFixed(1).replace('.',',') : '0,0'}% do total de itens</div>
+          <div className="ops-kpi-subrow">
+            <span>Itens contados: <strong>{todasParaQualidade.length}</strong></span>
+            <span>Códigos distintos: <strong>{codigosDistintosContados}</strong></span>
+            <span>Divergências (códigos distintos): <strong>{codigosDistintosDivergentes}</strong></span>
+          </div>
         </div>
         <div className="ops-kpi-card">
           <div className="ops-kpi-head">

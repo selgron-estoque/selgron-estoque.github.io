@@ -5935,3 +5935,31 @@ mesmo padrão, só que na tabela ao vivo em vez do histórico.
 - Testado só via leitura/análise dos resultados de SQL que o cliente rodou — sem acesso
   de rede ao Supabase no sandbox, mesma limitação de sempre. Cliente confirmou os dois
   comandos rodados com sucesso.
+
+## Card "Itens Divergentes" (Resumo da Operação) ganha detalhamento — registros vs. códigos distintos
+
+Cliente pediu, direto em cima do card "Itens Divergentes" (835, "23,1% do total de
+itens"): incluir "Itens contados, Distintos e Divergências também códigos distintos" —
+interpretado como: mostrar, dentro do mesmo card, quantos REGISTROS de contagem existem
+no total e quantos CÓDIGOS de produto distintos isso representa, já que a investigação
+de duplicidade das seções anteriores deixou claro que "quantidade de registros" e
+"quantidade de produtos diferentes" são números que podem divergir bastante (um mesmo
+produto pode ter mais de uma contagem — 1ª contagem + recontagem, ou uma linha do
+histórico + uma contagem ao vivo pro mesmo item).
+
+- **`codigosDistintosContados`**/**`codigosDistintosDivergentes`** (Dashboard, perto de
+  `divergentes`) — `new Set(...).size` sobre `productCode`, um pra todo o pool
+  (`todasParaQualidade`) e outro só pros divergentes. Nenhum dado novo, só uma contagem
+  diferente em cima do que já existia.
+- **`.ops-kpi-subrow`** (CSS novo, mesmo card) — 3 linhas pequenas abaixo da % já
+  existente, separadas por uma linha divisória sutil: "Itens contados" (total de
+  registros, `todasParaQualidade.length`), "Códigos distintos" (produtos únicos
+  contados), "Divergências (códigos distintos)" (produtos únicos com alguma divergência
+  — distinto do número grande do topo do card, que continua sendo o total de REGISTROS
+  divergentes, não de produtos).
+- Escopado só a este card (`Itens Divergentes`) — os outros 3 de "Resumo da Operação"
+  não pediram esse detalhamento.
+- Testado via transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  (574 aberturas/574 fechamentos). **Verificação visual fica a cargo do cliente** —
+  mesma limitação de sempre (login exige Supabase Auth real, não simulável no sandbox
+  sem rede).
