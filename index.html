@@ -4247,10 +4247,10 @@ function App(){
           if(res.ok){ setInventories(prev=>[inv,...prev]); goto('inventories'); }
           return res;
         }} />}
-        {view==='randomCount' && <RandomCountFlow inv={flowState} user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} gruposExcluidos={gruposExcluidos} />}
+        {view==='randomCount' && <RandomCountFlow inv={flowState} user={currentUser} counts={counts} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} gruposExcluidos={gruposExcluidos} />}
         {view==='manualCount' && <ManualCountFlow user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('home');}} onAddressProposed={addAddressProposal} operadorVeSaldo={operadorVeSaldo} />}
-        {view==='routeCount' && <RouteCountFlow inv={flowState} user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} gruposExcluidos={gruposExcluidos} />}
-        {view==='importedListCount' && <ImportedListCountFlow inv={flowState} user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('inventories');}} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} />}
+        {view==='routeCount' && <RouteCountFlow inv={flowState} user={currentUser} counts={counts} onRegisterCount={registerFinishedCount} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} gruposExcluidos={gruposExcluidos} />}
+        {view==='importedListCount' && <ImportedListCountFlow inv={flowState} user={currentUser} counts={counts} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} />}
         {view==='recounts' && <RecountsPanel counts={counts} inventories={inventories} role={role} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} operadorVeValoresRecontagem={operadorVeValoresRecontagem} />}
         {view==='divergentes' && <DivergentItemsPanel counts={counts} inventories={inventories} role={role} goto={goto} onApprove={approveDivergence} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} />}
         {view==='todasDivergencias' && <AllDivergencesPanel counts={counts} historicoConcluidas={historicoConcluidas} goto={goto} />}
@@ -6620,7 +6620,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
 
 /* ---------------- MÓDULO 2: CONTAGEM ALEATÓRIA ---------------- */
 
-function RandomCountFlow({inv, user, onFinish, onAddressProposed, setInventories, counts, operadorVeSaldo, gruposExcluidos}){
+function RandomCountFlow({inv, user, onRegisterCount, onFinish, onAddressProposed, setInventories, counts, operadorVeSaldo, gruposExcluidos}){
   // Armazém obrigatório em TODA contagem por este motor (pedido do
   // cliente: item com saldo em mais de um armazém nunca batia, porque a
   // busca não era presa a um armazém físico específico). Um inventário
@@ -6702,7 +6702,7 @@ function RandomCountFlow({inv, user, onFinish, onAddressProposed, setInventories
       <div className="empty-state">
         <div className="ic"><Ic size={40}>🎉</Ic></div>
         Fila de contagem concluída.
-        <div style={{marginTop:16}}><button className="btn btn-primary" onClick={()=>onFinish(null)}>Voltar aos inventários</button></div>
+        <div style={{marginTop:16}}><button className="btn btn-primary" onClick={onFinish}>Voltar aos inventários</button></div>
       </div>
     );
   }
@@ -6711,6 +6711,7 @@ function RandomCountFlow({inv, user, onFinish, onAddressProposed, setInventories
     <div>
       <div className="role-note">Armazém {almoxarifadosFiltro.map(a=>a.padStart(2,'0')).join(', ')} · Itens ainda não contados primeiro, depois por sequência de endereço{inv && inv.grupo ? (' · Grupo: ' + inv.grupo.split(',').filter(Boolean).map(formatGrupoLabel).join(', ')) : ''}</div>
       <CountStep
+        key={q.current.codigo}
         product={q.current}
         user={user}
         inv={inv}
@@ -6721,7 +6722,7 @@ function RandomCountFlow({inv, user, onFinish, onAddressProposed, setInventories
         operadorVeSaldo={operadorVeSaldo}
         onComplete={(c)=>{
           if(inv && inv.id){ setInventories(prev=>prev.map(i=>i.id===inv.id?{...i, contados:i.contados+1}:i)); incrementContadosSupabase(inv.id); }
-          onFinish(c);
+          onRegisterCount(c);
           q.next();
         }}
       />
@@ -6842,7 +6843,7 @@ function ManualCountFlow({user, onFinish, onAddressProposed, counts, operadorVeS
 
 /* ---------------- MÓDULO 4: CONTAGEM POR ROTA ---------------- */
 
-function RouteCountFlow({inv, user, onFinish, onAddressProposed, setInventories, counts, operadorVeSaldo, gruposExcluidos}){
+function RouteCountFlow({inv, user, onRegisterCount, onAddressProposed, setInventories, counts, operadorVeSaldo, gruposExcluidos}){
   // Armazém obrigatório (mesmo motivo do RandomCountFlow) — Rota é sempre
   // avulsa hoje (nunca chega aqui vinda de um inventário já criado, ver
   // InventoryList/App()), então sempre pergunta antes de buscar qualquer
@@ -6901,7 +6902,7 @@ function RouteCountFlow({inv, user, onFinish, onAddressProposed, setInventories,
   if(active){
     return <CountStep product={active} user={user} inv={inv} counts={counts} onAddressProposed={onAddressProposed} operadorVeSaldo={operadorVeSaldo} onComplete={(c)=>{
       if(inv && inv.id){ setInventories(prev=>prev.map(i=>i.id===inv.id?{...i, contados:i.contados+1}:i)); incrementContadosSupabase(inv.id); }
-      onFinish(c);
+      onRegisterCount(c);
       setActive(null);
     }} />;
   }
@@ -6934,7 +6935,7 @@ function RouteCountFlow({inv, user, onFinish, onAddressProposed, setInventories,
 
 /* ---------------- MÓDULO 1B: CONTAGEM POR LISTA IMPORTADA (Excel) ---------------- */
 
-function ImportedListCountFlow({inv, user, onFinish, onAddressProposed, setInventories, counts, operadorVeSaldo}){
+function ImportedListCountFlow({inv, user, onRegisterCount, onFinish, onAddressProposed, setInventories, counts, operadorVeSaldo}){
   // Enriquece a lista importada com o catálogo real do Supabase (busca em
   // lote, uma requisição só pra todos os códigos da planilha — cache local
   // estático removido, ver CLAUDE.md "cache local removido"). Roda uma vez
@@ -7007,7 +7008,7 @@ function ImportedListCountFlow({inv, user, onFinish, onAddressProposed, setInven
       <div className="empty-state">
         <div className="ic"><Ic size={40}>🎉</Ic></div>
         {inv && inv.tipo==='Itens Específicos' ? 'Fila concluída' : 'Lista importada concluída'} — todos os {allItems.length} itens foram contados.
-        <div style={{marginTop:16}}><button className="btn btn-primary" onClick={()=>onFinish(null)}>Voltar aos inventários</button></div>
+        <div style={{marginTop:16}}><button className="btn btn-primary" onClick={onFinish}>Voltar aos inventários</button></div>
       </div>
     );
   }
@@ -7020,6 +7021,7 @@ function ImportedListCountFlow({inv, user, onFinish, onAddressProposed, setInven
           : ('Lista importada'+(inv?' de '+inv.nome:'')+' — ordem original da planilha')}
       </div>
       <CountStep
+        key={q.current.codigo}
         product={q.current}
         user={user}
         inv={inv}
@@ -7030,7 +7032,7 @@ function ImportedListCountFlow({inv, user, onFinish, onAddressProposed, setInven
         operadorVeSaldo={operadorVeSaldo}
         onComplete={(c)=>{
           if(inv && inv.id){ setInventories(prev=>prev.map(i=>i.id===inv.id?{...i, contados:i.contados+1}:i)); incrementContadosSupabase(inv.id); }
-          onFinish(c);
+          onRegisterCount(c);
           q.next();
         }}
       />

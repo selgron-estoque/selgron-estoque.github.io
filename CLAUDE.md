@@ -6317,3 +6317,54 @@ rodar o SQL novo (`backend/schema.sql`, bloco "CATÁLOGO GANHA UNIDADE DE MEDIDA
 ENDEREÇO EM MASSA") no projeto real e então usar o painel novo em Configurações pra
 fazer o primeiro upload de verdade — mesmo handoff de sempre (sandbox sem acesso de
 rede ao Supabase real).
+
+## Bug real: fila de contagem não avançava sozinha pro próximo item
+
+Cliente reportou: "uma lista de contagem, por exemplo, não está pulando para o
+próximo item automaticamente" — em qualquer fluxo baseado em fila (Aleatória, Curva
+ABC, Rota de Endereço, Contagem por Grupo, Lista Importada, Itens Específicos),
+confirmar a contagem de um item voltava pra tela "Inventários Pendentes" em vez de
+já mostrar o próximo item da fila — obrigando clicar no card do inventário de novo a
+cada item contado, mesmo depois do redesenho "coletor industrial" ter adicionado uma
+barra de progresso ("Item 18 de 152") que só faz sentido se a fila avançar sozinha.
+
+- **Causa raiz**: `RandomCountFlow`/`RouteCountFlow`/`ImportedListCountFlow` recebiam
+  um único `onFinish` de `App()` que fazia DUAS coisas juntas — `registerFinishedCount(c)`
+  (grava a contagem) **e** `goto('inventories')` (navega pra lista de inventários). O
+  `onComplete` do `CountStep`, dentro desses 3 fluxos, chamava esse `onFinish(c)` e
+  **depois** `q.next()` (ou `setActive(null)`, na Rota) — mas como `goto('inventories')`
+  muda o `view` do `App()` na mesma leva de atualizações, o componente da fila
+  desmonta ANTES de `q.next()` ter algum efeito visível: o avanço pro próximo item
+  acontecia num componente que já ia sumir da tela no mesmo instante.
+- **Correção**: os 3 fluxos passaram a receber dois callbacks separados —
+  `onRegisterCount` (só grava a contagem, sem navegar — chamado a CADA item) e
+  `onFinish` (só navega — reservado pro botão "Voltar aos inventários" que aparece
+  quando a fila termina, ou não existe mais em `RouteCountFlow`, que nunca teve uma
+  tela de "fila concluída" própria). Isso faz o componente da fila continuar montado
+  entre um item e outro, permitindo o avanço de verdade.
+- **Efeito colateral que precisou de correção junto**: com o componente da fila agora
+  ficando montado entre itens (antes sempre desmontava via navegação), o `CountStep`
+  interno passou a correr risco de reaproveitar estado antigo entre um item e outro —
+  `qty`/`step`/`enderecoInformado`/etc. são inicializados só uma vez via `useState`,
+  não resetam sozinhos só porque a prop `product` mudou. Corrigido com
+  `key={q.current.codigo}` no `<CountStep>` de `RandomCountFlow`/`ImportedListCountFlow`
+  — força o React a desmontar/remontar uma instância nova a cada item, com estado
+  limpo. `RouteCountFlow` não precisou disso: ali o item ativo já desmonta sozinho ao
+  voltar pra tela de escolha (`setActive(null)`) entre uma contagem e outra.
+- **Verificação rigorosa** (mesmo cuidado extra adotado desde o bug crítico da rodada
+  "Itens Específicos" — reação a bug real anterior que só apareceu em runtime, não no
+  transpile): montei `RandomCountFlow` de verdade com `jsdom`+`react-dom/client`+
+  `act()` (catálogo mockado via `supabaseClient.rpc` fake, 2 itens), simulei o fluxo
+  completo — preencher endereço do item 1, preencher quantidade, confirmar; confirmei
+  que a tela NÃO navegou embora (`onFinish` não disparado) e já mostrava o item 2, com
+  os campos de endereço E quantidade genuinamente VAZIOS (prova de que o `key` resolveu
+  o reaproveitamento de estado); repeti pro item 2, confirmei a tela de "Fila de
+  contagem concluída"; só ao clicar "Voltar aos inventários" o `onFinish` disparou.
+  Também renderizei `RandomCountFlow`/`RouteCountFlow`/`ImportedListCountFlow` isolados
+  (`renderToStaticMarkup`) pra garantir que nenhum deles quebra com as props novas.
+  Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos
+  (575/575, sem mudança). **Verificação num tablet real fica a cargo do cliente** —
+  mesma limitação de sempre (login exige Supabase Auth real, não simulável no sandbox
+  sem rede real), mas dessa vez o comportamento crítico (avançar sem navegar, sem
+  herdar estado do item anterior) já foi confirmado com interação real de DOM, não só
+  leitura de código.
