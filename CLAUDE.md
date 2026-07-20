@@ -6120,3 +6120,50 @@ qualquer outro inventário hoje).
   ponta a ponta (buscar, adicionar, remover, criar o inventário e contá-lo) fica a cargo
   do cliente** — mesma limitação de sempre (login exige Supabase Auth real, não
   simulável no sandbox sem rede).
+
+## Bug crítico real: site inteiro em branco após o deploy de "Itens Específicos"
+
+Cliente reportou "saiu do ar o site" logo depois do deploy anterior, com a tela ficando
+totalmente branca. Confirmei primeiro, via API do GitHub, que o deploy em si tinha
+concluído com sucesso (não era falha de publicação) — o problema era um erro de
+JavaScript em tempo de execução, não pego pelo transpile Babel de sempre (que só
+detecta erro de SINTAXE, não de ORDEM de declaração em tempo de execução).
+
+- **Causa raiz**: dentro de `NewInventory`, o novo `useEffect` de busca do "Itens
+  Específicos" (`especBusca`/`especResultados`/`especBuscando`) foi declarado logo
+  depois dos outros estados — mas ele referenciava `isEspecificos` no corpo E no array
+  de dependências (`[isEspecificos, especBusca]`), enquanto `const isEspecificos =
+  tipo==='Itens Específicos'` só era declarado bem mais abaixo, depois do array
+  `tipos`. Como `const` tem "temporal dead zone" em JavaScript, isso lança
+  `ReferenceError: Cannot access 'isEspecificos' before initialization` — não num caso
+  raro, mas em TODA renderização de `NewInventory` (hooks rodam incondicionalmente a
+  cada render, então o `useEffect` com esse array quebrado sempre executa).
+- **Por que isso derrubou o SITE INTEIRO, não só a tela de criar inventário**: o app não
+  tem error boundary, então um erro não capturado em qualquer componente derruba a
+  árvore React inteira, deixando `<div id="root">` vazio — tela branca. E como
+  `view`/`flowState` persistem em `localStorage` (ver "Navegação sobrevive a recarregar
+  a página"), qualquer aparelho cuja ÚLTIMA tela aberta antes do reload fosse "Novo
+  Inventário" (exatamente o caso do cliente, que estava testando a funcionalidade nova)
+  passou a travar em branco em TODO reload subsequente — a navegação persistida tentava
+  reabrir direto naquela tela quebrada.
+- **Correção**: `isImportado`/`isEspecificos`/`isPorGrupo` foram movidos pra logo depois
+  de `const [tipo, setTipo] = useState(null)`, antes de qualquer outro código (inclusive
+  o `useEffect` novo) — mesma regra já aprendida antes neste projeto ("Configurações do
+  app compartilhadas...": um `useEffect` cujo array de dependências referencia algo
+  declarado mais abaixo quebra com esse mesmo erro).
+- **Verificação reforçada, além do transpile de sempre** (que não pega esse tipo de bug,
+  só verifica sintaxe): montei um harness real com `jsdom`+`react-dom/client`+`act()`
+  (não só `renderToStaticMarkup`) rodando o `NewInventory` de verdade — primeiro
+  reproduzi o crash exato (`Cannot access 'isEspecificos' before initialization`)
+  restaurando a ordem antiga das declarações, confirmando que o teste realmente pega
+  esse tipo de erro; depois confirmei que a versão corrigida monta a tela 1 (7 botões de
+  tipo), clica em "Itens Específicos" de verdade (evento de clique simulado, não só
+  chamada direta de função) e chega na tela 2 com o campo de busca e o contador de itens
+  — sem lançar nenhum erro.
+- **Lição pro futuro**: depois de qualquer mudança que adicione um novo `useEffect`
+  (ou qualquer hook com array de dependências) dentro de um componente já grande,
+  SEMPRE conferir se todo identificador usado no array de dependências já foi declarado
+  ANTES daquele ponto do código — o transpile Babel de sempre NÃO pega esse erro (é
+  válido sintaticamente), só aparece em tempo de execução. Quando a mudança for de
+  risco parecido (novo hook em componente extenso), vale a pena rodar um teste de
+  render de verdade (jsdom+react-dom, não só transpile) antes de publicar.

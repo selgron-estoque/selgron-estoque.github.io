@@ -5333,6 +5333,9 @@ function NewInventory({onCreate, goto, inventories, gruposExcluidos}){
   // inventário, só depois configura o resto (nome, almoxarifado, data,
   // quantidade). `tipo:null` = ainda no passo 1 (escolha do tipo).
   const [tipo, setTipo] = useState(null);
+  const isImportado = tipo==='Lista Importada (Excel)';
+  const isEspecificos = tipo==='Itens Específicos';
+  const isPorGrupo = tipo==='Contagem por Grupo';
 
   // "Contagem por Grupo" — grupos disponíveis carregados sob demanda (só
   // quando esse tipo é escolhido, não vale a pena buscar sempre) via a RPC
@@ -5434,9 +5437,6 @@ function NewInventory({onCreate, goto, inventories, gruposExcluidos}){
     {v:'Lista Importada (Excel)', d:'Conta exatamente os itens de uma planilha importada, na ordem em que vieram'},
   ];
 
-  const isImportado = tipo==='Lista Importada (Excel)';
-  const isEspecificos = tipo==='Itens Específicos';
-  const isPorGrupo = tipo==='Contagem por Grupo';
   // Rótulo pro nome automático: 1 grupo mostra a descrição inteira; mais de
   // um mostra os 2 primeiros + "e mais N" (senão o nome do inventário ficaria
   // absurdamente longo com vários grupos selecionados).
