@@ -5853,3 +5853,49 @@ fixo.
 - Testado via transpile Babel do arquivo inteiro. **Não testado contra o Supabase real**
   (mesma limitação de sempre) — a correção do parser só vale a partir do próximo upload
   feito pelo cliente; os dados já duplicados exigem a limpeza manual descrita acima.
+
+## Investigação completa: "salto" na Tendência Semanal — dois bugs de dado real, nenhum código novo
+
+Depois da correção do endereço vazio (seção anterior), o cliente continuou reportando
+que o número da semana 25 em "Contagens na Semana" (349, depois 301 após a 1ª limpeza)
+não batia com a própria referência dele (271, quebrado por status: OK=210/Ajustado=51/
+Ajustar=8/Sem Ajuste=2). Investigação de várias rodadas, sempre por consulta SQL (sem
+acesso de rede ao Supabase no sandbox) até fechar 100%:
+
+- **Descartado, em ordem**: duplicata exata código+data (já corrigida antes, resolveu
+  349→301); duplicata do mesmo código em datas diferentes dentro da semana (nenhuma
+  encontrada); diferença de critério entre a coluna `semana` da própria planilha e o
+  cálculo de semana do app via `getWeekInfo` (os dois bateram exatamente igual, então
+  não é isso).
+- **Causa real, achada comparando linha a linha com a planilha do cliente**: duas linhas
+  pro código `110.040.00011` — uma formatada certo, outra crua (`11004000011`, sem
+  pontuação) — mesmo produto físico, mas como STRING são códigos diferentes, então
+  nenhuma consulta de duplicata (todas comparando por igualdade de texto) via essas
+  duas como o mesmo item. Os timestamps de importação (`importado_em`) confirmaram a
+  origem: a linha crua veio de um upload de 15/07 (antes do parser aplicar
+  `reconstructNumericCode` nessa tabela — bug já documentado e corrigido numa rodada
+  anterior do projeto), a linha formatada veio de um upload de 20/07 (já com o parser
+  corrigido). Ou seja: **nenhum bug de código NOVO** — só sobra de dado de um upload
+  anterior à correção já existente.
+- **Consulta de diagnóstico** contou 281 linhas com `produto_codigo` cru (só dígitos, sem
+  ponto) em TODA a tabela `contagens_historico` (não só na semana 25) — reconstruindo o
+  código de cada uma com a MESMA regra do `reconstructNumericCode` (replicada em SQL via
+  `substring`, casos 8/9/10/11 dígitos) e cruzando contra o resto da tabela, separou em
+  dois grupos: 241 já tinham uma versão formatada corretamente em outra linha (duplicata
+  pura, resolve com `delete`) e 40 não tinham nenhuma versão certa ainda (não é
+  duplicata, só precisava corrigir o código no lugar, `update`). Cliente rodou os dois
+  comandos (delete primeiro, depois update — ordem importa, update depois do delete evita
+  erro de chave duplicada) e confirmou: `count(*) where produto_codigo ~ '^[0-9]+$'` caiu
+  pra 0, e o breakdown por status da semana 25 passou a bater EXATAMENTE com a referência
+  do cliente (OK=210, Ajustado=51, Ajustar=8, Sem Ajuste=2).
+- **Nenhuma mudança de código nesta rodada** — os dois bugs de origem (endereço null não
+  travando duplicado; parser sem `reconstructNumericCode` na tabela de histórico) já
+  tinham sido corrigidos antes (o segundo, numa rodada bem anterior do projeto); essa
+  investigação era 100% sobre limpar dado remanescente de ANTES dessas correções
+  existirem, não sobre um bug ainda ativo no código atual.
+- **Lição pro futuro**: sempre que uma investigação de "número não bate" envolver dado
+  histórico importado, checar não só duplicata de linha idêntica, mas também se o mesmo
+  identificador (código de produto, neste caso) pode existir em MAIS DE UMA
+  representação de string (formatado vs. cru) — comparação de duplicata por igualdade
+  de texto simples não pega esse caso, precisa normalizar o campo primeiro (ou comparar
+  os dois lados já normalizados) antes de decidir se é duplicata de verdade.
