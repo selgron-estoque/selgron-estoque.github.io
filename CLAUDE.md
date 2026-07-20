@@ -5899,3 +5899,39 @@ acesso de rede ao Supabase no sandbox) até fechar 100%:
   representação de string (formatado vs. cru) — comparação de duplicata por igualdade
   de texto simples não pega esse caso, precisa normalizar o campo primeiro (ou comparar
   os dois lados já normalizados) antes de decidir se é duplicata de verdade.
+
+## O mesmo bug de código cru também duplicava itens em "Recontagens Pendentes"/"Itens Divergentes"
+
+Depois de fechar a investigação da Tendência Semanal, o cliente pediu pra checar se as
+mesmas duas telas de fila (`RecountsPanel`/`DivergentItemsPanel`, que leem `contagens`
+com `status_aprovacao` aberto) tinham o mesmo problema — resposta: sim, exatamente o
+mesmo padrão, só que na tabela ao vivo em vez do histórico.
+
+- **5 linhas** com `produto_codigo` cru (só dígitos) e `status_aprovacao='aguardando_
+  segunda'`, todas seeds antigos de `buildRecontarSeedsFromHistorico` (id no formato
+  `CNT-HIST-<código>-<data>`, `criado_em` de 15/07 — de antes da correção do
+  `reconstructNumericCode` no parser do histórico já documentada antes). Como o
+  `id` dessas linhas já usa o código SEM pontuação de propósito (o `replace(/[^A-Za-z0-9]
+  /g,'')` no gerador de id remove os pontos de qualquer código, formatado ou não — não é
+  o sinal do bug, só a convenção normal de montar um id seguro pra URL), o sinal de
+  verdade do bug estava na coluna `produto_codigo` em si, não no `id`.
+- Cruzando os 5 contra o resto de `contagens` (mesmo código reconstruído + mesma data),
+  **4 tinham uma segunda linha já com o código formatado certo, também
+  `aguardando_segunda`** — ou seja, o MESMO item físico aparecia duas vezes na fila de
+  recontagem, um documento sob o código cru e outro sob o código certo. A 5ª linha não
+  tinha par — só precisava corrigir o código no lugar, sem apagar nada.
+- **Antes de apagar, confirmei que era seguro**: as duas cópias de cada duplicata
+  continuavam `aguardando_segunda` (nenhuma tinha sido recontada/decidida ainda) — se
+  uma das duas já tivesse avançado de status, apagar a outra sem investigar mais teria
+  risco de perder uma decisão registrada. Como não era o caso, o cliente rodou um
+  `delete` nos 4 ids da versão crua (mantendo a formatada) e um `update` pontual no
+  código da 5ª linha (por id específico, não por padrão — mais seguro que confiar de
+  novo numa regra genérica depois de já ter achado exceção à regra numa rodada anterior).
+- **Mesma causa raiz de sempre, sem código novo pra escrever**: como a exibição desses
+  itens já usa `contagemRowToLocal` (que já reconstrói o código na leitura, corrigido
+  numa rodada bem anterior do projeto), o card na tela sempre mostrou o código formatado
+  certo mesmo com o dado cru no banco — o problema era só de DADO duplicado (dois
+  documentos abertos pro mesmo item), não de exibição.
+- Testado só via leitura/análise dos resultados de SQL que o cliente rodou — sem acesso
+  de rede ao Supabase no sandbox, mesma limitação de sempre. Cliente confirmou os dois
+  comandos rodados com sucesso.
