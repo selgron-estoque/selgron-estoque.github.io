@@ -105,7 +105,7 @@ Deno.serve(async (req: Request) => {
 
   try {
     if (acao === "criar_usuario") {
-      const { nome, usuario, email, senha, perfil, acessosExtras } = body;
+      const { nome, usuario, email, senha, perfil, acessosExtras, acessosRemovidos } = body;
       if (!nome || !usuario || !email || !senha || !perfil) {
         return resposta(400, { ok: false, erro: "Preencha todos os campos obrigatórios." });
       }
@@ -116,7 +116,7 @@ Deno.serve(async (req: Request) => {
 
       const { error: insertErr } = await supabase.from("usuarios").insert({
         id: novoAuth.user.id, nome, usuario, email, perfil,
-        status: "ativo", acessos_extras: acessosExtras || [],
+        status: "ativo", acessos_extras: acessosExtras || [], acessos_removidos: acessosRemovidos || [],
       });
       if (insertErr) {
         await supabase.auth.admin.deleteUser(novoAuth.user.id); // desfaz o auth.users órfão
@@ -126,7 +126,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (acao === "atualizar_usuario") {
-      const { userId, nome, usuario, email, perfil, acessosExtras } = body;
+      const { userId, nome, usuario, email, perfil, acessosExtras, acessosRemovidos } = body;
       if (!userId) return resposta(400, { ok: false, erro: "Usuário não informado." });
 
       if (email) {
@@ -139,6 +139,7 @@ Deno.serve(async (req: Request) => {
       if (email !== undefined) patch.email = email;
       if (perfil !== undefined) patch.perfil = perfil;
       if (acessosExtras !== undefined) patch.acessos_extras = acessosExtras;
+      if (acessosRemovidos !== undefined) patch.acessos_removidos = acessosRemovidos;
       const { error } = await supabase.from("usuarios").update(patch).eq("id", userId);
       if (error) return resposta(400, { ok: false, erro: error.message });
       return resposta(200, { ok: true });

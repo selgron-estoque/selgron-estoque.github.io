@@ -140,7 +140,7 @@
   .chip-input input{flex:1;min-width:90px;border:none;background:none;padding:6px 4px;font-size:16px;color:var(--ink);}
   .chip-input input:focus{outline:none;}
 
-  /* Botão de liga/desliga (toggle switch) — usado em "Acessos extras" no
+  /* Botão de liga/desliga (toggle switch) — usado em "Acesso por tela" no
      UserForm, preferido pelo cliente em vez de checkbox simples. Estrutura
      clássica: input checkbox escondido + track/thumb desenhados via CSS. */
   .toggle-switch-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:10px 0;border-bottom:1px solid var(--line);}
@@ -1514,6 +1514,10 @@ function usuarioRowToLocal(row){
     perfil: row.perfil,
     status: row.status,
     acessosExtras: row.acessos_extras || [],
+    // Complemento de `acessosExtras` — telas que o perfil normalmente
+    // liberaria, mas que foram tiradas especificamente deste usuário (ver
+    // TODOS_OS_MENUS/hasAccess).
+    acessosRemovidos: row.acessos_removidos || [],
     ultimoAcesso: row.ultimo_acesso || null,
     atualizadoEm: row.atualizado_em,
   };
@@ -3907,14 +3911,15 @@ function App(){
   }
 
   // A navegação (view) sobrevive a recarregar a página — se o usuário
-  // perdeu acesso à tela em que estava (perfil trocado, exceção de acesso
-  // removida, ou simplesmente a navegação persistida de antes desta
-  // funcionalidade existir ainda aponta pra uma tela hoje restrita, ex.:
-  // Indicadores/Relatórios que passaram a exigir líder/admin), volta pra
-  // Home em vez de deixar a tela em branco (nenhuma rota bate a condição de
-  // acesso, `.content` renderiza vazio).
+  // perdeu acesso à tela em que estava (perfil trocado, acesso removido pelo
+  // admin em `acessosRemovidos`, ou a navegação persistida de antes de
+  // alguma tela virar restrita), volta pra Home em vez de deixar a tela em
+  // branco (nenhuma rota bate a condição de acesso, `.content` renderiza
+  // vazio). Checa `hasAccess` direto (sem depender de `view` estar em
+  // ACESSOS_RESTRITOS) — agora QUALQUER tela do menu principal pode ser
+  // bloqueada por usuário, não só as que tinham entrada nesse mapa antes.
   useEffect(()=>{
-    if(currentUser && ACESSOS_RESTRITOS[view] && !hasAccess(currentUser, view)){
+    if(currentUser && !hasAccess(currentUser, view)){
       setView('home');
       setFlowState(null);
     }
@@ -4648,8 +4653,8 @@ function App(){
       {view!=='home' && !COUNT_SCREEN_VIEWS.includes(view) && <SubBar view={view} goto={goto} />}
       <div className="content">
         {view==='home' && <Home role={role} user={currentUser} inventories={inventories} counts={counts} historicoConcluidas={historicoConcluidas} enderecosPropostos={enderecosPropostos} goto={goto} />}
-        {view==='inventories' && <InventoryList inventories={inventories} goto={goto} role={role} counts={counts} onDelete={deleteInventory} onCancel={cancelInventory} />}
-        {view==='pickCountType' && <PickCountType role={role} goto={goto} inventories={inventories} gruposExcluidos={gruposExcluidos} onCreate={async(inv)=>{
+        {view==='inventories' && hasAccess(currentUser,'inventories') && <InventoryList inventories={inventories} goto={goto} role={role} counts={counts} onDelete={deleteInventory} onCancel={cancelInventory} />}
+        {view==='pickCountType' && hasAccess(currentUser,'pickCountType') && <PickCountType role={role} goto={goto} inventories={inventories} gruposExcluidos={gruposExcluidos} onCreate={async(inv)=>{
           const res = await saveInventarioToSupabase(inv);
           if(res.ok){ setInventories(prev=>[inv,...prev]); goto('inventories'); }
           return res;
@@ -4658,15 +4663,15 @@ function App(){
         {view==='manualCount' && <ManualCountFlow user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('home');}} onAddressProposed={addAddressProposal} operadorVeSaldo={operadorVeSaldo} />}
         {view==='routeCount' && <RouteCountFlow inv={flowState} user={currentUser} counts={counts} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} gruposExcluidos={gruposExcluidos} />}
         {view==='importedListCount' && <ImportedListCountFlow inv={flowState} user={currentUser} counts={counts} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} />}
-        {view==='recounts' && <RecountsPanel counts={counts} inventories={inventories} role={role} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} operadorVeValoresRecontagem={operadorVeValoresRecontagem} />}
-        {view==='divergentes' && <DivergentItemsPanel counts={counts} inventories={inventories} role={role} goto={goto} onApprove={approveDivergence} onSendToDiretoria={enviarParaAprovacaoDiretoria} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} />}
-        {view==='aprovacaoDiretoria' && (role==='lider'||role==='admin') && <DiretoriaApprovalPanel counts={counts} inventories={inventories} role={role} onApproveSA={aprovarAjusteDiretoria} onRejectSA={reprovarAjusteDiretoria} />}
+        {view==='recounts' && hasAccess(currentUser,'recounts') && <RecountsPanel counts={counts} inventories={inventories} role={role} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} operadorVeValoresRecontagem={operadorVeValoresRecontagem} />}
+        {view==='divergentes' && hasAccess(currentUser,'divergentes') && <DivergentItemsPanel counts={counts} inventories={inventories} role={role} goto={goto} onApprove={approveDivergence} onSendToDiretoria={enviarParaAprovacaoDiretoria} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} />}
+        {view==='aprovacaoDiretoria' && hasAccess(currentUser,'aprovacaoDiretoria') && <DiretoriaApprovalPanel counts={counts} inventories={inventories} role={role} onApproveSA={aprovarAjusteDiretoria} onRejectSA={reprovarAjusteDiretoria} />}
         {view==='todasDivergencias' && <AllDivergencesPanel counts={counts} historicoConcluidas={historicoConcluidas} goto={goto} />}
-        {view==='concluidas' && <ConcludedCountsPanel counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} onDeleteCount={role==='admin' ? deleteCount : undefined} onReprovarAjusteHistorico={role==='admin' ? reprovarAjusteHistorico : undefined} onRefresh={refreshHistoricoConcluidas} />}
+        {view==='concluidas' && hasAccess(currentUser,'concluidas') && <ConcludedCountsPanel counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} onDeleteCount={role==='admin' ? deleteCount : undefined} onReprovarAjusteHistorico={role==='admin' ? reprovarAjusteHistorico : undefined} onRefresh={refreshHistoricoConcluidas} />}
         {view==='recount' && flowState && <RecountFlow original={flowState} user={currentUser} onAddressProposed={addAddressProposal} onFinish={(c)=>{registerFinishedCount(c); goto('recounts');}} operadorVeSaldo={operadorVeSaldo} />}
         {view==='dashboard' && hasAccess(currentUser,'dashboard') && <Dashboard counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} historicoParaTendencia={historicoParaTendencia} goto={goto} />}
         {view==='relatorios' && hasAccess(currentUser,'relatorios') && <ReportsScreen counts={counts} inventories={inventories} currentUser={currentUser} sendHistory={reportSendHistory} onLogSend={logReportSend} role={role} onHistoricoImportado={refreshHistoricoConcluidas} />}
-        {view==='settings' && <Settings role={role} currentUser={currentUser} operadorVeSaldo={operadorVeSaldo} onSetOperadorVeSaldo={updateOperadorVeSaldo} operadorVeValoresRecontagem={operadorVeValoresRecontagem} onSetOperadorVeValoresRecontagem={updateOperadorVeValoresRecontagem} gruposExcluidos={gruposExcluidos} onSetGruposExcluidos={updateGruposExcluidos} sessionTimeoutMin={sessionTimeoutMin} onSetSessionTimeoutMin={updateSessionTimeoutMin} />}
+        {view==='settings' && hasAccess(currentUser,'settings') && <Settings role={role} currentUser={currentUser} operadorVeSaldo={operadorVeSaldo} onSetOperadorVeSaldo={updateOperadorVeSaldo} operadorVeValoresRecontagem={operadorVeValoresRecontagem} onSetOperadorVeValoresRecontagem={updateOperadorVeValoresRecontagem} gruposExcluidos={gruposExcluidos} onSetGruposExcluidos={updateGruposExcluidos} sessionTimeoutMin={sessionTimeoutMin} onSetSessionTimeoutMin={updateSessionTimeoutMin} />}
         {view==='usuarios' && hasAccess(currentUser,'usuarios') && (
           <UsuariosScreen
             users={users}
@@ -5063,28 +5068,65 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
 
 const ROLE_LABELS = {operador:'Operador', lider:'Líder de Estoque', admin:'Administrador'};
 
-// Telas restritas por perfil, com possibilidade de exceção por usuário —
-// pedido do cliente: "posso dar acesso a abas diferentes pra qualquer
-// operador independente do perfil cadastrado". `hasAccess` centraliza a
-// checagem (perfil já libera OU o usuário está na lista de exceção dele,
-// `acessosExtras`) — usado tanto pelos menus (Sidebar/MobileHomeMenu, via
-// buildSidebarGroups) quanto pela guarda de rota em App(), mesma dupla
-// checagem que o resto do app já faz (visibilidade do link + guarda da
-// rota). Telas fora deste mapa não têm restrição nenhuma (sempre liberado).
+// Telas com um padrão de acesso por perfil diferente do "liberado a todo
+// mundo" — usado só como PONTO DE PARTIDA (o que um usuário NOVO desse
+// perfil já vem marcado) pro toggle por tela em UserForm. Telas fora deste
+// mapa continuam com o comportamento de sempre: liberadas por padrão a
+// qualquer perfil, mas agora, assim como as que estão aqui, também podem ser
+// tiradas de um usuário específico via `acessosRemovidos` (ver hasAccess).
 const ACESSOS_RESTRITOS = {
   dashboard: ['lider','admin'],
   relatorios: ['lider','admin'],
   enderecos: ['lider','admin'],
   usuarios: ['admin'],
-  // Aprovação de SA de Ajuste não interessa ao operador — ele não participa
-  // dessa etapa do fluxo (líder gera a SA, Diretoria/admin decide).
+  // Aprovação de SA de Ajuste não interessa ao operador por padrão — ele não
+  // participa dessa etapa do fluxo (líder gera a SA, Diretoria/admin decide)
+  // — mas o admin agora pode conceder a exceção como qualquer outra tela.
   aprovacaoDiretoria: ['lider','admin'],
 };
+
+// TODAS as telas do menu principal que podem ser ligadas/desligadas por
+// usuário (pedido do cliente: "todos os menus, tenham a opção de eu
+// selecionar por operador se ele pode ter acesso ou não") — usada pelo
+// toggle em UserForm. "Início" fica de fora de propósito: é o destino de
+// segurança pra onde o app redireciona sozinho quando alguém perde acesso à
+// tela em que estava (ver useEffect logo abaixo de goto/voltarUmPasso em
+// App()) — não pode ser ela mesma bloqueável, senão não sobraria destino
+// nenhum pra redirecionar.
+const TODOS_OS_MENUS = [
+  {id:'inventories', label:'Inventários'},
+  {id:'pickCountType', label:'Nova Contagem'},
+  {id:'recounts', label:'Recontagens Pendentes'},
+  {id:'divergentes', label:'Itens Divergentes'},
+  {id:'aprovacaoDiretoria', label:'Aprovação de Ajustes'},
+  {id:'concluidas', label:'Contagens Concluídas'},
+  {id:'usuarios', label:'Usuários'},
+  {id:'enderecos', label:'Endereços Pendentes'},
+  {id:'dashboard', label:'Indicadores'},
+  {id:'relatorios', label:'Relatórios'},
+  {id:'settings', label:'Configurações'},
+];
+
+// Verdadeiro se o PERFIL sozinho (sem considerar exceções por usuário) já
+// libera essa tela — telas fora de ACESSOS_RESTRITOS sempre liberam (mesmo
+// comportamento de sempre).
+function perfilLiberaPorPadrao(perfil, viewId){
+  const perfisPadrao = ACESSOS_RESTRITOS[viewId];
+  return !perfisPadrao || perfisPadrao.includes(perfil);
+}
+
+// Administrador NUNCA é bloqueado por nenhuma das duas listas — decisão
+// deliberada pra não correr risco de um admin se autobloquear de uma tela
+// crítica (ex.: Configurações, Usuários) sem querer. Pra líder/operador,
+// `acessosRemovidos` (tira acesso que o perfil daria) tem prioridade sobre o
+// padrão do perfil, e `acessosExtras` continua concedendo o que o perfil
+// sozinho não daria — as duas listas juntas cobrem TODO o menu agora, não só
+// as 4 telas que tinham essa opção antes.
 function hasAccess(user, viewId){
   if(!user) return false;
-  const perfisPadrao = ACESSOS_RESTRITOS[viewId];
-  if(!perfisPadrao) return true;
-  if(perfisPadrao.includes(user.perfil)) return true;
+  if(user.perfil==='admin') return true;
+  if((user.acessosRemovidos||[]).includes(viewId)) return false;
+  if(perfilLiberaPorPadrao(user.perfil, viewId)) return true;
   return (user.acessosExtras||[]).includes(viewId);
 }
 
@@ -5173,8 +5215,20 @@ function buildSidebarGroups(user){
   // "Usuários" saiu de dentro de Configurações e entrou aqui (pedido do
   // cliente: fazia mais sentido como cadastro do que como configuração do
   // sistema) — mesmo grupo que já tinha "Endereços Pendentes" por razão
-  // parecida. Cada item aparece só pra quem tem acesso (perfil padrão OU
-  // exceção concedida) — o grupo inteiro só existe se sobrar pelo menos 1 item.
+  // parecida. Cada item aparece só pra quem tem acesso — o grupo inteiro só
+  // existe se sobrar pelo menos 1 item.
+  // TODOS os itens de menu agora passam por `podeVer` (não só os 4 que já
+  // tinham essa checagem antes) — pedido do cliente: "todos os menus, tenham
+  // a opção de eu selecionar por operador se ele pode ter acesso ou não".
+  // "Início" é a única exceção (ver TODOS_OS_MENUS) — sempre aparece.
+  const contagemItems = [
+    ...(podeVer('inventories') ? [{id:'inventories', ic:'box', label:'Inventários'}] : []),
+    ...(podeVer('pickCountType') ? [{id:'pickCountType', ic:'search', label:'Nova Contagem'}] : []),
+    ...(podeVer('recounts') ? [{id:'recounts', ic:'repeat', label:'Recontagens Pendentes'}] : []),
+    ...(podeVer('divergentes') ? [{id:'divergentes', ic:'alertTriangle', label:'Itens Divergentes'}] : []),
+    ...(podeVer('aprovacaoDiretoria') ? [{id:'aprovacaoDiretoria', ic:'clipboardList', label:'Aprovação de Ajustes'}] : []),
+    ...(podeVer('concluidas') ? [{id:'concluidas', ic:'checkCircle', label:'Contagens Concluídas'}] : []),
+  ];
   const cadastrosItems = [
     ...(podeVer('usuarios') ? [{id:'usuarios', ic:'user', label:'Usuários'}] : []),
     ...(podeVer('enderecos') ? [{id:'enderecos', ic:'mapPin', label:'Endereços Pendentes'}] : []),
@@ -5183,23 +5237,17 @@ function buildSidebarGroups(user){
     ...(podeVer('dashboard') ? [{id:'dashboard', ic:'barChart', label:'Indicadores'}] : []),
     ...(podeVer('relatorios') ? [{id:'relatorios', ic:'fileText', label:'Relatórios'}] : []),
   ];
+  const sistemaItems = [
+    ...(podeVer('settings') ? [{id:'settings', ic:'settings', label:'Configurações'}] : []),
+  ];
   return [
     { label: null, items: [
       {id:'home', ic:'home', label:'Início'},
     ]},
-    { label: 'Contagem', items: [
-      {id:'inventories', ic:'box', label:'Inventários'},
-      {id:'pickCountType', ic:'search', label:'Nova Contagem'},
-      {id:'recounts', ic:'repeat', label:'Recontagens Pendentes'},
-      {id:'divergentes', ic:'alertTriangle', label:'Itens Divergentes'},
-      ...(podeVer('aprovacaoDiretoria') ? [{id:'aprovacaoDiretoria', ic:'clipboardList', label:'Aprovação de Ajustes'}] : []),
-      {id:'concluidas', ic:'checkCircle', label:'Contagens Concluídas'},
-    ]},
+    ...(contagemItems.length>0 ? [{ label: 'Contagem', items: contagemItems }] : []),
     ...(cadastrosItems.length>0 ? [{ label: 'Cadastros', items: cadastrosItems }] : []),
     ...(analiseItems.length>0 ? [{ label: 'Análise', items: analiseItems }] : []),
-    { label: 'Sistema', items: [
-      {id:'settings', ic:'settings', label:'Configurações'},
-    ]},
+    ...(sistemaItems.length>0 ? [{ label: 'Sistema', items: sistemaItems }] : []),
   ];
 }
 
@@ -10348,17 +10396,8 @@ const PERFIL_OPTIONS = [
 ];
 
 function emptyUserForm(){
-  return {nome:'', usuario:'', email:'', senha:'', perfil:'operador', acessosExtras:[]};
+  return {nome:'', usuario:'', email:'', senha:'', perfil:'operador', acessosExtras:[], acessosRemovidos:[]};
 }
-
-// Rótulo curto de cada tela restrita, pros checkboxes de "Acessos extras" no
-// UserForm — mesmos ids usados em ACESSOS_RESTRITOS/buildSidebarGroups.
-const ACESSOS_EXTRAS_LABELS = {
-  dashboard: 'Indicadores',
-  relatorios: 'Relatórios',
-  enderecos: 'Endereços Pendentes',
-  usuarios: 'Usuários',
-};
 
 // Verifica se o login já está em uso por OUTRO usuário (case-insensitive,
 // mesma normalização usada no login real). Na edição, exclui o próprio
@@ -10535,15 +10574,28 @@ function UserManagementPanel({users, currentUser, goto, onToggleUserStatus, onDe
 function UserForm({mode, initialData, users, onCreateUser, onUpdateUser, onSaved, onCancel}){
   const isEdit = mode!=='new';
   const [form, setForm] = useState(isEdit && initialData
-    ? {nome:initialData.nome, usuario:initialData.usuario, email:initialData.email||'', senha:'', perfil:initialData.perfil, acessosExtras:initialData.acessosExtras||[]}
+    ? {nome:initialData.nome, usuario:initialData.usuario, email:initialData.email||'', senha:'', perfil:initialData.perfil, acessosExtras:initialData.acessosExtras||[], acessosRemovidos:initialData.acessosRemovidos||[]}
     : emptyUserForm());
   const [feedback, setFeedback] = useState('');
   const [salvando, setSalvando] = useState(false);
 
-  function toggleAcessoExtra(viewId){
-    setForm(f=>({...f, acessosExtras: f.acessosExtras.includes(viewId)
-      ? f.acessosExtras.filter(v=>v!==viewId)
-      : [...f.acessosExtras, viewId]}));
+  // Toggle único pra QUALQUER tela do menu (TODOS_OS_MENUS) — decide sozinho
+  // se a mudança deve ir pra `acessosExtras` (perfil normalmente NÃO libera
+  // essa tela, então ligar é conceder uma exceção) ou `acessosRemovidos`
+  // (perfil normalmente libera, então desligar é uma restrição específica
+  // deste usuário) — `padraoPermite` já vem calculado no render, a partir do
+  // perfil ATUAL selecionado no formulário.
+  function toggleAcessoMenu(viewId, padraoPermite){
+    setForm(f=>{
+      if(padraoPermite){
+        return {...f, acessosRemovidos: f.acessosRemovidos.includes(viewId)
+          ? f.acessosRemovidos.filter(v=>v!==viewId)
+          : [...f.acessosRemovidos, viewId]};
+      }
+      return {...f, acessosExtras: f.acessosExtras.includes(viewId)
+        ? f.acessosExtras.filter(v=>v!==viewId)
+        : [...f.acessosExtras, viewId]};
+    });
   }
 
   async function submitForm(e){
@@ -10566,9 +10618,9 @@ function UserForm({mode, initialData, users, onCreateUser, onUpdateUser, onSaved
     let res;
     if(!isEdit){
       if(!form.senha || form.senha.length<6){ setFeedback('Defina uma senha inicial com pelo menos 6 caracteres.'); setSalvando(false); return; }
-      res = await onCreateUser({nome, usuario, email, senha:form.senha, perfil:form.perfil, acessosExtras:form.acessosExtras});
+      res = await onCreateUser({nome, usuario, email, senha:form.senha, perfil:form.perfil, acessosExtras:form.acessosExtras, acessosRemovidos:form.acessosRemovidos});
     } else {
-      res = await onUpdateUser(mode, {nome, usuario, email, perfil:form.perfil, acessosExtras:form.acessosExtras});
+      res = await onUpdateUser(mode, {nome, usuario, email, perfil:form.perfil, acessosExtras:form.acessosExtras, acessosRemovidos:form.acessosRemovidos});
     }
     setSalvando(false);
     if(res && res.ok){
@@ -10613,30 +10665,39 @@ function UserForm({mode, initialData, users, onCreateUser, onUpdateUser, onSaved
           </select>
         </div>
         <div className="field">
-          <label>Acessos extras (além do que o perfil já libera)</label>
-          <div>
-            {Object.keys(ACESSOS_EXTRAS_LABELS).map(viewId=>{
-              const jaIncluso = ACESSOS_RESTRITOS[viewId].includes(form.perfil);
-              const ligado = jaIncluso || form.acessosExtras.includes(viewId);
-              return (
-                <div key={viewId} className="toggle-switch-row">
-                  <span style={{fontSize:13,color: jaIncluso ? 'var(--ink-dim)' : 'var(--ink)'}}>
-                    {ACESSOS_EXTRAS_LABELS[viewId]}
-                    {jaIncluso && <span style={{fontSize:11.5}}> (já incluso no perfil selecionado)</span>}
-                  </span>
-                  <label className="toggle-switch">
-                    <input
-                      type="checkbox"
-                      checked={ligado}
-                      disabled={jaIncluso}
-                      onChange={()=>toggleAcessoExtra(viewId)}
-                    />
-                    <span className="toggle-switch-track"></span>
-                  </label>
-                </div>
-              );
-            })}
-          </div>
+          <label>Acesso por tela</label>
+          {form.perfil==='admin' ? (
+            <div style={{fontSize:12.5,color:'var(--ink-dim)'}}>Administrador sempre tem acesso a todas as telas — não é possível restringir.</div>
+          ) : (
+            <>
+              <div style={{fontSize:11.5,color:'var(--ink-dim)',marginBottom:8}}>
+                Marque as telas que este usuário pode acessar. O padrão já vem
+                marcado conforme o perfil selecionado — desmarque pra tirar o
+                acesso, ou marque uma tela que o perfil normalmente não teria.
+              </div>
+              <div>
+                {TODOS_OS_MENUS.map(m=>{
+                  const padraoPermite = perfilLiberaPorPadrao(form.perfil, m.id);
+                  const ligado = padraoPermite
+                    ? !form.acessosRemovidos.includes(m.id)
+                    : form.acessosExtras.includes(m.id);
+                  return (
+                    <div key={m.id} className="toggle-switch-row">
+                      <span style={{fontSize:13}}>{m.label}</span>
+                      <label className="toggle-switch">
+                        <input
+                          type="checkbox"
+                          checked={ligado}
+                          onChange={()=>toggleAcessoMenu(m.id, padraoPermite)}
+                        />
+                        <span className="toggle-switch-track"></span>
+                      </label>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
         </div>
         <div className="btn-row">
           <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={salvando}>Cancelar</button>

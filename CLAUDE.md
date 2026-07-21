@@ -7531,3 +7531,86 @@ planilha e não atualizou" — o item continuava sem aparecer em "Itens Divergen
   inteiro e balanceamento de chaves do CSS conferidos (577/577, sem mudança). **O
   cliente precisa reimportar a planilha mais uma vez** — desta vez o item deve
   permanecer e aparecer em "Itens Divergentes" de verdade.
+
+## Acesso por tela — TODOS os menus, não só os 4 que já tinham essa opção
+
+Cliente pediu, mostrando um print da Sidebar inteira: "todos os menus, tenham a opção
+de eu selecionar por operador se ele pode ter acesso ou não". Até aqui, só 4 telas
+(Indicadores/Relatórios/Endereços Pendentes/Usuários) tinham um mecanismo de exceção
+por usuário (`acessosExtras`, um campo que só CONCEDIA acesso além do que o perfil já
+libera) — o resto do menu (Inventários, Nova Contagem, Recontagens, Itens Divergentes,
+Aprovação de Ajustes, Contagens Concluídas, Configurações) sempre foi liberado pra
+qualquer perfil, sem nenhuma forma de restringir.
+
+- **`acessos_removidos`** (`usuarios`, `backend/schema.sql`, `jsonb` igual
+  `acessos_extras`) — coluna nova, complemento da existente: telas que o perfil
+  normalmente liberaria, mas foram tiradas ESPECIFICAMENTE deste usuário. As duas
+  listas juntas (`acessosExtras`/`acessosRemovidos`) cobrem o menu inteiro: uma
+  concede o que o perfil não daria, a outra revoga o que o perfil daria.
+- **Administrador nunca é afetado por nenhuma das duas listas** — decisão deliberada
+  (`hasAccess` sai cedo com `true` se `user.perfil==='admin'`), pra não correr risco de
+  um admin se autobloquear de uma tela crítica (Usuários, Configurações) sem querer.
+- **`TODOS_OS_MENUS`** (perto de `ACESSOS_RESTRITOS`) — lista com as 11 telas
+  configuráveis (todo o menu, exceto "Início"). "Início" fica de fora de propósito: é o
+  destino de segurança pra onde o app redireciona sozinho quando alguém perde acesso à
+  tela em que estava (`useEffect` de navegação em `App()`) — não pode ser ela mesma
+  bloqueável, senão não sobraria destino nenhum pra redirecionar.
+- **`hasAccess(user, viewId)` reescrita**: admin sempre `true`; senão, checa
+  `acessosRemovidos` primeiro (revogação explícita vence); senão, `perfilLiberaPorPadrao`
+  (mesmo `ACESSOS_RESTRITOS` de sempre, mas agora só como PONTO DE PARTIDA, não mais a
+  palavra final); senão, `acessosExtras` (concessão, como já era). `ACESSOS_RESTRITOS`
+  continua com só 5 entradas (dashboard/relatorios/enderecos/usuarios/
+  aprovacaoDiretoria) — as outras 6 telas do menu não precisam de entrada nesse mapa,
+  já eram "liberado a todo mundo por padrão" e continuam assim, só que agora também
+  revogáveis via `acessosRemovidos`.
+- **`buildSidebarGroups`**: TODOS os itens do menu (não só Cadastros/Análise, que já
+  tinham essa checagem) agora passam por `hasAccess` — um item revogado some do menu
+  igual já acontecia com os 4 antigos.
+- **Guardas de rota em `App()`**: `inventories`/`pickCountType`/`recounts`/
+  `divergentes`/`concluidas`/`settings` ganharam `hasAccess(currentUser, viewId)` (antes
+  renderizavam incondicionalmente, sem checagem nenhuma — mesma dupla checagem
+  (visibilidade do link + guarda da rota) que o resto do app já faz nas outras telas).
+  **Bug pré-existente corrigido no caminho**: a rota `aprovacaoDiretoria` usava
+  `(role==='lider'||role==='admin')` direto, hardcoded, em vez de `hasAccess` — mesmo
+  que um admin concedesse a exceção pra um operador (agora possível, já que essa tela
+  entrou em `TODOS_OS_MENUS`), a guarda de rota bloquearia mesmo assim (só o menu
+  mostraria o item, navegar pra lá renderizaria vazio). Trocado pra
+  `hasAccess(currentUser,'aprovacaoDiretoria')`, consistente com o resto.
+- **`useEffect` de redirecionamento** (volta pra Home quando a tela atual fica
+  inacessível): antes só disparava se `ACESSOS_RESTRITOS[view]` existisse — como agora
+  QUALQUER tela pode ficar bloqueada via `acessosRemovidos`, mesmo sem entrada nesse
+  mapa, a condição virou só `!hasAccess(currentUser, view)`.
+- **`UserForm`**: a seção "Acessos extras (além do que o perfil já libera)" virou
+  "Acesso por tela" — mostra as 11 telas de `TODOS_OS_MENUS`, cada uma com um toggle
+  SEMPRE editável (nenhum mais fica travado/desabilitado como "já incluso no perfil",
+  diferente de antes). `toggleAcessoMenu(viewId, padraoPermite)` decide sozinho se a
+  mudança vai pra `acessosRemovidos` (perfil libera por padrão, desligar = revogar) ou
+  `acessosExtras` (perfil não libera por padrão, ligar = conceder) — o admin só vê e
+  clica no toggle, não precisa saber qual lista por trás está mudando. Perfil
+  "Administrador" selecionado esconde a seção inteira, com um aviso ("Administrador
+  sempre tem acesso a todas as telas — não é possível restringir") no lugar dos
+  toggles.
+- **Edge Function `usuarios-admin`**: `criar_usuario`/`atualizar_usuario` passam a
+  aceitar e gravar `acessosRemovidos` (→ `acessos_removidos`), mesmo padrão já usado
+  pra `acessosExtras`.
+- Testado via harness real (jsdom + react-dom/client + `act()`, mesma técnica rigorosa
+  de sempre): `hasAccess` cobrindo os cenários — admin nunca bloqueado mesmo com
+  `acessosRemovidos` preenchido; operador padrão vendo telas sem restrição mas não as
+  restritas; operador com `acessosExtras` vendo Indicadores/Aprovação de Ajustes
+  (concessão nova, antes impossível pra essa 2ª); operador com `acessosRemovidos`
+  perdendo Inventários/Recontagens mas mantendo o resto (revogação nova, não existia
+  antes); líder com `acessosRemovidos` perdendo uma tela que o perfil dele normalmente
+  daria. `perfilLiberaPorPadrao` isolado. `buildSidebarGroups` confirmando que um item
+  revogado some do menu, outro não-afetado continua, e "Início" nunca some.
+  `UserForm`: mostra os 11 rótulos, nenhum checkbox desabilitado, estado inicial
+  batendo com o padrão do perfil (Inventários marcado/Usuários e Aprovação de Ajustes
+  desmarcados pro operador), clicar desmarca/marca corretamente, e perfil
+  "Administrador" esconde a seção inteira com o aviso certo. Transpile Babel do
+  arquivo inteiro e balanceamento de chaves do CSS conferidos (577/577, sem mudança —
+  nenhuma classe CSS nova, reaproveita `.toggle-switch`/`.field` já existentes). Rodei
+  de novo toda a suíte de regressão disponível no scratchpad, sem quebrar nada.
+  **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma limitação de
+  sempre (login exige Supabase Auth real, não simulável no sandbox sem rede). Falta o
+  cliente rodar o SQL novo (`alter table usuarios add column if not exists
+  acessos_removidos jsonb...`) e fazer o redeploy da Edge Function `usuarios-admin`
+  atualizada no projeto real.

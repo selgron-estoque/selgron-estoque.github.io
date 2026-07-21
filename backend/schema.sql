@@ -1054,3 +1054,27 @@ alter table contagens add column if not exists reprovado_em text;
 -- Sem policy nova — mesma UPDATE já existente em `contagens` cobre.
 -- =============================================================================
 alter table contagens add column if not exists motivo_reprovacao_diretoria text;
+
+-- =============================================================================
+-- ACESSO POR TELA — todos os menus configuráveis por usuário, não só extras
+--
+-- Até aqui, `acessos_extras` só CONCEDIA acesso além do que o perfil já
+-- libera por padrão (ex.: dar "Indicadores" a um operador), e só 4 telas
+-- (Indicadores/Relatórios/Endereços Pendentes/Usuários) tinham essa opção na
+-- tela de edição de usuário — o resto do menu (Inventários, Nova Contagem,
+-- Recontagens, Itens Divergentes, Aprovação de Ajustes, Contagens Concluídas,
+-- Configurações) sempre ficou liberado pra todo mundo, sem nenhuma forma de
+-- restringir. Cliente pediu pra poder escolher, por operador, se ele tem
+-- acesso ou não a QUALQUER menu — incluindo tirar acesso de uma tela que o
+-- perfil normalmente libera, não só conceder uma a mais.
+--
+-- `acessos_removidos` é o complemento de `acessos_extras`: uma lista de telas
+-- que esse usuário NÃO pode acessar, mesmo que o perfil dele normalmente
+-- liberasse (ver `hasAccess`/`TODOS_OS_MENUS` no index.html). Administrador
+-- nunca é afetado por nenhuma das duas listas — sempre tem acesso a tudo,
+-- decisão deliberada pra não correr risco de um admin se autobloquear de uma
+-- tela crítica sem querer.
+--
+-- Sem policy nova — mesma UPDATE já existente em `usuarios` cobre.
+-- =============================================================================
+alter table usuarios add column if not exists acessos_removidos jsonb not null default '[]'::jsonb;
