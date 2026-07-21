@@ -6529,3 +6529,47 @@ só alcançável pelo operador via um botão avulso ("Nova Contagem" → "Contag
   funcional de ponta a ponta com o Supabase real (endereços cadastrados de verdade)
   fica a cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth
   real, não simulável no sandbox sem rede).
+
+## Bug real: "Nova senha" ficava presa e depois mostrava erro contraditório
+
+Cliente mandou print da tela "Nova senha" mostrando duas mensagens contraditórias ao
+mesmo tempo: o aviso de sempre ("O administrador liberou sua conta...") E um erro
+vermelho ("Esta conta não está liberada para definir uma nova senha.") — e apontou o
+próprio diagnóstico: "quando o operador troca a senha ele não continua para entrada...
+[o certo seria] voltar para tela de login, para aí sim entrar".
+
+- **Causa raiz**: `selfSetNewPassword` (`App()`) tentava logar automaticamente depois
+  de salvar a senha nova (`supabaseClient.auth.signInWithPassword`), usando o e-mail de
+  `target = users.find(u=>u.id===userId)` — mas `users` (cache local) normalmente está
+  **vazio no aparelho do OPERADOR**: a sincronização completa da lista só roda pra quem
+  já está logado E tem acesso à tela "Usuários" (ver "Quarto pedaço do backend real" mais
+  acima), e o operador nunca tem esse acesso — o aparelho dele nunca carrega `users`
+  antes do primeiro login bem-sucedido. Sem `target`, o bloco de login automático era
+  pulado em SILÊNCIO (sem erro, sem navegar) — a senha já tinha sido salva no servidor
+  (status virou `'ativo'`), mas a tela "Nova senha" continuava exatamente na mesma tela,
+  sem nenhum feedback de que algo tinha acontecido. O operador, achando que não
+  funcionou, clicava "Definir senha e entrar" de novo — e essa 2ª chamada batia num
+  status que já não era mais `'deve_definir_senha'` (a Edge Function `auto_definir_senha`
+  exige exatamente esse status), devolvendo o erro confuso do print — mesmo a senha já
+  estando salva corretamente desde a 1ª tentativa.
+- **Correção, exatamente como o cliente sugeriu**: `selfSetNewPassword` não tenta mais
+  logar automaticamente — só salva a senha e devolve `{ok:true}` (o `if(target)` que
+  restava só atualiza o cache local/histórico quando existe, sem depender disso pro
+  fluxo funcionar). `LoginScreen.submitNewPassword`, ao receber sucesso, volta
+  `mode` pra `'login'`, limpa os campos de senha nova E a senha antiga (digitada na 1ª
+  tentativa, que ficaria "presa" no campo), mantém o campo "Usuário ou e-mail" como
+  estava (nunca foi limpo), e mostra um aviso verde de sucesso
+  ("Senha definida com sucesso! Faça login com sua nova senha.", `login-success2`, mesmo
+  componente visual já usado no fluxo de "esqueci minha senha"). O operador digita a
+  senha nova ali mesmo e loga normalmente — sem depender de `users` estar populado.
+- Testado via harness real (jsdom + react-dom/client + `act()`, mesma técnica rigorosa
+  de sempre — carrega o `index.html` inteiro transpilado numa `vm.Script`): simulei o
+  cenário exato do print (login cai em "precisa definir nova senha" → preenche/confirma
+  a nova senha → `onSelfSetPassword` mockado retornando sucesso) e confirmei que a tela
+  volta pro login normal (não mais presa em "Nova senha"), mostra a mensagem de sucesso,
+  NÃO mostra mais o erro "não está liberada", o campo de usuário continua preenchido, o
+  campo de senha antiga foi limpo, e o botão "Definir senha e entrar" some da tela
+  (impossível clicar de novo por engano, resolvendo a causa raiz da 2ª chamada
+  conflitante). Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  conferidos (575/575, sem mudança). **Verificação contra o Supabase Auth real fica a
+  cargo do cliente** — mesma limitação de sempre.

@@ -3996,23 +3996,30 @@ function App(){
 
   // Chamado pela tela "Nova senha" (usuário liberado pelo admin definindo a
   // própria senha) — não exige admin logado (a própria Edge Function trata
-  // esse caso sem checar JWT, ver `auto_definir_senha`). Completa o login
-  // chamando `signInWithPassword` com a senha recém-definida.
+  // esse caso sem checar JWT, ver `auto_definir_senha`).
+  //
+  // NÃO tenta logar automaticamente depois de salvar — antes tentava
+  // (`signInWithPassword` na hora), mas `target` (o registro local do
+  // usuário, usado só pra pegar o e-mail) normalmente é `undefined` no
+  // aparelho do OPERADOR: a sincronização completa de `users` só roda pra
+  // quem já está logado E tem acesso à tela "Usuários" (ver seção
+  // "Quarto pedaço do backend real" no CLAUDE.md) — um operador nunca tem
+  // isso, então o aparelho dele geralmente nunca teve `users` carregado
+  // antes do primeiro login. Sem `target`, o login automático era pulado
+  // em silêncio (sem erro, sem navegar) — a tela "Nova senha" ficava
+  // parada, sem feedback nenhum, e se o usuário clicasse "Definir senha e
+  // entrar" de novo, a 2ª chamada batia num status que já tinha virado
+  // 'ativo' na 1ª tentativa e voltava "Esta conta não está liberada para
+  // definir uma nova senha" — confuso, já que a senha TINHA sido salva.
+  // Agora só salva a senha e devolve `{ok:true}` — `LoginScreen` volta pra
+  // tela de login normal com um aviso de sucesso, e o usuário loga de
+  // verdade por ali (fluxo simples e sem essa dependência frágil).
   async function selfSetNewPassword(userId, novaSenha){
     const target = users.find(u=>u.id===userId);
     const res = await chamarUsuariosAdmin('auto_definir_senha', {userId, novaSenha});
-    if(res.ok){
-      if(target){
-        setUsers(prev=>prev.map(u=>u.id===userId?{...u, status:'ativo'}:u));
-        logHistory(target.nome, 'Senha definida pelo próprio usuário', '—');
-      }
-      const emailAlvo = target ? target.email : null;
-      if(emailAlvo){
-        const { error } = await supabaseClient.auth.signInWithPassword({email:emailAlvo, password:novaSenha});
-        if(error) return {ok:false, erro:'Senha salva, mas não foi possível entrar automaticamente — tente logar de novo.'};
-      }
-      touchLastActivity();
-      setView('home');
+    if(res.ok && target){
+      setUsers(prev=>prev.map(u=>u.id===userId?{...u, status:'ativo'}:u));
+      logHistory(target.nome, 'Senha definida pelo próprio usuário', '—');
     }
     return res;
   }
@@ -4483,6 +4490,11 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
   const [showSenha, setShowSenha] = useState(false);
   const [error, setError] = useState('');
   const [forgotMsg, setForgotMsg] = useState('');
+  // Mostrado na tela de login normal depois que "Nova senha" salva com
+  // sucesso — não tenta mais logar automaticamente (ver comentário em
+  // `selfSetNewPassword`), então precisa deixar claro que a senha JÁ foi
+  // salva e o próximo passo é logar com ela.
+  const [successMsg, setSuccessMsg] = useState('');
   const [pendingUserId, setPendingUserId] = useState(null);
   const [novaSenha, setNovaSenha] = useState('');
   const [confirmaSenha, setConfirmaSenha] = useState('');
@@ -4533,6 +4545,7 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
   async function submitLogin(e){
     e.preventDefault();
     setError('');
+    setSuccessMsg('');
     setSalvandoLogin(true);
     const result = await onLogin(identifier, senha, lembrar);
     setSalvandoLogin(false);
@@ -4560,7 +4573,20 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
     setSalvandoSenha(true);
     const res = await onSelfSetPassword(pendingUserId, novaSenha);
     setSalvandoSenha(false);
-    if(res && !res.ok) setError(res.erro || 'Não foi possível salvar a nova senha — tente novamente.');
+    if(res && res.ok){
+      // Senha salva — volta pra tela de login normal em vez de tentar
+      // entrar direto (ver comentário em `selfSetNewPassword`). Limpa a
+      // senha antiga que tinha sido digitada na 1ª tentativa (o campo
+      // "Usuário ou e-mail" continua preenchido, já que nunca foi limpo).
+      setNovaSenha('');
+      setConfirmaSenha('');
+      setSenha('');
+      setPendingUserId(null);
+      setMode('login');
+      setSuccessMsg('Senha definida com sucesso! Faça login com sua nova senha.');
+    } else if(res){
+      setError(res.erro || 'Não foi possível salvar a nova senha — tente novamente.');
+    }
   }
 
   return (
@@ -4574,6 +4600,9 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
           <div className="login-form-body" onFocus={scrollCampoFocadoParaVisivel}>
             {notice && mode==='login' && (
               <div className="login-notice2">{notice}</div>
+            )}
+            {successMsg && mode==='login' && (
+              <div className="login-success2">{successMsg}</div>
             )}
 
             {mode==='login' && (
