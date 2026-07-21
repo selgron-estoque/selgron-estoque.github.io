@@ -7432,3 +7432,58 @@ pelas próprias ações que essa tela já tem — "Sem Ajuste Necessário" (vai 
 apaga a contagem, só muda o status pra outra fila — não é perda de dado. Sem mudança
 de código nesta investigação, registrado aqui só pra não perder o contexto caso o
 cliente relate o mesmo susto de novo no futuro.
+
+## Bug real encontrado no caso concreto: coluna "SA" da planilha com dado sujo excluía item "Ajustar" da fila pra sempre
+
+Cliente deu um exemplo específico do item que sumiu de "Itens Divergentes":
+`000.63681`. Como o app não tinha essa coluna nova ainda aplicada no Supabase real
+(`motivo_reprovacao_diretoria`, ver seção acima), a 1ª consulta SQL que pedi falhou —
+ajustei pra uma versão sem essa coluna, e a 2ª consulta (`contagens_historico`) trouxe
+o resultado:
+
+```json
+{"produto_codigo":"000.63681", "status":"Ajustar", "solicitacao_ajuste":"Ajustar", ...}
+```
+
+- **Causa raiz**: o campo "SA" (`solicitacao_ajuste`) dessa linha veio da planilha com
+  o valor **"Ajustar"** — a MESMA palavra do campo "Status", não uma SA de verdade.
+  `buildAjustarSeedsFromHistorico` (que decide quais itens "Ajustar" viram uma
+  divergência nova em "Itens Divergentes") tinha um guard (`!l.solicitacao_ajuste`)
+  que tratava QUALQUER valor não-vazio nessa coluna como "já tem SA real, não precisa
+  entrar na fila de novo" — escrito com base na suposição, confirmada com o cliente na
+  época ("linhas 'Ajustar' nunca trazem SA na planilha real"), que não se sustentou
+  pra esse item real. Com esse dado sujo, o item nunca era semeado — silenciosamente,
+  sem erro nenhum (mesma categoria de bug já vista várias vezes neste projeto: RLS sem
+  policy, coluna com espaço no cabeçalho, etc.) — explicando por que ele nunca chegou
+  a aparecer, mesmo antes de qualquer ação recente do time.
+- **`HISTORICO_STATUS_VOCABULARIO`** (`['OK', 'Sem Ajuste', 'Ajustado', 'Ajustar',
+  'Recontar', 'Pendente']`, perto de `HISTORICO_STATUS_CONCLUIDOS`) + **`pareceValorDeStatusNaoSA(v)`**
+  — trata como "sem SA real" tanto um campo vazio quanto um valor que só repete uma das
+  6 palavras do vocabulário de Status desta planilha (case-insensitive) — uma SA de
+  verdade não seria só a palavra "Ajustar"/"Ajustado"/etc. sozinha.
+- **`buildAjustarSeedsFromHistorico`**: filtro trocou de `!l.solicitacao_ajuste` pra
+  `pareceValorDeStatusNaoSA(l.solicitacao_ajuste)` — item "Ajustar" com esse tipo de
+  dado sujo na coluna SA agora É semeado normalmente; item "Ajustar" com uma SA de
+  verdade continua excluído (comportamento antigo preservado).
+- **`historicoRowToCountLike`** (usado por "Contagens Concluídas"): mesma proteção
+  aplicada na EXIBIÇÃO — `solicitacaoAjuste` vira `null` quando o valor bruto só repete
+  uma palavra do vocabulário de Status, evitando mostrar um badge tipo "Ajustado · SA
+  Ajustado" como se fosse uma SA de verdade.
+- **Não foi preciso limpar nada no banco** — como esse item nunca tinha sido semeado
+  antes (o bug sempre existiu desde que essa função foi criada), não há registro
+  duplicado nem órfão pra remover; basta o cliente reimportar a planilha de novo (mesmo
+  arquivo ou uma versão atualizada) que o item — e qualquer outro com o mesmo problema
+  — passa a ser semeado corretamente, sem precisar de nenhum SQL de limpeza.
+- Testado via harness real (mesma técnica de sempre): `pareceValorDeStatusNaoSA`
+  cobrindo vazio/null, as 6 palavras do vocabulário (maiúsculo e minúsculo) e uma SA de
+  verdade (não deve ser tratada como "vazia"); `buildAjustarSeedsFromHistorico` com o
+  EXATO payload retornado pela consulta do cliente pro item `000.63681` — confirma que
+  ele agora É semeado; regressão confirmando que um item "Ajustar" com uma SA de
+  verdade continua excluído, e que um item "Ajustar" com o campo genuinamente vazio
+  continua sendo semeado como sempre; `historicoRowToCountLike` não mostra mais SA suja
+  como se fosse real, mas continua mostrando uma SA de verdade normalmente. Transpile
+  Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos (577/577, sem
+  mudança). Rodei de novo toda a suíte de regressão disponível no scratchpad, sem
+  quebrar nada. **Falta o cliente reimportar a planilha em Configurações** pra esse
+  item (e qualquer outro com o mesmo problema de dado sujo na coluna SA) passar a
+  aparecer em "Itens Divergentes".

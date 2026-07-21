@@ -2250,6 +2250,25 @@ async function fetchUltimaImportacaoHistorico(){
 // Paginado de verdade (ver fetchTodasPaginado) — nenhum teto fixo, nem do
 // código nem do projeto Supabase.
 const HISTORICO_STATUS_CONCLUIDOS = ['OK', 'Sem Ajuste', 'Ajustado'];
+
+// Bug real encontrado (cliente reportou item "000.63681" que nunca aparecia
+// em "Itens Divergentes"): a coluna "SA" da planilha, pra pelo menos essa
+// linha, veio preenchida com a palavra "Ajustar" (idêntica ao próprio valor
+// de "Status" daquela linha) em vez de um número de SA de verdade — dado sujo
+// na origem, não um código quebrado (o parser já lê a coluna certa pelo
+// nome). `buildAjustarSeedsFromHistorico` tratava QUALQUER valor não-vazio
+// nessa coluna como "já tem SA real, não precisa entrar na fila de novo" —
+// com esse dado sujo, um item que na prática NUNCA teve SA nenhuma ficava
+// silenciosamente de fora da fila, sem erro nenhum (mesma categoria de bug
+// silencioso já vista antes neste projeto — RLS sem policy, coluna com
+// espaço). Lista com todo o vocabulário conhecido de "Status" desta planilha
+// (ver "Padrão de planilha do cliente" no histórico) — se o valor da coluna
+// "SA" for só uma dessas palavras repetida, não é uma SA de verdade.
+const HISTORICO_STATUS_VOCABULARIO = ['OK', 'Sem Ajuste', 'Ajustado', 'Ajustar', 'Recontar', 'Pendente'];
+function pareceValorDeStatusNaoSA(v){
+  if(!v) return true;
+  return HISTORICO_STATUS_VOCABULARIO.some(s => s.toLowerCase() === String(v).trim().toLowerCase());
+}
 async function fetchContagensHistoricoConcluidas(){
   if(!supabaseClient) return [];
   try{
@@ -2367,14 +2386,16 @@ function buildRecontarSeedsFromHistorico(linhas){
 // um Status só, mas mantém os dois espaços de id claramente distintos).
 function buildAjustarSeedsFromHistorico(linhas){
   return linhas
-    // "!l.solicitacao_ajuste" — pedido explícito do cliente: item "Ajustar" que
-    // JÁ tem uma SA preenchida na planilha não deveria mais entrar na fila de
-    // decisão do líder (a SA já existe, então já passou por essa etapa em algum
-    // lugar) — só o "Ajustar" SEM SA é que representa uma divergência ainda sem
-    // decisão nenhuma. Na prática, o cliente confirmou que linhas "Ajustar" nunca
-    // trazem SA na planilha real — este guard é defensivo/futuro, não muda o
-    // comportamento observado até aqui.
-    .filter(l => l.status==='Ajustar' && l.produto_codigo && l.data && !l.solicitacao_ajuste)
+    // Item "Ajustar" que JÁ tem uma SA de verdade preenchida na planilha não
+    // deveria mais entrar na fila de decisão do líder (a SA já existe, então
+    // já passou por essa etapa em algum lugar) — só o "Ajustar" SEM SA real é
+    // que representa uma divergência ainda sem decisão nenhuma.
+    // `pareceValorDeStatusNaoSA` (perto de HISTORICO_STATUS_CONCLUIDOS) trata
+    // como "sem SA real" tanto o campo vazio quanto um valor sujo repetindo
+    // uma palavra do vocabulário de Status (achado real: item "000.63681"
+    // tinha "SA"="Ajustar", igual ao Status, e por isso nunca entrava aqui —
+    // o guard original só olhava vazio/não-vazio, sem essa proteção).
+    .filter(l => l.status==='Ajustar' && l.produto_codigo && l.data && pareceValorDeStatusNaoSA(l.solicitacao_ajuste))
     .map(l => {
       const percentual = (l.saldo_sistema!=null && l.saldo_sistema!==0 && l.diferenca!=null)
         ? (l.diferenca / l.saldo_sistema) * 100
@@ -8805,7 +8826,11 @@ function historicoRowToCountLike(h){
     // contagem feita ao vivo no app, mas são reais e o cliente pediu que
     // apareçam pra fins de auditoria.
     classe: h.classe || null,
-    solicitacaoAjuste: h.solicitacao_ajuste || null,
+    // Mesma proteção do filtro de seed (pareceValorDeStatusNaoSA) — sem isso,
+    // um valor sujo tipo "SA"="Ajustado" (mesma palavra do Status) apareceria
+    // como badge "Ajustado · SA Ajustado" em Contagens Concluídas, parecendo
+    // uma SA de verdade sem ser.
+    solicitacaoAjuste: pareceValorDeStatusNaoSA(h.solicitacao_ajuste) ? null : h.solicitacao_ajuste,
     documento: h.documento || null,
     diasSemMovimento: h.dias_sem_movimento!=null ? h.dias_sem_movimento : null,
     semana: h.semana!=null ? h.semana : null,
