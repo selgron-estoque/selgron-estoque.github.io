@@ -993,3 +993,42 @@ $$ language sql stable;
 create policy "escrita autenticada" on produtos for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 create policy "escrita autenticada" on enderecos for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 create policy "escrita autenticada" on estoque_enderecos for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+
+-- =============================================================================
+-- FLUXO REAL DE AJUSTE DE ESTOQUE DA SELGRON — SA de Ajuste + aprovação da
+-- Diretoria. O cliente revelou o processo de verdade: contagem → análise do
+-- líder → (opcional) recontagem → se a divergência se confirma, o líder gera
+-- uma SA de Ajuste e manda pra aprovação da Diretoria → só depois de aprovada
+-- o ajuste é efetivado e o item conta como resolvido. Se a Diretoria reprovar,
+-- volta pra fila de recontagem, com um destaque visual próprio (diferente da
+-- rejeição do líder).
+--
+-- Hoje a aprovação da Diretoria é MANUAL, dentro do próprio app (o admin
+-- representa a Diretoria) — não existe perfil "diretoria" novo nem integração
+-- externa. `numero_sa` é digitado pelo líder no momento de encaminhar pra
+-- aprovação (antes da decisão, não depois).
+--
+-- Dois valores novos de `status_aprovacao` (índice/RLS/policies já cobrem
+-- qualquer valor de texto, não precisam de mudança):
+--   aguardando_aprovacao_diretoria — SA gerada, aguardando decisão (estado
+--     aberto, tratado como tal em OPEN_STATUSES no index.html).
+--   ajuste_aprovado_diretoria — Diretoria aprovou, ajuste efetivado (estado
+--     final, aparece em "Contagens Concluídas" como "Ajustado").
+-- Se reprovado, o status volta pra `aguardando_segunda` (mesmo valor já usado
+-- por "Solicitar nova contagem") — reaproveita 100% a fila/tela existente,
+-- só com `reprovado_pela_diretoria=true` pra diferenciar visualmente o card.
+--
+-- Sem policy nova — a de UPDATE já existente em `contagens`
+-- (`auth.role()='authenticated'`, ver "ENDURECIMENTO DE RLS" mais acima) já
+-- cobre gravar essas colunas novas, mesmo padrão de toda migração de coluna
+-- anterior nesta tabela.
+--
+-- Introspecção sugerida antes de rodar, mesma cautela de sempre:
+--   select column_name from information_schema.columns where table_name = 'contagens' and column_name = 'numero_sa';
+-- =============================================================================
+alter table contagens add column if not exists numero_sa text;
+alter table contagens add column if not exists sa_gerada_por text;
+alter table contagens add column if not exists sa_gerada_em text;
+alter table contagens add column if not exists reprovado_pela_diretoria boolean not null default false;
+alter table contagens add column if not exists reprovado_por text;
+alter table contagens add column if not exists reprovado_em text;

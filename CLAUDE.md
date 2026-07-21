@@ -6622,3 +6622,142 @@ detalhes abertos por padrão..." acima).
   (575/575, sem mudança — nenhuma classe CSS nova, só reaproveitamento das já
   existentes). **Verificação visual fica a cargo do cliente** — mesma limitação de
   sempre (login exige Supabase Auth real, não simulável no sandbox sem rede).
+
+## Fluxo real de ajuste de estoque da Selgron — SA de Ajuste + aprovação da Diretoria
+
+Cliente revelou o processo real de ajuste que o app ainda não modelava: contagem →
+análise do líder ("Itens Divergentes") → (opcional) recontagem → **se a divergência se
+confirma, o líder gera uma SA de Ajuste e encaminha pra aprovação da Diretoria — só
+depois de aprovada o ajuste é efetivado e o item conta como resolvido**. Antes disso,
+"Aprovar divergência" já finalizava o item direto, sem essa etapa intermediária.
+Planejado via `EnterPlanMode`/`ExitPlanMode` dado o tamanho (toca a regra de negócio
+central de divergência, 3 telas já existentes e cria uma 4ª). Confirmado com o cliente,
+pergunta a pergunta:
+
+- **A aprovação da Diretoria é manual, dentro do próprio app** — hoje o admin representa
+  a Diretoria (não existe perfil "diretoria" novo nem integração externa).
+- **O número da SA é digitado pelo líder** no momento de encaminhar pra aprovação (antes
+  da decisão, não depois).
+- **Se a Diretoria reprovar**, o item volta pra fila de recontagem (mesmo destino de
+  "Solicitar nova contagem"), mas com um card "bem destacado" avisando que foi a
+  Diretoria que reprovou, não o líder.
+- **"Sem Ajuste Necessário" não passa pela Diretoria** — resolve direto como antes, só
+  com uma marcação leve em "Contagens Concluídas" pra diferenciar de "Ajustado".
+- **O status "Concluído" do INVENTÁRIO não muda** — continua baseado só em
+  `contados>=qtdItens` (contagem física feita). Itens sem divergência concluem cada um
+  normalmente; itens com divergência entram na fila de análise — isso é rastreado por
+  CONTAGEM, nunca trava o inventário inteiro.
+
+Fecha, de quebra, uma pendência já documentada antes ("Classe"/"SA" sempre em branco no
+export do relatório, porque nenhum fluxo ao vivo capturava o número da SA) — a partir de
+agora esse dado existe pra contagem ao vivo, não só pro histórico importado.
+
+### Dois status novos, um flag novo
+
+`statusAprovacao` ganha `aguardando_aprovacao_diretoria` (SA gerada, aguardando decisão —
+estado ABERTO, entrou em `OPEN_STATUSES`) e `ajuste_aprovado_diretoria` (Diretoria
+aprovou, ajuste efetivado — estado final, aparece em "Contagens Concluídas"). `aprovado_lider`
+continua existindo, mas passa a significar exclusivamente "sem ajuste necessário" daqui
+pra frente (não precisou de coluna nova — já era o que esse status sempre quis dizer).
+Se a Diretoria reprovar, o status volta pra `aguardando_segunda` (mesmo valor de sempre,
+reaproveita 100% a fila de "Recontagens Pendentes"), com o flag novo
+`reprovado_pela_diretoria` pra diferenciar visualmente do rejeitado-pelo-líder
+(`recontagemSolicitadaPeloLider`, já existente) — os dois nunca coexistem na mesma linha
+(setados por ações de pipelines diferentes), então a prioridade entre os dois no card é
+só defensiva.
+
+**Colunas novas em `contagens`** (`backend/schema.sql`): `numero_sa`, `sa_gerada_por`,
+`sa_gerada_em`, `reprovado_pela_diretoria`, `reprovado_por`, `reprovado_em`. Sem RLS
+nova — a policy de UPDATE já existente (`auth.role()='authenticated'`) já cobre.
+`numero_sa` mapeia (`contagemRowToLocal`) pro campo local **`solicitacaoAjuste`** — não
+`numeroSa` — de propósito: é o MESMO nome que `historicoRowToCountLike` já usa pra SA
+vinda da planilha antiga importada, unificando os dois casos no mesmo campo de exibição
+em `ConcludedCountsPanel` (o bloco que já mostrava "SA: {r.solicitacaoAjuste}" só pro
+histórico passou a mostrar pra contagem ao vivo também, sem duplicar lógica).
+
+### `App()` — três funções novas, mesmo padrão de sempre
+
+`enviarParaAprovacaoDiretoria(countId, numeroSa)` (líder gera a SA e encaminha),
+`aprovarAjusteDiretoria(countId)` (Diretoria aprova, reaproveita `aprovado_por`/
+`aprovado_em` com o sentido de "quem resolveu definitivamente"), `reprovarAjusteDiretoria(countId)`
+(Diretoria reprova, volta pra `aguardando_segunda` com o flag novo) — todas seguem o
+mesmo padrão `await` Supabase → só atualiza estado local se `res.ok`, já usado por
+`approveDivergence`/`requestRecountFromOperator`. `approveDivergence` (existente) não
+mudou de implementação — só passou a ser chamado pelo botão "Sem Ajuste Necessário" em
+vez de "Aprovar divergência".
+
+### `DivergentItemsPanel` — botão único vira bifurcação de 2 caminhos
+
+O antigo botão único "Aprovar divergência" virou dois, dentro do mesmo
+`count-card-actions-row` que já suportava até 4 botões (classe já preparada pra isso,
+ver seção "Recontagens Pendentes — segunda rodada" mais acima): **"Sem Ajuste
+Necessário"** (chama `onApprove` direto, igual comportamento de antes) e **"Gerar SA de
+Ajuste"** (abre um campo inline pedindo o número da SA — mesmo padrão visual do
+confirm-inline de excluir já usado no componente — e ao confirmar chama a nova prop
+`onSendToDiretoria`). Novo estado local `saAbertoId`/`saValor`.
+
+### `RecountsPanel` — card "Ajuste Reprovado", destaque FORTE
+
+Pedido do cliente: diferente do "leve" pedido pra Sem Ajuste, aqui precisa ficar "bem
+destacado". Reaproveita a MESMA técnica visual já usada pra `.count-card.urgente` (anel/
+box-shadow ao redor do card inteiro), com uma cor NOVA reservada só pra esse caso — roxo
+`#7B3FC4`/`#F1E9FB` (já é uma cor secundária estabelecida no app — usada em
+"Acuracidade"/"Divergência por Família" — nunca usada em estado de contagem antes, evita
+inventar tom novo e mantém essa combinação com um significado único: "Diretoria
+reprovou"). CSS novo: `.count-card.reprovado-diretoria` (mesma técnica de
+`.count-card.urgente`, ao lado dela no `<style>`). Chip de severidade prioriza esse
+estado sobre o chip vermelho já existente de "Rejeitada" (líder), e um novo
+`divergence-alert` (cores roxas via `style` inline) avisa quem/quando a Diretoria
+reprovou.
+
+### `ConcludedCountsPanel` — badges "Ajustado"/"Sem Ajuste"
+
+Badge verde "Ajustado · SA {número}" (`--ok-bg`/`--ok`) quando `statusAprovacao===
+'ajuste_aprovado_diretoria'`; badge neutro/leve "Sem Ajuste" (`--panel-raised`/
+`--ink-dim`) quando `aprovado_lider` com divergência real — exatamente o "leve destaque"
+pedido, contrastando com o roxo forte de `RecountsPanel`. Item sem divergência nenhuma
+não ganha badge extra (pedido explícito: "vão pra concluído... como qualquer outra
+contagem"). `houveAjuste` (usado no resumo da cadeia) ficou mais preciso: usa o status
+explícito quando existe (`ajuste_aprovado_diretoria`→true, `aprovado_lider`→false), cai
+no heurístico antigo (`diferenca!==0`) só pros status mais antigos. No detalhe por
+rodada, a linha que já mostrava Classe/SA/Documento só pro histórico importado passou a
+mostrar SA pra contagem ao vivo também (`r.solicitacaoAjuste`, unificado).
+
+### Tela nova: "Aprovação de Ajustes" (`DiretoriaApprovalPanel`, view `aprovacaoDiretoria`)
+
+Mesmo shell visual das outras 3 telas de contagem (`count-card`/`SearchWithScanner`/
+`TrendFilterBar`/`result-grid-4col`/`SeverityFilterRow`) — lista
+`aguardando_aprovacao_diretoria`, com badge da SA + quem gerou/quando. Botão **"Aprovar"**
+(sem confirmação, mesmo padrão de "Aprovar divergência" de antes) e **"Reprovar"** (COM
+confirmação inline, já que devolve o item pra recontagem — ação mais consequente). Só
+`role==='admin'` tem os botões (`canDecide`); líder vê a lista em modo leitura ("Aguardando
+decisão da Diretoria"), mesmo padrão `canApprove`/operador já usado em `DivergentItemsPanel`.
+
+Fiação (mesmo padrão de extração de tela já usado 3x neste projeto): `App()` guarda a
+rota atrás de `role==='lider'||role==='admin'`; `buildSidebarGroups` ganha o item logo
+depois de "Itens Divergentes"; `VIEW_TITLES.aprovacaoDiretoria`; `ACESSOS_RESTRITOS.aprovacaoDiretoria
+= ['lider','admin']`; Home ganha um 6º KPI ("Aguardando Aprovação da Diretoria", cor
+âmbar — mesma de "Recontagens Pendentes", já que semanticamente é mais uma fila de
+pendência), só renderizado quando `role!=='operador'`.
+
+### Painel "Regras de Divergência" (Relatórios)
+
+Ganhou uma nota curta explicando o novo passo (SA → Diretoria) — cosmético, só
+documentação dentro do próprio app, não muda nenhuma regra de cálculo.
+
+- Testado via harness real (jsdom + react-dom/client + `act()`, mesma técnica rigorosa
+  de sempre — carrega o `index.html` inteiro transpilado numa `vm.Script`): confirmei
+  que "Gerar SA de Ajuste" abre o campo, digitar+confirmar chama `onSendToDiretoria` com
+  id/SA corretos; que "Sem Ajuste Necessário" continua chamando `onApprove`; que
+  `DiretoriaApprovalPanel` mostra a SA/quem gerou, "Reprovar" exige confirmação e chama
+  `onRejectSA`, "Aprovar" chama `onApproveSA` sem confirmação; que um item
+  `reprovadoPelaDiretoria:true` em `RecountsPanel` ganha a classe `reprovado-diretoria`,
+  o chip roxo "Ajuste Reprovado" e o alerta com o texto certo; que `ConcludedCountsPanel`
+  mostra "Ajustado · SA X" pra `ajuste_aprovado_diretoria`, "Sem Ajuste" só pro
+  `aprovado_lider` com divergência real (nenhum badge extra pro item sem divergência); e
+  que o KPI novo na Home aparece só pra líder/admin, nunca pro operador. Transpile Babel
+  do arquivo inteiro e balanceamento de chaves do CSS conferidos (576/576 — só a 1 regra
+  nova, `.count-card.reprovado-diretoria`). **Verificação visual/funcional de ponta a
+  ponta fica a cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth
+  real, não simulável no sandbox sem rede). Falta o cliente rodar o SQL novo (6 colunas
+  em `contagens`) no projeto Supabase real antes de usar em produção.

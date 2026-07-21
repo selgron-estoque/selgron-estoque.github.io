@@ -198,6 +198,11 @@
      grosso, pedido explícito do cliente (1ª versão era azul/fino demais). */
   .count-card.urgente{box-shadow:0 0 0 3px var(--danger), 0 1px 3px rgba(0,0,0,.04);}
   .urgente-chip{display:inline-flex;align-items:center;gap:5px;font-family:var(--font-mono);font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;padding:4px 9px;border-radius:20px;background:var(--danger);color:#fff;}
+  /* Item reprovado pela Diretoria (fluxo de SA de Ajuste, ver App()) — mesma
+     técnica do anel de "urgente" acima, mas com cor RESERVADA só pra esse
+     caso (roxo, já usado em outras partes do app com outro sentido — nunca em
+     estado de contagem), pra não se confundir com a rejeição do líder (vermelho). */
+  .count-card.reprovado-diretoria{box-shadow:0 0 0 3px #7B3FC4, 0 1px 3px rgba(0,0,0,.04);}
   .count-card-bar{width:5px;flex-shrink:0;}
   .count-card-body{flex:1;min-width:0;padding:16px 20px;display:flex;flex-direction:column;gap:10px;}
   .count-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
@@ -1219,6 +1224,16 @@ function contagemRowToLocal(row){
     recontagemSolicitadaEm: row.recontagem_solicitada_em,
     urgente: !!row.urgente,
     diferencaConfirmada: !!row.diferenca_confirmada,
+    // Fluxo de SA de Ajuste/aprovação da Diretoria (ver App()) — `solicitacaoAjuste`
+    // reaproveita o MESMO nome de campo já usado por `historicoRowToCountLike`
+    // pra SA vinda da planilha antiga, unificando os dois casos num só lugar
+    // de exibição (ver `ConcludedCountsPanel`).
+    solicitacaoAjuste: row.numero_sa,
+    saGeradaPor: row.sa_gerada_por,
+    saGeradaEm: row.sa_gerada_em,
+    reprovadoPelaDiretoria: !!row.reprovado_pela_diretoria,
+    reprovadoPor: row.reprovado_por,
+    reprovadoEm: row.reprovado_em,
     atualizadoEm: row.atualizado_em,
   };
 }
@@ -3015,12 +3030,20 @@ const STATUS_INFO = {
   aprovado_segunda: {level:'ok', text:'Aprovado — a recontagem confirmou o saldo dentro da tolerância'},
   aguardando_segunda: {level:'warn', text:'Segunda contagem solicitada — deve ser feita por outro operador'},
   aguardando_analise_lider: {level:'danger', text:'Enviado para análise do líder de estoque'},
-  aprovado_lider: {level:'ok', text:'Divergência aprovada pelo líder de estoque'},
+  aprovado_lider: {level:'ok', text:'Divergência aprovada pelo líder de estoque — sem ajuste necessário'},
+  // Fluxo real de ajuste de estoque da Selgron (pedido do cliente): o líder
+  // não finaliza mais uma divergência confirmada direto — gera uma SA de
+  // Ajuste e manda pra aprovação da Diretoria (`enviarParaAprovacaoDiretoria`
+  // em App()); só depois da Diretoria decidir o item conta como resolvido
+  // (`aprovarAjusteDiretoria`) ou volta pra recontagem (`reprovarAjusteDiretoria`,
+  // que grava o status de volta como `aguardando_segunda`, ver OPEN_STATUSES).
+  aguardando_aprovacao_diretoria: {level:'warn', text:'SA de ajuste enviada — aguardando aprovação da Diretoria'},
+  ajuste_aprovado_diretoria: {level:'ok', text:'Ajuste aprovado pela Diretoria e efetivado no estoque'},
 };
 
 // Status que ainda não foram resolvidos — enquanto um item estiver num
 // desses, existe um "documento de contagem em aberto" pra ele.
-const OPEN_STATUSES = ['aguardando_segunda', 'aguardando_analise_lider'];
+const OPEN_STATUSES = ['aguardando_segunda', 'aguardando_analise_lider', 'aguardando_aprovacao_diretoria'];
 
 // Encontra o documento de contagem em aberto (se houver) mais recente pra um
 // código de produto — usado pra bloquear lançar uma contagem NOVA (1ª
@@ -3054,6 +3077,8 @@ const STATUS_LABEL_PADRAO = {
   aguardando_segunda: 'Recontar',
   aguardando_analise_lider: 'Pendente',
   aprovado_lider: 'Sem Ajuste',
+  aguardando_aprovacao_diretoria: 'Pendente',
+  ajuste_aprovado_diretoria: 'Ajustado',
 };
 function statusLabelPadrao(c){
   return STATUS_LABEL_PADRAO[c.statusAprovacao] || '';
@@ -3133,7 +3158,7 @@ function buildCountRows(counts){
     'Classe': '',
     'Causa': c.motivo || '',
     'OBS': c.observacao || '',
-    'SA': '',
+    'SA': c.solicitacaoAjuste || '',
     'Dias S/ Mov.': '',
     'Doc': formatDocFromData(c.data),
     'ID Contagem': c.id,
@@ -3840,6 +3865,82 @@ function App(){
     return res;
   }
 
+  // ---- Fluxo real de ajuste de estoque da Selgron (SA → Diretoria) ----
+  // O líder não finaliza mais uma divergência confirmada sozinho quando decide
+  // que precisa mexer no saldo — gera uma SA de Ajuste (número digitado por
+  // ele mesmo) e encaminha pra aprovação da Diretoria; só depois da decisão da
+  // Diretoria (hoje: manual, feita pelo próprio admin dentro do app) o item
+  // conta como resolvido de verdade. "Sem Ajuste Necessário" continua sendo
+  // `approveDivergence`, sem passar por nada disso — ver DivergentItemsPanel.
+
+  // Líder gera a SA e encaminha — item sai de "Itens Divergentes" e entra em
+  // "Aprovação de Ajustes" (`aguardando_aprovacao_diretoria`, um estado ABERTO
+  // como qualquer outro em OPEN_STATUSES).
+  async function enviarParaAprovacaoDiretoria(countId, numeroSa){
+    const saGeradaPor = currentUser ? currentUser.nome : '—';
+    const saGeradaEm = new Date().toLocaleString('pt-BR');
+    const res = await updateContagemStatusToSupabase(countId, {
+      status_aprovacao: 'aguardando_aprovacao_diretoria',
+      numero_sa: numeroSa,
+      sa_gerada_por: saGeradaPor,
+      sa_gerada_em: saGeradaEm,
+    });
+    if(res.ok){
+      setCounts(prev=>prev.map(c=>c.id===countId?{
+        ...c,
+        statusAprovacao:'aguardando_aprovacao_diretoria',
+        solicitacaoAjuste: numeroSa,
+        saGeradaPor,
+        saGeradaEm,
+      }:c));
+    }
+    return res;
+  }
+
+  // Diretoria aprova — ajuste efetivado, item vira final (aparece em
+  // "Contagens Concluídas" como "Ajustado"). Reaproveita `aprovado_por`/
+  // `aprovado_em` (mesmas colunas que `approveDivergence` já usa) com o
+  // sentido de "quem resolveu essa divergência definitivamente".
+  async function aprovarAjusteDiretoria(countId){
+    const aprovadoPor = currentUser ? currentUser.nome : '—';
+    const aprovadoEm = new Date().toLocaleString('pt-BR');
+    const res = await updateContagemStatusToSupabase(countId, {
+      status_aprovacao: 'ajuste_aprovado_diretoria',
+      aprovado_por: aprovadoPor,
+      aprovado_em: aprovadoEm,
+    });
+    if(res.ok){
+      setCounts(prev=>prev.map(c=>c.id===countId?{...c, statusAprovacao:'ajuste_aprovado_diretoria', aprovadoPor, aprovadoEm}:c));
+    }
+    return res;
+  }
+
+  // Diretoria reprova — volta pro MESMO destino de "Solicitar nova contagem"
+  // (aguardando_segunda, RecountsPanel), mas com um flag próprio
+  // (`reprovadoPelaDiretoria`) pra diferenciar visualmente do card de rejeição
+  // do líder — pedido do cliente: precisa ficar "bem destacado" que foi a
+  // Diretoria que reprovou, não o líder, pra puxar mais atenção na análise.
+  async function reprovarAjusteDiretoria(countId){
+    const reprovadoPor = currentUser ? currentUser.nome : '—';
+    const reprovadoEm = new Date().toLocaleString('pt-BR');
+    const res = await updateContagemStatusToSupabase(countId, {
+      status_aprovacao: 'aguardando_segunda',
+      reprovado_pela_diretoria: true,
+      reprovado_por: reprovadoPor,
+      reprovado_em: reprovadoEm,
+    });
+    if(res.ok){
+      setCounts(prev=>prev.map(c=>c.id===countId?{
+        ...c,
+        statusAprovacao:'aguardando_segunda',
+        reprovadoPelaDiretoria:true,
+        reprovadoPor,
+        reprovadoEm,
+      }:c));
+    }
+    return res;
+  }
+
   // Marca/desmarca um item pendente (Recontagens/Itens Divergentes) como
   // urgente — líder/admin decidem quais itens furam a ordem normal da fila
   // (as duas telas já ordenam urgentes primeiro, ver `RecountsPanel`/
@@ -4304,7 +4405,8 @@ function App(){
         {view==='routeCount' && <RouteCountFlow inv={flowState} user={currentUser} counts={counts} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} gruposExcluidos={gruposExcluidos} />}
         {view==='importedListCount' && <ImportedListCountFlow inv={flowState} user={currentUser} counts={counts} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} />}
         {view==='recounts' && <RecountsPanel counts={counts} inventories={inventories} role={role} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} operadorVeValoresRecontagem={operadorVeValoresRecontagem} />}
-        {view==='divergentes' && <DivergentItemsPanel counts={counts} inventories={inventories} role={role} goto={goto} onApprove={approveDivergence} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} />}
+        {view==='divergentes' && <DivergentItemsPanel counts={counts} inventories={inventories} role={role} goto={goto} onApprove={approveDivergence} onSendToDiretoria={enviarParaAprovacaoDiretoria} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} />}
+        {view==='aprovacaoDiretoria' && (role==='lider'||role==='admin') && <DiretoriaApprovalPanel counts={counts} inventories={inventories} role={role} onApproveSA={aprovarAjusteDiretoria} onRejectSA={reprovarAjusteDiretoria} />}
         {view==='todasDivergencias' && <AllDivergencesPanel counts={counts} historicoConcluidas={historicoConcluidas} goto={goto} />}
         {view==='concluidas' && <ConcludedCountsPanel counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} onDeleteCount={role==='admin' ? deleteCount : undefined} onRefresh={refreshHistoricoConcluidas} />}
         {view==='recount' && flowState && <RecountFlow original={flowState} user={currentUser} onAddressProposed={addAddressProposal} onFinish={(c)=>{registerFinishedCount(c); goto('recounts');}} operadorVeSaldo={operadorVeSaldo} />}
@@ -4719,6 +4821,9 @@ const ACESSOS_RESTRITOS = {
   relatorios: ['lider','admin'],
   enderecos: ['lider','admin'],
   usuarios: ['admin'],
+  // Aprovação de SA de Ajuste não interessa ao operador — ele não participa
+  // dessa etapa do fluxo (líder gera a SA, Diretoria/admin decide).
+  aprovacaoDiretoria: ['lider','admin'],
 };
 function hasAccess(user, viewId){
   if(!user) return false;
@@ -4756,6 +4861,7 @@ const VIEW_TITLES = {
   importedListCount:'Lista Importada',
   recounts:'Recontagens Pendentes',
   divergentes:'Itens Divergentes',
+  aprovacaoDiretoria:'Aprovação de Ajustes',
   todasDivergencias:'Todas as Divergências',
   concluidas:'Contagens Concluídas',
   enderecos:'Endereços Pendentes',
@@ -4831,6 +4937,7 @@ function buildSidebarGroups(user){
       {id:'pickCountType', ic:'search', label:'Nova Contagem'},
       {id:'recounts', ic:'repeat', label:'Recontagens Pendentes'},
       {id:'divergentes', ic:'alertTriangle', label:'Itens Divergentes'},
+      ...(podeVer('aprovacaoDiretoria') ? [{id:'aprovacaoDiretoria', ic:'clipboardList', label:'Aprovação de Ajustes'}] : []),
       {id:'concluidas', ic:'checkCircle', label:'Contagens Concluídas'},
     ]},
     ...(cadastrosItems.length>0 ? [{ label: 'Cadastros', items: cadastrosItems }] : []),
@@ -5024,6 +5131,11 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
   // divergência que AINDA não entrou em processo de recontagem. Assim que o
   // item vira aguardando_segunda, some daqui (mesma regra da tela).
   const itensDivergentesPendentes = counts.filter(c=>c.statusAprovacao==='aguardando_analise_lider').length;
+  // "Aprovação de Ajustes" (KPI + tela própria, ver DiretoriaApprovalPanel) —
+  // SAs de ajuste geradas pelo líder, aguardando decisão da Diretoria. Não
+  // interessa ao operador (ele não participa dessa etapa), mesmo critério de
+  // ACESSOS_RESTRITOS.aprovacaoDiretoria.
+  const aguardandoDiretoria = counts.filter(c=>c.statusAprovacao==='aguardando_aprovacao_diretoria').length;
   const podeGerir = hasAccess(user,'enderecos');
   const pendentesEnderecos = enderecosPropostos.filter(e=>e.status==='pendente').length;
 
@@ -5089,6 +5201,12 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
       trend:<span className={"pnl-kpi-trend "+(itensDivergentesPendentes>0?'bad':'good')}>{itensDivergentesPendentes>0?'Requer atenção':'Nenhuma pendência'}</span>,
       onClick:()=>goto('divergentes'),
     },
+    ...(role!=='operador' ? [{
+      key:'aprovacaoDiretoria', icon:'clipboardList', bg:'#FFF1D6', color:'#A35F00',
+      label:'Aguardando Aprovação da Diretoria', value:aguardandoDiretoria,
+      trend:<span className={"pnl-kpi-trend "+(aguardandoDiretoria>0?'bad':'good')}>{aguardandoDiretoria>0?'Requer atenção':'Nenhuma pendência'}</span>,
+      onClick:()=>goto('aprovacaoDiretoria'),
+    }] : []),
     {
       key:'concluidas', icon:'checkCircle', bg:'#E3F6EA', color:'#1E8E4F',
       label:'Contagens Concluídas Hoje', value:concluidasHoje,
@@ -7539,13 +7657,15 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
         const sev = classifySeverity4(severidadeDe(c));
         const temExtra = c.motivo || c.observacao || c.foto || c.almoxarifado || (c.enderecoContado && c.enderecoContado!==c.endereco) || (c.valorDivergente && Number(c.valorDivergente)!==0);
         return (
-        <div key={c.id} className={"count-card"+(c.urgente?' urgente':'')}>
+        <div key={c.id} className={"count-card"+(c.urgente?' urgente':'')+(c.reprovadoPelaDiretoria?' reprovado-diretoria':'')}>
           <div className="count-card-bar" style={{background:sev.color}}></div>
           <div className="count-card-body">
             <div className="count-card-head">
               <div className="count-card-badges">
                 {c.urgente && <span className="urgente-chip"><Ic>🔥</Ic> Urgente</span>}
-                {c.recontagemSolicitadaPeloLider
+                {c.reprovadoPelaDiretoria
+                  ? <span className="severity-chip" style={{background:'#F1E9FB',color:'#7B3FC4'}}><Ic>⛔</Ic> Ajuste Reprovado</span>
+                  : c.recontagemSolicitadaPeloLider
                   ? <span className="severity-chip" style={{background:'var(--danger-bg)',color:'var(--danger)'}}><Ic>⚠</Ic> Rejeitada</span>
                   : <span className="severity-chip" style={{background:sev.bg,color:sev.color}}><Ic>{sev.icon}</Ic> {sev.label}</span>}
               </div>
@@ -7576,6 +7696,11 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
               </div>
               <div className="count-card-address-badge"><DIcon name="mapPin" size={16} /> {c.endereco || 'não cadastrado'}</div>
             </div>
+            {c.reprovadoPelaDiretoria && (
+              <div className="divergence-alert" style={{background:'#F1E9FB',borderColor:'#7B3FC4',color:'#7B3FC4'}}>
+                <Ic>⛔</Ic><span>A Diretoria reprovou a SA {c.solicitacaoAjuste} em {c.reprovadoEm} — reenviado para nova análise.</span>
+              </div>
+            )}
             {c.recontagemSolicitadaPeloLider && (
               <div className="divergence-alert"><Ic>⚠</Ic>
                 <span>{c.recontagemSolicitadaPor || 'O líder'} não aceitou a divergência da 1ª contagem e solicitou uma nova contagem em {c.recontagemSolicitadaEm}.</span>
@@ -7642,7 +7767,7 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
 // aparecer só em "Recontagens". Visível pra todos os papéis (antes ficava
 // escondida inteira do operador) — mas as ações (aprovar/solicitar
 // recontagem) continuam só pra líder/admin, operador vê em modo leitura.
-function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequestRecount, onDeleteCount, onToggleUrgente}){
+function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSendToDiretoria, onRequestRecount, onDeleteCount, onToggleUrgente}){
   // Bug real corrigido aqui: faltava a mesma checagem de "ponta da
   // corrente" que RecountsPanel já tinha (`byOriginal`/`!byOriginal[c.id]`)
   // — sem isso, uma linha com status 'aguardando_analise_lider' continuava
@@ -7666,6 +7791,11 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequ
   const [busyId, setBusyId] = useState(null);
   const [erros, setErros] = useState({});
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  // Campo inline pra digitar o número da SA de Ajuste antes de encaminhar pra
+  // aprovação da Diretoria (mesmo padrão de "confirmar" inline já usado pra
+  // excluir) — guarda o id do card com o campo aberto e o valor digitado.
+  const [saAbertoId, setSaAbertoId] = useState(null);
+  const [saValor, setSaValor] = useState('');
   // Menu "⋮" (Marcar urgente + Excluir, mesmo padrão do RecountsPanel) —
   // guarda só o id do card com o menu aberto no momento.
   const [menuAbertoId, setMenuAbertoId] = useState(null);
@@ -7712,6 +7842,20 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequ
     const res = await onRequestRecount(countId);
     setBusyId(null);
     if(!res || !res.ok) setErros(prev=>({...prev, [countId]: (res && res.erro) || 'Não foi possível solicitar a recontagem — tente novamente.'}));
+  }
+
+  async function handleEnviarParaDiretoria(countId){
+    if(!saValor.trim()) return;
+    setBusyId(countId);
+    setErros(prev=>({...prev, [countId]: null}));
+    const res = await onSendToDiretoria(countId, saValor.trim());
+    setBusyId(null);
+    if(res && res.ok){
+      setSaAbertoId(null);
+      setSaValor('');
+    } else {
+      setErros(prev=>({...prev, [countId]: (res && res.erro) || 'Não foi possível enviar — tente novamente.'}));
+    }
   }
 
   async function handleConfirmDelete(countId){
@@ -7768,13 +7912,15 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequ
         const anterior = c.contagemAnteriorId ? counts.find(x=>x.id===c.contagemAnteriorId) : null;
         const sev = classifySeverity4(severidadeDe(c));
         return (
-          <div key={c.id} className={"count-card"+(c.urgente?' urgente':'')}>
+          <div key={c.id} className={"count-card"+(c.urgente?' urgente':'')+(c.reprovadoPelaDiretoria?' reprovado-diretoria':'')}>
             <div className="count-card-bar" style={{background:sev.color}}></div>
             <div className="count-card-body">
               <div className="count-card-head">
                 <div className="count-card-badges">
                   {c.urgente && <span className="urgente-chip"><Ic>🔥</Ic> Urgente</span>}
-                  <span className="severity-chip" style={{background:sev.bg,color:sev.color}}><Ic>{sev.icon}</Ic> {sev.label}</span>
+                  {c.reprovadoPelaDiretoria
+                    ? <span className="severity-chip" style={{background:'#F1E9FB',color:'#7B3FC4'}}><Ic>⛔</Ic> Ajuste Reprovado</span>
+                    : <span className="severity-chip" style={{background:sev.bg,color:sev.color}}><Ic>{sev.icon}</Ic> {sev.label}</span>}
                   <span className="category-chip">{categoriaDoInventario(c, inventories)}</span>
                   {c.numeroContagem>1 && <span className="category-chip">{c.numeroContagem}ª contagem</span>}
                 </div>
@@ -7838,6 +7984,11 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequ
                 </div>
               )}
               {c.motivo && <div style={{padding:'10px 16px 0',fontSize:12.5}}>Motivo: <strong>{c.motivo}</strong></div>}
+              {c.reprovadoPelaDiretoria && (
+                <div className="divergence-alert" style={{margin:'10px 16px 0',background:'#F1E9FB',borderColor:'#7B3FC4',color:'#7B3FC4'}}>
+                  <Ic>⛔</Ic><span>A Diretoria reprovou a SA {c.solicitacaoAjuste} em {c.reprovadoEm} — reenviado para nova análise.</span>
+                </div>
+              )}
               {c.diferencaConfirmada && (
                 <div className="divergence-alert" style={{margin:'10px 16px 0'}}>
                   <Ic>⚠</Ic><span>Diferença confirmada: <strong>{c.diferenca>0?'+':''}{c.diferenca}</strong> nas duas rodadas.</span>
@@ -7856,14 +8007,164 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onRequ
                     <button className="btn btn-danger" disabled={busyId===c.id} onClick={()=>handleConfirmDelete(c.id)}>{busyId===c.id ? 'Excluindo…' : 'Confirmar exclusão'}</button>
                   </div>
                 </div>
+              ) : saAbertoId===c.id ? (
+                <div className="count-card-actions">
+                  <div className="field" style={{marginBottom:10}}>
+                    <label>Número da SA de Ajuste</label>
+                    <input type="text" value={saValor} onChange={e=>setSaValor(e.target.value)} placeholder="Ex: SA-2026-00123" autoFocus />
+                  </div>
+                  {erros[c.id] && <div className="divergence-alert" style={{marginBottom:10}}><Ic>⚠</Ic><span>{erros[c.id]}</span></div>}
+                  <div className="btn-row">
+                    <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>{setSaAbertoId(null); setSaValor('');}}>Cancelar</button>
+                    <button className="btn btn-primary" disabled={busyId===c.id || !saValor.trim()} onClick={()=>handleEnviarParaDiretoria(c.id)}>{busyId===c.id ? 'Enviando…' : 'Enviar para aprovação da Diretoria'}</button>
+                  </div>
+                </div>
               ) : canApprove ? (
                 <div className="btn-row count-card-actions-row">
                   <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>handleRequestRecount(c.id)}>{busyId===c.id ? 'Enviando…' : 'Solicitar nova contagem'}</button>
                   <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>goto('recount', c)}><Ic>🔁</Ic> Recontar</button>
-                  <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>handleApprove(c.id)}>{busyId===c.id ? 'Enviando…' : 'Aprovar divergência'}</button>
+                  <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>handleApprove(c.id)}>{busyId===c.id ? 'Enviando…' : 'Sem Ajuste Necessário'}</button>
+                  <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>{setSaAbertoId(c.id); setSaValor('');}}><Ic>📋</Ic> Gerar SA de Ajuste</button>
                 </div>
               ) : (
                 <div style={{fontSize:12,color:'var(--ink-dim)'}}>Aguardando decisão do líder de estoque.</div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// "Aprovação de Ajustes" — tela nova, pedido do cliente: o fluxo real de
+// ajuste de estoque da Selgron não termina no líder aprovar a divergência.
+// Quando o líder decide que HÁ ajuste necessário (botão "Gerar SA de Ajuste"
+// em DivergentItemsPanel), o item cai aqui até a Diretoria decidir — hoje
+// isso é manual, feito pelo próprio admin dentro do app (não existe perfil
+// "Diretoria" nem integração externa). Mesmo shell visual das outras 3 telas
+// de contagem (count-card/SearchWithScanner/TrendFilterBar/result-grid-4col).
+function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejectSA}){
+  const canDecide = role==='admin';
+  const aguardandoDiretoria = counts.filter(c=>c.statusAprovacao==='aguardando_aprovacao_diretoria');
+
+  const [trendFilter, setTrendFilter] = useState({tipo:'30d', from:'', to:''});
+  const hojeStr = hojeLocalStr();
+  const { from: dataInicioStr, to: dataFimStr } = computeTrendRange(trendFilter.tipo, hojeStr, trendFilter.from, trendFilter.to);
+  const aguardandoDiretoriaNoPeriodo = aguardandoDiretoria.filter(c=>c.data && c.data>=dataInicioStr && c.data<=dataFimStr);
+
+  const [busca, setBusca] = useState('');
+  const buscaNorm = busca.trim().toLowerCase();
+  const porBusca = buscaNorm
+    ? aguardandoDiretoriaNoPeriodo.filter(c => c.productCode.toLowerCase().includes(buscaNorm) || (c.descricao||'').toLowerCase().includes(buscaNorm))
+    : aguardandoDiretoriaNoPeriodo;
+
+  const [severidade, setSeveridade] = useState('todos');
+  const listaFiltrada = severidade==='todos' ? porBusca : porBusca.filter(c=>classifySeverity4(severidadeDe(c)).level===severidade);
+
+  const [busyId, setBusyId] = useState(null);
+  const [erros, setErros] = useState({});
+  const [confirmRejectId, setConfirmRejectId] = useState(null);
+
+  async function handleApprove(countId){
+    setBusyId(countId);
+    setErros(prev=>({...prev, [countId]: null}));
+    const res = await onApproveSA(countId);
+    setBusyId(null);
+    if(!res || !res.ok) setErros(prev=>({...prev, [countId]: (res && res.erro) || 'Não foi possível aprovar — tente novamente.'}));
+  }
+
+  async function handleConfirmReject(countId){
+    setBusyId(countId);
+    setErros(prev=>({...prev, [countId]: null}));
+    const res = await onRejectSA(countId);
+    setBusyId(null);
+    if(res && res.ok){
+      setConfirmRejectId(null);
+    } else {
+      setErros(prev=>({...prev, [countId]: (res && res.erro) || 'Não foi possível reprovar — tente novamente.'}));
+    }
+  }
+
+  return (
+    <div>
+      <TrendFilterBar
+        trendFilter={trendFilter}
+        setTrendFilter={setTrendFilter}
+        dataInicioStr={dataInicioStr}
+        dataFimStr={dataFimStr}
+        hojeStr={hojeStr}
+        subtitle="Selecione o período para filtrar as SAs aguardando aprovação"
+      />
+
+      <SearchWithScanner value={busca} onChange={setBusca} placeholder="Código ou descrição do material" />
+
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8,marginBottom:10}}>
+        <span style={{fontSize:12.5,color:'var(--ink-dim)'}}>
+          <strong style={{color:'var(--ink)'}}>{aguardandoDiretoria.length}</strong> pendentes
+          {aguardandoDiretoriaNoPeriodo.length!==aguardandoDiretoria.length && <> · <strong style={{color:'var(--ink)'}}>{aguardandoDiretoriaNoPeriodo.length}</strong> no período selecionado</>}
+        </span>
+      </div>
+
+      <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+        <SeverityFilterRow counts={porBusca} value={severidade} onChange={setSeveridade} />
+      </div>
+
+      {listaFiltrada.length===0 ? (
+        <div className="empty-state" style={{padding:20}}>
+          {aguardandoDiretoria.length===0
+            ? 'Nenhuma SA de ajuste aguardando aprovação no momento.'
+            : (aguardandoDiretoriaNoPeriodo.length===0 ? 'Nenhuma SA aguardando aprovação nesse período.' : 'Nenhum item encontrado para esse filtro.')}
+        </div>
+      ) : listaFiltrada.map(c=>{
+        const sev = classifySeverity4(severidadeDe(c));
+        return (
+          <div key={c.id} className="count-card">
+            <div className="count-card-bar" style={{background:sev.color}}></div>
+            <div className="count-card-body">
+              <div className="count-card-head">
+                <div className="count-card-badges">
+                  <span className="severity-chip" style={{background:'#F1E9FB',color:'#7B3FC4'}}><Ic>📋</Ic> SA {c.solicitacaoAjuste}</span>
+                  <span className="category-chip">{categoriaDoInventario(c, inventories)}</span>
+                </div>
+                <span className="count-card-date">{c.data}</span>
+              </div>
+              <div className="count-card-toprow">
+                <div className="count-card-title">
+                  <div className="item-code">{c.productCode}</div>
+                  <div className="item-desc">{c.descricao}</div>
+                </div>
+                <div className="count-card-address-badge"><DIcon name="mapPin" size={16} /> {c.endereco || 'não cadastrado'}</div>
+              </div>
+              <div className="result-grid result-grid-4col" style={{gridTemplateColumns:'repeat(4,1fr)'}}>
+                <div className="rg"><div className="k">Sistema</div><div className="v">{c.saldoSistema==null ? '—' : c.saldoSistema}</div></div>
+                <div className="rg"><div className="k">Físico</div><div className="v">{c.qtdContada}</div></div>
+                <div className="rg"><div className="k">Diferença</div><div className="v" style={{color:sev.color}}>{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div></div>
+                <div className="rg"><div className="k">%</div><div className="v" style={{color:sev.color}}>{c.percentual==null ? '—' : Math.round(c.percentual)+'%'}</div></div>
+              </div>
+              <div style={{padding:'10px 16px 0',fontSize:12.5,color:'var(--ink-dim)'}}>SA gerada por {c.saGeradaPor||'—'} em {c.saGeradaEm||'—'}</div>
+              {c.motivo && <div style={{padding:'6px 16px 0',fontSize:12.5}}>Motivo: <strong>{c.motivo}</strong></div>}
+              {c.valorDivergente!=null && Number(c.valorDivergente)!==0 && <div style={{padding:'6px 16px 0',fontSize:12.5}}>Valor divergente: <strong>R$ {Number(c.valorDivergente).toFixed(2)}</strong></div>}
+              {erros[c.id] && (
+                <div className="divergence-alert" style={{margin:'10px 16px 0'}}><Ic>⚠</Ic><span>{erros[c.id]}</span></div>
+              )}
+              {confirmRejectId===c.id ? (
+                <div className="count-card-actions">
+                  <div className="divergence-alert" style={{marginBottom:10}}>
+                    <Ic>⚠</Ic><span>Reprovar a SA {c.solicitacaoAjuste}? O item volta pra fila de recontagem, marcado como reprovado pela Diretoria.</span>
+                  </div>
+                  <div className="btn-row">
+                    <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>setConfirmRejectId(null)}>Cancelar</button>
+                    <button className="btn btn-danger" disabled={busyId===c.id} onClick={()=>handleConfirmReject(c.id)}>{busyId===c.id ? 'Enviando…' : 'Confirmar reprovação'}</button>
+                  </div>
+                </div>
+              ) : canDecide ? (
+                <div className="btn-row count-card-actions-row">
+                  <button className="btn btn-danger" disabled={busyId===c.id} onClick={()=>setConfirmRejectId(c.id)}>Reprovar</button>
+                  <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>handleApprove(c.id)}>{busyId===c.id ? 'Enviando…' : 'Aprovar'}</button>
+                </div>
+              ) : (
+                <div style={{padding:'10px 16px 16px',fontSize:12,color:'var(--ink-dim)'}}>Aguardando decisão da Diretoria.</div>
               )}
             </div>
           </div>
@@ -7987,12 +8288,17 @@ function buildConcludedChains(counts){
       rodadas.unshift(atual);
       atual = atual.contagemAnteriorId ? byId.get(atual.contagemAnteriorId) : null;
     }
-    // "Houve ajuste de estoque" = a rodada final tinha uma diferença real
-    // aprovada (não zero) — é o sinal mais honesto disponível hoje de que o
-    // saldo do Protheus precisa ser corrigido; o app não captura ainda se o
-    // ajuste foi de fato lançado lá (mesma limitação já documentada pro
-    // status "Sem Ajuste" no export do relatório).
-    const houveAjuste = tip.diferenca!=null && tip.diferenca!==0;
+    // "Houve ajuste de estoque" — agora tem sinal EXPLÍCITO pros dois status
+    // que passam pela Diretoria (ver `enviarParaAprovacaoDiretoria`/
+    // `aprovarAjusteDiretoria` em App()): `ajuste_aprovado_diretoria` sempre
+    // teve ajuste de verdade, `aprovado_lider` (daqui pra frente só usado pro
+    // caminho "Sem Ajuste Necessário") nunca tem. Pros status mais antigos
+    // (aprovado_auto/aprovado_segunda, sempre com diferença zero por
+    // definição) cai no mesmo heurístico de antes, que já dava o resultado
+    // certo pra esses casos.
+    const houveAjuste = tip.statusAprovacao==='ajuste_aprovado_diretoria' ? true
+      : tip.statusAprovacao==='aprovado_lider' ? false
+      : (tip.diferenca!=null && tip.diferenca!==0);
     return { chaveId: tip.id, tip, rodadas, houveAjuste };
   }).sort(compararCadeiasPorData);
 }
@@ -8189,6 +8495,19 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
                   <span className="severity-chip" style={{background:sev.bg,color:sev.color}}><Ic>{sev.icon}</Ic> {sev.label}</span>
                   <span className="category-chip">{categoriaDoInventario(tip, inventories)}</span>
                   {tip._fromHistorico && <span className="category-chip">histórico importado</span>}
+                  {/* Fluxo de SA de Ajuste/Diretoria (ver App()) — "Ajustado" é um
+                      resultado positivo e concreto (Diretoria aprovou, ajuste
+                      efetivado), badge verde; "Sem Ajuste" é uma decisão sem
+                      nenhuma ação sobre o estoque, badge neutro/leve (pedido
+                      explícito do cliente — destaque LEVE, diferente do roxo
+                      forte usado pro item reprovado em RecountsPanel). Item sem
+                      divergência nenhuma não ganha badge extra nenhum. */}
+                  {tip.statusAprovacao==='ajuste_aprovado_diretoria' && (
+                    <span className="category-chip" style={{background:'var(--ok-bg)',color:'var(--ok)'}}>Ajustado{tip.solicitacaoAjuste ? (' · SA '+tip.solicitacaoAjuste) : ''}</span>
+                  )}
+                  {tip.statusAprovacao==='aprovado_lider' && tip.diferenca!=null && tip.diferenca!==0 && (
+                    <span className="category-chip" style={{background:'var(--panel-raised)',color:'var(--ink-dim)'}}>Sem Ajuste</span>
+                  )}
                 </div>
                 <span className="count-card-date">{tip.data ? tip.data+(tip.hora?' '+tip.hora:'') : 'Sem data registrada'}</span>
               </div>
@@ -8252,6 +8571,11 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
                         {r.motivo && <div style={{fontSize:12.5}}>Motivo: <strong>{r.motivo}</strong></div>}
                         {r.observacao && <div style={{fontSize:12.5}}>Observação: {r.observacao}</div>}
                         {r.aprovadoPor && <div style={{fontSize:12,color:'var(--ink-dim)'}}>Aprovado por {r.aprovadoPor} em {r.aprovadoEm}</div>}
+                        {!r._fromHistorico && r.solicitacaoAjuste && (
+                          <div style={{fontSize:11.5,color:'var(--ink-dim)',fontFamily:'var(--font-mono)'}}>
+                            SA: {r.solicitacaoAjuste} · gerada por {r.saGeradaPor||'—'} em {r.saGeradaEm||'—'}
+                          </div>
+                        )}
                         {r._fromHistorico && (r.classe || r.solicitacaoAjuste || r.documento || r.diasSemMovimento!=null) && (
                           <div style={{fontSize:11.5,color:'var(--ink-dim)',fontFamily:'var(--font-mono)'}}>
                             {r.classe && <>Classe ABC: {r.classe} · </>}
@@ -8431,6 +8755,10 @@ function ReportsScreen({counts, inventories, currentUser, sendHistory, onLogSend
           <div>A partir de R$ 50 → <span style={{color:'var(--warn)'}}>Segunda contagem obrigatória</span></div>
           <div style={{marginTop:8,fontSize:12}}>Na recontagem, se a diferença bater exata com a da 1ª contagem, vai
           direto pro líder com o aviso "Diferença confirmada, seguir com ajuste".</div>
+          <div style={{marginTop:8,fontSize:12}}>Se o líder confirmar que HÁ ajuste necessário, ele gera uma SA de
+          Ajuste e encaminha pra aprovação da Diretoria ("Aprovação de Ajustes") — só depois de
+          aprovada o item conta como resolvido. Se a Diretoria reprovar, volta pra recontagem.
+          "Sem Ajuste Necessário" não passa por essa etapa.</div>
         </div>
       </div>
       <div className="panel">
