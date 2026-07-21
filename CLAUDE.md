@@ -6404,3 +6404,54 @@ sempre mostrava "Pendente", nunca "Concluído", mesmo em 100%).
   mesmos dados mistos. Transpile Babel do arquivo inteiro e balanceamento de chaves
   do CSS conferidos (575/575, sem mudança). **Verificação visual fica a cargo do
   cliente** — mesma limitação de sempre (login exige Supabase Auth real).
+
+## "Concluídos" ganha seta de recolher, some pro operador, botão "Cancelar" e barra verde
+
+Quatro ajustes do cliente na tela "Inventários Pendentes" (`InventoryList`), em cima
+da seção "Concluídos" criada na rodada anterior:
+
+- **Seta pra ocultar/exibir a lista de concluídos**: `concluidosAbertos` (estado local,
+  não persiste — mesmo critério de sempre pra UI efêmera), começa aberto (mesmo
+  comportamento de antes). O próprio `section-title` "Concluídos" virou clicável
+  (`justifyContent:'space-between'`), com um badge do total ao lado do texto e um
+  `<DIcon name="chevronDown">` que gira -90° quando recolhido (`transition:transform`).
+- **Concluídos somem pro operador**: `podeVerConcluidos = role!=='operador'` — a seção
+  inteira (título + cards) só renderiza pra líder/admin. Não muda o KPI "Inventários
+  Pendentes" da Home nem a lista de pendentes em si (já eram só não-concluídos) — só
+  esconde os já finalizados, que o operador não tem ação nenhuma sobre mesmo.
+- **Botão "Cancelar"** (novo, ao lado de Baixar/Excluir, só admin) — encerra um
+  inventário EM ANDAMENTO mantendo os itens já contados e descartando os que ainda
+  estavam em aberto, sem esperar a fila terminar sozinha. Só aparece quando
+  `!concluido && inv.contados>0` (não faz sentido cancelar algo que nunca foi
+  começado — nesse caso já existe "Excluir"). Tem confirmação inline própria
+  (`confirmCancelId`/`cancelando`/`erroCancelamento`, mesmo padrão de "Excluir" —
+  o botão de abortar a confirmação de exclusão também foi renomeado de "Cancelar" pra
+  "Voltar", pra não colidir com o significado novo de "Cancelar" no mesmo card).
+  - **`cancelInventory(id)`** (App(), perto de `deleteInventory`) — trunca
+    `qtdItens` pro valor de `contados` (é isso que faz `inventarioConcluido` passar a
+    considerar o documento fechado) e, só pros tipos que guardam a própria lista de
+    itens (`itensImportados` — Lista Importada/Itens Específicos), também trunca essa
+    lista pros primeiros `contados` itens (a ordem de contagem desses dois tipos é
+    sempre sequencial/exata da lista, documentado em outra seção deste arquivo — cortar
+    no índice `contados` remove exatamente os itens ainda não contados). Os demais
+    tipos (Aleatória/Curva ABC/Rota/Grupo) nunca guardaram uma lista própria de itens
+    em aberto — a fila é recalculada por RPC a cada vez usando `contados` como cursor
+    — então truncar só `qtdItens` já é suficiente, não tem "lista" pra cortar.
+  - **`updateInventarioToSupabase(id, patch)`** (nova, perto de
+    `deleteInventarioFromSupabase`) — `supabaseClient.from('inventarios').update(patch)`,
+    mesmo padrão `await`/erro visível de sempre. Não precisou de nenhuma policy nova —
+    `inventarios` já tinha UPDATE liberado desde a rodada de "ações do líder aguardam
+    confirmação do Supabase" (aprovar/rejeitar divergência etc.).
+- **Barra de progresso muda de cor ao chegar em 100%**: `.progress-bar .fill` tinha
+  `background:var(--safety)` fixo no CSS — agora um `style` inline no `InventoryList`
+  sobrescreve pra `var(--ok)` (verde, mesma cor já usada em `StatusTag`/badges de
+  sucesso no resto do app) quando `pct>=100`, mantendo laranja enquanto ainda está em
+  andamento. Escopado só a este componente (não mexe na classe CSS compartilhada, que
+  continua laranja por padrão pra qualquer outro uso de `.progress-bar`).
+- Testado via transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  (575/575, sem mudança — nenhuma classe CSS nova foi criada, só JSX/JS). **Verificação
+  visual/funcional de ponta a ponta (a seta recolhendo de verdade, o cancelamento
+  encerrando o inventário certo, a barra virando verde) fica a cargo do cliente** —
+  mesma limitação de sempre (login exige Supabase Auth real, não simulável no sandbox
+  sem rede). Falta o cliente confirmar que o botão "Cancelar" não aparece mais depois
+  de usado (o card deve migrar sozinho de "pendentes" pra "Concluídos" na mesma tela).

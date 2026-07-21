@@ -1320,6 +1320,23 @@ async function deleteInventarioFromSupabase(id){
   }
 }
 
+// Atualiza campos de um inventário já existente no Supabase — usada por
+// `cancelInventory` (App()), que encerra um inventário em andamento mantendo
+// só os itens já contados (trunca qtd_itens/itens_importados pro que já foi
+// de fato contado, descartando o resto da fila em aberto). Mesmo padrão
+// `await` de sempre: só atualiza o estado local se a gravação remota
+// confirmar, senão o inventário "ressuscitaria" no formato antigo via sync.
+async function updateInventarioToSupabase(id, patch){
+  if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
+  try{
+    const { error } = await supabaseClient.from('inventarios').update(patch).eq('id', id);
+    if(error) return {ok:false, erro:error.message};
+    return {ok:true};
+  }catch(err){
+    return {ok:false, erro:String(err && err.message || err)};
+  }
+}
+
 // Exclui uma contagem no Supabase — mesmo padrão de `deleteInventarioFromSupabase`.
 // Usada por `deleteCount` em App() pra apagar de vez uma contagem lançada por
 // engano (líder/admin), sem deixar rastro: some tanto do localStorage quanto
@@ -3846,6 +3863,29 @@ function App(){
     return res;
   }
 
+  // Cancela um inventário em andamento (líder/admin, ação inline em
+  // InventoryList) — mantém os itens já contados e descarta só os que ainda
+  // estavam em aberto, encerrando o documento como Concluído. Trunca
+  // `qtdItens` pro tanto já contado (é isso que faz `inventarioConcluido`
+  // considerar o inventário fechado); pros tipos que guardam a própria lista
+  // de itens (Lista Importada/Itens Específicos), também trunca
+  // `itensImportados` pros primeiros `contados` itens — os demais tipos
+  // (Aleatória/Curva ABC/Rota/Grupo) nunca guardaram uma lista própria de
+  // itens em aberto (a fila é recalculada por RPC a cada vez, usando
+  // `contados` como cursor), então truncar `qtdItens` já é suficiente.
+  async function cancelInventory(id){
+    const inv = inventories.find(i=>i.id===id);
+    if(!inv) return {ok:false, erro:'Inventário não encontrado.'};
+    const patch = {qtd_itens: inv.contados};
+    const itensTruncados = inv.itensImportados ? inv.itensImportados.slice(0, inv.contados) : null;
+    if(itensTruncados) patch.itens_importados = itensTruncados;
+    const res = await updateInventarioToSupabase(id, patch);
+    if(res.ok){
+      setInventories(prev=>prev.map(i=>i.id===id ? {...i, qtdItens: inv.contados, itensImportados: itensTruncados || i.itensImportados} : i));
+    }
+    return res;
+  }
+
   // Exclusão definitiva de uma contagem (lançada por engano) — mesmo padrão
   // de `deleteInventory`: aguarda confirmação do Supabase antes de sumir da
   // tela, pra não "ressuscitar" via sincronização se a exclusão remota tiver
@@ -4241,7 +4281,7 @@ function App(){
       {view!=='home' && !COUNT_SCREEN_VIEWS.includes(view) && <SubBar view={view} goto={goto} />}
       <div className="content">
         {view==='home' && <Home role={role} user={currentUser} inventories={inventories} counts={counts} historicoConcluidas={historicoConcluidas} enderecosPropostos={enderecosPropostos} goto={goto} />}
-        {view==='inventories' && <InventoryList inventories={inventories} goto={goto} role={role} counts={counts} onDelete={deleteInventory} />}
+        {view==='inventories' && <InventoryList inventories={inventories} goto={goto} role={role} counts={counts} onDelete={deleteInventory} onCancel={cancelInventory} />}
         {view==='pickCountType' && <PickCountType role={role} goto={goto} inventories={inventories} gruposExcluidos={gruposExcluidos} onCreate={async(inv)=>{
           const res = await saveInventarioToSupabase(inv);
           if(res.ok){ setInventories(prev=>[inv,...prev]); goto('inventories'); }
@@ -5319,13 +5359,24 @@ function inventarioConcluido(inv){
   return inv.qtdItens>0 && inv.contados>=inv.qtdItens;
 }
 
-function InventoryList({inventories, goto, role, counts, onDelete}){
+function InventoryList({inventories, goto, role, counts, onDelete, onCancel}){
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   // `onDelete` agora aguarda confirmação do Supabase antes de sumir com o
   // card (ver App()) — `excluindo` desabilita os botões durante o envio,
   // `erroExclusao` mostra o motivo se falhar, mantendo o card visível.
   const [excluindo, setExcluindo] = useState(false);
   const [erroExclusao, setErroExclusao] = useState('');
+  // Mesmo padrão pro cancelamento (encerrar um inventário em andamento
+  // mantendo só o que já foi contado) — confirmação inline própria, separada
+  // da de excluir (são ações diferentes, um cancela e o outro apaga).
+  const [confirmCancelId, setConfirmCancelId] = useState(null);
+  const [cancelando, setCancelando] = useState(false);
+  const [erroCancelamento, setErroCancelamento] = useState('');
+  // Seção "Concluídos" começa aberta (mesmo comportamento de sempre) — o
+  // usuário pode recolher pra ver só o que ainda está pendente sem rolar a
+  // lista inteira. Estado puramente de UI, não persiste (mesmo critério já
+  // usado pra `sidebarCollapsed`/navegação).
+  const [concluidosAbertos, setConcluidosAbertos] = useState(true);
 
   if(inventories.length===0){
     return <div className="empty-state"><div className="ic"><Ic size={40}>📦</Ic></div>Nenhum inventário programado.</div>;
@@ -5351,8 +5402,24 @@ function InventoryList({inventories, goto, role, counts, onDelete}){
     }
   }
 
+  async function handleConfirmCancel(id){
+    setCancelando(true);
+    setErroCancelamento('');
+    const res = await onCancel(id);
+    setCancelando(false);
+    if(res && res.ok){
+      setConfirmCancelId(null);
+    } else {
+      setErroCancelamento((res && res.erro) || 'Não foi possível cancelar — tente novamente.');
+    }
+  }
+
   const pendentes = inventories.filter(inv=>!inventarioConcluido(inv));
   const concluidos = inventories.filter(inventarioConcluido);
+  // Concluídos só interessa a quem gerencia — pro operador, ver documentos
+  // já fechados ali misturado com o que ainda precisa contar só gera
+  // confusão sobre o que de fato falta fazer.
+  const podeVerConcluidos = role!=='operador';
 
   function renderCard(inv){
     const pct = inv.qtdItens ? Math.round((inv.contados/inv.qtdItens)*100) : 0;
@@ -5374,7 +5441,7 @@ function InventoryList({inventories, goto, role, counts, onDelete}){
             <span>{inv.tipo}</span>
             <span>{inv.data}</span>
           </div>
-          <div className="progress-bar"><div className="fill" style={{width:pct+'%'}}></div></div>
+          <div className="progress-bar"><div className="fill" style={{width:pct+'%', background: pct>=100 ? 'var(--ok)' : 'var(--safety)'}}></div></div>
           <div style={{fontFamily:'var(--font-mono)',fontSize:11.5,color:'var(--ink-dim)',marginTop:6}}>{inv.contados}/{inv.qtdItens} itens contados ({pct}%)</div>
         </div>
         {role==='admin' && (
@@ -5385,13 +5452,25 @@ function InventoryList({inventories, goto, role, counts, onDelete}){
               </div>
               {erroExclusao && <div className="divergence-alert" style={{marginBottom:10}}><Ic>⚠</Ic><span>{erroExclusao}</span></div>}
               <div className="btn-row">
-                <button className="btn btn-secondary" disabled={excluindo} onClick={()=>{setConfirmDeleteId(null); setErroExclusao('');}}>Cancelar</button>
+                <button className="btn btn-secondary" disabled={excluindo} onClick={()=>{setConfirmDeleteId(null); setErroExclusao('');}}>Voltar</button>
                 <button className="btn btn-danger" disabled={excluindo} onClick={()=>handleConfirmDelete(inv.id)}>{excluindo ? 'Excluindo…' : 'Confirmar exclusão'}</button>
+              </div>
+            </div>
+          ) : confirmCancelId===inv.id ? (
+            <div style={{padding:'0 18px 16px'}} onClick={e=>e.stopPropagation()}>
+              <div className="divergence-alert" style={{marginBottom:10}}>
+                <Ic>⚠</Ic><span>Cancelar "{inv.nome}"? Os {inv.contados} itens já contados são mantidos; os itens ainda em aberto são removidos e o inventário passa a Concluído. Essa ação não pode ser desfeita.</span>
+              </div>
+              {erroCancelamento && <div className="divergence-alert" style={{marginBottom:10}}><Ic>⚠</Ic><span>{erroCancelamento}</span></div>}
+              <div className="btn-row">
+                <button className="btn btn-secondary" disabled={cancelando} onClick={()=>{setConfirmCancelId(null); setErroCancelamento('');}}>Voltar</button>
+                <button className="btn btn-danger" disabled={cancelando} onClick={()=>handleConfirmCancel(inv.id)}>{cancelando ? 'Cancelando…' : 'Confirmar cancelamento'}</button>
               </div>
             </div>
           ) : (
             <div className="btn-row" style={{padding:'0 18px 16px'}} onClick={e=>e.stopPropagation()}>
               <button className="btn btn-secondary" onClick={()=>handleDownload(inv)}><Ic>⬇</Ic> Baixar</button>
+              {!concluido && inv.contados>0 && <button className="btn btn-secondary" onClick={()=>setConfirmCancelId(inv.id)}><Ic>⛔</Ic> Cancelar</button>}
               <button className="btn btn-danger" onClick={()=>setConfirmDeleteId(inv.id)}><Ic>🗑</Ic> Excluir</button>
             </div>
           )
@@ -5411,10 +5490,13 @@ function InventoryList({inventories, goto, role, counts, onDelete}){
         <div className="empty-state" style={{marginBottom:16}}>Nenhum inventário pendente no momento.</div>
       ) : pendentes.map(renderCard)}
 
-      {concluidos.length>0 && (
+      {podeVerConcluidos && concluidos.length>0 && (
         <>
-          <div className="section-title">Concluídos</div>
-          {concluidos.map(renderCard)}
+          <div className="section-title" style={{cursor:'pointer',justifyContent:'space-between'}} onClick={()=>setConcluidosAbertos(v=>!v)}>
+            <span>Concluídos <span className="badge" style={{position:'static',marginLeft:8}}>{concluidos.length}</span></span>
+            <DIcon name="chevronDown" size={16} style={{transform: concluidosAbertos ? 'rotate(0deg)' : 'rotate(-90deg)', transition:'transform .15s'}} />
+          </div>
+          {concluidosAbertos && concluidos.map(renderCard)}
         </>
       )}
     </div>
