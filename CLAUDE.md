@@ -6478,3 +6478,54 @@ ainda (onde só "Baixar"/"Excluir" apareciam).
 - Testado via transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
   (575/575, sem mudança). **Verificação visual/funcional fica a cargo do cliente** —
   mesma limitação de sempre (login exige Supabase Auth real).
+
+## "Contagem por Rota de Endereço" ganha escolha de corredor + fila sequencial
+
+Cliente pediu: "configurar para escolher o endereço que vou contar, exemplo hoje vou
+contar o corredor 010 ou o corredor 019 e libera na sequência do corredor". Investigando
+antes de mexer: o app já tinha um `RouteCountFlow` (motor de "Rota") que agrupava itens
+por corredor/rua — mas só como uma lista estática inteira (TODOS os corredores expostos
+de uma vez, cada item clicável manualmente, sem fila/avanço automático) e, mais grave,
+**nunca era de fato alcançado a partir de um inventário criado do tipo "Contagem por
+Rota de Endereço"**: `InventoryList` roteava QUALQUER tipo não-importado (incluindo
+Rota) pro motor genérico `RandomCountFlow` — decisão tomada antes, documentada como
+"unificação" (ver seção "Clique no card de inventário vai direto pro 1º item"), mas que
+deixava o `RouteCountFlow`/agrupamento por corredor como código morto pra líder/admin,
+só alcançável pelo operador via um botão avulso ("Nova Contagem" → "Contagem por Rota").
+
+- **`InventoryList`**: roteamento ganhou um 3º caso — `inv.tipo==='Contagem por Rota de
+  Endereço'` agora vai pra `'routeCount'` (motor próprio), em vez de cair no genérico
+  `'randomCount'` junto com Aleatória/Curva ABC/Grupo. Os outros tipos não mudaram.
+- **`RouteCountFlow` reescrito**: depois de agrupar por corredor/rua (como já fazia),
+  ganhou uma tela nova de **escolha de corredor** — lista cada corredor com "N de M itens
+  ainda por contar" (corredor 100% já contado aparece cinza/desabilitado, "todos já
+  contados"). Ao escolher um corredor, os itens dele (ordenados rua → endereço — "a
+  sequência do corredor") entram numa fila que libera um item de cada vez, com
+  auto-avanço pro próximo assim que confirma a contagem (mesmo padrão de fila usado em
+  `RandomCountFlow`/`ImportedListCountFlow` — `useCountQueue`, `key={q.current.codigo}`
+  no `CountStep` pra garantir que o estado de um item nunca vaza pro próximo). Ao
+  terminar o corredor, mostra "Corredor X concluído" com dois botões: "Escolher outro
+  corredor" (volta pra lista sem sair da tela) e "Voltar aos inventários".
+- **"Retomar" não é por posição, é por item**: diferente de `RandomCountFlow` (que
+  retoma de `inv.contados` como um índice fixo), aqui o operador pode escolher um
+  corredor DIFERENTE a cada vez que entra — não existe uma posição única de progresso.
+  Em vez disso, cada corredor filtra fora, na hora, qualquer item cujo código já tenha
+  alguma contagem registrada (`codigosJaContados`, mesmo critério que `RandomCountFlow`
+  já usa pra priorizar não-contados) — contar o corredor 010 hoje e o 019 amanhã
+  funciona naturalmente, sem duplicar nem pular item.
+- **`App()`**: a instância de `RouteCountFlow` ganhou a prop `onFinish={()=>
+  goto('inventories')}` (não existia — a versão antiga nunca tinha "fila concluída" pra
+  voltar de algum lugar).
+- Testado via harness real (jsdom + react-dom/client + `act()`, mesma técnica rigorosa
+  adotada desde o bug crítico de tela branca — carrega o `index.html` inteiro
+  transpilado numa `vm.Script`, Supabase mockado): confirmei a tela de escolha mostrando
+  "2 de 2 itens ainda por contar" pro corredor com itens pendentes e "todos já
+  contados" pro corredor já resolvido; escolher um corredor mostra "item 1 de 2"; contar
+  o 1º item (via simulação de leitura de QR, já que o item tem endereço cadastrado)
+  avança pro item 2 SEM sair da tela (`onFinish` não disparado no meio da fila); contar
+  o 2º mostra "Corredor concluído"; "Escolher outro corredor" volta pra lista sem
+  navegar. Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  conferidos (575/575, sem mudança — nenhuma classe CSS nova). **Verificação visual/
+  funcional de ponta a ponta com o Supabase real (endereços cadastrados de verdade)
+  fica a cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth
+  real, não simulável no sandbox sem rede).

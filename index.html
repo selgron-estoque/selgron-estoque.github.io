@@ -4294,7 +4294,7 @@ function App(){
         }} />}
         {view==='randomCount' && <RandomCountFlow inv={flowState} user={currentUser} counts={counts} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} gruposExcluidos={gruposExcluidos} />}
         {view==='manualCount' && <ManualCountFlow user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('home');}} onAddressProposed={addAddressProposal} operadorVeSaldo={operadorVeSaldo} />}
-        {view==='routeCount' && <RouteCountFlow inv={flowState} user={currentUser} counts={counts} onRegisterCount={registerFinishedCount} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} gruposExcluidos={gruposExcluidos} />}
+        {view==='routeCount' && <RouteCountFlow inv={flowState} user={currentUser} counts={counts} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} gruposExcluidos={gruposExcluidos} />}
         {view==='importedListCount' && <ImportedListCountFlow inv={flowState} user={currentUser} counts={counts} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} />}
         {view==='recounts' && <RecountsPanel counts={counts} inventories={inventories} role={role} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} operadorVeValoresRecontagem={operadorVeValoresRecontagem} />}
         {view==='divergentes' && <DivergentItemsPanel counts={counts} inventories={inventories} role={role} goto={goto} onApprove={approveDivergence} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} />}
@@ -5432,8 +5432,14 @@ function InventoryList({inventories, goto, role, counts, onDelete, onCancel}){
     // Continuar contando um inventário já concluído não faz sentido (a fila
     // já está vazia) — só os cards ainda pendentes navegam pro fluxo de
     // contagem ao clicar; concluídos só têm as ações de Baixar/Excluir.
+    // "Contagem por Rota de Endereço" tem motor próprio (RouteCountFlow) —
+    // deixa escolher o corredor a contar agora, em vez de cair na fila
+    // genérica (RandomCountFlow) usada pelos demais tipos não-importados.
+    const destino = (inv.tipo==='Lista Importada (Excel)' || inv.tipo==='Itens Específicos') ? 'importedListCount'
+      : inv.tipo==='Contagem por Rota de Endereço' ? 'routeCount'
+      : 'randomCount';
     return (
-      <div key={inv.id} className="item-card" style={concluido ? {} : {cursor:'pointer'}} onClick={concluido ? undefined : ()=>goto((inv.tipo==='Lista Importada (Excel)' || inv.tipo==='Itens Específicos') ? 'importedListCount' : 'randomCount', inv)}>
+      <div key={inv.id} className="item-card" style={concluido ? {} : {cursor:'pointer'}} onClick={concluido ? undefined : ()=>goto(destino, inv)}>
         <div className="item-card-head">
           <div>
             <div className="item-code">{inv.id} · {inv.almoxarifado}</div>
@@ -6972,30 +6978,29 @@ function ManualCountFlow({user, onFinish, onAddressProposed, counts, operadorVeS
 
 /* ---------------- MÓDULO 4: CONTAGEM POR ROTA ---------------- */
 
-function RouteCountFlow({inv, user, onRegisterCount, onAddressProposed, setInventories, counts, operadorVeSaldo, gruposExcluidos}){
-  // Armazém obrigatório (mesmo motivo do RandomCountFlow) — Rota é sempre
-  // avulsa hoje (nunca chega aqui vinda de um inventário já criado, ver
-  // InventoryList/App()), então sempre pergunta antes de buscar qualquer
-  // item.
+function RouteCountFlow({inv, user, onRegisterCount, onFinish, onAddressProposed, setInventories, counts, operadorVeSaldo, gruposExcluidos}){
+  // Armazém obrigatório (mesmo motivo do RandomCountFlow) — se `inv` já vem
+  // de um inventário criado do tipo "Contagem por Rota de Endereço" (ver
+  // InventoryList), o almoxarifado já está definido ali; a versão avulsa
+  // (operador, "Nova Contagem" → "Contagem por Rota") pergunta na hora.
   const invAlmoxarifados = (inv && inv.almoxarifado) ? inv.almoxarifado.split(',').map(s=>normalizarCodigoAlmox(s)).filter(Boolean) : null;
   const [armazemAdHoc, setArmazemAdHoc] = useState('');
   const almoxarifadosFiltro = invAlmoxarifados || (armazemAdHoc ? [armazemAdHoc] : null);
 
-  // Substitui o antigo agrupamento síncrono sobre o cache local (removido,
-  // ver CLAUDE.md "cache local removido") — busca itens priorizados no
-  // Supabase (mesma RPC do RandomCountFlow, com limite maior já que aqui
-  // interessa toda a rota, não só qtdItens) e agrupa por corredor/rua os que
-  // já têm endereço cadastrado.
+  // Busca itens priorizados no Supabase (mesma RPC do RandomCountFlow, com
+  // limite maior já que aqui interessa toda a rota, não só `qtdItens`) e
+  // agrupa por corredor/rua os que já têm endereço cadastrado.
   const [anyAddress, setAnyAddress] = useState(null); // null = carregando
   const [grouped, setGrouped] = useState(null);
   useEffect(()=>{
     if(!almoxarifadosFiltro) return; // esperando o armazém ser escolhido
     let cancelado = false;
+    const gruposFiltro = (inv && inv.grupo) ? inv.grupo.split(',').filter(Boolean) : undefined;
     fetchAnyAddressRegistered().then(async (hasAny)=>{
       if(cancelado) return;
       setAnyAddress(hasAny);
       if(!hasAny) return;
-      const itens = await fetchContagemItensPrioritarios(200, undefined, almoxarifadosFiltro, gruposExcluidos);
+      const itens = await fetchContagemItensPrioritarios(200, gruposFiltro, almoxarifadosFiltro, gruposExcluidos);
       if(cancelado) return;
       const byCorredor = {};
       itens.filter(p=>p.enderecoCadastrado).forEach(p=>{
@@ -7006,9 +7011,38 @@ function RouteCountFlow({inv, user, onRegisterCount, onAddressProposed, setInven
       setGrouped(byCorredor);
     });
     return ()=>{ cancelado = true; };
-  }, [almoxarifadosFiltro ? almoxarifadosFiltro.join(',') : null, gruposExcluidos ? gruposExcluidos.join(',') : '']);
+  }, [almoxarifadosFiltro ? almoxarifadosFiltro.join(',') : null, gruposExcluidos ? gruposExcluidos.join(',') : '', inv && inv.grupo]);
 
-  const [active, setActive] = useState(null);
+  // Corredor escolhido pra contar agora (ex.: "hoje o 010, amanhã o 019") —
+  // pedido do cliente: em vez de despejar TODOS os corredores numa lista só
+  // pra clicar item a item, escolhe um corredor e a fila libera sozinha, em
+  // sequência (rua → endereço), item após item — mesmo padrão de fila
+  // auto-avançando já usado em RandomCountFlow/ImportedListCountFlow.
+  const [corredorEscolhido, setCorredorEscolhido] = useState(null);
+
+  // Itens já contados (qualquer corredor, qualquer rodada) — mesmo critério
+  // já usado em RandomCountFlow (`codigosJaContados`). Usado pra excluir da
+  // fila em vez de basear o "retomar" numa posição fixa: como o operador
+  // pode escolher um corredor DIFERENTE a cada vez que entra, não existe um
+  // índice único de progresso — cada item já contado simplesmente some de
+  // qualquer corredor em que apareça, não importa quando/onde foi contado.
+  const codigosJaContados = useMemo(()=> new Set((counts||[]).map(c=>c.productCode)), [counts]);
+
+  // Lista achatada e ordenada (rua → endereço) só do corredor escolhido, sem
+  // os itens já contados — "libera na sequência do corredor".
+  const itensCorredor = useMemo(()=>{
+    if(!grouped || !corredorEscolhido || !grouped[corredorEscolhido]) return [];
+    const flat = [];
+    Object.keys(grouped[corredorEscolhido]).sort().forEach(rua=>{
+      grouped[corredorEscolhido][rua]
+        .slice()
+        .sort((a,b)=>(a.endereco||'').localeCompare(b.endereco||''))
+        .forEach(p=>flat.push(p));
+    });
+    return flat.filter(p=>!codigosJaContados.has(p.codigo));
+  }, [grouped, corredorEscolhido, codigosJaContados]);
+
+  const q = useCountQueue(itensCorredor);
 
   if(!almoxarifadosFiltro){
     return <ArmazemGate onSelected={setArmazemAdHoc} />;
@@ -7028,36 +7062,63 @@ function RouteCountFlow({inv, user, onRegisterCount, onAddressProposed, setInven
     );
   }
 
-  if(active){
-    return <CountStep product={active} user={user} inv={inv} counts={counts} onAddressProposed={onAddressProposed} operadorVeSaldo={operadorVeSaldo} onComplete={(c)=>{
-      if(inv && inv.id){ setInventories(prev=>prev.map(i=>i.id===inv.id?{...i, contados:i.contados+1}:i)); incrementContadosSupabase(inv.id); }
-      onRegisterCount(c);
-      setActive(null);
-    }} />;
+  if(!corredorEscolhido){
+    const corredores = Object.keys(grouped).sort();
+    return (
+      <div>
+        <div className="role-note">Armazém {almoxarifadosFiltro.map(a=>a.padStart(2,'0')).join(', ')} · Escolha o corredor que vai contar agora</div>
+        {corredores.map(cor=>{
+          const totalCor = Object.values(grouped[cor]).reduce((s,arr)=>s+arr.length, 0);
+          const pendentesCor = Object.values(grouped[cor]).reduce((s,arr)=>s+arr.filter(p=>!codigosJaContados.has(p.codigo)).length, 0);
+          return (
+            <div key={cor} className="list-row" onClick={()=>pendentesCor>0 && setCorredorEscolhido(cor)} style={pendentesCor===0 ? {opacity:0.55,cursor:'default'} : undefined}>
+              <div>
+                <div className="lr-title">Corredor {cor}</div>
+                <div className="lr-sub">{pendentesCor===0 ? `${totalCor} itens — todos já contados` : `${pendentesCor} de ${totalCor} itens ainda por contar`}</div>
+              </div>
+              {pendentesCor>0 && <span className="chevron"><Ic>›</Ic></span>}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  if(q.done){
+    return (
+      <div className="empty-state">
+        <div className="ic"><Ic size={40}>🎉</Ic></div>
+        Corredor {corredorEscolhido} concluído.
+        <div className="btn-row" style={{marginTop:16,justifyContent:'center'}}>
+          <button className="btn btn-secondary" onClick={()=>setCorredorEscolhido(null)}>Escolher outro corredor</button>
+          {onFinish && <button className="btn btn-primary" onClick={onFinish}>Voltar aos inventários</button>}
+        </div>
+      </div>
+    );
   }
 
   return (
     <div>
-      <div className="role-note">Rota otimizada por menor deslocamento — Armazém {almoxarifadosFiltro.map(a=>a.padStart(2,'0')).join(', ')}</div>
-      {Object.keys(grouped).sort().map(cor=>(
-        <div key={cor} style={{marginBottom:18}}>
-          <div className="section-title">Corredor {cor}</div>
-          {Object.keys(grouped[cor]).sort().map(rua=>(
-            <div key={rua} style={{marginBottom:10}}>
-              <div style={{fontFamily:'var(--font-mono)',fontSize:11,color:'var(--ink-dim)',marginBottom:6,textTransform:'uppercase'}}>Rua {rua}</div>
-              {grouped[cor][rua].map(p=>(
-                <div key={p.codigo} className="list-row" onClick={()=>setActive(p)}>
-                  <div>
-                    <div className="lr-title">{p.descricao}</div>
-                    <div className="lr-sub">{p.endereco}</div>
-                  </div>
-                  <span className="chevron"><Ic>›</Ic></span>
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-      ))}
+      <div className="role-note" style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,flexWrap:'wrap'}}>
+        <span>Corredor {corredorEscolhido} · item {q.idx+1} de {q.total}</span>
+        <button className="btn btn-secondary" style={{padding:'4px 12px',fontSize:12}} onClick={()=>setCorredorEscolhido(null)}>Trocar corredor</button>
+      </div>
+      <CountStep
+        key={q.current.codigo}
+        product={q.current}
+        user={user}
+        inv={inv}
+        counts={counts}
+        queueAtual={q.idx+1}
+        queueTotal={q.total}
+        onAddressProposed={onAddressProposed}
+        operadorVeSaldo={operadorVeSaldo}
+        onComplete={(c)=>{
+          if(inv && inv.id){ setInventories(prev=>prev.map(i=>i.id===inv.id?{...i, contados:i.contados+1}:i)); incrementContadosSupabase(inv.id); }
+          onRegisterCount(c);
+          q.next();
+        }}
+      />
     </div>
   );
 }
