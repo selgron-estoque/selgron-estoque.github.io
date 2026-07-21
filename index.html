@@ -6471,7 +6471,7 @@ function NewInventory({onCreate, goto, inventories, gruposExcluidos}){
                     <div className="lr-title">{p.descricao}</div>
                     <div className="lr-sub">{p.codigo} · {p.enderecoCadastrado ? p.endereco : 'sem endereço cadastrado'}</div>
                   </div>
-                  <button type="button" className="btn btn-outline" disabled={jaAdicionado} onClick={()=>addItemEspecifico(p)}>
+                  <button type="button" className="btn btn-outline" style={{width:'auto',padding:'10px 16px',fontSize:12}} disabled={jaAdicionado} onClick={()=>addItemEspecifico(p)}>
                     {jaAdicionado ? 'Adicionado' : 'Adicionar'}
                   </button>
                 </div>
@@ -6487,7 +6487,7 @@ function NewInventory({onCreate, goto, inventories, gruposExcluidos}){
                   <div className="lr-title">{it.descricao || it.codigo}</div>
                   <div className="lr-sub">{it.codigo}{it.endereco ? ' · '+it.endereco : ''}</div>
                 </div>
-                <button type="button" className="btn btn-danger" onClick={()=>removeItemEspecifico(it.codigo)}><Ic>🗑</Ic></button>
+                <button type="button" className="btn btn-danger" style={{width:'auto',padding:'10px 14px'}} onClick={()=>removeItemEspecifico(it.codigo)}><Ic>🗑</Ic></button>
               </div>
             ))}
           </div>
