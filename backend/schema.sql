@@ -1032,3 +1032,17 @@ alter table contagens add column if not exists sa_gerada_em text;
 alter table contagens add column if not exists reprovado_pela_diretoria boolean not null default false;
 alter table contagens add column if not exists reprovado_por text;
 alter table contagens add column if not exists reprovado_em text;
+
+-- =============================================================================
+-- MOTIVO DA REPROVAÇÃO DE AJUSTE (Diretoria) — pedido do cliente
+--
+-- Ao reprovar uma SA de Ajuste (tela "Aprovação de Ajustes"), o admin agora
+-- precisa digitar POR QUE o ajuste não foi aceito — antes só ficava registrado
+-- QUE foi reprovado (`reprovado_pela_diretoria`/`reprovado_por`/`reprovado_em`),
+-- sem nenhum motivo. O campo é exibido no card do item reaberto em
+-- "Recontagens Pendentes"/"Itens Divergentes", junto do aviso "A Diretoria
+-- reprovou a SA...".
+--
+-- Sem policy nova — mesma UPDATE já existente em `contagens` cobre.
+-- =============================================================================
+alter table contagens add column if not exists motivo_reprovacao_diretoria text;

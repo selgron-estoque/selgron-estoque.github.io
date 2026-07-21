@@ -1241,6 +1241,7 @@ function contagemRowToLocal(row){
     reprovadoPelaDiretoria: !!row.reprovado_pela_diretoria,
     reprovadoPor: row.reprovado_por,
     reprovadoEm: row.reprovado_em,
+    motivoReprovacaoDiretoria: row.motivo_reprovacao_diretoria,
     atualizadoEm: row.atualizado_em,
   };
 }
@@ -2430,7 +2431,7 @@ function buildAjustarSeedsFromHistorico(linhas){
 // massa, que evita sobrescrever pra não perder uma recontagem já feita): aqui
 // é uma ação manual e deliberada de um admin, sobrescrever é o comportamento
 // certo, não um risco de duplicar/perder dado.
-async function reprovarAjusteHistoricoNaLinha(rawRow){
+async function reprovarAjusteHistoricoNaLinha(rawRow, motivoReprovacao){
   if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
   if(!rawRow || !rawRow.produto_codigo) return {ok:false, erro:'Item do histórico inválido.'};
   try{
@@ -2470,7 +2471,7 @@ async function reprovarAjusteHistoricoNaLinha(rawRow){
       status_aprovacao: 'aguardando_analise_lider',
       motivo: rawRow.causa,
       tem_foto: false,
-      observacao: (rawRow.observacao ? rawRow.observacao + ' — ' : '') + 'Ajuste reprovado manualmente no site (a planilha ainda mostra "Ajustado").',
+      observacao: (rawRow.observacao ? rawRow.observacao + ' — ' : '') + 'Ajuste reprovado manualmente no site (a planilha ainda mostra "Ajustado").' + (motivoReprovacao ? ' Motivo da reprovação: ' + motivoReprovacao : ''),
       data: rawRow.data,
       hora: null,
     };
@@ -4099,14 +4100,16 @@ function App(){
   // (`reprovadoPelaDiretoria`) pra diferenciar visualmente do card de rejeição
   // do líder — pedido do cliente: precisa ficar "bem destacado" que foi a
   // Diretoria que reprovou, não o líder, pra puxar mais atenção na análise.
-  async function reprovarAjusteDiretoria(countId){
+  async function reprovarAjusteDiretoria(countId, motivo){
     const reprovadoPor = currentUser ? currentUser.nome : '—';
     const reprovadoEm = new Date().toLocaleString('pt-BR');
+    const motivoReprovacao = (motivo||'').trim() || null;
     const res = await updateContagemStatusToSupabase(countId, {
       status_aprovacao: 'aguardando_segunda',
       reprovado_pela_diretoria: true,
       reprovado_por: reprovadoPor,
       reprovado_em: reprovadoEm,
+      motivo_reprovacao_diretoria: motivoReprovacao,
     });
     if(res.ok){
       setCounts(prev=>prev.map(c=>c.id===countId?{
@@ -4115,6 +4118,7 @@ function App(){
         reprovadoPelaDiretoria:true,
         reprovadoPor,
         reprovadoEm,
+        motivoReprovacaoDiretoria: motivoReprovacao,
       }:c));
     }
     return res;
@@ -4129,8 +4133,8 @@ function App(){
   // (mesmo padrão de sempre — não espera o próximo ciclo do Realtime pra
   // aparecer em "Itens Divergentes") — se por acaso já existisse uma entrada
   // com esse id (reprovação repetida), substitui em vez de duplicar.
-  async function reprovarAjusteHistorico(rawRow){
-    const res = await reprovarAjusteHistoricoNaLinha(rawRow);
+  async function reprovarAjusteHistorico(rawRow, motivo){
+    const res = await reprovarAjusteHistoricoNaLinha(rawRow, motivo);
     if(res.ok && res.seedLocal){
       setCounts(prev=>[res.seedLocal, ...prev.filter(c=>c.id!==res.seedLocal.id)]);
     }
@@ -8059,7 +8063,7 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
             </div>
             {c.reprovadoPelaDiretoria && (
               <div className="divergence-alert" style={{background:'#F1E9FB',borderColor:'#7B3FC4',color:'#7B3FC4'}}>
-                <Ic>⛔</Ic><span>A Diretoria reprovou a SA {c.solicitacaoAjuste} em {c.reprovadoEm} — reenviado para nova análise.</span>
+                <Ic>⛔</Ic><span>A Diretoria reprovou a SA {c.solicitacaoAjuste} em {c.reprovadoEm} — reenviado para nova análise.{c.motivoReprovacaoDiretoria && <><br/><strong>Motivo:</strong> {c.motivoReprovacaoDiretoria}</>}</span>
               </div>
             )}
             {c.recontagemSolicitadaPeloLider && (
@@ -8358,7 +8362,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSend
               {c.observacao && <div style={{padding:'6px 16px 0',fontSize:12.5,color:'var(--ink-dim)'}}>Observação: {c.observacao}</div>}
               {c.reprovadoPelaDiretoria && (
                 <div className="divergence-alert" style={{margin:'10px 16px 0',background:'#F1E9FB',borderColor:'#7B3FC4',color:'#7B3FC4'}}>
-                  <Ic>⛔</Ic><span>A Diretoria reprovou a SA {c.solicitacaoAjuste} em {c.reprovadoEm} — reenviado para nova análise.</span>
+                  <Ic>⛔</Ic><span>A Diretoria reprovou a SA {c.solicitacaoAjuste} em {c.reprovadoEm} — reenviado para nova análise.{c.motivoReprovacaoDiretoria && <><br/><strong>Motivo:</strong> {c.motivoReprovacaoDiretoria}</>}</span>
                 </div>
               )}
               {c.diferencaConfirmada && (
@@ -8442,6 +8446,12 @@ function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejec
   const [busyId, setBusyId] = useState(null);
   const [erros, setErros] = useState({});
   const [confirmRejectId, setConfirmRejectId] = useState(null);
+  // Motivo da reprovação — pedido do cliente: exigir uma justificativa antes
+  // de devolver o item pra recontagem, pra o operador saber POR QUE a
+  // Diretoria não aceitou o ajuste (não só QUE foi reprovado). Um só campo de
+  // texto por vez (mesmo padrão de `confirmRejectId`, só 1 confirmação aberta
+  // por vez) — reseta ao abrir uma reprovação nova ou ao cancelar.
+  const [motivoRejeicao, setMotivoRejeicao] = useState('');
 
   async function handleApprove(countId){
     setBusyId(countId);
@@ -8454,10 +8464,11 @@ function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejec
   async function handleConfirmReject(countId){
     setBusyId(countId);
     setErros(prev=>({...prev, [countId]: null}));
-    const res = await onRejectSA(countId);
+    const res = await onRejectSA(countId, motivoRejeicao.trim());
     setBusyId(null);
     if(res && res.ok){
       setConfirmRejectId(null);
+      setMotivoRejeicao('');
     } else {
       setErros(prev=>({...prev, [countId]: (res && res.erro) || 'Não foi possível reprovar — tente novamente.'}));
     }
@@ -8530,14 +8541,23 @@ function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejec
                   <div className="divergence-alert" style={{marginBottom:10}}>
                     <Ic>⚠</Ic><span>Reprovar a SA {c.solicitacaoAjuste}? O item volta pra fila de recontagem, marcado como reprovado pela Diretoria.</span>
                   </div>
+                  <div className="field" style={{marginBottom:10}}>
+                    <label>Motivo da reprovação</label>
+                    <textarea
+                      placeholder="Explique por que o ajuste não foi aceito…"
+                      value={motivoRejeicao}
+                      onChange={e=>setMotivoRejeicao(e.target.value)}
+                      disabled={busyId===c.id}
+                    />
+                  </div>
                   <div className="btn-row">
-                    <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>setConfirmRejectId(null)}>Cancelar</button>
-                    <button className="btn btn-danger" disabled={busyId===c.id} onClick={()=>handleConfirmReject(c.id)}>{busyId===c.id ? 'Enviando…' : 'Confirmar reprovação'}</button>
+                    <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>{ setConfirmRejectId(null); setMotivoRejeicao(''); }}>Cancelar</button>
+                    <button className="btn btn-danger" disabled={busyId===c.id || !motivoRejeicao.trim()} onClick={()=>handleConfirmReject(c.id)}>{busyId===c.id ? 'Enviando…' : 'Confirmar reprovação'}</button>
                   </div>
                 </div>
               ) : canDecide ? (
                 <div className="btn-row count-card-actions-row">
-                  <button className="btn btn-danger" disabled={busyId===c.id} onClick={()=>setConfirmRejectId(c.id)}>Reprovar</button>
+                  <button className="btn btn-danger" disabled={busyId===c.id} onClick={()=>{ setConfirmRejectId(c.id); setMotivoRejeicao(''); }}>Reprovar</button>
                   <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>handleApprove(c.id)}>{busyId===c.id ? 'Enviando…' : 'Aprovar'}</button>
                 </div>
               ) : (
@@ -8786,6 +8806,10 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
   const [confirmReprovarId, setConfirmReprovarId] = useState(null);
   const [reprovando, setReprovando] = useState(false);
   const [erroReprovar, setErroReprovar] = useState('');
+  // Motivo da reprovação — mesmo pedido do cliente já aplicado no fluxo de
+  // "Aprovação de Ajustes" (ver DiretoriaApprovalPanel): registrar POR QUE o
+  // ajuste não foi aceito, não só QUE foi reprovado.
+  const [motivoReprovar, setMotivoReprovar] = useState('');
   // Mesmo padrão de toggle "Detalhes"/"Ocultar" já usado em RecontagensPanel
   // (pedido do cliente: padronizar) — troca a navegação pra uma tela própria
   // por uma expansão inline dentro do próprio card, sem sair da lista.
@@ -8830,10 +8854,11 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
   async function handleConfirmReprovar(chaveId, historicoRaw){
     setReprovando(true);
     setErroReprovar('');
-    const res = await onReprovarAjusteHistorico(historicoRaw);
+    const res = await onReprovarAjusteHistorico(historicoRaw, motivoReprovar.trim());
     setReprovando(false);
     if(res && res.ok){
       setConfirmReprovarId(null);
+      setMotivoReprovar('');
       // Tira o item de "Contagens Concluídas" na hora — sem isso, ficaria
       // duplicado (aqui como "Ajustado" e em "Itens Divergentes" como
       // pendente) até o próximo refresh manual/reload.
@@ -8981,7 +9006,7 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
                 <div className="count-card-actions-col" style={{width:'auto'}}>
                   <button className="btn btn-outline" onClick={()=>toggleDetalhes(cd.chaveId)}><Ic>📋</Ic> {aberto ? 'Ocultar' : 'Detalhes'}</button>
                   {onReprovarAjusteHistorico && tip._fromHistorico && tip._statusOriginal==='Ajustado' && (
-                    <button className="btn btn-danger" onClick={()=>{ setConfirmReprovarId(cd.chaveId); setErroReprovar(''); }}><Ic>⛔</Ic> Reprovar ajuste</button>
+                    <button className="btn btn-danger" onClick={()=>{ setConfirmReprovarId(cd.chaveId); setErroReprovar(''); setMotivoReprovar(''); }}><Ic>⛔</Ic> Reprovar ajuste</button>
                   )}
                 </div>
               </div>
@@ -8990,9 +9015,18 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
                   <div className="divergence-alert" style={{marginBottom:10}}>
                     <Ic>⚠</Ic><span>Reprovar o ajuste de {tip.productCode}? O item sai de "Contagens Concluídas" e volta pra "Itens Divergentes" pra uma nova decisão — sem alterar a planilha original, só o registro no site.</span>
                   </div>
+                  <div className="field" style={{marginBottom:10}}>
+                    <label>Motivo da reprovação</label>
+                    <textarea
+                      placeholder="Explique por que o ajuste não foi aceito…"
+                      value={motivoReprovar}
+                      onChange={e=>setMotivoReprovar(e.target.value)}
+                      disabled={reprovando}
+                    />
+                  </div>
                   <div className="btn-row">
-                    <button className="btn btn-secondary" disabled={reprovando} onClick={()=>setConfirmReprovarId(null)}>Cancelar</button>
-                    <button className="btn btn-danger" disabled={reprovando} onClick={()=>handleConfirmReprovar(cd.chaveId, tip._historicoRaw)}>{reprovando ? 'Reprovando…' : 'Confirmar reprovação'}</button>
+                    <button className="btn btn-secondary" disabled={reprovando} onClick={()=>{ setConfirmReprovarId(null); setMotivoReprovar(''); }}>Cancelar</button>
+                    <button className="btn btn-danger" disabled={reprovando || !motivoReprovar.trim()} onClick={()=>handleConfirmReprovar(cd.chaveId, tip._historicoRaw)}>{reprovando ? 'Reprovando…' : 'Confirmar reprovação'}</button>
                   </div>
                   {erroReprovar && <div style={{fontSize:11.5,color:'var(--danger)',marginTop:8}}>{erroReprovar}</div>}
                 </div>

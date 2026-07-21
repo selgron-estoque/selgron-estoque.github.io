@@ -7257,3 +7257,59 @@ sequência física de prateleiras em vez de pular de código em código.
   regressão disponível no scratchpad, sem quebrar nada. **Verificação visual de
   ponta a ponta fica a cargo do cliente** — mesma limitação de sempre (login exige
   Supabase Auth real, não simulável no sandbox sem rede).
+
+## Campo "Motivo da reprovação" nos dois fluxos de reprovar um ajuste
+
+Cliente pediu: "quando eu reprovar um ajuste abrir um campo = 'MOTIVO DA REPROVAÇÃO'
+algo assim". O app tem DOIS botões de reprovação de ajuste diferentes — confirmado com
+o cliente (`AskUserQuestion`) que o campo deveria valer nos dois:
+
+1. **"Aprovação de Ajustes"** (`DiretoriaApprovalPanel`, botão "Reprovar") — reprova
+   uma SA de Ajuste pendente, devolvendo o item pra "Recontagens Pendentes"
+   (`reprovarAjusteDiretoria`).
+2. **"Contagens Concluídas"** (`ConcludedCountsPanel`, botão "Reprovar ajuste") —
+   reverte um item já "Ajustado" vindo do histórico importado, sem tocar a planilha
+   original (`reprovarAjusteHistorico`/`reprovarAjusteHistoricoNaLinha`).
+
+- **Campo obrigatório**: nos dois fluxos, o botão "Confirmar reprovação" só habilita
+  depois de o texto do motivo ser preenchido (`disabled={... || !motivo.trim()}`) —
+  decisão de exigir justificativa sempre, não deixar em branco, já que é exatamente o
+  tipo de informação que faz falta numa auditoria depois (mesmo espírito já registrado
+  em "Itens 'Recontar' do histórico..."/"Histórico ganha todos os campos pra
+  auditoria").
+- **`backend/schema.sql`**: nova coluna `contagens.motivo_reprovacao_diretoria text`
+  — só usada pelo fluxo 1 (SA de Ajuste), já que tem coluna própria pra persistir.
+  Sem policy nova (mesma UPDATE já existente cobre).
+- **Fluxo 1 (Diretoria)**: `reprovarAjusteDiretoria(countId, motivo)` grava
+  `motivo_reprovacao_diretoria` junto das colunas já existentes
+  (`reprovado_pela_diretoria`/`reprovado_por`/`reprovado_em`); `contagemRowToLocal`
+  mapeia pra `motivoReprovacaoDiretoria`. O alerta "A Diretoria reprovou a SA..." (que
+  já aparecia em `RecountsPanel` e `DivergentItemsPanel` quando o item volta reprovado)
+  ganhou uma linha extra "**Motivo:** {texto}" quando o campo vem preenchido — omitida
+  por completo em itens reprovados ANTES desta mudança (sem motivo salvo), sem quebrar
+  nem mostrar "Motivo:" vazio.
+- **Fluxo 2 (histórico)**: como `contagens_historico` não tem uma coluna própria pra
+  isso (é só um espelho de auditoria da planilha, sem esse conceito), o motivo entra
+  direto no campo `observacao` já existente do item reaberto em "Itens Divergentes"
+  (`reprovarAjusteHistoricoNaLinha(rawRow, motivoReprovacao)`, concatenado depois do
+  texto fixo "Ajuste reprovado manualmente no site..." com o prefixo "Motivo da
+  reprovação: ") — reaproveita o campo/exibição que `DivergentItemsPanel` já tinha
+  (ver "Bug real: DivergentItemsPanel nunca mostrava... observação" no histórico
+  acima), sem precisar de coluna nova nem de mudança de exibição.
+- Testado via harness real (jsdom + react-dom/client + `act()`, mesma técnica rigorosa
+  de sempre): nos dois fluxos, o botão de confirmar começa desabilitado, habilita ao
+  digitar o motivo, e a função de callback (`onRejectSA`/`onReprovarAjusteHistorico`)
+  recebe o texto certo; `RecountsPanel` mostra "Motivo: {texto}" quando presente e não
+  mostra nada quando ausente (regressão de item antigo sem esse campo, testada à
+  parte); `reprovarAjusteHistoricoNaLinha` isolado (mock de query builder do Supabase)
+  confirma que a `observacao` gravada contém "Motivo da reprovação: {texto}". Dois
+  testes de regressão antigos (`harness_diretoria.js`/`harness_reprovar_ajuste_
+  historico.js`) precisaram só passar a preencher o motivo antes de clicar "Confirmar
+  reprovação" — mudança de comportamento intencional desta rodada (campo obrigatório),
+  não regressão. Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  conferidos (577/577, sem mudança — reaproveita `.field`/`textarea` já estilizado no
+  CSS). Rodei de novo toda a suíte de regressão disponível no scratchpad, sem quebrar
+  nada. **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma
+  limitação de sempre (login exige Supabase Auth real, não simulável no sandbox sem
+  rede). Falta o cliente rodar o SQL novo (`alter table contagens add column if not
+  exists motivo_reprovacao_diretoria text;`) no projeto real.
