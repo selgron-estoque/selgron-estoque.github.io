@@ -3876,6 +3876,11 @@ function App(){
   async function cancelInventory(id){
     const inv = inventories.find(i=>i.id===id);
     if(!inv) return {ok:false, erro:'Inventário não encontrado.'};
+    // Sem nenhum item contado ainda não tem o que "manter" — cancelar nesse
+    // caso é o mesmo que excluir o documento (senão `qtdItens` zerado nunca
+    // bateria a condição `qtdItens>0` de `inventarioConcluido`, e o card
+    // ficaria preso pra sempre em "0/0 pendente", sem sair da lista).
+    if(inv.contados===0) return deleteInventory(id);
     const patch = {qtd_itens: inv.contados};
     const itensTruncados = inv.itensImportados ? inv.itensImportados.slice(0, inv.contados) : null;
     if(itensTruncados) patch.itens_importados = itensTruncados;
@@ -5372,11 +5377,11 @@ function InventoryList({inventories, goto, role, counts, onDelete, onCancel}){
   const [confirmCancelId, setConfirmCancelId] = useState(null);
   const [cancelando, setCancelando] = useState(false);
   const [erroCancelamento, setErroCancelamento] = useState('');
-  // Seção "Concluídos" começa aberta (mesmo comportamento de sempre) — o
-  // usuário pode recolher pra ver só o que ainda está pendente sem rolar a
-  // lista inteira. Estado puramente de UI, não persiste (mesmo critério já
-  // usado pra `sidebarCollapsed`/navegação).
-  const [concluidosAbertos, setConcluidosAbertos] = useState(true);
+  // Seção "Concluídos" começa FECHADA (pedido do cliente) — o usuário
+  // expande clicando na seta só quando quiser ver o que já foi finalizado,
+  // sem isso ocupar espaço por padrão na tela. Estado puramente de UI, não
+  // persiste (mesmo critério já usado pra `sidebarCollapsed`/navegação).
+  const [concluidosAbertos, setConcluidosAbertos] = useState(false);
 
   if(inventories.length===0){
     return <div className="empty-state"><div className="ic"><Ic size={40}>📦</Ic></div>Nenhum inventário programado.</div>;
@@ -5459,7 +5464,13 @@ function InventoryList({inventories, goto, role, counts, onDelete, onCancel}){
           ) : confirmCancelId===inv.id ? (
             <div style={{padding:'0 18px 16px'}} onClick={e=>e.stopPropagation()}>
               <div className="divergence-alert" style={{marginBottom:10}}>
-                <Ic>⚠</Ic><span>Cancelar "{inv.nome}"? Os {inv.contados} itens já contados são mantidos; os itens ainda em aberto são removidos e o inventário passa a Concluído. Essa ação não pode ser desfeita.</span>
+                <Ic>⚠</Ic>
+                <span>
+                  {inv.contados>0
+                    ? `Cancelar "${inv.nome}"? Os ${inv.contados} itens já contados são mantidos; os itens ainda em aberto são removidos e o inventário passa a Concluído.`
+                    : `Cancelar "${inv.nome}"? Nenhum item foi contado ainda — cancelar remove o inventário por completo.`
+                  } Essa ação não pode ser desfeita.
+                </span>
               </div>
               {erroCancelamento && <div className="divergence-alert" style={{marginBottom:10}}><Ic>⚠</Ic><span>{erroCancelamento}</span></div>}
               <div className="btn-row">
@@ -5470,7 +5481,7 @@ function InventoryList({inventories, goto, role, counts, onDelete, onCancel}){
           ) : (
             <div className="btn-row" style={{padding:'0 18px 16px'}} onClick={e=>e.stopPropagation()}>
               <button className="btn btn-secondary" onClick={()=>handleDownload(inv)}><Ic>⬇</Ic> Baixar</button>
-              {!concluido && inv.contados>0 && <button className="btn btn-secondary" onClick={()=>setConfirmCancelId(inv.id)}><Ic>⛔</Ic> Cancelar</button>}
+              {!concluido && <button className="btn btn-secondary" onClick={()=>setConfirmCancelId(inv.id)}><Ic>⛔</Ic> Cancelar</button>}
               <button className="btn btn-danger" onClick={()=>setConfirmDeleteId(inv.id)}><Ic>🗑</Ic> Excluir</button>
             </div>
           )

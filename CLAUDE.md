@@ -6455,3 +6455,26 @@ da seção "Concluídos" criada na rodada anterior:
   mesma limitação de sempre (login exige Supabase Auth real, não simulável no sandbox
   sem rede). Falta o cliente confirmar que o botão "Cancelar" não aparece mais depois
   de usado (o card deve migrar sozinho de "pendentes" pra "Concluídos" na mesma tela).
+
+## Ajustes na rodada anterior: "Cancelar" não aparecia em inventário ainda não iniciado + Concluídos começa fechado
+
+Cliente testou a rodada anterior e reportou "não vi o botão de cancelar" — a causa era
+o guard `inv.contados>0`: o botão só aparecia em inventários JÁ com algo contado, e o
+teste do cliente provavelmente foi num inventário recém-criado, com 0 itens contados
+ainda (onde só "Baixar"/"Excluir" apareciam).
+
+- **`cancelInventory`** ganhou um caso a mais: `if(inv.contados===0) return
+  deleteInventory(id);` — sem nenhum item contado não tem o que "manter", cancelar vira
+  equivalente a excluir o documento (evita também um estado inválido: gravar
+  `qtdItens:0` faria `inventarioConcluido` nunca considerar o card concluído —
+  `qtdItens>0` é uma das condições — e ele ficaria preso pra sempre em "0/0 pendente").
+- **Botão "Cancelar" agora aparece em QUALQUER inventário não concluído** (removida a
+  condição `inv.contados>0` do JSX) — o texto de confirmação muda conforme o caso:
+  com itens já contados, mantém a mensagem de antes; sem nenhum item contado, avisa
+  explicitamente que cancelar remove o inventário por completo (mesmo efeito de
+  "Excluir", só que pelo botão que o usuário já estava procurando).
+- **Seção "Concluídos" passou a começar FECHADA** (`concluidosAbertos` default
+  `false`, era `true`) — pedido explícito do cliente, expande só ao clicar na seta.
+- Testado via transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  (575/575, sem mudança). **Verificação visual/funcional fica a cargo do cliente** —
+  mesma limitação de sempre (login exige Supabase Auth real).
