@@ -7487,3 +7487,47 @@ o resultado:
   quebrar nada. **Falta o cliente reimportar a planilha em Configurações** pra esse
   item (e qualquer outro com o mesmo problema de dado sujo na coluna SA) passar a
   aparecer em "Itens Divergentes".
+
+## A correção anterior não bastava: segunda cópia da mesma lógica desfazia o efeito
+
+Cliente reimportou a planilha (como pedido na seção anterior) e reportou "subi a
+planilha e não atualizou" — o item continuava sem aparecer em "Itens Divergentes".
+
+- **Causa raiz real**: `computeIdsSeedsCandidatos` (usada por
+  `limparSeedsHistoricoDesatualizados`, que roda logo DEPOIS da semeadura, no MESMO
+  reimport) tinha uma SEGUNDA CÓPIA da lógica antiga e não-corrigida
+  (`!(l.status==='Ajustar' && !l.solicitacao_ajuste)`) — a correção anterior só tinha
+  sido aplicada em `buildAjustarSeedsFromHistorico` (o filtro que decide o que
+  SEMEAR), não nessa função irmã (que decide o que REMOVER como órfão). Resultado
+  concreto: o item `000.63681` era semeado corretamente (correção anterior funcionando)
+  e, na sequência do MESMO reimport, essa função ainda achava — pelo critério antigo —
+  que ele "não deveria mais ter esse seed" (porque `solicitacao_ajuste` não é vazio,
+  mesmo sendo só a palavra "Ajustar" repetida) e o marcava como órfão pra remover. Como
+  o item acabou de ser inserido (sem nenhuma rodada seguinte apontando pra ele), passava
+  pelas duas checagens de segurança da função e era excluído — o insert e o delete
+  aconteciam no mesmo ciclo, cancelando um ao outro, dando a impressão de que "nada
+  mudou" ao reimportar.
+- **Corrigido**: `computeIdsSeedsCandidatos` trocou pra usar o MESMO
+  `pareceValorDeStatusNaoSA` já usado pela função de seed —
+  `!(l.status==='Ajustar' && pareceValorDeStatusNaoSA(l.solicitacao_ajuste))` — agora as
+  duas funções (a que semeia e a que limpa) concordam sobre o que conta como "ainda
+  deveria ter esse seed", então uma não desfaz o trabalho da outra.
+- **Lição pro futuro**: sempre que uma condição de negócio (aqui, "isso é uma SA de
+  verdade ou não?") aparecer em mais de um lugar do código, checar TODOS os lugares
+  antes de considerar uma correção completa — corrigir só o primeiro que aparece na
+  busca não é suficiente se a mesma regra foi duplicada em vez de extraída como função
+  compartilhada (que é exatamente o padrão que devia ter sido usado desde o início,
+  e que agora finalmente é — os dois lugares chamam `pareceValorDeStatusNaoSA`).
+- Testado via harness real simulando o CICLO COMPLETO com um banco em memória (mock de
+  query builder do Supabase mais elaborado que o de costume — precisa suportar
+  `select().in().eq()`, `delete().in()`, refletindo de fato inserções/remoções num
+  `Map`, não só registrar chamadas): semeei o item exato reportado
+  (`buildAjustarSeedsFromHistorico` + `seedRecontarQueueFromHistorico`, confirmando que
+  ele entra no banco em memória) e, na sequência, rodei
+  `limparSeedsHistoricoDesatualizados` com a MESMA linha de entrada — confirmei que
+  `removidas` é 0 e que o item CONTINUA no banco depois da limpeza (antes desta
+  correção, teria sido removido no mesmo ciclo). Rodei de novo toda a suíte de
+  regressão disponível no scratchpad, sem quebrar nada. Transpile Babel do arquivo
+  inteiro e balanceamento de chaves do CSS conferidos (577/577, sem mudança). **O
+  cliente precisa reimportar a planilha mais uma vez** — desta vez o item deve
+  permanecer e aparecer em "Itens Divergentes" de verdade.

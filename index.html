@@ -2557,7 +2557,16 @@ function computeIdsSeedsCandidatos(linhas){
     const codigoSeguro = String(l.produto_codigo).replace(/[^A-Za-z0-9]/g,'');
     const dataSegura = l.data.replace(/-/g,'');
     if(l.status!=='Recontar') candidatos.push('CNT-HIST-'+codigoSeguro+'-'+dataSegura);
-    if(!(l.status==='Ajustar' && !l.solicitacao_ajuste)) candidatos.push('CNT-HIST-ADJ-'+codigoSeguro+'-'+dataSegura);
+    // Mesmo critério de `buildAjustarSeedsFromHistorico` (pareceValorDeStatusNaoSA) —
+    // bug real encontrado: esta função tinha uma CÓPIA da lógica antiga
+    // (`!l.solicitacao_ajuste`), sem a correção pro dado sujo tipo SA="Ajustar".
+    // Resultado: corrigir só a função de seed não bastava — o item corrigido
+    // (ex. 000.63681) era semeado corretamente e, no mesmo reimport, marcado
+    // como "órfão" por esta função (que ainda achava que ele não deveria mais
+    // ter seed) e removido em seguida — reimportar a planilha parecia "não
+    // atualizar nada", quando na real o insert e o delete aconteciam nesse
+    // mesmo ciclo, um cancelando o outro.
+    if(!(l.status==='Ajustar' && pareceValorDeStatusNaoSA(l.solicitacao_ajuste))) candidatos.push('CNT-HIST-ADJ-'+codigoSeguro+'-'+dataSegura);
   });
   return candidatos;
 }
