@@ -2411,6 +2411,77 @@ function buildAjustarSeedsFromHistorico(linhas){
     });
 }
 
+// Cliente pediu uma forma de reverter, DIRETO NO SITE (sem editar a
+// planilha), um item que a planilha trouxe como "Ajustado" mas cujo ajuste
+// foi reprovado na realidade — "quero voltar o status de Ajustado... não
+// quero fazer na planilha quero fazer no site". Reaproveita o MESMO destino
+// que qualquer "Ajustar" já tem hoje (Itens Divergentes, aguardando_analise_
+// lider) — o item volta a ser uma divergência pendente de decisão, com as
+// mesmas ações de sempre (Aprovar/Solicitar nova contagem/Recontar/Gerar SA
+// de Ajuste de novo).
+//
+// Dois efeitos, os dois precisam ter sucesso pra considerar a ação completa:
+// (1) atualiza `contagens_historico.status` pra 'Ajustar' — só pra manter o
+// registro de auditoria coerente com a decisão tomada no site; NUNCA toca no
+// arquivo original (a planilha do cliente continua mostrando "Ajustado" até
+// ele mesmo decidir corrigir lá, se quiser); (2) semeia a entrada equivalente
+// em `contagens`, mesmo formato de `buildAjustarSeedsFromHistorico` — usa
+// upsert SEM `ignoreDuplicates` de propósito (diferente da importação em
+// massa, que evita sobrescrever pra não perder uma recontagem já feita): aqui
+// é uma ação manual e deliberada de um admin, sobrescrever é o comportamento
+// certo, não um risco de duplicar/perder dado.
+async function reprovarAjusteHistoricoNaLinha(rawRow){
+  if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
+  if(!rawRow || !rawRow.produto_codigo) return {ok:false, erro:'Item do histórico inválido.'};
+  try{
+    const { error: errUpdate } = await supabaseClient
+      .from('contagens_historico')
+      .update({status: 'Ajustar'})
+      .eq('produto_codigo', rawRow.produto_codigo)
+      .eq('data', rawRow.data)
+      .eq('endereco', rawRow.endereco);
+    if(errUpdate) return {ok:false, erro:'Falha ao atualizar o histórico: '+errUpdate.message};
+
+    const codigoSeguro = String(rawRow.produto_codigo).replace(/[^A-Za-z0-9]/g,'');
+    const dataSegura = (rawRow.data||'').replace(/-/g,'');
+    const idSeguro = 'CNT-HIST-ADJ-' + codigoSeguro + '-' + dataSegura;
+    const percentual = (rawRow.saldo_sistema!=null && rawRow.saldo_sistema!==0 && rawRow.diferenca!=null)
+      ? (rawRow.diferenca / rawRow.saldo_sistema) * 100
+      : null;
+    const classificacao = rawRow.valor_divergente!=null ? classifyDivergence(Math.abs(rawRow.valor_divergente)).label : 'Divergência (importada do histórico)';
+    const seedRow = {
+      id: idSeguro,
+      inventario_id: '—',
+      produto_codigo: rawRow.produto_codigo,
+      descricao: rawRow.descricao,
+      endereco: rawRow.endereco==='-' ? null : rawRow.endereco,
+      endereco_contado: rawRow.endereco==='-' ? null : rawRow.endereco,
+      endereco_pendente_validacao: false,
+      usuario: 'Importação Histórica',
+      numero_contagem: 1,
+      contagem_anterior_id: null,
+      qtd_contada: rawRow.qtd_contada,
+      saldo_sistema: rawRow.saldo_sistema,
+      diferenca: rawRow.diferenca,
+      percentual,
+      valor_divergente: rawRow.valor_divergente!=null ? Math.abs(rawRow.valor_divergente) : 0,
+      fora_do_cache_local: true,
+      classificacao,
+      status_aprovacao: 'aguardando_analise_lider',
+      motivo: rawRow.causa,
+      tem_foto: false,
+      observacao: (rawRow.observacao ? rawRow.observacao + ' — ' : '') + 'Ajuste reprovado manualmente no site (a planilha ainda mostra "Ajustado").',
+      data: rawRow.data,
+      hora: null,
+    };
+    const { error: errSeed } = await supabaseClient.from('contagens').upsert([seedRow], {onConflict:'id'});
+    if(errSeed) return {ok:false, erro:'Histórico atualizado, mas falhou ao reabrir a divergência: '+errSeed.message};
+    return {ok:true, seedLocal: contagemRowToLocal(seedRow)};
+  }catch(err){
+    return {ok:false, erro:String(err && err.message || err)};
+  }
+}
+
 async function seedRecontarQueueFromHistorico(seeds, onProgress){
   if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
   if(seeds.length===0) return {ok:true, inseridas:0};
@@ -4035,6 +4106,23 @@ function App(){
     return res;
   }
 
+  // Reverte um item importado do histórico da planilha (status "Ajustado")
+  // DIRETO NO SITE, sem editar o arquivo original — pedido do cliente:
+  // "tenho itens como Ajustados na planilha que o ajuste foi reprovado...
+  // não quero fazer na planilha quero fazer no site". `rawRow` vem de
+  // `tip._historicoRaw` (ver historicoRowToCountLike/ConcludedCountsPanel).
+  // Ao ter sucesso, insere a divergência reaberta direto no estado local
+  // (mesmo padrão de sempre — não espera o próximo ciclo do Realtime pra
+  // aparecer em "Itens Divergentes") — se por acaso já existisse uma entrada
+  // com esse id (reprovação repetida), substitui em vez de duplicar.
+  async function reprovarAjusteHistorico(rawRow){
+    const res = await reprovarAjusteHistoricoNaLinha(rawRow);
+    if(res.ok && res.seedLocal){
+      setCounts(prev=>[res.seedLocal, ...prev.filter(c=>c.id!==res.seedLocal.id)]);
+    }
+    return res;
+  }
+
   // Marca/desmarca um item pendente (Recontagens/Itens Divergentes) como
   // urgente — líder/admin decidem quais itens furam a ordem normal da fila
   // (as duas telas já ordenam urgentes primeiro, ver `RecountsPanel`/
@@ -4502,7 +4590,7 @@ function App(){
         {view==='divergentes' && <DivergentItemsPanel counts={counts} inventories={inventories} role={role} goto={goto} onApprove={approveDivergence} onSendToDiretoria={enviarParaAprovacaoDiretoria} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} />}
         {view==='aprovacaoDiretoria' && (role==='lider'||role==='admin') && <DiretoriaApprovalPanel counts={counts} inventories={inventories} role={role} onApproveSA={aprovarAjusteDiretoria} onRejectSA={reprovarAjusteDiretoria} />}
         {view==='todasDivergencias' && <AllDivergencesPanel counts={counts} historicoConcluidas={historicoConcluidas} goto={goto} />}
-        {view==='concluidas' && <ConcludedCountsPanel counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} onDeleteCount={role==='admin' ? deleteCount : undefined} onRefresh={refreshHistoricoConcluidas} />}
+        {view==='concluidas' && <ConcludedCountsPanel counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} onDeleteCount={role==='admin' ? deleteCount : undefined} onReprovarAjusteHistorico={role==='admin' ? reprovarAjusteHistorico : undefined} onRefresh={refreshHistoricoConcluidas} />}
         {view==='recount' && flowState && <RecountFlow original={flowState} user={currentUser} onAddressProposed={addAddressProposal} onFinish={(c)=>{registerFinishedCount(c); goto('recounts');}} operadorVeSaldo={operadorVeSaldo} />}
         {view==='dashboard' && hasAccess(currentUser,'dashboard') && <Dashboard counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} historicoParaTendencia={historicoParaTendencia} goto={goto} />}
         {view==='relatorios' && hasAccess(currentUser,'relatorios') && <ReportsScreen counts={counts} inventories={inventories} currentUser={currentUser} sendHistory={reportSendHistory} onLogSend={logReportSend} role={role} onHistoricoImportado={refreshHistoricoConcluidas} />}
@@ -8581,6 +8669,13 @@ function historicoRowToCountLike(h){
     _statusDisplay: display,
     _fromHistorico: true,
     _statusOriginal: statusNorm,
+    // Guarda a linha CRUA (produto_codigo/data/endereco tal como está em
+    // `contagens_historico`, sem a reconstrução de código feita acima) — é
+    // isso que `reprovarAjusteHistoricoNaLinha` precisa pra bater exatamente
+    // na chave única (produto_codigo, data, endereco) da tabela na hora de
+    // atualizar o status; `productCode` (acima) já vem corrigido pra
+    // exibição e pode não bater com o valor cru gravado no banco.
+    _historicoRaw: h,
   };
 }
 
@@ -8602,12 +8697,19 @@ function historicoRowToConcludedChain(h){
   return { chaveId: tip.id, tip, rodadas: [tip], houveAjuste };
 }
 
-function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDeleteCount, onRefresh}){
+function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDeleteCount, onReprovarAjusteHistorico, onRefresh}){
   const [busca, setBusca] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState(null); // id da RODADA (r.id), não da cadeia
   const [excluindo, setExcluindo] = useState(false);
   const [erroExclusao, setErroExclusao] = useState('');
   const [atualizando, setAtualizando] = useState(false);
+  // "Reprovar ajuste" — reverte um item importado como "Ajustado" direto no
+  // site, sem editar a planilha (ver reprovarAjusteHistoricoNaLinha em App()).
+  // Estado por CADEIA (cd.chaveId), mesmo padrão de confirmação inline já
+  // usado pra excluir uma rodada.
+  const [confirmReprovarId, setConfirmReprovarId] = useState(null);
+  const [reprovando, setReprovando] = useState(false);
+  const [erroReprovar, setErroReprovar] = useState('');
   // Mesmo padrão de toggle "Detalhes"/"Ocultar" já usado em RecontagensPanel
   // (pedido do cliente: padronizar) — troca a navegação pra uma tela própria
   // por uma expansão inline dentro do próprio card, sem sair da lista.
@@ -8646,6 +8748,22 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
       setConfirmDeleteId(null);
     } else {
       setErroExclusao((res && res.erro) || 'Não foi possível excluir — tente novamente.');
+    }
+  }
+
+  async function handleConfirmReprovar(chaveId, historicoRaw){
+    setReprovando(true);
+    setErroReprovar('');
+    const res = await onReprovarAjusteHistorico(historicoRaw);
+    setReprovando(false);
+    if(res && res.ok){
+      setConfirmReprovarId(null);
+      // Tira o item de "Contagens Concluídas" na hora — sem isso, ficaria
+      // duplicado (aqui como "Ajustado" e em "Itens Divergentes" como
+      // pendente) até o próximo refresh manual/reload.
+      if(onRefresh) onRefresh();
+    } else {
+      setErroReprovar((res && res.erro) || 'Não foi possível reprovar — tente novamente.');
     }
   }
 
@@ -8775,8 +8893,23 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
                 </div>
                 <div className="count-card-actions-col" style={{width:'auto'}}>
                   <button className="btn btn-outline" onClick={()=>toggleDetalhes(cd.chaveId)}><Ic>📋</Ic> {aberto ? 'Ocultar' : 'Detalhes'}</button>
+                  {onReprovarAjusteHistorico && tip._fromHistorico && tip._statusOriginal==='Ajustado' && (
+                    <button className="btn btn-danger" onClick={()=>{ setConfirmReprovarId(cd.chaveId); setErroReprovar(''); }}><Ic>⛔</Ic> Reprovar ajuste</button>
+                  )}
                 </div>
               </div>
+              {confirmReprovarId===cd.chaveId && (
+                <div style={{padding:'0 16px 16px'}}>
+                  <div className="divergence-alert" style={{marginBottom:10}}>
+                    <Ic>⚠</Ic><span>Reprovar o ajuste de {tip.productCode}? O item sai de "Contagens Concluídas" e volta pra "Itens Divergentes" pra uma nova decisão — sem alterar a planilha original, só o registro no site.</span>
+                  </div>
+                  <div className="btn-row">
+                    <button className="btn btn-secondary" disabled={reprovando} onClick={()=>setConfirmReprovarId(null)}>Cancelar</button>
+                    <button className="btn btn-danger" disabled={reprovando} onClick={()=>handleConfirmReprovar(cd.chaveId, tip._historicoRaw)}>{reprovando ? 'Reprovando…' : 'Confirmar reprovação'}</button>
+                  </div>
+                  {erroReprovar && <div style={{fontSize:11.5,color:'var(--danger)',marginTop:8}}>{erroReprovar}</div>}
+                </div>
+              )}
               {aberto && (
                 // Painel de auditoria: mostra TODA informação disponível de
                 // cada rodada, não só um resumo — pedido explícito do

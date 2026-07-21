@@ -7069,3 +7069,65 @@ pedindo 50 por página com opção de escolher outra quantidade.
   toca essas 4 telas sem quebrar nada. **Verificação visual/de performance de ponta a
   ponta (o delay realmente sumir) fica a cargo do cliente** — mesma limitação de
   sempre (login exige Supabase Auth real, não simulável no sandbox sem rede).
+
+## "Reprovar ajuste" em Contagens Concluídas — reverte um item "Ajustado" direto no site
+
+Cliente subiu a planilha e reportou "nada mudou", explicando o pedido real por trás da
+conversa anterior (que eu tinha entendido errado): "eu tenho itens como Ajustados na
+planilha que o ajuste foi reprovado. Eu quero voltar o status de Ajustado, mas não quero
+fazer na planilha, quero fazer no site." Confirmado o comportamento exato antes de
+implementar: o item sai de "Contagens Concluídas", é marcado como "Ajustar" no banco (sem
+tocar o arquivo Excel original) e aparece imediatamente em "Itens Divergentes" pra uma
+nova decisão — reaproveitando 100% as ações que essa tela já tem (Aprovar/Solicitar nova
+contagem/Recontar/Gerar SA de Ajuste de novo).
+
+- **`historicoRowToCountLike`** ganhou `_historicoRaw: h` — guarda a linha CRUA de
+  `contagens_historico` (código/data/endereço tal como estão no banco, sem a
+  reconstrução de código aplicada só pra exibição) — precisa disso pra montar a
+  cláusula `WHERE` exata (`produto_codigo`/`data`/`endereco`, a mesma chave única da
+  tabela) na hora de atualizar o status.
+- **`reprovarAjusteHistoricoNaLinha(rawRow)`** (função nova, perto de
+  `buildAjustarSeedsFromHistorico`) — dois efeitos, os dois precisam ter sucesso:
+  1. `update contagens_historico set status='Ajustar' where produto_codigo=... and
+     data=... and endereco=...` — só corrige o registro de auditoria pra bater com a
+     decisão tomada no site; a planilha do cliente nunca é tocada.
+  2. Semeia (via `upsert`, mesmo formato de `buildAjustarSeedsFromHistorico`, id
+     `CNT-HIST-ADJ-<código>-<data>`) a divergência equivalente em `contagens`, com
+     `status_aprovacao:'aguardando_analise_lider'` — é isso que faz o item aparecer na
+     hora em "Itens Divergentes". **Sem `ignoreDuplicates`, de propósito** — diferente
+     do upsert em massa da importação (que evita sobrescrever pra não perder uma
+     recontagem já feita nesse meio-tempo): aqui é uma ação manual e deliberada de um
+     admin clicando um botão, sobrescrever é o comportamento certo.
+- **`reprovarAjusteHistorico(rawRow)`** (`App()`, wrapper fino) — chama a função acima
+  e, com sucesso, injeta o item reaberto direto no estado local (`setCounts`) — não
+  espera o próximo ciclo do Realtime pra aparecer em "Itens Divergentes", mesmo padrão
+  já usado nas outras ações de líder/admin.
+- **Botão "Reprovar ajuste"** (`ConcludedCountsPanel`, coluna de ações ao lado de
+  "Detalhes") — só aparece quando `onReprovarAjusteHistorico` existe (prop passada só
+  pra admin, mesmo padrão de `onDeleteCount`) **e** o item é `tip._fromHistorico &&
+  tip._statusOriginal==='Ajustado'` — não aparece pra um "Ajustado" que já veio de uma
+  aprovação AO VIVO no app (`ajuste_aprovado_diretoria`), já que esse fluxo já tem seu
+  próprio "Reprovar" na tela "Aprovação de Ajustes" antes de chegar em Concluídas.
+  Confirmação inline (mesmo padrão de "Excluir contagem" já usado no resto do app) antes
+  de executar. Depois de confirmado com sucesso, chama `onRefresh` (a mesma função que
+  já busca `historicoConcluidas` de novo) pra tirar o item da lista na hora — sem isso
+  ficaria duplicado (uma vez "Ajustado" aqui, outra vez pendente em Itens Divergentes)
+  até o próximo refresh manual/reload.
+- Testado via harness real (jsdom + react-dom/client + `act()`, mock de query builder
+  do Supabase registrando as chamadas feitas): `reprovarAjusteHistoricoNaLinha`
+  isolado — confirma o UPDATE em `contagens_historico` com o status certo e os filtros
+  certos, o UPSERT em `contagens` com o id determinístico certo e SEM
+  `ignoreDuplicates`, e o objeto `seedLocal` retornado já no formato camelCase certo
+  (via `contagemRowToLocal`); `ConcludedCountsPanel` — botão aparece só no item do
+  histórico "Ajustado" (não no item ao vivo `ajuste_aprovado_diretoria`, mesmo os dois
+  tendo o mesmo badge "Ajustado" visível), a confirmação mostra o código certo,
+  confirmar chama `onReprovarAjusteHistorico` com a linha crua certa e depois
+  `onRefresh`; sem a prop (perfil não-admin), o botão nunca aparece em nenhum item.
+  Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos
+  (577/577, sem mudança — nenhuma classe CSS nova, reaproveita `.btn-danger`/
+  `.divergence-alert`/`.btn-row` já existentes). Rodei de novo a suíte de regressão
+  disponível (Concluídas, Diretoria, KPIs da Home, itens do inventário, rota) sem
+  quebrar nada. **Verificação contra o Supabase real fica a cargo do cliente** — mesma
+  limitação de sempre (sandbox sem rede) — não precisa rodar SQL novo, só usa colunas/
+  policies que já existem (`contagens_historico` já tem policy de escrita ampla,
+  `contagens` já tem INSERT/UPDATE liberados desde a migração pro Supabase Auth).
