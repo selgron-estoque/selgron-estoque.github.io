@@ -2432,6 +2432,86 @@ async function seedRecontarQueueFromHistorico(seeds, onProgress){
   }
 }
 
+// Cliente reimportou a planilha depois de corrigir alguns Status na fonte
+// (ex: um item que estava "Recontar"/"Ajustar" foi resolvido pra "OK"/"Sem
+// Ajuste"/"Ajustado") e o site continuou mostrando o item como pendente —
+// causa raiz: `seedRecontarQueueFromHistorico` usa `upsert(...,
+// {ignoreDuplicates:true})`, que é ON CONFLICT DO NOTHING — reimportar com o
+// Status novo simplesmente para de GERAR aquele seed (o filtro de
+// buildRecontarSeedsFromHistorico/buildAjustarSeedsFromHistorico já não bate
+// mais), mas isso nunca REMOVE o seed antigo que já tinha sido gravado numa
+// importação anterior — ele fica órfão em `contagens`, preso pra sempre em
+// "Recontagens Pendentes"/"Itens Divergentes" com o status velho.
+//
+// `computeIdsSeedsCandidatos(linhas)` calcula, pra cada linha do arquivo
+// ATUAL, o id que o seed "Recontar" e o id que o seed "Ajustar" TERIAM pra
+// aquele código+data — e marca como candidato à remoção sempre que o Status
+// atual da linha não é mais o que geraria aquele seed. Isso gera candidato
+// pra praticamente toda linha que não é mais Recontar/Ajustar (a maioria),
+// mas só é candidato de verdade — o passo seguinte confere no banco se esse
+// id EXISTE mesmo antes de decidir remover.
+function computeIdsSeedsCandidatos(linhas){
+  const candidatos = [];
+  linhas.forEach(l=>{
+    if(!l.produto_codigo || !l.data) return;
+    const codigoSeguro = String(l.produto_codigo).replace(/[^A-Za-z0-9]/g,'');
+    const dataSegura = l.data.replace(/-/g,'');
+    if(l.status!=='Recontar') candidatos.push('CNT-HIST-'+codigoSeguro+'-'+dataSegura);
+    if(!(l.status==='Ajustar' && !l.solicitacao_ajuste)) candidatos.push('CNT-HIST-ADJ-'+codigoSeguro+'-'+dataSegura);
+  });
+  return candidatos;
+}
+
+// Remove da fila ao vivo (`contagens`) os seeds que ficaram órfãos depois de
+// uma reimportação com Status corrigido. Só remove um id quando:
+// (a) o registro realmente existe e ainda é o seed original intocado
+//     (`usuario='Importação Histórica'`, `numero_contagem=1` — se alguém já
+//     mudou isso à mão não é mais "só um seed importado");
+// (b) NENHUMA rodada seguinte foi registrada em cima dele
+//     (`contagem_anterior_id` de outra linha apontando pra ele) — isso
+//     evita apagar o histórico de uma recontagem que já aconteceu de
+//     verdade no app nesse meio-tempo, o que perderia dado real.
+// `contagens_historico` (a tabela de auditoria) nunca é tocada aqui — só
+// reflete o arquivo via upsert normal (`importHistoricoContagensToSupabase`);
+// esta função só limpa o efeito colateral na tabela AO VIVO.
+async function limparSeedsHistoricoDesatualizados(linhas, onProgress){
+  if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.', removidas:0};
+  const candidatos = computeIdsSeedsCandidatos(linhas);
+  if(candidatos.length===0) return {ok:true, removidas:0};
+  try{
+    const TAMANHO_LOTE = 300;
+    let removidas = 0;
+    for(let i=0; i<candidatos.length; i+=TAMANHO_LOTE){
+      const lote = candidatos.slice(i, i+TAMANHO_LOTE);
+      const { data: existentes, error: err1 } = await supabaseClient
+        .from('contagens')
+        .select('id')
+        .in('id', lote)
+        .eq('usuario', 'Importação Histórica')
+        .eq('numero_contagem', 1);
+      if(err1) return {ok:false, erro:'Falha ao verificar seeds existentes: '+err1.message, removidas};
+      if(!existentes || existentes.length===0){ if(onProgress) onProgress(removidas, candidatos.length); continue; }
+      const idsExistentes = existentes.map(r=>r.id);
+      const { data: referenciados, error: err2 } = await supabaseClient
+        .from('contagens')
+        .select('contagem_anterior_id')
+        .in('contagem_anterior_id', idsExistentes);
+      if(err2) return {ok:false, erro:'Falha ao verificar recontagens já feitas: '+err2.message, removidas};
+      const idsReferenciados = new Set((referenciados||[]).map(r=>r.contagem_anterior_id));
+      const idsSeguros = idsExistentes.filter(id=>!idsReferenciados.has(id));
+      if(idsSeguros.length>0){
+        const { error: err3 } = await supabaseClient.from('contagens').delete().in('id', idsSeguros);
+        if(err3) return {ok:false, erro:'Falha ao remover seeds desatualizados: '+err3.message, removidas};
+        removidas += idsSeguros.length;
+      }
+      if(onProgress) onProgress(removidas, candidatos.length);
+    }
+    return {ok:true, removidas};
+  }catch(err){
+    return {ok:false, erro:String(err && err.message || err), removidas:0};
+  }
+}
+
 // Converte uma linha vinda do Supabase (RPC ou consulta direta) pro MESMO
 // formato de objeto "produto" que o app sempre usou (antes vindo do cache
 // local RAW_SB2_PRODUCTS/PRODUCTS, removido — ver CLAUDE.md "cache local
@@ -10551,8 +10631,22 @@ function HistoricoImportPanel({onImported}){
     const seedsRecontar = buildRecontarSeedsFromHistorico(parseResult.linhas);
     const seedsAjustar = buildAjustarSeedsFromHistorico(parseResult.linhas);
     const seedRes = await seedRecontarQueueFromHistorico([...seedsRecontar, ...seedsAjustar]);
+    // Depois de semear os NOVOS itens ainda pendentes, limpa os que ficaram
+    // órfãos — item que estava "Recontar"/"Ajustar" numa importação anterior
+    // e foi resolvido na planilha atual precisa sair de "Recontagens
+    // Pendentes"/"Itens Divergentes", senão o site continua mostrando o
+    // status velho mesmo com a planilha já corrigida.
+    const limpezaRes = seedRes.ok
+      ? await limparSeedsHistoricoDesatualizados(parseResult.linhas)
+      : {ok:true, removidas:0}; // se a semeadura falhou, não faz sentido tentar limpar também
     const resFinal = seedRes.ok
-      ? {...res, recontarEnfileiradas: seedsRecontar.length, ajustarEnfileirados: seedsAjustar.length}
+      ? {
+          ...res,
+          recontarEnfileiradas: seedsRecontar.length,
+          ajustarEnfileirados: seedsAjustar.length,
+          seedsRemovidos: limpezaRes.ok ? limpezaRes.removidas : undefined,
+          erroLimpezaSeeds: limpezaRes.ok ? undefined : limpezaRes.erro,
+        }
       : {...res, erroFilaRecontagem: seedRes.erro};
     setResultado(resFinal);
     setStatus('done');
@@ -10624,7 +10718,11 @@ function HistoricoImportPanel({onImported}){
           Histórico importado: {resultado.inseridas} linhas gravadas (ou atualizadas) no Supabase.
           {resultado.recontarEnfileiradas!=null && <> {resultado.recontarEnfileiradas} itens entraram na fila de recontagem.</>}
           {resultado.ajustarEnfileirados!=null && <> {resultado.ajustarEnfileirados} itens entraram em Itens Divergentes.</>}
+          {resultado.seedsRemovidos!=null && resultado.seedsRemovidos>0 && (
+            <> {resultado.seedsRemovidos} item(ns) que já tinham status desatualizado (ex: era "Recontar"/"Ajustar" e virou "OK"/"Sem Ajuste"/"Ajustado" na planilha) foram removidos de Recontagens/Itens Divergentes.</>
+          )}
           {resultado.erroFilaRecontagem && <><br/><Ic>⚠</Ic> Histórico salvo, mas falhou ao enfileirar recontagens/ajustes: {resultado.erroFilaRecontagem}</>}
+          {resultado.erroLimpezaSeeds && <><br/><Ic>⚠</Ic> Histórico salvo, mas falhou ao limpar itens com status desatualizado: {resultado.erroLimpezaSeeds}</>}
         </div>
       )}
       {resultado && !resultado.ok && (

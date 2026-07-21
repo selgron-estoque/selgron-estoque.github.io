@@ -6901,3 +6901,73 @@ importado" e a faixa de severidade por valor.
   inventário, rota) sem quebrar nada. **Verificação visual/funcional de ponta a ponta
   fica a cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth
   real, não simulável no sandbox sem rede).
+
+## Bug real: reimportar a planilha com Status corrigido não atualizava o site
+
+Cliente reportou "não deu certo, precisa corrigir os status" depois de uma 1ª tentativa
+de reimportação, e em seguida esclareceu: "eu atualizei alguns status na planilha,
+precisa subir a planilha e ajustar o site conforme planilha" — ou seja, ele corrigiu
+manualmente alguns Status na planilha master (ex: um item que estava "Recontar" ou
+"Ajustar" numa importação anterior foi resolvido pra "OK"/"Sem Ajuste"/"Ajustado") e
+esperava que reimportar o arquivo atualizado corrigisse o que já estava errado no app —
+o que não acontecia.
+
+- **Causa raiz**: `seedRecontarQueueFromHistorico` grava os itens "Recontar"/"Ajustar"
+  na tabela AO VIVO (`contagens`) via `upsert(..., {onConflict:'id', ignoreDuplicates:
+  true})` — ou seja, `ON CONFLICT DO NOTHING`. Isso é ótimo pra evitar duplicar o mesmo
+  item ao reimportar o arquivo sem mudança nele, mas tem um efeito colateral nunca
+  corrigido até agora: se o Status de uma linha MUDA (deixa de ser "Recontar"/"Ajustar"),
+  o filtro de `buildRecontarSeedsFromHistorico`/`buildAjustarSeedsFromHistorico` para de
+  GERAR aquele seed — mas isso nunca REMOVE o seed antigo que já tinha sido gravado numa
+  importação anterior. O item ficava órfão em `contagens`, preso pra sempre em
+  "Recontagens Pendentes"/"Itens Divergentes" com o status velho, mesmo a planilha já
+  mostrando ele resolvido. `contagens_historico` (a tabela de auditoria) em si sempre
+  atualizava certo, via UPSERT de verdade na chave `(produto_codigo, data, endereco)` —
+  o problema era só na tabela AO VIVO, que alimenta as telas de pendência.
+- **`computeIdsSeedsCandidatos(linhas)`** (nova, perto de `seedRecontarQueueFromHistorico`)
+  — calcula, pra CADA linha do arquivo atual, o id que o seed "Recontar" e o id que o
+  seed "Ajustar" TERIAM pra aquele código+data (mesmo formato de id determinístico já
+  usado nas duas funções de seed) — marca como candidato à remoção sempre que o Status
+  ATUAL da linha não é mais o que geraria aquele seed (ex: linha agora "OK" → o id de
+  "Recontar" pra esse código+data vira candidato). Gera candidato pra praticamente toda
+  linha que não é mais Recontar/Ajustar (a maioria de um arquivo já maduro), mas isso é
+  só o 1º filtro — o passo seguinte confere no banco se o id existe de verdade antes de
+  decidir remover.
+- **`limparSeedsHistoricoDesatualizados(linhas, onProgress)`** (nova, mesmo lugar) — só
+  remove um id candidato quando **as duas condições** batem: (a) o registro existe e
+  ainda é o seed original intocado (`usuario='Importação Histórica'`, `numero_contagem=1`
+  — se alguém já mexeu nisso não é mais "só um seed importado" sem tratamento); (b)
+  **nenhuma rodada seguinte foi registrada em cima dele** (nenhuma linha de `contagens`
+  tem `contagem_anterior_id` apontando pra esse id) — essa 2ª checagem é crítica: sem
+  ela, se um operador JÁ tivesse recontado esse item de verdade no app entre uma
+  importação e outra, apagar o seed original quebraria a cadeia de histórico dessa
+  recontagem real (perderia a "1ª contagem" que a recontagem aponta de volta). Batches de
+  300 ids por vez (mesmo padrão de lotes já usado em toda importação deste projeto),
+  2 consultas por lote (existência + referência) + 1 delete só dos ids que sobrarem
+  seguros.
+- **`HistoricoImportPanel.handleConfirmar`** passou a chamar
+  `limparSeedsHistoricoDesatualizados(parseResult.linhas)` logo depois de semear os
+  itens novos (`seedRecontarQueueFromHistorico`) — ordem não importa de verdade (um
+  código+data não pode estar em duas categorias ao mesmo tempo), mas semear primeiro e
+  limpar depois é a ordem mais intuitiva de ler. O banner de sucesso ganhou uma linha
+  nova ("N item(ns) que já tinham status desatualizado... foram removidos de
+  Recontagens/Itens Divergentes") e um aviso de erro próprio
+  (`erroLimpezaSeeds`) — mesmo padrão de transparência já usado nos outros contadores
+  desse painel.
+- **Nenhuma mudança de schema/RLS necessária** — `contagens` já tinha policy de
+  UPDATE/DELETE pra `authenticated` desde a migração pro Supabase Auth (RLS endurecida),
+  só o código nunca tinha usado DELETE pra esse caso específico antes.
+- Testado via harness real (mock de query builder encadeável do Supabase — `select`/
+  `delete`/`in`/`eq` — simulando um banco em memória, técnica nova pra este tipo de
+  função porque `limparSeedsHistoricoDesatualizados` chama `supabaseClient` direto, não
+  recebe como prop): 5 cenários num só teste — item ainda "Recontar" (não tocado), item
+  que virou "OK" (removido), item que virou "Ajustado" (removido, prefixo `ADJ`), item
+  que virou "OK" mas JÁ tinha uma recontagem real registrada em cima dele (protegido,
+  não removido, e a recontagem real continua intacta), e um item novo que nunca teve
+  seed nenhum (candidato gerado mas não existe no banco, no-op sem erro). Rodei de novo
+  a suíte de regressão que toca contagens/histórico (Concluídas, Diretoria, KPIs da
+  Home, itens do inventário, rota) sem quebrar nada. **Verificação contra o Supabase
+  real fica a cargo do cliente** — mesma limitação de sempre (sandbox sem rede) — o
+  próximo passo é ele reimportar a planilha corrigida e confirmar que os itens
+  resolvidos saem de "Recontagens"/"Itens Divergentes" e aparecem em "Contagens
+  Concluídas" com o badge certo (Ajustado/Sem Ajuste/SALDO OK, ver seção anterior).
