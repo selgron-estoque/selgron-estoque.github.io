@@ -6837,3 +6837,67 @@ DIVERGIU: "Contado em verde são itens sem divergência. Contado em vermelho e c
   classe CSS nova, só o `status="danger"` já existente no componente `StatusTag`).
   **Verificação visual fica a cargo do cliente** — mesma limitação de sempre (login
   exige Supabase Auth real, não simulável no sandbox sem rede).
+
+## "Contagens Concluídas" ganha badges pros status do histórico importado (SA, SALDO OK, Sem Ajuste destacado)
+
+Cliente detalhou como cada Status da planilha `BD_Contagens` (importação do histórico,
+ver "Padrão de planilha do cliente" no histórico acima) deveria se refletir na tela —
+até aqui, os badges "Ajustado"/"Sem Ajuste" (criados na rodada da "SA de Ajuste +
+aprovação da Diretoria") só existiam pra decisão AO VIVO do app
+(`tip.statusAprovacao`), que é sempre `null` numa linha vinda do histórico — ou seja,
+um item importado da planilha com Status "OK"/"Sem Ajuste"/"Ajustado" aparecia em
+"Contagens Concluídas" sem NENHUM badge de status, só o chip cinza "histórico
+importado" e a faixa de severidade por valor.
+
+- **"Ajustados" (histórico) ganham o mesmo badge verde "Ajustado · SA {número}"** que
+  a contagem ao vivo já tinha — `ehAjustado` passou a checar
+  `tip.statusAprovacao==='ajuste_aprovado_diretoria' || (tip._fromHistorico &&
+  tip._statusOriginal==='Ajustado')`. O número da SA já vinha carregado em
+  `tip.solicitacaoAjuste` desde que `historicoRowToCountLike` foi escrita (campo
+  `solicitacao_ajuste` da planilha) — só faltava um lugar mostrando esse badge pra
+  linha de histórico, não precisou de dado novo.
+- **Busca por nº de SA**: o campo de busca de "Contagens Concluídas" (`SearchWithScanner`)
+  só filtrava por código/descrição — ganhou `(cd.tip.solicitacaoAjuste||'').toLowerCase()
+  .includes(buscaNorm)` no mesmo filtro, e o placeholder mudou de "Código ou descrição
+  do material" pra "Código, descrição ou nº da SA", deixando a nova capacidade
+  descobrível. Escopado só a esta tela — as outras (Recontagens/Itens Divergentes) não
+  lidam com item já resolvido com SA, então não ganharam essa busca.
+- **Itens "Ajustar" (histórico) SEM SA continuam indo pra "Itens Divergentes"** — já
+  era o comportamento (`buildAjustarSeedsFromHistorico`, confirmado antes que a
+  planilha real nunca traz SA nesses casos) — só formalizado com um guard explícito
+  (`!l.solicitacao_ajuste`) no filtro, defensivo/pra documentar a regra em código, não
+  muda nada observável hoje.
+- **Itens "Recontar" continuam com o fluxo já definido** (`buildRecontarSeedsFromHistorico`,
+  sem mudança) — vão pra "Recontagens Pendentes" via `aguardando_segunda`.
+- **"OK" (histórico) ganha badge verde novo "SALDO OK"** (`ehSaldoOk`,
+  `tip._fromHistorico && tip._statusOriginal==='OK'`) — deixa explícito que o item foi
+  contado e NÃO teve divergência nenhuma (diferente de "Sem Ajuste", que pode ter uma
+  diferença pequena dentro da tolerância). Escopado só ao histórico — uma contagem AO
+  VIVO sem divergência nenhuma continua sem badge extra, decisão já tomada antes
+  ("itens sem divergência nenhuma não ganha badge extra nenhum") e não revista aqui.
+- **"Sem Ajuste" (histórico) ganha badge + card com borda amarela discreta** —
+  `ehSemAjuste` passou a incluir também `tip._fromHistorico && tip._statusOriginal===
+  'Sem Ajuste'` (antes só cobria o caso ao vivo, `statusAprovacao==='aprovado_lider'`
+  com divergência real). Além do badge (já existia), o card inteiro ganha a classe
+  `.count-card.sem-ajuste-destaque` — `box-shadow:0 0 0 2px var(--warn)` — mesma
+  técnica de anel já usada em `.count-card.urgente`/`.count-card.reprovado-diretoria`,
+  só com 2px (não 3px) e cor âmbar em vez de vermelho/roxo, pedido explícito do cliente
+  ("card discreto... sem chamar muita atenção", ao contrário dos outros dois anéis, que
+  são pra CHAMAR atenção). Escopado só ao histórico, de propósito — a contagem ao vivo
+  "Sem Ajuste" (`aprovado_lider`) continua só com o badge, sem borda, mesma decisão já
+  tomada antes ("leve destaque" só quis dizer o badge, não um anel no card).
+- Testado via harness real (jsdom + react-dom/client + `act()`, mesma técnica de
+  sempre): 3 linhas de histórico (OK/Sem Ajuste/Ajustado com SA) + 1 contagem ao vivo
+  já ajustada (controle, pra confirmar que o badge antigo continua funcionando) —
+  confirmei os 4 badges certos, que só o card "Sem Ajuste" ganha a classe
+  `sem-ajuste-destaque` (os outros dois não), que o campo de busca tem o placeholder
+  novo, e que buscar por "SA-2026-00123" filtra pra mostrar só o item daquela SA
+  (nem os outros dois do histórico, nem o item ao vivo com SA diferente). Testei
+  também `buildAjustarSeedsFromHistorico` isoladamente: duas linhas "Ajustar", uma sem
+  SA e outra com SA — só a sem SA vira seed pra "Itens Divergentes". Transpile Babel do
+  arquivo inteiro e balanceamento de chaves do CSS conferidos (577/577 — só a 1 regra
+  nova, `.count-card.sem-ajuste-destaque`). Rodei de novo a suíte de regressão que toca
+  `ConcludedCountsPanel`/fluxo de contagem (Diretoria, KPIs da Home, itens do
+  inventário, rota) sem quebrar nada. **Verificação visual/funcional de ponta a ponta
+  fica a cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth
+  real, não simulável no sandbox sem rede).

@@ -203,6 +203,13 @@
      caso (roxo, já usado em outras partes do app com outro sentido — nunca em
      estado de contagem), pra não se confundir com a rejeição do líder (vermelho). */
   .count-card.reprovado-diretoria{box-shadow:0 0 0 3px #7B3FC4, 0 1px 3px rgba(0,0,0,.04);}
+  /* Item "Sem Ajuste" vindo do histórico importado (BD_Contagens) — pedido
+     explícito do cliente: "card discreto e uma borda na cor amarela... sem
+     chamar muita atenção". Mesma técnica de anel do "urgente"/"reprovado-
+     diretoria" acima, mas 2px (não 3px) e cor âmbar (`--warn`, a mesma já
+     usada em "Pendente" no resto do app) — deliberadamente mais sutil que os
+     outros dois anéis, que são pra CHAMAR atenção; este é o oposto. */
+  .count-card.sem-ajuste-destaque{box-shadow:0 0 0 2px var(--warn), 0 1px 3px rgba(0,0,0,.04);}
   .count-card-bar{width:5px;flex-shrink:0;}
   .count-card-body{flex:1;min-width:0;padding:16px 20px;display:flex;flex-direction:column;gap:10px;}
   .count-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
@@ -2359,7 +2366,14 @@ function buildRecontarSeedsFromHistorico(linhas){
 // um Status só, mas mantém os dois espaços de id claramente distintos).
 function buildAjustarSeedsFromHistorico(linhas){
   return linhas
-    .filter(l => l.status==='Ajustar' && l.produto_codigo && l.data)
+    // "!l.solicitacao_ajuste" — pedido explícito do cliente: item "Ajustar" que
+    // JÁ tem uma SA preenchida na planilha não deveria mais entrar na fila de
+    // decisão do líder (a SA já existe, então já passou por essa etapa em algum
+    // lugar) — só o "Ajustar" SEM SA é que representa uma divergência ainda sem
+    // decisão nenhuma. Na prática, o cliente confirmou que linhas "Ajustar" nunca
+    // trazem SA na planilha real — este guard é defensivo/futuro, não muda o
+    // comportamento observado até aqui.
+    .filter(l => l.status==='Ajustar' && l.produto_codigo && l.data && !l.solicitacao_ajuste)
     .map(l => {
       const percentual = (l.saldo_sistema!=null && l.saldo_sistema!==0 && l.diferenca!=null)
         ? (l.diferenca / l.saldo_sistema) * 100
@@ -8504,9 +8518,12 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
     cadeias.filter(cd => cd.tip.data && cd.tip.data>=dataInicioStr && cd.tip.data<=dataFimStr),
   [cadeias, dataInicioStr, dataFimStr]);
 
+  // Busca também por nº de SA — pedido explícito do cliente ("possibilitando
+  // pesquisas por uma SA específica"), pra achar rápido em qual documento um
+  // ajuste específico foi feito.
   const buscaNorm = busca.trim().toLowerCase();
   const cadeiasPorBusca = buscaNorm
-    ? cadeiasNoPeriodo.filter(cd => cd.tip.productCode.toLowerCase().includes(buscaNorm) || (cd.tip.descricao||'').toLowerCase().includes(buscaNorm))
+    ? cadeiasNoPeriodo.filter(cd => cd.tip.productCode.toLowerCase().includes(buscaNorm) || (cd.tip.descricao||'').toLowerCase().includes(buscaNorm) || (cd.tip.solicitacaoAjuste||'').toLowerCase().includes(buscaNorm))
     : cadeiasNoPeriodo;
 
   const [severidade, setSeveridade] = useState('todos');
@@ -8525,7 +8542,7 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
         subtitle="Selecione o período para filtrar as contagens concluídas"
       />
 
-      <SearchWithScanner value={busca} onChange={setBusca} placeholder="Código ou descrição do material" />
+      <SearchWithScanner value={busca} onChange={setBusca} placeholder="Código, descrição ou nº da SA" />
 
       <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
         <SeverityFilterRow counts={cadeiasPorBusca.map(cd=>cd.tip)} value={severidade} onChange={setSeveridade} />
@@ -8543,8 +8560,18 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
         const tip = cd.tip;
         const sev = classifySeverity4(severidadeDe(tip));
         const aberto = detalhesAbertosIds.has(cd.chaveId);
+        // "Ajustado"/"Sem Ajuste"/"OK" podem vir de dois lugares: uma decisão AO
+        // VIVO no app (statusAprovacao) ou uma linha JÁ resolvida importada da
+        // planilha antiga (tip._fromHistorico + tip._statusOriginal, que guarda
+        // o vocabulário cru da planilha — "OK"/"Sem Ajuste"/"Ajustado"). Os dois
+        // casos precisam mostrar o mesmo badge, senão um item do histórico
+        // aparece sem nenhuma indicação de status (statusAprovacao é sempre
+        // `null` pra linha de histórico).
+        const ehAjustado = tip.statusAprovacao==='ajuste_aprovado_diretoria' || (tip._fromHistorico && tip._statusOriginal==='Ajustado');
+        const ehSemAjuste = (tip.statusAprovacao==='aprovado_lider' && tip.diferenca!=null && tip.diferenca!==0) || (tip._fromHistorico && tip._statusOriginal==='Sem Ajuste');
+        const ehSaldoOk = tip._fromHistorico && tip._statusOriginal==='OK';
         return (
-          <div key={cd.chaveId} className="count-card">
+          <div key={cd.chaveId} className={"count-card"+(ehSemAjuste ? ' sem-ajuste-destaque' : '')}>
             <div className="count-card-bar" style={{background:sev.color}}></div>
             <div className="count-card-body">
               <div className="count-card-head">
@@ -8554,16 +8581,24 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
                   {tip._fromHistorico && <span className="category-chip">histórico importado</span>}
                   {/* Fluxo de SA de Ajuste/Diretoria (ver App()) — "Ajustado" é um
                       resultado positivo e concreto (Diretoria aprovou, ajuste
-                      efetivado), badge verde; "Sem Ajuste" é uma decisão sem
-                      nenhuma ação sobre o estoque, badge neutro/leve (pedido
-                      explícito do cliente — destaque LEVE, diferente do roxo
-                      forte usado pro item reprovado em RecountsPanel). Item sem
-                      divergência nenhuma não ganha badge extra nenhum. */}
-                  {tip.statusAprovacao==='ajuste_aprovado_diretoria' && (
+                      efetivado ou já constava assim na planilha antiga), badge
+                      verde com o nº da SA quando disponível (pedido explícito do
+                      cliente — "permitindo identificar em qual SA o ajuste foi
+                      realizado"); "Sem Ajuste" é uma decisão sem nenhuma ação
+                      sobre o estoque, badge neutro/leve + borda amarela discreta
+                      no card inteiro (pedido explícito — "sem chamar muita
+                      atenção"); "SALDO OK" (só histórico importado — a contagem
+                      ao vivo já não ganha badge nenhum quando bate exato, decisão
+                      anterior mantida) deixa explícito que o item foi contado e
+                      não teve divergência nenhuma, não só "sem ajuste". */}
+                  {ehAjustado && (
                     <span className="category-chip" style={{background:'var(--ok-bg)',color:'var(--ok)'}}>Ajustado{tip.solicitacaoAjuste ? (' · SA '+tip.solicitacaoAjuste) : ''}</span>
                   )}
-                  {tip.statusAprovacao==='aprovado_lider' && tip.diferenca!=null && tip.diferenca!==0 && (
+                  {ehSemAjuste && (
                     <span className="category-chip" style={{background:'var(--panel-raised)',color:'var(--ink-dim)'}}>Sem Ajuste</span>
+                  )}
+                  {ehSaldoOk && (
+                    <span className="category-chip" style={{background:'var(--ok-bg)',color:'var(--ok)'}}>SALDO OK</span>
                   )}
                 </div>
                 <span className="count-card-date">{tip.data ? tip.data+(tip.hora?' '+tip.hora:'') : 'Sem data registrada'}</span>
