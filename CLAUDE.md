@@ -7158,3 +7158,61 @@ invisível justamente na tela pra onde "Reprovar ajuste" manda o item.
   (577/577, sem mudança). Rodei de novo a suíte de regressão disponível sem quebrar
   nada. **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma
   limitação de sempre (login exige Supabase Auth real).
+
+## "Contagens Concluídas" ganha filtro por STATUS (Ajustado/Sem Ajuste/SALDO OK)
+
+Cliente mandou print de "Contagens Concluídas" mostrando o filtro de severidade
+existente (chips TODOS/CRÍTICAS/ALTAS/MÉDIAS/BAIXAS, por valor R$ de divergência) com
+milhares de itens (3067, já que "Todo o período" virou padrão numa rodada anterior) e
+pediu: "altere esse filtro ou inclui os filtros de status" — a severidade por R$
+sozinha não ajuda a achar, por exemplo, só os itens "Ajustado" ou só os "SALDO OK"
+entre milhares de linhas.
+
+- **Decisão**: ADICIONAR um filtro novo por STATUS, em vez de substituir o de
+  severidade — os dois funcionam em conjunto (E lógico, não OU), cada um estreitando
+  a lista já filtrada pelo outro.
+- **`classificarStatusConcluido(tip)`** (função nova, logo depois de `severidadeDe`) —
+  reaproveita e centraliza a MESMA lógica que já existia duplicada dentro do loop de
+  renderização dos badges (`ehAjustado`/`ehSemAjuste`/`ehSaldoOk`, ver seção "SA de
+  Ajuste" mais acima) — resolve pra uma das 4 categorias: `'ajustado'` (ao vivo via
+  `statusAprovacao==='ajuste_aprovado_diretoria'` OU histórico com
+  `_statusOriginal==='Ajustado'`), `'sem_ajuste'` (ao vivo `aprovado_lider` com
+  divergência real, OU histórico `'Sem Ajuste'`), `'saldo_ok'` (só existe vindo do
+  histórico, `_statusOriginal==='OK'` — a contagem ao vivo não tem um status
+  equivalente a "bateu exato e já foi 100% resolvido sem nenhuma revisão", já que item
+  sem divergência nem entra em análise do líder) e `'outros'` (fallback, ex. item sem
+  divergência nenhuma vindo de aprovação automática — não ganha badge nenhum, mesmo
+  critério de antes).
+- **As 3 variáveis dentro do `.map(cd=>{...})`** (`ehAjustado`/`ehSemAjuste`/
+  `ehSaldoOk`, usadas pros badges do card) foram simplificadas pra chamar
+  `classificarStatusConcluido(tip)` uma vez e derivar as 3 a partir do resultado — evita
+  que a lógica do FILTRO e a lógica do BADGE divirjam com o tempo (antes só existiam
+  no badge; agora são a mesma fonte usada nos dois lugares).
+- **`StatusConcluidoFilterRow({tips, value, onChange})`** (componente novo, logo
+  depois de `SeverityFilterRow`) — mesmo padrão visual de chips com contagem já
+  estabelecido (`Todos (N)` + um botão por categoria: Ajustado/Sem Ajuste/SALDO OK).
+- **`ConcludedCountsPanel`**: novo estado `statusFiltro` (`'todos'` por padrão), a
+  lista filtrada virou uma cadeia de dois `.filter()` — primeiro por severidade
+  (like já existia), depois por `classificarStatusConcluido(cd.tip)===statusFiltro`
+  quando não é `'todos'` — comportamento de E lógico entre os dois filtros. O
+  componente novo é renderizado logo abaixo do `SeverityFilterRow` já existente,
+  antes da busca/paginação.
+- Testado via harness real (jsdom + react-dom/client + `act()`, mesma técnica
+  rigorosa de sempre): `classificarStatusConcluido` resolve certo os 7 cenários
+  (ajustado ao vivo/histórico, sem ajuste ao vivo/histórico, saldo OK histórico, sem
+  divergência nenhuma, aprovado automático — os 2 últimos caem em "outros");
+  `StatusConcluidoFilterRow` mostra as contagens certas por categoria e dispara
+  `onChange` ao clicar; `ConcludedCountsPanel` com 4 itens (1 de cada categoria + 1 ao
+  vivo ajustado) mostra todos inicialmente, filtra pra só 1 item ao clicar no chip
+  "Sem Ajuste (N)", e volta a mostrar todos ao clicar de novo em "Todos". Também
+  reconferido: um teste de regressão anterior (`harness_diretoria.js`) tinha uma
+  asserção frágil (contava toda ocorrência do texto "Sem Ajuste" na tela, incluindo
+  botões) que passou a contar 2 em vez de 1 só porque o chip novo do filtro também
+  tem esse texto — ajustada a asserção pra contar só o badge dentro do card
+  (`.count-card *` com texto exato "Sem Ajuste"), não é uma regressão de
+  comportamento, só o teste ficou mais preciso. Transpile Babel do arquivo inteiro e
+  balanceamento de chaves do CSS conferidos (577/577, sem mudança — nenhuma classe
+  CSS nova, reaproveita `.btn`/`.btn-outline`/`.btn-primary` já existentes). Rodei de
+  novo toda a suíte de regressão disponível no scratchpad, sem quebrar nada.
+  **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma limitação
+  de sempre (login exige Supabase Auth real, não simulável no sandbox sem rede).

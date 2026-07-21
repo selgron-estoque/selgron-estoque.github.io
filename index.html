@@ -3166,6 +3166,20 @@ function severidadeDe(c){
   return c.percentual==null ? null : c.valorDivergente;
 }
 
+// Classifica um item de "Contagens Concluídas" por STATUS real (Ajustado/Sem
+// Ajuste/SALDO OK), não por valor em R$ (isso já é o que `classifySeverity4`
+// faz). Extraído do que já era calculado inline no render de
+// `ConcludedCountsPanel` (badges) — cliente pediu um filtro por esse status,
+// então virou uma função reutilizável em vez de repetir o mesmo ternário no
+// filtro e no badge. "outros" cobre o resto (item sem divergência nenhuma,
+// que não ganha badge nenhum — decisão já tomada antes, ver CLAUDE.md).
+function classificarStatusConcluido(tip){
+  if(tip.statusAprovacao==='ajuste_aprovado_diretoria' || (tip._fromHistorico && tip._statusOriginal==='Ajustado')) return 'ajustado';
+  if((tip.statusAprovacao==='aprovado_lider' && tip.diferenca!=null && tip.diferenca!==0) || (tip._fromHistorico && tip._statusOriginal==='Sem Ajuste')) return 'sem_ajuste';
+  if(tip._fromHistorico && tip._statusOriginal==='OK') return 'saldo_ok';
+  return 'outros';
+}
+
 // Badge de categoria do card — de onde essa contagem veio, cruzando
 // `count.inventario` (id local, ou '—' pra contagem avulsa) com a lista de
 // inventários já carregada. Nunca inventa uma categoria: se o inventário
@@ -7731,6 +7745,32 @@ function SeverityFilterRow({counts, value, onChange}){
   );
 }
 
+// Linha de chips por STATUS (Ajustado/Sem Ajuste/SALDO OK) — pedido do
+// cliente em "Contagens Concluídas": com "Todos os períodos" virando padrão
+// (ver seção anterior), a lista de histórico pode passar de milhares de itens
+// e o único filtro que já existia (`SeverityFilterRow`, por valor em R$) não
+// deixa achar rápido "só os Ajustados" ou "só os Sem Ajuste". Mesmo padrão
+// visual/estrutural de `SeverityFilterRow` (chips com contagem), só que
+// classificando por `classificarStatusConcluido` em vez de valor — os dois
+// filtros funcionam em conjunto (AND), não um substituindo o outro.
+function StatusConcluidoFilterRow({tips, value, onChange}){
+  const categorias = ['ajustado','sem_ajuste','saldo_ok'];
+  const porCategoria = {ajustado:0, sem_ajuste:0, saldo_ok:0};
+  tips.forEach(tip=>{
+    const cat = classificarStatusConcluido(tip);
+    if(porCategoria[cat]!==undefined) porCategoria[cat]++;
+  });
+  const LABELS = {ajustado:'Ajustado', sem_ajuste:'Sem Ajuste', saldo_ok:'SALDO OK'};
+  return (
+    <div style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:14}}>
+      <button type="button" className={'btn '+(value==='todos'?'btn-primary':'btn-outline')} style={{width:'auto',padding:'8px 14px',fontSize:12}} onClick={()=>onChange('todos')}>Todos ({tips.length})</button>
+      {categorias.map(cat=>(
+        <button key={cat} type="button" className={'btn '+(value===cat?'btn-primary':'btn-outline')} style={{width:'auto',padding:'8px 14px',fontSize:12}} onClick={()=>onChange(cat)}>{LABELS[cat]} ({porCategoria[cat]})</button>
+      ))}
+    </div>
+  );
+}
+
 // Barra de busca + botão "Scanner" (abre a câmera, ao detectar um código
 // preenche a busca — mesmo padrão já usado em ManualCountFlow/CountStep,
 // só reaproveitado aqui). Compartilhada pelas 3 telas.
@@ -8799,7 +8839,13 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
     : cadeiasNoPeriodo;
 
   const [severidade, setSeveridade] = useState('todos');
-  const cadeiasFiltradas = severidade==='todos' ? cadeiasPorBusca : cadeiasPorBusca.filter(cd=>classifySeverity4(severidadeDe(cd.tip)).level===severidade);
+  // Filtro por STATUS (Ajustado/Sem Ajuste/SALDO OK) — pedido do cliente,
+  // funciona em conjunto (AND) com o filtro de severidade já existente, não
+  // substitui um pelo outro.
+  const [statusFiltro, setStatusFiltro] = useState('todos');
+  const cadeiasFiltradas = cadeiasPorBusca
+    .filter(cd => severidade==='todos' || classifySeverity4(severidadeDe(cd.tip)).level===severidade)
+    .filter(cd => statusFiltro==='todos' || classificarStatusConcluido(cd.tip)===statusFiltro);
   const {pagina, setPagina, tamanhoPagina, setTamanhoPagina, listaPaginada: cadeiasPaginadas, totalPaginas} = usePaginacaoLista(cadeiasFiltradas, 50);
 
   return (
@@ -8821,6 +8867,10 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
         <SeverityFilterRow counts={cadeiasPorBusca.map(cd=>cd.tip)} value={severidade} onChange={setSeveridade} />
       </div>
 
+      <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+        <StatusConcluidoFilterRow tips={cadeiasPorBusca.map(cd=>cd.tip)} value={statusFiltro} onChange={setStatusFiltro} />
+      </div>
+
       <div className="section-title" style={{marginTop:0}}>
         Histórico
         {cadeiasNoPeriodo.length>0 && <span className="badge" style={{position:'static',marginLeft:8}}>{cadeiasNoPeriodo.length}</span>}
@@ -8840,9 +8890,10 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
         // casos precisam mostrar o mesmo badge, senão um item do histórico
         // aparece sem nenhuma indicação de status (statusAprovacao é sempre
         // `null` pra linha de histórico).
-        const ehAjustado = tip.statusAprovacao==='ajuste_aprovado_diretoria' || (tip._fromHistorico && tip._statusOriginal==='Ajustado');
-        const ehSemAjuste = (tip.statusAprovacao==='aprovado_lider' && tip.diferenca!=null && tip.diferenca!==0) || (tip._fromHistorico && tip._statusOriginal==='Sem Ajuste');
-        const ehSaldoOk = tip._fromHistorico && tip._statusOriginal==='OK';
+        const statusCatConcluido = classificarStatusConcluido(tip);
+        const ehAjustado = statusCatConcluido==='ajustado';
+        const ehSemAjuste = statusCatConcluido==='sem_ajuste';
+        const ehSaldoOk = statusCatConcluido==='saldo_ok';
         return (
           <div key={cd.chaveId} className={"count-card"+(ehSemAjuste ? ' sem-ajuste-destaque' : '')}>
             <div className="count-card-bar" style={{background:sev.color}}></div>
