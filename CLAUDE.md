@@ -6761,3 +6761,43 @@ documentação dentro do próprio app, não muda nenhuma regra de cálculo.
   ponta fica a cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth
   real, não simulável no sandbox sem rede). Falta o cliente rodar o SQL novo (6 colunas
   em `contagens`) no projeto Supabase real antes de usar em produção.
+
+## "Inventários Pendentes" — ver os itens dentro de cada documento
+
+Cliente mandou print de "Inventários Pendentes" (cards INV-924/INV-415/INV-943) e
+perguntou como mostrar os itens que estão dentro de cada documento — confirmado
+("Boa isso mesmo, gostei") depois de eu propor: um botão "Itens (N)" no card, que
+expande uma lista com código/descrição/endereço de cada item e se já foi contado.
+
+- **Escopado só aos 2 tipos que guardam uma lista PRÓPRIA de itens**: "Itens
+  Específicos" e "Lista Importada (Excel)" — os dois já gravam `itensImportados`
+  (array `{codigo, descricao, endereco, almoxarifado, saldoSistema}`) na própria
+  linha do inventário (`saveInventarioToSupabase`). Os outros tipos (Aleatória/Curva
+  ABC/Rota/Grupo) nunca tiveram uma lista fixa — a fila é recalculada por RPC a cada
+  vez a partir do catálogo/saldo, não tem "os itens deste documento" pra mostrar sem
+  reconstruir a mesma consulta que o fluxo de contagem já faz; fora de escopo por
+  não existir esse dado guardado.
+- **`itensAbertosIds`** (`InventoryList`, `Set` local, não persiste — mesmo critério
+  de sempre pra UI efêmera de expandir/recolher) + `toggleItens(id)`. Botão "Itens
+  (N)"/"Ocultar itens" só aparece quando `temListaItens` (tipo certo E
+  `itensImportados` não vazio) — `onClick` com `e.stopPropagation()` no container,
+  pra abrir/fechar a lista sem disparar a navegação do card (que abre o fluxo de
+  contagem ao clicar em qualquer outro lugar do card).
+- **Status de cada item** (`Contado`/`Pendente`, via `StatusTag` — mesmo componente
+  já usado em todo o app): calculado comparando o `codigo` do item contra os
+  `productCode` de `counts` filtrados por `c.inventario===inv.id` — dado 100% real,
+  sem nenhuma coluna nova, já que toda contagem grava o id do inventário de origem.
+- **Sem CSS novo** — reaproveita `.list-row`/`.lr-title`/`.lr-sub`/`.btn-outline`/
+  `StatusTag`, mesmos componentes já usados em outras listas do app.
+- Testado via harness real (jsdom + react-dom/client + `act()`, mesma técnica
+  rigorosa de sempre): botão "Itens (2)" aparece só no card do tipo com lista fixa,
+  não aparece no card "Aleatória"; clicar no botão expande a lista sem navegar
+  (`stopPropagation` funcionando); mostra os 2 itens com descrição/endereço certos,
+  incluindo o fallback "sem endereço" pro item sem endereço cadastrado; item com
+  contagem registrada no inventário mostra "Contado", o outro mostra "Pendente";
+  "Ocultar itens" recolhe a lista de volta; clicar no card "Aleatória" (que não tem
+  o botão) continua navegando normalmente pro fluxo de contagem. Transpile Babel do
+  arquivo inteiro e balanceamento de chaves do CSS conferidos (576/576, sem mudança
+  — nenhuma classe CSS nova). **Verificação visual fica a cargo do cliente** — mesma
+  limitação de sempre (login exige Supabase Auth real, não simulável no sandbox sem
+  rede).

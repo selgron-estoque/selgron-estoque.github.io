@@ -5529,6 +5529,20 @@ function InventoryList({inventories, goto, role, counts, onDelete, onCancel}){
   // sem isso ocupar espaço por padrão na tela. Estado puramente de UI, não
   // persiste (mesmo critério já usado pra `sidebarCollapsed`/navegação).
   const [concluidosAbertos, setConcluidosAbertos] = useState(false);
+  // Toggle "Itens"/"Ocultar itens" — só faz sentido pros 2 tipos que guardam
+  // uma lista FIXA de itens (`itensImportados`: Lista Importada/Itens
+  // Específicos); os demais tipos (Aleatória/Curva ABC/Rota/Grupo) montam a
+  // fila na hora, via RPC, sem uma lista fixa pra mostrar aqui. Visível pra
+  // qualquer perfil (só consulta, não é ação destrutiva) — mesmo padrão de
+  // `Set` já usado pro toggle "Detalhes" em RecountsPanel/ConcludedCountsPanel.
+  const [itensAbertosIds, setItensAbertosIds] = useState(()=>new Set());
+  function toggleItens(id){
+    setItensAbertosIds(prev=>{
+      const next = new Set(prev);
+      if(next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
 
   if(inventories.length===0){
     return <div className="empty-state"><div className="ic"><Ic size={40}>📦</Ic></div>Nenhum inventário programado.</div>;
@@ -5585,6 +5599,10 @@ function InventoryList({inventories, goto, role, counts, onDelete, onCancel}){
     const destino = (inv.tipo==='Lista Importada (Excel)' || inv.tipo==='Itens Específicos') ? 'importedListCount'
       : inv.tipo==='Contagem por Rota de Endereço' ? 'routeCount'
       : 'randomCount';
+    // Lista fixa de itens (só existe pros 2 tipos que guardam
+    // `itensImportados` — ver comentário do estado `itensAbertosIds` acima).
+    const temListaItens = (inv.tipo==='Itens Específicos' || inv.tipo==='Lista Importada (Excel)') && inv.itensImportados && inv.itensImportados.length>0;
+    const itensAberto = itensAbertosIds.has(inv.id);
     return (
       <div key={inv.id} className="item-card" style={concluido ? {} : {cursor:'pointer'}} onClick={concluido ? undefined : ()=>goto(destino, inv)}>
         <div className="item-card-head">
@@ -5602,6 +5620,32 @@ function InventoryList({inventories, goto, role, counts, onDelete, onCancel}){
           <div className="progress-bar"><div className="fill" style={{width:pct+'%', background: pct>=100 ? 'var(--ok)' : 'var(--safety)'}}></div></div>
           <div style={{fontFamily:'var(--font-mono)',fontSize:11.5,color:'var(--ink-dim)',marginTop:6}}>{inv.contados}/{inv.qtdItens} itens contados ({pct}%)</div>
         </div>
+        {temListaItens && (
+          <div style={{padding:'0 18px 14px'}} onClick={e=>e.stopPropagation()}>
+            <button type="button" className="btn btn-outline" style={{width:'auto',padding:'6px 14px',fontSize:12}} onClick={()=>toggleItens(inv.id)}>
+              <Ic>📋</Ic> {itensAberto ? 'Ocultar itens' : `Itens (${inv.itensImportados.length})`}
+            </button>
+            {itensAberto && (() => {
+              const codigosContados = new Set((counts||[]).filter(c=>c.inventario===inv.id).map(c=>c.productCode));
+              return (
+                <div style={{marginTop:10,display:'flex',flexDirection:'column',gap:6,maxHeight:280,overflowY:'auto'}}>
+                  {inv.itensImportados.map(it=>{
+                    const contado = codigosContados.has(it.codigo);
+                    return (
+                      <div key={it.codigo} className="list-row" style={{cursor:'default',margin:0}}>
+                        <div>
+                          <div className="lr-title">{it.codigo} · {it.descricao || '—'}</div>
+                          <div className="lr-sub">{it.endereco || 'sem endereço'}</div>
+                        </div>
+                        <StatusTag status={contado ? 'ok' : 'warn'} text={contado ? 'Contado' : 'Pendente'} />
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </div>
+        )}
         {role==='admin' && (
           confirmDeleteId===inv.id ? (
             <div style={{padding:'0 18px 16px'}} onClick={e=>e.stopPropagation()}>
