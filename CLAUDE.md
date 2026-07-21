@@ -7313,3 +7313,64 @@ o cliente (`AskUserQuestion`) que o campo deveria valer nos dois:
   limitação de sempre (login exige Supabase Auth real, não simulável no sandbox sem
   rede). Falta o cliente rodar o SQL novo (`alter table contagens add column if not
   exists motivo_reprovacao_diretoria text;`) no projeto real.
+
+## "Motivo" em vermelho + remove a frase padronizada de "Reprovar ajuste" da Observação
+
+Cliente pediu dois ajustes visuais, olhando um card de "Itens Divergentes" gerado pelo
+"Reprovar ajuste" (rodada anterior): (1) "pintar em vermelho esses Motivos, pode ser só
+a fonte" — os 4 pontos do app que mostram "Motivo: {texto}" (motivo da divergência,
+mesmo dado, mesmo padrão visual em `RecountsPanel`/`DivergentItemsPanel`/
+`DiretoriaApprovalPanel`/`ConcludedCountsPanel`) estavam em cor neutra; (2) apagar de
+TODAS as telas a frase padronizada que "Reprovar ajuste" grava na observação —
+"Ajuste reprovado manualmente no site (a planilha ainda mostra 'Ajustado')." — o
+cliente achou redundante/poluindo (agora que existe o campo dedicado "Motivo da
+reprovação", ver seção anterior, repetir essa frase inteira dentro da observação não
+agrega nada).
+
+- **"Motivo" em vermelho**: `style={{color:'var(--danger)'}}` adicionado aos 4 pontos
+  que renderizam "Motivo: <strong>{...}</strong>" (`RecountsPanel`/
+  `DivergentItemsPanel`/`DiretoriaApprovalPanel`/`ConcludedCountsPanel`, detalhe de
+  rodada) — só a cor da fonte, como pedido ("pode ser só a fonte"), sem mexer em
+  fundo/borda. **Não tocado**: o "Motivo:" que já aparece DENTRO do alerta roxo "A
+  Diretoria reprovou..." (`reprovadoPelaDiretoria`) — esse já usa a paleta roxa
+  reservada pra estado da Diretoria (`#7B3FC4`/`#F1E9FB`, convenção já estabelecida),
+  pintar de vermelho ali quebraria essa convenção sem necessidade — o card que o
+  cliente mostrou não tinha SA/Diretoria envolvida, só o motivo de divergência comum.
+- **`limparObservacaoExibicao(obs)`** (função nova, logo depois de `severidadeDe`) —
+  remove a frase padronizada de QUALQUER observação exibida, em qualquer tela, sem
+  precisar saber quais itens especificamente têm ela. Aplicada NO RENDER (não no
+  banco) — o dado gravado no Supabase continua exatamente como estava (`observacao` é
+  só texto livre, sem nenhuma coluna nova nem migração necessária); é uma limpeza de
+  EXIBIÇÃO, então já vale pra qualquer item já reprovado antes desta mudança, sem
+  esperar o cliente rodar SQL nenhum — resolve o "apagar de todas" pedido de forma
+  imediata. Lida com os 4 formatos possíveis que a frase podia aparecer (só a frase
+  sozinha; frase + observação original antes; frase + motivo da reprovação depois;
+  frase sozinha + motivo depois) — remove a frase e limpa os separadores " — " que
+  sobram soltos nas pontas, sem quebrar o que vinha antes/depois dela.
+- **`reprovarAjusteHistoricoNaLinha`** (o que GRAVA a observação ao reprovar um ajuste
+  do histórico) também parou de escrever essa frase em qualquer reprovação NOVA daqui
+  pra frente — a observação passou a ser só `{observação original da planilha, se
+  houver} — Motivo da reprovação: {texto digitado}` (ou só uma das duas partes,
+  conforme o que existir) — sem o texto fixo no meio.
+- Aplicado nos 3 lugares que renderizam "Observação: {texto}"
+  (`RecountsPanel`/`DivergentItemsPanel`/`ConcludedCountsPanel`, detalhe de rodada) —
+  quando a observação limpa vira string vazia (era só a frase padronizada, sem mais
+  nada), a linha "Observação:" inteira some, em vez de aparecer vazia.
+- Testado via harness real (jsdom + react-dom/client + `act()`, mesma técnica rigorosa
+  de sempre): `limparObservacaoExibicao` isolado nos 6 cenários (frase sozinha vira
+  vazio; frase+original remove só a frase; frase+motivo remove só a frase; frase no
+  meio de original+motivo remove só ela mantendo as duas pontas; observação sem a
+  frase não muda nada; `null`/`undefined` não quebra); `DivergentItemsPanel` com o
+  EXATO cenário do print do cliente (observação = "DIVERGÊNCIA ESPECÍFICA DESSE GRUPO
+  DE MATERIAIS — Ajuste reprovado manualmente no site...") confirma que só a parte
+  original aparece, sem a frase padronizada, e que o "Motivo:" daquele card está com
+  `color:'var(--danger)'`. Um teste de regressão antigo
+  (`harness_observacao_divergentes.js`) tinha uma asserção que checava explicitamente
+  que a frase padronizada APARECIA — invertida pra confirmar que ela NÃO aparece mais
+  (mudança de comportamento intencional desta rodada, não regressão). Transpile Babel
+  do arquivo inteiro e balanceamento de chaves do CSS conferidos (577/577, sem mudança
+  — nenhuma classe CSS nova, só `style` inline reaproveitando `var(--danger)` já
+  existente). Rodei de novo toda a suíte de regressão disponível no scratchpad, sem
+  quebrar nada. **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma
+  limitação de sempre (login exige Supabase Auth real, não simulável no sandbox sem
+  rede).
