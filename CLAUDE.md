@@ -6573,3 +6573,52 @@ próprio diagnóstico: "quando o operador troca a senha ele não continua para e
   conflitante). Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
   conferidos (575/575, sem mudança). **Verificação contra o Supabase Auth real fica a
   cargo do cliente** — mesma limitação de sempre.
+
+## "Contagens Concluídas" — detalhes padronizados com "Recontagens Pendentes"
+
+Cliente pediu: "quero que os detalhes sejam mostrados da mesma forma de 'Recontagens
+Pendentes', tudo padronizado". Até aqui, `ConcludedCountsPanel` era o único dos 3 painéis
+de contagem (Recontagens/Itens Divergentes/Concluídas) que ainda abria uma TELA
+SEPARADA ao clicar "Ver Detalhes" (`selecionado`/`aberta`, com botão "← Voltar para a
+lista") — os outros dois já mostravam detalhes expandindo INLINE dentro do próprio card,
+via um botão "Detalhes"/"Ocultar" (`RecountsPanel`, ver seção ""Recontagens Pendentes":
+detalhes abertos por padrão..." acima).
+
+- **Navegação removida por completo**: `selecionado`/`setSelecionado` e a tela de
+  drill-down inteira (que reconstruía o cabeçalho do item, o resumo da cadeia e a lista
+  de rodadas em cards `item-card` separados) saíram do componente — não existe mais
+  nenhum "sair da lista" nesta tela, igual às outras duas.
+- **`detalhesAbertosIds`** (mesmo padrão de `Set` já usado em `RecountsPanel`, só que
+  aqui detalhes vêm FECHADOS por padrão — diferente de Recontagens, que abre tudo já
+  visível — porque uma cadeia concluída pode ter várias rodadas, e abrir todas de cara
+  deixaria a lista bem mais longa que o necessário pra uma tela de histórico). Botão
+  "Detalhes"/"Ocultar" na mesma coluna de ação (`count-card-actions-col`) que já existia,
+  só trocou de rótulo/comportamento ("Ver Detalhes" → navegava; "Detalhes" → expande
+  inline).
+- **Resumo da cadeia** (quantidade final, quantas recontagens, valor do ajuste) virou um
+  `count-card-extra` — mesmo bloco visual já usado em `RecountsPanel` pros detalhes
+  extras (Armazém/Motivo/Observação/etc.), só que com o conteúdo específico dessa tela.
+- **Lista de rodadas reaproveita `.rounds-stack`/`.round-panel`** — o MESMO componente
+  visual já usado em `DivergentItemsPanel` pra comparar 1ª/2ª contagem lado a lado (ver
+  ""Itens Divergentes" mostra a 1ª e a 2ª contagem lado a lado" acima), estendido de "só
+  2 rodadas fixas" pra "N rodadas quaisquer" — a última (que decidiu o status final da
+  cadeia) vem destacada como `.current` (borda laranja + badge "Final"), as anteriores
+  como `.previous` (neutras). Cada rodada continua mostrando TODA a informação que já
+  mostrava na tela separada (endereço, valor divergente, motivo, observação, quem
+  aprovou, e — só pra linhas do histórico importado — Classe ABC/SA/Documento/Dias sem
+  movimento) — nenhum dado foi perdido na padronização, só o CONTAINER visual mudou de
+  `item-card`/`result-grid` (6 colunas) pra `round-panel`/`result-grid-4col` (o padrão
+  novo usado no resto do app).
+- **Excluir uma rodada** (`onDeleteCount`, admin) continua funcionando exatamente igual
+  — só que agora o botão/confirmação ficam dentro do `round-panel` da rodada, inline na
+  mesma lista expandida, em vez de numa tela à parte.
+- Testado via harness real (jsdom + react-dom/client + `act()`, mesma técnica rigorosa
+  de sempre — carrega o `index.html` inteiro transpilado numa `vm.Script`): confirmei
+  que o botão "Ver Detalhes" não existe mais, que "Detalhes" expande as rodadas SEM
+  navegar (nenhum "Voltar para a lista" na tela), que a rodada final vem marcada
+  "Final", que a observação/motivo de uma rodada específica aparecem corretos, que
+  excluir uma rodada chama `onDeleteCount` com o id certo, e que "Ocultar" recolhe de
+  volta. Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos
+  (575/575, sem mudança — nenhuma classe CSS nova, só reaproveitamento das já
+  existentes). **Verificação visual fica a cargo do cliente** — mesma limitação de
+  sempre (login exige Supabase Auth real, não simulável no sandbox sem rede).

@@ -8084,11 +8084,21 @@ function historicoRowToConcludedChain(h){
 
 function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDeleteCount, onRefresh}){
   const [busca, setBusca] = useState('');
-  const [selecionado, setSelecionado] = useState(null); // chaveId da cadeia aberta em detalhe
-  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null); // id da RODADA (r.id), não da cadeia
   const [excluindo, setExcluindo] = useState(false);
   const [erroExclusao, setErroExclusao] = useState('');
   const [atualizando, setAtualizando] = useState(false);
+  // Mesmo padrão de toggle "Detalhes"/"Ocultar" já usado em RecontagensPanel
+  // (pedido do cliente: padronizar) — troca a navegação pra uma tela própria
+  // por uma expansão inline dentro do próprio card, sem sair da lista.
+  const [detalhesAbertosIds, setDetalhesAbertosIds] = useState(()=>new Set());
+  function toggleDetalhes(id){
+    setDetalhesAbertosIds(prev=>{
+      const next = new Set(prev);
+      if(next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
 
   // Mesmo painel "Filtros" (presets de calendário) já usado em Indicadores —
   // `useState` puro, não `usePersistedState` (pedido do cliente: o filtro
@@ -8139,97 +8149,6 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
   const [severidade, setSeveridade] = useState('todos');
   const cadeiasFiltradas = severidade==='todos' ? cadeiasPorBusca : cadeiasPorBusca.filter(cd=>classifySeverity4(severidadeDe(cd.tip)).level===severidade);
 
-  const aberta = selecionado ? cadeias.find(cd=>cd.chaveId===selecionado) : null;
-
-  if(aberta){
-    const tip = aberta.tip;
-    const statusInfo = tip._statusDisplay || STATUS_INFO[tip.statusAprovacao] || {};
-    return (
-      <div>
-        <button className="back-btn" style={{marginBottom:14}} onClick={()=>setSelecionado(null)}><Ic>←</Ic> Voltar para a lista</button>
-
-        <div className="panel" style={{marginBottom:16}}>
-          <div className="item-code" style={{fontSize:16}}>{tip.productCode}</div>
-          <div className="item-desc" style={{fontSize:15,marginBottom:12}}>{tip.descricao}</div>
-          <div style={{marginBottom:12}}>
-            <StatusTag status={statusInfo.level||'ok'} text={statusInfo.text||'—'} />
-          </div>
-          <div className="result-grid">
-            <div className="rg"><div className="k">Endereço</div><div className="v">{tip.endereco || tip.enderecoContado || '—'}</div></div>
-            <div className="rg"><div className="k">Quantidade Final Validada</div><div className="v">{tip.qtdContada}</div></div>
-            <div className="rg"><div className="k">Total de Contagens</div><div className="v">{tip.numeroContagem}</div></div>
-            <div className="rg"><div className="k">Recontagens Realizadas</div><div className="v">{tip.numeroContagem-1}</div></div>
-            <div className="rg"><div className="k">Ajuste de Estoque</div><div className="v">{tip.diferenca==null ? '— (sem saldo local)' : (aberta.houveAjuste ? 'Necessário' : 'Não necessário')}</div></div>
-            {aberta.houveAjuste && (
-              <div className="rg"><div className="k">Valor do Ajuste</div><div className="v">R$ {Number(tip.valorDivergente||0).toFixed(2)}</div></div>
-            )}
-          </div>
-        </div>
-
-        <div className="section-title" style={{marginTop:0}}>Histórico de Contagens ({aberta.rodadas.length})</div>
-        {aberta.rodadas.map((r,idx)=>{
-          const info = r._statusDisplay || STATUS_INFO[r.statusAprovacao] || {};
-          // Painel de auditoria: mostra TODA informação disponível de cada
-          // rodada, não só um resumo — pedido explícito do cliente ("um dia
-          // bata uma auditoria, preciso de toda informação necessária ali").
-          // Data sempre explícita, com aviso claro quando a planilha antiga
-          // não trouxe data pra essa linha (não é bug, é limitação real do
-          // dado de origem — ver "Padrão de planilha do cliente" no CLAUDE.md).
-          return (
-            <div key={r.id} className="item-card">
-              <div className="item-card-head">
-                <div>
-                  <div className="item-code">{idx+1}ª contagem{r._fromHistorico && <span style={{color:'var(--ink-dim)',fontWeight:400,fontSize:12}}> · histórico importado</span>}</div>
-                  <div className="item-desc" style={{fontSize:13}}>{r.data ? r.data+(r.hora?' '+r.hora:'') : 'Data não registrada na planilha'}</div>
-                </div>
-                <StatusTag status={info.level||'ok'} text={info.text||(r.classificacao?r.classificacao.label:'—')} />
-              </div>
-              <div className="result-grid" style={{padding:'0 18px 14px'}}>
-                <div className="rg"><div className="k">Usuário</div><div className="v">{r.usuario||'—'}</div></div>
-                <div className="rg"><div className="k">Endereço</div><div className="v">{r.endereco || r.enderecoContado || '—'}</div></div>
-                <div className="rg"><div className="k">Saldo Sistema</div><div className="v">{r.saldoSistema==null ? '—' : r.saldoSistema}</div></div>
-                <div className="rg"><div className="k">Físico</div><div className="v">{r.qtdContada}</div></div>
-                <div className="rg"><div className="k">Diferença</div><div className="v">{r.diferenca==null ? '— (sem saldo local)' : (r.diferenca>0?'+':'')+r.diferenca+(r.percentual==null?'':' ('+Math.round(r.percentual)+'%)')}</div></div>
-                <div className="rg"><div className="k">Valor Divergente</div><div className="v">{r.valorDivergente!=null && r.valorDivergente!==0 ? 'R$ '+Number(r.valorDivergente).toFixed(2) : '—'}</div></div>
-              </div>
-              {r.motivo && <div style={{padding:'0 18px 10px',fontSize:12.5}}>Motivo: <strong>{r.motivo}</strong></div>}
-              {r.observacao && <div style={{padding:'0 18px 10px',fontSize:12.5}}>Observação: {r.observacao}</div>}
-              {r.aprovadoPor && (
-                <div style={{padding:'0 18px 10px',fontSize:12,color:'var(--ink-dim)'}}>Aprovado por {r.aprovadoPor} em {r.aprovadoEm}</div>
-              )}
-              {r._fromHistorico && (r.classe || r.solicitacaoAjuste || r.documento || r.diasSemMovimento!=null) && (
-                <div style={{padding:'0 18px 14px',fontSize:11.5,color:'var(--ink-dim)',fontFamily:'var(--font-mono)'}}>
-                  {r.classe && <>Classe ABC: {r.classe} · </>}
-                  {r.solicitacaoAjuste && <>SA: {r.solicitacaoAjuste} · </>}
-                  {r.documento && <>Doc: {r.documento} · </>}
-                  {r.diasSemMovimento!=null && <>Dias s/ movimento: {r.diasSemMovimento}</>}
-                </div>
-              )}
-              {onDeleteCount && !r._fromHistorico && (
-                confirmDeleteId===r.id ? (
-                  <div style={{padding:'0 18px 16px'}}>
-                    <div className="divergence-alert" style={{marginBottom:10}}>
-                      <Ic>⚠</Ic><span>Excluir esta {idx+1}ª contagem? Essa ação não pode ser desfeita e não deixa rastro.</span>
-                    </div>
-                    {erroExclusao && <div className="divergence-alert" style={{marginBottom:10}}><Ic>⚠</Ic><span>{erroExclusao}</span></div>}
-                    <div className="btn-row">
-                      <button className="btn btn-secondary" disabled={excluindo} onClick={()=>{setConfirmDeleteId(null); setErroExclusao('');}}>Cancelar</button>
-                      <button className="btn btn-danger" disabled={excluindo} onClick={()=>handleConfirmDelete(r.id)}>{excluindo ? 'Excluindo…' : 'Confirmar exclusão'}</button>
-                    </div>
-                  </div>
-                ) : (
-                  <div style={{padding:'0 18px 16px'}}>
-                    <button className="btn btn-danger" onClick={()=>setConfirmDeleteId(r.id)}><Ic>🗑</Ic> Excluir esta contagem</button>
-                  </div>
-                )
-              )}
-            </div>
-          );
-        })}
-      </div>
-    );
-  }
-
   return (
     <div>
       <TrendFilterBar
@@ -8259,8 +8178,8 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
         </div>
       ) : cadeiasFiltradas.map(cd=>{
         const tip = cd.tip;
-        const info = tip._statusDisplay || STATUS_INFO[tip.statusAprovacao] || {};
         const sev = classifySeverity4(severidadeDe(tip));
+        const aberto = detalhesAbertosIds.has(cd.chaveId);
         return (
           <div key={cd.chaveId} className="count-card">
             <div className="count-card-bar" style={{background:sev.color}}></div>
@@ -8288,11 +8207,80 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
                     <div className="rg"><div className="k">Contagens</div><div className="v">{tip.numeroContagem}</div></div>
                     <div className="rg"><div className="k">Ajuste</div><div className="v" style={{fontSize:12.5}}>{cd.houveAjuste ? 'Necessário' : (tip.diferenca==null?'Sem saldo local':'Não necessário')}</div></div>
                   </div>
+                  {aberto && (
+                    <div className="count-card-extra">
+                      <div>Quantidade final validada: <strong>{tip.qtdContada}</strong></div>
+                      <div>{cd.rodadas.length-1} recontagem(ns) até a decisão final</div>
+                      {cd.houveAjuste && <div>Valor do ajuste: <strong>R$ {Number(tip.valorDivergente||0).toFixed(2)}</strong></div>}
+                    </div>
+                  )}
                 </div>
                 <div className="count-card-actions-col" style={{width:'auto'}}>
-                  <button className="btn btn-outline" onClick={()=>setSelecionado(cd.chaveId)}><Ic>📋</Ic> Ver Detalhes</button>
+                  <button className="btn btn-outline" onClick={()=>toggleDetalhes(cd.chaveId)}><Ic>📋</Ic> {aberto ? 'Ocultar' : 'Detalhes'}</button>
                 </div>
               </div>
+              {aberto && (
+                // Painel de auditoria: mostra TODA informação disponível de
+                // cada rodada, não só um resumo — pedido explícito do
+                // cliente ("um dia bata uma auditoria, preciso de toda
+                // informação necessária ali"). Mesmo componente visual já
+                // usado pra comparar 1ª/2ª contagem em "Itens Divergentes"
+                // (`.rounds-stack`/`.round-panel`), estendido pra N rodadas —
+                // a última (que decidiu o status final da cadeia) vem
+                // destacada como "current", as anteriores como "previous".
+                // Data sempre explícita, com aviso claro quando a planilha
+                // antiga não trouxe data pra essa linha (não é bug, é
+                // limitação real do dado de origem).
+                <div className="rounds-stack" style={{padding:'0 16px 16px'}}>
+                  {cd.rodadas.map((r,idx)=>{
+                    const isUltima = idx===cd.rodadas.length-1;
+                    return (
+                      <div key={r.id} className={"round-panel "+(isUltima?'current':'previous')}>
+                        <div className="round-eyebrow">
+                          <span className="label">{idx+1}ª Contagem{r._fromHistorico ? ' · histórico importado' : ''}</span>
+                          {isUltima && <span className="badge">Final</span>}
+                          <span className="round-who">{r.usuario||'—'} · {r.data ? r.data+(r.hora?' '+r.hora:'') : 'sem data registrada'}</span>
+                        </div>
+                        <div className="result-grid" style={{marginTop:0,gridTemplateColumns:'repeat(4,1fr)'}}>
+                          <div className="rg"><div className="k">Sistema</div><div className="v">{r.saldoSistema==null ? '—' : r.saldoSistema}</div></div>
+                          <div className="rg"><div className="k">Físico</div><div className="v">{r.qtdContada}</div></div>
+                          <div className="rg"><div className="k">Diferença</div><div className="v">{r.diferenca==null ? '—' : (r.diferenca>0?'+':'')+r.diferenca}</div></div>
+                          <div className="rg"><div className="k">%</div><div className="v">{r.percentual==null ? '—' : Math.round(r.percentual)+'%'}</div></div>
+                        </div>
+                        {(r.endereco || r.enderecoContado) && <div style={{fontSize:12.5}}>Endereço: <strong>{r.endereco || r.enderecoContado}</strong></div>}
+                        {r.valorDivergente!=null && r.valorDivergente!==0 && <div style={{fontSize:12.5}}>Valor divergente: <strong>R$ {Number(r.valorDivergente).toFixed(2)}</strong></div>}
+                        {r.motivo && <div style={{fontSize:12.5}}>Motivo: <strong>{r.motivo}</strong></div>}
+                        {r.observacao && <div style={{fontSize:12.5}}>Observação: {r.observacao}</div>}
+                        {r.aprovadoPor && <div style={{fontSize:12,color:'var(--ink-dim)'}}>Aprovado por {r.aprovadoPor} em {r.aprovadoEm}</div>}
+                        {r._fromHistorico && (r.classe || r.solicitacaoAjuste || r.documento || r.diasSemMovimento!=null) && (
+                          <div style={{fontSize:11.5,color:'var(--ink-dim)',fontFamily:'var(--font-mono)'}}>
+                            {r.classe && <>Classe ABC: {r.classe} · </>}
+                            {r.solicitacaoAjuste && <>SA: {r.solicitacaoAjuste} · </>}
+                            {r.documento && <>Doc: {r.documento} · </>}
+                            {r.diasSemMovimento!=null && <>Dias s/ movimento: {r.diasSemMovimento}</>}
+                          </div>
+                        )}
+                        {onDeleteCount && !r._fromHistorico && (
+                          confirmDeleteId===r.id ? (
+                            <div>
+                              <div className="divergence-alert" style={{marginBottom:10}}>
+                                <Ic>⚠</Ic><span>Excluir esta {idx+1}ª contagem? Essa ação não pode ser desfeita e não deixa rastro.</span>
+                              </div>
+                              {erroExclusao && <div className="divergence-alert" style={{marginBottom:10}}><Ic>⚠</Ic><span>{erroExclusao}</span></div>}
+                              <div className="btn-row">
+                                <button className="btn btn-secondary" disabled={excluindo} onClick={()=>{setConfirmDeleteId(null); setErroExclusao('');}}>Cancelar</button>
+                                <button className="btn btn-danger" disabled={excluindo} onClick={()=>handleConfirmDelete(r.id)}>{excluindo ? 'Excluindo…' : 'Confirmar exclusão'}</button>
+                              </div>
+                            </div>
+                          ) : (
+                            <button className="btn btn-danger" style={{alignSelf:'flex-start'}} onClick={()=>setConfirmDeleteId(r.id)}><Ic>🗑</Ic> Excluir esta contagem</button>
+                          )
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         );
