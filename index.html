@@ -8280,6 +8280,14 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSend
                 </div>
               )}
               {c.motivo && <div style={{padding:'10px 16px 0',fontSize:12.5}}>Motivo: <strong>{c.motivo}</strong></div>}
+              {/* Bug real corrigido aqui: esta tela nunca mostrava `observacao`
+                  em lugar nenhum (só `motivo`) — passava batido pra qualquer
+                  contagem ao vivo com observação preenchida, e ficava
+                  especialmente errado pro item semeado por "Reprovar ajuste"
+                  (ConcludedCountsPanel/reprovarAjusteHistoricoNaLinha), cuja
+                  observação registra justamente POR QUE o item voltou a
+                  aparecer aqui ("Ajuste reprovado manualmente no site..."). */}
+              {c.observacao && <div style={{padding:'6px 16px 0',fontSize:12.5,color:'var(--ink-dim)'}}>Observação: {c.observacao}</div>}
               {c.reprovadoPelaDiretoria && (
                 <div className="divergence-alert" style={{margin:'10px 16px 0',background:'#F1E9FB',borderColor:'#7B3FC4',color:'#7B3FC4'}}>
                   <Ic>⛔</Ic><span>A Diretoria reprovou a SA {c.solicitacaoAjuste} em {c.reprovadoEm} — reenviado para nova análise.</span>

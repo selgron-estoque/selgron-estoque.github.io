@@ -7131,3 +7131,30 @@ contagem/Recontar/Gerar SA de Ajuste de novo).
   limitação de sempre (sandbox sem rede) — não precisa rodar SQL novo, só usa colunas/
   policies que já existem (`contagens_historico` já tem policy de escrita ampla,
   `contagens` já tem INSERT/UPDATE liberados desde a migração pro Supabase Auth).
+
+## Bug real: "Itens Divergentes" nunca mostrava o campo Observação
+
+Cliente perguntou, logo depois de testar "Reprovar ajuste": "vai ter a observação que
+pedi que ajuste foi reprovado??" — resposta honesta era não, e era um bug real: a
+observação gravada por `reprovarAjusteHistoricoNaLinha` (`"Ajuste reprovado manualmente
+no site (a planilha ainda mostra 'Ajustado')."`) já existia no banco desde a rodada
+anterior, mas `DivergentItemsPanel` nunca renderizava o campo `observacao` em lugar
+nenhum — só mostrava `motivo`. `RecountsPanel` sempre mostrou `observacao` normalmente
+(`{c.observacao && <div>Observação: {c.observacao}</div>}`), então esse texto só ficava
+invisível justamente na tela pra onde "Reprovar ajuste" manda o item.
+
+- **Corrigido**: `DivergentItemsPanel` ganhou a mesma linha (`{c.observacao && <div
+  style={{padding:'6px 16px 0',fontSize:12.5,color:'var(--ink-dim)'}}>Observação:
+  {c.observacao}</div>}`), logo abaixo de "Motivo" — mesmo padrão visual já usado em
+  `RecountsPanel`. Isso beneficia QUALQUER contagem com observação preenchida nessa
+  tela, não só a do "Reprovar ajuste" (a gap era genérica, só nunca tinha sido notada
+  porque poucas contagens ao vivo chegam a "Itens Divergentes" com observação
+  preenchida).
+- Testado via harness real (jsdom + react-dom/client + `act()`): um item exatamente no
+  formato que `reprovarAjusteHistoricoNaLinha` gera (mesmo id/observação) mostra
+  "Observação: Ajuste reprovado manualmente no site..." no card; `RecountsPanel`
+  continua mostrando observação normalmente (regressão conferida, não foi tocado).
+  Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos
+  (577/577, sem mudança). Rodei de novo a suíte de regressão disponível sem quebrar
+  nada. **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma
+  limitação de sempre (login exige Supabase Auth real).
