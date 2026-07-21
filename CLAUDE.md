@@ -7024,3 +7024,48 @@ Limpar Filtros".
   itens do inventário) sem quebrar nada. **Verificação visual fica a cargo do cliente**
   — mesma limitação de sempre (login exige Supabase Auth real, não simulável no sandbox
   sem rede).
+
+## Paginação nas 4 telas de contagem — resolve o delay causado por "Todos os períodos"
+
+Efeito colateral esperado da rodada anterior: cliente notou "um delay bem pequeno
+quando troco entre as análises" — sem a janela de 30 dias escondendo a maior parte dos
+itens, `RecountsPanel`/`DivergentItemsPanel`/`DiretoriaApprovalPanel`/
+`ConcludedCountsPanel` passaram a poder renderizar centenas de `.count-card` de uma vez
+só (cada um bem mais pesado que uma linha de tabela — várias divs, grid de resultado,
+chips, botões). Perguntei se paginação (100 por vez) resolveria — cliente confirmou,
+pedindo 50 por página com opção de escolher outra quantidade.
+
+- **`usePaginacaoLista(lista, tamanhoPadrao)`** (hook novo, perto de
+  `SearchWithScanner`) — mesmo padrão já usado em `UserManagementPanel`
+  (`USERS_PAGE_SIZE`), só generalizado pra reaproveitar nas 4 telas e com o tamanho de
+  página também configurável (`tamanhoPagina`/`setTamanhoPagina`, não fixo como em
+  Usuários). `Math.min(pagina, totalPaginas)` clampa sozinho quando a lista encolhe
+  (busca/filtro reduzindo o total) — sem precisar de nenhum `useEffect` de reset.
+- **`PaginationControls`** (componente novo, mesmo lugar) — "‹ Anterior"/"Página X de Y
+  · N itens"/"Próxima ›" (idêntico ao de Usuários) + um `<select>` novo "Por página"
+  com `TAMANHOS_PAGINA_OPCOES = [50, 100, 200, 500]` — atende o pedido explícito
+  ("opção de escolher outra quantidade se necessário"). Trocar o tamanho sempre volta
+  pra página 1 (evita ficar numa página que deixou de existir).
+- **Só de EXIBIÇÃO, sem custo de rede** — a lista inteira já está em memória (Realtime,
+  sem paginação no fetch, ver "Bug real de causa raiz: teto de linhas..." no histórico
+  acima); a paginação só corta o array em memória antes de mapear pro JSX, não dispara
+  nenhuma consulta nova ao Supabase ao trocar de página.
+- **Escopo**: as mesmas 4 telas da rodada de "Todos os períodos" —
+  `RecountsPanel`/`DivergentItemsPanel`/`DiretoriaApprovalPanel` (`listaFiltrada` →
+  `listaPaginada`) e `ConcludedCountsPanel` (`cadeiasFiltradas` → `cadeiasPaginadas`,
+  mesmo hook, só nome de variável local diferente pra não confundir com "cadeia" de
+  recontagem). Indicadores (`Dashboard`) não usa cards `.count-card` nessa forma —
+  fora de escopo, sem necessidade.
+- Testado via harness real (jsdom + react-dom/client + `act()`, mesma técnica de
+  sempre) com 120 itens sintéticos em `RecountsPanel` (mesmo hook/componente das
+  outras 3, suficiente pra cobrir a lógica): confirmei "Página 1 de 3 · 120 itens" e
+  EXATAMENTE 50 `.count-card` no DOM (não 120 — prova de que a paginação reduz o
+  volume renderizado de verdade, não só o texto do contador); "Próxima ›" avança
+  mostrando os itens certos e escondendo os da página anterior; a última página (20
+  itens) desabilita "Próxima ›"; trocar "Por página" pra 100 no `<select>` volta pra
+  página 1 e passa a mostrar 100 cards. Transpile Babel do arquivo inteiro e
+  balanceamento de chaves do CSS conferidos (577/577, sem mudança — nenhuma classe CSS
+  nova, só elementos com `style` inline). Rodei de novo toda a suíte de regressão que
+  toca essas 4 telas sem quebrar nada. **Verificação visual/de performance de ponta a
+  ponta (o delay realmente sumir) fica a cargo do cliente** — mesma limitação de
+  sempre (login exige Supabase Auth real, não simulável no sandbox sem rede).

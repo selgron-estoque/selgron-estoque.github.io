@@ -7667,6 +7667,53 @@ function SearchWithScanner({value, onChange, placeholder}){
   );
 }
 
+// Paginação client-side pras 4 telas de contagem (Recontagens/Itens
+// Divergentes/Aprovação de Ajustes/Contagens Concluídas) — cliente notou um
+// delay pequeno ao trocar de filtro/tela depois que o padrão de período virou
+// "Todos os períodos" (ver seção anterior no CLAUDE.md): sem a janela de 30
+// dias escondendo a maior parte, essas listas podem renderizar centenas de
+// cards `.count-card` (bem mais pesados que uma linha de tabela) de uma vez.
+// Mesmo padrão já usado em `UserManagementPanel` (`USERS_PAGE_SIZE`, "‹
+// Anterior"/"Próxima ›"), só que com o tamanho de página também configurável
+// pelo usuário (pedido explícito — "opção de escolher outra quantidade se
+// necessário"). Paginação é só de EXIBIÇÃO — a lista inteira já está em
+// memória (Realtime, sem paginação no fetch), então trocar de página não
+// bate no Supabase de novo, só corta o array antes de mapear pro JSX.
+const TAMANHOS_PAGINA_OPCOES = [50, 100, 200, 500];
+function usePaginacaoLista(lista, tamanhoPadrao=50){
+  const [pagina, setPagina] = useState(1);
+  const [tamanhoPagina, setTamanhoPaginaState] = useState(tamanhoPadrao);
+  // Trocar o tamanho da página sempre volta pra página 1 — senão dava pra
+  // ficar numa página que não existe mais (ex: pág. 4 de 50 itens, muda pra
+  // 200 por página, só sobra 1 página).
+  function setTamanhoPagina(v){ setTamanhoPaginaState(v); setPagina(1); }
+  const totalPaginas = Math.max(1, Math.ceil(lista.length / tamanhoPagina));
+  // `Math.min` clampa sozinho se a lista encolher (filtro/busca reduzindo o
+  // total) — não precisa de nenhum `useEffect` de reset, a página válida
+  // mais próxima já é recalculada a cada render.
+  const paginaAtual = Math.min(pagina, totalPaginas);
+  const listaPaginada = lista.slice((paginaAtual-1)*tamanhoPagina, paginaAtual*tamanhoPagina);
+  return {pagina: paginaAtual, setPagina, tamanhoPagina, setTamanhoPagina, listaPaginada, totalPaginas};
+}
+function PaginationControls({pagina, setPagina, totalPaginas, tamanhoPagina, setTamanhoPagina, totalItens, itemLabel='itens'}){
+  if(totalItens===0) return null;
+  return (
+    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:10,margin:'14px 0'}}>
+      <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+        <button type="button" className="btn btn-outline" style={{width:'auto',padding:'8px 14px'}} disabled={pagina<=1} onClick={()=>setPagina(p=>p-1)}>‹ Anterior</button>
+        <span style={{fontFamily:'var(--font-mono)',fontSize:11.5,color:'var(--ink-dim)'}}>Página {pagina} de {totalPaginas} · {totalItens} {itemLabel}</span>
+        <button type="button" className="btn btn-outline" style={{width:'auto',padding:'8px 14px'}} disabled={pagina>=totalPaginas} onClick={()=>setPagina(p=>p+1)}>Próxima ›</button>
+      </div>
+      <div style={{display:'flex',alignItems:'center',gap:6,fontSize:12,color:'var(--ink-dim)'}}>
+        <span>Por página:</span>
+        <select aria-label="Itens por página" value={tamanhoPagina} onChange={e=>setTamanhoPagina(Number(e.target.value))} style={{padding:'6px 8px',borderRadius:8,border:'1px solid var(--line)',fontSize:12,fontFamily:'var(--font-corp)'}}>
+          {TAMANHOS_PAGINA_OPCOES.map(n=><option key={n} value={n}>{n}</option>)}
+        </select>
+      </div>
+    </div>
+  );
+}
+
 function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggleUrgente, operadorVeValoresRecontagem}){
   const canMark = role==='lider' || role==='admin';
   // Escopo AJUSTADO (cliente pediu pra restringir depois de ver o resultado
@@ -7724,6 +7771,7 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
   // sempre aparecem primeiro — sort estável, preserva a ordem relativa entre
   // itens com a mesma urgência (não embaralha o resto da fila).
   const listaFiltrada = [...listaFiltradaSemOrdenar].sort((a,b)=>(b.urgente?1:0)-(a.urgente?1:0));
+  const {pagina, setPagina, tamanhoPagina, setTamanhoPagina, listaPaginada, totalPaginas} = usePaginacaoLista(listaFiltrada, 50);
 
   const [urgenteBusyId, setUrgenteBusyId] = useState(null);
   const [urgenteErro, setUrgenteErro] = useState({});
@@ -7810,7 +7858,7 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
             ? 'Nenhum item aguardando recontagem no momento.'
             : (aguardandoSegundaNoPeriodo.length===0 ? 'Nenhum item aguardando recontagem nesse período.' : 'Nenhum item encontrado para esse filtro.')}
         </div>
-      ) : listaFiltrada.map(c=>{
+      ) : listaPaginada.map(c=>{
         const sev = classifySeverity4(severidadeDe(c));
         const temExtra = c.motivo || c.observacao || c.foto || c.almoxarifado || (c.enderecoContado && c.enderecoContado!==c.endereco) || (c.valorDivergente && Number(c.valorDivergente)!==0);
         return (
@@ -7912,6 +7960,7 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
         </div>
         );
       })}
+      <PaginationControls pagina={pagina} setPagina={setPagina} totalPaginas={totalPaginas} tamanhoPagina={tamanhoPagina} setTamanhoPagina={setTamanhoPagina} totalItens={listaFiltrada.length} itemLabel="itens" />
     </div>
   );
 }
@@ -7985,6 +8034,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSend
   // Itens marcados como urgentes sempre aparecem primeiro — mesmo critério
   // já usado em RecountsPanel.
   const listaFiltrada = [...listaFiltradaSemOrdenar].sort((a,b)=>(b.urgente?1:0)-(a.urgente?1:0));
+  const {pagina, setPagina, tamanhoPagina, setTamanhoPagina, listaPaginada, totalPaginas} = usePaginacaoLista(listaFiltrada, 50);
 
   async function handleApprove(countId){
     setBusyId(countId);
@@ -8066,7 +8116,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSend
             ? 'Nenhuma divergência aguardando análise no momento.'
             : (aguardandoAnaliseNoPeriodo.length===0 ? 'Nenhuma divergência aguardando análise nesse período.' : 'Nenhum item encontrado para esse filtro.')}
         </div>
-      ) : listaFiltrada.map(c=>{
+      ) : listaPaginada.map(c=>{
         const anterior = c.contagemAnteriorId ? counts.find(x=>x.id===c.contagemAnteriorId) : null;
         const sev = classifySeverity4(severidadeDe(c));
         return (
@@ -8191,6 +8241,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSend
           </div>
         );
       })}
+      <PaginationControls pagina={pagina} setPagina={setPagina} totalPaginas={totalPaginas} tamanhoPagina={tamanhoPagina} setTamanhoPagina={setTamanhoPagina} totalItens={listaFiltrada.length} itemLabel="itens" />
     </div>
   );
 }
@@ -8222,6 +8273,7 @@ function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejec
 
   const [severidade, setSeveridade] = useState('todos');
   const listaFiltrada = severidade==='todos' ? porBusca : porBusca.filter(c=>classifySeverity4(severidadeDe(c)).level===severidade);
+  const {pagina, setPagina, tamanhoPagina, setTamanhoPagina, listaPaginada, totalPaginas} = usePaginacaoLista(listaFiltrada, 50);
 
   const [busyId, setBusyId] = useState(null);
   const [erros, setErros] = useState({});
@@ -8277,7 +8329,7 @@ function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejec
             ? 'Nenhuma SA de ajuste aguardando aprovação no momento.'
             : (aguardandoDiretoriaNoPeriodo.length===0 ? 'Nenhuma SA aguardando aprovação nesse período.' : 'Nenhum item encontrado para esse filtro.')}
         </div>
-      ) : listaFiltrada.map(c=>{
+      ) : listaPaginada.map(c=>{
         const sev = classifySeverity4(severidadeDe(c));
         return (
           <div key={c.id} className="count-card">
@@ -8331,6 +8383,7 @@ function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejec
           </div>
         );
       })}
+      <PaginationControls pagina={pagina} setPagina={setPagina} totalPaginas={totalPaginas} tamanhoPagina={tamanhoPagina} setTamanhoPagina={setTamanhoPagina} totalItens={listaFiltrada.length} itemLabel="itens" />
     </div>
   );
 }
@@ -8621,6 +8674,7 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
 
   const [severidade, setSeveridade] = useState('todos');
   const cadeiasFiltradas = severidade==='todos' ? cadeiasPorBusca : cadeiasPorBusca.filter(cd=>classifySeverity4(severidadeDe(cd.tip)).level===severidade);
+  const {pagina, setPagina, tamanhoPagina, setTamanhoPagina, listaPaginada: cadeiasPaginadas, totalPaginas} = usePaginacaoLista(cadeiasFiltradas, 50);
 
   return (
     <div>
@@ -8649,7 +8703,7 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
         <div className="empty-state" style={{padding:20}}>
           {cadeiasNoPeriodo.length===0 ? 'Nenhuma contagem concluída nesse período.' : 'Nenhum item encontrado para esse filtro.'}
         </div>
-      ) : cadeiasFiltradas.map(cd=>{
+      ) : cadeiasPaginadas.map(cd=>{
         const tip = cd.tip;
         const sev = classifySeverity4(severidadeDe(tip));
         const aberto = detalhesAbertosIds.has(cd.chaveId);
@@ -8794,6 +8848,7 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
           </div>
         );
       })}
+      <PaginationControls pagina={pagina} setPagina={setPagina} totalPaginas={totalPaginas} tamanhoPagina={tamanhoPagina} setTamanhoPagina={setTamanhoPagina} totalItens={cadeiasFiltradas.length} itemLabel="itens" />
     </div>
   );
 }
