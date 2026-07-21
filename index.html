@@ -2472,10 +2472,13 @@ async function reprovarAjusteHistoricoNaLinha(rawRow, motivoReprovacao){
       motivo: rawRow.causa,
       tem_foto: false,
       // Sem a frase padronizada "Ajuste reprovado manualmente no site..." de
-      // antes — cliente achou redundante (o motivo digitado já deixa claro o
-      // porquê). Só a observação original da planilha + o motivo digitado
-      // agora, se houver.
-      observacao: [rawRow.observacao, motivoReprovacao ? 'Motivo da reprovação: ' + motivoReprovacao : ''].filter(Boolean).join(' — '),
+      // antes — cliente achou redundante. Observação fica só com o texto
+      // original da planilha, se houver — o motivo da reprovação em si vai
+      // pra coluna própria (`motivo_reprovacao_diretoria`, mesma já usada
+      // pelo fluxo de SA/Diretoria) em vez de embutido aqui, pra poder
+      // exibir destacado (vermelho) separado do resto da observação.
+      observacao: rawRow.observacao || null,
+      motivo_reprovacao_diretoria: motivoReprovacao || null,
       data: rawRow.data,
       hora: null,
     };
@@ -8084,8 +8087,18 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
             </div>
             {c.reprovadoPelaDiretoria && (
               <div className="divergence-alert" style={{background:'#F1E9FB',borderColor:'#7B3FC4',color:'#7B3FC4'}}>
-                <Ic>⛔</Ic><span>A Diretoria reprovou a SA {c.solicitacaoAjuste} em {c.reprovadoEm} — reenviado para nova análise.{c.motivoReprovacaoDiretoria && <><br/><strong>Motivo:</strong> {c.motivoReprovacaoDiretoria}</>}</span>
+                <Ic>⛔</Ic><span>A Diretoria reprovou a SA {c.solicitacaoAjuste} em {c.reprovadoEm} — reenviado para nova análise.{c.motivoReprovacaoDiretoria && <><br/><strong>Motivo da reprovação:</strong> <span style={{color:'var(--danger)'}}>{c.motivoReprovacaoDiretoria}</span></>}</span>
               </div>
+            )}
+            {/* Motivo de um ajuste reprovado — pedido do cliente: vermelho só
+                aqui, não no "Motivo:" comum (causa da divergência), que
+                continua neutro. Só quando NÃO veio pelo fluxo de SA/Diretoria
+                acima (esse já mostra o motivo embutido no próprio alerta roxo,
+                mostrar de novo aqui duplicaria) — cobre o caso de
+                "Reprovar ajuste" em Contagens Concluídas
+                (reprovarAjusteHistoricoNaLinha), que reabre o item sem SA. */}
+            {!c.reprovadoPelaDiretoria && c.motivoReprovacaoDiretoria && (
+              <div style={{padding:'10px 16px 0',fontSize:12.5,color:'var(--danger)'}}>Motivo da reprovação: <strong>{c.motivoReprovacaoDiretoria}</strong></div>
             )}
             {c.recontagemSolicitadaPeloLider && (
               <div className="divergence-alert"><Ic>⚠</Ic>
@@ -8118,7 +8131,7 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
                         <div className="count-card-extra">
                           {c.almoxarifado && <div>Armazém: <strong>{c.almoxarifado}</strong></div>}
                           {c.enderecoContado && c.enderecoContado!==c.endereco && <div>Endereço contado: <strong>{c.enderecoContado}</strong></div>}
-                          {c.motivo && <div style={{color:'var(--danger)'}}>Motivo: <strong>{c.motivo}</strong></div>}
+                          {c.motivo && <div>Motivo: <strong>{c.motivo}</strong></div>}
                           {limparObservacaoExibicao(c.observacao) && <div>Observação: {limparObservacaoExibicao(c.observacao)}</div>}
                           {c.foto && <div>Foto anexada na contagem.</div>}
                           {c.valorDivergente && Number(c.valorDivergente)!==0 && <div>Valor divergente: <strong>R$ {Number(c.valorDivergente).toFixed(2)}</strong></div>}
@@ -8372,7 +8385,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSend
                   <div className="rg"><div className="k">%</div><div className="v" style={{color:sev.color}}>{c.percentual==null ? '—' : Math.round(c.percentual)+'%'}</div></div>
                 </div>
               )}
-              {c.motivo && <div style={{padding:'10px 16px 0',fontSize:12.5,color:'var(--danger)'}}>Motivo: <strong>{c.motivo}</strong></div>}
+              {c.motivo && <div style={{padding:'10px 16px 0',fontSize:12.5}}>Motivo: <strong>{c.motivo}</strong></div>}
               {/* Bug real corrigido aqui: esta tela nunca mostrava `observacao`
                   em lugar nenhum (só `motivo`) — passava batido pra qualquer
                   contagem ao vivo com observação preenchida, e ficava
@@ -8385,8 +8398,19 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSend
               {limparObservacaoExibicao(c.observacao) && <div style={{padding:'6px 16px 0',fontSize:12.5,color:'var(--ink-dim)'}}>Observação: {limparObservacaoExibicao(c.observacao)}</div>}
               {c.reprovadoPelaDiretoria && (
                 <div className="divergence-alert" style={{margin:'10px 16px 0',background:'#F1E9FB',borderColor:'#7B3FC4',color:'#7B3FC4'}}>
-                  <Ic>⛔</Ic><span>A Diretoria reprovou a SA {c.solicitacaoAjuste} em {c.reprovadoEm} — reenviado para nova análise.{c.motivoReprovacaoDiretoria && <><br/><strong>Motivo:</strong> {c.motivoReprovacaoDiretoria}</>}</span>
+                  <Ic>⛔</Ic><span>A Diretoria reprovou a SA {c.solicitacaoAjuste} em {c.reprovadoEm} — reenviado para nova análise.{c.motivoReprovacaoDiretoria && <><br/><strong>Motivo da reprovação:</strong> <span style={{color:'var(--danger)'}}>{c.motivoReprovacaoDiretoria}</span></>}</span>
                 </div>
+              )}
+              {/* Motivo de um ajuste reprovado — vermelho só aqui, não no
+                  "Motivo:" comum (causa da divergência), que continua neutro
+                  (pedido do cliente, ver seção "'Motivo' em vermelho..." no
+                  CLAUDE.md). Só quando NÃO veio pelo fluxo de SA/Diretoria
+                  acima (esse já mostra o motivo embutido no próprio alerta
+                  roxo) — cobre o caso de "Reprovar ajuste" em Contagens
+                  Concluídas (reprovarAjusteHistoricoNaLinha), que reabre o
+                  item aqui sem SA nenhuma envolvida. */}
+              {!c.reprovadoPelaDiretoria && c.motivoReprovacaoDiretoria && (
+                <div style={{padding:'6px 16px 0',fontSize:12.5,color:'var(--danger)'}}>Motivo da reprovação: <strong>{c.motivoReprovacaoDiretoria}</strong></div>
               )}
               {c.diferencaConfirmada && (
                 <div className="divergence-alert" style={{margin:'10px 16px 0'}}>
@@ -8554,7 +8578,7 @@ function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejec
                 <div className="rg"><div className="k">%</div><div className="v" style={{color:sev.color}}>{c.percentual==null ? '—' : Math.round(c.percentual)+'%'}</div></div>
               </div>
               <div style={{padding:'10px 16px 0',fontSize:12.5,color:'var(--ink-dim)'}}>SA gerada por {c.saGeradaPor||'—'} em {c.saGeradaEm||'—'}</div>
-              {c.motivo && <div style={{padding:'6px 16px 0',fontSize:12.5,color:'var(--danger)'}}>Motivo: <strong>{c.motivo}</strong></div>}
+              {c.motivo && <div style={{padding:'6px 16px 0',fontSize:12.5}}>Motivo: <strong>{c.motivo}</strong></div>}
               {c.valorDivergente!=null && Number(c.valorDivergente)!==0 && <div style={{padding:'6px 16px 0',fontSize:12.5}}>Valor divergente: <strong>R$ {Number(c.valorDivergente).toFixed(2)}</strong></div>}
               {erros[c.id] && (
                 <div className="divergence-alert" style={{margin:'10px 16px 0'}}><Ic>⚠</Ic><span>{erros[c.id]}</span></div>
@@ -9084,8 +9108,9 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
                         </div>
                         {(r.endereco || r.enderecoContado) && <div style={{fontSize:12.5}}>Endereço: <strong>{r.endereco || r.enderecoContado}</strong></div>}
                         {r.valorDivergente!=null && r.valorDivergente!==0 && <div style={{fontSize:12.5}}>Valor divergente: <strong>R$ {Number(r.valorDivergente).toFixed(2)}</strong></div>}
-                        {r.motivo && <div style={{fontSize:12.5,color:'var(--danger)'}}>Motivo: <strong>{r.motivo}</strong></div>}
+                        {r.motivo && <div style={{fontSize:12.5}}>Motivo: <strong>{r.motivo}</strong></div>}
                         {limparObservacaoExibicao(r.observacao) && <div style={{fontSize:12.5}}>Observação: {limparObservacaoExibicao(r.observacao)}</div>}
+                        {r.motivoReprovacaoDiretoria && <div style={{fontSize:12.5,color:'var(--danger)'}}>Motivo da reprovação: <strong>{r.motivoReprovacaoDiretoria}</strong></div>}
                         {r.aprovadoPor && <div style={{fontSize:12,color:'var(--ink-dim)'}}>Aprovado por {r.aprovadoPor} em {r.aprovadoEm}</div>}
                         {!r._fromHistorico && r.solicitacaoAjuste && (
                           <div style={{fontSize:11.5,color:'var(--ink-dim)',fontFamily:'var(--font-mono)'}}>

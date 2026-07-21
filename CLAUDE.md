@@ -7374,3 +7374,61 @@ agrega nada).
   quebrar nada. **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma
   limitação de sempre (login exige Supabase Auth real, não simulável no sandbox sem
   rede).
+
+## Correção: vermelho só no motivo da REPROVAÇÃO, não no motivo geral da divergência
+
+Cliente corrigiu logo depois da rodada anterior: "Não, esse vermelho é apenas nos
+motivos dos ajustes que foram reprovados" — a 1ª interpretação (pintar de vermelho os
+4 pontos que mostram "Motivo:", a causa da divergência, tipo "Chapas/Barras e Tubos")
+estava errada; o pedido era só sobre o motivo digitado ao REPROVAR um ajuste.
+
+- **Revertido**: os 4 pontos com "Motivo: <strong>{c.motivo}</strong>"
+  (`RecountsPanel`/`DivergentItemsPanel`/`DiretoriaApprovalPanel`/`ConcludedCountsPanel`)
+  voltaram à cor neutra de sempre.
+- **Redesenho do "motivo da reprovação" do fluxo histórico**: até aqui, o motivo
+  digitado em "Reprovar ajuste" (`ConcludedCountsPanel`/
+  `reprovarAjusteHistoricoNaLinha`) ficava embutido dentro do campo `observacao`
+  ("...— Motivo da reprovação: X") — mesma raiz do problema que motivou a rodada
+  anterior (texto amontoado, difícil de destacar só uma parte). Passou a usar a MESMA
+  coluna que o fluxo de SA/Diretoria já tinha (`motivo_reprovacao_diretoria`, criada na
+  seção "Motivo da reprovação" acima) — `observacao` volta a ser só o texto original
+  da planilha, sem nada embutido.
+- **Exibição, 2 casos que nunca se sobrepõem** (`c.reprovadoPelaDiretoria` distingue
+  qual):
+  - **Via SA/Diretoria** (`reprovadoPelaDiretoria:true`): o motivo continua dentro do
+    MESMO alerta roxo "A Diretoria reprovou a SA...", mas agora só o VALOR do motivo
+    fica vermelho (`<span style={{color:'var(--danger)'}}>`), não a frase toda — o
+    resto do alerta continua na paleta roxa reservada pra esse estado. Rótulo também
+    passou de "Motivo:" pra "Motivo da reprovação:", pra não confundir com o "Motivo:"
+    comum.
+  - **Via histórico** (`!reprovadoPelaDiretoria && motivoReprovacaoDiretoria`): bloco
+    novo, próprio, com "Motivo da reprovação: {texto}" inteiro em vermelho — aparece
+    em `RecountsPanel`/`DivergentItemsPanel` (as duas telas que podem mostrar um item
+    reaberto por esse fluxo) e no detalhe de rodada de `ConcludedCountsPanel` (pra
+    manter o rastro de auditoria, caso o item já tenha sido resolvido de novo depois).
+- Testado via harness real (jsdom + react-dom/client + `act()`, mesma técnica rigorosa
+  de sempre): motivo geral da divergência (causa) confirmado SEM cor (neutro); motivo
+  da reprovação (fluxo histórico) aparece separado da Observação, em elemento próprio,
+  com `color:'var(--danger)'`, tanto em `DivergentItemsPanel` quanto em
+  `RecountsPanel`; motivo da reprovação (fluxo SA/Diretoria) aparece exatamente 1 vez
+  (não duplicado), dentro do alerta roxo. Dois testes de regressão precisaram só de
+  ajuste de texto/coluna esperada (rótulo "Motivo:" → "Motivo da reprovação:" dentro do
+  alerta roxo; motivo passou de dentro de `observacao` pra `motivo_reprovacao_diretoria`
+  no retorno de `reprovarAjusteHistoricoNaLinha`) — mudança de comportamento intencional
+  desta correção, não regressão. Transpile Babel do arquivo inteiro e balanceamento de
+  chaves do CSS conferidos (577/577, sem mudança). Rodei de novo toda a suíte de
+  regressão disponível no scratchpad, sem quebrar nada. **Verificação visual de ponta a
+  ponta fica a cargo do cliente** — mesma limitação de sempre (login exige Supabase
+  Auth real, não simulável no sandbox sem rede).
+
+## Investigação: "Itens Divergentes" caiu de 40+ pra 21 — não é bug
+
+Cliente reportou o número caindo de repente. Investigado a lógica de filtragem de
+`DivergentItemsPanel` (nenhuma mudança desta sessão toca nela — só ajustes visuais em
+telas diferentes) e confirmado com o cliente: os itens que "sumiram" foram movidos
+pelas próprias ações que essa tela já tem — "Sem Ajuste Necessário" (vai pra
+"Contagens Concluídas"), "Gerar SA de Ajuste" (vai pra "Aprovação de Ajustes") ou
+"Solicitar nova contagem" (vai pra "Recontagens Pendentes"). Nenhuma dessas ações
+apaga a contagem, só muda o status pra outra fila — não é perda de dado. Sem mudança
+de código nesta investigação, registrado aqui só pra não perder o contexto caso o
+cliente relate o mesmo susto de novo no futuro.

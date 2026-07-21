@@ -1034,7 +1034,7 @@ alter table contagens add column if not exists reprovado_por text;
 alter table contagens add column if not exists reprovado_em text;
 
 -- =============================================================================
--- MOTIVO DA REPROVAÇÃO DE AJUSTE (Diretoria) — pedido do cliente
+-- MOTIVO DA REPROVAÇÃO DE AJUSTE — pedido do cliente, reaproveitada por 2 fluxos
 --
 -- Ao reprovar uma SA de Ajuste (tela "Aprovação de Ajustes"), o admin agora
 -- precisa digitar POR QUE o ajuste não foi aceito — antes só ficava registrado
@@ -1042,6 +1042,14 @@ alter table contagens add column if not exists reprovado_em text;
 -- sem nenhum motivo. O campo é exibido no card do item reaberto em
 -- "Recontagens Pendentes"/"Itens Divergentes", junto do aviso "A Diretoria
 -- reprovou a SA...".
+--
+-- MESMA coluna também reaproveitada pelo "Reprovar ajuste" de "Contagens
+-- Concluídas" (item "Ajustado" do histórico revertido pra "Ajustar",
+-- reprovarAjusteHistoricoNaLinha) — apesar do nome ("...diretoria"), guarda o
+-- motivo de QUALQUER reprovação de ajuste, não só a via SA/Diretoria; manter
+-- uma coluna só em vez de criar uma 2ª evita duplicar o mesmo conceito. Nesse
+-- 2º fluxo o motivo NÃO fica mais embutido dentro de `observacao` (era assim
+-- antes; cliente achou poluído) — cada informação na sua própria coluna.
 --
 -- Sem policy nova — mesma UPDATE já existente em `contagens` cobre.
 -- =============================================================================
