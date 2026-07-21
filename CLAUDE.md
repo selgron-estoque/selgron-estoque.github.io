@@ -7216,3 +7216,44 @@ entre milhares de linhas.
   novo toda a suíte de regressão disponível no scratchpad, sem quebrar nada.
   **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma limitação
   de sempre (login exige Supabase Auth real, não simulável no sandbox sem rede).
+
+## "Recontagens Pendentes" ganha botão de ordenação (Código / Endereço)
+
+Cliente pediu: "Em recontagem, colocar um botão de ordenação assim eu posso escolher
+se quero contar por ordem de código ou por endereço" — a fila hoje vinha sempre na
+ordem de chegada (com urgentes sempre no topo), sem opção de reordenar pra seguir uma
+sequência física de prateleiras em vez de pular de código em código.
+
+- **`ordenacao`** (`RecountsPanel`, `useState('codigo')`) — mesmo critério de
+  `busca`/`severidade` nesta tela: preferência de sessão, não persiste (`useState`
+  puro, não `usePersistedState`) — reabrir a tela volta ao padrão "Código".
+- **Urgente continua sempre no topo, não importa a ordenação escolhida** — o sort
+  passou a ter dois níveis: 1º urgência (como já era), 2º o critério escolhido
+  (código ou endereço) como desempate dentro de cada grupo. Isso preserva 100% o
+  comportamento já existente de "item marcado urgente sempre aparece primeiro"
+  (pedido em rodada anterior, ver "Marcar item como urgente" no histórico acima).
+- **Ordenar por Endereço**: compara `c.endereco` (string) — item **sem** endereço
+  cadastrado vai pro FINAL da lista, não pro topo (comparação de string vazia
+  colocaria ele primeiro por engano, já que `''` "vem antes" de qualquer letra/
+  número). Empate de mesmo endereço (mais de um item na mesma posição) desempata
+  por código, mesmo critério do modo "Código".
+- **Toggle visual**: 2 botões pill (`btn-primary`/`btn-outline`, mesmo padrão já
+  usado em `SeverityFilterRow`/`StatusConcluidoFilterRow`), com um ícone novo
+  (`arrowsUpDown`, adicionado a `DICON_PATHS` no mesmo estilo Lucide-ish dos outros
+  30+ ícones do app) e o rótulo "Ordenar por:" — logo abaixo do filtro de
+  severidade já existente.
+- **Escopo**: só `RecountsPanel` ("Recontagens Pendentes"), como pedido — não
+  estendido a "Itens Divergentes"/"Contagens Concluídas" (o pedido do cliente foi
+  específico sobre "recontagem"; se ele quiser o mesmo toggle nas outras 2 telas de
+  listagem de contagem, é só replicar o mesmo padrão).
+- Testado via harness real (jsdom + react-dom/client + `act()`, mesma técnica
+  rigorosa de sempre): 5 itens sintéticos (1 urgente + 4 normais, incluindo 1 sem
+  endereço) — confirma que os botões existem, que o padrão inicial ("Código") ordena
+  certo com o urgente sempre primeiro, que clicar "Endereço" reordena o resto por
+  endereço (com o item sem endereço indo pro final, não pro topo) mantendo o
+  urgente no topo, e que voltar pra "Código" reordena de novo corretamente.
+  Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos
+  (577/577, sem mudança — nenhuma classe CSS nova). Rodei de novo toda a suíte de
+  regressão disponível no scratchpad, sem quebrar nada. **Verificação visual de
+  ponta a ponta fica a cargo do cliente** — mesma limitação de sempre (login exige
+  Supabase Auth real, não simulável no sandbox sem rede).
