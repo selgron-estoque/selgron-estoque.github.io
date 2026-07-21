@@ -5626,18 +5626,31 @@ function InventoryList({inventories, goto, role, counts, onDelete, onCancel}){
               <Ic>📋</Ic> {itensAberto ? 'Ocultar itens' : `Itens (${inv.itensImportados.length})`}
             </button>
             {itensAberto && (() => {
-              const codigosContados = new Set((counts||[]).filter(c=>c.inventario===inv.id).map(c=>c.productCode));
+              // Um item pode ter mais de uma rodada (recontagem) dentro do mesmo
+              // inventário — usa sempre a rodada MAIS RECENTE (maior numeroContagem)
+              // pra decidir se está divergente hoje, não a 1ª (que pode já ter sido
+              // corrigida por uma recontagem seguinte).
+              const ultimaPorCodigo = {};
+              (counts||[]).filter(c=>c.inventario===inv.id).forEach(c=>{
+                const atual = ultimaPorCodigo[c.productCode];
+                if(!atual || (c.numeroContagem||1) >= (atual.numeroContagem||1)) ultimaPorCodigo[c.productCode] = c;
+              });
               return (
                 <div style={{marginTop:10,display:'flex',flexDirection:'column',gap:6,maxHeight:280,overflowY:'auto'}}>
                   {inv.itensImportados.map(it=>{
-                    const contado = codigosContados.has(it.codigo);
+                    const countItem = ultimaPorCodigo[it.codigo];
+                    const contado = !!countItem;
+                    const divergente = contado && countItem.diferenca!=null && countItem.diferenca!==0;
                     return (
                       <div key={it.codigo} className="list-row" style={{cursor:'default',margin:0}}>
                         <div>
                           <div className="lr-title">{it.codigo} · {it.descricao || '—'}</div>
                           <div className="lr-sub">{it.endereco || 'sem endereço'}</div>
                         </div>
-                        <StatusTag status={contado ? 'ok' : 'warn'} text={contado ? 'Contado' : 'Pendente'} />
+                        <StatusTag
+                          status={!contado ? 'warn' : (divergente ? 'danger' : 'ok')}
+                          text={!contado ? 'Pendente' : (divergente ? (<><Ic>⚠</Ic> Contado</>) : 'Contado')}
+                        />
                       </div>
                     );
                   })}

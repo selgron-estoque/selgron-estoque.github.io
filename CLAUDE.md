@@ -6801,3 +6801,39 @@ expande uma lista com código/descrição/endereço de cada item e se já foi co
   — nenhuma classe CSS nova). **Verificação visual fica a cargo do cliente** — mesma
   limitação de sempre (login exige Supabase Auth real, não simulável no sandbox sem
   rede).
+
+## "Itens (N)" ganha 3 estados: Pendente / Contado (sem divergência) / Contado (divergente)
+
+Logo depois da rodada anterior, o cliente pediu pra diferenciar visualmente, dentro
+da lista de itens de um documento, um item contado que BATEU do que foi contado mas
+DIVERGIU: "Contado em verde são itens sem divergência. Contado em vermelho e com o
+ícone de atenção, são itens com divergência".
+
+- **Rodada mais recente decide, não a 1ª**: um item pode ter mais de uma contagem
+  (recontagem) dentro do MESMO inventário — `ultimaPorCodigo` (dentro do bloco que já
+  monta a lista) escolhe, pra cada código, a contagem com o maior `numeroContagem` —
+  se a 1ª rodada divergiu mas uma recontagem seguinte já resolveu (`diferenca:0`), o
+  item aparece VERDE, não vermelho (testado explicitamente: 1ª rodada com diferença,
+  2ª rodada zerada → mostra "Contado" verde).
+- **`divergente = contado && countItem.diferenca!=null && countItem.diferenca!==0`**
+  — mesmo critério já usado em todo o resto do app pra decidir "isso divergiu"
+  (`divergentes = counts.filter(c=>c.diferenca!==0 && c.diferenca!==null)`, usado no
+  Dashboard/Home) — nenhuma regra nova inventada, só reaplicada aqui.
+- **3 combinações de `StatusTag`**: sem nenhuma contagem → `status="warn"`/"Pendente"
+  (âmbar, como já era); contado sem divergência → `status="ok"`/"Contado" (verde,
+  como já era); contado COM divergência → `status="danger"`/"Contado" com
+  `<Ic>⚠</Ic>` na frente (vermelho). O ícone de atenção não sobra como o caractere
+  "⚠" no texto — a app já converte todo emoji em ícone SVG linear
+  (`Ic`/`EMOJI_TO_DICON`/`DIcon`, ver "Unificação de ícones" no histórico acima), então
+  o que aparece é o mesmo ícone `alertTriangle` já usado em alertas de divergência no
+  resto do app, não um emoji cru.
+- Testado via harness real (jsdom + react-dom/client + `act()`, mesma técnica de
+  sempre): 3 itens — um contado sem divergência (verde, sem ícone de perigo), um
+  nunca contado (âmbar/"Pendente"), um contado com divergência na rodada mais recente
+  (vermelho/"Contado" + ícone `alertTriangle` dentro do `status-tag`) — e um 4º
+  cenário à parte confirmando que um item com a 1ª rodada divergente e a 2ª já
+  resolvida (`diferenca:0`) aparece verde, não vermelho. Transpile Babel do arquivo
+  inteiro e balanceamento de chaves do CSS conferidos (576/576, sem mudança — nenhuma
+  classe CSS nova, só o `status="danger"` já existente no componente `StatusTag`).
+  **Verificação visual fica a cargo do cliente** — mesma limitação de sempre (login
+  exige Supabase Auth real, não simulável no sandbox sem rede).
