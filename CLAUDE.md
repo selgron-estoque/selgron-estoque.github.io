@@ -6971,3 +6971,56 @@ o que não acontecia.
   próximo passo é ele reimportar a planilha corrigida e confirmar que os itens
   resolvidos saem de "Recontagens"/"Itens Divergentes" e aparecem em "Contagens
   Concluídas" com o badge certo (Ajustado/Sem Ajuste/SALDO OK, ver seção anterior).
+
+## Filtro "Todos os períodos" vira o padrão em Recontagens/Itens Divergentes/Aprovação de Ajustes/Contagens Concluídas
+
+Cliente reportou (com print da Sidebar destacando essas 4 telas): "os filtros de data...
+devem iniciar sem nenhum período selecionado. Atualmente, eles carregam automaticamente
+os últimos 30 dias, o que acaba limitando as consultas" — pedindo, como alternativa
+aceitável caso um padrão restrito fosse necessário por performance, um botão "Remover/
+Limpar Filtros".
+
+- **Não havia custo de performance nenhum em remover o padrão de 30 dias** — `counts`
+  (contagens ao vivo) já chega inteiro no navegador via Realtime/paginação sem limite
+  (`fetchContagensFromSupabase`, sem teto de linhas — ver "Bug real de causa raiz: teto
+  de linhas do Supabase..." no histórico acima) e `historicoConcluidas` também já vem
+  paginado por completo. O filtro de período nessas 4 telas sempre foi só um `.filter()`
+  em memória sobre dado já carregado — nunca uma consulta nova ao Supabase. Ou seja,
+  tirar a janela de 30 dias por padrão não tem nenhum trade-off de rede/performance
+  real — é estritamente melhor, não uma escolha entre duas alternativas. Por isso a
+  implementação escolhida foi a mais direta (menor impacto na estrutura, como o próprio
+  cliente sugeriu): trocar o valor PADRÃO do filtro, não inventar um mecanismo novo.
+- **`computeTrendRange` ganhou o caso `'todos'`** (perto do `case 'hoje'`) — retorna
+  `{from:'1970-01-01', to:hojeStr}`, uma data-sentinela bem anterior a qualquer registro
+  real do app (contagem ao vivo ou histórico importado). Efeito idêntico a "sem filtro
+  nenhum", sem precisar mudar a lógica de comparação `data>=dataInicioStr &&
+  data<=dataFimStr` já usada nas 4 telas — mesmo raciocínio de baixo impacto.
+- **Pill "Todos os períodos" nova**, primeira da lista em `TrendFilterBar` (antes de
+  "Hoje") — ao mesmo tempo satisfaz o pedido alternativo do cliente ("botão Remover/
+  Limpar Filtros"): clicar nela a qualquer momento volta a mostrar tudo, sem precisar de
+  um elemento de UI novo/separado — reaproveita o mesmo padrão de pills já estabelecido.
+- **Escopo**: só as 4 telas que o print da Sidebar destacava —
+  `RecountsPanel`/`DivergentItemsPanel`/`DiretoriaApprovalPanel`/`ConcludedCountsPanel`
+  (`useState` local de cada uma, `{tipo:'30d',...}` → `{tipo:'todos',...}`). **O filtro
+  de "Tendência" em Indicadores (`Dashboard`, `dashboardTrendFilter`) não foi tocado** —
+  continua persistindo em `localStorage` com padrão "Últimos 30 dias", decisão diferente
+  já confirmada explicitamente pelo cliente antes (ver "Painel 'Filtros' — redesign
+  completo estilo SaaS premium": "persistir o último filtro utilizado"). A pill "Todos
+  os períodos" aparece lá também (componente compartilhado, `TrendFilterBar`), o que só
+  soma uma opção a mais — não muda o padrão nem o comportamento de persistência daquela
+  tela.
+- **Limitação que não muda com esta rodada**: um item SEM `data` continua de fora de
+  QUALQUER filtro de período, incluindo "Todos os períodos" — decisão já tomada antes
+  ("item sem data não deve aparecer em nenhum filtro de período, ponto", ver "Filtro de
+  período... Tendência em Indicadores" acima), não revista aqui.
+- Testado via harness real (jsdom + react-dom/client + `act()`, mesma técnica de
+  sempre): `computeTrendRange('todos', ...)` retorna `1970-01-01`→hoje; um item datado
+  de 2020 (bem fora de qualquer janela fixa de 30/60/90 dias/ano) aparece por padrão nas
+  4 telas sem precisar clicar em nada; a pill "Todos os períodos" vem marcada como ativa
+  por padrão; escolher "Últimos 30 dias" esconde o item de 2020, e voltar pra "Todos os
+  períodos" traz ele de volta. Transpile Babel do arquivo inteiro e balanceamento de
+  chaves do CSS conferidos (577/577, sem mudança — nenhuma classe CSS nova). Rodei de
+  novo a suíte de regressão que toca essas 4 telas (Diretoria, Concluídas, histórico,
+  itens do inventário) sem quebrar nada. **Verificação visual fica a cargo do cliente**
+  — mesma limitação de sempre (login exige Supabase Auth real, não simulável no sandbox
+  sem rede).

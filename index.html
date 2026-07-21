@@ -7696,8 +7696,14 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
   // `useState` puro (não `usePersistedState`) — pedido do cliente: o
   // filtro deve voltar ao padrão sempre que a tela recarregar, não ficar
   // lembrado entre sessões (mesmo critério em Itens Divergentes/Contagens
-  // Concluídas, ver abaixo).
-  const [trendFilter, setTrendFilter] = useState({tipo:'30d', from:'', to:''});
+  // Concluídas, ver abaixo). Padrão mudou de "Últimos 30 dias" pra "Todos os
+  // períodos" — cliente reportou que o filtro de 30 dias escondia registro
+  // de verdade sem nenhum aviso ("acaba limitando as consultas"); como
+  // `counts` já vem inteiro pro navegador (Realtime, sem paginação por
+  // período), tirar a janela de 30 dias por padrão não tem custo nenhum de
+  // rede/performance — é só filtro em memória, então "sem filtro" por
+  // padrão é estritamente melhor aqui, não uma troca.
+  const [trendFilter, setTrendFilter] = useState({tipo:'todos', from:'', to:''});
   const hojeStr = hojeLocalStr();
   const { from: dataInicioStr, to: dataFimStr } = computeTrendRange(trendFilter.tipo, hojeStr, trendFilter.from, trendFilter.to);
   const aguardandoSegundaNoPeriodo = aguardandoSegunda.filter(c=>c.data && c.data>=dataInicioStr && c.data<=dataFimStr);
@@ -7961,8 +7967,9 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSend
 
   // Filtro de período ("Filtros"), mesmo critério e mesmo comentário já
   // usado em RecountsPanel — `useState` puro, não `usePersistedState` (o
-  // filtro volta ao padrão sempre que a tela recarregar, pedido do cliente).
-  const [trendFilter, setTrendFilter] = useState({tipo:'30d', from:'', to:''});
+  // filtro volta ao padrão sempre que a tela recarregar, pedido do cliente),
+  // padrão "Todos os períodos" em vez de "Últimos 30 dias" (mesmo motivo).
+  const [trendFilter, setTrendFilter] = useState({tipo:'todos', from:'', to:''});
   const hojeStr = hojeLocalStr();
   const { from: dataInicioStr, to: dataFimStr } = computeTrendRange(trendFilter.tipo, hojeStr, trendFilter.from, trendFilter.to);
   const aguardandoAnaliseNoPeriodo = aguardandoAnalise.filter(c=>c.data && c.data>=dataInicioStr && c.data<=dataFimStr);
@@ -8199,7 +8206,10 @@ function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejec
   const canDecide = role==='admin';
   const aguardandoDiretoria = counts.filter(c=>c.statusAprovacao==='aguardando_aprovacao_diretoria');
 
-  const [trendFilter, setTrendFilter] = useState({tipo:'30d', from:'', to:''});
+  // Mesmo critério das demais telas de contagem — `useState` puro (não
+  // persiste) e padrão "Todos os períodos" (não esconde SA aguardando
+  // aprovação só porque foi gerada há mais de 30 dias).
+  const [trendFilter, setTrendFilter] = useState({tipo:'todos', from:'', to:''});
   const hojeStr = hojeLocalStr();
   const { from: dataInicioStr, to: dataFimStr } = computeTrendRange(trendFilter.tipo, hojeStr, trendFilter.from, trendFilter.to);
   const aguardandoDiretoriaNoPeriodo = aguardandoDiretoria.filter(c=>c.data && c.data>=dataInicioStr && c.data<=dataFimStr);
@@ -8559,9 +8569,12 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
 
   // Mesmo painel "Filtros" (presets de calendário) já usado em Indicadores —
   // `useState` puro, não `usePersistedState` (pedido do cliente: o filtro
-  // volta ao padrão "Últimos 30 dias" sempre que a tela recarregar, em vez
-  // de continuar lembrando o período escolhido da última vez).
-  const [trendFilter, setTrendFilter] = useState({tipo:'30d', from:'', to:''});
+  // volta ao padrão sempre que a tela recarregar, em vez de continuar
+  // lembrando o período escolhido da última vez). Padrão mudou de "Últimos
+  // 30 dias" pra "Todos os períodos" — mesmo motivo já documentado em
+  // RecountsPanel: o histórico completo já está em memória (sem paginação
+  // por data), então filtrar por padrão só escondia dado sem necessidade.
+  const [trendFilter, setTrendFilter] = useState({tipo:'todos', from:'', to:''});
   const hojeStr = hojeLocalStr();
   const { from: dataInicioStr, to: dataFimStr } = computeTrendRange(trendFilter.tipo, hojeStr, trendFilter.from, trendFilter.to);
 
@@ -9017,6 +9030,14 @@ function computeTrendRange(tipo, hojeStr, from, to){
   const hoje = new Date(hojeStr + 'T00:00:00');
   const fmt = d => d.toISOString().slice(0,10);
   switch(tipo){
+    // "Todos os períodos" — sem restrição de data nenhuma. Em vez de mudar a
+    // lógica de filtro em cada tela (que já compara `data>=dataInicioStr &&
+    // data<=dataFimStr`), usa uma data-sentinela bem anterior a qualquer
+    // registro real do app (nenhuma contagem, ao vivo ou do histórico
+    // importado, é de antes disso) — efeito idêntico a "sem filtro", menor
+    // impacto na estrutura já existente.
+    case 'todos':
+      return { from: '1970-01-01', to: hojeStr };
     case 'hoje':
       return { from: hojeStr, to: hojeStr };
     case 'semana': {
@@ -9523,6 +9544,7 @@ function TrendFilterBar({trendFilter, setTrendFilter, dataInicioStr, dataFimStr,
         <div className="tfb-period-label"><CalendarIcon /> Período</div>
         <div className="tfb-quick-buttons">
           {[
+            {v:'todos', l:'Todos os períodos'},
             {v:'hoje', l:'Hoje'},
             {v:'semana', l:'Esta semana'},
             {v:'mes', l:'Este mês'},
