@@ -8214,3 +8214,45 @@ visual — Fase 0" acima).
   cards.
 
 **Todas as 6 fases do plano de padronização estão concluídas e publicadas.**
+
+## Configurações: checkbox laranja + título de card maiúsculo/espaçado
+
+Cliente mandou 2 prints lado a lado ("Baixar Relatório" vs. "Configurações") e
+apontou: "em configurações a fonte e cor ou tamanho estão diferentes ainda" — depois
+da rodada de padronização acima (que só mexeu em VALORES duplicados dentro de cada
+sistema, nunca em `font-family`/`text-transform`), sobravam 2 diferenças reais:
+
+1. **Checkbox azul nativo do navegador** (`.cfg-check-row input`, sem
+   `accent-color` nenhum) em vez do laranja da marca — o app já tem esse precedente
+   em `.radio-opt input{accent-color:var(--safety)}`, só nunca tinha sido aplicado
+   às 2 checkboxes de Configurações. Corrigido, mesmo valor.
+2. **Título de cada card** (`.cfg-card-title`, "Visibilidade do saldo na
+   contagem") em negrito/minúsculo/preto/15px — diferente do padrão de cabeçalho
+   usado no resto do app (`.section-title`, ex. "BAIXAR RELATÓRIO": maiúsculo,
+   Oswald, letra espaçada, cinza, 12,5px). Perguntei via `AskUserQuestion` se
+   queria manter (padrão já estabelecido nas 3 telas "redesenhadas" — Configurações/
+   Usuários/Editar Usuário — desde as rodadas anteriores) ou alinhar ao padrão
+   antigo — cliente escolheu **alinhar**.
+   - `.cfg-card-title` trocou pra `font-family:var(--font-display);font-size:
+     var(--text-sm);font-weight:600;text-transform:uppercase;letter-spacing:1px;
+     color:var(--ink-dim)` — mesmas propriedades tipográficas de `.section-title`
+     (não literalmente a mesma classe, porque `.cfg-card-title` vive dentro de um
+     flex row ao lado do botão "?", sem o `margin:24px 0 12px 0` que `.section-
+     title` tem como elemento de bloco solto).
+   - **Escopo deliberadamente restrito só a `.cfg-card-title`** — não estendido a
+     `.um-name` (nome do usuário nos cards de "Usuários", mesmos valores numéricos
+     de `.cfg-card-title` só por coincidência — é um DADO, não um título decorativo;
+     deixar "ALISSON SILVA" maiúsculo/espaçado ficaria estranho ao lado de "(você)")
+     nem a `.uf-header-title`/`.uf-list-title` (o 2º já É maiúsculo/mono desde que
+     foi criado; o 1º é o título de PÁGINA de "Editar Usuário", papel diferente de
+     um título de card). Perguntei sobre "o mesmo padrão em Usuários/Editar
+     Usuário" na pergunta ao cliente pra evitar CRIAR uma inconsistência nova entre
+     essas 3 telas, mas na prática nenhuma das duas tinha um "título de card"
+     equivalente que valesse a pena tocar — só Configurações tinha o padrão
+     antigo (negrito/minúsculo) que o cliente queria trocar.
+- Testado via transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  (649/649, sem mudança — só valores dentro de 2 regras já existentes). Rodei
+  `harness_settings_redesign.js` de novo, sem quebrar nada (o erro `supabaseClient.
+  rpc is not a function` no log é o mesmo mock incompleto de sempre, não uma
+  regressão). **Verificação visual fica a cargo do cliente** — mesma limitação de
+  sempre (login exige Supabase Auth real, não simulável no sandbox sem rede).
