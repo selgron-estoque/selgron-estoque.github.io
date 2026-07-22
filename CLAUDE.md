@@ -8256,3 +8256,26 @@ sistema, nunca em `font-family`/`text-transform`), sobravam 2 diferenças reais:
   rpc is not a function` no log é o mesmo mock incompleto de sempre, não uma
   regressão). **Verificação visual fica a cargo do cliente** — mesma limitação de
   sempre (login exige Supabase Auth real, não simulável no sandbox sem rede).
+
+## Configurações: linha decorativa faltando no título do card
+
+Cliente mandou print apontando "Tem um risco ao lado dos nomes de relatório,
+implante em configurações como padrão" — "risco" aqui é "linha/traço", não
+"risco" no sentido de perigo: `.section-title` (usado em "BAIXAR RELATÓRIO") tem
+uma linha horizontal decorativa depois do texto, via `.section-title::after{content:
+'';flex:1;height:1px;background:var(--line);}` — na rodada anterior, ao alinhar
+`.cfg-card-title` à tipografia de `.section-title` (maiúsculo/Oswald/espaçado), só
+copiei as propriedades de FONTE, sem replicar essa linha.
+
+- `.cfg-card-title` ganhou `display:flex;align-items:center;gap:8px;flex:1` +
+  `.cfg-card-title::after{content:'';flex:1;height:1px;background:var(--line);}`
+  — mesmo padrão de `.section-title`, só que com `flex:1` A MAIS no próprio
+  `.cfg-card-title` (que `.section-title` não precisa): `.section-title` é um bloco
+  solto que já ocupa 100% da largura do painel por padrão; `.cfg-card-title` vive
+  dentro de `.cfg-card-head` (flex row, ao lado do botão "?"), então precisa de
+  `flex:1` pra crescer e "empurrar" o botão pro canto direito, dando espaço pra
+  linha se estender de verdade.
+- Testado via transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  (650/650 — 1 regra nova, `::after`). Rodei `harness_settings_redesign.js` de
+  novo, sem quebrar nada. **Verificação visual fica a cargo do cliente** — mesma
+  limitação de sempre.
