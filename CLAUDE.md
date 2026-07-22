@@ -8168,3 +8168,49 @@ Testado via transpile Babel do arquivo inteiro (OK) e balanceamento de chaves do
   continuam `true`. **Verificação visual fica a cargo do cliente**, mas o resultado
   esperado é ZERO diferença perceptível (só removeu duplicação de `style` inline
   por trás de valores idênticos).
+
+## Padronização de fontes, cores e tamanhos — Fase 6 (`.empty-state`) — ÚLTIMA FASE
+
+Fecha o plano de 6 fases aprovado em `EnterPlanMode`/`ExitPlanMode` no início desta
+rodada (ver "Padronização de fontes, cores e tamanhos — dentro de cada sistema
+visual — Fase 0" acima).
+
+- **Base `.empty-state{padding:50px 20px}` (nunca usada como autorada — todo call
+  site sobrescrevia) virou `padding:20px`** — o valor que 11 dos 22 overrides já
+  usavam (o "morto" de verdade era o `50px`, nunca visto em nenhum override real).
+  Nova classe `.empty-state--compact{padding:14px}` pro outro grupo (6 overrides
+  puros em `14px`).
+- **22 dos 23 call sites migrados**: 11 com `style={{padding:20}}` perderam o
+  `style` inteiro (já é o padrão da classe base); 6 com `style={{padding:14}}`
+  puro viraram `className="empty-state empty-state--compact"` sem `style`; 4 com
+  `padding` + outra propriedade (`marginTop:8`/`marginTop:14`/`marginBottom:14`)
+  mantiveram só a propriedade extra no `style`, com a classe certa
+  (`empty-state`/`empty-state--compact`) cuidando do padding.
+- **1 call site NÃO tinha override nenhum** (`InventoryList`, "Nenhum inventário
+  pendente no momento.", `style={{marginBottom:16}}` sem `padding`) — esse SEMPRE
+  rendeu com o padding-base "morto" (`50px 20px`), nunca migrado porque nunca
+  citado em nenhuma lista de override. Com a base virando `20px`, esse texto passa
+  a ter MENOS respiro vertical que tinha antes (era 50px, vira 20px) — diferente
+  dos outros 22, essa é uma mudança visual real, não só uma promoção de `style`
+  inline pra classe. **Decisão consciente**: mantido assim de propósito — o texto
+  é uma mensagem de "lista vazia" em tela cheia, semanticamente do mesmo grupo dos
+  outros 11 que já usavam `20px` (não do grupo `14px`, que é só pra dentro de
+  card/painel) — é mais coerente esse ficar alinhado ao grupo que já pertence por
+  significado do que preservar um respiro que só existia por nunca ter sido
+  revisado. **Sinalizado pro cliente conferir** esse texto específico (tela
+  "Inventários Pendentes" vazia) depois do deploy — é o único ponto desta fase
+  onde "zero mudança visual" não se aplica.
+- Testado via transpile Babel do arquivo inteiro (OK) e balanceamento de chaves do
+  CSS (649/649 — 1 regra nova, `.empty-state--compact`). Rodei 6 harnesses cobrindo
+  telas que usam `.empty-state` em vários contextos (`harness_home`,
+  `harness_route` — corredor sem itens, `harness_queue` — fila concluída,
+  `harness_concluidas`, `harness_diretoria`) — todas as asserções continuam
+  `true`. Um harness pré-existente (`harness_inv.js`) falhou, mas por um motivo
+  SEM relação com esta mudança: o teste assume o card de um inventário concluído
+  aparecer expandido de cara, mas "Concluídos" passou a nascer RECOLHIDO desde uma
+  rodada anterior desta sessão (ver "'Concluídos' ganha seta de recolher..." mais
+  acima) — o harness ficou desatualizado por causa daquela mudança, não desta;
+  confirmado que o diff desta fase não toca em nada de `InventoryList`/contagem de
+  cards.
+
+**Todas as 6 fases do plano de padronização estão concluídas e publicadas.**

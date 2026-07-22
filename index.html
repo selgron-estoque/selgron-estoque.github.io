@@ -665,7 +665,8 @@
   .nav-btn.active{color:var(--safety);}
   .nav-btn .ic{font-size:19px;}
 
-  .empty-state{text-align:center;padding:50px 20px;color:var(--ink-dim);}
+  .empty-state{text-align:center;padding:20px;color:var(--ink-dim);}
+  .empty-state--compact{padding:14px;}
   .empty-state .ic{font-size:40px;margin-bottom:12px;}
 
   .divergence-alert{background:var(--warn-bg);border:1px solid var(--warn);border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:var(--text-sm);display:flex;gap:10px;align-items:flex-start;}
@@ -6514,9 +6515,9 @@ function NewInventory({onCreate, goto, inventories, gruposExcluidos}){
               <div className="field">
                 <label>Grupo (pode selecionar mais de um)</label>
                 {grupos===null ? (
-                  <div className="empty-state" style={{padding:14}}>Carregando grupos disponíveis…</div>
+                  <div className="empty-state empty-state--compact">Carregando grupos disponíveis…</div>
                 ) : grupos.length===0 ? (
-                  <div className="empty-state" style={{padding:14}}>Nenhum grupo com saldo carregado ainda.</div>
+                  <div className="empty-state empty-state--compact">Nenhum grupo com saldo carregado ainda.</div>
                 ) : (
                   <GrupoMultiSelectField
                     grupos={grupos}
@@ -6579,9 +6580,9 @@ function NewInventory({onCreate, goto, inventories, gruposExcluidos}){
           <div className="field">
             <label>Buscar item por código ou descrição</label>
             <input type="text" value={especBusca} onChange={e=>setEspecBusca(e.target.value)} placeholder="Ex: 000.35310 ou parafuso" />
-            {especBuscando && <div className="empty-state" style={{padding:14,marginTop:8}}>Buscando no catálogo…</div>}
+            {especBuscando && <div className="empty-state empty-state--compact" style={{marginTop:8}}>Buscando no catálogo…</div>}
             {!especBuscando && especBusca.trim().length>=2 && especResultados.length===0 && (
-              <div className="empty-state" style={{padding:14,marginTop:8}}>Nenhum item encontrado.</div>
+              <div className="empty-state empty-state--compact" style={{marginTop:8}}>Nenhum item encontrado.</div>
             )}
             {especResultados.map(p=>{
               const jaAdicionado = (itensImportados||[]).some(it=>it.codigo===p.codigo);
@@ -6717,9 +6718,9 @@ function PickCountType({role, goto, onCreate, inventories, gruposExcluidos}){
         {grupoAvulsoAberto && (
           <div className="field" style={{marginTop:-6}}>
             {gruposAvulso===null ? (
-              <div className="empty-state" style={{padding:14}}>Carregando grupos disponíveis…</div>
+              <div className="empty-state empty-state--compact">Carregando grupos disponíveis…</div>
             ) : gruposAvulso.length===0 ? (
-              <div className="empty-state" style={{padding:14}}>Nenhum grupo com saldo carregado ainda.</div>
+              <div className="empty-state empty-state--compact">Nenhum grupo com saldo carregado ainda.</div>
             ) : (
               <>
                 <GrupoMultiSelectField
@@ -7456,7 +7457,7 @@ function RandomCountFlow({inv, user, onRegisterCount, onFinish, onAddressPropose
   }
 
   if(allItems===null){
-    return <div className="empty-state" style={{padding:20}}>Carregando itens para contagem…</div>;
+    return <div className="empty-state">Carregando itens para contagem…</div>;
   }
 
   if(q.done){
@@ -7518,9 +7519,9 @@ function ArmazemGate({onSelected, titulo}){
       <div className="field">
         <label>Armazém</label>
         {armazens===null ? (
-          <div className="empty-state" style={{padding:14}}>Carregando armazéns…</div>
+          <div className="empty-state empty-state--compact">Carregando armazéns…</div>
         ) : armazens.length===0 ? (
-          <div className="empty-state" style={{padding:14}}>Nenhum armazém com saldo carregado ainda.</div>
+          <div className="empty-state empty-state--compact">Nenhum armazém com saldo carregado ainda.</div>
         ) : (
           <select value={valor} onChange={e=>setValor(e.target.value)}>
             <option value="">Selecione o armazém…</option>
@@ -7588,8 +7589,8 @@ function ManualCountFlow({user, onFinish, onAddressProposed, counts, operadorVeS
         <label>Ou buscar por código, descrição ou código de barras</label>
         <input type="text" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Ex: 000.35310 ou parafuso" />
       </div>
-      {loading && <div className="empty-state" style={{padding:20}}>Buscando no catálogo…</div>}
-      {!loading && results.length===0 && query && <div className="empty-state" style={{padding:20}}>Nenhum item encontrado.</div>}
+      {loading && <div className="empty-state">Buscando no catálogo…</div>}
+      {!loading && results.length===0 && query && <div className="empty-state">Nenhum item encontrado.</div>}
       {results.map(p=>(
         <div key={p.codigo} className="list-row" onClick={()=>setSelected(p)}>
           <div>
@@ -7676,7 +7677,7 @@ function RouteCountFlow({inv, user, onRegisterCount, onFinish, onAddressProposed
   }
 
   if(anyAddress===null){
-    return <div className="empty-state" style={{padding:20}}>Verificando endereços cadastrados…</div>;
+    return <div className="empty-state">Verificando endereços cadastrados…</div>;
   }
 
   if(!anyAddress || !grouped){
@@ -7813,7 +7814,7 @@ function ImportedListCountFlow({inv, user, onRegisterCount, onFinish, onAddressP
   const q = useCountQueue(pendentes);
 
   if(allItems===null){
-    return <div className="empty-state" style={{padding:20}}>Carregando itens da lista importada…</div>;
+    return <div className="empty-state">Carregando itens da lista importada…</div>;
   }
 
   if(allItems.length===0){
@@ -7900,7 +7901,7 @@ function RecountFlow({original, user, onFinish, onAddressProposed, operadorVeSal
   }, [original.productCode, original.almoxarifado]);
 
   if(produtoBase===null){
-    return <div className="empty-state" style={{padding:20}}>Carregando item…</div>;
+    return <div className="empty-state">Carregando item…</div>;
   }
 
   // Item sem cadastro de endereço (comum — o Protheus ainda não tem esse
@@ -8235,7 +8236,7 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
       </div>
 
       {listaFiltrada.length===0 ? (
-        <div className="empty-state" style={{padding:20}}>
+        <div className="empty-state">
           {aguardandoSegunda.length===0
             ? 'Nenhum item aguardando recontagem no momento.'
             : (aguardandoSegundaNoPeriodo.length===0 ? 'Nenhum item aguardando recontagem nesse período.' : 'Nenhum item encontrado para esse filtro.')}
@@ -8503,7 +8504,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSend
       </div>
 
       {listaFiltrada.length===0 ? (
-        <div className="empty-state" style={{padding:20}}>
+        <div className="empty-state">
           {aguardandoAnalise.length===0
             ? 'Nenhuma divergência aguardando análise no momento.'
             : (aguardandoAnaliseNoPeriodo.length===0 ? 'Nenhuma divergência aguardando análise nesse período.' : 'Nenhum item encontrado para esse filtro.')}
@@ -8744,7 +8745,7 @@ function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejec
       </div>
 
       {listaFiltrada.length===0 ? (
-        <div className="empty-state" style={{padding:20}}>
+        <div className="empty-state">
           {aguardandoDiretoria.length===0
             ? 'Nenhuma SA de ajuste aguardando aprovação no momento.'
             : (aguardandoDiretoriaNoPeriodo.length===0 ? 'Nenhuma SA aguardando aprovação nesse período.' : 'Nenhum item encontrado para esse filtro.')}
@@ -8862,7 +8863,7 @@ function AllDivergencesPanel({counts, historicoConcluidas, goto}){
       </div>
       <div className="panel">
         {filtrados.length===0 ? (
-          <div className="empty-state" style={{padding:20}}>{termo ? 'Nenhum item encontrado para essa busca.' : 'Nenhuma divergência registrada no momento.'}</div>
+          <div className="empty-state">{termo ? 'Nenhum item encontrado para essa busca.' : 'Nenhuma divergência registrada no momento.'}</div>
         ) : (
           <table className="rank-table">
             <thead><tr><th>Produto</th><th>Almox.</th><th className="num">Esperado</th><th className="num">Encontrado</th><th className="num">Diferença</th><th className="num">Valor (R$)</th></tr></thead>
@@ -9178,7 +9179,7 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
         {cadeiasNoPeriodo.length>0 && <span className="badge" style={{position:'static',marginLeft:8}}>{cadeiasNoPeriodo.length}</span>}
       </div>
       {cadeiasFiltradas.length===0 ? (
-        <div className="empty-state" style={{padding:20}}>
+        <div className="empty-state">
           {cadeiasNoPeriodo.length===0 ? 'Nenhuma contagem concluída nesse período.' : 'Nenhum item encontrado para esse filtro.'}
         </div>
       ) : cadeiasPaginadas.map(cd=>{
@@ -10308,7 +10309,7 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
       </div>
 
       {armazens.length===0 && (
-        <div className="empty-state" style={{padding:20,marginBottom:14}}>
+        <div className="empty-state" style={{marginBottom:14}}>
           <div className="ic"><Ic size={40}>📦</Ic></div>
           Nenhum saldo carregado ainda. Envie a planilha SB2 em Configurações pra ver o valor em estoque por armazém.
         </div>
@@ -11667,9 +11668,9 @@ function Settings({role, currentUser, operadorVeSaldo, onSetOperadorVeSaldo, ope
               <span className="cfg-help-btn" title="Também não aparecem pra seleção em 'Contagem por Grupo' — útil pra grupos cujo material não existe fisicamente no almoxarifado (só saldo remanescente no sistema). Esta configuração só afeta geração automática de fila.">?</span>
             </div>
             {gruposDisponiveis===null ? (
-              <div className="empty-state" style={{padding:14,marginTop:14}}>Carregando grupos disponíveis…</div>
+              <div className="empty-state empty-state--compact" style={{marginTop:14}}>Carregando grupos disponíveis…</div>
             ) : gruposDisponiveis.length===0 ? (
-              <div className="empty-state" style={{padding:14,marginTop:14}}>Nenhum grupo com saldo carregado ainda.</div>
+              <div className="empty-state empty-state--compact" style={{marginTop:14}}>Nenhum grupo com saldo carregado ainda.</div>
             ) : (
               <div style={{marginTop:14}}>
                 <GrupoMultiSelectField
