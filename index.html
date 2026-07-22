@@ -4328,6 +4328,18 @@ function App(){
     return res;
   }
 
+  // Editar motivo/observação de uma contagem já registrada — pedido do
+  // cliente: essas informações pararam de ser capturadas na própria tela de
+  // contagem (redesenho "coletor industrial") com a intenção de virem a ser
+  // preenchidas depois, em Recontagens/Itens Divergentes, mas essa parte
+  // nunca tinha sido construída até agora. Mesmo padrão de `toggleUrgente` —
+  // reaproveita `updateContagemStatusToSupabase`, sem coluna nova nenhuma.
+  async function editarMotivoObservacaoContagem(countId, {motivo, observacao}){
+    const res = await updateContagemStatusToSupabase(countId, {motivo, observacao});
+    if(res.ok) setCounts(prev=>prev.map(c=>c.id===countId ? {...c, motivo, observacao} : c));
+    return res;
+  }
+
   // Exclusão de inventário — mesmo padrão: aguarda confirmação do Supabase
   // antes de remover da tela, pra não sumir localmente e "ressuscitar"
   // depois via sincronização se a exclusão remota tiver falhado.
@@ -4779,9 +4791,9 @@ function App(){
         {view==='manualCount' && <ManualCountFlow user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('home');}} onAddressProposed={addAddressProposal} operadorVeSaldo={operadorVeSaldo} />}
         {view==='routeCount' && <RouteCountFlow inv={flowState} user={currentUser} counts={counts} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} gruposExcluidos={gruposExcluidos} />}
         {view==='importedListCount' && <ImportedListCountFlow inv={flowState} user={currentUser} counts={counts} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} />}
-        {view==='recounts' && hasAccess(currentUser,'recounts') && <RecountsPanel counts={counts} inventories={inventories} role={role} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} operadorVeValoresRecontagem={operadorVeValoresRecontagem} />}
-        {view==='divergentes' && hasAccess(currentUser,'divergentes') && <DivergentItemsPanel counts={counts} inventories={inventories} role={role} goto={goto} onApprove={approveDivergence} onSendToDiretoria={enviarParaAprovacaoDiretoria} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} />}
-        {view==='aprovacaoDiretoria' && hasAccess(currentUser,'aprovacaoDiretoria') && <DiretoriaApprovalPanel counts={counts} inventories={inventories} role={role} onApproveSA={aprovarAjusteDiretoria} onRejectSA={reprovarAjusteDiretoria} />}
+        {view==='recounts' && hasAccess(currentUser,'recounts') && <RecountsPanel counts={counts} inventories={inventories} role={role} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onEditarMotivoObservacao={editarMotivoObservacaoContagem} operadorVeValoresRecontagem={operadorVeValoresRecontagem} />}
+        {view==='divergentes' && hasAccess(currentUser,'divergentes') && <DivergentItemsPanel counts={counts} inventories={inventories} role={role} goto={goto} onApprove={approveDivergence} onSendToDiretoria={enviarParaAprovacaoDiretoria} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onEditarMotivoObservacao={editarMotivoObservacaoContagem} />}
+        {view==='aprovacaoDiretoria' && hasAccess(currentUser,'aprovacaoDiretoria') && <DiretoriaApprovalPanel counts={counts} inventories={inventories} role={role} onApproveSA={aprovarAjusteDiretoria} onRejectSA={reprovarAjusteDiretoria} onToggleUrgente={toggleUrgente} />}
         {view==='todasDivergencias' && <AllDivergencesPanel counts={counts} historicoConcluidas={historicoConcluidas} goto={goto} />}
         {view==='concluidas' && hasAccess(currentUser,'concluidas') && <ConcludedCountsPanel counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} onDeleteCount={role==='admin' ? deleteCount : undefined} onReprovarAjusteHistorico={role==='admin' ? reprovarAjusteHistorico : undefined} onRefresh={refreshHistoricoConcluidas} />}
         {view==='recount' && flowState && <RecountFlow original={flowState} user={currentUser} onAddressProposed={addAddressProposal} onFinish={(c)=>{registerFinishedCount(c); goto('recounts');}} operadorVeSaldo={operadorVeSaldo} />}
@@ -8071,7 +8083,7 @@ function PaginationControls({pagina, setPagina, totalPaginas, tamanhoPagina, set
   );
 }
 
-function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggleUrgente, operadorVeValoresRecontagem}){
+function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggleUrgente, onEditarMotivoObservacao, operadorVeValoresRecontagem}){
   const canMark = role==='lider' || role==='admin';
   // Escopo AJUSTADO (cliente pediu pra restringir depois de ver o resultado
   // inicial): o quadro Sistema/Físico/Diferença/% fica visível pra QUALQUER
@@ -8159,6 +8171,31 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
     const res = await onToggleUrgente(c.id, !c.urgente);
     setUrgenteBusyId(null);
     if(!res || !res.ok) setUrgenteErro(prev=>({...prev, [c.id]: (res && res.erro) || 'Não foi possível salvar — tente novamente.'}));
+  }
+
+  // Editar motivo/observação — opção nova no menu "⋮", pedido do cliente
+  // (nunca existiu antes: esses campos nascem vazios em toda contagem ao
+  // vivo desde que a captura foi tirada da tela de contagem). Nunca é
+  // obrigatório — pode salvar vazio (limpa o que já tinha) ou preenchido,
+  // tanto pra item que já tem motivo/observação quanto pro que não tem.
+  const [editandoMotivoId, setEditandoMotivoId] = useState(null);
+  const [motivoEdit, setMotivoEdit] = useState('');
+  const [observacaoEdit, setObservacaoEdit] = useState('');
+  const [motivoBusyId, setMotivoBusyId] = useState(null);
+  const [motivoErro, setMotivoErro] = useState({});
+  function abrirEdicaoMotivo(c){
+    setEditandoMotivoId(c.id);
+    setMotivoEdit(c.motivo || '');
+    setObservacaoEdit(limparObservacaoExibicao(c.observacao) || '');
+    setMenuAbertoId(null);
+  }
+  async function handleSalvarMotivoObservacao(countId){
+    setMotivoBusyId(countId);
+    setMotivoErro(prev=>({...prev, [countId]: null}));
+    const res = await onEditarMotivoObservacao(countId, {motivo: motivoEdit.trim(), observacao: observacaoEdit.trim()});
+    setMotivoBusyId(null);
+    if(res && res.ok) setEditandoMotivoId(null);
+    else setMotivoErro(prev=>({...prev, [countId]: (res && res.erro) || 'Não foi possível salvar — tente novamente.'}));
   }
 
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
@@ -8269,6 +8306,9 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
                         {canMark && (
                           <button type="button" disabled={urgenteBusyId===c.id} onClick={()=>{ handleToggleUrgente(c); setMenuAbertoId(null); }}><Ic>🔥</Ic> {urgenteBusyId===c.id ? 'Salvando…' : (c.urgente ? 'Remover urgência' : 'Marcar urgente')}</button>
                         )}
+                        {canMark && (
+                          <button type="button" onClick={()=>abrirEdicaoMotivo(c)}><DIcon name="edit" size={16}/> Editar motivo/observação</button>
+                        )}
                         {onDeleteCount && (
                           <button type="button" className="menu-item-danger" onClick={()=>{ setConfirmDeleteId(c.id); setMenuAbertoId(null); }}><Ic>🗑</Ic> Excluir contagem</button>
                         )}
@@ -8305,7 +8345,23 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
                 <span>{c.recontagemSolicitadaPor || 'O líder'} não aceitou a divergência da 1ª contagem e solicitou uma nova contagem em {c.recontagemSolicitadaEm}.</span>
               </div>
             )}
-            {confirmDeleteId===c.id ? (
+            {editandoMotivoId===c.id ? (
+              <div className="count-card-actions">
+                <div className="field" style={{marginBottom:10}}>
+                  <label>Motivo (opcional)</label>
+                  <input type="text" value={motivoEdit} onChange={e=>setMotivoEdit(e.target.value)} placeholder="Ex: Erro de digitação, item sem etiqueta…" autoFocus />
+                </div>
+                <div className="field" style={{marginBottom:10}}>
+                  <label>Observação (opcional)</label>
+                  <textarea value={observacaoEdit} onChange={e=>setObservacaoEdit(e.target.value)} placeholder="Detalhes adicionais…" />
+                </div>
+                {motivoErro[c.id] && <div className="divergence-alert" style={{marginBottom:10}}><Ic>⚠</Ic><span>{motivoErro[c.id]}</span></div>}
+                <div className="btn-row">
+                  <button className="btn btn-secondary" disabled={motivoBusyId===c.id} onClick={()=>setEditandoMotivoId(null)}>Cancelar</button>
+                  <button className="btn btn-primary" disabled={motivoBusyId===c.id} onClick={()=>handleSalvarMotivoObservacao(c.id)}>{motivoBusyId===c.id ? 'Salvando…' : 'Salvar'}</button>
+                </div>
+              </div>
+            ) : confirmDeleteId===c.id ? (
               <div className="count-card-actions">
                 <div className="divergence-alert" style={{marginBottom:10}}>
                   <Ic>⚠</Ic><span>Excluir esta contagem de {c.productCode}? Essa ação não pode ser desfeita e não deixa rastro.</span>
@@ -8367,7 +8423,7 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
 // aparecer só em "Recontagens". Visível pra todos os papéis (antes ficava
 // escondida inteira do operador) — mas as ações (aprovar/solicitar
 // recontagem) continuam só pra líder/admin, operador vê em modo leitura.
-function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSendToDiretoria, onRequestRecount, onDeleteCount, onToggleUrgente}){
+function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSendToDiretoria, onRequestRecount, onDeleteCount, onToggleUrgente, onEditarMotivoObservacao}){
   // Bug real corrigido aqui: faltava a mesma checagem de "ponta da
   // corrente" que RecountsPanel já tinha (`byOriginal`/`!byOriginal[c.id]`)
   // — sem isso, uma linha com status 'aguardando_analise_lider' continuava
@@ -8480,6 +8536,27 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSend
     if(!res || !res.ok) setErros(prev=>({...prev, [c.id]: (res && res.erro) || 'Não foi possível salvar — tente novamente.'}));
   }
 
+  // Editar motivo/observação — opção nova no menu "⋮", mesmo padrão de
+  // RecountsPanel (nunca obrigatório, reaproveita busyId/erros já
+  // existentes já que são compartilhados por várias ações desta tela).
+  const [editandoMotivoId, setEditandoMotivoId] = useState(null);
+  const [motivoEdit, setMotivoEdit] = useState('');
+  const [observacaoEdit, setObservacaoEdit] = useState('');
+  function abrirEdicaoMotivo(c){
+    setEditandoMotivoId(c.id);
+    setMotivoEdit(c.motivo || '');
+    setObservacaoEdit(limparObservacaoExibicao(c.observacao) || '');
+    setMenuAbertoId(null);
+  }
+  async function handleSalvarMotivoObservacao(countId){
+    setBusyId(countId);
+    setErros(prev=>({...prev, [countId]: null}));
+    const res = await onEditarMotivoObservacao(countId, {motivo: motivoEdit.trim(), observacao: observacaoEdit.trim()});
+    setBusyId(null);
+    if(res && res.ok) setEditandoMotivoId(null);
+    else setErros(prev=>({...prev, [countId]: (res && res.erro) || 'Não foi possível salvar — tente novamente.'}));
+  }
+
   return (
     <div>
       <TrendFilterBar
@@ -8534,6 +8611,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSend
                       {menuAbertoId===c.id && (
                         <div className="count-card-menu-dropdown">
                           <button type="button" disabled={busyId===c.id} onClick={()=>{ handleToggleUrgente(c); setMenuAbertoId(null); }}><Ic>🔥</Ic> {busyId===c.id ? 'Salvando…' : (c.urgente ? 'Remover urgência' : 'Marcar urgente')}</button>
+                          <button type="button" onClick={()=>abrirEdicaoMotivo(c)}><DIcon name="edit" size={16}/> Editar motivo/observação</button>
                           {onDeleteCount && (
                             <button type="button" className="menu-item-danger" onClick={()=>{ setConfirmDeleteId(c.id); setMenuAbertoId(null); }}><Ic>🗑</Ic> Excluir contagem</button>
                           )}
@@ -8620,7 +8698,23 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSend
               {erros[c.id] && (
                 <div className="divergence-alert" style={{margin:'10px 16px 0'}}><Ic>⚠</Ic><span>{erros[c.id]}</span></div>
               )}
-              {confirmDeleteId===c.id ? (
+              {editandoMotivoId===c.id ? (
+                <div className="count-card-actions">
+                  <div className="field" style={{marginBottom:10}}>
+                    <label>Motivo (opcional)</label>
+                    <input type="text" value={motivoEdit} onChange={e=>setMotivoEdit(e.target.value)} placeholder="Ex: Erro de digitação, item sem etiqueta…" autoFocus />
+                  </div>
+                  <div className="field" style={{marginBottom:10}}>
+                    <label>Observação (opcional)</label>
+                    <textarea value={observacaoEdit} onChange={e=>setObservacaoEdit(e.target.value)} placeholder="Detalhes adicionais…" />
+                  </div>
+                  {erros[c.id] && <div className="divergence-alert" style={{marginBottom:10}}><Ic>⚠</Ic><span>{erros[c.id]}</span></div>}
+                  <div className="btn-row">
+                    <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>setEditandoMotivoId(null)}>Cancelar</button>
+                    <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>handleSalvarMotivoObservacao(c.id)}>{busyId===c.id ? 'Salvando…' : 'Salvar'}</button>
+                  </div>
+                </div>
+              ) : confirmDeleteId===c.id ? (
                 <div className="count-card-actions">
                   <div className="divergence-alert" style={{marginBottom:10}}>
                     <Ic>⚠</Ic><span>Excluir esta contagem de {c.productCode}? Essa ação não pode ser desfeita e não deixa rastro.</span>
@@ -8668,8 +8762,13 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSend
 // isso é manual, feito pelo próprio admin dentro do app (não existe perfil
 // "Diretoria" nem integração externa). Mesmo shell visual das outras 3 telas
 // de contagem (count-card/SearchWithScanner/TrendFilterBar/result-grid-4col).
-function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejectSA}){
+function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejectSA, onToggleUrgente}){
   const canDecide = role==='admin';
+  // "Marcar urgente" — mesmo padrão já usado em Recontagens/Itens
+  // Divergentes, estendido aqui: essa também é uma fila de contagem já
+  // realizada aguardando decisão, só que numa etapa diferente (aprovação
+  // da SA), então faz sentido o líder/admin poder furar a fila aqui também.
+  const canMark = role==='lider' || role==='admin';
   const aguardandoDiretoria = counts.filter(c=>c.statusAprovacao==='aguardando_aprovacao_diretoria');
 
   // Mesmo critério das demais telas de contagem — `useState` puro (não
@@ -8687,12 +8786,31 @@ function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejec
     : aguardandoDiretoriaNoPeriodo;
 
   const [severidade, setSeveridade] = useState('todos');
-  const listaFiltrada = severidade==='todos' ? porBusca : porBusca.filter(c=>classifySeverity4(severidadeDe(c)).level===severidade);
+  const listaFiltradaSemOrdenar = severidade==='todos' ? porBusca : porBusca.filter(c=>classifySeverity4(severidadeDe(c)).level===severidade);
+  // Itens marcados como urgentes sempre aparecem primeiro — mesmo critério
+  // já usado em RecountsPanel/DivergentItemsPanel.
+  const listaFiltrada = [...listaFiltradaSemOrdenar].sort((a,b)=>(b.urgente?1:0)-(a.urgente?1:0));
   const {pagina, setPagina, tamanhoPagina, setTamanhoPagina, listaPaginada, totalPaginas} = usePaginacaoLista(listaFiltrada, 50);
 
   const [busyId, setBusyId] = useState(null);
   const [erros, setErros] = useState({});
   const [confirmRejectId, setConfirmRejectId] = useState(null);
+  const [menuAbertoId, setMenuAbertoId] = useState(null);
+  useEffect(()=>{
+    if(!menuAbertoId) return;
+    function handleClickOutside(e){
+      if(!e.target.closest('.count-card-menu')) setMenuAbertoId(null);
+    }
+    document.addEventListener('click', handleClickOutside);
+    return ()=>document.removeEventListener('click', handleClickOutside);
+  }, [menuAbertoId]);
+  async function handleToggleUrgente(c){
+    setBusyId(c.id);
+    setErros(prev=>({...prev, [c.id]: null}));
+    const res = await onToggleUrgente(c.id, !c.urgente);
+    setBusyId(null);
+    if(!res || !res.ok) setErros(prev=>({...prev, [c.id]: (res && res.erro) || 'Não foi possível salvar — tente novamente.'}));
+  }
   // Motivo da reprovação — pedido do cliente: exigir uma justificativa antes
   // de devolver o item pra recontagem, pra o operador saber POR QUE a
   // Diretoria não aceitou o ajuste (não só QUE foi reprovado). Um só campo de
@@ -8754,15 +8872,28 @@ function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejec
       ) : listaPaginada.map(c=>{
         const sev = classifySeverity4(severidadeDe(c));
         return (
-          <div key={c.id} className="count-card">
+          <div key={c.id} className={"count-card"+(c.urgente?' urgente':'')}>
             <div className="count-card-bar" style={{background:sev.color}}></div>
             <div className="count-card-body">
               <div className="count-card-head">
                 <div className="count-card-badges">
+                  {c.urgente && <span className="urgente-chip"><Ic>🔥</Ic> Urgente</span>}
                   <span className="severity-chip" style={{background:'var(--purple-bg)',color:'var(--purple)'}}><Ic>📋</Ic> SA {c.solicitacaoAjuste}</span>
                   <span className="category-chip">{categoriaDoInventario(c, inventories)}</span>
                 </div>
-                <span className="count-card-date">{c.data}</span>
+                <div className="count-card-head-right">
+                  <span className="count-card-date">{c.data}</span>
+                  {canMark && (
+                    <div className="count-card-menu">
+                      <button type="button" className="count-card-menu-btn" onClick={()=>setMenuAbertoId(menuAbertoId===c.id ? null : c.id)}>⋮</button>
+                      {menuAbertoId===c.id && (
+                        <div className="count-card-menu-dropdown">
+                          <button type="button" disabled={busyId===c.id} onClick={()=>{ handleToggleUrgente(c); setMenuAbertoId(null); }}><Ic>🔥</Ic> {busyId===c.id ? 'Salvando…' : (c.urgente ? 'Remover urgência' : 'Marcar urgente')}</button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="count-card-toprow">
                 <div className="count-card-title">

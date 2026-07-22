@@ -8279,3 +8279,77 @@ copiei as propriedades de FONTE, sem replicar essa linha.
   (650/650 — 1 regra nova, `::after`). Rodei `harness_settings_redesign.js` de
   novo, sem quebrar nada. **Verificação visual fica a cargo do cliente** — mesma
   limitação de sempre.
+
+## "Marcar urgente" chega em "Aprovação de Ajustes" + editar motivo/observação no menu "⋮"
+
+Dois pedidos do cliente: (1) "a opção de contagem urgente ou priorizar que já tem...
+incluir em todo tipo de contagem"; (2) "a opção de editar os motivos ou observação,
+naqueles 3 pontinhos que já existe". Investigado com 2 agentes de pesquisa em paralelo
+antes de mexer em qualquer código, e confirmado com o cliente via `AskUserQuestion`
+(a 1ª pergunta, sobre criar uma prioridade nova pra item ainda não contado, foi
+recusada — "não, é só sobre o que já existe").
+
+**Pedido 1 — escopo definido por eliminação**: hoje "urgente" só existe pra um item
+que JÁ foi contado pelo menos uma vez (campo `urgente` em `contagens`), disponível só
+em "Recontagens Pendentes" e "Itens Divergentes". Como o cliente descartou a
+interpretação de "item ainda não contado", e a única outra tela onde uma contagem já
+feita fica pendente de decisão sem ter essa opção era "Aprovação de Ajustes"
+(`DiretoriaApprovalPanel` — SA de Ajuste aguardando aprovação da Diretoria), estendi
+"Marcar urgente" pra lá também, mesmo padrão exato das outras duas telas (chip
+"🔥 Urgente", contorno vermelho do card, ordenação urgente-primeiro, menu "⋮" com a
+opção) — nenhuma coluna nova no banco, só reaproveita `contagens.urgente` e
+`toggleUrgente` que já existiam. `canMark` (líder/admin) controla quem vê a opção,
+separado de `canDecide` (só admin, que continua sendo quem aprova/reprova a SA em si).
+**Assunção registrada aqui pro cliente confirmar**: se essa não for a interpretação
+certa de "todo tipo de contagem", é só avisar.
+
+**Pedido 2 — não era bug, era funcionalidade nova**: confirmado que a opção de editar
+motivo/observação NUNCA existiu em lugar nenhum — motivo/observação pararam de ser
+capturados na própria tela de contagem num redesenho anterior ("coletor industrial"),
+com a intenção declarada no código de que a análise se moveria pra Recontagens/Itens
+Divergentes depois, mas essa parte nunca foi construída. Cliente esclareceu o
+comportamento esperado: "tem uns itens que se você notar tem motivo, preciso editar
+alguns e para os que não tem colocar. Isso não pode ser obrigatório e pode ser um
+lugar bem discreto" — ou seja, precisa funcionar tanto pra EDITAR um motivo já
+existente quanto pra ADICIONAR um que nunca foi preenchido, sem nenhuma validação
+travando o salvamento vazio.
+
+- **`editarMotivoObservacaoContagem(countId, {motivo, observacao})`** (`App()`, perto
+  de `toggleUrgente`) — mesmo padrão de sempre: reaproveita
+  `updateContagemStatusToSupabase` (já usada por `toggleUrgente`/`approveDivergence`/
+  etc.), sem coluna nova (`motivo`/`observacao` já existiam na tabela, só nunca eram
+  editáveis depois de gravadas).
+- **Opção nova "Editar motivo/observação" no menu "⋮"** de `RecountsPanel` e
+  `DivergentItemsPanel` (os dois únicos lugares onde esse menu já existia — "naqueles
+  3 pontinhos que já existe", não criei um menu novo em nenhum lugar) — abre um
+  formulário inline (mesmo padrão visual do "Gerar SA de Ajuste"/confirmação de
+  exclusão já usados nessas telas), com campo de texto pro Motivo e textarea pra
+  Observação, pré-preenchidos com o valor atual (vazio quando o item nunca teve
+  nenhum). Botão "Salvar" nunca fica desabilitado por causa de campo vazio — só fica
+  desabilitado durante o salvamento em si (`busyId===c.id`), cumprindo "não pode ser
+  obrigatório".
+- `RecountsPanel` ganhou state próprio (`motivoBusyId`/`motivoErro`, mesmo padrão já
+  usado pra `urgenteBusyId`/`urgenteErro`); `DivergentItemsPanel` reaproveita
+  `busyId`/`erros` que já eram compartilhados entre várias ações da tela (Aprovar/
+  Rejeitar/Excluir/Marcar urgente) — mesmo critério dessa tela específica.
+- Testado via harness real (jsdom + react-dom/client + `act()`, técnica já
+  estabelecida nesta sessão): "Marcar urgente" em "Aprovação de Ajustes" — menu "⋮"
+  aparece pra líder, some pro operador, marcar urgente chama `onToggleUrgente` com o
+  id/valor certos, item urgente passa a aparecer primeiro na lista e ganha a classe/
+  chip visuais; "Editar motivo/observação" nos dois painéis — opção aparece no menu,
+  formulário pré-preenche com o valor existente (ou vazio quando não tem), botão
+  "Salvar" nunca trava por campo vazio, salva tanto edição de valor existente quanto
+  adição do zero, formulário fecha depois de salvar com sucesso. Rodei de novo a
+  suíte de regressão mais próxima (`harness_diretoria`, `harness_ordenacao_
+  recontagens`, `harness_status_filtro_concluidas`, `harness_home_kpi`) — 2
+  asserções pré-existentes falharam em `harness_diretoria.js` (reprovar SA sem
+  preencher o motivo obrigatório; contagem de badge "Sem Ajuste" em
+  `ConcludedCountsPanel`), confirmado que as duas são staleness de teste SEM relação
+  com esta mudança — a 1ª porque esse harness nunca preenchia o campo de motivo
+  (exigência adicionada numa rodada anterior, código intocado por mim hoje,
+  confirmado funcionando certo num teste ad-hoc preenchendo o campo); a 2ª porque
+  `ConcludedCountsPanel` não foi tocado nesta rodada. Transpile Babel do arquivo
+  inteiro e balanceamento de chaves do CSS conferidos (650/650, sem mudança — nenhuma
+  classe CSS nova, tudo reaproveitado). **Verificação visual/funcional de ponta a
+  ponta fica a cargo do cliente** — mesma limitação de sempre (login exige Supabase
+  Auth real, não simulável no sandbox sem rede).
