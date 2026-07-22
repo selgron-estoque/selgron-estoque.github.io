@@ -140,19 +140,62 @@
   .chip-input input{flex:1;min-width:90px;border:none;background:none;padding:6px 4px;font-size:16px;color:var(--ink);}
   .chip-input input:focus{outline:none;}
 
-  /* Botão de liga/desliga (toggle switch) — usado em "Acesso por tela" no
-     UserForm, preferido pelo cliente em vez de checkbox simples. Estrutura
-     clássica: input checkbox escondido + track/thumb desenhados via CSS. */
-  .toggle-switch-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:10px 0;border-bottom:1px solid var(--line);}
-  .toggle-switch-row:last-child{border-bottom:none;}
-  .toggle-switch{position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0;cursor:pointer;}
-  .toggle-switch input{opacity:0;width:0;height:0;position:absolute;}
-  .toggle-switch-track{position:absolute;inset:0;background:var(--line);border-radius:999px;transition:background .15s ease;}
-  .toggle-switch-track::before{content:'';position:absolute;top:2px;left:2px;width:20px;height:20px;background:#fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:transform .15s ease;}
-  .toggle-switch input:checked + .toggle-switch-track{background:var(--safety);}
-  .toggle-switch input:checked + .toggle-switch-track::before{transform:translateX(20px);}
-  .toggle-switch input:disabled + .toggle-switch-track{opacity:.55;cursor:not-allowed;}
-  .toggle-switch input:focus-visible + .toggle-switch-track{outline:2px solid var(--accent2);outline-offset:2px;}
+  /* "Editar/Novo Usuário" — dual-list de permissões (transfer list) no
+     lugar dos toggles individuais de antes: pedido do cliente pra bater com
+     referência de sistema corporativo (Fiori/Admin Center/Oracle), minimalista,
+     sem ícone decorativo/cor de fundo/sombra forte. Escopado só a este
+     formulário (prefixo uf-), radius:8px próprio (diferente do --radius:10px
+     do resto do app, de propósito — mesmo tipo de exceção já documentada em
+     outros cantos do CSS). */
+  .uf-header{display:flex;align-items:flex-start;gap:14px;margin-bottom:22px;}
+  .uf-back-btn{flex-shrink:0;width:34px;height:34px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--ink);display:flex;align-items:center;justify-content:center;cursor:pointer;}
+  .uf-back-btn:hover{background:var(--panel-raised);}
+  .uf-header-title{font-family:var(--font-display);font-size:22px;font-weight:600;color:var(--ink);}
+  .uf-header-sub{font-size:13px;color:var(--ink-dim);margin-top:3px;}
+
+  .uf-info-strip{display:flex;flex-wrap:wrap;align-items:center;gap:22px;padding:16px 18px;border:1px solid var(--line);border-radius:8px;margin-bottom:22px;background:var(--panel);}
+  .uf-info-item{display:flex;flex-direction:column;gap:4px;min-width:130px;}
+  .uf-info-label{font-family:var(--font-mono);font-size:10.5px;text-transform:uppercase;letter-spacing:0.6px;color:var(--ink-dim);}
+  .uf-info-value{font-size:14px;font-weight:600;color:var(--ink);word-break:break-word;}
+  .uf-info-editbtn{margin-left:auto;width:auto;padding:9px 16px;font-size:12px;flex-shrink:0;}
+  .uf-info-editfields{display:flex;flex-wrap:wrap;gap:14px;flex:1;align-items:flex-start;}
+  .uf-info-editfields .field{margin-bottom:0;min-width:180px;flex:1;}
+
+  .uf-perm-title{font-family:var(--font-mono);font-size:11px;text-transform:uppercase;letter-spacing:0.8px;color:var(--ink-dim);margin-bottom:4px;}
+  .uf-perm-note{font-size:12px;color:var(--ink-dim);margin-bottom:16px;}
+
+  .uf-dual{display:flex;align-items:stretch;gap:14px;}
+  .uf-list-panel{flex:1;min-width:0;border:1px solid var(--line);border-radius:8px;background:var(--panel);display:flex;flex-direction:column;}
+  .uf-list-panel.liberados{border-top:2px solid var(--ok);}
+  .uf-list-title-row{padding:12px 14px;border-bottom:1px solid var(--line);}
+  .uf-list-title{font-family:var(--font-mono);font-size:11px;text-transform:uppercase;letter-spacing:0.6px;color:var(--ink-dim);}
+  .uf-list-search{position:relative;padding:10px 14px;border-bottom:1px solid var(--line);}
+  .uf-list-search svg{position:absolute;left:24px;top:50%;transform:translateY(-50%);color:var(--ink-dim);pointer-events:none;}
+  .uf-list-search input{width:100%;background:var(--panel-raised);border:1px solid var(--line);border-radius:8px;padding:8px 10px 8px 32px;font-size:13px;color:var(--ink);}
+  .uf-list-search input:focus{outline:2px solid var(--safety);outline-offset:0;}
+  .uf-list-body{max-height:340px;overflow-y:auto;}
+  .uf-list-row{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);cursor:pointer;font-size:13px;color:var(--ink);}
+  .uf-list-row:last-child{border-bottom:none;}
+  .uf-list-row:hover{background:var(--panel-raised);}
+  .uf-list-row.selected{background:#FFF4E0;}
+  .uf-list-row input[type=checkbox]{width:15px;height:15px;flex-shrink:0;pointer-events:none;}
+  .uf-list-row .uf-row-label{flex:1;}
+  .uf-list-row .uf-drag-handle{color:var(--ink-dim);cursor:grab;flex-shrink:0;display:flex;}
+  .uf-list-row .uf-remove-btn{flex-shrink:0;width:22px;height:22px;border-radius:6px;border:none;background:transparent;color:var(--ink-dim);display:flex;align-items:center;justify-content:center;cursor:pointer;}
+  .uf-list-row .uf-remove-btn:hover{background:var(--danger);color:#fff;}
+  .uf-list-empty{padding:24px 14px;text-align:center;font-size:12.5px;color:var(--ink-dim);}
+
+  .uf-center{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;}
+  .uf-center-btn{width:120px;padding:9px 10px;font-size:11px;font-weight:600;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--ink-dim);display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;text-transform:uppercase;letter-spacing:0.4px;}
+  .uf-center-btn:hover:not(:disabled){background:var(--panel-raised);color:var(--ink);}
+  .uf-center-btn:disabled{opacity:.45;cursor:not-allowed;}
+
+  @media (max-width:760px){
+    .uf-dual{flex-direction:column;}
+    .uf-center{flex-direction:row;justify-content:center;}
+    .uf-center-btn{width:auto;flex:1;padding:9px 4px;}
+    .uf-info-editbtn{margin-left:0;}
+  }
   .grupo-suggestions{margin-top:6px;max-height:260px;overflow-y:auto;background:var(--panel-raised);border:1px solid var(--line);border-radius:8px;}
   .grupo-suggestion-item{display:block;width:100%;text-align:left;background:none;border:none;border-bottom:1px solid var(--line);color:var(--ink);padding:11px 14px;font-size:14px;cursor:pointer;}
   .grupo-suggestion-item:last-child{border-bottom:none;}
@@ -4793,6 +4836,10 @@ const DICON_PATHS = {
   chevronDown: <path d="m6 9 6 6 6-6"/>,
   chevronRight: <path d="m9 18 6-6-6-6"/>,
   chevronLeft: <path d="m15 18-6-6 6-6"/>,
+  chevronsRight: <><path d="m6 17 5-5-5-5"/><path d="m13 17 5-5-5-5"/></>,
+  chevronsLeft: <><path d="m18 17-5-5 5-5"/><path d="m11 17-5-5 5-5"/></>,
+  x: <><path d="M18 6 6 18"/><path d="m6 6 12 12"/></>,
+  gripVertical: <><circle cx="9" cy="5" r="1.3" fill="currentColor" stroke="none"/><circle cx="9" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="9" cy="19" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="5" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="19" r="1.3" fill="currentColor" stroke="none"/></>,
   logOut: <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></>,
   trendingUp: <><path d="M22 7 13.5 15.5 8.5 10.5 2 17"/><path d="M16 7h6v6"/></>,
   trendingDown: <><path d="M22 17 13.5 8.5 8.5 13.5 2 7"/><path d="M16 17h6v-6"/></>,
@@ -10578,6 +10625,26 @@ function UserForm({mode, initialData, users, onCreateUser, onUpdateUser, onSaved
     : emptyUserForm());
   const [feedback, setFeedback] = useState('');
   const [salvando, setSalvando] = useState(false);
+  // Ficha de dados (nome/login/e-mail/perfil): edição nova sempre começa
+  // editável (não existe dado nenhum ainda pra mostrar em modo leitura);
+  // edição de usuário existente começa em modo leitura (faixa compacta),
+  // só vira formulário ao clicar "Editar dados" — é isso que libera o
+  // espaço vertical pra permissões, pedido explícito do cliente.
+  const [editandoDados, setEditandoDados] = useState(!isEdit);
+  // Dual-list de permissões: nenhuma dessas variáveis é persistida — são só
+  // estado de INTERFACE (seleção múltipla, busca, ordem visual de arrastar)
+  // por cima das mesmas duas listas reais (acessosExtras/acessosRemovidos)
+  // que já existiam antes deste redesenho.
+  const [buscaDisponiveis, setBuscaDisponiveis] = useState('');
+  const [buscaLiberados, setBuscaLiberados] = useState('');
+  const [selDisponiveis, setSelDisponiveis] = useState(()=>new Set());
+  const [selLiberados, setSelLiberados] = useState(()=>new Set());
+  // Ordem de exibição de "Comandos Liberados" — só cosmética (drag and drop
+  // pra reorganizar), nunca gravada no usuário; começa na ordem natural de
+  // TODOS_OS_MENUS e só é reorganizada por arrastar-e-soltar dentro da
+  // sessão de edição atual.
+  const [ordemLiberados, setOrdemLiberados] = useState(()=>TODOS_OS_MENUS.map(m=>m.id));
+  const [dragId, setDragId] = useState(null);
 
   // Toggle único pra QUALQUER tela do menu (TODOS_OS_MENUS) — decide sozinho
   // se a mudança deve ir pra `acessosExtras` (perfil normalmente NÃO libera
@@ -10597,6 +10664,42 @@ function UserForm({mode, initialData, users, onCreateUser, onUpdateUser, onSaved
         : [...f.acessosExtras, viewId]};
     });
   }
+  function estaLiberado(viewId){
+    const padraoPermite = perfilLiberaPorPadrao(form.perfil, viewId);
+    return padraoPermite ? !form.acessosRemovidos.includes(viewId) : form.acessosExtras.includes(viewId);
+  }
+  function moverUm(viewId){
+    toggleAcessoMenu(viewId, perfilLiberaPorPadrao(form.perfil, viewId));
+    setSelDisponiveis(prev=>{ if(!prev.has(viewId)) return prev; const n=new Set(prev); n.delete(viewId); return n; });
+    setSelLiberados(prev=>{ if(!prev.has(viewId)) return prev; const n=new Set(prev); n.delete(viewId); return n; });
+  }
+  function liberarSelecionados(){ selDisponiveis.forEach(moverUm); }
+  function removerSelecionados(){ selLiberados.forEach(moverUm); }
+  function liberarTodos(){ TODOS_OS_MENUS.filter(m=>!estaLiberado(m.id)).forEach(m=>moverUm(m.id)); }
+  function removerTodos(){ TODOS_OS_MENUS.filter(m=>estaLiberado(m.id)).forEach(m=>moverUm(m.id)); }
+  function toggleSelecao(setFn, viewId){
+    setFn(prev=>{ const n=new Set(prev); n.has(viewId) ? n.delete(viewId) : n.add(viewId); return n; });
+  }
+  function reordenarLiberado(fromId, toId){
+    if(!fromId || fromId===toId) return;
+    setOrdemLiberados(prev=>{
+      const arr = prev.slice();
+      const fromIdx = arr.indexOf(fromId), toIdx = arr.indexOf(toId);
+      if(fromIdx===-1 || toIdx===-1) return prev;
+      arr.splice(fromIdx,1);
+      arr.splice(toIdx,0,fromId);
+      return arr;
+    });
+  }
+
+  const buscaDispNorm = buscaDisponiveis.trim().toLowerCase();
+  const buscaLibNorm = buscaLiberados.trim().toLowerCase();
+  const disponiveisList = TODOS_OS_MENUS.filter(m=>!estaLiberado(m.id) && (!buscaDispNorm || m.label.toLowerCase().includes(buscaDispNorm)));
+  const liberadosList = ordemLiberados
+    .map(id=>TODOS_OS_MENUS.find(m=>m.id===id))
+    .filter(m=>m && estaLiberado(m.id) && (!buscaLibNorm || m.label.toLowerCase().includes(buscaLibNorm)));
+  const totalDisponiveis = TODOS_OS_MENUS.filter(m=>!estaLiberado(m.id)).length;
+  const totalLiberados = TODOS_OS_MENUS.filter(m=>estaLiberado(m.id)).length;
 
   async function submitForm(e){
     e.preventDefault();
@@ -10632,75 +10735,126 @@ function UserForm({mode, initialData, users, onCreateUser, onUpdateUser, onSaved
 
   return (
     <div className="panel">
-      <div className="section-title" style={{marginTop:0}}>{isEdit ? 'Editar Usuário' : 'Novo Usuário'}</div>
+      <div className="uf-header">
+        <button type="button" className="uf-back-btn" onClick={onCancel} disabled={salvando} aria-label="Voltar"><DIcon name="chevronLeft" size={20}/></button>
+        <div>
+          <div className="uf-header-title">{isEdit ? 'Editar Usuário' : 'Novo Usuário'}</div>
+          <div className="uf-header-sub">Atualize os dados do usuário e defina suas permissões de acesso.</div>
+        </div>
+      </div>
       <form onSubmit={submitForm}>
         {feedback && <div className="login-error" style={{marginBottom:12}}>{feedback}</div>}
-        <div className="field">
-          <label>Nome completo</label>
-          <input type="text" value={form.nome} onChange={e=>setForm(f=>({...f,nome:e.target.value}))} autoFocus />
-        </div>
-        <div className="field">
-          <label>Usuário de acesso (login)</label>
-          <input type="text" value={form.usuario} onChange={e=>setForm(f=>({...f,usuario:e.target.value}))} placeholder="nome.sobrenome" autoCapitalize="none" />
-        </div>
-        <div className="field">
-          <label>E-mail</label>
-          <input type="text" value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))} placeholder="nome@empresa.com" autoCapitalize="none" autoCorrect="off" spellCheck="false" />
-          <div style={{fontSize:11.5,color:'var(--ink-dim)',marginTop:6}}>
-            Operador sem e-mail próprio? Use um endereço fictício com o login da pessoa,
-            por exemplo <strong style={{color:'var(--ink)'}}>{(form.usuario||'nome.sobrenome').trim()||'nome.sobrenome'}@estoque.selgron.local</strong> —
-            ninguém recebe mensagem nesse endereço, ele só precisa ser único no sistema.
-          </div>
-        </div>
-        {!isEdit && (
-          <div className="field">
-            <label>Senha inicial</label>
-            <input type="text" value={form.senha} onChange={e=>setForm(f=>({...f,senha:e.target.value}))} placeholder="mínimo 6 caracteres" />
-          </div>
-        )}
-        <div className="field">
-          <label>Perfil de acesso</label>
-          <select value={form.perfil} onChange={e=>setForm(f=>({...f,perfil:e.target.value}))}>
-            {PERFIL_OPTIONS.map(p=><option key={p.v} value={p.v}>{p.label}</option>)}
-          </select>
-        </div>
-        <div className="field">
-          <label>Acesso por tela</label>
-          {form.perfil==='admin' ? (
-            <div style={{fontSize:12.5,color:'var(--ink-dim)'}}>Administrador sempre tem acesso a todas as telas — não é possível restringir.</div>
+
+        <div className="uf-info-strip">
+          {editandoDados ? (
+            <>
+              <div className="uf-info-editfields">
+                <div className="field">
+                  <label>Nome completo</label>
+                  <input type="text" value={form.nome} onChange={e=>setForm(f=>({...f,nome:e.target.value}))} autoFocus={!isEdit} />
+                </div>
+                <div className="field">
+                  <label>Usuário de acesso (login)</label>
+                  <input type="text" value={form.usuario} onChange={e=>setForm(f=>({...f,usuario:e.target.value}))} placeholder="nome.sobrenome" autoCapitalize="none" />
+                </div>
+                <div className="field" style={{minWidth:240}}>
+                  <label>E-mail</label>
+                  <input type="text" value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))} placeholder="nome@empresa.com" autoCapitalize="none" autoCorrect="off" spellCheck="false" />
+                  <div style={{fontSize:11.5,color:'var(--ink-dim)',marginTop:6}}>
+                    Operador sem e-mail próprio? Use um endereço fictício com o login da pessoa,
+                    por exemplo <strong style={{color:'var(--ink)'}}>{(form.usuario||'nome.sobrenome').trim()||'nome.sobrenome'}@estoque.selgron.local</strong> —
+                    ninguém recebe mensagem nesse endereço, ele só precisa ser único no sistema.
+                  </div>
+                </div>
+                {!isEdit && (
+                  <div className="field">
+                    <label>Senha inicial</label>
+                    <input type="text" value={form.senha} onChange={e=>setForm(f=>({...f,senha:e.target.value}))} placeholder="mínimo 6 caracteres" />
+                  </div>
+                )}
+                <div className="field">
+                  <label>Perfil de acesso</label>
+                  <select value={form.perfil} onChange={e=>setForm(f=>({...f,perfil:e.target.value}))}>
+                    {PERFIL_OPTIONS.map(p=><option key={p.v} value={p.v}>{p.label}</option>)}
+                  </select>
+                </div>
+              </div>
+              {isEdit && <button type="button" className="btn btn-outline uf-info-editbtn" onClick={()=>setEditandoDados(false)}>Concluir edição</button>}
+            </>
           ) : (
             <>
-              <div style={{fontSize:11.5,color:'var(--ink-dim)',marginBottom:8}}>
-                Marque as telas que este usuário pode acessar. O padrão já vem
-                marcado conforme o perfil selecionado — desmarque pra tirar o
-                acesso, ou marque uma tela que o perfil normalmente não teria.
-              </div>
-              <div>
-                {TODOS_OS_MENUS.map(m=>{
-                  const padraoPermite = perfilLiberaPorPadrao(form.perfil, m.id);
-                  const ligado = padraoPermite
-                    ? !form.acessosRemovidos.includes(m.id)
-                    : form.acessosExtras.includes(m.id);
-                  return (
-                    <div key={m.id} className="toggle-switch-row">
-                      <span style={{fontSize:13}}>{m.label}</span>
-                      <label className="toggle-switch">
-                        <input
-                          type="checkbox"
-                          checked={ligado}
-                          onChange={()=>toggleAcessoMenu(m.id, padraoPermite)}
-                        />
-                        <span className="toggle-switch-track"></span>
-                      </label>
-                    </div>
-                  );
-                })}
-              </div>
+              <div className="uf-info-item"><span className="uf-info-label">Nome completo</span><span className="uf-info-value">{form.nome}</span></div>
+              <div className="uf-info-item"><span className="uf-info-label">Usuário de acesso (login)</span><span className="uf-info-value">{form.usuario}</span></div>
+              <div className="uf-info-item"><span className="uf-info-label">E-mail</span><span className="uf-info-value">{form.email}</span></div>
+              <div className="uf-info-item"><span className="uf-info-label">Perfil de acesso</span><span className="uf-info-value">{PERFIL_OPTIONS.find(p=>p.v===form.perfil)?.label}</span></div>
+              <button type="button" className="btn btn-outline uf-info-editbtn" onClick={()=>setEditandoDados(true)}>Editar dados</button>
             </>
           )}
         </div>
-        <div className="btn-row">
-          <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={salvando}>Cancelar</button>
+
+        <div className="uf-perm-title">Permissões de Acesso</div>
+        {form.perfil==='admin' ? (
+          <div className="uf-perm-note" style={{marginBottom:0}}>Administrador sempre tem acesso a todas as telas — não é possível restringir.</div>
+        ) : (
+          <>
+            <div className="uf-perm-note">Defina quais telas este usuário pode acessar — mova comandos entre as duas listas.</div>
+            <div className="uf-dual">
+              <div className="uf-list-panel">
+                <div className="uf-list-title-row"><span className="uf-list-title">Comandos Disponíveis ({totalDisponiveis})</span></div>
+                <div className="uf-list-search">
+                  <DIcon name="search" size={14}/>
+                  <input type="text" placeholder="Buscar comando" value={buscaDisponiveis} onChange={e=>setBuscaDisponiveis(e.target.value)} />
+                </div>
+                <div className="uf-list-body">
+                  {disponiveisList.length===0 && <div className="uf-list-empty">{buscaDispNorm ? 'Nenhum comando encontrado.' : 'Todos os comandos já estão liberados.'}</div>}
+                  {disponiveisList.map(m=>(
+                    <div key={m.id} className={'uf-list-row'+(selDisponiveis.has(m.id)?' selected':'')}
+                      onClick={()=>toggleSelecao(setSelDisponiveis, m.id)}
+                      onDoubleClick={()=>moverUm(m.id)}>
+                      <input type="checkbox" checked={selDisponiveis.has(m.id)} readOnly tabIndex={-1} />
+                      <span className="uf-row-label">{m.label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="uf-center">
+                <button type="button" className="uf-center-btn" disabled={selDisponiveis.size===0} onClick={liberarSelecionados}><DIcon name="chevronRight" size={14}/> Liberar</button>
+                <button type="button" className="uf-center-btn" disabled={selLiberados.size===0} onClick={removerSelecionados}><DIcon name="chevronLeft" size={14}/> Remover</button>
+                <button type="button" className="uf-center-btn" disabled={totalDisponiveis===0} onClick={liberarTodos}><DIcon name="chevronsRight" size={14}/> Liberar todos</button>
+                <button type="button" className="uf-center-btn" disabled={totalLiberados===0} onClick={removerTodos}><DIcon name="chevronsLeft" size={14}/> Remover todos</button>
+              </div>
+
+              <div className="uf-list-panel liberados">
+                <div className="uf-list-title-row"><span className="uf-list-title">Comandos Liberados ({totalLiberados})</span></div>
+                <div className="uf-list-search">
+                  <DIcon name="search" size={14}/>
+                  <input type="text" placeholder="Buscar comando" value={buscaLiberados} onChange={e=>setBuscaLiberados(e.target.value)} />
+                </div>
+                <div className="uf-list-body">
+                  {liberadosList.length===0 && <div className="uf-list-empty">{buscaLibNorm ? 'Nenhum comando encontrado.' : 'Nenhum comando liberado ainda.'}</div>}
+                  {liberadosList.map(m=>(
+                    <div key={m.id} className={'uf-list-row'+(selLiberados.has(m.id)?' selected':'')}
+                      draggable
+                      onDragStart={()=>setDragId(m.id)}
+                      onDragOver={e=>e.preventDefault()}
+                      onDrop={e=>{e.preventDefault(); reordenarLiberado(dragId, m.id); setDragId(null);}}
+                      onDragEnd={()=>setDragId(null)}
+                      onClick={()=>toggleSelecao(setSelLiberados, m.id)}
+                      onDoubleClick={()=>moverUm(m.id)}>
+                      <span className="uf-row-label">{m.label}</span>
+                      <span className="uf-drag-handle"><DIcon name="gripVertical" size={15}/></span>
+                      <button type="button" className="uf-remove-btn" onClick={e=>{e.stopPropagation(); moverUm(m.id);}} aria-label={'Remover '+m.label}><DIcon name="x" size={13}/></button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        <div className="btn-row" style={{marginTop:22}}>
+          <button type="button" className="btn btn-outline" onClick={onCancel} disabled={salvando}>Cancelar</button>
           <button type="submit" className="btn btn-primary" disabled={salvando}>{salvando ? 'Salvando…' : (isEdit ? 'Salvar Alterações' : 'Criar Usuário')}</button>
         </div>
       </form>

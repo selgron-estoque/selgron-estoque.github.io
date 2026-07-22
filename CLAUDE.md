@@ -7620,3 +7620,101 @@ tropeço no caminho: o arquivo `index.ts` baixado do GitHub pelo navegador salvo
 `index.ts.ts`, extensão duplicada, precisou ser renomeado antes do deploy aceitar).
 Os dois passos concluídos com sucesso — "Acesso por tela" está 100% funcional em
 produção, não só no código.
+
+## Redesign completo de "Editar/Novo Usuário" — dual-list de permissões
+
+O cliente pediu um redesign visual completo desta tela, com referência explícita a
+sistemas corporativos (SAP Fiori, Microsoft Admin Center, Oracle) e uma instrução clara
+de escopo: **"Não altere nenhuma regra de negócio nem a estrutura de dados. Faça apenas
+a reformulação visual da tela."** — trocar os 11 toggles individuais (liga/desliga, ver
+seção "Acesso por tela" acima) por um **dual-list** (transfer list): duas colunas —
+"Comandos Disponíveis" / "Comandos Liberados" — com busca própria em cada uma, seleção
+múltipla, botões centrais pra mover, duplo-clique, e arrastar-e-soltar pra reordenar os
+liberados.
+
+- **Nenhuma mudança na regra de negócio nem no schema**: continuam sendo as MESMAS duas
+  listas de sempre (`acessosExtras`/`acessosRemovidos`, ver seção "Acesso por tela"),
+  a MESMA função `toggleAcessoMenu(viewId, padraoPermite)` (só ganhou um helper novo,
+  `estaLiberado(viewId)`, que extrai o cálculo "esse item está do lado liberado?" já
+  usado em vários pontos do componente novo) e o MESMO payload enviado em
+  `onCreateUser`/`onUpdateUser`. O dual-list é só uma CASCA visual diferente por cima
+  da mesma lógica — mover um item de uma lista pra outra (clique duplo, botão central,
+  ou X) sempre chama `toggleAcessoMenu` por baixo, exatamente como o switch antigo
+  fazia ao ser ligado/desligado.
+- **Cabeçalho novo** (`.uf-header`): seta "←" (chama `onCancel`, mesmo destino do botão
+  "Cancelar" do rodapé — navegação redundante de propósito, padrão comum em sistema
+  corporativo) + título "Editar Usuário"/"Novo Usuário" + subtítulo "Atualize os dados
+  do usuário e defina suas permissões de acesso."
+- **Faixa "Informações do Usuário" (`.uf-info-strip`) com dois modos**: em vez dos
+  campos sempre abertos/editáveis de antes, agora tem um modo LEITURA (faixa horizontal
+  compacta com Nome/Login/E-mail/Perfil como texto + botão "Editar dados") e um modo
+  EDIÇÃO (os mesmos campos de sempre, agora numa linha flex em vez de empilhados).
+  **Só existe modo leitura na EDIÇÃO de um usuário já existente** (`editandoDados`
+  começa `false` quando `isEdit`) — criar um usuário novo não tem dado nenhum pra
+  mostrar em modo leitura, então já começa direto no modo edição, sem o botão "Editar
+  dados" (não faz sentido nesse caso). Isso é o que libera o espaço vertical pedido
+  pelo cliente ("aproximadamente 80% da tela dedicada às permissões") — a faixa some
+  praticamente inteira até alguém precisar mesmo editar o cadastro.
+- **`TODOS_OS_MENUS`/`perfilLiberaPorPadrao` não mudaram** — o dual-list só consome os
+  mesmos dados que os toggles já consumiam.
+- **Seleção múltipla + botões centrais**: `selDisponiveis`/`selLiberados` (dois `Set`
+  de ids, estado só de INTERFACE, nunca persistido) — clicar numa linha alterna a
+  seleção (destaque visual `.selected`, fundo laranja bem claro); os 4 botões centrais
+  (`› Liberar`, `‹ Remover`, `» Liberar todos`, `« Remover todos`) operam sobre o que
+  está selecionado (ou sobre a lista inteira, nos "todos"), cada um desabilitado quando
+  não há nada pra mover naquela direção.
+- **Duplo-clique move na hora** (pedido explícito do cliente: "Duplo clique para
+  mover") — mesma função `moverUm(viewId)` que os botões centrais usam por trás,
+  chamada direto no `onDoubleClick` de cada linha.
+- **Drag and drop só na lista "Comandos Liberados"** (pedido do cliente: "Drag and Drop
+  para reorganizar os comandos liberados" — só essa lista, não a de disponíveis) —
+  **puramente cosmético, decisão consciente**: `ordemLiberados` é um `useState` local
+  (array de ids, começa na ordem natural de `TODOS_OS_MENUS`) reorganizado via eventos
+  nativos de HTML5 (`draggable`/`onDragStart`/`onDragOver`/`onDrop`) — a ordem nunca é
+  gravada no usuário (não existe campo de "ordem" em `acessosExtras`/`acessosRemovidos`,
+  que continuam sendo só conjuntos sem ordem) — reabrir o formulário depois de salvar
+  sempre volta pra ordem natural do menu. Não persistir a ordem foi uma escolha
+  deliberada pra não precisar de nenhuma mudança de estrutura de dados, respeitando a
+  instrução explícita do cliente.
+- **Busca independente nas duas listas** (`buscaDisponiveis`/`buscaLiberados`, filtro
+  simples `.includes()` sobre o rótulo, case-insensitive) — contador no título de cada
+  lista ("Comandos Disponíveis (N)"/"Comandos Liberados (N)") sempre reflete o total
+  REAL (antes do filtro de busca), não quantos aparecem na tela no momento — bate com o
+  pedido do cliente ("Contador no título").
+- **Visual minimalista, sem cor/ícone decorativo** (pedido explícito: "Não utilizar
+  ícones decorativos. Não utilizar cards coloridos. Não utilizar fundo colorido. Não
+  utilizar sombras exageradas.") — as linhas são só texto (checkbox à esquerda em
+  "Disponíveis", ícone de arrastar (`gripVertical`, novo em `DICON_PATHS`) + X
+  (`x`, novo) à direita em "Liberados"), sem nenhuma cor de fundo fora do estado
+  selecionado/hover (cinza bem claro). **Única exceção deliberada**: uma borda superior
+  fina em `--ok` (verde) no card "Comandos Liberados", bem sutil — presente na imagem de
+  referência que o cliente mandou junto do texto, e não contradiz "sem fundo colorido"
+  (o fundo continua branco, é só um traço de 2px). CSS escopado com prefixo `uf-`
+  (User Form), `border-radius:8px` (diferente do `--radius:10px` padrão do resto do
+  app, de propósito, pedido explícito "Raio de 8 px").
+- **Responsivo**: lado a lado em qualquer tela ≥760px (desktop e tablet, "Tablet:
+  Continuar lado a lado" — cobre a faixa de tablet real usada no chão de fábrica);
+  abaixo disso empilha (`flex-direction:column`), com os 4 botões centrais virando uma
+  fileira horizontal compacta entre as duas listas empilhadas.
+- **`.toggle-switch`/`.toggle-switch-row` removidas do CSS por completo** — confirmado
+  via busca no arquivo inteiro que não sobrou nenhuma referência, órfãs desde que a
+  única tela que as usava foi redesenhada.
+- Testado via harness real (jsdom + react-dom/client + `act()`, mesma técnica rigorosa
+  de sempre — carrega o `index.html` inteiro transpilado numa `vm.Script`): confirmei
+  que nenhum `.toggle-switch` sobra na página; que "Novo Usuário" já abre com a ficha
+  editável; que o agrupamento inicial bate com o perfil (`Inventários` em Liberados,
+  `Usuários` em Disponíveis pro perfil padrão "operador"); duplo-clique move um item de
+  Disponíveis pra Liberados; clicar numa linha em Liberados seleciona (classe
+  `.selected`) e o botão central "Remover" move de volta; "Liberar todos"/"Remover
+  todos" zeram/enchem as duas listas corretamente (0/11 e 11/0); a busca em Disponíveis
+  filtra pra só 1 resultado; perfil "Administrador" esconde o dual-list inteiro
+  (nenhum `.uf-list-panel` no DOM) mostrando só o aviso de sempre; "Editar Usuário" com
+  dado existente abre em modo LEITURA (sem `<input>` de nome, mostra o valor como
+  texto) com o botão "Editar dados" visível, que revela os campos editáveis ao clicar;
+  e que o `submit` final salva `acessosExtras`/`acessosRemovidos` EXATAMENTE como
+  vieram (prova de que a regra de negócio/estrutura de dados não mudou, só a casca
+  visual). Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  conferidos (610/610). **Verificação visual de ponta a ponta (arrastar de verdade com
+  mouse, aparência final comparada à referência) fica a cargo do cliente** — mesma
+  limitação de sempre (login exige Supabase Auth real, não simulável no sandbox sem
+  rede).
