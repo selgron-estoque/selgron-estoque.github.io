@@ -5300,7 +5300,7 @@ function buildSidebarGroups(user){
   const contagemItems = [
     ...(podeVer('inventories') ? [{id:'inventories', ic:'box', label:'Inventários'}] : []),
     ...(podeVer('pickCountType') ? [{id:'pickCountType', ic:'search', label:'Nova Contagem'}] : []),
-    ...(podeVer('recounts') ? [{id:'recounts', ic:'repeat', label:'Recontagens Pendentes'}] : []),
+    ...(podeVer('recounts') ? [{id:'recounts', ic:'repeat', label:'Recontagens'}] : []),
     ...(podeVer('divergentes') ? [{id:'divergentes', ic:'alertTriangle', label:'Itens Divergentes'}] : []),
     ...(podeVer('aprovacaoDiretoria') ? [{id:'aprovacaoDiretoria', ic:'clipboardList', label:'Aprovação de Ajustes'}] : []),
     ...(podeVer('concluidas') ? [{id:'concluidas', ic:'checkCircle', label:'Contagens Concluídas'}] : []),
@@ -5320,7 +5320,7 @@ function buildSidebarGroups(user){
     { label: null, items: [
       {id:'home', ic:'home', label:'Início'},
     ]},
-    ...(contagemItems.length>0 ? [{ label: 'Contagem', items: contagemItems }] : []),
+    ...(contagemItems.length>0 ? [{ label: 'Gestão de Inventário', items: contagemItems }] : []),
     ...(cadastrosItems.length>0 ? [{ label: 'Cadastros', items: cadastrosItems }] : []),
     ...(analiseItems.length>0 ? [{ label: 'Análise', items: analiseItems }] : []),
     ...(sistemaItems.length>0 ? [{ label: 'Sistema', items: sistemaItems }] : []),

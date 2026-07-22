@@ -7814,3 +7814,26 @@ de Senha").
   então) acusa diferenças esperadas de texto/estrutura, não regressão real. **Verificação
   visual de ponta a ponta fica a cargo do cliente** — mesma limitação de sempre (login
   exige Supabase Auth real, não simulável no sandbox sem rede).
+
+## Grupo "Contagem" da Sidebar renomeado — "Gestão de Inventário" + "Recontagens"
+
+Cliente achou o grupo "CONTAGEM" (Inventários/Nova Contagem/Recontagens Pendentes/Itens
+Divergentes/Aprovação de Ajustes/Contagens Concluídas) mal nomeado, já que é sobre
+inventário — sugeriu inicialmente renomear "Inventários" pra "Rota de Contagem" e "Nova
+Contagem" pra "Nova Rota". Apontei que isso seria impreciso: "Inventários" lista TODOS
+os tipos de documento (Aleatória/Curva ABC/Manual/Rota de Endereço/Grupo/Lista
+Importada/Itens Específicos — Rota é só 1 de 7), e "Nova Contagem" (`PickCountType`)
+deixa escolher entre vários tipos pra uma contagem avulsa, não só rota. Depois de
+discutir, o cliente decidiu manter "Inventários"/"Nova Contagem" como estavam e só:
+
+- **Grupo**: "Contagem" → **"Gestão de Inventário"** (`buildSidebarGroups`, label do
+  grupo — some via CSS `text-transform:uppercase`, aparece como "GESTÃO DE
+  INVENTÁRIO" na Sidebar, mesmo mecanismo de sempre).
+- **"Recontagens Pendentes" → "Recontagens"** — só o RÓTULO do item na Sidebar
+  (`buildSidebarGroups`). `VIEW_TITLES.recounts` (usado pelo header do `DesktopTopbar`
+  ao entrar na tela) e o rótulo do KPI "Recontagens Pendentes" na Home **não mudaram**
+  — só o menu lateral ficou mais enxuto, o resto do app continua chamando a tela pelo
+  nome completo.
+- Testado via transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  (630/630, sem mudança — só texto). **Verificação visual fica a cargo do cliente** —
+  mesma limitação de sempre.
