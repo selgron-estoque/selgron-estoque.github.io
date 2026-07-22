@@ -7899,3 +7899,17 @@ minimalista/corporativo dos redesenhos anteriores (Usuários, Editar Usuário).
   quebrar nada. **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma
   limitação de sempre (login exige Supabase Auth real, não simulável no sandbox sem
   rede).
+
+## Bug real: "Recontagens" ficou com nome desatualizado no dual-list de "Editar Usuário"
+
+Cliente notou (print com o item destacado) que "Comandos Liberados" no dual-list de
+"Editar Usuário" ainda mostrava "Recontagens Pendentes" — a rodada anterior que
+encurtou o rótulo do menu lateral (ver "Grupo 'Contagem' da Sidebar renomeado") só
+mudou `buildSidebarGroups` (o que a `Sidebar` renderiza), esquecendo que
+`TODOS_OS_MENUS` (perto da linha 5193 — a lista fonte usada pelo dual-list de
+permissões em `UserForm`) é um array SEPARADO com o próprio campo `label`, não
+derivado da Sidebar. Corrigido: `{id:'recounts', label:'Recontagens Pendentes'}` →
+`{id:'recounts', label:'Recontagens'}`. Conferido via script que os 11 labels de
+`TODOS_OS_MENUS` batem exatamente com os da Sidebar agora, um por um — nenhum outro
+divergia. Transpile Babel do arquivo inteiro conferido. **Verificação visual fica a
+cargo do cliente** — mesma limitação de sempre.
