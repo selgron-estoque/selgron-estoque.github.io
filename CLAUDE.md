@@ -8353,3 +8353,147 @@ travando o salvamento vazio.
   classe CSS nova, tudo reaproveitado). **Verificação visual/funcional de ponta a
   ponta fica a cargo do cliente** — mesma limitação de sempre (login exige Supabase
   Auth real, não simulável no sandbox sem rede).
+
+## Botão "Pular contagem" + correção da ordenação por endereço (Rota) + "Marcar urgente" em Inventários Pendentes
+
+O cliente mandou três pedidos numa mensagem só: "Incluir um botão de pular
+contagem, tem casos que o material não é encontrado ou então itens que não tem
+endereço cadastrado precisa pular pra não perder tempo", "Arrumar ordenação de
+contagem, ela não está seguindo na sequência do endereço. Fazendo com que o
+operador ande muito pra lá e pra cá contando itens" e "Incluir o marcar
+urgente na aba Inventários Pendentes também".
+
+### 1. Botão "Pular contagem"
+
+Investigado antes de implementar (agente `Explore`, ~92 mil tokens de leitura):
+confirmou que não existia NENHUM mecanismo de pular no `CountStep` hoje (o
+único que existiu — "Pular por enquanto" na etapa de endereço manual — foi
+removido de propósito numa rodada anterior, quando endereço virou
+obrigatório) e mapeou como cada um dos 3 fluxos com fila usa `inv.contados`
+como CURSOR POSICIONAL (`allItems.slice(jaContados)`), não só como contador.
+
+- **`CountStep` ganhou a prop opcional `onSkip`** — só existe quando o fluxo
+  que instancia `CountStep` a passa. `ManualCountFlow`/`RecountFlow` (sem
+  fila, um item avulso) nunca passam essa prop, então o botão simplesmente
+  não aparece ali — não faz sentido "pular" quando não há próximo item pra
+  ir. `RandomCountFlow`/`RouteCountFlow`/`ImportedListCountFlow` passam
+  `onSkip={()=>q.next()}`.
+- **Decisão central: pular NÃO grava nenhuma contagem nem incrementa
+  `contados`/`incrementContadosSupabase`** — só avança o cursor LOCAL da fila
+  (`q.next()`), sem tocar no cursor persistido. Considerei a alternativa (um
+  "pseudo-registro" de contagem com status próprio, sinalizado como pendente
+  de resolução em algum painel novo) e descartei por desproporcional ao
+  pedido: exigiria coluna nova no Supabase, uma tela pra revisar itens
+  pulados, e mais uma variação de status pra manter consistente com o resto
+  do app. A consequência prática da escolha mais simples: o item pulado
+  continua "pendente" de verdade — reaparece na FRENTE da fila na próxima
+  vez que o inventário for reaberto (mesmo mecanismo de retomar de onde
+  parou que já existe, `allItems.slice(jaContados)`), e o inventário nunca é
+  considerado 100% concluído (`inventarioConcluido`) enquanto ele não for de
+  fato contado — o que é o comportamento correto (o item genuinamente não
+  foi verificado, não deveria contar como resolvido). Dentro da MESMA
+  sessão, pular não trava nada: o operador segue vendo os itens seguintes
+  normalmente, só o item pulado que "sobra" pra próxima entrada.
+- **Botão aparece em QUALQUER etapa** (scan do QR, informar endereço manual,
+  tela de contagem), não só numa etapa específica — os dois casos que o
+  cliente descreveu ("material não encontrado" pode acontecer em qualquer
+  ponto do fluxo; "sem endereço cadastrado" é literalmente a etapa
+  `enderecoManual`, que continua exigindo o campo preenchido pra quem QUER
+  informar o endereço, mas agora tem uma saída pra quem não consegue).
+  Escondido só enquanto a câmera está ativa (`scanning`/`scanningItem`), pra
+  não competir visualmente com ela. Confirmação inline antes de executar
+  (mesmo padrão de "Excluir"/"Cancelar" já usado no resto do app) — ação tem
+  efeito real (avança sem contar), não é raso o bastante pra dispensar
+  confirmação.
+- Testado via harness real (jsdom + react-dom/client + `act()`): botão não
+  aparece sem `onSkip`; aparece e funciona nas etapas de scan E de endereço
+  manual (sem exigir preencher o campo); confirmação intermedeia (clicar
+  "Pular contagem" não chama `onSkip` direto, só abre a confirmação; "Voltar"
+  cancela sem chamar nada); `onComplete` nunca é chamado no caminho de
+  pular (prova de que não é tratado como contagem). A integração de ponta a
+  ponta com a fila de verdade (`RandomCountFlow` avançando pro próximo item
+  sem navegar) foi conferida por leitura direta do código (o `onSkip`
+  passado é o mesmíssimo `()=>q.next()` já usado dentro de `onComplete`,
+  então o comportamento de avanço é garantidamente o mesmo).
+
+### 2. Ordenação por endereço — bug real corrigido (RandomCountFlow + RouteCountFlow)
+
+Causa raiz encontrada pela investigação: as colunas `enderecos.corredor`/
+`enderecos.rua` (que a RPC `contagem_itens_prioritarios` traz via join,
+pensadas pra ordenar a fila por deslocamento físico) **nunca são
+preenchidas em lugar nenhum do app** — ficam sempre `NULL`. Sem esse dado,
+a ordenação caía pra comparação de TEXTO da string do endereço inteira
+(`(a.endereco||'').localeCompare(b.endereco)`), que erra a ordem sempre que
+a posição tem mais de um dígito (ex.: "005-A-10" vem ANTES de "005-A-2" numa
+comparação de string, porque `'1' < '2'` no 7º caractere) — bate exatamente
+com o sintoma relatado ("o operador anda muito pra lá e pra cá").
+
+- **`parseEnderecoPartes(endereco)`/`compararPorEndereco(a, b)`** (funções
+  novas, perto de `normalizeEnderecoCatalogo`) — em vez de depender de
+  popular as colunas do banco (exigiria migração + reimportar/recadastrar
+  todo o catálogo de endereços), extrai corredor/rua/posição direto da
+  STRING do endereço (sempre disponível quando `enderecoCadastrado` é
+  true), com posição comparada como NÚMERO, não texto. Endereço fora do
+  formato esperado cai num fallback de comparação de texto puro (nunca
+  deveria acontecer na prática, mesmo critério de segurança já usado em
+  `normalizeEnderecoCatalogo`).
+- **`RandomCountFlow.ordenarPorEndereco`** trocou o `.sort()` por texto por
+  `compararPorEndereco`.
+- **`RouteCountFlow`**: o agrupamento por corredor/rua (`byCorredor`) usava
+  `p.corredor`/`p.rua` (as colunas sempre-nulas) como chave — todo item
+  caía no mesmo bucket `"null"`, então a tela de "escolher corredor" na
+  prática só mostrava um corredor fantasma. Trocado pra agrupar por
+  `parseEnderecoPartes(p.endereco)`. A ordenação DENTRO de cada corredor
+  (rua → posição) também trocou de `.localeCompare` de texto pra
+  `compararPorEndereco`. A lista de corredores (`Object.keys(grouped)`)
+  ganhou ordenação NUMÉRICA (`Number(a)-Number(b)`, não mais lexicográfica —
+  senão "10" viria antes de "9", mesmo bug de comparação de texto só que um
+  nível acima) e os rótulos "Corredor X" passaram a exibir o número
+  padronizado em 3 dígitos (`cor.padStart(3,'0')`, mesmo padrão de exibição
+  já usado pro almoxarifado).
+- Testado via harness real (jsdom): `parseEnderecoPartes`/`compararPorEndereco`
+  isolados (posição de 2 dígitos ordenando corretamente antes de uma de 1
+  dígito só quando o valor numérico manda, endereço inválido não quebra) e
+  uma ordenação completa de 5 endereços batendo exatamente com a sequência
+  física esperada. Transpile Babel do arquivo inteiro e balanceamento de
+  chaves do CSS conferidos, sem mudança de CSS nesta parte.
+
+### 3. "Marcar urgente" chega em "Inventários Pendentes" (documento inteiro, não só um item)
+
+Extensão do mesmo padrão já usado em Recontagens/Itens Divergentes/Aprovação
+de Ajustes (marcar uma CONTAGEM como urgente) — aqui é o INVENTÁRIO inteiro
+que vira urgente, sinalizando pro operador qual documento priorizar antes
+dos outros.
+
+- **`inventarios.urgente boolean not null default false`** — coluna nova
+  (`backend/schema.sql`), mesmo padrão de sempre (sem tabela nova, sem
+  policy nova — `inventarios` já tem UPDATE liberado pra `authenticated`).
+- **`toggleInventarioUrgente(invId, urgente)`** (`App()`) — mesmo padrão
+  `await` Supabase → só atualiza estado local se `res.ok`, reaproveitando
+  `updateInventarioToSupabase` já existente.
+- **`InventoryList`**: `pendentes` ganhou o mesmo sort urgente-primeiro já
+  usado nas outras 3 telas (`.sort((a,b)=>(b.urgente?1:0)-(a.urgente?1:0))`,
+  só entre os pendentes — "Concluídos" não tem fila pra furar). Cada card
+  ganhou a classe `.item-card.urgente` (mesmo anel vermelho de
+  `.count-card.urgente`), o chip "🔥 Urgente" ao lado do `StatusTag`, e um
+  botão "Marcar urgente"/"Remover urgência" visível a líder/admin
+  (`canMark`) — **fora do bloco `role==='admin'` de Baixar/Cancelar/Excluir**
+  (líder também precisa poder marcar, mesmo grupo que já marca urgente nas
+  outras 3 telas), com `stopPropagation` pra não disparar a navegação do
+  card ao clicar.
+- **Mesma limitação já documentada nas outras 3 telas de urgente**: erro
+  visível por card (`urgenteErro`), nunca finge sucesso se a gravação
+  falhar.
+- Testado via harness real (jsdom + react-dom/client + `act()`): 2
+  inventários renderizam, botão existe em ambos, clicar marca o certo (via
+  `onToggleUrgente`), o card urgente sobe pro topo da lista e ganha a classe/
+  chip, o clique não navega (stopPropagation confirmado), e o botão não
+  aparece pra `role==='operador'`.
+
+Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+conferidos (651/651 — 1 regra nova, `.item-card.urgente`) depois de cada
+edit desta rodada. **Verificação visual/funcional de ponta a ponta fica a
+cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth
+real, não simulável no sandbox sem rede). Falta o cliente rodar o SQL novo
+(`alter table inventarios add column if not exists urgente...`) no projeto
+real.

@@ -1078,3 +1078,16 @@ alter table contagens add column if not exists motivo_reprovacao_diretoria text;
 -- Sem policy nova — mesma UPDATE já existente em `usuarios` cobre.
 -- =============================================================================
 alter table usuarios add column if not exists acessos_removidos jsonb not null default '[]'::jsonb;
+
+-- =============================================================================
+-- MARCAR INVENTÁRIO COMO URGENTE ("Inventários Pendentes") — cliente pediu pra
+-- estender o mesmo "marcar urgente" já usado em Recontagens/Itens Divergentes/
+-- Aprovação de Ajustes (que marca uma CONTAGEM) pra também marcar um
+-- INVENTÁRIO inteiro como urgente na tela "Inventários Pendentes" — sinaliza
+-- pro operador qual documento priorizar antes dos outros. Mesmo padrão:
+-- só mais uma coluna, sem tabela nova, sem policy nova (`inventarios` já tem
+-- UPDATE liberado pra `authenticated`).
+-- Introspecção antes de rodar:
+--   select column_name from information_schema.columns where table_name = 'inventarios' and column_name = 'urgente';
+-- =============================================================================
+alter table inventarios add column if not exists urgente boolean not null default false;

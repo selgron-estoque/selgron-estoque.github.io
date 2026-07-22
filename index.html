@@ -290,6 +290,7 @@
 
   /* ITEM CARD (count item) */
   .item-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;margin-bottom:14px;}
+  .item-card.urgente{box-shadow:0 0 0 3px var(--danger), 0 1px 3px rgba(0,0,0,.04);}
   .item-card-head{padding:16px 18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
   .item-code{font-family:var(--font-mono);font-size:var(--text-sm);color:var(--safety);letter-spacing:0.5px;}
   .item-desc{font-family:var(--font-display);font-size:18px;font-weight:600;margin:4px 0 0 0;text-transform:uppercase;}
@@ -1592,6 +1593,7 @@ function inventarioRowToLocal(row){
     contados: row.contados,
     ...(row.itens_importados ? {itensImportados: row.itens_importados} : {}),
     ...(row.grupo ? {grupo: row.grupo} : {}),
+    urgente: !!row.urgente,
   };
 }
 
@@ -1956,6 +1958,43 @@ function normalizeEnderecoCatalogo(raw){
   m = e.match(/^(\d{3})--([A-Z])-(\d)$/);
   if(m) return m[1]+'-'+m[2]+'-'+m[3];
   return null;
+}
+
+// Bug real corrigido aqui: `enderecos.corredor`/`enderecos.rua` (colunas que
+// a RPC `contagem_itens_prioritarios` traz via join, pensadas pra ordenar a
+// fila de contagem por deslocamento físico) NUNCA são preenchidas em lugar
+// nenhum do app — ficam sempre `NULL`. Sem isso, a ordenação em
+// `RandomCountFlow`/`RouteCountFlow` degenerava pra comparação de TEXTO da
+// string do endereço inteira (`(a.endereco||'').localeCompare(b.endereco)`),
+// que erra a ordem sempre que a posição tem mais de um dígito (ex.:
+// "005-A-10" vem ANTES de "005-A-2" numa comparação de string, porque '1' <
+// '2' no 7º caractere) — cliente reportou exatamente esse sintoma: "o
+// operador anda muito pra lá e pra cá contando itens". Em vez de depender de
+// popular as colunas do banco (exigiria migração + reimportar/recadastrar
+// todo o catálogo de endereços), a correção extrai corredor/rua/posição
+// direto da STRING do endereço (sempre disponível quando
+// `enderecoCadastrado` é true) — mesmo formato que `normalizeEnderecoCatalogo`
+// já produz (`\d+-[A-Za-z]-\d+`, corredor e posição com qualquer nº de
+// dígitos, cobrindo tanto o padrão normal de 3 dígitos quanto a exceção
+// "10000-X-0..."). Retorna `null` pra qualquer formato que não bata (mesmo
+// critério de segurança de `normalizeEnderecoCatalogo`: nunca adivinha).
+function parseEnderecoPartes(endereco){
+  if(!endereco) return null;
+  const m = /^(\d+)-([A-Za-z])-(\d+)$/.exec(String(endereco).trim());
+  if(!m) return null;
+  return {corredor: Number(m[1]), rua: m[2].toUpperCase(), posicao: Number(m[3])};
+}
+
+// Comparador pra ordenar itens por sequência física real de endereço —
+// corredor (numérico) → rua (letra) → posição (numérica, não string, é
+// exatamente o que corrige o bug acima). Item cujo endereço não bate no
+// formato esperado cai no fim da comparação por texto puro (fallback, nunca
+// deveria acontecer na prática já que `endereco` só existe quando
+// `enderecoCadastrado` é true, mas protege contra dado inesperado).
+function compararPorEndereco(enderecoA, enderecoB){
+  const pa = parseEnderecoPartes(enderecoA), pb = parseEnderecoPartes(enderecoB);
+  if(!pa || !pb) return (enderecoA||'').localeCompare(enderecoB||'');
+  return (pa.corredor - pb.corredor) || pa.rua.localeCompare(pb.rua) || (pa.posicao - pb.posicao);
 }
 
 // Lê a planilha "Descrição de Produtos" (export SB2 do Protheus com Unidade
@@ -4340,6 +4379,17 @@ function App(){
     return res;
   }
 
+  // Marca/desmarca um INVENTÁRIO inteiro como urgente, em "Inventários
+  // Pendentes" — mesma ideia de "Marcar urgente" já usada nas contagens
+  // (Recontagens/Itens Divergentes/Aprovação de Ajustes), estendida aqui pro
+  // cliente sinalizar qual documento o operador deve priorizar. Mesmo padrão:
+  // aguarda confirmação do Supabase antes de atualizar o cache local.
+  async function toggleInventarioUrgente(invId, urgente){
+    const res = await updateInventarioToSupabase(invId, {urgente});
+    if(res.ok) setInventories(prev=>prev.map(i=>i.id===invId ? {...i, urgente} : i));
+    return res;
+  }
+
   // Exclusão de inventário — mesmo padrão: aguarda confirmação do Supabase
   // antes de remover da tela, pra não sumir localmente e "ressuscitar"
   // depois via sincronização se a exclusão remota tiver falhado.
@@ -4781,7 +4831,7 @@ function App(){
       {view!=='home' && !COUNT_SCREEN_VIEWS.includes(view) && <SubBar view={view} goto={goto} />}
       <div className="content">
         {view==='home' && <Home role={role} user={currentUser} inventories={inventories} counts={counts} historicoConcluidas={historicoConcluidas} enderecosPropostos={enderecosPropostos} goto={goto} />}
-        {view==='inventories' && hasAccess(currentUser,'inventories') && <InventoryList inventories={inventories} goto={goto} role={role} counts={counts} onDelete={deleteInventory} onCancel={cancelInventory} />}
+        {view==='inventories' && hasAccess(currentUser,'inventories') && <InventoryList inventories={inventories} goto={goto} role={role} counts={counts} onDelete={deleteInventory} onCancel={cancelInventory} onToggleUrgente={toggleInventarioUrgente} />}
         {view==='pickCountType' && hasAccess(currentUser,'pickCountType') && <PickCountType role={role} goto={goto} inventories={inventories} gruposExcluidos={gruposExcluidos} onCreate={async(inv)=>{
           const res = await saveInventarioToSupabase(inv);
           if(res.ok){ setInventories(prev=>[inv,...prev]); goto('inventories'); }
@@ -5948,7 +5998,18 @@ function inventarioConcluido(inv){
   return inv.qtdItens>0 && inv.contados>=inv.qtdItens;
 }
 
-function InventoryList({inventories, goto, role, counts, onDelete, onCancel}){
+function InventoryList({inventories, goto, role, counts, onDelete, onCancel, onToggleUrgente}){
+  const canMark = role==='lider' || role==='admin';
+  const [urgenteBusyId, setUrgenteBusyId] = useState(null);
+  const [urgenteErro, setUrgenteErro] = useState({});
+  async function handleToggleUrgente(inv){
+    setUrgenteBusyId(inv.id);
+    setUrgenteErro(prev=>({...prev, [inv.id]: null}));
+    const res = await onToggleUrgente(inv.id, !inv.urgente);
+    setUrgenteBusyId(null);
+    if(!res || !res.ok) setUrgenteErro(prev=>({...prev, [inv.id]: (res && res.erro) || 'Não foi possível salvar — tente novamente.'}));
+  }
+
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   // `onDelete` agora aguarda confirmação do Supabase antes de sumir com o
   // card (ver App()) — `excluindo` desabilita os botões durante o envio,
@@ -6017,7 +6078,10 @@ function InventoryList({inventories, goto, role, counts, onDelete, onCancel}){
     }
   }
 
-  const pendentes = inventories.filter(inv=>!inventarioConcluido(inv));
+  // Inventários marcados urgentes sempre aparecem primeiro — mesmo critério
+  // já usado nas telas de contagem (Recontagens/Itens Divergentes/Aprovação
+  // de Ajustes). Só entre os pendentes — "Concluídos" não tem fila pra furar.
+  const pendentes = inventories.filter(inv=>!inventarioConcluido(inv)).sort((a,b)=>(b.urgente?1:0)-(a.urgente?1:0));
   const concluidos = inventories.filter(inventarioConcluido);
   // Concluídos só interessa a quem gerencia — pro operador, ver documentos
   // já fechados ali misturado com o que ainda precisa contar só gera
@@ -6041,13 +6105,16 @@ function InventoryList({inventories, goto, role, counts, onDelete, onCancel}){
     const temListaItens = (inv.tipo==='Itens Específicos' || inv.tipo==='Lista Importada (Excel)') && inv.itensImportados && inv.itensImportados.length>0;
     const itensAberto = itensAbertosIds.has(inv.id);
     return (
-      <div key={inv.id} className="item-card" style={concluido ? {} : {cursor:'pointer'}} onClick={concluido ? undefined : ()=>goto(destino, inv)}>
+      <div key={inv.id} className={"item-card"+(inv.urgente?' urgente':'')} style={concluido ? {} : {cursor:'pointer'}} onClick={concluido ? undefined : ()=>goto(destino, inv)}>
         <div className="item-card-head">
           <div>
             <div className="item-code">{inv.id} · {inv.almoxarifado}</div>
             <div className="item-desc" style={{fontSize:16}}>{inv.nome}</div>
           </div>
-          <StatusTag status={concluido ? 'ok' : 'warn'} text={concluido ? 'Concluído' : (inv.contados>0 ? 'Em andamento' : 'Pendente')} />
+          <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:6}}>
+            {inv.urgente && <span className="urgente-chip"><Ic>🔥</Ic> Urgente</span>}
+            <StatusTag status={concluido ? 'ok' : 'warn'} text={concluido ? 'Concluído' : (inv.contados>0 ? 'Em andamento' : 'Pendente')} />
+          </div>
         </div>
         <div style={{padding:'14px 18px'}}>
           <div style={{display:'flex',justifyContent:'space-between',fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>
@@ -6057,6 +6124,14 @@ function InventoryList({inventories, goto, role, counts, onDelete, onCancel}){
           <div className="progress-bar"><div className="fill" style={{width:pct+'%', background: pct>=100 ? 'var(--ok)' : 'var(--safety)'}}></div></div>
           <div style={{fontFamily:'var(--font-mono)',fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:6}}>{inv.contados}/{inv.qtdItens} itens contados ({pct}%)</div>
         </div>
+        {canMark && (
+          <div style={{padding:'0 18px 14px'}} onClick={e=>e.stopPropagation()}>
+            <button type="button" className="btn btn-outline" style={{width:'auto',padding:'6px 14px',fontSize:'var(--text-sm)'}} disabled={urgenteBusyId===inv.id} onClick={()=>handleToggleUrgente(inv)}>
+              <Ic>🔥</Ic> {urgenteBusyId===inv.id ? 'Salvando…' : (inv.urgente ? 'Remover urgência' : 'Marcar urgente')}
+            </button>
+            {urgenteErro[inv.id] && <div className="divergence-alert" style={{marginTop:8}}><Ic>⚠</Ic><span>{urgenteErro[inv.id]}</span></div>}
+          </div>
+        )}
         {temListaItens && (
           <div style={{padding:'0 18px 14px'}} onClick={e=>e.stopPropagation()}>
             <button type="button" className="btn btn-outline" style={{width:'auto',padding:'6px 14px',fontSize:'var(--text-sm)'}} onClick={()=>toggleItens(inv.id)}>
@@ -6854,7 +6929,7 @@ function useCountQueue(items){
   return {current, idx, total:items.length, next, done};
 }
 
-function CountStep({product, user, onComplete, onAddressProposed, inv, expectAddressCheck=true, numeroContagem=1, contagemAnteriorId=null, counts=[], previousCount=null, queueAtual=null, queueTotal=null, operadorVeSaldo=false}){
+function CountStep({product, user, onComplete, onAddressProposed, inv, expectAddressCheck=true, numeroContagem=1, contagemAnteriorId=null, counts=[], previousCount=null, queueAtual=null, queueTotal=null, operadorVeSaldo=false, onSkip=null}){
   // Bloqueia lançar uma contagem NOVA (1ª rodada) de um item que já tem um
   // documento em aberto em outro lugar do app (ex: contado numa lista de
   // inventário e ainda aguardando análise do líder, e alguém tenta contar o
@@ -6891,6 +6966,22 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   const [addressOk, setAddressOk] = useState(null);
   const [enderecoInformado, setEnderecoInformado] = useState('');
   const [qty, setQty] = useState('');
+
+  // "Pular contagem" — pedido do cliente: item não encontrado fisicamente
+  // ou sem endereço cadastrado (casos em que insistir custa tempo de chão de
+  // fábrica). Só existe quando o fluxo que chama `CountStep` passa `onSkip`
+  // (fluxos com FILA — Aleatória/Rota/Lista Importada; `ManualCountFlow`/
+  // `RecountFlow` não têm fila pra avançar, então nunca passam essa prop e o
+  // botão simplesmente não aparece ali). Pular NÃO grava nenhuma contagem
+  // nem incrementa `contados`/`inventarioConcluido` — decisão deliberada,
+  // mesmo espírito de simplicidade do resto do app: o item continua
+  // exatamente "pendente" (nem contado, nem perdido) e volta a aparecer
+  // normalmente na frente da fila na próxima vez que o inventário for
+  // reaberto (mesmo mecanismo que já existe hoje pra "retomar de onde
+  // parou"), sem precisar de nenhuma coluna nova no Supabase pra rastrear
+  // "item pulado". Dentro da MESMA sessão, o operador continua vendo os
+  // itens seguintes normalmente (o pulo só avança o cursor local da fila).
+  const [skipConfirm, setSkipConfirm] = useState(false);
 
   const [scanning, setScanning] = useState(false);
   // Verificação opcional do item por câmera dentro da própria tela de
@@ -7156,6 +7247,24 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
 
   return (
     <div>
+      {onSkip && !scanning && !scanningItem && (
+        skipConfirm ? (
+          <div className="divergence-alert" style={{marginBottom:14,flexDirection:'column',alignItems:'stretch',gap:10}}>
+            <div style={{display:'flex',gap:8,alignItems:'flex-start'}}>
+              <Ic>⚠</Ic>
+              <span>Pular este item? Ele continua pendente e volta a aparecer na fila mais tarde — nada é registrado como contado agora.</span>
+            </div>
+            <div className="btn-row">
+              <button type="button" className="btn btn-secondary" onClick={()=>setSkipConfirm(false)}>Voltar</button>
+              <button type="button" className="btn btn-danger" onClick={()=>onSkip('nao_encontrado')}>Confirmar — pular item</button>
+            </div>
+          </div>
+        ) : (
+          <button type="button" className="btn btn-outline" style={{width:'auto',padding:'6px 14px',fontSize:'var(--text-sm)',marginBottom:14}} onClick={()=>setSkipConfirm(true)}>
+            <DIcon name="chevronRight" size={16}/> Pular contagem (não encontrado / sem endereço)
+          </button>
+        )
+      )}
       {step!=='count' && (
         <div className="item-card" style={{marginBottom:14}}>
           <div className="item-card-head" style={{borderBottom:'none'}}>
@@ -7428,15 +7537,14 @@ function RandomCountFlow({inv, user, onRegisterCount, onFinish, onAddressPropose
     fetchContagemItensPrioritarios(Math.max(qtd, 25), gruposFiltro, almoxarifadosFiltro, gruposExcluidos).then(itens=>{
       if(cancelado) return;
       // Sequência de endereço: itens com endereço cadastrado vêm primeiro,
-      // ordenados por corredor → rua → endereço (deslocamento físico menor);
-      // itens sem endereço cadastrado ainda ficam depois, na ordem por valor
-      // (a RPC já devolve nessa ordem de valor/movimento).
+      // ordenados por corredor → rua → posição (deslocamento físico menor —
+      // `compararPorEndereco`, ver comentário perto de `parseEnderecoPartes`
+      // pra causa raiz do bug que isso corrige: comparação de string, não
+      // numérica, fazia "005-A-10" vir antes de "005-A-2"); itens sem
+      // endereço cadastrado ainda ficam depois, na ordem por valor (a RPC já
+      // devolve nessa ordem de valor/movimento).
       function ordenarPorEndereco(lista){
-        const comEndereco = lista.filter(p=>p.enderecoCadastrado).sort((a,b)=>
-          (a.corredor||'').localeCompare(b.corredor||'') ||
-          (a.rua||'').localeCompare(b.rua||'') ||
-          (a.endereco||'').localeCompare(b.endereco||'')
-        );
+        const comEndereco = lista.filter(p=>p.enderecoCadastrado).sort((a,b)=>compararPorEndereco(a.endereco, b.endereco));
         const semEndereco = lista.filter(p=>!p.enderecoCadastrado);
         return [...comEndereco, ...semEndereco];
       }
@@ -7496,6 +7604,7 @@ function RandomCountFlow({inv, user, onRegisterCount, onFinish, onAddressPropose
         queueTotal={allItems.length}
         onAddressProposed={onAddressProposed}
         operadorVeSaldo={operadorVeSaldo}
+        onSkip={()=>q.next()}
         onComplete={(c)=>{
           if(inv && inv.id){ setInventories(prev=>prev.map(i=>i.id===inv.id?{...i, contados:i.contados+1}:i)); incrementContadosSupabase(inv.id); }
           onRegisterCount(c);
@@ -7643,11 +7752,18 @@ function RouteCountFlow({inv, user, onRegisterCount, onFinish, onAddressProposed
       if(!hasAny) return;
       const itens = await fetchContagemItensPrioritarios(200, gruposFiltro, almoxarifadosFiltro, gruposExcluidos);
       if(cancelado) return;
+      // Agrupa por corredor/rua extraídos da STRING do endereço (não das
+      // colunas `p.corredor`/`p.rua`, que nunca são preenchidas — ver
+      // comentário de `parseEnderecoPartes` acima). Item cujo endereço não
+      // bate no formato esperado fica de fora do agrupamento (mesmo critério
+      // de segurança já usado no resto do app).
       const byCorredor = {};
       itens.filter(p=>p.enderecoCadastrado).forEach(p=>{
-        byCorredor[p.corredor] = byCorredor[p.corredor] || {};
-        byCorredor[p.corredor][p.rua] = byCorredor[p.corredor][p.rua] || [];
-        byCorredor[p.corredor][p.rua].push(p);
+        const partes = parseEnderecoPartes(p.endereco);
+        if(!partes) return;
+        byCorredor[partes.corredor] = byCorredor[partes.corredor] || {};
+        byCorredor[partes.corredor][partes.rua] = byCorredor[partes.corredor][partes.rua] || [];
+        byCorredor[partes.corredor][partes.rua].push(p);
       });
       setGrouped(byCorredor);
     });
@@ -7669,15 +7785,18 @@ function RouteCountFlow({inv, user, onRegisterCount, onFinish, onAddressProposed
   // qualquer corredor em que apareça, não importa quando/onde foi contado.
   const codigosJaContados = useMemo(()=> new Set((counts||[]).map(c=>c.productCode)), [counts]);
 
-  // Lista achatada e ordenada (rua → endereço) só do corredor escolhido, sem
-  // os itens já contados — "libera na sequência do corredor".
+  // Lista achatada e ordenada (rua → posição) só do corredor escolhido, sem
+  // os itens já contados — "libera na sequência do corredor". Ordena por
+  // `compararPorEndereco` (posição NUMÉRICA, não texto — mesma correção já
+  // aplicada em `RandomCountFlow.ordenarPorEndereco`), não mais por
+  // comparação de string do endereço inteiro.
   const itensCorredor = useMemo(()=>{
     if(!grouped || !corredorEscolhido || !grouped[corredorEscolhido]) return [];
     const flat = [];
     Object.keys(grouped[corredorEscolhido]).sort().forEach(rua=>{
       grouped[corredorEscolhido][rua]
         .slice()
-        .sort((a,b)=>(a.endereco||'').localeCompare(b.endereco||''))
+        .sort((a,b)=>compararPorEndereco(a.endereco, b.endereco))
         .forEach(p=>flat.push(p));
     });
     return flat.filter(p=>!codigosJaContados.has(p.codigo));
@@ -7704,7 +7823,11 @@ function RouteCountFlow({inv, user, onRegisterCount, onFinish, onAddressProposed
   }
 
   if(!corredorEscolhido){
-    const corredores = Object.keys(grouped).sort();
+    // Ordenação NUMÉRICA (não lexicográfica) — as chaves de `grouped` são
+    // números de corredor coagidos a string por serem chave de objeto; sem
+    // `.sort()` numérico, "10" viria antes de "9" (mesmo bug de comparação
+    // de texto já corrigido acima pra posição dentro do corredor).
+    const corredores = Object.keys(grouped).sort((a,b)=>Number(a)-Number(b));
     return (
       <div>
         <div className="role-note">Armazém {almoxarifadosFiltro.map(a=>a.padStart(2,'0')).join(', ')} · Escolha o corredor que vai contar agora</div>
@@ -7714,7 +7837,7 @@ function RouteCountFlow({inv, user, onRegisterCount, onFinish, onAddressProposed
           return (
             <div key={cor} className="list-row" onClick={()=>pendentesCor>0 && setCorredorEscolhido(cor)} style={pendentesCor===0 ? {opacity:0.55,cursor:'default'} : undefined}>
               <div>
-                <div className="lr-title">Corredor {cor}</div>
+                <div className="lr-title">Corredor {cor.padStart(3,'0')}</div>
                 <div className="lr-sub">{pendentesCor===0 ? `${totalCor} itens — todos já contados` : `${pendentesCor} de ${totalCor} itens ainda por contar`}</div>
               </div>
               {pendentesCor>0 && <span className="chevron"><Ic>›</Ic></span>}
@@ -7729,7 +7852,7 @@ function RouteCountFlow({inv, user, onRegisterCount, onFinish, onAddressProposed
     return (
       <div className="empty-state">
         <div className="ic"><Ic size={40}>🎉</Ic></div>
-        Corredor {corredorEscolhido} concluído.
+        Corredor {corredorEscolhido.padStart(3,'0')} concluído.
         <div className="btn-row" style={{marginTop:16,justifyContent:'center'}}>
           <button className="btn btn-secondary" onClick={()=>setCorredorEscolhido(null)}>Escolher outro corredor</button>
           {onFinish && <button className="btn btn-primary" onClick={onFinish}>Voltar aos inventários</button>}
@@ -7741,7 +7864,7 @@ function RouteCountFlow({inv, user, onRegisterCount, onFinish, onAddressProposed
   return (
     <div>
       <div className="role-note" style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,flexWrap:'wrap'}}>
-        <span>Corredor {corredorEscolhido} · item {q.idx+1} de {q.total}</span>
+        <span>Corredor {corredorEscolhido.padStart(3,'0')} · item {q.idx+1} de {q.total}</span>
         <button className="btn btn-secondary" style={{padding:'4px 12px',fontSize:'var(--text-sm)'}} onClick={()=>setCorredorEscolhido(null)}>Trocar corredor</button>
       </div>
       <CountStep
@@ -7753,6 +7876,7 @@ function RouteCountFlow({inv, user, onRegisterCount, onFinish, onAddressProposed
         queueAtual={q.idx+1}
         queueTotal={q.total}
         onAddressProposed={onAddressProposed}
+        onSkip={()=>q.next()}
         operadorVeSaldo={operadorVeSaldo}
         onComplete={(c)=>{
           if(inv && inv.id){ setInventories(prev=>prev.map(i=>i.id===inv.id?{...i, contados:i.contados+1}:i)); incrementContadosSupabase(inv.id); }
@@ -7860,6 +7984,7 @@ function ImportedListCountFlow({inv, user, onRegisterCount, onFinish, onAddressP
         queueAtual={jaContados+q.idx+1}
         queueTotal={allItems.length}
         onAddressProposed={onAddressProposed}
+        onSkip={()=>q.next()}
         operadorVeSaldo={operadorVeSaldo}
         onComplete={(c)=>{
           if(inv && inv.id){ setInventories(prev=>prev.map(i=>i.id===inv.id?{...i, contados:i.contados+1}:i)); incrementContadosSupabase(inv.id); }
