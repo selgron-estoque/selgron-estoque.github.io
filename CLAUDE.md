@@ -8018,3 +8018,32 @@ o mesmo raciocínio sem reduzir risco.
   renderizado, só a fonte do valor mudou de literal pra token) — **verificação visual
   pixel-a-pixel fica a cargo do cliente**, mas o resultado esperado é ZERO diferença
   perceptível.
+
+## Padronização de fontes, cores e tamanhos — Fase 2 (tamanho de fonte, CSS)
+
+Fases 2a (tablet/operador) e 2b (corporativo/admin) feitas juntas num commit só —
+**desvio deliberado do plano original**: a escala de tokens (`--text-2xs/xs/sm/md/lg`)
+é a MESMA pros dois sistemas por decisão de projeto (só `font-family`/cor continuam
+por sistema), então não existe transformação diferente entre 2a/2b — dividir só por
+"qual seletor pertence a qual sistema" não muda o mapeamento nem reduz risco de
+verdade (é regex puro sobre `font-size:Npx`, sem lógica condicional por seletor), só
+fragmentaria o mesmo commit em dois sem ganho real de bisecção.
+
+- **160 literais `font-size:Npx` dentro do `<style>`** migrados pra `var(--text-*)`
+  via regex restrito à tabela de absorção do plano (9/9.5/10→`--text-2xs`;
+  10.5/11/11.5→`--text-xs`; 12/12.5/13→`--text-sm`; 13.5/14/14.5→`--text-md`;
+  15→`--text-lg`, sem merge). **42 literais fora da escala ficaram intocados de
+  propósito** (10 em 16px, mais 18/20/22/17/19/26/28/24/30/40/48px e o outlier
+  7.2px) — mesmo critério já definido no plano (tamanhos ≥16px são provavelmente
+  título/decoração intencional por componente, mexer arriscava alterar algo visível
+  por pouco ganho de consistência).
+- **Verificado que não existe nenhum `font:` shorthand no CSS** (só `font-size:`
+  isolado) — não havia risco de a regex perder alguma declaração escondida atrás de
+  shorthand.
+- Testado via transpile Babel do arquivo inteiro (JSX não foi tocado nesta fase,
+  saída idêntica em tamanho à da Fase 1) e balanceamento de chaves do CSS (646/646,
+  inalterado — só valores dentro de declarações já existentes mudaram, nenhuma regra
+  nova). Rodei `harness_home.js` (smoke test de render) sem quebrar nada.
+  **Diferença visual esperada é sub-pixel** (ex.: 13px vira 12.5px, 10.5px vira
+  11px — desvio máximo de 0.5px por decisão do plano) — **verificação visual fica a
+  cargo do cliente**, mas não deve ser perceptível a olho nu em nenhuma tela.
