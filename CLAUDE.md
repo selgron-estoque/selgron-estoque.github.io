@@ -8067,3 +8067,26 @@ idêntico pros dois sistemas.
   `harness_ordenacao_recontagens`) — todas as asserções continuam `true`, sem
   nenhuma quebra. **Diferença visual esperada é sub-pixel** (mesmo critério da fase
   anterior) — **verificação visual fica a cargo do cliente**.
+
+## Padronização de fontes, cores e tamanhos — Fase 3 (raio)
+
+- **3a — 22 regras com `border-radius:10px` literal viraram `var(--radius)`**
+  (mesmo valor numérico, zero mudança visual) — mais que os "~15" estimados no
+  plano original (a pesquisa tinha focado só na "área corporativa", mas
+  `--radius:10px` sempre foi um token ÚNICO compartilhado pelos dois sistemas, não
+  escopado — então o mecânico valeu tanto pra `.round-panel`/`.cs-mini`/
+  `.round-eyebrow .badge` (sistema tablet/operador) quanto pra `.tfb-*`/
+  `.desktop-*`/`.pnl-*`/`.mhm-*` (sistema corporativo), sem precisar dividir em
+  dois lotes por sistema.
+- **3b — `.uf-list-row .uf-remove-btn`: `6px` → `8px`**, alinhando com o resto da
+  família `.uf-*` (todas as outras usam 8px). Único elemento visual desta fase com
+  mudança perceptível (botão pequeno de 22×22px, no dual-list de "Editar Usuário").
+- **3c já estava feita**: o comentário que documenta a exceção de 16px nas classes
+  `.cs-*` (tela de contagem "coletor industrial") já existia desde que essa família
+  foi criada — conferido nas linhas 445-450, já referencia explicitamente
+  ".count-card acima" como a mesma exceção. Nenhuma mudança necessária.
+- Testado via transpile Babel do arquivo inteiro (OK) e balanceamento de chaves do
+  CSS (646/646, inalterado). Zero literais `border-radius:10px` restantes
+  (confirmado via grep). **Ponto de maior risco visual desta fase: `.uf-remove-btn`
+  (3b)** — sinalizado pro cliente conferir o botão "×" de remover em "Comandos
+  Liberados" no dual-list de "Editar Usuário" depois do deploy.
