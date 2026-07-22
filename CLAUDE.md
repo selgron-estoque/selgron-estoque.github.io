@@ -7718,3 +7718,12 @@ liberados.
   mouse, aparência final comparada à referência) fica a cargo do cliente** — mesma
   limitação de sempre (login exige Supabase Auth real, não simulável no sandbox sem
   rede).
+
+**Ajuste rápido depois do deploy**: cliente pediu pra tirar a checkbox de "Comandos
+Disponíveis" — as duas listas agora têm exatamente o mesmo visual (só texto, seleção
+por clique na linha inteira, sem nenhum indicador de checkbox). A seleção múltipla em
+si não mudou (`selDisponiveis`, destaque `.selected` no clique) — só o elemento
+`<input type="checkbox">`, que era puramente decorativo (`readOnly`, sem `onChange`
+próprio, o clique sempre foi tratado no `onClick` da linha), foi removido do JSX. CSS
+órfão (`.uf-list-row input[type=checkbox]`) removido junto. Reconferido via harness
+que a seleção/duplo-clique continuam funcionando idênticos sem a checkbox.
