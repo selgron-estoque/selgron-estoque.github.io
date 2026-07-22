@@ -3450,6 +3450,34 @@ function getOpenCountForProduct(counts, productCode){
   return counts.find(c=>c.productCode===productCode && !hasFollowUp.has(c.id) && OPEN_STATUSES.includes(c.statusAprovacao)) || null;
 }
 
+// Bug real reportado pelo cliente: "Itens Específicos" (e "Lista Importada",
+// que compartilha o mesmo motor) deixava lançar a contagem de um item que já
+// estava incluído em OUTRO inventário ainda pendente — o bloqueio acima
+// (`getOpenCountForProduct`) só entra em ação depois que uma contagem de
+// verdade já foi FINALIZADA em algum lugar (documento "em aberto" aguardando
+// revisão); ele não cobre o caso de um item que já está PLANEJADO (na lista
+// `itensImportados` de outro inventário), mas ainda não foi contado em lugar
+// nenhum — nada impedia contar esse mesmo item numa 2ª lista antes da 1ª ser
+// resolvida, gerando dois documentos pro mesmo item ao mesmo tempo. Só se
+// aplica aos 2 tipos que guardam uma lista FIXA de itens
+// (`itensImportados`: "Itens Específicos"/"Lista Importada") — os demais
+// tipos (Aleatória/Curva ABC/Rota/Grupo) montam a fila na hora via RPC, sem
+// nenhuma lista persistida pra cruzar contra outro inventário; resolver isso
+// pra esses tipos exigiria um mecanismo de reserva de item entre aparelhos —
+// escopo maior, já avaliado e recusado pelo cliente antes (ver CLAUDE.md
+// "Sincronização em tempo real... decisão consciente de não reservar item").
+function getOpenInventoryItemConflict(inventories, counts, currentInvId, productCode){
+  const outros = (inventories||[]).filter(i =>
+    i.id!==currentInvId && !inventarioConcluido(i) && i.itensImportados && i.itensImportados.length>0
+  );
+  for(const outroInv of outros){
+    if(!outroInv.itensImportados.some(it=>it.codigo===productCode)) continue;
+    const jaContadoNesseInv = (counts||[]).some(c=>c.inventario===outroInv.id && c.productCode===productCode);
+    if(!jaContadoNesseInv) return outroInv;
+  }
+  return null;
+}
+
 /* ---------------- RELATÓRIO EXCEL (SheetJS) ---------------- */
 
 function statusLabel(c){
@@ -4840,7 +4868,7 @@ function App(){
         {view==='randomCount' && <RandomCountFlow inv={flowState} user={currentUser} counts={counts} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} gruposExcluidos={gruposExcluidos} />}
         {view==='manualCount' && <ManualCountFlow user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('home');}} onAddressProposed={addAddressProposal} operadorVeSaldo={operadorVeSaldo} />}
         {view==='routeCount' && <RouteCountFlow inv={flowState} user={currentUser} counts={counts} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} gruposExcluidos={gruposExcluidos} />}
-        {view==='importedListCount' && <ImportedListCountFlow inv={flowState} user={currentUser} counts={counts} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} />}
+        {view==='importedListCount' && <ImportedListCountFlow inv={flowState} user={currentUser} counts={counts} inventories={inventories} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} />}
         {view==='recounts' && hasAccess(currentUser,'recounts') && <RecountsPanel counts={counts} inventories={inventories} role={role} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onEditarMotivoObservacao={editarMotivoObservacaoContagem} operadorVeValoresRecontagem={operadorVeValoresRecontagem} />}
         {view==='divergentes' && hasAccess(currentUser,'divergentes') && <DivergentItemsPanel counts={counts} inventories={inventories} role={role} goto={goto} onApprove={approveDivergence} onSendToDiretoria={enviarParaAprovacaoDiretoria} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onEditarMotivoObservacao={editarMotivoObservacaoContagem} />}
         {view==='aprovacaoDiretoria' && hasAccess(currentUser,'aprovacaoDiretoria') && <DiretoriaApprovalPanel counts={counts} inventories={inventories} role={role} onApproveSA={aprovarAjusteDiretoria} onRejectSA={reprovarAjusteDiretoria} onToggleUrgente={toggleUrgente} />}
@@ -6929,7 +6957,7 @@ function useCountQueue(items){
   return {current, idx, total:items.length, next, done};
 }
 
-function CountStep({product, user, onComplete, onAddressProposed, inv, expectAddressCheck=true, numeroContagem=1, contagemAnteriorId=null, counts=[], previousCount=null, queueAtual=null, queueTotal=null, operadorVeSaldo=false, onSkip=null}){
+function CountStep({product, user, onComplete, onAddressProposed, inv, expectAddressCheck=true, numeroContagem=1, contagemAnteriorId=null, counts=[], previousCount=null, queueAtual=null, queueTotal=null, operadorVeSaldo=false, onSkip=null, conflitoInventario=null}){
   // Bloqueia lançar uma contagem NOVA (1ª rodada) de um item que já tem um
   // documento em aberto em outro lugar do app (ex: contado numa lista de
   // inventário e ainda aguardando análise do líder, e alguém tenta contar o
@@ -6953,6 +6981,29 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
           Não é possível lançar uma nova contagem deste item enquanto esse documento não for
           resolvido (aprovado ou recontado) — veja em "Recontagens".
         </div>
+        {onSkip && <button type="button" className="btn btn-outline" style={{marginTop:16}} onClick={()=>onSkip('documento_aberto')}>Pular este item</button>}
+      </div>
+    );
+  }
+  // Mesmo bloqueio de cima, mas pro caso em que o item ainda não tem
+  // NENHUMA contagem finalizada — só está PLANEJADO (presente na lista de
+  // itens) em outro inventário ainda pendente (ver `getOpenInventoryItemConflict`
+  // acima). Só se aplica a "Itens Específicos"/"Lista Importada", únicos
+  // tipos que passam `conflitoInventario` (ver `ImportedListCountFlow`).
+  if(conflitoInventario){
+    return (
+      <div className="empty-state">
+        <div className="ic"><Ic size={40}>🔒</Ic></div>
+        <div style={{fontWeight:700,marginBottom:6}}>{product.codigo} já está em outro inventário pendente</div>
+        <div style={{maxWidth:420,margin:'0 auto'}}>
+          Este item já faz parte de "{conflitoInventario.nome}" ({conflitoInventario.id}), que ainda está
+          pendente e ainda não contou esse item.
+        </div>
+        <div style={{maxWidth:420,margin:'10px auto 0',fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>
+          Para evitar dois documentos abertos pro mesmo item, conte-o primeiro em "{conflitoInventario.nome}"
+          — ou pule este item e resolva o outro inventário depois.
+        </div>
+        {onSkip && <button type="button" className="btn btn-outline" style={{marginTop:16}} onClick={()=>onSkip('em_outro_inventario')}>Pular este item</button>}
       </div>
     );
   }
@@ -7890,7 +7941,7 @@ function RouteCountFlow({inv, user, onRegisterCount, onFinish, onAddressProposed
 
 /* ---------------- MÓDULO 1B: CONTAGEM POR LISTA IMPORTADA (Excel) ---------------- */
 
-function ImportedListCountFlow({inv, user, onRegisterCount, onFinish, onAddressProposed, setInventories, counts, operadorVeSaldo}){
+function ImportedListCountFlow({inv, user, onRegisterCount, onFinish, onAddressProposed, setInventories, counts, operadorVeSaldo, inventories}){
   // Enriquece a lista importada com o catálogo real do Supabase (busca em
   // lote, uma requisição só pra todos os códigos da planilha — cache local
   // estático removido, ver CLAUDE.md "cache local removido"). Roda uma vez
@@ -7968,6 +8019,11 @@ function ImportedListCountFlow({inv, user, onRegisterCount, onFinish, onAddressP
     );
   }
 
+  // Bug real corrigido — item já presente, ainda não contado, em outro
+  // inventário pendente ("Itens Específicos"/"Lista Importada" — únicos
+  // tipos com lista fixa de itens pra cruzar). Ver `getOpenInventoryItemConflict`.
+  const conflitoInventario = inv ? getOpenInventoryItemConflict(inventories, counts, inv.id, q.current.codigo) : null;
+
   return (
     <div>
       <div className="role-note">
@@ -7985,6 +8041,7 @@ function ImportedListCountFlow({inv, user, onRegisterCount, onFinish, onAddressP
         queueTotal={allItems.length}
         onAddressProposed={onAddressProposed}
         onSkip={()=>q.next()}
+        conflitoInventario={conflitoInventario}
         operadorVeSaldo={operadorVeSaldo}
         onComplete={(c)=>{
           if(inv && inv.id){ setInventories(prev=>prev.map(i=>i.id===inv.id?{...i, contados:i.contados+1}:i)); incrementContadosSupabase(inv.id); }

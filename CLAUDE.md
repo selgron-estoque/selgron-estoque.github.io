@@ -8497,3 +8497,75 @@ cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth
 real, não simulável no sandbox sem rede). Falta o cliente rodar o SQL novo
 (`alter table inventarios add column if not exists urgente...`) no projeto
 real.
+
+## Bug real: "Itens Específicos" deixava contar item que já estava pendente em outro inventário aberto
+
+Cliente reportou: "Tem uns tipos de contagem que está deixando lançar
+contagem de itens que já tem inventário aberto, Inventário de Itens
+Específicos por exemplo deixou eu lançar o mesmo item, mesmo tendo um
+inventário já aberto." Investigado o mecanismo de bloqueio já existente
+(`getOpenCountForProduct`/`openDoc` em `CountStep`, ver "Bloqueio de
+contagem duplicada" no histórico bem acima) — ele só entra em ação depois
+que uma contagem já foi FINALIZADA em algum lugar (documento "em aberto"
+aguardando revisão do líder/recontagem/Diretoria). Ele **não** cobre o
+caso descrito pelo cliente: um item que já está PLANEJADO (presente na
+lista `itensImportados`) em outro inventário "Itens Específicos"/"Lista
+Importada" ainda pendente, mas nunca foi de fato contado em lugar nenhum —
+nada impedia contar esse mesmo item numa 2ª lista antes da 1ª ser
+resolvida, gerando dois documentos abertos pro mesmo item ao mesmo tempo.
+
+- **`getOpenInventoryItemConflict(inventories, counts, currentInvId,
+  productCode)`** (perto de `getOpenCountForProduct`) — procura, entre os
+  OUTROS inventários ainda pendentes (`!inventarioConcluido`) que guardam
+  uma lista fixa de itens, algum que contenha o código E que esse código
+  ainda não tenha nenhuma contagem registrada NAQUELE inventário
+  (`counts.some(c=>c.inventario===outroInv.id && c.productCode===...)`) —
+  se achar, retorna o inventário conflitante; senão `null`.
+- **Escopo deliberadamente restrito a "Itens Específicos"/"Lista Importada"**
+  (os únicos 2 tipos que guardam `itensImportados`, uma lista fixa
+  cruzável) — Aleatória/Curva ABC/Rota/Grupo montam a fila na hora via RPC,
+  sem lista persistida pra comparar contra outro inventário; cobrir esses
+  tipos exigiria um mecanismo de RESERVA de item entre aparelhos (travar no
+  servidor no momento em que o item é aberto pra contar), escopo bem maior
+  que já foi avaliado e **recusado pelo próprio cliente antes** (ver
+  "Sincronização em tempo real... decisão consciente de não reservar item
+  durante a contagem" no histórico — ele preferiu resolver por processo/
+  treinamento em vez de reserva real). O caso reportado agora é diferente
+  e mais simples de resolver sem essa infraestrutura: não é dois aparelhos
+  disputando o MESMO item no MESMO inventário em tempo real, é o MESMO item
+  literalmente listado em DOIS documentos diferentes — dá pra detectar de
+  forma determinística só cruzando listas já carregadas em memória, sem
+  precisar de lock nenhum.
+- **`CountStep` ganhou a prop `conflitoInventario`** — quando presente,
+  bloqueia a tela (mesmo visual "🔒" já usado por `openDoc`, chave o
+  suficiente pra reaproveitar em vez de criar um componente novo), com o
+  nome/id do outro inventário e uma explicação de por que está bloqueado.
+  Ganhou também um botão "Pular este item" quando `onSkip` está disponível
+  (reaproveita o mecanismo de pular já implementado nesta mesma rodada,
+  ver seção acima) — sem confirmação extra aqui (diferente do botão de
+  pular da tela normal de contagem): a própria tela de bloqueio já é uma
+  confirmação implícita de que esse item não pode ser contado agora.
+- **`ImportedListCountFlow`** calcula `conflitoInventario` a cada item da
+  fila (`getOpenInventoryItemConflict(inventories, counts, inv.id,
+  q.current.codigo)`) e passa pro `CountStep` — ganhou a prop nova
+  `inventories`, encaminhada de `App()` (que já tinha esse estado
+  carregado, só nunca tinha sido passado pra este fluxo).
+- **Nenhuma mudança de schema/RLS** — o cruzamento usa só dado já carregado
+  em memória (`inventories`/`counts`, ambos já sincronizados via Realtime),
+  sem consulta nova ao Supabase.
+- Testado via harness real (jsdom + react-dom/client + `act()`):
+  `getOpenInventoryItemConflict` isolado nos 5 cenários (detecta conflito
+  quando o item está pendente em outro inventário aberto; sem conflito pra
+  item que não existe em nenhum outro; sem conflito quando o item JÁ foi
+  contado no outro inventário — resolvido, não é mais um conflito;
+  inventário concluído nunca conflita; um inventário nunca conflita
+  consigo mesmo) e `CountStep` com `conflitoInventario` preenchido
+  (mostra a tela de bloqueio com o nome do outro inventário, nenhum campo
+  de quantidade aparece, "Pular este item" chama `onSkip` direto sem
+  confirmação extra, `onComplete` nunca é chamado). Transpile Babel do
+  arquivo inteiro e balanceamento de chaves do CSS conferidos (651/651,
+  sem mudança — nenhuma classe CSS nova). Rodei de novo a suíte de
+  regressão do botão "Pular contagem"/urgente desta mesma rodada, sem
+  quebrar nada. **Verificação visual/funcional de ponta a ponta fica a
+  cargo do cliente** — mesma limitação de sempre (login exige Supabase
+  Auth real, não simulável no sandbox sem rede).
