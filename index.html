@@ -195,6 +195,34 @@
     .uf-center-btn{width:auto;flex:1;padding:9px 4px;}
     .uf-info-editbtn{margin-left:0;}
   }
+
+  /* "Usuários" — cards com avatar/pill de status/botões com ícone, pedido do
+     cliente pra bater com um mockup de referência (mesmo espírito
+     minimalista/corporativo do redesenho de "Editar Usuário" acima).
+     Escopado com prefixo um- (User Management). */
+  .um-search-row{display:flex;flex-wrap:wrap;align-items:flex-end;gap:14px;margin-bottom:20px;}
+  .um-search-row .field{flex:1;min-width:220px;margin-bottom:0;}
+  .um-search-icon-wrap{position:relative;}
+  .um-search-icon-wrap svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--ink-dim);pointer-events:none;}
+  .um-search-icon-wrap input{padding-left:36px;}
+  .um-new-btn{width:auto;flex-shrink:0;padding:13px 18px;font-size:13px;display:flex;align-items:center;gap:8px;}
+  .btn-outline-danger{background:transparent;color:var(--danger);border:1px solid var(--danger);}
+  .btn-outline-danger:hover:not(:disabled){background:var(--danger-bg);}
+
+  .um-card{border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:14px;display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;background:var(--panel);}
+  .um-avatar{width:48px;height:48px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;font-size:15px;flex-shrink:0;}
+  .um-info{flex:1;min-width:180px;}
+  .um-name{font-size:15px;font-weight:700;color:var(--ink);}
+  .um-you{font-size:12px;font-weight:600;color:var(--accent2);margin-left:4px;}
+  .um-sub{font-family:var(--font-mono);font-size:12px;color:var(--ink-dim);margin-top:3px;}
+  .um-last{font-size:11.5px;color:var(--ink-dim);margin-top:4px;}
+  .um-right{display:flex;flex-direction:column;align-items:flex-end;gap:10px;flex-shrink:0;}
+  .um-actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;}
+  .um-btn{width:auto;padding:8px 12px;font-size:11.5px;display:flex;align-items:center;gap:6px;}
+  .um-pw-panel,.um-del-panel{width:280px;max-width:100%;}
+  .um-req-card{border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:10px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;background:var(--panel);}
+  .um-req-card:last-child{margin-bottom:0;}
+
   .grupo-suggestions{margin-top:6px;max-height:260px;overflow-y:auto;background:var(--panel-raised);border:1px solid var(--line);border-radius:8px;}
   .grupo-suggestion-item{display:block;width:100%;text-align:left;background:none;border:none;border-bottom:1px solid var(--line);color:var(--ink);padding:11px 14px;font-size:14px;cursor:pointer;}
   .grupo-suggestion-item:last-child{border-bottom:none;}
@@ -4838,6 +4866,7 @@ const DICON_PATHS = {
   chevronsRight: <><path d="m6 17 5-5-5-5"/><path d="m13 17 5-5-5-5"/></>,
   chevronsLeft: <><path d="m18 17-5-5 5-5"/><path d="m11 17-5-5 5-5"/></>,
   x: <><path d="M18 6 6 18"/><path d="m6 6 12 12"/></>,
+  edit: <><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></>,
   gripVertical: <><circle cx="9" cy="5" r="1.3" fill="currentColor" stroke="none"/><circle cx="9" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="9" cy="19" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="5" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="19" r="1.3" fill="currentColor" stroke="none"/></>,
   logOut: <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></>,
   trendingUp: <><path d="M22 7 13.5 15.5 8.5 10.5 2 17"/><path d="M16 7h6v6"/></>,
@@ -5220,6 +5249,7 @@ const VIEW_TITLES = {
 // uma entrada aqui — a maioria das telas não precisa, o título já basta).
 const VIEW_SUBTITLES = {
   home: 'Resumo operacional do inventário',
+  usuarios: 'Gerencie os usuários do sistema, permissões e redefinições de senha.',
 };
 
 // Telas que renderizam o motor de contagem (CountStep) direto na tela —
@@ -10454,6 +10484,28 @@ function isLoginDuplicado(users, usuario, excludeId){
 }
 
 const USERS_PAGE_SIZE = 8;
+const PASSWORD_HISTORY_PAGE_SIZE = 6;
+
+// Cor pastel do avatar circular de cada usuário — determinística por `id`
+// (hash simples), pra não mudar de cor quando a lista é filtrada/paginada
+// nem quando o usuário reabre a tela depois.
+const AVATAR_PALETTE = [
+  {bg:'#E0EDFF', fg:'#2563C7'},
+  {bg:'#FFE9D6', fg:'#C2660B'},
+  {bg:'#DFF5EC', fg:'#1E8E63'},
+  {bg:'#EDE3FB', fg:'#7B3FC4'},
+  {bg:'#E4F7DE', fg:'#3F8F1E'},
+  {bg:'#FCE4EC', fg:'#C2185B'},
+];
+function avatarColorFor(id){
+  let h = 0;
+  const s = String(id||'');
+  for(let i=0;i<s.length;i++) h = (h*31 + s.charCodeAt(i)) | 0;
+  return AVATAR_PALETTE[Math.abs(h) % AVATAR_PALETTE.length];
+}
+function iniciaisNome(nome){
+  return (nome||'').split(' ').filter(Boolean).slice(0,2).map(p=>p[0]).join('').toUpperCase();
+}
 
 function UserManagementPanel({users, currentUser, goto, onToggleUserStatus, onDeleteUser, onAdminPasswordAction}){
   const [search, setSearch] = useState('');
@@ -10532,46 +10584,51 @@ function UserManagementPanel({users, currentUser, goto, onToggleUserStatus, onDe
 
   return (
     <div className="panel">
-      <div className="field">
-        <label>Buscar usuário</label>
-        <input type="text" value={search} onChange={e=>handleSearchChange(e.target.value)} placeholder="Nome completo, login ou e-mail" />
+      <div className="um-search-row">
+        <div className="field um-search-icon-wrap">
+          <label>Buscar usuário</label>
+          <DIcon name="search" size={15}/>
+          <input type="text" value={search} onChange={e=>handleSearchChange(e.target.value)} placeholder="Nome completo, login ou e-mail" />
+        </div>
+        <button className="btn btn-primary um-new-btn" onClick={()=>goto('userForm', {mode:'new'})}><DIcon name="plus" size={15}/> Novo usuário</button>
       </div>
-
-      <button className="btn btn-secondary" style={{marginBottom:14}} onClick={()=>goto('userForm', {mode:'new'})}>+ Novo Usuário</button>
 
       {filtered.length===0 ? (
         <div style={{fontSize:13,color:'var(--ink-dim)',padding:'12px 0'}}>Nenhum usuário encontrado{search?` para "${search}"`:''}.</div>
       ) : (
         <React.Fragment>
-          {paged.map(u=>(
-            <div key={u.id} className="list-row" style={{flexWrap:'wrap',alignItems:'flex-start'}}>
-              <div>
-                <div className="lr-title">{u.nome}{u.id===currentUser.id && <span style={{color:'var(--ink-dim)',fontWeight:400}}> (você)</span>}</div>
-                <div className="lr-sub">{u.usuario} · {PERFIL_OPTIONS.find(p=>p.v===u.perfil)?.label}</div>
-                <div style={{fontSize:11.5,color:'var(--ink-dim)',marginTop:4}}>
+          {paged.map(u=>{
+            const avatarColor = avatarColorFor(u.id);
+            return (
+            <div key={u.id} className="um-card">
+              <div className="um-avatar" style={{background:avatarColor.bg,color:avatarColor.fg}}>{iniciaisNome(u.nome)}</div>
+              <div className="um-info">
+                <div className="um-name">{u.nome}{u.id===currentUser.id && <span className="um-you">(você)</span>}</div>
+                <div className="um-sub">{u.usuario} · {PERFIL_OPTIONS.find(p=>p.v===u.perfil)?.label}</div>
+                <div className="um-last">
                   Último acesso: {u.ultimoAcesso ? new Date(u.ultimoAcesso).toLocaleString('pt-BR') : 'nunca acessou'}
                 </div>
               </div>
-              <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:8}}>
+              <div className="um-right">
                 <StatusTag status={u.status==='ativo'?'ok':u.status==='bloqueado'?'danger':'warn'} text={u.status==='ativo'?'Ativo':u.status==='bloqueado'?'Bloqueado':'Aguardando nova senha'} />
-                <div className="btn-row" style={{width:'auto'}}>
-                  <button className="btn btn-outline" style={{padding:'7px 10px',fontSize:10.5}} disabled={busyId===u.id} onClick={()=>goto('userForm', {mode:u.id, initialData:u})}>Editar</button>
+                <div className="um-actions">
+                  <button className="btn btn-outline um-btn" disabled={busyId===u.id} onClick={()=>goto('userForm', {mode:u.id, initialData:u})}><DIcon name="edit" size={13}/> Editar</button>
                   {/* Nunca mostra "Bloquear" na própria linha — mesmo raciocínio já
                       usado no botão "Excluir" abaixo. Se por algum motivo a própria
                       conta já estiver bloqueada, "Desbloquear" continua visível. */}
                   {(u.id!==currentUser.id || u.status==='bloqueado') && (
-                    <button className="btn btn-outline" style={{padding:'7px 10px',fontSize:10.5}} disabled={busyId===u.id} onClick={()=>handleToggle(u.id)}>{busyId===u.id ? 'Enviando…' : (u.status==='bloqueado'?'Desbloquear':'Bloquear')}</button>
+                    <button className="btn btn-outline um-btn" disabled={busyId===u.id} onClick={()=>handleToggle(u.id)}><DIcon name="lock" size={13}/> {busyId===u.id ? 'Enviando…' : (u.status==='bloqueado'?'Desbloquear':'Bloquear')}</button>
                   )}
-                  <button className="btn btn-outline" style={{padding:'7px 10px',fontSize:10.5}} disabled={busyId===u.id} onClick={()=>{setPwAction(pwAction===u.id?null:u.id); setPwValue(''); setErros(prev=>({...prev,[u.id]:null})); setSenhaGerada(prev=>{const n={...prev}; delete n[u.id]; return n;});}}>Redefinir senha</button>
+                  <button className="btn btn-outline um-btn" disabled={busyId===u.id} onClick={()=>{setPwAction(pwAction===u.id?null:u.id); setPwValue(''); setErros(prev=>({...prev,[u.id]:null})); setSenhaGerada(prev=>{const n={...prev}; delete n[u.id]; return n;});}}><DIcon name="lock" size={13}/> Redefinir senha</button>
                   {u.id!==currentUser.id && (
-                    <button className="btn btn-danger" style={{padding:'7px 10px',fontSize:10.5,width:'auto'}} disabled={busyId===u.id} onClick={()=>{setConfirmDeleteId(u.id); setErros(prev=>({...prev,[u.id]:null}));}}>Excluir</button>
+                    <button className="btn btn-outline-danger um-btn" disabled={busyId===u.id} onClick={()=>{setConfirmDeleteId(u.id); setErros(prev=>({...prev,[u.id]:null}));}}><DIcon name="trash" size={13}/> Excluir</button>
                   )}
                 </div>
                 {erros[u.id] && pwAction!==u.id && confirmDeleteId!==u.id && (
                   <div style={{fontSize:11.5,color:'var(--danger)',maxWidth:260,textAlign:'right'}}>{erros[u.id]}</div>
                 )}
                 {pwAction===u.id && (
-                  <div style={{background:'var(--panel-raised)',border:'1px solid var(--line)',borderRadius:8,padding:12,width:260}}>
+                  <div className="um-pw-panel" style={{background:'var(--panel-raised)',border:'1px solid var(--line)',borderRadius:8,padding:12}}>
                     {senhaGerada[u.id] ? (
                       <React.Fragment>
                         <div style={{fontSize:11.5,color:'var(--ink-dim)',marginBottom:6}}>Senha temporária gerada — repasse ao usuário agora (não fica visível de novo depois de fechar):</div>
@@ -10592,7 +10649,7 @@ function UserManagementPanel({users, currentUser, goto, onToggleUserStatus, onDe
                   </div>
                 )}
                 {confirmDeleteId===u.id && (
-                  <div style={{background:'var(--danger-bg)',border:'1px solid var(--danger)',borderRadius:8,padding:12,width:260}}>
+                  <div className="um-del-panel" style={{background:'var(--danger-bg)',border:'1px solid var(--danger)',borderRadius:8,padding:12}}>
                     <div style={{fontSize:12,color:'var(--danger)',marginBottom:10}}>Excluir "{u.nome}"? Essa ação não pode ser desfeita.</div>
                     {erros[u.id] && <div style={{fontSize:11.5,color:'var(--danger)',marginBottom:10}}>{erros[u.id]}</div>}
                     <div className="btn-row">
@@ -10603,7 +10660,8 @@ function UserManagementPanel({users, currentUser, goto, onToggleUserStatus, onDe
                 )}
               </div>
             </div>
-          ))}
+            );
+          })}
           {totalPages>1 && (
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:10,paddingTop:14,borderTop:'1px solid var(--line)'}}>
               <button className="btn btn-outline" style={{width:'auto',padding:'8px 14px'}} disabled={currentPage<=1} onClick={()=>setPage(p=>p-1)}>‹ Anterior</button>
@@ -10866,18 +10924,18 @@ function PasswordRequestRow({req, onResolve}){
 
   if(req.status!=='pendente'){
     return (
-      <div className="list-row">
-        <div><div className="lr-title">{req.usuarioNome}</div><div className="lr-sub">solicitado em {req.data}</div></div>
+      <div className="um-req-card">
+        <div><div className="lr-title">{req.usuarioNome}</div><div className="lr-sub">Solicitado em {req.data}</div></div>
         <StatusTag status="ok" text="Resolvido" />
       </div>
     );
   }
 
   return (
-    <div className="list-row" style={{flexWrap:'wrap',alignItems:'flex-start'}}>
+    <div className="um-req-card">
       <div>
         <div className="lr-title">{req.usuarioNome}</div>
-        <div className="lr-sub">solicitado em {req.data}</div>
+        <div className="lr-sub">Solicitado em {req.data}</div>
       </div>
       <div style={{width:'100%',marginTop:10}}>
         <div className="btn-row" style={{marginBottom:8}}>
@@ -11374,6 +11432,11 @@ function UsuariosScreen({users, currentUser, goto, successMessage, onToggleUserS
   // além de voltar pra esta tela — parecia que "nada tinha acontecido".
   const [dismissed, setDismissed] = useState(false);
   useEffect(()=>{ setDismissed(false); }, [successMessage]);
+  const [historyPage, setHistoryPage] = useState(1);
+  const totalHistoryPages = Math.max(1, Math.ceil(passwordHistory.length / PASSWORD_HISTORY_PAGE_SIZE));
+  const currentHistoryPage = Math.min(historyPage, totalHistoryPages);
+  const historyStart = (currentHistoryPage-1)*PASSWORD_HISTORY_PAGE_SIZE;
+  const pagedHistory = passwordHistory.slice(historyStart, historyStart+PASSWORD_HISTORY_PAGE_SIZE);
 
   return (
     <div>
@@ -11412,11 +11475,22 @@ function UsuariosScreen({users, currentUser, goto, successMessage, onToggleUserS
           <table className="rank-table">
             <thead><tr><th>Usuário</th><th>Ação</th><th>Administrador</th><th>Data/Hora</th></tr></thead>
             <tbody>
-              {passwordHistory.map(h=>(
+              {pagedHistory.map(h=>(
                 <tr key={h.id}><td>{h.usuario}</td><td>{h.acao}</td><td>{h.administrador}</td><td style={{fontFamily:'var(--font-mono)',fontSize:11.5}}>{h.data}</td></tr>
               ))}
             </tbody>
           </table>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:14,paddingTop:14,borderTop:'1px solid var(--line)',flexWrap:'wrap',gap:10}}>
+            <span style={{fontSize:12,color:'var(--ink-dim)'}}>
+              Mostrando {historyStart+1} a {Math.min(historyStart+PASSWORD_HISTORY_PAGE_SIZE, passwordHistory.length)} de {passwordHistory.length} alteraç{passwordHistory.length===1?'ão':'ões'}
+            </span>
+            {totalHistoryPages>1 && (
+              <div className="btn-row" style={{width:'auto'}}>
+                <button className="btn btn-outline" style={{width:'auto',padding:'8px 14px'}} disabled={currentHistoryPage<=1} onClick={()=>setHistoryPage(p=>p-1)}>‹</button>
+                <button className="btn btn-outline" style={{width:'auto',padding:'8px 14px'}} disabled={currentHistoryPage>=totalHistoryPages} onClick={()=>setHistoryPage(p=>p+1)}>›</button>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

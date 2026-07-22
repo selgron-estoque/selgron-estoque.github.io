@@ -7727,3 +7727,90 @@ si não mudou (`selDisponiveis`, destaque `.selected` no clique) — só o eleme
 próprio, o clique sempre foi tratado no `onClick` da linha), foi removido do JSX. CSS
 órfão (`.uf-list-row input[type=checkbox]`) removido junto. Reconferido via harness
 que a seleção/duplo-clique continuam funcionando idênticos sem a checkbox.
+
+## Redesign completo da tela "Usuários" — cards com avatar, pills, botões com ícone
+
+Cliente mandou um mockup de referência (screenshot) da tela "Usuários" inteira e pediu
+"a tela de usuário deixe igual a esta" — mesmo espírito corporativo/minimalista das
+duas rodadas anteriores (dual-list de "Editar Usuário"), agora aplicado à listagem
+(`UserManagementPanel`) e às duas seções que vivem logo abaixo dela na mesma tela
+(`UsuariosScreen`: "Solicitações de Redefinição de Senha" e "Histórico de Alterações
+de Senha").
+
+- **Barra de busca + "Novo usuário" na mesma linha** (`.um-search-row`, flex row) —
+  antes o botão "+ Novo Usuário" ficava numa linha própria, abaixo do campo de busca
+  (empilhado). Ícone de lupa dentro do campo (`.um-search-icon-wrap`, mesmo padrão já
+  usado no dual-list de "Editar Usuário"). **Cor do botão "Novo usuário" continua
+  laranja (`--safety`)**, não azul como no mockup — decisão consciente, mesmo critério
+  já usado em rodadas anteriores (login, dashboard): a cor primária de AÇÃO do app é a
+  cor institucional da Selgron, referências visuais externas não substituem essa
+  convenção (ver "Convenções de design" no topo deste arquivo).
+- **Cada usuário virou um card próprio** (`.um-card`, borda + raio 12px + padding
+  generoso + margem entre cards) em vez de linhas empilhadas dentro de um único
+  `.list-row`/painel — mesma ideia de "separação visual clara por card" do mockup.
+- **Avatar circular com iniciais**, cor pastel determinística por usuário
+  (`avatarColorFor(id)` — hash simples do `id` escolhendo de uma paleta fixa de 6 pares
+  bg/fg, `AVATAR_PALETTE`) — a cor de cada usuário nunca muda entre filtragens/páginas/
+  reaberturas da tela, já que é calculada a partir do `id` (estável), não da posição na
+  lista. `iniciaisNome(nome)` reaproveita EXATAMENTE a mesma lógica que já existia
+  inline em `DesktopTopbar` pro avatar do usuário logado (2 primeiras iniciais de
+  palavras do nome) — não inventei um critério novo, só extraí como função nomeada
+  reutilizável.
+- **Botões com ícone** (`edit`/`lock`/`trash`, `edit` é novo em `DICON_PATHS` — um
+  lápis, mesmo estilo Lucide-ish dos outros 30+ ícones) — "Editar"/"Bloquear"/
+  "Redefinir senha"/"Excluir", mesmas ações/handlers de sempre
+  (`handleToggle`/`handlePwAction`/`handleDelete`, nenhuma mudança de lógica). "Excluir"
+  trocou de `.btn-danger` (preenchimento vermelho sólido) pra `.btn-outline-danger`
+  (nova classe: borda+texto vermelho, fundo transparente, preenche vermelho só no
+  hover) — bate com o visual do mockup (botão de exclusão discreto até precisar, não
+  um bloco vermelho chamativo o tempo todo).
+- **Nenhuma mudança de comportamento**: os mesmos guards de sempre continuam intactos
+  (nunca mostra "Bloquear"/"Excluir" na própria linha do admin logado, painéis de
+  redefinir senha/confirmar exclusão abrem exatamente como antes, só que agora dentro
+  de containers com a classe nova `.um-pw-panel`/`.um-del-panel` — só CSS, zero mudança
+  de estado/fluxo).
+- **`PasswordRequestRow`** (usado em "Solicitações de Redefinição de Senha") trocou
+  `.list-row` por `.um-req-card` (mesmo visual de card usado nos usuários, bordas mais
+  arredondadas) — texto "solicitado em" virou "Solicitado em" (maiúscula inicial, bate
+  com o mockup), sem nenhuma mudança de dado/lógica.
+- **"Histórico de Alterações de Senha" ganhou paginação** — pedido implícito pelo
+  mockup mostrar "Mostrando 1 a 6 de 6 alterações" com controles de página; antes a
+  tabela mostrava TODO o histórico de uma vez, sem paginar (podia crescer bastante com
+  o tempo, já que é um log de auditoria — bloqueio/desbloqueio, redefinição de senha,
+  exclusão de usuário, todos já registrados ali desde sempre). `PASSWORD_HISTORY_PAGE_SIZE
+  = 6` (bate com o exemplo do mockup, que tinha exatamente 6 linhas cabendo numa
+  página). Texto de status segue a fórmula do mockup ("Mostrando X a Y de Z
+  alterações") em vez do padrão "Página X de Y" já usado na paginação de usuários logo
+  acima na mesma tela — **decisão consciente de NÃO unificar os dois textos**: são
+  conceitos ligeiramente diferentes (intervalo de itens mostrados vs. número de
+  página), e o mockup pediu especificamente esse texto pra esta tabela. Os botões de
+  navegação (‹/›), porém, reaproveitam o mesmo `.btn-outline` já usado na paginação de
+  usuários — só o texto do meio muda, não o padrão de interação.
+- **Subtítulo da tela** ("Gerencie os usuários do sistema, permissões e redefinições de
+  senha.") — adicionado via `VIEW_SUBTITLES.usuarios` (mecanismo que já existia, só
+  tinha entrada pra `home`), aparece abaixo do título "Usuários" que o `DesktopTopbar`
+  já mostra sozinho. **Decisão consciente de NÃO duplicar o título "Usuários" dentro do
+  conteúdo** (o mockup mostra um "Usuários" grande no topo do conteúdo) — o
+  `DesktopTopbar` já mostra exatamente esse título acima do conteúdo; repetir de novo
+  dentro da tela reintroduziria exatamente o problema já corrigido antes nesta sessão
+  (ver "Título da página repetido 3 vezes" no histórico acima) — usar o mecanismo de
+  subtítulo já existente entrega o mesmo resultado visual (título + subtítulo grandes no
+  topo) sem duplicar texto.
+- Testado via harness real (jsdom + react-dom/client + `act()`, mesma técnica rigorosa
+  de sempre — carrega o `index.html` inteiro transpilado numa `vm.Script`): 3 cards
+  `.um-card` renderizados a partir de 3 usuários mockados; avatar mostra as iniciais
+  certas; "(você)" aparece só na linha do usuário logado; botão "Novo usuário" (texto
+  novo) existe; botão de excluir usa a classe nova `.btn-outline-danger`; pill
+  "AGUARDANDO NOVA SENHA" aparece pro usuário com esse status; nenhum `.list-row`/
+  `.toggle-switch` sobra dentro dos cards; a própria linha do admin não mostra
+  "Bloquear" nem "Excluir"; clicar "Redefinir senha" ainda abre o painel de sempre
+  (dentro do container novo); a tabela de histórico mostra 6 linhas na 1ª página e o
+  texto "Mostrando 1 a 6 de 9 alterações" com 9 linhas mockadas, avança pra "Mostrando 7
+  a 9 de 9 alterações" (3 linhas) ao clicar "›". Transpile Babel do arquivo inteiro e
+  balanceamento de chaves do CSS conferidos (630/630). Rodei de novo a suíte de
+  regressão do dual-list de "Editar Usuário" (`harness_userform_redesign.js`) sem
+  quebrar nada — só um harness BEM mais antigo (`harness_acesso_por_tela.js`, escrito
+  pro modelo de toggles individuais, já superado por DUAS rodadas de redesign desde
+  então) acusa diferenças esperadas de texto/estrutura, não regressão real. **Verificação
+  visual de ponta a ponta fica a cargo do cliente** — mesma limitação de sempre (login
+  exige Supabase Auth real, não simulável no sandbox sem rede).
