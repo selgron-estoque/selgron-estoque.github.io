@@ -309,7 +309,7 @@
      técnica do anel de "urgente" acima, mas com cor RESERVADA só pra esse
      caso (roxo, já usado em outras partes do app com outro sentido — nunca em
      estado de contagem), pra não se confundir com a rejeição do líder (vermelho). */
-  .count-card.reprovado-diretoria{box-shadow:0 0 0 3px #7B3FC4, 0 1px 3px rgba(0,0,0,.04);}
+  .count-card.reprovado-diretoria{box-shadow:0 0 0 3px var(--purple), 0 1px 3px rgba(0,0,0,.04);}
   /* Item "Sem Ajuste" vindo do histórico importado (BD_Contagens) — pedido
      explícito do cliente: "card discreto e uma borda na cor amarela... sem
      chamar muita atenção". Mesma técnica de anel do "urgente"/"reprovado-
@@ -559,7 +559,7 @@
   @media (min-width:640px){.kpi-grid{grid-template-columns:repeat(4,1fr);}}
   .weekly-charts-grid{display:flex;flex-direction:column;gap:14px;margin-bottom:14px;}
   @media (min-width:900px){.weekly-charts-grid{display:grid;grid-template-columns:1fr 1fr;}}
-  .chart-meta-badge{font-family:var(--font-mono);font-size:11px;font-weight:700;color:#0D9488;background:rgba(13,148,136,0.12);border-radius:6px;padding:3px 8px;white-space:nowrap;}
+  .chart-meta-badge{font-family:var(--font-mono);font-size:11px;font-weight:700;color:var(--teal);background:rgba(13,148,136,0.12);border-radius:6px;padding:3px 8px;white-space:nowrap;}
 
   /* Card "Saúde do Inventário" — pedido do cliente com imagem de referência
      (selo + variação vs. período anterior + mini gráfico + acuracidade
@@ -600,7 +600,7 @@
      introduzir mais uma cor de marca. */
   .trend-filter-bar{background:#fff;border:1px solid #EAEAEA;border-radius:18px;padding:24px;box-shadow:0 8px 30px rgba(0,0,0,.05);margin-bottom:24px;}
   .tfb-head{display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap;}
-  .tfb-icon-badge{width:40px;height:40px;border-radius:12px;background:rgba(13,148,136,0.12);color:#0D9488;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .tfb-icon-badge{width:40px;height:40px;border-radius:12px;background:rgba(13,148,136,0.12);color:var(--teal);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
   .tfb-icon-badge svg{margin:auto;}
   .tfb-head-text{min-width:0;}
   .tfb-title{font-family:var(--font-corp);font-size:15px;font-weight:700;color:var(--navy);}
@@ -613,7 +613,7 @@
      desorganizada/apertada em larguras intermediárias. */
   .tfb-head-actions{display:flex;align-items:center;gap:10px;margin-left:0;width:100%;justify-content:space-between;flex-wrap:wrap;margin-top:14px;}
   .tfb-range-chip{display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:12px;font-weight:600;color:var(--navy);background:var(--gray-50);border:1px solid var(--gray-200);border-radius:10px;padding:9px 14px;white-space:nowrap;}
-  .tfb-refresh-btn{display:flex;align-items:center;gap:8px;font-family:var(--font-corp);font-size:12.5px;font-weight:700;color:#fff;background:#0D9488;border:none;border-radius:10px;padding:9px 16px;cursor:pointer;transition:background 0.2s;white-space:nowrap;}
+  .tfb-refresh-btn{display:flex;align-items:center;gap:8px;font-family:var(--font-corp);font-size:12.5px;font-weight:700;color:#fff;background:var(--teal);border:none;border-radius:10px;padding:9px 16px;cursor:pointer;transition:background 0.2s;white-space:nowrap;}
   .tfb-refresh-btn:hover:not(:disabled){background:#0b7a70;}
   .tfb-refresh-btn:disabled{opacity:0.7;cursor:default;}
   .tfb-period-row{display:flex;flex-direction:column;align-items:flex-start;gap:14px;margin-top:20px;}
@@ -621,7 +621,7 @@
   .tfb-quick-buttons{display:flex;flex-wrap:wrap;gap:8px;}
   .tfb-pill{font-family:var(--font-corp);font-size:12.5px;font-weight:600;color:var(--ink-dim);background:#fff;border:1px solid var(--gray-200);border-radius:10px;padding:8px 14px;cursor:pointer;white-space:nowrap;transition:background 0.2s,color 0.2s,border-color 0.2s,box-shadow 0.2s;}
   .tfb-pill:hover:not(.active){background:rgba(13,148,136,0.08);border-color:rgba(13,148,136,0.3);}
-  .tfb-pill.active{background:#0D9488;color:#fff;border-color:#0D9488;box-shadow:0 4px 10px rgba(13,148,136,0.3);}
+  .tfb-pill.active{background:var(--teal);color:#fff;border-color:var(--teal);box-shadow:0 4px 10px rgba(13,148,136,0.3);}
   .tfb-custom-row{display:flex;flex-direction:column;align-items:stretch;gap:16px;margin-top:16px;padding-top:16px;border-top:1px solid var(--gray-100);}
   .tfb-date-field{display:flex;flex-direction:column;gap:6px;}
   .tfb-date-field label{font-family:var(--font-corp);font-size:11px;font-weight:600;color:var(--ink-dim);}
@@ -5597,19 +5597,19 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
 
   const kpis = [
     {
-      key:'andamento', icon:'box', bg:'#E3EEFC', color:'#2A6FD6',
+      key:'andamento', icon:'box', bg:'var(--blue-bg)', color:'var(--blue)',
       label:'Inventários em Andamento', value:emAndamento,
       trend:<span className="pnl-kpi-trend flat">{pendentesInicio} aguardando início</span>,
       onClick:()=>goto('inventories'),
     },
     {
-      key:'recontagens', icon:'repeat', bg:'#FFF1D6', color:'#A35F00',
+      key:'recontagens', icon:'repeat', bg:'var(--warn-bg)', color:'var(--warn)',
       label:'Recontagens Pendentes', value:pendentesRecontagem,
       trend:<span className={"pnl-kpi-trend "+(pendentesRecontagem>0?'bad':'good')}>{pendentesRecontagem>0?'Requer atenção':'Nenhuma pendência'}</span>,
       onClick:()=>goto('recounts'),
     },
     {
-      key:'divergentes', icon:'alertTriangle', bg:'#FBE6E3', color:'#C4291B',
+      key:'divergentes', icon:'alertTriangle', bg:'var(--danger-bg)', color:'var(--danger)',
       label:'Itens Divergentes', value:itensDivergentesPendentes,
       // Estado atual (fila de pendência), não cumulativo — mesmo critério já
       // usado em "Recontagens Pendentes" (sem histórico de snapshot pra
@@ -5618,19 +5618,19 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
       onClick:()=>goto('divergentes'),
     },
     ...(role!=='operador' ? [{
-      key:'aprovacaoDiretoria', icon:'clipboardList', bg:'#FFF1D6', color:'#A35F00',
+      key:'aprovacaoDiretoria', icon:'clipboardList', bg:'var(--warn-bg)', color:'var(--warn)',
       label:'Aguardando Aprovação da Diretoria', value:aguardandoDiretoria,
       trend:<span className={"pnl-kpi-trend "+(aguardandoDiretoria>0?'bad':'good')}>{aguardandoDiretoria>0?'Requer atenção':'Nenhuma pendência'}</span>,
       onClick:()=>goto('aprovacaoDiretoria'),
     }] : []),
     {
-      key:'concluidas', icon:'checkCircle', bg:'#E3F6EA', color:'#1E8E4F',
+      key:'concluidas', icon:'checkCircle', bg:'var(--ok-bg)', color:'var(--ok)',
       label:'Contagens Concluídas Hoje', value:concluidasHoje,
       trend:<KpiTrend pct={concluidasTrendPct} />,
       onClick:()=>goto('concluidas'),
     },
     {
-      key:'acuracidade', icon:'percent', bg:'#F1E9FB', color:'#7B3FC4',
+      key:'acuracidade', icon:'percent', bg:'var(--purple-bg)', color:'var(--purple)',
       label:'Acuracidade do Estoque', value:hoje.acuracidade.toFixed(1)+'%',
       trend:<KpiTrend pct={acuracidadePontos} suffix=" pts" />,
       // Sem acesso a Indicadores (perfil não libera nem tem exceção
@@ -5680,10 +5680,10 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
   const totalInv = planejados+emAndamento+concluidosInv+canceladosInv;
 
   const statusRows = [
-    {label:'Planejados', value:planejados, color:'#94A3B8'},
-    {label:'Em andamento', value:emAndamento, color:'#F6A200'},
-    {label:'Concluídos', value:concluidosInv, color:'#1E8E4F'},
-    {label:'Cancelados', value:canceladosInv, color:'#C4291B'},
+    {label:'Planejados', value:planejados, color:'var(--gray-400)'},
+    {label:'Em andamento', value:emAndamento, color:'var(--safety)'},
+    {label:'Concluídos', value:concluidosInv, color:'var(--ok)'},
+    {label:'Cancelados', value:canceladosInv, color:'var(--danger)'},
   ];
   const maxRow = Math.max(1, ...statusRows.map(r=>r.value));
 
@@ -8244,7 +8244,7 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
               <div className="count-card-badges">
                 {c.urgente && <span className="urgente-chip"><Ic>🔥</Ic> Urgente</span>}
                 {c.reprovadoPelaDiretoria
-                  ? <span className="severity-chip" style={{background:'#F1E9FB',color:'#7B3FC4'}}><Ic>⛔</Ic> Ajuste Reprovado</span>
+                  ? <span className="severity-chip" style={{background:'var(--purple-bg)',color:'var(--purple)'}}><Ic>⛔</Ic> Ajuste Reprovado</span>
                   : c.recontagemSolicitadaPeloLider
                   ? <span className="severity-chip" style={{background:'var(--danger-bg)',color:'var(--danger)'}}><Ic>⚠</Ic> Rejeitada</span>
                   : <span className="severity-chip" style={{background:sev.bg,color:sev.color}}><Ic>{sev.icon}</Ic> {sev.label}</span>}
@@ -8277,7 +8277,7 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
               <div className="count-card-address-badge"><DIcon name="mapPin" size={16} /> {c.endereco || 'não cadastrado'}</div>
             </div>
             {c.reprovadoPelaDiretoria && (
-              <div className="divergence-alert" style={{background:'#F1E9FB',borderColor:'#7B3FC4',color:'#7B3FC4'}}>
+              <div className="divergence-alert" style={{background:'var(--purple-bg)',borderColor:'var(--purple)',color:'var(--purple)'}}>
                 <Ic>⛔</Ic><span>A Diretoria reprovou a SA {c.solicitacaoAjuste} em {c.reprovadoEm} — reenviado para nova análise.{c.motivoReprovacaoDiretoria && <><br/><strong>Motivo da reprovação:</strong> <span style={{color:'var(--danger)'}}>{c.motivoReprovacaoDiretoria}</span></>}</span>
               </div>
             )}
@@ -8512,7 +8512,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSend
                 <div className="count-card-badges">
                   {c.urgente && <span className="urgente-chip"><Ic>🔥</Ic> Urgente</span>}
                   {c.reprovadoPelaDiretoria
-                    ? <span className="severity-chip" style={{background:'#F1E9FB',color:'#7B3FC4'}}><Ic>⛔</Ic> Ajuste Reprovado</span>
+                    ? <span className="severity-chip" style={{background:'var(--purple-bg)',color:'var(--purple)'}}><Ic>⛔</Ic> Ajuste Reprovado</span>
                     : <span className="severity-chip" style={{background:sev.bg,color:sev.color}}><Ic>{sev.icon}</Ic> {sev.label}</span>}
                   <span className="category-chip">{categoriaDoInventario(c, inventories)}</span>
                   {c.numeroContagem>1 && <span className="category-chip">{c.numeroContagem}ª contagem</span>}
@@ -8588,7 +8588,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSend
                   costumava embutir aqui — cliente achou redundante. */}
               {limparObservacaoExibicao(c.observacao) && <div style={{padding:'6px 16px 0',fontSize:12.5,color:'var(--ink-dim)'}}>Observação: {limparObservacaoExibicao(c.observacao)}</div>}
               {c.reprovadoPelaDiretoria && (
-                <div className="divergence-alert" style={{margin:'10px 16px 0',background:'#F1E9FB',borderColor:'#7B3FC4',color:'#7B3FC4'}}>
+                <div className="divergence-alert" style={{margin:'10px 16px 0',background:'var(--purple-bg)',borderColor:'var(--purple)',color:'var(--purple)'}}>
                   <Ic>⛔</Ic><span>A Diretoria reprovou a SA {c.solicitacaoAjuste} em {c.reprovadoEm} — reenviado para nova análise.{c.motivoReprovacaoDiretoria && <><br/><strong>Motivo da reprovação:</strong> <span style={{color:'var(--danger)'}}>{c.motivoReprovacaoDiretoria}</span></>}</span>
                 </div>
               )}
@@ -8750,7 +8750,7 @@ function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejec
             <div className="count-card-body">
               <div className="count-card-head">
                 <div className="count-card-badges">
-                  <span className="severity-chip" style={{background:'#F1E9FB',color:'#7B3FC4'}}><Ic>📋</Ic> SA {c.solicitacaoAjuste}</span>
+                  <span className="severity-chip" style={{background:'var(--purple-bg)',color:'var(--purple)'}}><Ic>📋</Ic> SA {c.solicitacaoAjuste}</span>
                   <span className="category-chip">{categoriaDoInventario(c, inventories)}</span>
                 </div>
                 <span className="count-card-date">{c.data}</span>
@@ -9976,7 +9976,7 @@ function InventoryHealthCard({weeklyStats, meta=META_ACURACIDADE_SEMANAL}){
   // 4 faixas de status, relativas à META (não valores fixos) — assim o
   // rótulo continua fazendo sentido se o cliente um dia mudar a meta de 95%.
   let tier;
-  if(atual.acuracidade >= meta) tier = {status:'Excelente', sub:'Você está dentro da meta!', color:'#0D9488', bg:'#E7F6F3'};
+  if(atual.acuracidade >= meta) tier = {status:'Excelente', sub:'Você está dentro da meta!', color:'var(--teal)', bg:'var(--teal-bg)'};
   else if(atual.acuracidade >= meta-10) tier = {status:'Bom', sub:'Perto da meta', color:'#2563EB', bg:'#EAF1FD'};
   else if(atual.acuracidade >= meta-25) tier = {status:'Atenção', sub:'Abaixo da meta', color:'#B7791F', bg:'#FDF3E3'};
   else tier = {status:'Crítico', sub:'Bem abaixo da meta', color:'#C4291B', bg:'#FBEAE8'};
@@ -10342,7 +10342,7 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
         <div className="ops-kpi-card">
           <div className="ops-kpi-head">
             <span className="ops-kpi-label">Acuracidade Geral</span>
-            <span className="ops-kpi-icon" style={{background:'#F1E9FB', color:'#7B3FC4'}}><DIcon name="percent" size={15} /></span>
+            <span className="ops-kpi-icon" style={{background:'var(--purple-bg)', color:'var(--purple)'}}><DIcon name="percent" size={15} /></span>
           </div>
           <div className="ops-kpi-value">{acuracidade}%</div>
           <div className="ops-kpi-meta">Meta: {META_ACURACIDADE_SEMANAL}%</div>
@@ -10351,7 +10351,7 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
         <div className="ops-kpi-card">
           <div className="ops-kpi-head">
             <span className="ops-kpi-label">Valor Divergente</span>
-            <span className="ops-kpi-icon" style={{background:'#FBE6E3', color:'#C4291B'}}><DIcon name="circleDollar" size={15} /></span>
+            <span className="ops-kpi-icon" style={{background:'var(--danger-bg)', color:'var(--danger)'}}><DIcon name="circleDollar" size={15} /></span>
           </div>
           <div className="ops-kpi-value">{fmtReais(valorDivergente)}</div>
           <div className="ops-kpi-meta danger">{valorTotalEstoque>0 ? (valorDivergente/valorTotalEstoque*100).toFixed(1).replace('.',',') : '0,0'}% do valor total em estoque</div>
@@ -10359,7 +10359,7 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
         <div className="ops-kpi-card">
           <div className="ops-kpi-head">
             <span className="ops-kpi-label">Itens Divergentes</span>
-            <span className="ops-kpi-icon" style={{background:'#FFF1D6', color:'#A35F00'}}><DIcon name="alertTriangle" size={15} /></span>
+            <span className="ops-kpi-icon" style={{background:'var(--warn-bg)', color:'var(--warn)'}}><DIcon name="alertTriangle" size={15} /></span>
           </div>
           <div className="ops-kpi-value">{divergentes.length}</div>
           <div className="ops-kpi-meta">{todasParaQualidade.length>0 ? (divergentes.length/todasParaQualidade.length*100).toFixed(1).replace('.',',') : '0,0'}% do total de itens</div>
@@ -10374,7 +10374,7 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
         <div className="ops-kpi-card">
           <div className="ops-kpi-head">
             <span className="ops-kpi-label">Valor em Estoque</span>
-            <span className="ops-kpi-icon" style={{background:'#E3EEFC', color:'#2A6FD6'}}><DIcon name="box" size={15} /></span>
+            <span className="ops-kpi-icon" style={{background:'var(--blue-bg)', color:'var(--blue)'}}><DIcon name="box" size={15} /></span>
           </div>
           <div className="ops-kpi-value">{fmtReais(valorTotalEstoque)}</div>
           <div className="ops-kpi-meta">{armazensAtivos} armazéns ativos</div>
@@ -10432,7 +10432,7 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
             ) : porFamilia.map(([fam,n])=>(
               <div key={fam} className="bar-row">
                 <div className="bl" style={{width:160}}>{fam}</div>
-                <div className="bar-track"><div className="bar-fill" style={{width:(n/maxFamilia*100)+'%', background:'#7B3FC4'}}><span style={{color:'#fff'}}>{n}</span></div></div>
+                <div className="bar-track"><div className="bar-fill" style={{width:(n/maxFamilia*100)+'%', background:'var(--purple)'}}><span style={{color:'#fff'}}>{n}</span></div></div>
               </div>
             ))}
           </div>

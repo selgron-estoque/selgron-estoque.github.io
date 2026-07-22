@@ -7962,3 +7962,59 @@ Testado via transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
 (zero regra consumindo os tokens novos ainda) — a partir da Fase 1 (cores), cada lote
 segue o mesmo processo de sempre (transpile+CSS+harness onde aplicável, commit, push,
 confirmar deploy, sinalizar pro cliente os pontos de maior risco visual).
+
+## Padronização de fontes, cores e tamanhos — Fase 1 (cores)
+
+Fases 1a (CSS)/1b (JSX, duplicatas exatas)/1c (adoção de `--purple`/`--teal`/`--blue`)
+feitas juntas num commit só — na prática quase todo literal duplicado vivia dentro dos
+MESMOS objetos JSX (o array `kpis` da Home, os 4 `ops-kpi-icon` de "Resumo da Operação",
+o array `statusRows` do donut "Situação Geral dos Inventários") intercalado com os
+usos do roxo/teal/azul novos, então separar em 3 commits mecânicos teria só fragmentado
+o mesmo raciocínio sem reduzir risco.
+
+- **Fase 1a (CSS) ficou vazia**: conferido que, dentro do bloco `<style>`, os 9 hex que
+  duplicam token existente (`#C4291B`/`#FFF1D6`/`#A35F00`/`#FBE6E3`/`#F6A200`/`#1E8E4F`/
+  `#E3F6EA`/`#94A3B8`/`#64748B`) só apareciam nas próprias definições de `:root` (mais
+  um comentário mencionando `#F6A200` de passagem) — nenhuma regra de CSS duplicava
+  esses valores fora do `:root`. A deriva real estava só no JSX.
+- **9 duplicatas exatas trocadas por `var()`**: o array `kpis` (Home — "Inventários em
+  Andamento"/"Recontagens Pendentes"/"Itens Divergentes"/"Aguardando Aprovação da
+  Diretoria"/"Contagens Concluídas Hoje"), os 4 `.ops-kpi-icon` de "Resumo da Operação"
+  (Indicadores — Acuracidade Geral/Valor Divergente/Itens Divergentes/Valor em Estoque)
+  e o array `statusRows` do donut "Situação Geral dos Inventários" (Planejados→
+  `var(--gray-400)`/Em andamento→`var(--safety)`/Concluídos→`var(--ok)`/Cancelados→
+  `var(--danger)`) — todos reusavam exatamente as cores de status já tokenizadas
+  (danger/warn/ok/safety/gray-400), sem nenhuma diferença de tom.
+- **`--purple`/`--purple-bg` adotado nos ~13 usos existentes**: `.count-card.
+  reprovado-diretoria` (CSS), o card KPI "Acuracidade do Estoque" (Home), o
+  `.ops-kpi-icon` "Acuracidade Geral" (Indicadores), os 2 chips "Ajuste Reprovado"
+  (`RecountsPanel`), os 2 `divergence-alert` de reprovação da Diretoria, o chip "SA
+  {número}" (`ConcludedCountsPanel`) e a barra "Divergência por Família/Grupo".
+- **`--teal`/`--teal-bg` adotado**: `.chart-meta-badge`, `.tfb-icon-badge`,
+  `.tfb-refresh-btn`, `.tfb-pill.active` (CSS) e o tier "Excelente" do
+  `InventoryHealthCard` — os únicos usos de teal fora de JS que ainda eram hex cru.
+  **Deliberadamente NÃO tocado**: `WEEKLY_CHART_COLOR` (já centralizado como constante
+  JS única, usado em `fill`/`stroke` de SVG — trocar por `var(--teal)` funcionaria na
+  maioria dos navegadores modernos, mas o ganho seria zero já que já é fonte única de
+  verdade em JS; risco desnecessário pra um valor que já não tinha duplicação real) e
+  `ARMAZEM_COLORS` (paleta categórica cíclica, fora de escopo desde o plano original).
+- **`--blue`/`--blue-bg` adotado**: o card KPI "Inventários em Andamento" (Home) e o
+  `.ops-kpi-icon` "Valor em Estoque" (Indicadores). **Deliberadamente NÃO tocado**: o
+  gradiente `.ops-kpi-bar-fill{background:linear-gradient(90deg,#6D5BD0,#2A6FD6)}` —
+  mesmo o 2º stop batendo exatamente com `--blue`, os dois tons formam um par estético
+  único (roxo→azul); o plano já reservava o 1º stop (`#6D5BD0`) como fora de escopo, e
+  tokenizar só a metade do gradiente deixaria a regra inconsistente sem ganho real.
+- **Confirmado fora de escopo, intocado**: `AVATAR_PALETTE` (inclusive seu par de roxo
+  ligeiramente diferente, `#EDE3FB`≠`#F1E9FB` — confirmado não ser duplicata perdida),
+  `ARMAZEM_COLORS`, a tier "Crítico" do `InventoryHealthCard` (só "Excelente" ganhou
+  token, mesmo critério do plano aprovado).
+- Testado via transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  (646/646, inalterado — só JSX/valores de `var()` foram tocados). Rodei de novo os
+  harnesses de regressão mais próximos do código tocado (`harness_home_kpi.js` —
+  confirma que o KPI "Aguardando Aprovação da Diretoria" aparece/some certo por perfil;
+  `harness_diretoria.js` — confirma que os 4 componentes que usam roxo/`reprovado-
+  diretoria` continuam renderizando e reagindo aos cliques exatamente como antes) sem
+  quebrar nada. Mudança é 100% cosmética por trás de nomes (mesmo valor de cor
+  renderizado, só a fonte do valor mudou de literal pra token) — **verificação visual
+  pixel-a-pixel fica a cargo do cliente**, mas o resultado esperado é ZERO diferença
+  perceptível.
