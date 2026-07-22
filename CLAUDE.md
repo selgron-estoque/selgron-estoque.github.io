@@ -7913,3 +7913,52 @@ derivado da Sidebar. Corrigido: `{id:'recounts', label:'Recontagens Pendentes'}`
 `TODOS_OS_MENUS` batem exatamente com os da Sidebar agora, um por um — nenhum outro
 divergia. Transpile Babel do arquivo inteiro conferido. **Verificação visual fica a
 cargo do cliente** — mesma limitação de sempre.
+
+## Padronização de fontes, cores e tamanhos — dentro de cada sistema visual (Fase 0)
+
+Cliente pediu: "Preciso que revise todas as fontes, cores e tamanhos. Quero um site
+todo padronizado." Confirmado via `AskUserQuestion` (opção recomendada): padronizar
+DENTRO de cada um dos dois sistemas visuais já existentes (tablet/operador vs.
+corporativo/admin — ver "Convenções de design" mais abaixo), sem fundir os dois.
+Planejado via `EnterPlanMode`/`ExitPlanMode` (3 agentes Explore levantando o estado
+real do CSS/JSX em paralelo + 1 agente Plan sintetizando, com uma correção manual
+minha na revisão: o roxo `#7B3FC4`/`#F1E9FB` já era reuso ESPERADO em múltiplos
+contextos segundo o próprio comentário original do código — não uma reserva exclusiva
+pro estado "reprovado pela Diretoria" como o agente Plan tinha interpretado — por isso
+o token novo se chama `--purple`/`--purple-bg`, não `--reprovado`).
+
+Plano de 6 fases, cada uma commitada/enviada/confirmada separadamente (documentado por
+completo no plano aprovado). **Esta é só a Fase 0** — só adiciona os tokens novos ao
+`:root` (linhas 34-63), sem consumir nenhum ainda em nenhuma regra existente:
+
+- `--text-2xs: 9.5px` / `--text-xs: 11px` / `--text-sm: 12.5px` / `--text-md: 14px` /
+  `--text-lg: 15px` — escala de tamanho de fonte nova, **compartilhada pelos dois
+  sistemas** (decisão consciente: um número em px não é identidade visual de nenhum
+  sistema — só `font-family` e cor continuam escopados por sistema, exatamente como já
+  eram). Absorve os 321 pontos de uso hoje espalhados em ~12 valores quase-iguais na
+  faixa 9-16px (tabela de absorção completa no plano aprovado,
+  `/root/.claude/plans/cached-strolling-eagle.md`).
+- `--purple: #7B3FC4` / `--purple-bg: #F1E9FB` — cor secundária já usada em ~18 pontos
+  (anel/chip "reprovado pela Diretoria", chip "Ajuste", ícone KPI "Acuracidade do
+  Estoque", barra "Divergência por Família") sem token próprio até agora.
+- `--teal: #0D9488` / `--teal-bg: #E7F6F3` — mesmo teal já centralizado em JS
+  (`WEEKLY_CHART_COLOR`), sem equivalente em CSS pros usos em `.tfb-*`/
+  `.chart-meta-badge`/tier "Excelente" do `InventoryHealthCard`.
+- `--blue: #2A6FD6` / `--blue-bg: #E3EEFC` — par de tinta do ícone KPI "Valor em
+  Estoque", sem token.
+
+**Fase 0 é puramente aditiva** — nenhuma regra existente foi tocada, zero mudança
+visual esperada. As Fases 1-6 (cores/tamanho de fonte/raio/padding de badge/composição
+de botão/`.empty-state`), que de fato passam a CONSUMIR esses tokens substituindo
+literais, serão feitas em lotes separados, cada um com seu próprio commit/push/
+confirmação de deploy — nunca acumular fases sem confirmar, mesmo critério de sempre.
+Fora de escopo, decisão já confirmada: fusão dos dois sistemas visuais; tamanhos
+decorativos/heading acima de 16px; `AVATAR_PALETTE`/`ARMAZEM_COLORS`/tiers do
+`InventoryHealthCard`; trio v2 de login + gradiente de fundo; raio 16px do
+`.count-card`/`.cs-*` (exceção já documentada).
+
+Testado via transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+(646/646, mudança puramente aditiva). **Sem verificação visual necessária nesta fase**
+(zero regra consumindo os tokens novos ainda) — a partir da Fase 1 (cores), cada lote
+segue o mesmo processo de sempre (transpile+CSS+harness onde aplicável, commit, push,
+confirmar deploy, sinalizar pro cliente os pontos de maior risco visual).
