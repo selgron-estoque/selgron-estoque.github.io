@@ -8108,3 +8108,63 @@ vertical/horizontal perceptível. Os outros 5 já estavam próximos do valor fin
 
 Testado via transpile Babel do arquivo inteiro (OK) e balanceamento de chaves do CSS
 (646/646, inalterado — só valores de padding mudaram, nenhuma regra nova).
+
+## Padronização de fontes, cores e tamanhos — Fase 5 (composição de botão)
+
+- **5a — `.btn-sm`/`.btn-xs` criadas** (perto de `.btn-outline`/`.btn-danger`),
+  modificadores que compõem com `.btn`+variante de cor, sem substituir nada.
+  `.btn-sm{padding:8px 14px;font-size:var(--text-sm);width:auto;}` — bate
+  exatamente com o padrão já dominante achado no JSX (6 call sites idênticos).
+- **`.btn-xs` teve o valor AJUSTADO em relação ao plano original**: o plano tinha
+  estimado `padding:6px 12px;font-size:var(--text-xs)` a partir da pesquisa inicial,
+  mas ao levantar os call sites de verdade, o padrão REALMENTE dominante e repetido
+  (6 ocorrências idênticas, todas dentro dos subpainéis de `UserManagementPanel` —
+  confirmar senha/cancelar exclusão) era `padding:8px;font-size:var(--text-2xs)`
+  (um valor MENOR, não 6px 12px/text-xs) — a combinação "6px 12px + text-xs" citada
+  no plano na prática só tinha 1 ocorrência isolada no arquivo inteiro (não migrada,
+  volume baixo de mais pra justificar). Ajustado `.btn-xs` pra refletir o padrão
+  real em vez do valor estimado — mesmo critério já usado antes nesta sessão de
+  corrigir uma suposição do agente Plan contra a evidência real do código (ver
+  correção do nome `--purple` na seção "Contexto" da Fase 0/1).
+- **5b — `.uf-center-btn` NÃO foi forçado a compor `.btn`+`.btn-outline`+`.btn-xs`,
+  decisão revista contra o plano original**: ao ler o CSS de perto, as declarações
+  de `.uf-center-btn` NÃO são duplicatas exatas das classes base — `background:
+  var(--panel)` (branco opaco) é diferente de `.btn-outline{background:transparent}`
+  (mesmo resultado visual só quando o fundo ao redor já é branco, mas não é o
+  mesmo valor); `padding:9px 10px` não bate com `.btn-xs` (8px) nem com `.btn-sm`
+  (8px 14px); `border-radius:8px` é o próprio raio da família `.uf-*`, diferente de
+  `var(--radius)` que `.btn` usa. Forçar a composição trocaria pelo menos um desses
+  valores de verdade (não seria "zero mudança visual" como o plano assumia) — ou
+  deixaria a classe com uma mistura de propriedades reais + herdadas conflitantes.
+  Mantido como está, standalone — é um componente pequeno (4 usos, só no dual-list),
+  sem duplicação real que valha o risco de mudar a aparência.
+- **5c — 6 call sites migrados pra `.btn-sm`**: os toggles "Todos/Críticas/Altas/
+  Médias/Baixas" (`SeverityFilterRow`), "Todos/Ajustado/Sem Ajuste/SALDO OK"
+  (`StatusConcluidoFilterRow`) e "Código"/"Endereço" (ordenação em
+  `RecountsPanel`) — todos tinham exatamente `style={{width:'auto',padding:'8px
+  14px',fontSize:'var(--text-sm)'}}` ao lado de uma `className` dinâmica
+  (`'btn '+(condição?'btn-primary':'btn-outline')`); virou `className={'btn
+  '+(condição?'btn-primary':'btn-outline')+' btn-sm'}`, sem `style` nenhum.
+  **Deliberadamente NÃO migrados**: 3 outros botões com padding parecido mas NÃO
+  idêntico (`10px 16px` no botão "Adicionar" de Itens Específicos — mesmo botão já
+  ajustado numa correção de bug anterior desta sessão, não mexer de novo; `6px
+  14px` no toggle "Itens (N)"/"Ocultar itens" de `InventoryList`; e os botões de
+  paginação `width:'auto',padding:'8px 14px'` SEM override de `fontSize` — aplicar
+  `.btn-sm` neles reduziria o tamanho da fonte padrão do `.btn` de 15px pra 12.5px
+  nos glifos "‹"/"›", uma mudança real que os outros 6 não têm).
+- **5d — 6 call sites migrados pra `.btn-xs`**: os botões dos subpainéis de
+  `UserManagementPanel` ("Fechar", "Gerar temporária", "Liberar p/ criar",
+  "Confirmar senha definida", "Cancelar", "Confirmar exclusão") — a linha de ação
+  PRINCIPAL (Editar/Bloquear/Redefinir senha/Excluir) já usava `.um-btn` desde o
+  redesign anterior (própria, com padding 8px 12px/text-xs — parecida mas
+  DIFERENTE de `.btn-xs`, não mexida aqui) — só os subpainéis (aparecem só depois
+  de clicar numa ação) tinham o padrão inline repetido.
+- Testado via transpile Babel do arquivo inteiro (OK) e balanceamento de chaves do
+  CSS (648/648 — 2 regras novas, `.btn-sm`/`.btn-xs`). Rodei
+  `harness_usermanagement_redesign.js` (maior risco desta fase, per o plano —
+  confirma que os 3 cards, avatares, pills e paginação continuam intactos),
+  `harness_ordenacao_recontagens.js`, `harness_status_filtro_concluidas.js` e
+  `harness_diretoria.js` (cobrem os outros 6 botões migrados) — todas as asserções
+  continuam `true`. **Verificação visual fica a cargo do cliente**, mas o resultado
+  esperado é ZERO diferença perceptível (só removeu duplicação de `style` inline
+  por trás de valores idênticos).

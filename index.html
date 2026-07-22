@@ -136,6 +136,13 @@
   .btn-secondary:active{background:#2b2f36;}
   .btn-outline{background:transparent;color:var(--ink-dim);border:1px solid var(--line);}
   .btn-danger{background:var(--danger);color:#fff;}
+  /* Modificadores de tamanho — absorvem os padrões de padding/font-size mais
+     repetidos entre botões secundários pequenos em JSX (ver CLAUDE.md
+     "Padronização... Fase 5"), em vez de cada call site reinventar o próprio
+     style inline. Compõem com .btn/.btn-primary/.btn-outline/etc., não
+     substituem — só ajustam tamanho. */
+  .btn-sm{padding:8px 14px;font-size:var(--text-sm);width:auto;}
+  .btn-xs{padding:8px;font-size:var(--text-2xs);width:auto;}
   .btn-row{display:flex;gap:10px;}
   .btn-row .btn{flex:1;}
   .btn:disabled{opacity:0.4;}
@@ -7957,9 +7964,9 @@ function SeverityFilterRow({counts, value, onChange}){
   const LABELS = {critica:'Críticas', alta:'Altas', media:'Médias', baixa:'Baixas'};
   return (
     <div style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:14}}>
-      <button type="button" className={'btn '+(value==='todos'?'btn-primary':'btn-outline')} style={{width:'auto',padding:'8px 14px',fontSize:'var(--text-sm)'}} onClick={()=>onChange('todos')}>Todos ({counts.length})</button>
+      <button type="button" className={'btn '+(value==='todos'?'btn-primary':'btn-outline')+' btn-sm'} onClick={()=>onChange('todos')}>Todos ({counts.length})</button>
       {niveis.map(n=>(
-        <button key={n} type="button" className={'btn '+(value===n?'btn-primary':'btn-outline')} style={{width:'auto',padding:'8px 14px',fontSize:'var(--text-sm)'}} onClick={()=>onChange(n)}>{LABELS[n]} ({porNivel[n]})</button>
+        <button key={n} type="button" className={'btn '+(value===n?'btn-primary':'btn-outline')+' btn-sm'} onClick={()=>onChange(n)}>{LABELS[n]} ({porNivel[n]})</button>
       ))}
     </div>
   );
@@ -7983,9 +7990,9 @@ function StatusConcluidoFilterRow({tips, value, onChange}){
   const LABELS = {ajustado:'Ajustado', sem_ajuste:'Sem Ajuste', saldo_ok:'SALDO OK'};
   return (
     <div style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:14}}>
-      <button type="button" className={'btn '+(value==='todos'?'btn-primary':'btn-outline')} style={{width:'auto',padding:'8px 14px',fontSize:'var(--text-sm)'}} onClick={()=>onChange('todos')}>Todos ({tips.length})</button>
+      <button type="button" className={'btn '+(value==='todos'?'btn-primary':'btn-outline')+' btn-sm'} onClick={()=>onChange('todos')}>Todos ({tips.length})</button>
       {categorias.map(cat=>(
-        <button key={cat} type="button" className={'btn '+(value===cat?'btn-primary':'btn-outline')} style={{width:'auto',padding:'8px 14px',fontSize:'var(--text-sm)'}} onClick={()=>onChange(cat)}>{LABELS[cat]} ({porCategoria[cat]})</button>
+        <button key={cat} type="button" className={'btn '+(value===cat?'btn-primary':'btn-outline')+' btn-sm'} onClick={()=>onChange(cat)}>{LABELS[cat]} ({porCategoria[cat]})</button>
       ))}
     </div>
   );
@@ -8223,8 +8230,8 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
 
       <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginBottom:14}}>
         <span style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)',display:'flex',alignItems:'center',gap:4}}><DIcon name="arrowsUpDown" size={14}/> Ordenar por:</span>
-        <button type="button" className={'btn '+(ordenacao==='codigo'?'btn-primary':'btn-outline')} style={{width:'auto',padding:'8px 14px',fontSize:'var(--text-sm)'}} onClick={()=>setOrdenacao('codigo')}>Código</button>
-        <button type="button" className={'btn '+(ordenacao==='endereco'?'btn-primary':'btn-outline')} style={{width:'auto',padding:'8px 14px',fontSize:'var(--text-sm)'}} onClick={()=>setOrdenacao('endereco')}>Endereço</button>
+        <button type="button" className={'btn '+(ordenacao==='codigo'?'btn-primary':'btn-outline')+' btn-sm'} onClick={()=>setOrdenacao('codigo')}>Código</button>
+        <button type="button" className={'btn '+(ordenacao==='endereco'?'btn-primary':'btn-outline')+' btn-sm'} onClick={()=>setOrdenacao('endereco')}>Endereço</button>
       </div>
 
       {listaFiltrada.length===0 ? (
@@ -10670,17 +10677,17 @@ function UserManagementPanel({users, currentUser, goto, onToggleUserStatus, onDe
                       <React.Fragment>
                         <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginBottom:6}}>Senha temporária gerada — repasse ao usuário agora (não fica visível de novo depois de fechar):</div>
                         <div style={{fontFamily:'var(--font-mono)',fontSize:16,fontWeight:700,color:'var(--ok)',background:'var(--ok-bg)',border:'1px solid var(--ok)',borderRadius:6,padding:'8px 10px',textAlign:'center',marginBottom:8,letterSpacing:1}}>{senhaGerada[u.id]}</div>
-                        <button className="btn btn-secondary" style={{padding:'8px',fontSize:'var(--text-2xs)'}} onClick={()=>{setSenhaGerada(prev=>{const n={...prev}; delete n[u.id]; return n;}); setPwAction(null);}}>Fechar</button>
+                        <button className="btn btn-secondary btn-xs" onClick={()=>{setSenhaGerada(prev=>{const n={...prev}; delete n[u.id]; return n;}); setPwAction(null);}}>Fechar</button>
                       </React.Fragment>
                     ) : (
                       <React.Fragment>
                         {erros[u.id] && <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginBottom:8}}>{erros[u.id]}</div>}
                         <div className="btn-row" style={{marginBottom:8}}>
-                          <button className="btn btn-secondary" style={{padding:'8px',fontSize:'var(--text-2xs)'}} disabled={busyId===u.id} onClick={()=>handlePwAction(u.id,'temp')}>{busyId===u.id ? 'Enviando…' : 'Gerar temporária'}</button>
-                          <button className="btn btn-secondary" style={{padding:'8px',fontSize:'var(--text-2xs)'}} disabled={busyId===u.id} onClick={()=>handlePwAction(u.id,'liberar')}>Liberar p/ criar</button>
+                          <button className="btn btn-secondary btn-xs" disabled={busyId===u.id} onClick={()=>handlePwAction(u.id,'temp')}>{busyId===u.id ? 'Enviando…' : 'Gerar temporária'}</button>
+                          <button className="btn btn-secondary btn-xs" disabled={busyId===u.id} onClick={()=>handlePwAction(u.id,'liberar')}>Liberar p/ criar</button>
                         </div>
                         <input type="text" placeholder="Definir senha manual" value={pwValue} onChange={e=>setPwValue(e.target.value)} style={{width:'100%',padding:8,marginBottom:8,background:'var(--panel)',border:'1px solid var(--line)',borderRadius:6,color:'var(--ink)',fontSize:'var(--text-sm)'}} />
-                        <button className="btn btn-primary" style={{padding:'8px',fontSize:'var(--text-2xs)'}} disabled={pwValue.length<6 || busyId===u.id} onClick={()=>handlePwAction(u.id,'definir',pwValue)}>{busyId===u.id ? 'Enviando…' : 'Confirmar senha definida'}</button>
+                        <button className="btn btn-primary btn-xs" disabled={pwValue.length<6 || busyId===u.id} onClick={()=>handlePwAction(u.id,'definir',pwValue)}>{busyId===u.id ? 'Enviando…' : 'Confirmar senha definida'}</button>
                       </React.Fragment>
                     )}
                   </div>
@@ -10690,8 +10697,8 @@ function UserManagementPanel({users, currentUser, goto, onToggleUserStatus, onDe
                     <div style={{fontSize:'var(--text-sm)',color:'var(--danger)',marginBottom:10}}>Excluir "{u.nome}"? Essa ação não pode ser desfeita.</div>
                     {erros[u.id] && <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginBottom:10}}>{erros[u.id]}</div>}
                     <div className="btn-row">
-                      <button className="btn btn-secondary" style={{padding:'8px',fontSize:'var(--text-2xs)'}} disabled={busyId===u.id} onClick={()=>setConfirmDeleteId(null)}>Cancelar</button>
-                      <button className="btn btn-danger" style={{padding:'8px',fontSize:'var(--text-2xs)'}} disabled={busyId===u.id} onClick={()=>handleDelete(u.id)}>{busyId===u.id ? 'Excluindo…' : 'Confirmar exclusão'}</button>
+                      <button className="btn btn-secondary btn-xs" disabled={busyId===u.id} onClick={()=>setConfirmDeleteId(null)}>Cancelar</button>
+                      <button className="btn btn-danger btn-xs" disabled={busyId===u.id} onClick={()=>handleDelete(u.id)}>{busyId===u.id ? 'Excluindo…' : 'Confirmar exclusão'}</button>
                     </div>
                   </div>
                 )}
