@@ -7610,7 +7610,13 @@ qualquer perfil, sem nenhuma forma de restringir.
   nenhuma classe CSS nova, reaproveita `.toggle-switch`/`.field` já existentes). Rodei
   de novo toda a suíte de regressão disponível no scratchpad, sem quebrar nada.
   **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma limitação de
-  sempre (login exige Supabase Auth real, não simulável no sandbox sem rede). Falta o
-  cliente rodar o SQL novo (`alter table usuarios add column if not exists
-  acessos_removidos jsonb...`) e fazer o redeploy da Edge Function `usuarios-admin`
-  atualizada no projeto real.
+  sempre (login exige Supabase Auth real, não simulável no sandbox sem rede).
+
+**Confirmado em produção**: o cliente rodou o SQL novo (`alter table usuarios add
+column if not exists acessos_removidos jsonb not null default '[]'::jsonb;`) no SQL
+Editor do projeto real, e fez o redeploy da Edge Function `usuarios-admin` atualizada
+(`npx supabase functions deploy usuarios-admin`, guiado passo a passo — inclusive um
+tropeço no caminho: o arquivo `index.ts` baixado do GitHub pelo navegador salvou como
+`index.ts.ts`, extensão duplicada, precisou ser renomeado antes do deploy aceitar).
+Os dois passos concluídos com sucesso — "Acesso por tela" está 100% funcional em
+produção, não só no código.
