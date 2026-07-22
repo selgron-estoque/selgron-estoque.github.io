@@ -8090,3 +8090,21 @@ idêntico pros dois sistemas.
   (confirmado via grep). **Ponto de maior risco visual desta fase: `.uf-remove-btn`
   (3b)** — sinalizado pro cliente conferir o botão "×" de remover em "Comandos
   Liberados" no dual-list de "Editar Usuário" depois do deploy.
+
+## Padronização de fontes, cores e tamanhos — Fase 4 (padding de badges)
+
+7 classes de "pill" pequeno (`.home-card .badge`, `.mhm-badge`, `.round-eyebrow
+.badge`, `.cfg-timeout-badge strong`, `.chart-meta-badge`, `.pnl-kpi-trend`,
+`.pnl-status`) tinham 5 combinações diferentes de padding pro mesmo papel visual
+("badge/pill pequeno") — consolidadas pra `padding:4px 9px`, o valor já mais
+adotado no app (usado por `.status-tag`/`.urgente-chip`/`.severity-chip`/
+`.category-chip`, que não foram tocados por já estarem nesse padrão). Só CSS, nenhum
+JSX tocado.
+
+**Maior variação, sinalizada pro cliente conferir**: `.home-card .badge`/
+`.mhm-badge` saíam de `2px 7px` (os mais apertados da lista) — ganham mais respiro
+vertical/horizontal perceptível. Os outros 5 já estavam próximos do valor final
+(`2px 8px`/`3px 8px`/`3px 9px`), mudança mais sutil.
+
+Testado via transpile Babel do arquivo inteiro (OK) e balanceamento de chaves do CSS
+(646/646, inalterado — só valores de padding mudaram, nenhuma regra nova).
