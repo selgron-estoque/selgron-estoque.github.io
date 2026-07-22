@@ -8047,3 +8047,23 @@ fragmentaria o mesmo commit em dois sem ganho real de bisecção.
   **Diferença visual esperada é sub-pixel** (ex.: 13px vira 12.5px, 10.5px vira
   11px — desvio máximo de 0.5px por decisão do plano) — **verificação visual fica a
   cargo do cliente**, mas não deve ser perceptível a olho nu em nenhuma tela.
+
+## Padronização de fontes, cores e tamanhos — Fase 2 (tamanho de fonte, JSX)
+
+Mesmo desvio deliberado da Fase 2 (CSS): 2c/2d feitas juntas, já que o mapeamento é
+idêntico pros dois sistemas.
+
+- **117 dos 119 `fontSize:N` inline** (forma numérica, React já trata como px sem
+  unidade — confirmado que não existe nenhuma forma `fontSize:'Npx'` string em todo o
+  arquivo) migrados pra `fontSize:'var(--text-*)'` (precisou virar string — `var()`
+  não é um número válido em JS). **2 ficaram de fora de propósito** (`fontSize:16`,
+  fora da escala, mesmo critério da Fase 2 CSS).
+- Testado via transpile Babel do arquivo inteiro (OK) e balanceamento de chaves do
+  CSS (646/646, inalterado — só JSX foi tocado nesta fase). Rodei 9 harnesses de
+  regressão já existentes cobrindo boa parte da superfície tocada (`harness_home`,
+  `harness_home_kpi`, `harness_diretoria`, `harness_concluidas`,
+  `harness_userform_redesign`, `harness_usermanagement_redesign`,
+  `harness_settings_redesign`, `harness_status_filtro_concluidas`,
+  `harness_ordenacao_recontagens`) — todas as asserções continuam `true`, sem
+  nenhuma quebra. **Diferença visual esperada é sub-pixel** (mesmo critério da fase
+  anterior) — **verificação visual fica a cargo do cliente**.

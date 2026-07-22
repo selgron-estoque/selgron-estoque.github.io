@@ -4714,7 +4714,7 @@ function App(){
   // vez, o efeito acima já desloga sozinho, então isso nunca fica preso.
   if(!authReady || (currentUserId && !currentUser)){
     return (
-      <div style={{display:'flex',alignItems:'center',justifyContent:'center',minHeight:'100vh',background:'var(--bg)',color:'var(--ink-dim)',fontFamily:'var(--font-body)',fontSize:14}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'center',minHeight:'100vh',background:'var(--bg)',color:'var(--ink-dim)',fontFamily:'var(--font-body)',fontSize:'var(--text-md)'}}>
         Carregando…
       </div>
     );
@@ -5716,7 +5716,7 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
               <button className="pnl-section-link" onClick={()=>goto('concluidas')}>Ver todas <DIcon name="chevronRight" size={13} /></button>
             </div>
             {atividades.length===0 ? (
-              <div style={{color:'var(--gray-500)', fontSize:13, padding:'12px 4px'}}>Nenhuma atividade registrada ainda.</div>
+              <div style={{color:'var(--gray-500)', fontSize:'var(--text-sm)', padding:'12px 4px'}}>Nenhuma atividade registrada ainda.</div>
             ) : (
               <table className="pnl-table">
                 <thead><tr><th>Data</th><th>Usuário</th><th>Almoxarifado</th><th>Itens</th><th>Acuracidade</th></tr></thead>
@@ -6029,16 +6029,16 @@ function InventoryList({inventories, goto, role, counts, onDelete, onCancel}){
           <StatusTag status={concluido ? 'ok' : 'warn'} text={concluido ? 'Concluído' : (inv.contados>0 ? 'Em andamento' : 'Pendente')} />
         </div>
         <div style={{padding:'14px 18px'}}>
-          <div style={{display:'flex',justifyContent:'space-between',fontSize:12.5,color:'var(--ink-dim)'}}>
+          <div style={{display:'flex',justifyContent:'space-between',fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>
             <span>{inv.tipo}</span>
             <span>{inv.data}</span>
           </div>
           <div className="progress-bar"><div className="fill" style={{width:pct+'%', background: pct>=100 ? 'var(--ok)' : 'var(--safety)'}}></div></div>
-          <div style={{fontFamily:'var(--font-mono)',fontSize:11.5,color:'var(--ink-dim)',marginTop:6}}>{inv.contados}/{inv.qtdItens} itens contados ({pct}%)</div>
+          <div style={{fontFamily:'var(--font-mono)',fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:6}}>{inv.contados}/{inv.qtdItens} itens contados ({pct}%)</div>
         </div>
         {temListaItens && (
           <div style={{padding:'0 18px 14px'}} onClick={e=>e.stopPropagation()}>
-            <button type="button" className="btn btn-outline" style={{width:'auto',padding:'6px 14px',fontSize:12}} onClick={()=>toggleItens(inv.id)}>
+            <button type="button" className="btn btn-outline" style={{width:'auto',padding:'6px 14px',fontSize:'var(--text-sm)'}} onClick={()=>toggleItens(inv.id)}>
               <Ic>📋</Ic> {itensAberto ? 'Ocultar itens' : `Itens (${inv.itensImportados.length})`}
             </button>
             {itensAberto && (() => {
@@ -6481,7 +6481,7 @@ function NewInventory({onCreate, goto, inventories, gruposExcluidos}){
                 style={{padding:18,textAlign:'left',border:'1px solid var(--line)',background:'var(--panel)',width:'100%'}}
                 onClick={()=>{ if(t.v==='Contagem Manual'){ goto('manualCount'); return; } setTipo(t.v); }}
               >
-                <div className="opt-title" style={{fontSize:15}}>{t.v}</div>
+                <div className="opt-title" style={{fontSize:'var(--text-lg)'}}>{t.v}</div>
                 <div className="opt-desc">{t.d}</div>
               </button>
             ))}
@@ -6584,7 +6584,7 @@ function NewInventory({onCreate, goto, inventories, gruposExcluidos}){
                     <div className="lr-title">{p.descricao}</div>
                     <div className="lr-sub">{p.codigo} · {p.enderecoCadastrado ? p.endereco : 'sem endereço cadastrado'}</div>
                   </div>
-                  <button type="button" className="btn btn-outline" style={{width:'auto',padding:'10px 16px',fontSize:12}} disabled={jaAdicionado} onClick={()=>addItemEspecifico(p)}>
+                  <button type="button" className="btn btn-outline" style={{width:'auto',padding:'10px 16px',fontSize:'var(--text-sm)'}} disabled={jaAdicionado} onClick={()=>addItemEspecifico(p)}>
                     {jaAdicionado ? 'Adicionado' : 'Adicionar'}
                   </button>
                 </div>
@@ -6610,7 +6610,7 @@ function NewInventory({onCreate, goto, inventories, gruposExcluidos}){
       {isImportado && importResumo && (
         <div className="panel">
           <div className="section-title" style={{marginTop:0}}>Resumo da Importação</div>
-          <div style={{fontSize:13,lineHeight:1.9}}>
+          <div style={{fontSize:'var(--text-sm)',lineHeight:1.9}}>
             <div>Linhas na planilha: <strong>{importResumo.totalLinhas}</strong></div>
             <div>Itens válidos para contagem: <strong>{importResumo.validas}</strong></div>
             {importResumo.duplicadas>0 && <div>Códigos duplicados removidos: <strong>{importResumo.duplicadas}</strong></div>}
@@ -6687,11 +6687,11 @@ function PickCountType({role, goto, onCreate, inventories, gruposExcluidos}){
     <div>
       <div className="radio-group">
         <button className="item-card" style={{padding:18,textAlign:'left',border:'1px solid var(--line)',background:'var(--panel)'}} onClick={()=>goto('randomCount')}>
-          <div className="opt-title" style={{fontSize:15}}><Ic>🎲</Ic>&nbsp; Contagem Aleatória / por Rota Gerada</div>
+          <div className="opt-title" style={{fontSize:'var(--text-lg)'}}><Ic>🎲</Ic>&nbsp; Contagem Aleatória / por Rota Gerada</div>
           <div className="opt-desc">O sistema indica o próximo item e endereço a contar</div>
         </button>
         <button className="item-card" style={{padding:18,textAlign:'left',border:'1px solid var(--line)',background:'var(--panel)'}} onClick={()=>goto('manualCount')}>
-          <div className="opt-title" style={{fontSize:15}}><Ic>⌨</Ic>&nbsp; Contagem Manual</div>
+          <div className="opt-title" style={{fontSize:'var(--text-lg)'}}><Ic>⌨</Ic>&nbsp; Contagem Manual</div>
           <div className="opt-desc">Buscar item por código, descrição ou código de barras</div>
         </button>
         <button
@@ -6700,11 +6700,11 @@ function PickCountType({role, goto, onCreate, inventories, gruposExcluidos}){
           disabled={!anyAddress}
           onClick={()=>{ if(anyAddress) goto('routeCount'); }}
         >
-          <div className="opt-title" style={{fontSize:15}}><Ic>🗺</Ic>&nbsp; Contagem por Rota</div>
+          <div className="opt-title" style={{fontSize:'var(--text-lg)'}}><Ic>🗺</Ic>&nbsp; Contagem por Rota</div>
           <div className="opt-desc">{anyAddress ? 'Sequência otimizada por corredor e rua, menor deslocamento' : 'Indisponível — nenhum endereço cadastrado ainda neste almoxarifado'}</div>
         </button>
         <button className="item-card" style={{padding:18,textAlign:'left',border:'1px solid var(--line)',background:'var(--panel)'}} onClick={()=>setGrupoAvulsoAberto(v=>!v)}>
-          <div className="opt-title" style={{fontSize:15}}><Ic>🏷</Ic>&nbsp; Contagem por Grupo</div>
+          <div className="opt-title" style={{fontSize:'var(--text-lg)'}}><Ic>🏷</Ic>&nbsp; Contagem por Grupo</div>
           <div className="opt-desc">Contar só os itens de um grupo/família específico</div>
         </button>
         {grupoAvulsoAberto && (
@@ -6853,7 +6853,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
             : <>{info.text || 'Aguardando resolução.'}</>
           } Contado por {openDoc.usuario} em {openDoc.data} {openDoc.hora||''} · {openDoc.qtdContada} un.
         </div>
-        <div style={{maxWidth:420,margin:'10px auto 0',fontSize:12.5,color:'var(--ink-dim)'}}>
+        <div style={{maxWidth:420,margin:'10px auto 0',fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>
           Não é possível lançar uma nova contagem deste item enquanto esse documento não for
           resolvido (aprovado ou recontado) — veja em "Recontagens".
         </div>
@@ -7103,7 +7103,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
         <div className="m"><div className="k">Endereço</div><div className="v">{product.endereco || 'não cadastrado'}</div></div>
       </div>
       {typeof product.valorFinanceiro === 'number' && product.valorFinanceiro > 0 && (
-        <div style={{padding:'0 18px 16px',display:'flex',gap:10,fontSize:11.5,color:'var(--ink-dim)',fontFamily:'var(--font-mono)',flexWrap:'wrap'}}>
+        <div style={{padding:'0 18px 16px',display:'flex',gap:10,fontSize:'var(--text-xs)',color:'var(--ink-dim)',fontFamily:'var(--font-mono)',flexWrap:'wrap'}}>
           <span>Valor em estoque: R$ {product.valorFinanceiro.toLocaleString('pt-BR',{minimumFractionDigits:2})}</span>
           {product.semMovimentoRecente && <span style={{color:'var(--warn)'}}>· sem saída recente</span>}
         </div>
@@ -7177,8 +7177,8 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
               <button className="btn btn-primary" style={{marginBottom:10}} onClick={()=>setScanning(true)}><Ic>📷</Ic> Escanear com a câmera</button>
               {infoComplementar}
               <div className="scan-toggle-row">
-                <button className="btn btn-outline" style={{fontSize:11.5}} onClick={()=>{simulateScan(false); setStep('scanResult');}}>Sem câmera: simular leitura errada</button>
-                <button className="btn btn-outline" style={{fontSize:11.5}} onClick={()=>{simulateScan(true); setStep('scanResult');}}>Sem câmera: simular leitura certa</button>
+                <button className="btn btn-outline" style={{fontSize:'var(--text-xs)'}} onClick={()=>{simulateScan(false); setStep('scanResult');}}>Sem câmera: simular leitura errada</button>
+                <button className="btn btn-outline" style={{fontSize:'var(--text-xs)'}} onClick={()=>{simulateScan(true); setStep('scanResult');}}>Sem câmera: simular leitura certa</button>
               </div>
             </div>
           )}
@@ -7721,7 +7721,7 @@ function RouteCountFlow({inv, user, onRegisterCount, onFinish, onAddressProposed
     <div>
       <div className="role-note" style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,flexWrap:'wrap'}}>
         <span>Corredor {corredorEscolhido} · item {q.idx+1} de {q.total}</span>
-        <button className="btn btn-secondary" style={{padding:'4px 12px',fontSize:12}} onClick={()=>setCorredorEscolhido(null)}>Trocar corredor</button>
+        <button className="btn btn-secondary" style={{padding:'4px 12px',fontSize:'var(--text-sm)'}} onClick={()=>setCorredorEscolhido(null)}>Trocar corredor</button>
       </div>
       <CountStep
         key={q.current.codigo}
@@ -7957,9 +7957,9 @@ function SeverityFilterRow({counts, value, onChange}){
   const LABELS = {critica:'Críticas', alta:'Altas', media:'Médias', baixa:'Baixas'};
   return (
     <div style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:14}}>
-      <button type="button" className={'btn '+(value==='todos'?'btn-primary':'btn-outline')} style={{width:'auto',padding:'8px 14px',fontSize:12}} onClick={()=>onChange('todos')}>Todos ({counts.length})</button>
+      <button type="button" className={'btn '+(value==='todos'?'btn-primary':'btn-outline')} style={{width:'auto',padding:'8px 14px',fontSize:'var(--text-sm)'}} onClick={()=>onChange('todos')}>Todos ({counts.length})</button>
       {niveis.map(n=>(
-        <button key={n} type="button" className={'btn '+(value===n?'btn-primary':'btn-outline')} style={{width:'auto',padding:'8px 14px',fontSize:12}} onClick={()=>onChange(n)}>{LABELS[n]} ({porNivel[n]})</button>
+        <button key={n} type="button" className={'btn '+(value===n?'btn-primary':'btn-outline')} style={{width:'auto',padding:'8px 14px',fontSize:'var(--text-sm)'}} onClick={()=>onChange(n)}>{LABELS[n]} ({porNivel[n]})</button>
       ))}
     </div>
   );
@@ -7983,9 +7983,9 @@ function StatusConcluidoFilterRow({tips, value, onChange}){
   const LABELS = {ajustado:'Ajustado', sem_ajuste:'Sem Ajuste', saldo_ok:'SALDO OK'};
   return (
     <div style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:14}}>
-      <button type="button" className={'btn '+(value==='todos'?'btn-primary':'btn-outline')} style={{width:'auto',padding:'8px 14px',fontSize:12}} onClick={()=>onChange('todos')}>Todos ({tips.length})</button>
+      <button type="button" className={'btn '+(value==='todos'?'btn-primary':'btn-outline')} style={{width:'auto',padding:'8px 14px',fontSize:'var(--text-sm)'}} onClick={()=>onChange('todos')}>Todos ({tips.length})</button>
       {categorias.map(cat=>(
-        <button key={cat} type="button" className={'btn '+(value===cat?'btn-primary':'btn-outline')} style={{width:'auto',padding:'8px 14px',fontSize:12}} onClick={()=>onChange(cat)}>{LABELS[cat]} ({porCategoria[cat]})</button>
+        <button key={cat} type="button" className={'btn '+(value===cat?'btn-primary':'btn-outline')} style={{width:'auto',padding:'8px 14px',fontSize:'var(--text-sm)'}} onClick={()=>onChange(cat)}>{LABELS[cat]} ({porCategoria[cat]})</button>
       ))}
     </div>
   );
@@ -8049,12 +8049,12 @@ function PaginationControls({pagina, setPagina, totalPaginas, tamanhoPagina, set
     <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:10,margin:'14px 0'}}>
       <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
         <button type="button" className="btn btn-outline" style={{width:'auto',padding:'8px 14px'}} disabled={pagina<=1} onClick={()=>setPagina(p=>p-1)}>‹ Anterior</button>
-        <span style={{fontFamily:'var(--font-mono)',fontSize:11.5,color:'var(--ink-dim)'}}>Página {pagina} de {totalPaginas} · {totalItens} {itemLabel}</span>
+        <span style={{fontFamily:'var(--font-mono)',fontSize:'var(--text-xs)',color:'var(--ink-dim)'}}>Página {pagina} de {totalPaginas} · {totalItens} {itemLabel}</span>
         <button type="button" className="btn btn-outline" style={{width:'auto',padding:'8px 14px'}} disabled={pagina>=totalPaginas} onClick={()=>setPagina(p=>p+1)}>Próxima ›</button>
       </div>
-      <div style={{display:'flex',alignItems:'center',gap:6,fontSize:12,color:'var(--ink-dim)'}}>
+      <div style={{display:'flex',alignItems:'center',gap:6,fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>
         <span>Por página:</span>
-        <select aria-label="Itens por página" value={tamanhoPagina} onChange={e=>setTamanhoPagina(Number(e.target.value))} style={{padding:'6px 8px',borderRadius:8,border:'1px solid var(--line)',fontSize:12,fontFamily:'var(--font-corp)'}}>
+        <select aria-label="Itens por página" value={tamanhoPagina} onChange={e=>setTamanhoPagina(Number(e.target.value))} style={{padding:'6px 8px',borderRadius:8,border:'1px solid var(--line)',fontSize:'var(--text-sm)',fontFamily:'var(--font-corp)'}}>
           {TAMANHOS_PAGINA_OPCOES.map(n=><option key={n} value={n}>{n}</option>)}
         </select>
       </div>
@@ -8211,7 +8211,7 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
       <SearchWithScanner value={busca} onChange={setBusca} placeholder="Buscar por código ou descrição do material" />
 
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8,marginBottom:10}}>
-        <span style={{fontSize:12.5,color:'var(--ink-dim)'}}>
+        <span style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>
           <strong style={{color:'var(--ink)'}}>{aguardandoSegunda.length}</strong> pendentes
           {aguardandoSegundaNoPeriodo.length!==aguardandoSegunda.length && <> · <strong style={{color:'var(--ink)'}}>{aguardandoSegundaNoPeriodo.length}</strong> no período selecionado</>}
         </span>
@@ -8222,9 +8222,9 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
       </div>
 
       <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginBottom:14}}>
-        <span style={{fontSize:12,color:'var(--ink-dim)',display:'flex',alignItems:'center',gap:4}}><DIcon name="arrowsUpDown" size={14}/> Ordenar por:</span>
-        <button type="button" className={'btn '+(ordenacao==='codigo'?'btn-primary':'btn-outline')} style={{width:'auto',padding:'8px 14px',fontSize:12}} onClick={()=>setOrdenacao('codigo')}>Código</button>
-        <button type="button" className={'btn '+(ordenacao==='endereco'?'btn-primary':'btn-outline')} style={{width:'auto',padding:'8px 14px',fontSize:12}} onClick={()=>setOrdenacao('endereco')}>Endereço</button>
+        <span style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)',display:'flex',alignItems:'center',gap:4}}><DIcon name="arrowsUpDown" size={14}/> Ordenar por:</span>
+        <button type="button" className={'btn '+(ordenacao==='codigo'?'btn-primary':'btn-outline')} style={{width:'auto',padding:'8px 14px',fontSize:'var(--text-sm)'}} onClick={()=>setOrdenacao('codigo')}>Código</button>
+        <button type="button" className={'btn '+(ordenacao==='endereco'?'btn-primary':'btn-outline')} style={{width:'auto',padding:'8px 14px',fontSize:'var(--text-sm)'}} onClick={()=>setOrdenacao('endereco')}>Endereço</button>
       </div>
 
       {listaFiltrada.length===0 ? (
@@ -8289,7 +8289,7 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
                 "Reprovar ajuste" em Contagens Concluídas
                 (reprovarAjusteHistoricoNaLinha), que reabre o item sem SA. */}
             {!c.reprovadoPelaDiretoria && c.motivoReprovacaoDiretoria && (
-              <div style={{padding:'10px 16px 0',fontSize:12.5,color:'var(--danger)'}}>Motivo da reprovação: <strong>{c.motivoReprovacaoDiretoria}</strong></div>
+              <div style={{padding:'10px 16px 0',fontSize:'var(--text-sm)',color:'var(--danger)'}}>Motivo da reprovação: <strong>{c.motivoReprovacaoDiretoria}</strong></div>
             )}
             {c.recontagemSolicitadaPeloLider && (
               <div className="divergence-alert"><Ic>⚠</Ic>
@@ -8485,7 +8485,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSend
       <SearchWithScanner value={busca} onChange={setBusca} placeholder="Código ou descrição do material" />
 
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8,marginBottom:10}}>
-        <span style={{fontSize:12.5,color:'var(--ink-dim)'}}>
+        <span style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>
           <strong style={{color:'var(--ink)'}}>{aguardandoAnalise.length}</strong> pendentes
           {aguardandoAnaliseNoPeriodo.length!==aguardandoAnalise.length && <> · <strong style={{color:'var(--ink)'}}>{aguardandoAnaliseNoPeriodo.length}</strong> no período selecionado</>}
         </span>
@@ -8576,7 +8576,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSend
                   <div className="rg"><div className="k">%</div><div className="v" style={{color:sev.color}}>{c.percentual==null ? '—' : Math.round(c.percentual)+'%'}</div></div>
                 </div>
               )}
-              {c.motivo && <div style={{padding:'10px 16px 0',fontSize:12.5}}>Motivo: <strong>{c.motivo}</strong></div>}
+              {c.motivo && <div style={{padding:'10px 16px 0',fontSize:'var(--text-sm)'}}>Motivo: <strong>{c.motivo}</strong></div>}
               {/* Bug real corrigido aqui: esta tela nunca mostrava `observacao`
                   em lugar nenhum (só `motivo`) — passava batido pra qualquer
                   contagem ao vivo com observação preenchida, e ficava
@@ -8586,7 +8586,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSend
                   aparecer aqui. `limparObservacaoExibicao` (perto de
                   `severidadeDe`) remove a frase padronizada que essa função
                   costumava embutir aqui — cliente achou redundante. */}
-              {limparObservacaoExibicao(c.observacao) && <div style={{padding:'6px 16px 0',fontSize:12.5,color:'var(--ink-dim)'}}>Observação: {limparObservacaoExibicao(c.observacao)}</div>}
+              {limparObservacaoExibicao(c.observacao) && <div style={{padding:'6px 16px 0',fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>Observação: {limparObservacaoExibicao(c.observacao)}</div>}
               {c.reprovadoPelaDiretoria && (
                 <div className="divergence-alert" style={{margin:'10px 16px 0',background:'var(--purple-bg)',borderColor:'var(--purple)',color:'var(--purple)'}}>
                   <Ic>⛔</Ic><span>A Diretoria reprovou a SA {c.solicitacaoAjuste} em {c.reprovadoEm} — reenviado para nova análise.{c.motivoReprovacaoDiretoria && <><br/><strong>Motivo da reprovação:</strong> <span style={{color:'var(--danger)'}}>{c.motivoReprovacaoDiretoria}</span></>}</span>
@@ -8601,7 +8601,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSend
                   Concluídas (reprovarAjusteHistoricoNaLinha), que reabre o
                   item aqui sem SA nenhuma envolvida. */}
               {!c.reprovadoPelaDiretoria && c.motivoReprovacaoDiretoria && (
-                <div style={{padding:'6px 16px 0',fontSize:12.5,color:'var(--danger)'}}>Motivo da reprovação: <strong>{c.motivoReprovacaoDiretoria}</strong></div>
+                <div style={{padding:'6px 16px 0',fontSize:'var(--text-sm)',color:'var(--danger)'}}>Motivo da reprovação: <strong>{c.motivoReprovacaoDiretoria}</strong></div>
               )}
               {c.diferencaConfirmada && (
                 <div className="divergence-alert" style={{margin:'10px 16px 0'}}>
@@ -8641,7 +8641,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSend
                   <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>{setSaAbertoId(c.id); setSaValor('');}}><Ic>📋</Ic> Gerar SA de Ajuste</button>
                 </div>
               ) : (
-                <div style={{fontSize:12,color:'var(--ink-dim)'}}>Aguardando decisão do líder de estoque.</div>
+                <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>Aguardando decisão do líder de estoque.</div>
               )}
             </div>
           </div>
@@ -8726,7 +8726,7 @@ function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejec
       <SearchWithScanner value={busca} onChange={setBusca} placeholder="Código ou descrição do material" />
 
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8,marginBottom:10}}>
-        <span style={{fontSize:12.5,color:'var(--ink-dim)'}}>
+        <span style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>
           <strong style={{color:'var(--ink)'}}>{aguardandoDiretoria.length}</strong> pendentes
           {aguardandoDiretoriaNoPeriodo.length!==aguardandoDiretoria.length && <> · <strong style={{color:'var(--ink)'}}>{aguardandoDiretoriaNoPeriodo.length}</strong> no período selecionado</>}
         </span>
@@ -8768,9 +8768,9 @@ function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejec
                 <div className="rg"><div className="k">Diferença</div><div className="v" style={{color:sev.color}}>{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div></div>
                 <div className="rg"><div className="k">%</div><div className="v" style={{color:sev.color}}>{c.percentual==null ? '—' : Math.round(c.percentual)+'%'}</div></div>
               </div>
-              <div style={{padding:'10px 16px 0',fontSize:12.5,color:'var(--ink-dim)'}}>SA gerada por {c.saGeradaPor||'—'} em {c.saGeradaEm||'—'}</div>
-              {c.motivo && <div style={{padding:'6px 16px 0',fontSize:12.5}}>Motivo: <strong>{c.motivo}</strong></div>}
-              {c.valorDivergente!=null && Number(c.valorDivergente)!==0 && <div style={{padding:'6px 16px 0',fontSize:12.5}}>Valor divergente: <strong>R$ {Number(c.valorDivergente).toFixed(2)}</strong></div>}
+              <div style={{padding:'10px 16px 0',fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>SA gerada por {c.saGeradaPor||'—'} em {c.saGeradaEm||'—'}</div>
+              {c.motivo && <div style={{padding:'6px 16px 0',fontSize:'var(--text-sm)'}}>Motivo: <strong>{c.motivo}</strong></div>}
+              {c.valorDivergente!=null && Number(c.valorDivergente)!==0 && <div style={{padding:'6px 16px 0',fontSize:'var(--text-sm)'}}>Valor divergente: <strong>R$ {Number(c.valorDivergente).toFixed(2)}</strong></div>}
               {erros[c.id] && (
                 <div className="divergence-alert" style={{margin:'10px 16px 0'}}><Ic>⚠</Ic><span>{erros[c.id]}</span></div>
               )}
@@ -8799,7 +8799,7 @@ function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejec
                   <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>handleApprove(c.id)}>{busyId===c.id ? 'Enviando…' : 'Aprovar'}</button>
                 </div>
               ) : (
-                <div style={{padding:'10px 16px 16px',fontSize:12,color:'var(--ink-dim)'}}>Aguardando decisão da Diretoria.</div>
+                <div style={{padding:'10px 16px 16px',fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>Aguardando decisão da Diretoria.</div>
               )}
             </div>
           </div>
@@ -9235,7 +9235,7 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
                     <div className="rg"><div className="k">Sistema</div><div className="v">{tip.saldoSistema==null ? '—' : tip.saldoSistema}</div></div>
                     <div className="rg"><div className="k">Qtd. Final</div><div className="v">{tip.qtdContada}</div></div>
                     <div className="rg"><div className="k">Contagens</div><div className="v">{tip.numeroContagem}</div></div>
-                    <div className="rg"><div className="k">Ajuste</div><div className="v" style={{fontSize:12.5}}>{cd.houveAjuste ? 'Necessário' : (tip.diferenca==null?'Sem saldo local':'Não necessário')}</div></div>
+                    <div className="rg"><div className="k">Ajuste</div><div className="v" style={{fontSize:'var(--text-sm)'}}>{cd.houveAjuste ? 'Necessário' : (tip.diferenca==null?'Sem saldo local':'Não necessário')}</div></div>
                   </div>
                   {aberto && (
                     <div className="count-card-extra">
@@ -9270,7 +9270,7 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
                     <button className="btn btn-secondary" disabled={reprovando} onClick={()=>{ setConfirmReprovarId(null); setMotivoReprovar(''); }}>Cancelar</button>
                     <button className="btn btn-danger" disabled={reprovando || !motivoReprovar.trim()} onClick={()=>handleConfirmReprovar(cd.chaveId, tip._historicoRaw)}>{reprovando ? 'Reprovando…' : 'Confirmar reprovação'}</button>
                   </div>
-                  {erroReprovar && <div style={{fontSize:11.5,color:'var(--danger)',marginTop:8}}>{erroReprovar}</div>}
+                  {erroReprovar && <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginTop:8}}>{erroReprovar}</div>}
                 </div>
               )}
               {aberto && (
@@ -9301,19 +9301,19 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
                           <div className="rg"><div className="k">Diferença</div><div className="v">{r.diferenca==null ? '—' : (r.diferenca>0?'+':'')+r.diferenca}</div></div>
                           <div className="rg"><div className="k">%</div><div className="v">{r.percentual==null ? '—' : Math.round(r.percentual)+'%'}</div></div>
                         </div>
-                        {(r.endereco || r.enderecoContado) && <div style={{fontSize:12.5}}>Endereço: <strong>{r.endereco || r.enderecoContado}</strong></div>}
-                        {r.valorDivergente!=null && r.valorDivergente!==0 && <div style={{fontSize:12.5}}>Valor divergente: <strong>R$ {Number(r.valorDivergente).toFixed(2)}</strong></div>}
-                        {r.motivo && <div style={{fontSize:12.5}}>Motivo: <strong>{r.motivo}</strong></div>}
-                        {limparObservacaoExibicao(r.observacao) && <div style={{fontSize:12.5}}>Observação: {limparObservacaoExibicao(r.observacao)}</div>}
-                        {r.motivoReprovacaoDiretoria && <div style={{fontSize:12.5,color:'var(--danger)'}}>Motivo da reprovação: <strong>{r.motivoReprovacaoDiretoria}</strong></div>}
-                        {r.aprovadoPor && <div style={{fontSize:12,color:'var(--ink-dim)'}}>Aprovado por {r.aprovadoPor} em {r.aprovadoEm}</div>}
+                        {(r.endereco || r.enderecoContado) && <div style={{fontSize:'var(--text-sm)'}}>Endereço: <strong>{r.endereco || r.enderecoContado}</strong></div>}
+                        {r.valorDivergente!=null && r.valorDivergente!==0 && <div style={{fontSize:'var(--text-sm)'}}>Valor divergente: <strong>R$ {Number(r.valorDivergente).toFixed(2)}</strong></div>}
+                        {r.motivo && <div style={{fontSize:'var(--text-sm)'}}>Motivo: <strong>{r.motivo}</strong></div>}
+                        {limparObservacaoExibicao(r.observacao) && <div style={{fontSize:'var(--text-sm)'}}>Observação: {limparObservacaoExibicao(r.observacao)}</div>}
+                        {r.motivoReprovacaoDiretoria && <div style={{fontSize:'var(--text-sm)',color:'var(--danger)'}}>Motivo da reprovação: <strong>{r.motivoReprovacaoDiretoria}</strong></div>}
+                        {r.aprovadoPor && <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>Aprovado por {r.aprovadoPor} em {r.aprovadoEm}</div>}
                         {!r._fromHistorico && r.solicitacaoAjuste && (
-                          <div style={{fontSize:11.5,color:'var(--ink-dim)',fontFamily:'var(--font-mono)'}}>
+                          <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',fontFamily:'var(--font-mono)'}}>
                             SA: {r.solicitacaoAjuste} · gerada por {r.saGeradaPor||'—'} em {r.saGeradaEm||'—'}
                           </div>
                         )}
                         {r._fromHistorico && (r.classe || r.solicitacaoAjuste || r.documento || r.diasSemMovimento!=null) && (
-                          <div style={{fontSize:11.5,color:'var(--ink-dim)',fontFamily:'var(--font-mono)'}}>
+                          <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',fontFamily:'var(--font-mono)'}}>
                             {r.classe && <>Classe ABC: {r.classe} · </>}
                             {r.solicitacaoAjuste && <>SA: {r.solicitacaoAjuste} · </>}
                             {r.documento && <>Doc: {r.documento} · </>}
@@ -9410,7 +9410,7 @@ function ReportsScreen({counts, inventories, currentUser, sendHistory, onLogSend
 
       <div className="panel">
         <div className="section-title" style={{marginTop:0}}>Baixar Relatório</div>
-        <div style={{fontSize:13,color:'var(--ink-dim)',marginBottom:14,lineHeight:1.6}}>
+        <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)',marginBottom:14,lineHeight:1.6}}>
           Gera uma planilha Excel (.xlsx) com 4 abas: <strong>Resumo</strong> (indicadores gerais),
           <strong> Contagens</strong> (todas as contagens realizadas, com histórico completo de
           rodadas e o endereço onde cada item foi fisicamente contado), <strong>Contar</strong>{' '}
@@ -9424,7 +9424,7 @@ function ReportsScreen({counts, inventories, currentUser, sendHistory, onLogSend
           <input type="date" value={filtroData} onChange={e=>setFiltroData(e.target.value)} />
         </div>
         {filtroData && (
-          <div style={{fontSize:12,color:'var(--ink-dim)',marginBottom:14}}>
+          <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)',marginBottom:14}}>
             Relatório vai sair só com as {countsFiltrados.length} contagens de {filtroData}.{' '}
             <a href="#" onClick={e=>{e.preventDefault(); setFiltroData('');}}>Limpar filtro</a>
           </div>
@@ -9433,7 +9433,7 @@ function ReportsScreen({counts, inventories, currentUser, sendHistory, onLogSend
           <Ic>⬇</Ic> Baixar Excel (.xlsx)
         </button>
         {countsFiltrados.length===0 && (
-          <div style={{fontSize:12,color:'var(--ink-dim)',marginTop:8}}>
+          <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)',marginTop:8}}>
             {filtroData ? 'Nenhuma contagem registrada nesse dia.' : 'Nenhuma contagem registrada ainda.'}
           </div>
         )}
@@ -9473,7 +9473,7 @@ function ReportsScreen({counts, inventories, currentUser, sendHistory, onLogSend
             <thead><tr><th>Destinatário</th><th>Assunto</th><th>Enviado por</th><th>Data</th></tr></thead>
             <tbody>
               {sendHistory.map(h=>(
-                <tr key={h.id}><td>{h.destinatario}</td><td>{h.assunto}</td><td>{h.enviadoPor}</td><td style={{fontFamily:'var(--font-mono)',fontSize:11.5}}>{h.data}</td></tr>
+                <tr key={h.id}><td>{h.destinatario}</td><td>{h.assunto}</td><td>{h.enviadoPor}</td><td style={{fontFamily:'var(--font-mono)',fontSize:'var(--text-xs)'}}>{h.data}</td></tr>
               ))}
             </tbody>
           </table>
@@ -9486,13 +9486,13 @@ function ReportsScreen({counts, inventories, currentUser, sendHistory, onLogSend
 
       <div className="panel">
         <div className="section-title" style={{marginTop:0}}>Regras de Divergência</div>
-        <div style={{fontSize:13,lineHeight:1.9,color:'var(--ink-dim)'}}>
+        <div style={{fontSize:'var(--text-sm)',lineHeight:1.9,color:'var(--ink-dim)'}}>
           <div>R$ 0 (contagem exata) → <span style={{color:'var(--ok)'}}>Aprovação automática</span></div>
           <div>Até R$ 49,99 → <span style={{color:'var(--danger)'}}>Análise do líder de estoque</span></div>
           <div>A partir de R$ 50 → <span style={{color:'var(--warn)'}}>Segunda contagem obrigatória</span></div>
-          <div style={{marginTop:8,fontSize:12}}>Na recontagem, se a diferença bater exata com a da 1ª contagem, vai
+          <div style={{marginTop:8,fontSize:'var(--text-sm)'}}>Na recontagem, se a diferença bater exata com a da 1ª contagem, vai
           direto pro líder com o aviso "Diferença confirmada, seguir com ajuste".</div>
-          <div style={{marginTop:8,fontSize:12}}>Se o líder confirmar que HÁ ajuste necessário, ele gera uma SA de
+          <div style={{marginTop:8,fontSize:'var(--text-sm)'}}>Se o líder confirmar que HÁ ajuste necessário, ele gera uma SA de
           Ajuste e encaminha pra aprovação da Diretoria ("Aprovação de Ajustes") — só depois de
           aprovada o item conta como resolvido. Se a Diretoria reprovar, volta pra recontagem.
           "Sem Ajuste Necessário" não passa por essa etapa.</div>
@@ -9500,7 +9500,7 @@ function ReportsScreen({counts, inventories, currentUser, sendHistory, onLogSend
       </div>
       <div className="panel">
         <div className="section-title" style={{marginTop:0}}>Origem dos Dados</div>
-        <div style={{fontSize:13,color:'var(--ink-dim)',lineHeight:1.7}}>
+        <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)',lineHeight:1.7}}>
           Catálogo completo (85 mil+ produtos) importado da tabela SB2 do Protheus, direto no
           Supabase — sem cache local no app. Saldo em estoque atualizado por upload manual da
           planilha SB2 acima ("Atualizar Saldo em Estoque"). Nenhum endereço físico cadastrado
@@ -9510,7 +9510,7 @@ function ReportsScreen({counts, inventories, currentUser, sendHistory, onLogSend
       </div>
       <div className="panel">
         <div className="section-title" style={{marginTop:0}}>Integrações Futuras</div>
-        <div style={{fontSize:13,color:'var(--ink-dim)'}}>ERP TOTVS · Power BI · Preparado, ainda não conectado.</div>
+        <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>ERP TOTVS · Power BI · Preparado, ainda não conectado.</div>
       </div>
     </div>
   );
@@ -10312,26 +10312,26 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'wrap',gap:10,marginBottom:14}}>
             <div>
               <div className="section-title" style={{marginTop:0,marginBottom:4}}>Valor por Armazém</div>
-              <div style={{fontSize:12,color:'var(--ink-dim)'}}>Distribuição do valor total em estoque por armazém.</div>
+              <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>Distribuição do valor total em estoque por armazém.</div>
             </div>
             <div style={{display:'flex',border:'1px solid var(--line)',borderRadius:8,overflow:'hidden',flexShrink:0}}>
-              <button onClick={()=>setModoValor('valor')} style={{border:'none',padding:'6px 12px',fontSize:11.5,cursor:'pointer',background:modoValor==='valor'?'var(--ink)':'transparent',color:modoValor==='valor'?'#fff':'var(--ink-dim)'}}>Valor (R$)</button>
-              <button onClick={()=>setModoValor('percentual')} style={{border:'none',padding:'6px 12px',fontSize:11.5,cursor:'pointer',background:modoValor==='percentual'?'var(--ink)':'transparent',color:modoValor==='percentual'?'#fff':'var(--ink-dim)'}}>% do Total</button>
+              <button onClick={()=>setModoValor('valor')} style={{border:'none',padding:'6px 12px',fontSize:'var(--text-xs)',cursor:'pointer',background:modoValor==='valor'?'var(--ink)':'transparent',color:modoValor==='valor'?'#fff':'var(--ink-dim)'}}>Valor (R$)</button>
+              <button onClick={()=>setModoValor('percentual')} style={{border:'none',padding:'6px 12px',fontSize:'var(--text-xs)',cursor:'pointer',background:modoValor==='percentual'?'var(--ink)':'transparent',color:modoValor==='percentual'?'#fff':'var(--ink-dim)'}}>% do Total</button>
             </div>
           </div>
           {armazens.map((a,i)=>(
             <div key={a} className="bar-row">
               <div style={{display:'flex',alignItems:'center',gap:8,width:130,flexShrink:0}}>
                 <div style={{width:24,height:24,borderRadius:7,background:ARMAZEM_COLORS[i%ARMAZEM_COLORS.length],display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><DIcon name="building" size={13} style={{color:'#fff'}}/></div>
-                <div style={{fontSize:12,color:'var(--ink-dim)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{formatArmazemLabel(a)}</div>
+                <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{formatArmazemLabel(a)}</div>
               </div>
               <div className="bar-track"><div className="bar-fill" style={{width:(porArmazem[a]/maxArmazemValor*100)+'%', background:ARMAZEM_COLORS[i%ARMAZEM_COLORS.length]}}></div></div>
-              <div style={{width:100,flexShrink:0,textAlign:'right',fontFamily:'var(--font-mono)',fontSize:11.5,color:'var(--ink-dim)'}}>
+              <div style={{width:100,flexShrink:0,textAlign:'right',fontFamily:'var(--font-mono)',fontSize:'var(--text-xs)',color:'var(--ink-dim)'}}>
                 {modoValor==='valor' ? fmtReais(porArmazem[a]) : (valorTotalEstoque>0 ? (porArmazem[a]/valorTotalEstoque*100).toFixed(1)+'%' : '—')}
               </div>
             </div>
           ))}
-          <div style={{marginTop:12,paddingTop:10,borderTop:'1px solid var(--line)',fontSize:11.5,color:'var(--ink-dim)'}}>
+          <div style={{marginTop:12,paddingTop:10,borderTop:'1px solid var(--line)',fontSize:'var(--text-xs)',color:'var(--ink-dim)'}}>
             <Ic>ℹ</Ic> Os valores consideram o custo médio dos itens em estoque, conforme o último upload da planilha SB2.
           </div>
         </div>
@@ -10399,14 +10399,14 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
         <div className="weekly-charts-grid">
           <div className="panel" style={{margin:0}}>
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:16}}>
-              <div style={{fontSize:13,fontWeight:700}}>Acuracidade Semanal (%)</div>
+              <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Acuracidade Semanal (%)</div>
               <span className="chart-meta-badge">Meta: {META_ACURACIDADE_SEMANAL}%</span>
             </div>
             <WeeklyLineChart weeks={weeklyStats} meta={META_ACURACIDADE_SEMANAL} />
           </div>
           <div className="panel" style={{margin:0}}>
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:16}}>
-              <div style={{fontSize:13,fontWeight:700}}>Contagens na Semana</div>
+              <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Contagens na Semana</div>
               <span className="chart-meta-badge">Meta: {META_CONTAGENS_SEMANAL}</span>
             </div>
             <WeeklyCountChart weeks={weeklyStats} meta={META_CONTAGENS_SEMANAL} />
@@ -10414,17 +10414,17 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
           <div className="panel" style={{margin:0}}>
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:16}}>
               <div>
-                <div style={{fontSize:13,fontWeight:700}}>Acuracidade Mensal (%)</div>
-                <div style={{fontSize:10.5,color:'var(--ink-dim)',marginTop:2}}>Todos os meses de {new Date().getFullYear()} com dado registrado</div>
+                <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Acuracidade Mensal (%)</div>
+                <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:2}}>Todos os meses de {new Date().getFullYear()} com dado registrado</div>
               </div>
               <span className="chart-meta-badge">Meta: {META_ACURACIDADE_SEMANAL}%</span>
             </div>
             <MonthlyAccuracyBarChart months={monthlyStats} meta={META_ACURACIDADE_SEMANAL} />
           </div>
           <div className="panel" style={{margin:0}}>
-            <div style={{fontSize:13,fontWeight:700,marginBottom:16}}>Divergência por Família/Grupo</div>
+            <div style={{fontSize:'var(--text-sm)',fontWeight:700,marginBottom:16}}>Divergência por Família/Grupo</div>
             {porFamilia.length===0 ? (
-              <div style={{color:'var(--ink-dim)',fontSize:13}}>
+              <div style={{color:'var(--ink-dim)',fontSize:'var(--text-sm)'}}>
                 Ainda sem dado suficiente pra esse indicador — a família/grupo do produto
                 só é gravada em contagens feitas a partir de agora, aparece aqui conforme
                 itens divergentes forem sendo contados.
@@ -10469,7 +10469,7 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
 
       <div className="section-title">Top 5 Maiores Divergências</div>
       <div className="panel">
-        {topDivergentes.length===0 ? <div style={{color:'var(--ink-dim)',fontSize:13}}>Sem contagens registradas.</div> : (
+        {topDivergentes.length===0 ? <div style={{color:'var(--ink-dim)',fontSize:'var(--text-sm)'}}>Sem contagens registradas.</div> : (
           <>
             <table className="rank-table">
               <thead><tr><th>Produto</th><th>Almox.</th><th className="num">Esperado</th><th className="num">Encontrado</th><th className="num">Diferença</th><th className="num">Valor (R$)</th></tr></thead>
@@ -10631,7 +10631,7 @@ function UserManagementPanel({users, currentUser, goto, onToggleUserStatus, onDe
       </div>
 
       {filtered.length===0 ? (
-        <div style={{fontSize:13,color:'var(--ink-dim)',padding:'12px 0'}}>Nenhum usuário encontrado{search?` para "${search}"`:''}.</div>
+        <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)',padding:'12px 0'}}>Nenhum usuário encontrado{search?` para "${search}"`:''}.</div>
       ) : (
         <React.Fragment>
           {paged.map(u=>{
@@ -10662,36 +10662,36 @@ function UserManagementPanel({users, currentUser, goto, onToggleUserStatus, onDe
                   )}
                 </div>
                 {erros[u.id] && pwAction!==u.id && confirmDeleteId!==u.id && (
-                  <div style={{fontSize:11.5,color:'var(--danger)',maxWidth:260,textAlign:'right'}}>{erros[u.id]}</div>
+                  <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',maxWidth:260,textAlign:'right'}}>{erros[u.id]}</div>
                 )}
                 {pwAction===u.id && (
                   <div className="um-pw-panel" style={{background:'var(--panel-raised)',border:'1px solid var(--line)',borderRadius:8,padding:12}}>
                     {senhaGerada[u.id] ? (
                       <React.Fragment>
-                        <div style={{fontSize:11.5,color:'var(--ink-dim)',marginBottom:6}}>Senha temporária gerada — repasse ao usuário agora (não fica visível de novo depois de fechar):</div>
+                        <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginBottom:6}}>Senha temporária gerada — repasse ao usuário agora (não fica visível de novo depois de fechar):</div>
                         <div style={{fontFamily:'var(--font-mono)',fontSize:16,fontWeight:700,color:'var(--ok)',background:'var(--ok-bg)',border:'1px solid var(--ok)',borderRadius:6,padding:'8px 10px',textAlign:'center',marginBottom:8,letterSpacing:1}}>{senhaGerada[u.id]}</div>
-                        <button className="btn btn-secondary" style={{padding:'8px',fontSize:10}} onClick={()=>{setSenhaGerada(prev=>{const n={...prev}; delete n[u.id]; return n;}); setPwAction(null);}}>Fechar</button>
+                        <button className="btn btn-secondary" style={{padding:'8px',fontSize:'var(--text-2xs)'}} onClick={()=>{setSenhaGerada(prev=>{const n={...prev}; delete n[u.id]; return n;}); setPwAction(null);}}>Fechar</button>
                       </React.Fragment>
                     ) : (
                       <React.Fragment>
-                        {erros[u.id] && <div style={{fontSize:11.5,color:'var(--danger)',marginBottom:8}}>{erros[u.id]}</div>}
+                        {erros[u.id] && <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginBottom:8}}>{erros[u.id]}</div>}
                         <div className="btn-row" style={{marginBottom:8}}>
-                          <button className="btn btn-secondary" style={{padding:'8px',fontSize:10}} disabled={busyId===u.id} onClick={()=>handlePwAction(u.id,'temp')}>{busyId===u.id ? 'Enviando…' : 'Gerar temporária'}</button>
-                          <button className="btn btn-secondary" style={{padding:'8px',fontSize:10}} disabled={busyId===u.id} onClick={()=>handlePwAction(u.id,'liberar')}>Liberar p/ criar</button>
+                          <button className="btn btn-secondary" style={{padding:'8px',fontSize:'var(--text-2xs)'}} disabled={busyId===u.id} onClick={()=>handlePwAction(u.id,'temp')}>{busyId===u.id ? 'Enviando…' : 'Gerar temporária'}</button>
+                          <button className="btn btn-secondary" style={{padding:'8px',fontSize:'var(--text-2xs)'}} disabled={busyId===u.id} onClick={()=>handlePwAction(u.id,'liberar')}>Liberar p/ criar</button>
                         </div>
-                        <input type="text" placeholder="Definir senha manual" value={pwValue} onChange={e=>setPwValue(e.target.value)} style={{width:'100%',padding:8,marginBottom:8,background:'var(--panel)',border:'1px solid var(--line)',borderRadius:6,color:'var(--ink)',fontSize:12}} />
-                        <button className="btn btn-primary" style={{padding:'8px',fontSize:10}} disabled={pwValue.length<6 || busyId===u.id} onClick={()=>handlePwAction(u.id,'definir',pwValue)}>{busyId===u.id ? 'Enviando…' : 'Confirmar senha definida'}</button>
+                        <input type="text" placeholder="Definir senha manual" value={pwValue} onChange={e=>setPwValue(e.target.value)} style={{width:'100%',padding:8,marginBottom:8,background:'var(--panel)',border:'1px solid var(--line)',borderRadius:6,color:'var(--ink)',fontSize:'var(--text-sm)'}} />
+                        <button className="btn btn-primary" style={{padding:'8px',fontSize:'var(--text-2xs)'}} disabled={pwValue.length<6 || busyId===u.id} onClick={()=>handlePwAction(u.id,'definir',pwValue)}>{busyId===u.id ? 'Enviando…' : 'Confirmar senha definida'}</button>
                       </React.Fragment>
                     )}
                   </div>
                 )}
                 {confirmDeleteId===u.id && (
                   <div className="um-del-panel" style={{background:'var(--danger-bg)',border:'1px solid var(--danger)',borderRadius:8,padding:12}}>
-                    <div style={{fontSize:12,color:'var(--danger)',marginBottom:10}}>Excluir "{u.nome}"? Essa ação não pode ser desfeita.</div>
-                    {erros[u.id] && <div style={{fontSize:11.5,color:'var(--danger)',marginBottom:10}}>{erros[u.id]}</div>}
+                    <div style={{fontSize:'var(--text-sm)',color:'var(--danger)',marginBottom:10}}>Excluir "{u.nome}"? Essa ação não pode ser desfeita.</div>
+                    {erros[u.id] && <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginBottom:10}}>{erros[u.id]}</div>}
                     <div className="btn-row">
-                      <button className="btn btn-secondary" style={{padding:'8px',fontSize:10}} disabled={busyId===u.id} onClick={()=>setConfirmDeleteId(null)}>Cancelar</button>
-                      <button className="btn btn-danger" style={{padding:'8px',fontSize:10}} disabled={busyId===u.id} onClick={()=>handleDelete(u.id)}>{busyId===u.id ? 'Excluindo…' : 'Confirmar exclusão'}</button>
+                      <button className="btn btn-secondary" style={{padding:'8px',fontSize:'var(--text-2xs)'}} disabled={busyId===u.id} onClick={()=>setConfirmDeleteId(null)}>Cancelar</button>
+                      <button className="btn btn-danger" style={{padding:'8px',fontSize:'var(--text-2xs)'}} disabled={busyId===u.id} onClick={()=>handleDelete(u.id)}>{busyId===u.id ? 'Excluindo…' : 'Confirmar exclusão'}</button>
                     </div>
                   </div>
                 )}
@@ -10702,7 +10702,7 @@ function UserManagementPanel({users, currentUser, goto, onToggleUserStatus, onDe
           {totalPages>1 && (
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:10,paddingTop:14,borderTop:'1px solid var(--line)'}}>
               <button className="btn btn-outline" style={{width:'auto',padding:'8px 14px'}} disabled={currentPage<=1} onClick={()=>setPage(p=>p-1)}>‹ Anterior</button>
-              <span style={{fontFamily:'var(--font-mono)',fontSize:11.5,color:'var(--ink-dim)'}}>Página {currentPage} de {totalPages} · {filtered.length} usuário{filtered.length===1?'':'s'}</span>
+              <span style={{fontFamily:'var(--font-mono)',fontSize:'var(--text-xs)',color:'var(--ink-dim)'}}>Página {currentPage} de {totalPages} · {filtered.length} usuário{filtered.length===1?'':'s'}</span>
               <button className="btn btn-outline" style={{width:'auto',padding:'8px 14px'}} disabled={currentPage>=totalPages} onClick={()=>setPage(p=>p+1)}>Próxima ›</button>
             </div>
           )}
@@ -10854,7 +10854,7 @@ function UserForm({mode, initialData, users, onCreateUser, onUpdateUser, onSaved
                 <div className="field" style={{minWidth:240}}>
                   <label>E-mail</label>
                   <input type="text" value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))} placeholder="nome@empresa.com" autoCapitalize="none" autoCorrect="off" spellCheck="false" />
-                  <div style={{fontSize:11.5,color:'var(--ink-dim)',marginTop:6}}>
+                  <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:6}}>
                     Operador sem e-mail próprio? Use um endereço fictício com o login da pessoa,
                     por exemplo <strong style={{color:'var(--ink)'}}>{(form.usuario||'nome.sobrenome').trim()||'nome.sobrenome'}@estoque.selgron.local</strong> —
                     ninguém recebe mensagem nesse endereço, ele só precisa ser único no sistema.
@@ -10976,12 +10976,12 @@ function PasswordRequestRow({req, onResolve}){
       </div>
       <div style={{width:'100%',marginTop:10}}>
         <div className="btn-row" style={{marginBottom:8}}>
-          <button className="btn btn-secondary" style={{padding:'8px',fontSize:11}} onClick={()=>onResolve(req.id,'temp')}>Gerar senha temporária</button>
-          <button className="btn btn-secondary" style={{padding:'8px',fontSize:11}} onClick={()=>onResolve(req.id,'liberar')}>Liberar p/ criar nova senha</button>
+          <button className="btn btn-secondary" style={{padding:'8px',fontSize:'var(--text-xs)'}} onClick={()=>onResolve(req.id,'temp')}>Gerar senha temporária</button>
+          <button className="btn btn-secondary" style={{padding:'8px',fontSize:'var(--text-xs)'}} onClick={()=>onResolve(req.id,'liberar')}>Liberar p/ criar nova senha</button>
         </div>
         <div style={{display:'flex',gap:8}}>
-          <input type="text" placeholder="Definir senha manualmente" value={pwValue} onChange={e=>setPwValue(e.target.value)} style={{flex:1,padding:10,background:'var(--panel-raised)',border:'1px solid var(--line)',borderRadius:6,color:'var(--ink)',fontSize:13}} />
-          <button className="btn btn-primary" style={{padding:'0 14px',fontSize:11,width:'auto'}} disabled={pwValue.length<6} onClick={()=>onResolve(req.id,'definir',pwValue)}>Definir</button>
+          <input type="text" placeholder="Definir senha manualmente" value={pwValue} onChange={e=>setPwValue(e.target.value)} style={{flex:1,padding:10,background:'var(--panel-raised)',border:'1px solid var(--line)',borderRadius:6,color:'var(--ink)',fontSize:'var(--text-sm)'}} />
+          <button className="btn btn-primary" style={{padding:'0 14px',fontSize:'var(--text-xs)',width:'auto'}} disabled={pwValue.length<6} onClick={()=>onResolve(req.id,'definir',pwValue)}>Definir</button>
         </div>
       </div>
     </div>
@@ -11016,7 +11016,7 @@ function AddressValidationPanel({enderecosPropostos=[], onResolve}){
         {pendentes.length>0 && <span className="badge" style={{position:'static',marginLeft:8}}>{pendentes.length}</span>}
       </div>
       {enderecosPropostos.length===0 ? (
-        <div style={{fontSize:13,color:'var(--ink-dim)'}}>
+        <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>
           Nenhum endereço informado ainda. Toda vez que um operador contar um item sem endereço
           cadastrado, ele vai informar onde encontrou — e o endereço aparece aqui para validação.
         </div>
@@ -11026,12 +11026,12 @@ function AddressValidationPanel({enderecosPropostos=[], onResolve}){
             <div>
               <div className="lr-title">{e.descricao}</div>
               <div className="lr-sub">{e.productCode} · informado como <strong style={{color:'var(--ink)'}}>{e.enderecoInformado}</strong> por {e.usuario} em {e.data}</div>
-              {erros[e.id] && <div style={{fontSize:11.5,color:'var(--danger)',marginTop:4}}>{erros[e.id]}</div>}
+              {erros[e.id] && <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginTop:4}}>{erros[e.id]}</div>}
             </div>
             {e.status==='pendente' ? (
               <div className="btn-row" style={{width:'auto'}}>
-                <button className="btn btn-secondary" style={{padding:'8px 12px',fontSize:11}} disabled={busyId===e.id} onClick={()=>handleResolve(e.id,'rejeitado')}>Rejeitar</button>
-                <button className="btn btn-primary" style={{padding:'8px 12px',fontSize:11}} disabled={busyId===e.id} onClick={()=>handleResolve(e.id,'confirmado')}>{busyId===e.id ? 'Enviando…' : 'Confirmar'}</button>
+                <button className="btn btn-secondary" style={{padding:'8px 12px',fontSize:'var(--text-xs)'}} disabled={busyId===e.id} onClick={()=>handleResolve(e.id,'rejeitado')}>Rejeitar</button>
+                <button className="btn btn-primary" style={{padding:'8px 12px',fontSize:'var(--text-xs)'}} disabled={busyId===e.id} onClick={()=>handleResolve(e.id,'confirmado')}>{busyId===e.id ? 'Enviando…' : 'Confirmar'}</button>
               </div>
             ) : (
               <StatusTag status={e.status==='confirmado'?'ok':'danger'} text={e.status==='confirmado'?'Confirmado':'Rejeitado'} />
@@ -11097,14 +11097,14 @@ function StockSyncPanel(){
   return (
     <div className="panel">
       <div className="section-title" style={{marginTop:0}}>Atualizar Saldo em Estoque (SB2)</div>
-      <div style={{fontSize:13,color:'var(--ink-dim)',marginBottom:14,lineHeight:1.6}}>
+      <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)',marginBottom:14,lineHeight:1.6}}>
         Enquanto a sincronização automática com o Protheus não está pronta, suba aqui a
         planilha SB2 (export padrão: colunas Produto, Almoxarifado, DT.Ult.Saida, Saldo
         Atual, Sld.Atu.) sempre que precisar atualizar o saldo — normalmente todo dia.
         Cada upload <strong>substitui</strong> todo o saldo anterior pelo snapshot da
         planilha nova. Requer conexão com a internet.
       </div>
-      <div style={{fontSize:12.5,fontFamily:'var(--font-mono)',color:'var(--ink-dim)',marginBottom:14}}>
+      <div style={{fontSize:'var(--text-sm)',fontFamily:'var(--font-mono)',color:'var(--ink-dim)',marginBottom:14}}>
         {ultimaAtualizacao===undefined
           ? 'Verificando última atualização…'
           : ultimaAtualizacao
@@ -11120,7 +11120,7 @@ function StockSyncPanel(){
 
       {parseResult && status!=='done' && (
         <div style={{marginTop:14}}>
-          <div style={{fontSize:13,color:'var(--ink-dim)',lineHeight:1.8}}>
+          <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)',lineHeight:1.8}}>
             {parseResult.resumo.totalLinhas} linhas na planilha · {parseResult.resumo.validas} válidas ·{' '}
             {parseResult.resumo.armazens} armazéns
             {parseResult.resumo.semCodigo>0 && <> · {parseResult.resumo.semCodigo} sem código</>}
@@ -11130,7 +11130,7 @@ function StockSyncPanel(){
             <Ic>⬆</Ic> {status==='uploading' ? 'Atualizando…' : 'Confirmar atualização'}
           </button>
           {status==='uploading' && progresso && (
-            <div style={{fontSize:12,color:'var(--ink-dim)',marginTop:8}}>
+            <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)',marginTop:8}}>
               {progresso.inseridas} de {progresso.total} linhas enviadas…
             </div>
           )}
@@ -11215,14 +11215,14 @@ function CatalogoDescricaoSyncPanel(){
   return (
     <div className="panel">
       <div className="section-title" style={{marginTop:0}}>Atualizar Catálogo (Unidade/Endereço)</div>
-      <div style={{fontSize:13,color:'var(--ink-dim)',marginBottom:14,lineHeight:1.6}}>
+      <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)',marginBottom:14,lineHeight:1.6}}>
         Suba aqui a planilha de descrição de produtos (export do Protheus: colunas
         Produto, Descrição, Grupo, Unidade, Localizacao) sempre que tiver uma
         atualização — pode reenviar quantas vezes precisar, cada envio atualiza os
         códigos que trouxerem dado novo, sem apagar o resto do catálogo. Requer
         conexão com a internet.
       </div>
-      <div style={{fontSize:12.5,fontFamily:'var(--font-mono)',color:'var(--ink-dim)',marginBottom:14}}>
+      <div style={{fontSize:'var(--text-sm)',fontFamily:'var(--font-mono)',color:'var(--ink-dim)',marginBottom:14}}>
         {ultimaAtualizacao===undefined
           ? 'Verificando última atualização…'
           : ultimaAtualizacao
@@ -11238,7 +11238,7 @@ function CatalogoDescricaoSyncPanel(){
 
       {parseResult && status!=='done' && (
         <div style={{marginTop:14}}>
-          <div style={{fontSize:13,color:'var(--ink-dim)',lineHeight:1.8}}>
+          <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)',lineHeight:1.8}}>
             {parseResult.resumo.totalLinhas} linhas na planilha · {parseResult.resumo.codigosUnicos} códigos únicos ·{' '}
             {parseResult.resumo.comUnidade} com unidade · {parseResult.resumo.comEndereco} com endereço
             ({parseResult.resumo.enderecosDistintos} endereços distintos)
@@ -11257,7 +11257,7 @@ function CatalogoDescricaoSyncPanel(){
             <Ic>⬆</Ic> {status==='uploading' ? 'Atualizando…' : 'Confirmar atualização'}
           </button>
           {status==='uploading' && progresso && (
-            <div style={{fontSize:12,color:'var(--ink-dim)',marginTop:8}}>
+            <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)',marginTop:8}}>
               {ETAPA_LABEL[progresso.etapa]}: {progresso.feito} de {progresso.total}…
             </div>
           )}
@@ -11381,14 +11381,14 @@ function HistoricoImportPanel({onImported}){
   return (
     <div className="panel">
       <div className="section-title" style={{marginTop:0}}>Importar Histórico de Contagens (planilha de análise)</div>
-      <div style={{fontSize:13,color:'var(--ink-dim)',marginBottom:14,lineHeight:1.6}}>
+      <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)',marginBottom:14,lineHeight:1.6}}>
         Envia pro Supabase o histórico de contagens da planilha de análise que a Selgron já
         usava antes do Inventário 360 (aba <strong>BD_Contagens</strong>). Fica guardado
         numa tabela separada, só pra consulta/relatório — não interfere nas contagens em
         andamento no app. Pode subir o mesmo arquivo mais de uma vez conforme ele for
         crescendo: linhas já importadas antes não duplicam.
       </div>
-      <div style={{fontSize:12.5,fontFamily:'var(--font-mono)',color:'var(--ink-dim)',marginBottom:14}}>
+      <div style={{fontSize:'var(--text-sm)',fontFamily:'var(--font-mono)',color:'var(--ink-dim)',marginBottom:14}}>
         {ultimaImportacao===undefined
           ? 'Verificando última importação…'
           : ultimaImportacao
@@ -11400,7 +11400,7 @@ function HistoricoImportPanel({onImported}){
         <Ic>📄</Ic> {arquivoNome || 'Selecionar planilha de análise (.xlsx)'}
       </button>
       {lendo && (
-        <div style={{fontSize:13,color:'var(--ink-dim)',marginTop:10}}>
+        <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)',marginTop:10}}>
           <Ic>⏳</Ic> Lendo planilha… (pode levar alguns segundos, arquivo grande)
         </div>
       )}
@@ -11409,17 +11409,17 @@ function HistoricoImportPanel({onImported}){
 
       {parseResult && status!=='done' && (
         <div style={{marginTop:14}}>
-          <div style={{fontSize:13,color:'var(--ink-dim)',lineHeight:1.8}}>
+          <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)',lineHeight:1.8}}>
             {parseResult.resumo.totalLinhas} linhas na planilha · {parseResult.resumo.validas} válidas
             {parseResult.resumo.semCodigo>0 && <> · {parseResult.resumo.semCodigo} sem código</>}
             {parseResult.resumo.semData>0 && <> · {parseResult.resumo.semData} sem data</>}
             {parseResult.resumo.duplicadas>0 && <> · {parseResult.resumo.duplicadas} duplicadas (mesmo código+data+endereço, mantida a mais recente)</>}
           </div>
-          <div style={{fontSize:13,color:'var(--ink-dim)',marginTop:4}}>
+          <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)',marginTop:4}}>
             <Ic>🔁</Ic> {buildRecontarSeedsFromHistorico(parseResult.linhas).length} itens marcados "Recontar" vão entrar na fila de
             recontagem do app (tela "Recontagens" → Aguardando Segunda Contagem).
           </div>
-          <div style={{fontSize:13,color:'var(--ink-dim)',marginTop:4}}>
+          <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)',marginTop:4}}>
             <Ic>⚠</Ic> {buildAjustarSeedsFromHistorico(parseResult.linhas).length} itens marcados "Ajustar" vão entrar em
             "Itens Divergentes", aguardando decisão do líder de estoque.
           </div>
@@ -11427,7 +11427,7 @@ function HistoricoImportPanel({onImported}){
             <Ic>⬆</Ic> {status==='uploading' ? 'Importando…' : 'Confirmar importação'}
           </button>
           {status==='uploading' && progresso && (
-            <div style={{fontSize:12,color:'var(--ink-dim)',marginTop:8}}>
+            <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)',marginTop:8}}>
               {progresso.inseridas} de {progresso.total} linhas enviadas…
             </div>
           )}
@@ -11479,8 +11479,8 @@ function UsuariosScreen({users, currentUser, goto, successMessage, onToggleUserS
     <div>
       {successMessage && !dismissed && (
         <div className="result-banner ok" style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:12}}>
-          <span style={{fontSize:13,fontWeight:600,color:'var(--ok)'}}>{successMessage}</span>
-          <button type="button" className="btn btn-secondary" style={{width:'auto',padding:'6px 12px',fontSize:11.5}} onClick={()=>setDismissed(true)}>Fechar</button>
+          <span style={{fontSize:'var(--text-sm)',fontWeight:600,color:'var(--ok)'}}>{successMessage}</span>
+          <button type="button" className="btn btn-secondary" style={{width:'auto',padding:'6px 12px',fontSize:'var(--text-xs)'}} onClick={()=>setDismissed(true)}>Fechar</button>
         </div>
       )}
       <UserManagementPanel
@@ -11498,7 +11498,7 @@ function UsuariosScreen({users, currentUser, goto, successMessage, onToggleUserS
           {pendentesSenha.length>0 && <span className="badge" style={{position:'static',marginLeft:8}}>{pendentesSenha.length}</span>}
         </div>
         {passwordRequests.length===0 ? (
-          <div style={{fontSize:13,color:'var(--ink-dim)'}}>Nenhuma solicitação de "esqueci minha senha" recebida ainda.</div>
+          <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>Nenhuma solicitação de "esqueci minha senha" recebida ainda.</div>
         ) : (
           passwordRequests.map(r=>(
             <PasswordRequestRow key={r.id} req={r} onResolve={onResolvePasswordRequest} />
@@ -11513,12 +11513,12 @@ function UsuariosScreen({users, currentUser, goto, successMessage, onToggleUserS
             <thead><tr><th>Usuário</th><th>Ação</th><th>Administrador</th><th>Data/Hora</th></tr></thead>
             <tbody>
               {pagedHistory.map(h=>(
-                <tr key={h.id}><td>{h.usuario}</td><td>{h.acao}</td><td>{h.administrador}</td><td style={{fontFamily:'var(--font-mono)',fontSize:11.5}}>{h.data}</td></tr>
+                <tr key={h.id}><td>{h.usuario}</td><td>{h.acao}</td><td>{h.administrador}</td><td style={{fontFamily:'var(--font-mono)',fontSize:'var(--text-xs)'}}>{h.data}</td></tr>
               ))}
             </tbody>
           </table>
           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:14,paddingTop:14,borderTop:'1px solid var(--line)',flexWrap:'wrap',gap:10}}>
-            <span style={{fontSize:12,color:'var(--ink-dim)'}}>
+            <span style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>
               Mostrando {historyStart+1} a {Math.min(historyStart+PASSWORD_HISTORY_PAGE_SIZE, passwordHistory.length)} de {passwordHistory.length} alteraç{passwordHistory.length===1?'ão':'ões'}
             </span>
             {totalHistoryPages>1 && (
@@ -11686,21 +11686,21 @@ function Settings({role, currentUser, operadorVeSaldo, onSetOperadorVeSaldo, ope
             </div>
             <div className="cfg-timeout-row">
               <input type="number" min="1" step="1" value={timeoutInput} onChange={e=>setTimeoutInput(e.target.value)} onWheel={e=>e.target.blur()} />
-              <span style={{fontSize:13,color:'var(--ink-dim)'}}>minutos</span>
+              <span style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>minutos</span>
             </div>
             <div className="cfg-timeout-badge">Hoje: <strong>{timeoutAtual} minutos</strong></div>
           </div>
 
           {erro && <div className="login-error" style={{marginBottom:12}}>{erro}</div>}
           <div className="cfg-footer">
-            {salvo && <span style={{fontSize:13,color:'var(--ok)'}}>Salvo — já vale em todos os aparelhos.</span>}
+            {salvo && <span style={{fontSize:'var(--text-sm)',color:'var(--ok)'}}>Salvo — já vale em todos os aparelhos.</span>}
             <button type="button" className="btn btn-primary" disabled={!podeSalvar} onClick={salvarTudo}><DIcon name="checkCircle" size={16}/> {salvando ? 'Salvando…' : 'Salvar alterações'}</button>
           </div>
         </>
       )}
       {!isAdmin && (
         <div className="panel">
-          <div style={{fontSize:13,color:'var(--ink-dim)'}}>Nenhuma configuração disponível no momento.</div>
+          <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>Nenhuma configuração disponível no momento.</div>
         </div>
       )}
     </div>
