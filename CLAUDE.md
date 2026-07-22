@@ -7837,3 +7837,65 @@ discutir, o cliente decidiu manter "Inventários"/"Nova Contagem" como estavam e
 - Testado via transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
   (630/630, sem mudança — só texto). **Verificação visual fica a cargo do cliente** —
   mesma limitação de sempre.
+
+## Redesign completo de "Configurações" — cards com "?" de ajuda + salvamento em bloco
+
+Cliente mandou um mockup de referência (4 cards: "Visibilidade do saldo na contagem",
+"Visibilidade de valores em recontagens/divergentes", "Grupos excluídos da contagem
+automática", "Tempo de inatividade" — cada um com um "?" no canto e um único botão
+laranja "Salvar alterações" no rodapé) e pediu "Reformule Configurações". Mesmo espírito
+minimalista/corporativo dos redesenhos anteriores (Usuários, Editar Usuário).
+
+- **Mudança de comportamento deliberada, não só visual**: antes, CADA campo salvava
+  sozinho na hora (checkbox chamava `onSetOperadorVeSaldo` no `onChange`, chip de grupo
+  chamava `onSetGruposExcluidos` a cada adicionar/remover, o timeout tinha seu próprio
+  botão "Salvar"). O mockup mostra um único botão "Salvar alterações" pro formulário
+  inteiro — interpretei isso como "edita tudo localmente, grava tudo de uma vez só ao
+  confirmar" (padrão comum de tela de configurações, ex. GitHub/Slack), não como
+  4 saves independentes disfarçados atrás de um botão só. Sinalizado aqui porque é a
+  única parte desta rodada que vai além de CSS/JSX.
+- **`saldoLocal`/`valoresRecontagemLocal`/`gruposLocal`/`timeoutInput`** — estado LOCAL
+  do componente `Settings`, começam iguais ao valor real (`app_config`, vindo via prop)
+  e só mudam na tela enquanto o admin mexe; ressincronizam com a prop via `useEffect`
+  sempre que ela muda (mesmo padrão que `timeoutInput` já usava antes desta rodada,
+  cobre o caso de outro admin alterar a config em outro aparelho enquanto esta tela está
+  aberta — Realtime já propaga isso pro app inteiro).
+- **`salvarTudo()`**: compara cada valor local contra o valor real e só chama o
+  `onSet*` correspondente pro que de fato mudou (evita gravação desnecessária no
+  Supabase pros campos intocados) — todos os 4 `await` em sequência dentro da mesma
+  função, cada falha vira uma linha na mensagem de erro final (`"Campo: motivo"`),
+  mas as chamadas que tiveram sucesso continuam valendo (não há rollback — mesmo
+  espírito "erro visível, nunca finge sucesso" já usado em outras telas do app).
+- **Botão "Salvar alterações" fica desabilitado por padrão** (nada mudou ainda) e só
+  libera quando `houveMudanca` é true E o campo de timeout é um número válido >0 — um
+  timeout inválido trava o botão por completo, mesmo que outro campo já tenha mudança
+  pendente pra salvar (evita salvar parcialmente e confundir o admin sobre por que o
+  timeout não "pegou").
+- **"?" de ajuda** (`.cfg-help-btn`, círculo com "?", `cursor:help`) — tooltip nativo do
+  navegador via atributo `title`, mesmo padrão leve já usado em outros lugares do app
+  (ex. seletor de idioma da tela de login) — sem popover/JS customizado. Cada card
+  ganhou um resumo curto abaixo do título (visível sempre) + o texto mais detalhado
+  (ressalvas, exceções pra líder/admin, etc.) movido pro tooltip do "?" — o texto
+  gigante que existia antes num único parágrafo por card foi dividido nessas duas
+  camadas.
+- **Grupos Excluídos**: `GrupoMultiSelectField` não mudou (mesmo componente, chips
+  laranja já existentes) — só os callbacks (`onToggle`/`onRemove`) passaram a mexer em
+  `gruposLocal` (estado local) em vez de chamar `onSetGruposExcluidos` direto.
+- **Tempo de Inatividade**: perdeu o botão "Salvar" próprio (agora é só mais um campo
+  do formulário, salvo junto no botão único) — ganhou o badge "Hoje: N minutos"
+  (`.cfg-timeout-badge`) no lugar do texto corrido "Hoje: **N minutos**." que existia
+  antes.
+- Testado via harness real (jsdom + react-dom/client + `act()`, mesma técnica rigorosa
+  de sempre — carrega o `index.html` inteiro transpilado numa `vm.Script`): 4 cards
+  `.cfg-card` + 4 botões `.cfg-help-btn` renderizados; botão "Salvar alterações" começa
+  desabilitado; marcar um checkbox NÃO dispara chamada nenhuma na hora (confirma o
+  staged-save); clicar "Salvar alterações" chama só o `onSet*` do campo que de fato
+  mudou, com o valor certo; timeout inválido (0) trava o botão mesmo com outro campo já
+  alterado, corrigir o valor libera de novo; uma falha simulada mostra a mensagem certa
+  mencionando o campo que falhou; perfil não-admin continua sem nenhum `.cfg-card`,
+  só a mensagem de sempre. Transpile Babel do arquivo inteiro e balanceamento de chaves
+  do CSS conferidos (646/646). Rodei de novo a suíte de regressão dos dois redesenhos
+  anteriores (`harness_userform_redesign.js`/`harness_usermanagement_redesign.js`) sem
+  quebrar nada. **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma
+  limitação de sempre (login exige Supabase Auth real, não simulável no sandbox sem
+  rede).

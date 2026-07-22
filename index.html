@@ -223,6 +223,28 @@
   .um-req-card{border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:10px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;background:var(--panel);}
   .um-req-card:last-child{margin-bottom:0;}
 
+  /* "Configurações" — cards com "?" de ajuda (tooltip nativo via title) e
+     salvamento em bloco (edita local, só grava tudo ao clicar "Salvar
+     alterações" no rodapé) — pedido do cliente pra bater com um mockup de
+     referência, mesmo espírito minimalista/corporativo dos redesenhos
+     anteriores (Usuários, Editar Usuário). Escopado com prefixo cfg-. */
+  .cfg-card{border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:16px;background:var(--panel);}
+  .cfg-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;}
+  .cfg-card-title{font-size:15px;font-weight:700;color:var(--ink);}
+  .cfg-card-desc{font-size:12.5px;color:var(--ink-dim);margin-top:4px;line-height:1.5;max-width:640px;}
+  .cfg-help-btn{flex-shrink:0;width:24px;height:24px;border-radius:50%;border:1px solid var(--line);background:var(--panel);color:var(--ink-dim);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;cursor:help;}
+  .cfg-check-row{display:flex;align-items:flex-start;gap:10px;margin-top:16px;cursor:pointer;}
+  .cfg-check-row input{width:18px;height:18px;margin-top:2px;flex-shrink:0;}
+  .cfg-check-label{font-size:14px;font-weight:600;color:var(--ink);}
+  .cfg-check-sub{font-size:12px;color:var(--ink-dim);margin-top:2px;}
+  .cfg-timeout-row{display:flex;align-items:center;gap:10px;margin-top:16px;flex-wrap:wrap;}
+  .cfg-timeout-row input{width:80px;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel-raised);color:var(--ink);font-size:14px;}
+  .cfg-timeout-badge{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-dim);margin-top:12px;}
+  .cfg-timeout-badge strong{background:var(--panel-raised);border:1px solid var(--line);border-radius:6px;padding:2px 8px;color:var(--ink);}
+  .cfg-note{display:flex;align-items:flex-start;gap:6px;font-size:11.5px;color:var(--ink-dim);margin-top:10px;}
+  .cfg-footer{display:flex;justify-content:flex-end;align-items:center;gap:12px;margin-top:8px;}
+  .cfg-footer .btn{width:auto;padding:14px 26px;}
+
   .grupo-suggestions{margin-top:6px;max-height:260px;overflow-y:auto;background:var(--panel-raised);border:1px solid var(--line);border-radius:8px;}
   .grupo-suggestion-item{display:block;width:100%;text-align:left;background:none;border:none;border-bottom:1px solid var(--line);color:var(--ink);padding:11px 14px;font-size:14px;cursor:pointer;}
   .grupo-suggestion-item:last-child{border-bottom:none;}
@@ -11516,168 +11538,150 @@ function Settings({role, currentUser, operadorVeSaldo, onSetOperadorVeSaldo, ope
     return ()=>{ cancelado = true; };
   }, [isAdmin]);
 
-  // Os 3 `onSet*` recebidos de App() agora são assíncronos (gravam no
-  // Supabase, `app_config`) — cada painel tem seu próprio busy/erro, mesmo
-  // padrão já usado em RecountsPanel/UserManagementPanel: desabilita só o
-  // controle em uso, mostra erro inline se a gravação falhar, nunca finge
-  // sucesso.
-  const [salvandoSaldo, setSalvandoSaldo] = useState(false);
-  const [erroSaldo, setErroSaldo] = useState(null);
-  async function toggleOperadorVeSaldo(checked){
-    setSalvandoSaldo(true); setErroSaldo(null);
-    const res = await onSetOperadorVeSaldo(checked);
-    setSalvandoSaldo(false);
-    if(!res.ok) setErroSaldo(res.erro || 'Falha ao salvar — tente novamente.');
-  }
-
-  // Trava SEPARADA da acima — pedido explícito da Diretoria (ver
-  // CLAUDE.md): operação não pode ter acesso a valores nas telas de
-  // revisão (Recontagens Pendentes/Itens Divergentes), independente de como
-  // "Visibilidade do Saldo na Contagem" estiver configurada.
-  const [salvandoValoresRecontagem, setSalvandoValoresRecontagem] = useState(false);
-  const [erroValoresRecontagem, setErroValoresRecontagem] = useState(null);
-  async function toggleOperadorVeValoresRecontagem(checked){
-    setSalvandoValoresRecontagem(true); setErroValoresRecontagem(null);
-    const res = await onSetOperadorVeValoresRecontagem(checked);
-    setSalvandoValoresRecontagem(false);
-    if(!res.ok) setErroValoresRecontagem(res.erro || 'Falha ao salvar — tente novamente.');
-  }
-
-  const [salvandoGrupo, setSalvandoGrupo] = useState(false);
-  const [erroGrupo, setErroGrupo] = useState(null);
-  async function alterarGruposExcluidos(novaLista){
-    setSalvandoGrupo(true); setErroGrupo(null);
-    const res = await onSetGruposExcluidos(novaLista);
-    setSalvandoGrupo(false);
-    if(!res.ok) setErroGrupo(res.erro || 'Falha ao salvar — tente novamente.');
-  }
-
+  // Redesenho pedido pelo cliente (mockup: 4 cards + um único botão "Salvar
+  // alterações" no rodapé) trocou o salvamento de "cada campo grava sozinho
+  // ao mudar" (padrão antigo) por "edita tudo local, grava em bloco só ao
+  // clicar Salvar" — mais parecido com uma tela de configurações comum
+  // (edita vários campos, confirma uma vez só). `*Local` é só estado de
+  // INTERFACE, não persistido sozinho; ressincroniza com o valor real
+  // (`app_config`, via Realtime) sempre que a prop muda, mesmo padrão que
+  // `timeoutInput` já usava antes desta rodada.
+  const [saldoLocal, setSaldoLocal] = useState(!!operadorVeSaldo);
+  const [valoresRecontagemLocal, setValoresRecontagemLocal] = useState(!!operadorVeValoresRecontagem);
+  const [gruposLocal, setGruposLocal] = useState(gruposExcluidos||[]);
   const [timeoutInput, setTimeoutInput] = useState(String(sessionTimeoutMin ?? DEFAULT_SESSION_TIMEOUT_MIN));
-  const [timeoutSalvo, setTimeoutSalvo] = useState(false);
-  const [salvandoTimeout, setSalvandoTimeout] = useState(false);
-  const [erroTimeout, setErroTimeout] = useState(null);
+  useEffect(()=>{ setSaldoLocal(!!operadorVeSaldo); }, [operadorVeSaldo]);
+  useEffect(()=>{ setValoresRecontagemLocal(!!operadorVeValoresRecontagem); }, [operadorVeValoresRecontagem]);
+  useEffect(()=>{ setGruposLocal(gruposExcluidos||[]); }, [gruposExcluidos]);
   useEffect(()=>{ setTimeoutInput(String(sessionTimeoutMin ?? DEFAULT_SESSION_TIMEOUT_MIN)); }, [sessionTimeoutMin]);
 
-  async function salvarTimeout(){
-    const min = Number(timeoutInput);
-    if(!Number.isFinite(min) || min <= 0) return;
-    setSalvandoTimeout(true); setErroTimeout(null);
-    const res = await onSetSessionTimeoutMin(Math.round(min));
-    setSalvandoTimeout(false);
-    if(res.ok){
-      setTimeoutSalvo(true);
-      setTimeout(()=>setTimeoutSalvo(false), 2500);
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState(null);
+  const [salvo, setSalvo] = useState(false);
+
+  const gruposIguais = (a,b) => a.length===b.length && a.every(x=>b.includes(x));
+  const timeoutAtual = sessionTimeoutMin ?? DEFAULT_SESSION_TIMEOUT_MIN;
+  const timeoutNum = Number(timeoutInput);
+  const timeoutValido = Number.isFinite(timeoutNum) && timeoutNum>0;
+  const houveMudanca = saldoLocal!==!!operadorVeSaldo
+    || valoresRecontagemLocal!==!!operadorVeValoresRecontagem
+    || !gruposIguais(gruposLocal, gruposExcluidos||[])
+    || (timeoutValido && Math.round(timeoutNum)!==timeoutAtual);
+  const podeSalvar = isAdmin && timeoutValido && houveMudanca && !salvando;
+
+  async function salvarTudo(){
+    if(!podeSalvar) return;
+    setSalvando(true); setErro(null); setSalvo(false);
+    const falhas = [];
+    if(saldoLocal!==!!operadorVeSaldo){
+      const res = await onSetOperadorVeSaldo(saldoLocal);
+      if(!res.ok) falhas.push('Visibilidade do Saldo na Contagem: '+(res.erro||'falha ao salvar.'));
+    }
+    if(valoresRecontagemLocal!==!!operadorVeValoresRecontagem){
+      const res = await onSetOperadorVeValoresRecontagem(valoresRecontagemLocal);
+      if(!res.ok) falhas.push('Visibilidade de Valores em Recontagens: '+(res.erro||'falha ao salvar.'));
+    }
+    if(!gruposIguais(gruposLocal, gruposExcluidos||[])){
+      const res = await onSetGruposExcluidos(gruposLocal);
+      if(!res.ok) falhas.push('Grupos Excluídos: '+(res.erro||'falha ao salvar.'));
+    }
+    if(Math.round(timeoutNum)!==timeoutAtual){
+      const res = await onSetSessionTimeoutMin(Math.round(timeoutNum));
+      if(!res.ok) falhas.push('Tempo de Inatividade: '+(res.erro||'falha ao salvar.'));
+    }
+    setSalvando(false);
+    if(falhas.length>0){
+      setErro(falhas.join(' '));
     } else {
-      setErroTimeout(res.erro || 'Falha ao salvar — tente novamente.');
+      setSalvo(true);
+      setTimeout(()=>setSalvo(false), 2500);
     }
   }
 
   return (
     <div>
       {isAdmin && (
-        <div className="panel">
-          <div className="section-title" style={{marginTop:0}}>Visibilidade do Saldo na Contagem</div>
-          <div style={{fontSize:13,color:'var(--ink-dim)',lineHeight:1.6,marginBottom:12}}>
-            Controla se o operador vê o saldo do sistema (referência antes de digitar,
-            card de comparação ao vivo) durante a contagem, em todos os modos
-            (Aleatória, Manual, Rota, Lista Importada, Recontagem). Com a opção
-            desligada, o operador conta "às cegas" — a comparação com o sistema só
-            aparece depois, na análise do líder. Líder e administrador sempre veem o
-            saldo, independente desta configuração. Isso não muda a regra de aprovação
-            automática/segunda contagem/análise do líder, só o que aparece na tela.
-          </div>
-          <label style={{display:'flex',alignItems:'center',gap:10,cursor:salvandoSaldo?'wait':'pointer',opacity:salvandoSaldo?0.7:1}}>
-            <input
-              type="checkbox"
-              checked={!!operadorVeSaldo}
-              disabled={salvandoSaldo}
-              onChange={e=>toggleOperadorVeSaldo(e.target.checked)}
-              style={{width:18,height:18}}
-            />
-            <span style={{fontSize:14}}>Operador pode ver o saldo do sistema durante a contagem</span>
-          </label>
-          {erroSaldo && <div className="login-error" style={{marginTop:10}}>{erroSaldo}</div>}
-        </div>
-      )}
-      {isAdmin && (
-        <div className="panel">
-          <div className="section-title" style={{marginTop:0}}>Visibilidade de Valores em Recontagens/Divergentes</div>
-          <div style={{fontSize:13,color:'var(--ink-dim)',lineHeight:1.6,marginBottom:12}}>
-            Configuração separada da acima — controla só o BLOCO EXTRA de cada card em
-            "Recontagens Pendentes" (armazém, endereço contado, motivo, observação, foto,
-            valor divergente em R$ e quem contou). O quadro principal
-            (Sistema/Físico/Diferença/%) continua visível pra qualquer perfil — essa
-            configuração é só sobre o valor em R$ e os detalhes complementares. Com a
-            opção desligada (padrão), a operação não vê esse bloco extra — líder e
-            administrador sempre veem, sem essa restrição.
-          </div>
-          <label style={{display:'flex',alignItems:'center',gap:10,cursor:salvandoValoresRecontagem?'wait':'pointer',opacity:salvandoValoresRecontagem?0.7:1}}>
-            <input
-              type="checkbox"
-              checked={!!operadorVeValoresRecontagem}
-              disabled={salvandoValoresRecontagem}
-              onChange={e=>toggleOperadorVeValoresRecontagem(e.target.checked)}
-              style={{width:18,height:18}}
-            />
-            <span style={{fontSize:14}}>Operador pode ver detalhes extras em Recontagens Pendentes</span>
-          </label>
-          {erroValoresRecontagem && <div className="login-error" style={{marginTop:10}}>{erroValoresRecontagem}</div>}
-        </div>
-      )}
-      {isAdmin && (
-        <div className="panel">
-          <div className="section-title" style={{marginTop:0}}>Grupos Excluídos da Contagem Automática</div>
-          <div style={{fontSize:13,color:'var(--ink-dim)',lineHeight:1.6,marginBottom:12}}>
-            Grupos/famílias marcados aqui nunca entram sozinhos numa fila de contagem
-            (Aleatória, Curva ABC, Rota de Endereço) nem aparecem pra seleção em
-            "Contagem por Grupo" — útil pra grupos cujo material não existe fisicamente
-            no almoxarifado (só saldo remanescente no sistema). Buscar um código
-            específico na Contagem Manual continua funcionando normalmente, mesmo de um
-            grupo excluído — esta configuração só afeta geração automática de fila.
-          </div>
-          {gruposDisponiveis===null ? (
-            <div className="empty-state" style={{padding:14}}>Carregando grupos disponíveis…</div>
-          ) : gruposDisponiveis.length===0 ? (
-            <div className="empty-state" style={{padding:14}}>Nenhum grupo com saldo carregado ainda.</div>
-          ) : (
-            <div style={{opacity:salvandoGrupo?0.7:1}}>
-              <GrupoMultiSelectField
-                grupos={gruposDisponiveis}
-                selecionados={gruposExcluidos||[]}
-                onToggle={cod=>alterarGruposExcluidos([...(gruposExcluidos||[]), cod])}
-                onRemove={cod=>alterarGruposExcluidos((gruposExcluidos||[]).filter(c=>c!==cod))}
-              />
+        <>
+          <div className="cfg-card">
+            <div className="cfg-card-head">
+              <div>
+                <div className="cfg-card-title">Visibilidade do saldo na contagem</div>
+                <div className="cfg-card-desc">Controla se o operador vê o saldo do sistema (referência antes de digitar, card de comparação ao vivo) durante a contagem, em todos os modos.</div>
+              </div>
+              <span className="cfg-help-btn" title="Vale pra Aleatória, Manual, Rota, Lista Importada e Recontagem. Líder e administrador sempre veem o saldo, independente desta configuração — isso não muda a regra de aprovação automática/segunda contagem/análise do líder, só o que aparece na tela.">?</span>
             </div>
-          )}
-          {salvandoGrupo && <div style={{fontSize:12,color:'var(--ink-dim)',marginTop:8}}>Salvando…</div>}
-          {erroGrupo && <div className="login-error" style={{marginTop:10}}>{erroGrupo}</div>}
-        </div>
-      )}
-      {isAdmin && (
-        <div className="panel">
-          <div className="section-title" style={{marginTop:0}}>Tempo de Inatividade</div>
-          <div style={{fontSize:13,color:'var(--ink-dim)',lineHeight:1.6,marginBottom:12}}>
-            Minutos sem nenhuma interação (toque, clique, tecla) até o logout automático
-            — protege um tablet compartilhado esquecido logado no chão de fábrica. Hoje:
-            {' '}<strong>{sessionTimeoutMin ?? DEFAULT_SESSION_TIMEOUT_MIN} minutos</strong>.
+            <label className="cfg-check-row" style={{cursor:'pointer'}}>
+              <input type="checkbox" checked={saldoLocal} onChange={e=>setSaldoLocal(e.target.checked)} />
+              <div>
+                <div className="cfg-check-label">Operador pode ver o saldo do sistema durante a contagem</div>
+                <div className="cfg-check-sub">Com a opção desligada, o operador conta "às cegas" — a comparação com o sistema só aparece depois, na análise do líder.</div>
+              </div>
+            </label>
           </div>
-          <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
-            <input
-              type="number"
-              min="1"
-              step="1"
-              value={timeoutInput}
-              disabled={salvandoTimeout}
-              onChange={e=>setTimeoutInput(e.target.value)}
-              onWheel={e=>e.target.blur()}
-              style={{width:90}}
-            />
-            <span style={{fontSize:13,color:'var(--ink-dim)'}}>minutos</span>
-            <button type="button" className="btn btn-primary" onClick={salvarTimeout} disabled={salvandoTimeout || !Number.isFinite(Number(timeoutInput)) || Number(timeoutInput)<=0}>{salvandoTimeout?'Salvando…':'Salvar'}</button>
-            {timeoutSalvo && <span style={{fontSize:13,color:'var(--ok)'}}>Salvo — já vale em todos os aparelhos.</span>}
+
+          <div className="cfg-card">
+            <div className="cfg-card-head">
+              <div>
+                <div className="cfg-card-title">Visibilidade de valores em recontagens/divergentes</div>
+                <div className="cfg-card-desc">Configuração separada da acima — controla só o BLOCO EXTRA de cada card em "Recontagens".</div>
+              </div>
+              <span className="cfg-help-btn" title="Bloco extra: armazém, endereço contado, motivo, observação, foto, valor divergente em R$ e quem contou. O quadro principal (Sistema/Físico/Diferença/%) continua visível pra qualquer perfil — essa configuração é só sobre o valor em R$ e os detalhes complementares.">?</span>
+            </div>
+            <label className="cfg-check-row" style={{cursor:'pointer'}}>
+              <input type="checkbox" checked={valoresRecontagemLocal} onChange={e=>setValoresRecontagemLocal(e.target.checked)} />
+              <div>
+                <div className="cfg-check-label">Operador pode ver detalhes extras em Recontagens</div>
+                <div className="cfg-check-sub">Com a opção desligada (padrão), o operador não vê esse bloco extra — líder e administrador sempre veem, sem essa restrição.</div>
+              </div>
+            </label>
           </div>
-          {erroTimeout && <div className="login-error" style={{marginTop:10}}>{erroTimeout}</div>}
-        </div>
+
+          <div className="cfg-card">
+            <div className="cfg-card-head">
+              <div>
+                <div className="cfg-card-title">Grupos excluídos da contagem automática</div>
+                <div className="cfg-card-desc">Grupos/famílias marcados aqui nunca entram sozinhos numa fila de contagem (Aleatória, Curva ABC, Rota de Endereço).</div>
+              </div>
+              <span className="cfg-help-btn" title="Também não aparecem pra seleção em 'Contagem por Grupo' — útil pra grupos cujo material não existe fisicamente no almoxarifado (só saldo remanescente no sistema). Esta configuração só afeta geração automática de fila.">?</span>
+            </div>
+            {gruposDisponiveis===null ? (
+              <div className="empty-state" style={{padding:14,marginTop:14}}>Carregando grupos disponíveis…</div>
+            ) : gruposDisponiveis.length===0 ? (
+              <div className="empty-state" style={{padding:14,marginTop:14}}>Nenhum grupo com saldo carregado ainda.</div>
+            ) : (
+              <div style={{marginTop:14}}>
+                <GrupoMultiSelectField
+                  grupos={gruposDisponiveis}
+                  selecionados={gruposLocal}
+                  onToggle={cod=>setGruposLocal(prev=>[...prev, cod])}
+                  onRemove={cod=>setGruposLocal(prev=>prev.filter(c=>c!==cod))}
+                />
+              </div>
+            )}
+            <div className="cfg-note"><Ic>ℹ</Ic><span>Buscar um código específico na Contagem Manual continua funcionando normalmente, mesmo que um grupo esteja excluído.</span></div>
+          </div>
+
+          <div className="cfg-card">
+            <div className="cfg-card-head">
+              <div>
+                <div className="cfg-card-title">Tempo de inatividade</div>
+                <div className="cfg-card-desc">Minutos sem nenhuma interação (toque, clique, tecla) até o logout automático — protege um tablet compartilhado esquecido logado no chão de fábrica.</div>
+              </div>
+              <span className="cfg-help-btn" title="Cada evento de toque/clique/tecla reinicia a contagem. Vale em todos os aparelhos assim que salvo.">?</span>
+            </div>
+            <div className="cfg-timeout-row">
+              <input type="number" min="1" step="1" value={timeoutInput} onChange={e=>setTimeoutInput(e.target.value)} onWheel={e=>e.target.blur()} />
+              <span style={{fontSize:13,color:'var(--ink-dim)'}}>minutos</span>
+            </div>
+            <div className="cfg-timeout-badge">Hoje: <strong>{timeoutAtual} minutos</strong></div>
+          </div>
+
+          {erro && <div className="login-error" style={{marginBottom:12}}>{erro}</div>}
+          <div className="cfg-footer">
+            {salvo && <span style={{fontSize:13,color:'var(--ok)'}}>Salvo — já vale em todos os aparelhos.</span>}
+            <button type="button" className="btn btn-primary" disabled={!podeSalvar} onClick={salvarTudo}><DIcon name="checkCircle" size={16}/> {salvando ? 'Salvando…' : 'Salvar alterações'}</button>
+          </div>
+        </>
       )}
       {!isAdmin && (
         <div className="panel">
