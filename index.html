@@ -5055,7 +5055,7 @@ function App(){
         {view==='divergentes' && hasAccess(currentUser,'divergentes') && <DivergentItemsPanel counts={counts} inventories={inventories} role={role} goto={goto} onApprove={approveDivergence} onSendToDiretoria={enviarParaAprovacaoDiretoria} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onEditarMotivoObservacao={editarMotivoObservacaoContagem} />}
         {view==='aprovacaoDiretoria' && hasAccess(currentUser,'aprovacaoDiretoria') && <DiretoriaApprovalPanel counts={counts} inventories={inventories} role={role} onApproveSA={aprovarAjusteDiretoria} onRejectSA={reprovarAjusteDiretoria} onToggleUrgente={toggleUrgente} />}
         {view==='todasDivergencias' && <AllDivergencesPanel counts={counts} historicoConcluidas={historicoConcluidas} goto={goto} />}
-        {view==='concluidas' && hasAccess(currentUser,'concluidas') && <ConcludedCountsPanel counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} onDeleteCount={role==='admin' ? deleteCount : undefined} onReprovarAjusteHistorico={role==='admin' ? reprovarAjusteHistorico : undefined} onRefresh={refreshHistoricoConcluidas} />}
+        {view==='concluidas' && hasAccess(currentUser,'concluidas') && <ConcludedCountsPanel counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} onDeleteCount={role==='admin' ? deleteCount : undefined} onReprovarAjusteHistorico={role==='admin' ? reprovarAjusteHistorico : undefined} onRefresh={refreshHistoricoConcluidas} onEditarMotivoObservacao={role==='admin' ? editarMotivoObservacaoContagem : undefined} />}
         {view==='contagensHoje' && <TodayCountsPanel counts={counts} inventories={inventories} />}
         {view==='recount' && flowState && <RecountFlow original={flowState} user={currentUser} onAddressProposed={addAddressProposal} onFinish={(c)=>{registerFinishedCount(c); goto('recounts');}} operadorVeSaldo={operadorVeSaldo} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
         {view==='dashboard' && hasAccess(currentUser,'dashboard') && <Dashboard counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} historicoParaTendencia={historicoParaTendencia} goto={goto} />}
@@ -9672,7 +9672,7 @@ function historicoRowToConcludedChain(h){
   return { chaveId: tip.id, tip, rodadas: [tip], houveAjuste };
 }
 
-function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDeleteCount, onReprovarAjusteHistorico, onRefresh}){
+function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDeleteCount, onReprovarAjusteHistorico, onRefresh, onEditarMotivoObservacao}){
   const [busca, setBusca] = useState('');
   // Excluir virou uma ação do menu "⋮" no cabeçalho do card (mesmo padrão já
   // usado em RecountsPanel/DivergentItemsPanel/InventoryList), não mais um
@@ -9714,6 +9714,36 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
       if(next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
+  }
+
+  // Editar motivo/observação POR RODADA — pedido do cliente: numa cadeia
+  // que só resolveu depois de mais de uma contagem (ex.: 1ª e 2ª
+  // divergiram, 3ª bateu), quer poder registrar o que foi feito/apurado em
+  // qualquer rodada (não só a causa da divergência das primeiras — também
+  // uma explicação da resolução na rodada final). Mesmo padrão exato já
+  // usado em RecountsPanel/DivergentItemsPanel (reaproveita
+  // `editarMotivoObservacaoContagem` em App(), sem coluna nova no Supabase)
+  // — só que aqui o "card" editável é uma RODADA (`r.id`) dentro do
+  // detalhe expandido de uma cadeia, não o card inteiro. Uma linha do
+  // histórico importado (`r._fromHistorico`) nunca é editável — mesma
+  // restrição já aplicada a "Excluir"/"Reprovar ajuste" nesta tela.
+  const [editandoMotivoId, setEditandoMotivoId] = useState(null);
+  const [motivoEdit, setMotivoEdit] = useState('');
+  const [observacaoEdit, setObservacaoEdit] = useState('');
+  const [motivoBusyId, setMotivoBusyId] = useState(null);
+  const [motivoErro, setMotivoErro] = useState({});
+  function abrirEdicaoMotivo(r){
+    setEditandoMotivoId(r.id);
+    setMotivoEdit(r.motivo || '');
+    setObservacaoEdit(limparObservacaoExibicao(r.observacao) || '');
+  }
+  async function handleSalvarMotivoObservacao(roundId){
+    setMotivoBusyId(roundId);
+    setMotivoErro(prev=>({...prev, [roundId]: null}));
+    const res = await onEditarMotivoObservacao(roundId, {motivo: motivoEdit.trim(), observacao: observacaoEdit.trim()});
+    setMotivoBusyId(null);
+    if(res && res.ok) setEditandoMotivoId(null);
+    else setMotivoErro(prev=>({...prev, [roundId]: (res && res.erro) || 'Não foi possível salvar — tente novamente.'}));
   }
 
   // Mesmo painel "Filtros" (presets de calendário) já usado em Indicadores —
@@ -10018,8 +10048,33 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
                         </div>
                         {(r.endereco || r.enderecoContado) && <div style={{fontSize:'var(--text-sm)'}}>Endereço: <strong>{r.endereco || r.enderecoContado}</strong></div>}
                         {r.valorDivergente!=null && r.valorDivergente!==0 && <div style={{fontSize:'var(--text-sm)'}}>Valor divergente: <strong>R$ {Number(r.valorDivergente).toFixed(2)}</strong></div>}
-                        {r.motivo && <div style={{fontSize:'var(--text-sm)'}}>Motivo: <strong>{r.motivo}</strong></div>}
-                        {limparObservacaoExibicao(r.observacao) && <div style={{fontSize:'var(--text-sm)'}}>Observação: {limparObservacaoExibicao(r.observacao)}</div>}
+                        {editandoMotivoId===r.id ? (
+                          <div style={{marginTop:8}}>
+                            <div className="field" style={{marginBottom:10}}>
+                              <label>Motivo (opcional)</label>
+                              <input type="text" value={motivoEdit} onChange={e=>setMotivoEdit(e.target.value)} placeholder="Ex: Recontagem confirmou o valor certo, divergência era erro de leitura…" autoFocus />
+                            </div>
+                            <div className="field" style={{marginBottom:10}}>
+                              <label>Observação (opcional)</label>
+                              <textarea value={observacaoEdit} onChange={e=>setObservacaoEdit(e.target.value)} placeholder="Detalhes adicionais…" />
+                            </div>
+                            {motivoErro[r.id] && <div className="divergence-alert" style={{marginBottom:10}}><Ic>⚠</Ic><span>{motivoErro[r.id]}</span></div>}
+                            <div className="btn-row">
+                              <button type="button" className="btn btn-secondary" disabled={motivoBusyId===r.id} onClick={()=>setEditandoMotivoId(null)}>Cancelar</button>
+                              <button type="button" className="btn btn-primary" disabled={motivoBusyId===r.id} onClick={()=>handleSalvarMotivoObservacao(r.id)}>{motivoBusyId===r.id ? 'Salvando…' : 'Salvar'}</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            {r.motivo && <div style={{fontSize:'var(--text-sm)'}}>Motivo: <strong>{r.motivo}</strong></div>}
+                            {limparObservacaoExibicao(r.observacao) && <div style={{fontSize:'var(--text-sm)'}}>Observação: {limparObservacaoExibicao(r.observacao)}</div>}
+                            {onEditarMotivoObservacao && !r._fromHistorico && (
+                              <button type="button" className="btn btn-outline" style={{width:'auto',padding:'4px 10px',fontSize:'var(--text-xs)',marginTop:6}} onClick={()=>abrirEdicaoMotivo(r)}>
+                                <DIcon name="edit" size={13}/> Editar motivo/observação
+                              </button>
+                            )}
+                          </>
+                        )}
                         {r.motivoReprovacaoDiretoria && <div style={{fontSize:'var(--text-sm)',color:'var(--danger)'}}>Motivo da reprovação: <strong>{r.motivoReprovacaoDiretoria}</strong></div>}
                         {r.aprovadoPor && <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>Aprovado por {r.aprovadoPor} em {r.aprovadoEm}</div>}
                         {!r._fromHistorico && r.solicitacaoAjuste && (

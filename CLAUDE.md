@@ -10223,3 +10223,57 @@ card.
   **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma
   limitação de sempre (login exige Supabase Auth real, não simulável no
   sandbox sem rede).
+
+## "Contagens Concluídas" ganha "Editar motivo/observação" por rodada
+
+Cliente descreveu um caso concreto: um item cuja 1ª contagem divergiu, a 2ª
+(recontagem) também divergiu, e só a 3ª bateu — e pediu um campo de motivo
+pra registrar "o que foi feito", isto é, explicar como/por que a divergência
+foi resolvida, não só a causa da divergência em si (que já existia via
+`motivo`/`observacao`, mas sem nenhum jeito de EDITAR isso depois que a
+contagem já foi lançada, nesta tela específica).
+
+- **A capacidade já existia em outro lugar, só nunca tinha chegado aqui**:
+  `editarMotivoObservacaoContagem` (App(), ver seção "Editar motivo/
+  observação de uma contagem já registrada") já é usada há tempos em
+  `RecountsPanel`/`DivergentItemsPanel` (opção "Editar motivo/observação" no
+  menu "⋮") — mas `ConcludedCountsPanel` ("Contagens Concluídas") nunca tinha
+  recebido essa prop, então não tinha como anotar nada em cadeias já
+  resolvidas.
+- **Editável POR RODADA, não só na última** — uma cadeia (`cd.rodadas`) pode
+  ter N contagens; o botão "Editar motivo/observação" aparece em CADA rodada
+  dentro do detalhe expandido ("Detalhes"), não só na final. Cobre tanto o
+  caso descrito pelo cliente (documentar na 3ª rodada o que resolveu a
+  divergência) quanto o caso de querer corrigir/completar o motivo de uma
+  rodada anterior depois.
+- **Mesmo padrão visual/funcional exato de RecountsPanel** (campo "Motivo"
+  + "Observação", ambos opcionais, `<input>`+`<textarea>`, botões Cancelar/
+  Salvar, erro inline se a gravação falhar) — só reposicionado: em vez de
+  substituir o CARD inteiro (como em RecountsPanel, que só tem 1 rodada por
+  card), substitui só o bloco de texto Motivo/Observação DENTRO do
+  `round-panel` daquela rodada específica, sem interferir nas outras.
+- **Só admin** (`onEditarMotivoObservacao={role==='admin' ? ... :
+  undefined}`) — segue a convenção JÁ estabelecida NESTA tela especificamente
+  (`onDeleteCount`/`onReprovarAjusteHistorico` também são só-admin aqui,
+  diferente de RecountsPanel/DivergentItemsPanel onde a mesma ação é
+  líder+admin) — mantém consistência com as outras 2 ações administrativas
+  já existentes em "Contagens Concluídas", não com as outras 2 telas.
+- **Uma linha do histórico importado (`r._fromHistorico`) nunca é editável**
+  — mesma restrição já aplicada a "Excluir"/"Reprovar ajuste" nesta tela (o
+  histórico é só um espelho de auditoria da planilha, não um documento vivo
+  no app).
+- Testado via harness novo (`harness_concluidas_editar_motivo.js`, jsdom +
+  react-dom/client + `act()`, mesma técnica rigorosa de sempre): cadeia com
+  3 rodadas (1ª/2ª divergentes, 3ª resolvida) — cada rodada tem seu próprio
+  botão; editar a 3ª rodada abre o form, salvar chama
+  `onEditarMotivoObservacao` com o id certo (`c-3`) e os textos certos de
+  motivo/observação, e o form fecha sozinho depois do sucesso; sem a prop
+  (perfil não-admin), nenhum botão "Editar motivo/observação" aparece em
+  nenhuma rodada. Conferido por inspeção que os blocos de "Excluir"/
+  "Reprovar ajuste" (região diferente do JSX, não tocada por esta mudança)
+  continuam intactos. Transpile Babel do arquivo inteiro e balanceamento de
+  chaves do CSS conferidos (641/641, sem mudança — nenhuma classe CSS nova,
+  reaproveita `.field`/`.btn-row`/`.divergence-alert` já existentes).
+  **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma
+  limitação de sempre (login exige Supabase Auth real, não simulável no
+  sandbox sem rede).
