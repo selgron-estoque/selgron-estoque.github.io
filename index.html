@@ -581,7 +581,12 @@
      o espaço que sobraria vazio, em vez de deixar buraco na lateral. */
   .va-medium-row{display:flex;flex-wrap:wrap;gap:8px;}
   .va-medium{flex:1 1 130px;}
-  .va-medium,.va-small{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 11px;}
+  /* Médios ganham o mesmo tingimento verde do card grande (mesma "família"
+     visual do topo 3, ver referência do cliente) — os pequenos continuam
+     brancos/neutros, tier visualmente secundário. */
+  .va-medium{background:var(--ok-bg);}
+  .va-medium,.va-small{border:1px solid var(--line);border-radius:10px;padding:9px 11px;}
+  .va-small{background:var(--panel);}
   .va-medium .va-name,.va-small .va-name{font-size:var(--text-xs);color:var(--ink-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .va-medium .va-value{font-family:var(--font-mono);font-size:15px;font-weight:700;margin-top:2px;}
   .va-medium .va-pct{font-size:var(--text-2xs);color:var(--ink-dim);}
@@ -10677,6 +10682,25 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   const armazens = Object.keys(porArmazem).sort();
   const valorTotalEstoque = armazens.reduce((s,k)=>s+porArmazem[k],0);
   const fmtReais = v => 'R$ ' + Number(v).toLocaleString('pt-BR',{maximumFractionDigits:0});
+  // Versão abreviada (R$ 13,3 milhões / R$ 362 mil), só pros cards de
+  // "Valores por Armazém" — pedido do cliente com imagem de referência, pra
+  // caber mais cards numa linha só sem número gigante estourando o card.
+  // 1 casa decimal quando o valor em milhões já tem 2 dígitos (ex: 13,3),
+  // 2 casas quando tem só 1 dígito (ex: 1,84) — mantém ~3 dígitos
+  // significativos nos dois casos, mesmo padrão exato da referência.
+  const fmtReaisAbrev = v => {
+    const n = Number(v)||0;
+    const abs = Math.abs(n);
+    if(abs>=1000000){
+      const milhoes = n/1000000;
+      const casas = Math.abs(milhoes)>=10 ? 1 : 2;
+      return 'R$ ' + milhoes.toLocaleString('pt-BR',{minimumFractionDigits:casas,maximumFractionDigits:casas}) + ' milhões';
+    }
+    if(abs>=1000){
+      return 'R$ ' + Math.round(n/1000).toLocaleString('pt-BR') + ' mil';
+    }
+    return 'R$ ' + Math.round(n).toLocaleString('pt-BR');
+  };
   const armazensAtivos = Number(resumoGeral?.armazens_ativos || armazens.length);
   // "Valores por Armazém" (cards aninhados: 1 grande + 2 médios + resto
   // pequeno) precisa dos armazéns ordenados por VALOR decrescente (o maior
@@ -10819,7 +10843,7 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
                 <div className="va-grid">
                   <div className="va-big">
                     <div className="va-name">{formatArmazemLabel(armazensPorValor[0])}</div>
-                    <div className="va-value">{modoValor==='valor' ? fmtReais(porArmazem[armazensPorValor[0]]) : ((valorTotalEstoque>0 ? (porArmazem[armazensPorValor[0]]/valorTotalEstoque*100).toFixed(1) : '0.0')+'%')}</div>
+                    <div className="va-value">{modoValor==='valor' ? fmtReaisAbrev(porArmazem[armazensPorValor[0]]) : ((valorTotalEstoque>0 ? (porArmazem[armazensPorValor[0]]/valorTotalEstoque*100).toFixed(1) : '0.0')+'%')}</div>
                     {modoValor==='valor' && <div className="va-pct">{valorTotalEstoque>0 ? (porArmazem[armazensPorValor[0]]/valorTotalEstoque*100).toFixed(1) : '0.0'}%</div>}
                   </div>
                   <div className="va-side">
@@ -10828,7 +10852,7 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
                         {armazensPorValor.slice(1,3).map(a=>(
                           <div key={a} className="va-medium">
                             <div className="va-name">{formatArmazemLabel(a)}</div>
-                            <div className="va-value">{modoValor==='valor' ? fmtReais(porArmazem[a]) : ((valorTotalEstoque>0 ? (porArmazem[a]/valorTotalEstoque*100).toFixed(1) : '0.0')+'%')}</div>
+                            <div className="va-value">{modoValor==='valor' ? fmtReaisAbrev(porArmazem[a]) : ((valorTotalEstoque>0 ? (porArmazem[a]/valorTotalEstoque*100).toFixed(1) : '0.0')+'%')}</div>
                             {modoValor==='valor' && <div className="va-pct">{valorTotalEstoque>0 ? (porArmazem[a]/valorTotalEstoque*100).toFixed(1) : '0.0'}%</div>}
                           </div>
                         ))}
@@ -10839,7 +10863,7 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
                         {armazensPorValor.slice(3).map(a=>(
                           <div key={a} className="va-small">
                             <div className="va-name">{formatArmazemLabel(a)}</div>
-                            <div className="va-value">{modoValor==='valor' ? fmtReais(porArmazem[a]) : ((valorTotalEstoque>0 ? (porArmazem[a]/valorTotalEstoque*100).toFixed(1) : '0.0')+'%')}</div>
+                            <div className="va-value">{modoValor==='valor' ? fmtReaisAbrev(porArmazem[a]) : ((valorTotalEstoque>0 ? (porArmazem[a]/valorTotalEstoque*100).toFixed(1) : '0.0')+'%')}</div>
                             {modoValor==='valor' && <div className="va-pct">{valorTotalEstoque>0 ? (porArmazem[a]/valorTotalEstoque*100).toFixed(1) : '0.0'}%</div>}
                           </div>
                         ))}
@@ -10889,7 +10913,7 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
               ) : porFamilia.map(([fam,n])=>(
                 <div key={fam} className="bar-row">
                   <div className="bl" style={{width:160}}>{fam}</div>
-                  <div className="bar-track"><div className="bar-fill" style={{width:(n/maxFamilia*100)+'%', background:'var(--purple)'}}><span style={{color:'#fff'}}>{n}</span></div></div>
+                  <div className="bar-track"><div className="bar-fill" style={{width:(n/maxFamilia*100)+'%', background:'var(--teal)'}}><span style={{color:'#fff'}}>{n}</span></div></div>
                 </div>
               ))}
             </div>

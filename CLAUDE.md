@@ -9010,3 +9010,52 @@ mais direta foi dividir em dois containers de grid separados:
   referência do cliente, testar em monitor largo de verdade) fica a cargo
   dele** — mesma limitação de sempre (login exige Supabase Auth real, não
   simulável no sandbox sem rede).
+
+## "Valores por Armazém" — valor abreviado + tingimento dos cards médios + cor de "Divergência por Família/Grupo"
+
+Depois da correção de ordem/largura da rodada anterior, cliente confirmou "a
+ordem ficou correta" e pediu pra corrigir "cores e tamanhos" — mandou de novo
+o mesmo print de referência (o mockup com "Almox 01"/valores abreviados) pra
+eu comparar lado a lado, já que eu tinha perdido o acesso a ele.
+
+- **`fmtReaisAbrev(v)`** (função nova, perto de `fmtReais`, só usada nos 3
+  níveis de card de "Valores por Armazém" — `.va-big`/`.va-medium`/
+  `.va-small`) — formata "R$ 13,3 milhões"/"R$ 1,84 milhões" (≥R$1 milhão) e
+  "R$ 362 mil"/"R$ 16 mil" (≥R$1 mil), em vez do número cheio com separador
+  de milhar (`fmtReais`, ainda usado nos KPIs "Valor Divergente"/"Valor em
+  Estoque" de "Resumo da Operação" — fora de escopo deste pedido, o cliente
+  só mostrou referência pra este painel específico). **Casas decimais em
+  milhões variam** (1 casa se o valor já tem 2 dígitos antes da vírgula, ex.
+  "13,3"; 2 casas se tem só 1 dígito, ex. "1,84") — mantém ~3 dígitos
+  significativos nos dois casos, mesmo padrão exato da referência. Conferido
+  os 8 valores reais do print do cliente (R$13.329.778→"R$13,3 milhões",
+  R$1.841.374→"R$1,84 milhões", R$362.274→"R$362 mil", ... R$16.499→
+  "R$16 mil") — os 8 batem exatamente.
+- **Efeito colateral bom**: com o texto mais curto, os 5 cards pequenos
+  (`.va-small-row`, `flex-wrap`) cabem numa linha só com mais folga em
+  telas largas — mais perto do "5 numa linha" da referência, sem precisar
+  mexer no CSS de novo (o texto mais curto já basta).
+- **`.va-medium` ganhou o mesmo fundo verde claro do card grande**
+  (`var(--ok-bg)`, igual `.va-big`) — na referência, os 2 cards médios
+  (Armazém EX/Armazém 06) têm o mesmo tingimento do card grande, formando um
+  bloco visual único de "top 3"; só os pequenos (4º em diante) continuam
+  brancos/neutros como tier secundário.
+- **"Divergência por Família/Grupo" trocou de roxo pra teal**
+  (`var(--purple)` → `var(--teal)`) — o roxo tinha sido escolha própria de
+  uma rodada anterior (reusar a cor do ícone "Acuracidade Geral"), mas a
+  referência do cliente usa o MESMO teal já dominante nos outros 3 gráficos
+  da fileira de baixo (Acuracidade Semanal/Mensal, e também "Contagens na
+  Semana" acima) — troca alinha esse painel à paleta que o resto da tela já
+  usa, em vez de introduzir uma 2ª cor de destaque.
+- Testado via script Node isolado com os 8 valores reais do print (função
+  `fmtReaisAbrev` copiada, mesma técnica de sempre) — todos batem. Rodei de
+  novo os harnesses das 2 rodadas anteriores (estrutura de "Valores por
+  Armazém" com 9 asserções, ordem das fileiras com 11) sem quebrar nada — só
+  precisei atualizar 1 asserção que checava o número CHEIO antigo
+  ("R$ 13.329.778"), agora esperando o formato abreviado novo (mudança de
+  comportamento intencional desta rodada, não regressão). Transpile Babel do
+  arquivo inteiro e balanceamento de chaves do CSS conferidos (661/661 — CSS
+  ganhou 2 regras a mais pela separação `.va-medium`/`.va-small` em
+  declarações de background próprias). **Verificação visual de ponta a ponta
+  fica a cargo do cliente** — mesma limitação de sempre (login exige
+  Supabase Auth real, não simulável no sandbox sem rede).
