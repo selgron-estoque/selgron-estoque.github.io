@@ -7515,16 +7515,6 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
               <div className="cs-feedback"><span className="cs-dot"></span>{feedbackTexto}</div>
             </div>
           )}
-          {!hasSaldoLocal && qty!=='' && (
-            <div className={"cs-compare "+classification.level}>
-              <div className="cs-compare-grid">
-                <div className="cs-compare-cell"><div className="k">Sistema</div><div className="v">—</div></div>
-                <div className="cs-compare-cell"><div className="k">Informado</div><div className="v">{qty}</div></div>
-                <div className="cs-compare-cell"><div className="k">Diferença</div><div className="v">—</div></div>
-              </div>
-              <div className="cs-feedback"><span className="cs-dot"></span>{feedbackTexto}</div>
-            </div>
-          )}
           {mostrarSaldo===false && hasSaldoLocal && user.perfil==='operador' && qty!=='' && (
             <div className="role-note" style={{marginBottom:0}}>Contagem cega — o saldo do sistema fica oculto pra você durante a contagem.</div>
           )}

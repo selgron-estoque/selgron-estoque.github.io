@@ -8601,3 +8601,34 @@ mesma ação já mora dentro de um menu "⋮" no canto do cabeçalho do card.
   CSS conferidos (651/651, sem mudança — nenhuma classe CSS nova).
   **Verificação visual fica a cargo do cliente** — mesma limitação de
   sempre.
+
+## Card "Sistema/Informado/Diferença" removido quando não há saldo pra comparar
+
+Cliente mandou print da tela de contagem mostrando o card de comparação
+todo em traços ("SISTEMA —", "DIFERENÇA —", só "INFORMADO 9" preenchido)
+junto do aviso "Nenhum saldo carregado para este código — revisão manual
+necessária" e pediu pra remover. Esse card (`!hasSaldoLocal && qty!=='' &&
+...`, em `CountStep`) só existia pra item sem NENHUM saldo pra comparar —
+sem saldo, os dois valores relevantes (Sistema/Diferença) nunca tinham
+como ser preenchidos, então o card só mostrava ruído visual.
+
+- **Bloco removido por completo** — quando o item não tem saldo local
+  pra comparar, a tela agora só mostra o campo de quantidade + atalhos
+  (+1/+5/+10/Limpar), sem nenhum card abaixo. **Não removi** a variável
+  `classification`/`feedbackTexto` nem a lógica de classificação em si
+  (`classifyDivergenceSemCusto`/"revisão manual necessária") — isso
+  continua sendo calculado e salvo na contagem normalmente (usado pelo
+  roteamento de aprovação/análise do líder e pelo relatório), só a
+  EXIBIÇÃO desse card específico saiu da tela.
+- **O card de comparação REAL (item com saldo, `mostrarSaldo`) não foi
+  tocado** — continua mostrando Sistema/Informado/Diferença normalmente
+  quando há saldo pra comparar; só o card "tudo em traço" (sem saldo
+  nenhum) saiu.
+- Testado via harness real (jsdom + react-dom/client + `act()`): item sem
+  saldo não mostra mais `.cs-compare` nem o texto "Nenhum saldo
+  carregado..." (os atalhos +1/+5/+10/Limpar e o campo de quantidade
+  continuam funcionando normalmente); item COM saldo continua mostrando o
+  card de comparação de verdade ("Contagem confere"), sem regressão.
+  Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  conferidos (651/651, sem mudança — só JSX removido). **Verificação
+  visual fica a cargo do cliente** — mesma limitação de sempre.
