@@ -244,6 +244,25 @@
   .um-pw-panel,.um-del-panel{width:280px;max-width:100%;}
   .um-req-card{border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:10px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;background:var(--panel);}
   .um-req-card:last-child{margin-bottom:0;}
+  /* Bug real de layout no celular: `.um-right` tem `flex-shrink:0` (de
+     propósito, pra não espremer os botões em telas largas) mas NUNCA tinha
+     um `width` explícito — sem isso, o navegador dá a ele a largura de
+     "máximo conteúdo" (os 4 botões de `.um-actions` numa linha só, sem
+     quebrar), maior que a tela de um celular. `.um-card{flex-wrap:wrap}`
+     já jogava `.um-right` pra uma linha própria abaixo do avatar/nome, mas
+     ISSO não limita a LARGURA dele — o bloco inteiro (chip de status,
+     botões, e até os painéis de redefinir senha/excluir, que só respeitam
+     `max-width:100%` DESSE container) vazava pra fora da tela, cortado pela
+     borda do viewport (cliente reportou com print: linha vertical cortando
+     os 3 cards e o painel de "Redefinir senha" embaixo, todos na mesma
+     posição). `width:100%` só nessa faixa estreita resolve os três sintomas
+     de uma vez — `.um-actions{flex-wrap:wrap}` finalmente tem uma largura de
+     verdade pra quebrar os botões, e `.um-pw-panel`/`.um-del-panel` (que já
+     tinham `max-width:100%`) passam a calcular esse 100% em cima da largura
+     certa. */
+  @media (max-width:640px){
+    .um-right{width:100%;}
+  }
 
   /* "Configurações" — cards com "?" de ajuda (tooltip nativo via title) e
      salvamento em bloco (edita local, só grava tudo ao clicar "Salvar
@@ -1663,6 +1682,23 @@ function usuarioRowToLocal(row){
 async function chamarUsuariosAdmin(acao, payload){
   if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
   try{
+    // Bug real reportado pelo cliente: "Sessão inválida ou expirada" ao
+    // tentar redefinir senha depois do app ficar muito tempo em segundo
+    // plano no celular — o token de acesso expira (~1h) e o timer de
+    // renovação automática do supabase-js fica pausado enquanto a aba/app
+    // está minimizado (comportamento normal do navegador pra economizar
+    // bateria), então ele não renova sozinho até alguém chamar `getSession()`
+    // de novo. `functions.invoke` manda o token que já estava em memória, sem
+    // checar validade antes — se esse token estiver vencido, a Edge Function
+    // rejeita com 401 antes de sequer olhar a ação pedida. Chamando
+    // `getSession()` aqui ANTES de invocar a function, o supabase-js checa a
+    // validade e renova sozinho se precisar (é exatamente o gatilho que
+    // faltava) — resolve o caso comum (token só estava desatualizado) sem
+    // precisar de nenhuma ação do usuário.
+    const { data: sessaoAtual } = await supabaseClient.auth.getSession();
+    if(!sessaoAtual || !sessaoAtual.session){
+      return {ok:false, erro:'Sua sessão expirou. Atualize a página e faça login novamente.'};
+    }
     const { data, error } = await supabaseClient.functions.invoke('usuarios-admin', {
       body: {acao, ...payload},
     });

@@ -9743,3 +9743,74 @@ recente).
   projeto real — até lá, a linha simplesmente não aparece pra nenhuma
   contagem nova (mesmo tratamento "fire and forget" de sempre, não quebra a
   contagem se a coluna ainda não existir no banco).
+
+## Bug real de layout no celular ("Usuários") + "Sessão inválida" ao redefinir senha
+
+Cliente mandou print da tela "Usuários" no celular mostrando os botões
+(Editar/Bloquear/Redefinir senha/Excluir) vazando pra fora da tela — uma
+linha vertical cortando os 3 cards visíveis e o painel de "Redefinir senha"
+embaixo, todos na mesma posição — e perguntou por que não conseguia trocar
+a senha (o painel mostrava "Sessão inválida ou expirada.").
+
+### Layout: `.um-right` sem largura, vazando pra fora da tela
+
+- **Causa**: `.um-right` (bloco com o chip de status + `.um-actions` + os
+  painéis de redefinir senha/excluir, à direita de cada card de usuário)
+  tem `flex-shrink:0` de propósito (não espremer os botões em telas
+  largas), mas **nunca teve nenhum `width` explícito**. Sem isso, o
+  navegador dá a ele a largura de "máximo conteúdo" — os 4 botões de
+  `.um-actions` numa linha só, sem quebrar, mesmo essa classe já tendo
+  `flex-wrap:wrap` (que só entra em ação se o CONTAINER tiver uma largura
+  definida pra forçar a quebra — sem isso, o wrap nunca tem motivo pra
+  acontecer). `.um-card{flex-wrap:wrap}` já jogava `.um-right` pra uma
+  linha própria abaixo do avatar/nome no celular, mas isso não limita a
+  LARGURA do bloco em si — ele continuava mais largo que a tela,
+  arrastando junto o chip de status (cortado no print) e os painéis de
+  ação (`.um-pw-panel`/`.um-del-panel`, que já tinham `max-width:100%`, mas
+  100% de um container mais largo que a tela ainda é mais largo que a
+  tela).
+- **Correção**: `@media (max-width:640px){ .um-right{width:100%;} }` — só
+  nessa faixa estreita, força o bloco a ocupar exatamente a largura
+  disponível do card. Isso resolve os três sintomas do print de uma vez só:
+  `.um-actions{flex-wrap:wrap}` finalmente tem uma largura de verdade pra
+  quebrar os botões em 2 linhas em vez de vazar; o chip de status volta a
+  caber dentro da tela; e `.um-pw-panel`/`.um-del-panel` calculam seu
+  `max-width:100%` em cima do tamanho certo.
+
+### "Sessão inválida ou expirada": o token de acesso não estava sendo renovado a tempo
+
+- **Causa**: o token de acesso do Supabase Auth expira depois de ~1h — o
+  supabase-js tem um timer próprio que renova sozinho, mas esse timer fica
+  PAUSADO enquanto a aba/app está minimizado no celular (comportamento
+  normal do navegador pra economizar bateria) e só volta a rodar quando o
+  app é reaberto. `chamarUsuariosAdmin` (usada por toda ação de admin sobre
+  usuários — editar, bloquear, redefinir senha, excluir) sempre chamava
+  `supabaseClient.functions.invoke(...)` direto, que manda o token que já
+  estava em memória sem checar validade antes — se esse token tiver
+  expirado enquanto o app estava minimizado, a Edge Function `usuarios-admin`
+  rejeita com 401 ("Sessão inválida ou expirada.") antes mesmo de olhar a
+  ação pedida.
+- **Correção**: `chamarUsuariosAdmin` agora chama
+  `supabaseClient.auth.getSession()` ANTES de invocar a Edge Function — essa
+  chamada é o gatilho que faltava: o supabase-js checa a validade do token
+  atual e renova sozinho se precisar, então o token que a Edge Function
+  recebe em seguida já está em dia. Resolve o caso comum (token só estava
+  desatualizado por causa do app minimizado) sem exigir nenhuma ação do
+  usuário. **Se mesmo assim não existir sessão nenhuma** (`getSession()`
+  devolve `null` — cenário mais raro, refresh token também já vencido ou
+  sessão de fato encerrada), a função retorna direto, sem nem chamar a
+  Edge Function, com uma mensagem ACIONÁVEL ("Sua sessão expirou. Atualize
+  a página e faça login novamente.") em vez do texto técnico genérico da
+  function.
+- Testado via 2 harnesses novos (`harness_chamar_usuarios_admin_sessao_ok.js`/
+  `_expirada.js`, cada um em processo Node separado — `chamarUsuariosAdmin`
+  referencia `supabaseClient` como `const` de módulo, não dá pra trocar o
+  mock no meio de uma mesma execução do script): sessão válida chama
+  `getSession()` e segue normalmente pra `functions.invoke` (resultado
+  `ok:true`); sessão nula NÃO chega a chamar `functions.invoke` e devolve a
+  mensagem acionável certa. Transpile Babel do arquivo inteiro e
+  balanceamento de chaves do CSS conferidos (641/641, 1 regra nova —
+  `.um-right` dentro do `@media (max-width:640px)`). **Verificação visual
+  do layout no celular fica a cargo do cliente** — jsdom não calcula
+  layout real (largura/wrap), mesma limitação de sempre (login exige
+  Supabase Auth real, não simulável no sandbox sem rede).
