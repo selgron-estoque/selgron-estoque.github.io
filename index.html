@@ -582,38 +582,42 @@
      "usar só cores já existentes", não introduzir tom novo) — só os
      tamanhos de fonte usam px literal (12/28/22/18/14), fora da escala
      --text-* padrão, porque a fidelidade ao mockup pedia valores exatos. */
-  .va-grid{display:grid;grid-template-columns:1fr;gap:10px;}
-  /* Proporção 58/42 (pedida na 1ª rodada de fidelidade) deixava o card do
-     armazém líder grande demais — cliente pediu pra encolher e redistribuir
-     mais espaço pros demais armazéns. */
-  @media (min-width:520px){.va-grid{grid-template-columns:42fr 58fr;}}
+  /* Composição MANUAL via Flexbox, não CSS Grid — pedido explícito do
+     cliente (com spec técnica detalhada): a coluna direita não é um grid
+     uniforme, é 3 fileiras próprias e independentes (2 médios / grupos de 4
+     pequenos), cada uma um flex row separado. O JSX já entrega os dados
+     pré-fatiados nesse formato (`armazensMedios`/`armazensSmallRows`) — o
+     CSS só precisa desenhar cada fileira, nunca decidir quantas colunas
+     cabem sozinho. */
+  .va-grid{display:flex;flex-direction:column;gap:10px;}
+  @media (min-width:520px){.va-grid{flex-direction:row;align-items:stretch;}}
   /* min-width:0 nos 3 níveis de card: sem isso, um valor "R$ 1,84 milhões"
-     (texto sem ponto de quebra) força a coluna/track do grid a ficar mais
-     larga que a fração (fr) pedida — o gotcha clássico de grid item com
+     (texto sem ponto de quebra) força o item flex a ficar mais largo que a
+     fração pedida — o gotcha clássico de item de flex/grid com
      min-width:auto (padrão) — e o texto ainda assim pode quebrar linha de
      um jeito feio, inflando a altura do card (e, em cascata, do card
-     grande, que estica pra bater com essa altura via align-items:stretch).
-     nowrap+ellipsis nos valores é rede de segurança: nunca mais quebra em
-     2 linhas, na pior hipótese trunca com "…". */
-  .va-big{background:var(--ok-bg);border:1px solid var(--line);border-radius:var(--radius);padding:20px;display:flex;flex-direction:column;justify-content:flex-end;gap:4px;min-width:0;}
+     grande, que estica pra bater com essa altura via align-items:stretch,
+     também padrão do flex — é o que dá "altura igual à soma da coluna
+     direita" de graça, sem regra extra). nowrap+ellipsis nos valores é
+     rede de segurança: nunca mais quebra em 2 linhas, na pior hipótese
+     trunca com "…". */
+  .va-big{flex:0 0 58%;background:var(--ok-bg);border:1px solid var(--line);border-radius:var(--radius);padding:24px;display:flex;flex-direction:column;justify-content:flex-end;gap:4px;min-width:0;}
   .va-big .va-name{font-size:12px;color:var(--ink-dim);}
   .va-big .va-value{font-family:var(--font-mono);font-size:24px;font-weight:700;color:var(--navy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .va-big .va-pct{font-size:14px;font-weight:700;color:var(--ok);}
-  .va-side{display:flex;flex-direction:column;gap:8px;min-width:0;}
-  .va-medium-row{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;}
-  /* 4 colunas fixas (não flex/auto-fit) — de propósito, mesmo que a última
-     linha fique incompleta e sobre espaço vazio ao lado (ex: 5 armazéns
-     pequenos = 4+1): é exatamente como a referência do cliente mostra
-     (Almox 05 sozinho numa 3ª linha, sem esticar pra ocupar a linha
-     inteira) — não é o mesmo "buraco lateral" corrigido antes (aquele era
-     no CONTAINER da página, `.content`; aqui é fidelidade deliberada ao
-     mockup). */
-  .va-small-row{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;}
+  .va-side{flex:1 1 0%;display:flex;flex-direction:column;gap:8px;min-width:0;}
+  .va-medium-row{display:flex;gap:8px;}
+  .va-medium{flex:1 1 0%;}
+  /* Fileira de "pequenos" reutilizada tanto pro grupo de 4 quanto pro
+     restante incompleto (ex: 1 sobrando) — `flex:0 0 calc(...)` (não
+     `flex:1`) fixa a largura de CADA card em exatamente 1/4 da fileira,
+     então uma fileira com só 1 item não estica pra ocupar o espaço todo:
+     fica do tamanho certo, encostado à esquerda, com vazio à direita —
+     exatamente como a referência do cliente mostra (o card sozinho da
+     última linha nunca se expande nem centraliza). */
+  .va-small-row{display:flex;gap:8px;}
+  .va-small{flex:0 0 calc((100% - 24px)/4);}
   .va-medium,.va-small{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);display:flex;flex-direction:column;justify-content:flex-end;gap:2px;min-width:0;}
-  /* Padding interno reduzido (era 16px/10px 8px) — cliente pediu pra tirar
-     o espaçamento "em cada armazém", cards mais compactos/próximos do
-     conteúdo. Coluna direita também ficou mais larga (42→58%), então sobra
-     mais espaço útil pro texto mesmo com padding menor. */
   .va-medium{padding:12px;}
   .va-small{padding:8px 6px;}
   .va-medium .va-name,.va-small .va-name{font-size:12px;color:var(--ink-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
@@ -10734,6 +10738,18 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   // vira o card grande) — `armazens` continua ordenado alfabeticamente
   // (código cru), usado só pra somatórios.
   const armazensPorValor = [...armazens].sort((a,b)=>porArmazem[b]-porArmazem[a]);
+  // Composição MANUAL de "Valores por Armazém" (pedido explícito do
+  // cliente, com imagem de referência): não é grid automático — o 2º/3º
+  // colocado vão numa fileira de 2 cards médios, e todo o resto entra em
+  // fileiras de EXATAMENTE 4 cards pequenos cada (a última pode ficar
+  // incompleta, ex: sobrar só 1 — fica sozinho, sem esticar, igual a
+  // referência mostra). `armazensSmallRows` já vem pré-fatiado em grupos de
+  // 4, pronto pro JSX só percorrer sem recalcular nada.
+  const armazensMedios = armazensPorValor.slice(1,3);
+  const armazensSmallRows = [];
+  for(let i=3;i<armazensPorValor.length;i+=4){
+    armazensSmallRows.push(armazensPorValor.slice(i,i+4));
+  }
 
   const porOperador = {};
   counts.forEach(c=>{ porOperador[c.usuario] = (porOperador[c.usuario]||0)+1; });
@@ -10874,9 +10890,9 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
                     {modoValor==='valor' && <div className="va-pct">{valorTotalEstoque>0 ? (porArmazem[armazensPorValor[0]]/valorTotalEstoque*100).toFixed(1) : '0.0'}%</div>}
                   </div>
                   <div className="va-side">
-                    {armazensPorValor.length>1 && (
+                    {armazensMedios.length>0 && (
                       <div className="va-medium-row">
-                        {armazensPorValor.slice(1,3).map(a=>(
+                        {armazensMedios.map(a=>(
                           <div key={a} className="va-medium">
                             <div className="va-name">{formatArmazemLabel(a)}</div>
                             <div className="va-value">{modoValor==='valor' ? fmtReaisAbrev(porArmazem[a]) : ((valorTotalEstoque>0 ? (porArmazem[a]/valorTotalEstoque*100).toFixed(1) : '0.0')+'%')}</div>
@@ -10885,9 +10901,9 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
                         ))}
                       </div>
                     )}
-                    {armazensPorValor.length>3 && (
-                      <div className="va-small-row">
-                        {armazensPorValor.slice(3).map(a=>(
+                    {armazensSmallRows.map((linha,li)=>(
+                      <div key={li} className="va-small-row">
+                        {linha.map(a=>(
                           <div key={a} className="va-small">
                             <div className="va-name">{formatArmazemLabel(a)}</div>
                             <div className="va-value">{modoValor==='valor' ? fmtReaisAbrev(porArmazem[a]) : ((valorTotalEstoque>0 ? (porArmazem[a]/valorTotalEstoque*100).toFixed(1) : '0.0')+'%')}</div>
@@ -10895,7 +10911,7 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
                           </div>
                         ))}
                       </div>
-                    )}
+                    ))}
                   </div>
                 </div>
               )}

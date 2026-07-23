@@ -9222,3 +9222,61 @@ cada card de armazém; e copiar a cor da fonte dos valores da imagem.
   regras já existentes). **Verificação visual de ponta a ponta fica a cargo
   do cliente** — mesma limitação de sempre (login exige Supabase Auth real,
   não simulável no sandbox sem rede).
+
+## "Valores por Armazém" — CSS Grid → Flexbox + composição manual em linhas (não mais grid automático)
+
+Cliente mandou uma 3ª spec técnica, ainda mais explícita, corrigindo um
+ponto estrutural que as rodadas anteriores não tinham resolvido: a coluna
+direita continuava usando CSS Grid (`grid-template-columns:repeat(4,1fr)`)
+pra distribuir os cards pequenos — o que faz o NAVEGADOR decidir a
+distribuição automaticamente. O cliente foi explícito: "Este layout NÃO é
+um grid automático. Ele é uma composição manual" — pediu Flexbox, com cada
+fileira da coluna direita sendo um `display:flex` independente, e a
+composição (1 grande + 2 médios + 4 pequenos + 1 pequeno sozinho na última
+linha) definida no CÓDIGO, não deduzida pelo CSS a partir da quantidade de
+itens.
+
+- **`.va-grid` (CSS Grid) → Flexbox** (`display:flex;flex-direction:row`
+  a partir de 520px) — `.va-big{flex:0 0 58%}` / `.va-side{flex:1 1 0%}`
+  (proporção 58/42, revertendo de novo o 42/58 da rodada anterior — o
+  cliente re-mediu a referência e pediu explicitamente "58~60% / 40~42%"
+  desta vez, mais preciso que o pedido anterior de "diminuir"). Padding do
+  card grande subiu de 20px pra 24px (também pedido explícito desta
+  rodada). `align-items:stretch` (padrão do flex row, sem regra nova) já
+  resolve "altura igual à soma da coluna direita" — mesmo mecanismo que já
+  funcionava com grid, só que agora via flex.
+- **Composição das linhas virou lógica em JS, não CSS auto-flow**:
+  `armazensMedios` (2º/3º colocado, fixo) e `armazensSmallRows` (um array
+  de arrays, cada um com até 4 armazéns — `for(i=3;i<total;i+=4)
+  push(slice(i,i+4))`) — calculados uma vez no `Dashboard`, perto de
+  `armazensPorValor`. O JSX só percorre `armazensSmallRows.map(linha=>
+  <div className="va-small-row">{linha.map(...)}</div>)` — cada fileira é
+  um `.va-small-row` (flex) PRÓPRIO, nunca um grid decidindo sozinho quantas
+  colunas cabem.
+- **Decisão consciente, não contradiz "composição fixa"**: em vez de
+  travar em exatamente 8 armazéns (1+2+4+1), o código generaliza SÓ o
+  suficiente pra nunca esconder dado real (se um dia existir um 9º
+  armazém, ele cai numa 3ª fileira de pequenos, sozinho, mesma regra de
+  "não estica") — sem isso, um armazém a mais desapareceria da tela, o
+  que vai contra o princípio de sempre mostrado neste projeto de nunca
+  esconder dado real. A PARTE que o cliente queria travada (o padrão
+  visual — sempre EXATAMENTE 4 por fileira de pequenos, nunca um número
+  calculado pra "caber bonito") continua 100% fixa.
+- **`.va-small{flex:0 0 calc((100% - 24px)/4)}`** (em vez de `flex:1`) —
+  cada card pequeno tem largura FIXA de 1/4 da fileira, então uma fileira
+  com só 1 item (ex: o "Armazém 05" sozinho) não estica pra ocupar o
+  espaço todo — fica do tamanho certo, encostado à esquerda, com vazio à
+  direita, exatamente como a referência mostra ("não centralizar, não
+  expandir, manter alinhado à esquerda").
+- Testado via harness novo (jsdom + react-dom/client + `act()`, 8 armazéns
+  reais do print do cliente — mesmos valores de sempre): confirma
+  `.va-medium-row` com exatamente 2 cards (Armazém EX/06), e exatamente 2
+  `.va-small-row` — a 1ª com 4 cards, a 2ª com só 1 (Armazém 05) — batendo
+  exatamente com a composição 1+2+4+1 pedida. Confirmado também, por
+  grep, que nenhuma regra `.va-*` usa mais `display:grid` — só
+  `display:flex`. Rodei de novo os 2 harnesses das rodadas anteriores (9+11
+  asserções) sem quebrar nada. Transpile Babel do arquivo inteiro e
+  balanceamento de chaves do CSS conferidos (661/661). **Verificação
+  visual de ponta a ponta fica a cargo do cliente** — mesma limitação de
+  sempre (login exige Supabase Auth real, não simulável no sandbox sem
+  rede).
