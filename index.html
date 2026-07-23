@@ -1216,16 +1216,30 @@ async function searchSupabaseCatalog(query, almoxarifado){
   // só pegar o valor direto. `estoque_saldo` não tem FK pra `produtos` (ver
   // backend/schema.sql), então é uma consulta separada, não um join
   // automático do PostgREST.
+  //
+  // Bug real corrigido aqui: `data_ultima_saida` nunca era buscada nesta
+  // consulta (só `saldo`/`almoxarifado`), e `ultimaSaida` do produto
+  // retornado era sempre `null` incondicionalmente — todo item achado pela
+  // "Nova Contagem" avulsa (busca manual, o caminho mais comum pra achar um
+  // item fora de uma lista de inventário estruturada) mostrava "Sem
+  // registro de movimentação" em Itens Divergentes mesmo quando a planilha
+  // SB2 tinha a data real pra aquele código+armazém — o cliente reportou
+  // isso como "está aparecendo pra tudo". `fetchProdutosByCodigos`/
+  // `fetchContagemItensPrioritarios` (os outros dois caminhos que resolvem
+  // produto a partir do Supabase) já buscavam e propagavam esse campo
+  // corretamente — só esta função ficou pra trás.
   const codigos = data.map(row=>row.codigo);
   const saldoPorCodigo = {};
+  const ultimaSaidaPorCodigo = {};
   if(codigos.length>0 && almoxarifado){
     const { data: saldoRows } = await supabaseClient
       .from('estoque_saldo')
-      .select('produto_codigo, saldo, almoxarifado')
+      .select('produto_codigo, saldo, almoxarifado, data_ultima_saida')
       .in('produto_codigo', codigos)
       .eq('almoxarifado', almoxarifado);
     (saldoRows||[]).forEach(r=>{
       saldoPorCodigo[r.produto_codigo] = Number(r.saldo||0);
+      ultimaSaidaPorCodigo[r.produto_codigo] = r.data_ultima_saida || null;
     });
   }
 
@@ -1249,7 +1263,7 @@ async function searchSupabaseCatalog(query, almoxarifado){
       custoUnit: 0,
       valorFinanceiro: 0,
       semMovimentoRecente: false,
-      ultimaSaida: null,
+      ultimaSaida: ultimaSaidaPorCodigo[row.codigo] || null,
       foraDoCacheLocal: true,
     };
   });

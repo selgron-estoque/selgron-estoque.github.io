@@ -10277,3 +10277,56 @@ contagem já foi lançada, nesta tela específica).
   **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma
   limitação de sempre (login exige Supabase Auth real, não simulável no
   sandbox sem rede).
+
+## Bug real: "Sem registro de movimentação" aparecia pra quase tudo — `searchSupabaseCatalog` nunca buscava `data_ultima_saida`
+
+Cliente reagiu ao aviso vermelho novo (ver seção anterior) reportando que
+estava aparecendo "pra tudo" — o esperado é ele aparecer só nos itens que
+GENUINAMENTE não têm data de última movimentação registrada na planilha SB2,
+não em qualquer item.
+
+- **Causa raiz**: `searchSupabaseCatalog` (usada por `ManualCountFlow`, a
+  tela "Nova Contagem" avulsa — provavelmente o jeito mais comum de achar um
+  item fora de uma lista de inventário estruturada) buscava `estoque_saldo`
+  selecionando só `produto_codigo, saldo, almoxarifado` — **nunca incluía
+  `data_ultima_saida`** — e o produto retornado sempre fixava
+  `ultimaSaida: null` incondicionalmente, mesmo quando a planilha SB2 tinha
+  a data real pra aquele código+armazém. Todo item contado por essa tela
+  (a mais usada) mostrava o aviso vermelho, sem exceção — dando a impressão
+  de "pra tudo".
+- **Os outros dois caminhos que resolvem produto a partir do Supabase já
+  estavam certos** — `fetchContagemItensPrioritarios` (Aleatória/Curva ABC/
+  Rota/Grupo, via RPC `contagem_itens_prioritarios`, que já retorna
+  `data_ultima_saida`) e `fetchProdutosByCodigos` (Lista Importada/
+  Recontagem, que já seleciona essa coluna) — só `searchSupabaseCatalog`
+  tinha ficado pra trás.
+- **Correção**: a consulta a `estoque_saldo` passou a incluir
+  `data_ultima_saida` no `select`, e `ultimaSaida` do produto retornado
+  passou a vir desse valor (`ultimaSaidaPorCodigo[row.codigo] || null`) em
+  vez de `null` fixo — mesmo padrão já usado pra `saldoSistema` (só resolve
+  quando o armazém é conhecido, pra não arriscar pegar a data de um armazém
+  errado quando o código existe em mais de um).
+- **Itens que continuam legitimamente mostrando o aviso, sem ser bug**: (1)
+  código com saldo em MAIS de um armazém, buscado sem armazém específico
+  informado — mesma ambiguidade já aceita pro saldo, não dá pra saber qual
+  data usar; (2) linha real da SB2 com "DT.Ult.Saida" genuinamente vazia
+  (~845 das 12.577 linhas reais do cliente, documentado desde o upload da
+  SB2); (3) código sem NENHUM saldo carregado ainda em `estoque_saldo`
+  (cobertura do catálogo é só ~12%, documentado em "Cards de estoque no
+  modelo de referência"). Esses três casos são dado real faltando, não
+  comportamento pra "corrigir" — o aviso existe exatamente pra deixar isso
+  visível.
+- Testado via harness novo (`harness_search_catalog_ultima_saida.js`, mock
+  encadeável do Supabase simulando as duas tabelas — `produtos`/
+  `estoque_saldo` — com um item tendo `data_ultima_saida` real e outro
+  genuinamente `null`): item com data real na planilha agora traz
+  `ultimaSaida` certa (antes sempre vinha `null`); item sem data continua
+  `null` (comportamento correto, não regredido); `saldoSistema` continua
+  funcionando normalmente (mudança não quebrou o que já funcionava); sem
+  armazém informado, `ultimaSaida` continua `null` pros dois (ambiguidade
+  preservada, mesmo critério do saldo). Transpile Babel do arquivo inteiro
+  e balanceamento de chaves do CSS conferidos (641/641, sem mudança — só
+  JS, nenhuma classe CSS tocada). **Verificação contra o Supabase real fica
+  a cargo do cliente** — mesma limitação de sempre (sandbox sem rede) — mas
+  não depende de nenhuma migração de SQL, só recarregar a página já deve
+  mostrar as datas certas na próxima busca manual.
