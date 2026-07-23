@@ -9149,7 +9149,11 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSend
               )}
               {c.motivo && <div style={{padding:'10px 16px 0',fontSize:'var(--text-sm)'}}>Motivo: <strong>{c.motivo}</strong></div>}
               {c.valorDivergente!=null && Number(c.valorDivergente)!==0 && <div style={{padding:'6px 16px 0',fontSize:'var(--text-sm)'}}>Valor divergente: <strong>R$ {Number(c.valorDivergente).toFixed(2)}</strong></div>}
-              {c.ultimaSaida && <div style={{padding:'6px 16px 0',fontSize:'var(--text-sm)'}}>Última movimentação: <strong>{fmtDataBR(c.ultimaSaida)}</strong> · <strong>{diasParado(c.ultimaSaida)} dias parado</strong></div>}
+              <div style={{padding:'6px 16px 0',fontSize:'var(--text-sm)'}}>
+                {c.ultimaSaida
+                  ? <>Última movimentação: <strong>{fmtDataBR(c.ultimaSaida)}</strong> · <strong>{diasParado(c.ultimaSaida)} dias parado</strong></>
+                  : <strong style={{color:'var(--danger)'}}>Sem registro de movimentação</strong>}
+              </div>
               {/* Bug real corrigido aqui: esta tela nunca mostrava `observacao`
                   em lugar nenhum (só `motivo`) — passava batido pra qualquer
                   contagem ao vivo com observação preenchida, e ficava

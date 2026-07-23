@@ -10196,3 +10196,30 @@ atualizado (mesmo arquivo, agora com 12 famílias sintéticas pra testar o
 corte em 10) — mesmas 8 asserções de antes, adaptadas pro número novo, todas
 passando. Transpile Babel do arquivo inteiro e balanceamento de chaves do
 CSS conferidos (641/641, sem mudança).
+
+## "Itens Divergentes" — item sem data de última movimentação avisa em vermelho, em vez de sumir
+
+Cliente pediu: itens sem "última data de movimentação" (`c.ultimaSaida`, ver
+seção "Três correções... Última Movimentação" mais acima) devem mostrar
+explicitamente "Sem registro de movimentação", em vermelho e negrito — antes,
+a linha inteira só era renderizada quando `c.ultimaSaida` existia
+(`{c.ultimaSaida && <div>...</div>}`), então um item sem essa data ficava sem
+NENHUMA indicação, como se a informação nunca tivesse sido pensada pra esse
+card.
+
+- `DivergentItemsPanel`: a linha virou incondicional — sempre renderiza,
+  alternando entre o texto de sempre ("Última movimentação: {data} · {N}
+  dias parado") quando `c.ultimaSaida` existe, ou `<strong style={{color:
+  'var(--danger)'}}>Sem registro de movimentação</strong>` quando não existe
+  — reaproveita o token `--danger` (vermelho já usado em todo o app pra
+  estado de alerta/erro), sem introduzir cor nova.
+- Testado via harness novo (`harness_ultima_movimentacao.js`, jsdom +
+  react-dom/client + `act()`, mesma técnica rigorosa de sempre): item COM
+  data mostra "Última movimentação: 01/06/2026" + "dias parado", sem o aviso
+  vermelho; item SEM data mostra "Sem registro de movimentação" dentro de um
+  `<strong>` com `color:var(--danger)`, sem o texto de "Última
+  movimentação:". Transpile Babel do arquivo inteiro e balanceamento de
+  chaves do CSS conferidos (641/641, sem mudança — nenhuma classe CSS nova).
+  **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma
+  limitação de sempre (login exige Supabase Auth real, não simulável no
+  sandbox sem rede).
