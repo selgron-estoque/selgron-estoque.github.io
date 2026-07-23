@@ -9572,3 +9572,45 @@ Mensal (%)" à esquerda + "Divergência por Família/Grupo" à direita.
   fileira). **Verificação visual de ponta a ponta fica a cargo do cliente** —
   mesma limitação de sempre (login exige Supabase Auth real, não simulável no
   sandbox sem rede).
+
+## "Valores por Armazém": toggle fora do padrão de botão + valor pequeno demais + rodapé removido
+
+Cliente mandou print do painel logo após a reordenação da rodada anterior,
+pedindo 3 ajustes juntos: "Ajuste as cores para o padrão, corrija tamanho de
+fonte e remova o texto 'Os valores consideram o custo médio dos itens em
+estoque, conforme o último upload da planilha SB2.'"
+
+- **Cor "fora do padrão"**: o toggle "Valor (R$)"/"% do Total" desse painel
+  específico usava `background:var(--ink)` (preto) + `color:'#fff'` (branco)
+  no estado ativo — inline style próprio, nunca alinhado ao padrão real de
+  "estado ativo" já estabelecido no resto do app (`.btn-primary{background:
+  var(--safety);color:var(--safety-ink)}`, laranja da marca + texto escuro —
+  mesmo padrão usado em praticamente todo botão de ação/toggle ativo do app).
+  Corrigido pra usar exatamente essas duas variáveis (`var(--safety)`/
+  `var(--safety-ink)`) em vez de preto/branco — o estado inativo (`transparent`/
+  `var(--ink-dim)`) já estava certo, não precisou mudar.
+- **Tamanho de fonte pequeno demais**: `.bar-fill span` (o valor dentro da
+  barra, ex. "R$ 13,3 milhões") estava em `var(--text-2xs)` (9,5px) — bem
+  menor que o rótulo do armazém ao lado (`.bl`, `var(--text-sm)`, 12,5px),
+  criando o desequilíbrio visual do print. Subiu pra `var(--text-xs)` (11px)
+  — ainda cabe confortavelmente dentro dos 20px de altura de `.bar-track`,
+  mas fica bem mais legível. Escopo: `.bar-fill span` é compartilhada por
+  TODOS os usos de `.bar-row` no app (Divergência por Família/Grupo,
+  Produtividade por Operador, Principais Causas de Erro) — a mudança vale
+  pra todos eles, não só "Valores por Armazém" (mesmo raciocínio de sempre:
+  não duplicar uma regra CSS só pra um caso quando o valor serve a todos).
+- **Texto de rodapé removido**: a linha "ℹ Os valores consideram o custo
+  médio dos itens em estoque, conforme o último upload da planilha SB2."
+  saiu do JSX por completo, junto com o `<Ic>ℹ</Ic>` que a acompanhava —
+  pedido explícito do cliente, sem substituto.
+- Testado via `harness_warehouse_barlist.js` (3 asserções novas: o texto do
+  rodapé não existe mais em lugar nenhum da tela; o botão ativo usa
+  `var(--safety)` em vez de `var(--ink)`; o texto do botão ativo usa
+  `var(--safety-ink)` em vez de branco — as 9 asserções antigas continuam
+  passando, sem regressão na lista de barras em si) e
+  `harness_dashboard_row_order.js` (sem regressão — a reordenação da rodada
+  anterior não foi afetada). Transpile Babel do arquivo inteiro e
+  balanceamento de chaves do CSS conferidos (637/637, sem mudança — só
+  valores dentro de regras/JSX já existentes). **Verificação visual de
+  ponta a ponta fica a cargo do cliente** — mesma limitação de sempre (login
+  exige Supabase Auth real, não simulável no sandbox sem rede).

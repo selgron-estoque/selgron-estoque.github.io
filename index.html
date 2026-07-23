@@ -661,7 +661,7 @@
      mesmo efeito visual de outros bar charts com barra curta+rótulo
      longo. Não afeta os outros usos de `.bar-row` (valores curtos, tipo
      "3"/"2"/"1", nunca chegam perto de precisar disso). */
-  .bar-fill span{font-family:var(--font-mono);font-size:var(--text-2xs);font-weight:700;color:var(--safety-ink);white-space:nowrap;}
+  .bar-fill span{font-family:var(--font-mono);font-size:var(--text-xs);font-weight:700;color:var(--safety-ink);white-space:nowrap;}
   .rank-table{width:100%;border-collapse:collapse;}
   .rank-table th{text-align:left;font-family:var(--font-mono);font-size:var(--text-2xs);text-transform:uppercase;color:var(--ink-dim);padding:8px 6px;border-bottom:1px solid var(--line);}
   .rank-table td{padding:10px 6px;border-bottom:1px solid var(--line);font-size:var(--text-sm);}
@@ -10826,8 +10826,8 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
                   <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:2}}>Distribuição do valor total em estoque por armazém.</div>
                 </div>
                 <div style={{display:'flex',border:'1px solid var(--line)',borderRadius:8,overflow:'hidden',flexShrink:0}}>
-                  <button onClick={()=>setModoValor('valor')} style={{border:'none',padding:'6px 12px',fontSize:'var(--text-xs)',cursor:'pointer',background:modoValor==='valor'?'var(--ink)':'transparent',color:modoValor==='valor'?'#fff':'var(--ink-dim)'}}>Valor (R$)</button>
-                  <button onClick={()=>setModoValor('percentual')} style={{border:'none',padding:'6px 12px',fontSize:'var(--text-xs)',cursor:'pointer',background:modoValor==='percentual'?'var(--ink)':'transparent',color:modoValor==='percentual'?'#fff':'var(--ink-dim)'}}>% do Total</button>
+                  <button onClick={()=>setModoValor('valor')} style={{border:'none',padding:'6px 12px',fontSize:'var(--text-xs)',cursor:'pointer',background:modoValor==='valor'?'var(--safety)':'transparent',color:modoValor==='valor'?'var(--safety-ink)':'var(--ink-dim)'}}>Valor (R$)</button>
+                  <button onClick={()=>setModoValor('percentual')} style={{border:'none',padding:'6px 12px',fontSize:'var(--text-xs)',cursor:'pointer',background:modoValor==='percentual'?'var(--safety)':'transparent',color:modoValor==='percentual'?'var(--safety-ink)':'var(--ink-dim)'}}>% do Total</button>
                 </div>
               </div>
               {armazensTreemapData.length===0 ? (
@@ -10844,9 +10844,6 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
                   </div>
                 </div>
               ))}
-              <div style={{marginTop:14,paddingTop:10,borderTop:'1px solid var(--line)',fontSize:'var(--text-xs)',color:'var(--ink-dim)'}}>
-                <Ic>ℹ</Ic> Os valores consideram o custo médio dos itens em estoque, conforme o último upload da planilha SB2.
-              </div>
             </div>
           </div>
 
