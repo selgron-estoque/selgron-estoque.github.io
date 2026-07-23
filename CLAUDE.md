@@ -9931,3 +9931,50 @@ SEGUNDA pessoa conferindo, não a mesma).
   **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma
   limitação de sempre (login exige Supabase Auth real, não simulável no
   sandbox sem rede).
+
+## "Sessão inválida ou expirada" persistia mesmo depois da 1ª correção — trocado `getSession()` por `refreshSession()`
+
+O cliente reportou, com print (tela "Usuários", tentando redefinir a senha de
+"Leandro Oliane"), que o erro "Sessão inválida ou expirada." continuava
+aparecendo mesmo depois de uma correção anterior já ter sido publicada nesta
+mesma sessão — aquela 1ª tentativa tinha adicionado uma chamada a
+`supabaseClient.auth.getSession()` logo antes de invocar a Edge Function
+`usuarios-admin`, na expectativa de que o supabase-js detectasse um token
+vencido e o renovasse sozinho por trás. O print do cliente prova que essa
+renovação "proativa" não é confiável o bastante — `getSession()` pode devolver
+a sessão em cache sem garantir que um refresh de verdade aconteceu antes,
+principalmente depois do app ficar minimizado/em segundo plano por um tempo
+longo no celular (cenário em que o timer interno de renovação do supabase-js
+fica pausado).
+
+- **Descartada, investigada e eliminada**: cache do service worker servindo uma
+  versão antiga do `index.html` — `service-worker.js` já usa estratégia
+  "network-first, sempre" (`CACHE_NAME='stock360-v3'`), então isso não
+  explicaria o problema persistir com o aparelho online.
+- **Correção**: `chamarUsuariosAdmin` trocou a chamada de `getSession()` por
+  **`refreshSession()`, chamada incondicionalmente antes de qualquer ação**
+  (criar/editar/bloquear/redefinir senha/excluir usuário) — diferente de
+  `getSession()` (pode devolver sessão em cache sem tocar a rede),
+  `refreshSession()` sempre pede um access token NOVO de verdade ao servidor,
+  usando o refresh token já guardado, removendo qualquer ambiguidade sobre se
+  uma renovação "por trás" realmente aconteceu. Se `refreshSession()` falhar
+  (o refresh token TAMBÉM já expirou/foi invalidado — cenário extremo, app
+  minimizado por dias) a função nem chega a chamar a Edge Function, devolvendo
+  direto uma mensagem acionável: "Sua sessão expirou. Atualize a página e faça
+  login novamente." — em vez de deixar o erro genérico da function aparecer.
+- Testado via 2 harnesses novos (`harness_chamar_usuarios_admin_refresh_ok.js`/
+  `harness_chamar_usuarios_admin_refresh_falha.js`, substituindo os harnesses
+  antigos que só mockavam `getSession`): cenário 1 — `refreshSession()`
+  resolve com sessão válida → `functions.invoke` é chamado normalmente, com o
+  `acao`/payload certos, resultado de sucesso retornado; cenário 2 —
+  `refreshSession()` resolve com sessão `null`/erro → `functions.invoke`
+  NUNCA é chamada, retorna a mensagem acionável sem bater na Edge Function à
+  toa. Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  conferidos (641/641, sem mudança — só JS, nenhuma classe CSS tocada). Rodei
+  de novo alguns harnesses de regressão próximos (`harness_liberar_
+  recontagem_original.js`/`harness_today_counts_panel.js`) sem quebrar nada.
+  **Verificação contra o Supabase Auth real (o app minimizado de verdade por
+  um tempo longo no celular do cliente) fica a cargo dele** — mesma limitação
+  de sempre (sandbox sem rede) — mas diferente da 1ª tentativa, esta versão
+  não depende de nenhum comportamento "esperançoso" de renovação automática:
+  sempre força uma renovação de verdade antes de qualquer ação administrativa.

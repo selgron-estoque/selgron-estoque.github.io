@@ -1689,19 +1689,20 @@ async function chamarUsuariosAdmin(acao, payload){
   try{
     // Bug real reportado pelo cliente: "Sessão inválida ou expirada" ao
     // tentar redefinir senha depois do app ficar muito tempo em segundo
-    // plano no celular — o token de acesso expira (~1h) e o timer de
-    // renovação automática do supabase-js fica pausado enquanto a aba/app
-    // está minimizado (comportamento normal do navegador pra economizar
-    // bateria), então ele não renova sozinho até alguém chamar `getSession()`
-    // de novo. `functions.invoke` manda o token que já estava em memória, sem
-    // checar validade antes — se esse token estiver vencido, a Edge Function
-    // rejeita com 401 antes de sequer olhar a ação pedida. Chamando
-    // `getSession()` aqui ANTES de invocar a function, o supabase-js checa a
-    // validade e renova sozinho se precisar (é exatamente o gatilho que
-    // faltava) — resolve o caso comum (token só estava desatualizado) sem
-    // precisar de nenhuma ação do usuário.
-    const { data: sessaoAtual } = await supabaseClient.auth.getSession();
-    if(!sessaoAtual || !sessaoAtual.session){
+    // plano no celular. Uma 1ª tentativa de correção chamava só
+    // `getSession()` antes de invocar a function, na expectativa de que o
+    // supabase-js detectasse o token vencido e renovasse sozinho — o
+    // cliente reportou (com print) que o MESMO erro continuou aparecendo,
+    // ou seja essa renovação "proativa" de `getSession()` não é confiável o
+    // bastante (não é garantido que ela dispare um refresh de verdade antes
+    // de devolver a sessão em cache). Trocado por `refreshSession()`,
+    // chamada INCONDICIONALMENTE — ela sempre pede um access token NOVO de
+    // verdade pro servidor usando o refresh token guardado, sem depender de
+    // nenhuma lógica interna "vai que renova sozinho". Isso garante que o
+    // token que a Edge Function recebe em seguida está em dia, mesmo que o
+    // anterior tivesse vencido enquanto o app ficou minimizado.
+    const { data: sessaoRenovada, error: erroRefresh } = await supabaseClient.auth.refreshSession();
+    if(erroRefresh || !sessaoRenovada || !sessaoRenovada.session){
       return {ok:false, erro:'Sua sessão expirou. Atualize a página e faça login novamente.'};
     }
     const { data, error } = await supabaseClient.functions.invoke('usuarios-admin', {
