@@ -1829,6 +1829,53 @@ async function fetchEnderecosPropostosFromSupabase(){
   }
 }
 
+// ---- Reserva de item durante a contagem (trava real, ver CLAUDE.md) ----
+// Deliberadamente SEM estado sincronizado/canal Realtime próprio (diferente
+// de contagens/inventários/endereços/usuários) — cada chamada de
+// `reservarItemSupabase` já é uma consulta ao vivo, atômica, direto no
+// banco (a função SQL `reservar_item` decide na hora, sem depender de
+// nenhuma cópia local desatualizada) — manter um array `reservas`
+// sincronizado à parte só duplicaria estado sem nenhum ganho: a decisão de
+// bloquear ou liberar sempre precisa ser a mais recente possível, então já
+// é sempre buscada na hora, nunca de um cache.
+function reservaRowToLocal(row){
+  return {
+    codigo: row.produto_codigo,
+    inventarioId: row.inventario_id,
+    usuario: row.usuario,
+    usuarioId: row.usuario_id,
+    criadoEm: row.criado_em,
+    expiraEm: row.expira_em,
+    reservadoPorMim: !!row.reservado_por_mim,
+  };
+}
+
+// Tenta reservar um item pra contar — só sucede se ninguém mais tiver uma
+// reserva ATIVA (não expirada) pro mesmo código (a função SQL trata reserva
+// expirada como livre pra reuso, e reentrar no mesmo item por quem já é o
+// dono da reserva sempre sucede/renova). `res.ok` diz se a reserva foi
+// concedida; `res.reserva` sempre traz o estado atual (de quem for) — usado
+// pra mostrar "já sendo contado por Fulano" quando recusado.
+async function reservarItemSupabase(codigo, inventarioId){
+  if(!supabaseClient) return {ok:true, reserva:null}; // sem Supabase configurado, não trava (mesma tolerância a falha do resto do app)
+  try{
+    const { data, error } = await supabaseClient.rpc('reservar_item', {p_produto_codigo: codigo, p_inventario_id: inventarioId, p_minutos: 5});
+    if(error) return {ok:true, reserva:null, erro:error.message}; // falha de rede não deve travar o operador — mesma tolerância já usada em saveContagemToSupabase
+    const row = (data && data[0]) || null;
+    if(!row) return {ok:true, reserva:null};
+    return {ok: row.reservado_por_mim, reserva: reservaRowToLocal(row)};
+  }catch(err){
+    return {ok:true, reserva:null, erro:String(err && err.message || err)};
+  }
+}
+
+function liberarItemReservaSupabase(codigo){
+  if(!supabaseClient) return;
+  supabaseClient.rpc('liberar_item_reserva', {p_produto_codigo: codigo}).then(({error})=>{
+    if(error) console.warn('Falha ao liberar reserva de item:', error);
+  });
+}
+
 // ---- Atualização diária do saldo em estoque (planilha SB2) ----
 // O cliente ainda não tem a sincronização automática com o Protheus (a Edge
 // Function sync-saldo-protheus continua só desenhada) — enquanto isso, ele
@@ -4120,6 +4167,23 @@ function App(){
     });
   }
 
+  // Reserva de item durante a contagem (trava real — ver CLAUDE.md "Reserva
+  // de item durante a contagem"). Diferente de `addAddressProposal`, essa
+  // chamada PRECISA ser aguardada (`await`) antes do operador poder ver o
+  // campo de quantidade — é o próprio propósito da trava: saber ANTES de
+  // deixar o operador prosseguir se outro aparelho já está contando esse
+  // item agora. Rede fora do ar não bloqueia (ver `reservarItemSupabase`,
+  // que devolve `ok:true` em caso de erro de rede — mesma tolerância a
+  // falha de sempre, preferível a travar o chão de fábrica por causa de uma
+  // reserva que a rede não conseguiu confirmar). Sem estado local — a
+  // resposta da RPC já é a verdade mais atual, nada aqui pra cachear.
+  function reservarItem(codigo, inventarioId){
+    return reservarItemSupabase(codigo, inventarioId);
+  }
+  function liberarItemReserva(codigo){
+    liberarItemReservaSupabase(codigo);
+  }
+
   // `counts` muda o tempo todo (cada contagem finalizada), mas o efeito de
   // sincronização (mais abaixo) só quer re-executar quando `currentUser`
   // muda — sem essa ref, o `sync()` capturaria uma versão desatualizada de
@@ -4865,16 +4929,16 @@ function App(){
           if(res.ok){ setInventories(prev=>[inv,...prev]); goto('inventories'); }
           return res;
         }} />}
-        {view==='randomCount' && <RandomCountFlow inv={flowState} user={currentUser} counts={counts} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} gruposExcluidos={gruposExcluidos} />}
-        {view==='manualCount' && <ManualCountFlow user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('home');}} onAddressProposed={addAddressProposal} operadorVeSaldo={operadorVeSaldo} />}
-        {view==='routeCount' && <RouteCountFlow inv={flowState} user={currentUser} counts={counts} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} gruposExcluidos={gruposExcluidos} />}
-        {view==='importedListCount' && <ImportedListCountFlow inv={flowState} user={currentUser} counts={counts} inventories={inventories} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} />}
+        {view==='randomCount' && <RandomCountFlow inv={flowState} user={currentUser} counts={counts} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} gruposExcluidos={gruposExcluidos} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
+        {view==='manualCount' && <ManualCountFlow user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('home');}} onAddressProposed={addAddressProposal} operadorVeSaldo={operadorVeSaldo} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
+        {view==='routeCount' && <RouteCountFlow inv={flowState} user={currentUser} counts={counts} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} gruposExcluidos={gruposExcluidos} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
+        {view==='importedListCount' && <ImportedListCountFlow inv={flowState} user={currentUser} counts={counts} inventories={inventories} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
         {view==='recounts' && hasAccess(currentUser,'recounts') && <RecountsPanel counts={counts} inventories={inventories} role={role} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onEditarMotivoObservacao={editarMotivoObservacaoContagem} operadorVeValoresRecontagem={operadorVeValoresRecontagem} />}
         {view==='divergentes' && hasAccess(currentUser,'divergentes') && <DivergentItemsPanel counts={counts} inventories={inventories} role={role} goto={goto} onApprove={approveDivergence} onSendToDiretoria={enviarParaAprovacaoDiretoria} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onEditarMotivoObservacao={editarMotivoObservacaoContagem} />}
         {view==='aprovacaoDiretoria' && hasAccess(currentUser,'aprovacaoDiretoria') && <DiretoriaApprovalPanel counts={counts} inventories={inventories} role={role} onApproveSA={aprovarAjusteDiretoria} onRejectSA={reprovarAjusteDiretoria} onToggleUrgente={toggleUrgente} />}
         {view==='todasDivergencias' && <AllDivergencesPanel counts={counts} historicoConcluidas={historicoConcluidas} goto={goto} />}
         {view==='concluidas' && hasAccess(currentUser,'concluidas') && <ConcludedCountsPanel counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} onDeleteCount={role==='admin' ? deleteCount : undefined} onReprovarAjusteHistorico={role==='admin' ? reprovarAjusteHistorico : undefined} onRefresh={refreshHistoricoConcluidas} />}
-        {view==='recount' && flowState && <RecountFlow original={flowState} user={currentUser} onAddressProposed={addAddressProposal} onFinish={(c)=>{registerFinishedCount(c); goto('recounts');}} operadorVeSaldo={operadorVeSaldo} />}
+        {view==='recount' && flowState && <RecountFlow original={flowState} user={currentUser} onAddressProposed={addAddressProposal} onFinish={(c)=>{registerFinishedCount(c); goto('recounts');}} operadorVeSaldo={operadorVeSaldo} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
         {view==='dashboard' && hasAccess(currentUser,'dashboard') && <Dashboard counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} historicoParaTendencia={historicoParaTendencia} goto={goto} />}
         {view==='relatorios' && hasAccess(currentUser,'relatorios') && <ReportsScreen counts={counts} inventories={inventories} currentUser={currentUser} sendHistory={reportSendHistory} onLogSend={logReportSend} role={role} onHistoricoImportado={refreshHistoricoConcluidas} />}
         {view==='settings' && hasAccess(currentUser,'settings') && <Settings role={role} currentUser={currentUser} operadorVeSaldo={operadorVeSaldo} onSetOperadorVeSaldo={updateOperadorVeSaldo} operadorVeValoresRecontagem={operadorVeValoresRecontagem} onSetOperadorVeValoresRecontagem={updateOperadorVeValoresRecontagem} gruposExcluidos={gruposExcluidos} onSetGruposExcluidos={updateGruposExcluidos} sessionTimeoutMin={sessionTimeoutMin} onSetSessionTimeoutMin={updateSessionTimeoutMin} />}
@@ -6973,7 +7037,7 @@ function useCountQueue(items){
   return {current, idx, total:items.length, next, done};
 }
 
-function CountStep({product, user, onComplete, onAddressProposed, inv, expectAddressCheck=true, numeroContagem=1, contagemAnteriorId=null, counts=[], previousCount=null, queueAtual=null, queueTotal=null, operadorVeSaldo=false, onSkip=null, conflitoInventario=null}){
+function CountStep({product, user, onComplete, onAddressProposed, inv, expectAddressCheck=true, numeroContagem=1, contagemAnteriorId=null, counts=[], previousCount=null, queueAtual=null, queueTotal=null, operadorVeSaldo=false, onSkip=null, conflitoInventario=null, onReservarItem=null, onLiberarItemReserva=null}){
   // Bloqueia lançar uma contagem NOVA (1ª rodada) de um item que já tem um
   // documento em aberto em outro lugar do app (ex: contado numa lista de
   // inventário e ainda aguardando análise do líder, e alguém tenta contar o
@@ -7049,6 +7113,36 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   // "item pulado". Dentro da MESMA sessão, o operador continua vendo os
   // itens seguintes normalmente (o pulo só avança o cursor local da fila).
   const [skipConfirm, setSkipConfirm] = useState(false);
+
+  // Reserva de item durante a contagem — trava real pra evitar dois
+  // operadores contando o MESMO item ao mesmo tempo (cliente pediu depois
+  // de reconsiderar uma decisão anterior de resolver só por processo/
+  // treinamento — ver CLAUDE.md "Reserva de item durante a contagem"). Só
+  // roda quando o fluxo que chama `CountStep` passa `onReservarItem` — feito
+  // pra TODOS os fluxos de contagem (avulsa, fila, recontagem), não só os
+  // com fila. Remonta (e reserva de novo) toda vez que `product.codigo`
+  // muda — nos fluxos com fila isso já acontece sozinho via `key={q.current.
+  // codigo}`; nos avulsos, o próprio componente pai troca de produto.
+  const [reservaStatus, setReservaStatus] = useState(onReservarItem ? 'checking' : 'liberado');
+  const [reservaInfo, setReservaInfo] = useState(null);
+  useEffect(()=>{
+    if(!onReservarItem) return;
+    let cancelado = false;
+    setReservaStatus('checking');
+    onReservarItem(product.codigo, inv ? inv.id : '—').then(res=>{
+      if(cancelado) return;
+      if(res.ok){
+        setReservaStatus('liberado');
+      } else {
+        setReservaStatus('bloqueado');
+        setReservaInfo(res.reserva || null);
+      }
+    });
+    return ()=>{
+      cancelado = true;
+      if(onLiberarItemReserva) onLiberarItemReserva(product.codigo);
+    };
+  }, [product.codigo]);
 
   const [scanning, setScanning] = useState(false);
   // Verificação opcional do item por câmera dentro da própria tela de
@@ -7312,6 +7406,35 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   // `previousCount` existe.
   const previousSeverity = previousCount ? classifySeverity4(severidadeDe(previousCount)) : null;
 
+  // Bloqueio da reserva — checado por ÚLTIMO (depois de todos os hooks já
+  // declarados acima, nunca antes) pra não violar a ordem de hooks entre
+  // renders da MESMA instância montada (mesmo cuidado já documentado nos
+  // blocos `openDoc`/`conflitoInventario`, que retornam ANTES de qualquer
+  // hook por já não terem esse risco — aqui os hooks da reserva em si
+  // já foram todos chamados acima, então o retorno condicional aqui embaixo
+  // é seguro).
+  if(reservaStatus==='checking'){
+    return <div className="empty-state">Verificando disponibilidade do item…</div>;
+  }
+  if(reservaStatus==='bloqueado'){
+    const expiraStr = reservaInfo && reservaInfo.expiraEm ? new Date(reservaInfo.expiraEm).toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'}) : null;
+    return (
+      <div className="empty-state">
+        <div className="ic"><Ic size={40}>🔒</Ic></div>
+        <div style={{fontWeight:700,marginBottom:6}}>{product.codigo} está sendo contado agora</div>
+        <div style={{maxWidth:420,margin:'0 auto'}}>
+          {reservaInfo && reservaInfo.usuario ? <>{reservaInfo.usuario} abriu este item pra contar</> : 'Outro operador abriu este item pra contar'}
+          {expiraStr && <> — libera automaticamente às {expiraStr} se não for concluído</>}.
+        </div>
+        <div style={{maxWidth:420,margin:'10px auto 0',fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>
+          Pra evitar duas contagens do mesmo item ao mesmo tempo, espere terminar ou tente de novo em
+          alguns minutos.
+        </div>
+        {onSkip && <button type="button" className="btn btn-outline" style={{marginTop:16}} onClick={()=>onSkip('reservado_por_outro')}>Pular este item</button>}
+      </div>
+    );
+  }
+
   return (
     <div>
       {onSkip && !scanning && !scanningItem && (
@@ -7562,7 +7685,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
 
 /* ---------------- MÓDULO 2: CONTAGEM ALEATÓRIA ---------------- */
 
-function RandomCountFlow({inv, user, onRegisterCount, onFinish, onAddressProposed, setInventories, counts, operadorVeSaldo, gruposExcluidos}){
+function RandomCountFlow({inv, user, onRegisterCount, onFinish, onAddressProposed, setInventories, counts, operadorVeSaldo, gruposExcluidos, onReservarItem, onLiberarItemReserva}){
   // Armazém obrigatório em TODA contagem por este motor (pedido do
   // cliente: item com saldo em mais de um armazém nunca batia, porque a
   // busca não era presa a um armazém físico específico). Um inventário
@@ -7662,6 +7785,8 @@ function RandomCountFlow({inv, user, onRegisterCount, onFinish, onAddressPropose
         onAddressProposed={onAddressProposed}
         operadorVeSaldo={operadorVeSaldo}
         onSkip={()=>q.next()}
+        onReservarItem={onReservarItem}
+        onLiberarItemReserva={onLiberarItemReserva}
         onComplete={(c)=>{
           if(inv && inv.id){ setInventories(prev=>prev.map(i=>i.id===inv.id?{...i, contados:i.contados+1}:i)); incrementContadosSupabase(inv.id); }
           onRegisterCount(c);
@@ -7715,7 +7840,7 @@ function ArmazemGate({onSelected, titulo}){
   );
 }
 
-function ManualCountFlow({user, onFinish, onAddressProposed, counts, operadorVeSaldo}){
+function ManualCountFlow({user, onFinish, onAddressProposed, counts, operadorVeSaldo, onReservarItem, onLiberarItemReserva}){
   const [armazem, setArmazem] = useState('');
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState(null);
@@ -7745,7 +7870,7 @@ function ManualCountFlow({user, onFinish, onAddressProposed, counts, operadorVeS
   }
 
   if(selected){
-    return <CountStep product={selected} user={user} counts={counts} onAddressProposed={onAddressProposed} onComplete={(c)=>onFinish(c)} expectAddressCheck={true} operadorVeSaldo={operadorVeSaldo} />;
+    return <CountStep product={selected} user={user} counts={counts} onAddressProposed={onAddressProposed} onComplete={(c)=>onFinish(c)} expectAddressCheck={true} operadorVeSaldo={operadorVeSaldo} onReservarItem={onReservarItem} onLiberarItemReserva={onLiberarItemReserva} />;
   }
 
   function handleScanDetected(text){
@@ -7785,7 +7910,7 @@ function ManualCountFlow({user, onFinish, onAddressProposed, counts, operadorVeS
 
 /* ---------------- MÓDULO 4: CONTAGEM POR ROTA ---------------- */
 
-function RouteCountFlow({inv, user, onRegisterCount, onFinish, onAddressProposed, setInventories, counts, operadorVeSaldo, gruposExcluidos}){
+function RouteCountFlow({inv, user, onRegisterCount, onFinish, onAddressProposed, setInventories, counts, operadorVeSaldo, gruposExcluidos, onReservarItem, onLiberarItemReserva}){
   // Armazém obrigatório (mesmo motivo do RandomCountFlow) — se `inv` já vem
   // de um inventário criado do tipo "Contagem por Rota de Endereço" (ver
   // InventoryList), o almoxarifado já está definido ali; a versão avulsa
@@ -7935,6 +8060,8 @@ function RouteCountFlow({inv, user, onRegisterCount, onFinish, onAddressProposed
         onAddressProposed={onAddressProposed}
         onSkip={()=>q.next()}
         operadorVeSaldo={operadorVeSaldo}
+        onReservarItem={onReservarItem}
+        onLiberarItemReserva={onLiberarItemReserva}
         onComplete={(c)=>{
           if(inv && inv.id){ setInventories(prev=>prev.map(i=>i.id===inv.id?{...i, contados:i.contados+1}:i)); incrementContadosSupabase(inv.id); }
           onRegisterCount(c);
@@ -7947,7 +8074,7 @@ function RouteCountFlow({inv, user, onRegisterCount, onFinish, onAddressProposed
 
 /* ---------------- MÓDULO 1B: CONTAGEM POR LISTA IMPORTADA (Excel) ---------------- */
 
-function ImportedListCountFlow({inv, user, onRegisterCount, onFinish, onAddressProposed, setInventories, counts, operadorVeSaldo, inventories}){
+function ImportedListCountFlow({inv, user, onRegisterCount, onFinish, onAddressProposed, setInventories, counts, operadorVeSaldo, inventories, onReservarItem, onLiberarItemReserva}){
   // Enriquece a lista importada com o catálogo real do Supabase (busca em
   // lote, uma requisição só pra todos os códigos da planilha — cache local
   // estático removido, ver CLAUDE.md "cache local removido"). Roda uma vez
@@ -8049,6 +8176,8 @@ function ImportedListCountFlow({inv, user, onRegisterCount, onFinish, onAddressP
         onSkip={()=>q.next()}
         conflitoInventario={conflitoInventario}
         operadorVeSaldo={operadorVeSaldo}
+        onReservarItem={onReservarItem}
+        onLiberarItemReserva={onLiberarItemReserva}
         onComplete={(c)=>{
           if(inv && inv.id){ setInventories(prev=>prev.map(i=>i.id===inv.id?{...i, contados:i.contados+1}:i)); incrementContadosSupabase(inv.id); }
           onRegisterCount(c);
@@ -8061,7 +8190,7 @@ function ImportedListCountFlow({inv, user, onRegisterCount, onFinish, onAddressP
 
 /* ---------------- MÓDULO 7: RECONTAGEM E ANÁLISE DE DIVERGÊNCIAS ---------------- */
 
-function RecountFlow({original, user, onFinish, onAddressProposed, operadorVeSaldo}){
+function RecountFlow({original, user, onFinish, onAddressProposed, operadorVeSaldo, onReservarItem, onLiberarItemReserva}){
   // Busca ao vivo no catálogo real (cache local estático removido, ver
   // CLAUDE.md "cache local removido"). Se não encontrar ou a rede falhar,
   // cai pro MESMO fallback sintético de sempre, montado a partir do que a
@@ -8139,6 +8268,8 @@ function RecountFlow({original, user, onFinish, onAddressProposed, operadorVeSal
         previousCount={original}
         expectAddressCheck={!!product.enderecoCadastrado}
         operadorVeSaldo={operadorVeSaldo}
+        onReservarItem={onReservarItem}
+        onLiberarItemReserva={onLiberarItemReserva}
       />
     </div>
   );

@@ -8632,3 +8632,135 @@ como ser preenchidos, então o card só mostrava ruído visual.
   Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
   conferidos (651/651, sem mudança — só JSX removido). **Verificação
   visual fica a cargo do cliente** — mesma limitação de sempre.
+
+## Reserva de item durante a contagem (trava real) — decisão anterior revista
+
+Cliente perguntou: "verifica se tem bloqueio para que duas pessoas não abram
+o mesmo arquivo de inventário, precisa de uma trava para garantir que o
+mesmo item esteja sendo contado ao mesmo tempo". Essa pergunta já tinha sido
+feita e respondida antes (ver "Sincronização em tempo real (Supabase
+Realtime)... Segunda pergunta do cliente, mais profunda", mais acima) — na
+época o cliente decidiu resolver só por processo/treinamento (orientar o
+operador a ir fisicamente até o endereço antes de abrir o item), sem reserva
+de verdade no servidor. Como ele perguntou de novo, apresentei o estado
+atual (`getOpenCountForProduct`/`getOpenInventoryItemConflict` só reagem
+DEPOIS de uma contagem já finalizada/planejada — nenhum dos dois trava o
+item no momento em que é ABERTO pra contar) e ele decidiu, via
+`AskUserQuestion` (3 perguntas), reverter a decisão anterior: quer reserva
+real no servidor, expirando sozinha em **5 minutos** se abandonada, valendo
+pra **todos os tipos de contagem** (avulsa, fila e recontagem — não só os
+com fila).
+
+### Desenho: reserva por CÓDIGO, sem estado sincronizado no front-end
+
+Diferente de `contagens`/`inventarios`/`usuarios`/`enderecos_propostos`/
+`app_config` (todos com canal Realtime + array local sincronizado), a
+reserva de item **não precisa de nenhum estado sincronizado no cliente** —
+cada verificação já é uma chamada RPC ao vivo, atômica, direto no banco, no
+exato momento em que o item é aberto. Manter um array `reservas` à parte
+só duplicaria estado sem ganho nenhum (a decisão de bloquear sempre precisa
+ser a mais recente possível, nunca de um cache local) — por isso não
+existe canal Realtime nem array local pra isso, só duas funções finas em
+`App()` (`reservarItem`/`liberarItemReserva`) que chamam a RPC direto.
+
+- **`item_reservas`** (`backend/schema.sql`) — uma linha por CÓDIGO DE
+  PRODUTO (`produto_codigo text primary key`) — a reserva é GLOBAL por
+  código, não por inventário: o mesmo item não pode ser contado ao mesmo
+  tempo em lugar nenhum do app (avulso, numa lista, ou em recontagem).
+  `usuario_id` (via `auth.uid()`) é a chave de PROPRIEDADE de verdade;
+  `usuario` (nome) é só pra exibição ("já sendo contado por Fulano").
+- **`reservar_item(p_produto_codigo, p_inventario_id, p_minutos=5)`** — faz
+  um `INSERT ... ON CONFLICT (produto_codigo) DO UPDATE ... WHERE
+  r.expira_em < now() OR r.usuario_id = v_uid` — só sobrescreve a reserva
+  existente se ela já EXPIROU ou já é do próprio usuário (reentrar no mesmo
+  item, ex. remontagem do componente sem o item ter de fato mudado, sempre
+  sucede/renova). **SEMPRE devolve o estado ATUAL da reserva daquele
+  código** (de quem for), com um campo calculado `reservado_por_mim` — é
+  assim que o cliente sabe, numa recusa, quem está contando agora e quando
+  expira, sem precisar de uma segunda consulta. Faxina leve embutida (`delete
+  ... expira_em < now() - interval '1 hour'`) evita a tabela crescer sem
+  limite ao longo do tempo, sem precisar de nenhum job de limpeza externo —
+  reservas expiradas mais recentes que 1h continuam na tabela até serem
+  sobrescritas na próxima tentativa pro mesmo código, ou removidas por essa
+  faxina depois de 1h.
+- **`liberar_item_reserva(p_produto_codigo)`** — só remove se for a reserva
+  de quem está chamando (`usuario_id = auth.uid()`), protegendo contra um
+  aparelho liberar por engano a reserva de outro operador.
+- RLS: leitura/escrita liberada pra `authenticated` (mesmo padrão de sempre
+  pra tabela sem dado sensível, sem Supabase Auth granular por linha ainda).
+
+### `index.html` — `CountStep` ganha o bloqueio, TODOS os fluxos ganham as props
+
+- **`reservarItemSupabase`/`liberarItemReservaSupabase`** (perto de
+  `fetchEnderecosPropostosFromSupabase`) — chamam as duas RPCs.
+  `reservarItemSupabase` **nunca bloqueia por falha de rede** — se a RPC
+  falhar (Supabase fora do ar, erro de rede), devolve `{ok:true}` — mesma
+  tolerância a falha já usada em `saveContagemToSupabase`/
+  `addAddressProposal`: preferível deixar o operador contar sem a trava a
+  travar o chão de fábrica por causa de uma reserva que a rede não
+  conseguiu confirmar.
+- **`App()` ganha `reservarItem(codigo, inventarioId)`/`liberarItemReserva(codigo)`**
+  — wrappers finos (sem estado local, ver acima), passados como prop pros 5
+  fluxos de contagem (`RandomCountFlow`/`RouteCountFlow`/
+  `ImportedListCountFlow`/`ManualCountFlow`/`RecountFlow`), que só repassam
+  pro `<CountStep>` interno.
+- **`CountStep` ganha `onReservarItem`/`onLiberarItemReserva`** (opcionais,
+  `null` por padrão — se não passados, o componente se comporta EXATAMENTE
+  como antes, sem nenhuma tela de reserva). Um novo estado
+  `reservaStatus` (`'checking'`/`'liberado'`/`'bloqueado'`, começa
+  `'checking'` só quando `onReservarItem` existe) + um `useEffect` que
+  dispara a reserva a cada `product.codigo` novo (nos fluxos com fila, isso
+  já acontece sozinho via `key={q.current.codigo}` — o componente remonta
+  por item; nos avulsos, o componente pai já troca de produto). A função de
+  limpeza do `useEffect` chama `onLiberarItemReserva` — cobre TODOS os
+  casos de saída (item concluído, pulado, ou o operador simplesmente
+  voltando/navegando pra outro lugar), sem precisar duplicar a chamada de
+  liberação em cada ponto de saída manualmente.
+- **Cuidado de ordem de hooks**: os 2 hooks novos (`useState`×2 +
+  `useEffect`) foram declarados junto dos outros hooks do componente (logo
+  depois de `skipConfirm`), e o bloqueio condicional (`if(reservaStatus===
+  'checking'/'bloqueado') return (...)`) só acontece **depois de TODOS os
+  hooks do componente já terem sido chamados** (bem no fim, logo antes do
+  `return` principal) — nunca no meio, pra não violar a ordem de hooks
+  entre renders da mesma instância montada (mesmo cuidado já documentado
+  nos blocos `openDoc`/`conflitoInventario`, que retornam ANTES de qualquer
+  hook por já não terem esse risco).
+- **Tela de bloqueio** (mesmo visual "🔒" já usado por `openDoc`/
+  `conflitoInventario`) mostra quem está contando agora e a que horas a
+  reserva expira (`toLocaleTimeString`), com o botão "Pular este item"
+  (reaproveita o mecanismo de pular já existente) quando `onSkip` está
+  disponível.
+- **Sem heartbeat/renovação automática** — decisão deliberada: o cliente
+  escolheu 5 minutos como o menor prazo justamente pra reduzir a chance de
+  um item ficar preso, então se uma contagem legítima demorar mais que
+  isso, a reserva pode expirar e outro operador pode pegar o item nesse
+  meio-tempo — mesmo trade-off aceito, não um bug. `finalize()`/`onSkip`
+  não precisam liberar a reserva explicitamente — o desmonte do componente
+  (troca de item via `key`, ou navegação pra outro lugar) já faz isso
+  sozinho via a função de limpeza do `useEffect`.
+
+### Fora de escopo, decisão consciente
+
+- Nenhum indicador visual de "quantos itens estão sendo contados agora" em
+  lugar nenhum — o pedido era só a trava em si, não um painel de
+  monitoramento.
+- Sem histórico/auditoria de reservas passadas — a tabela só guarda o
+  estado ATUAL (1 linha por código), sobrescrita a cada nova reserva.
+
+Testado via harness real (jsdom + react-dom/client + `act()`): sem
+`onReservarItem`, `CountStep` se comporta exatamente como antes (nenhuma
+tela de "verificando"/bloqueio); com `onReservarItem` concedendo a reserva,
+mostra a tela normal (não fica preso em "Verificando disponibilidade") e
+chama `onLiberarItemReserva` com o código certo ao desmontar; com
+`onReservarItem` recusando, mostra a tela de bloqueio com o nome de quem
+está contando, nenhum campo de endereço/quantidade aparece, e "Pular este
+item" chama `onSkip` com o motivo certo. Rodei de novo as suítes de
+regressão de fila (`RandomCountFlow`/`RouteCountFlow` — avançar sem
+navegar/sem herdar estado do item anterior, corredores/itens) sem quebrar
+nada (2 harnesses antigos precisaram só de um mock de `.auth`/container
+isolado atualizados, mesmo ajuste de mock já aplicado a outros harnesses
+nesta sessão — não é regressão de código). Transpile Babel do arquivo
+inteiro e balanceamento de chaves do CSS conferidos (651/651, sem mudança —
+nenhuma classe CSS nova). **Verificação contra o Supabase real fica a cargo
+do cliente** — mesma limitação de sempre (sandbox sem rede) — falta rodar o
+SQL novo (`item_reservas` + as 2 funções) no projeto real.

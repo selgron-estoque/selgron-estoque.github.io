@@ -1091,3 +1091,84 @@ alter table usuarios add column if not exists acessos_removidos jsonb not null d
 --   select column_name from information_schema.columns where table_name = 'inventarios' and column_name = 'urgente';
 -- =============================================================================
 alter table inventarios add column if not exists urgente boolean not null default false;
+
+-- =============================================================================
+-- RESERVA DE ITEM DURANTE A CONTAGEM — trava real pra evitar dois operadores
+-- contando o MESMO item ao mesmo tempo. Já tinha sido discutida antes (ver
+-- CLAUDE.md, seção "Sincronização em tempo real... Segunda pergunta do
+-- cliente") e na época ele decidiu resolver só por processo/treinamento, sem
+-- reserva de verdade — voltou a pedir agora, escolhendo: reserva real no
+-- servidor, expiração de 5 minutos (se o operador abandonar a tela sem
+-- terminar), valendo pra TODOS os tipos de contagem (avulsa, fila e
+-- recontagem, não só os com fila).
+--
+-- Uma linha por CÓDIGO DE PRODUTO (chave primária) — a reserva é GLOBAL por
+-- código, não por inventário: o mesmo item não pode ser contado ao mesmo
+-- tempo em lugar nenhum do app, esteja ele numa lista, avulso, ou em
+-- recontagem. `usuario_id` é a chave de propriedade de verdade (comparada
+-- via `auth.uid()`, nunca por nome — nome é só pra EXIBIÇÃO, "reservado por
+-- Fulano").
+create table if not exists item_reservas (
+  produto_codigo text primary key,
+  inventario_id text,
+  usuario text not null,
+  usuario_id uuid,
+  criado_em timestamptz not null default now(),
+  expira_em timestamptz not null
+);
+
+alter table item_reservas enable row level security;
+create policy "leitura autenticada" on item_reservas for select using (auth.role() = 'authenticated');
+create policy "escrita autenticada" on item_reservas for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+
+-- Reserva o item pro usuário que chama — só sucede (retorna uma linha com
+-- `reservado_por_mim = true`) se NINGUÉM MAIS tiver uma reserva ATIVA (não
+-- expirada) pro mesmo código. Uma reserva EXPIRADA é tratada como livre — o
+-- UPSERT sobrescreve sozinho, sem precisar de nenhum job de limpeza externo
+-- (a linha `delete ... expira_em < now() - interval '1 hour'` faz uma faxina
+-- leve a cada chamada, só pra tabela não crescer sem limite ao longo do
+-- tempo). Reentrar no MESMO item por quem já é o dono da reserva também
+-- sucede (renova o prazo) — cobre o caso de o componente remontar sem o
+-- item ter de fato mudado.
+--
+-- SEMPRE devolve o estado ATUAL da reserva daquele código (de quem for) —
+-- é assim que o cliente sabe "quem está contando agora" quando é recusado,
+-- sem precisar de uma segunda consulta.
+create or replace function reservar_item(p_produto_codigo text, p_inventario_id text, p_minutos int default 5)
+returns table(produto_codigo text, inventario_id text, usuario text, usuario_id uuid, criado_em timestamptz, expira_em timestamptz, reservado_por_mim boolean)
+language plpgsql
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_nome text;
+begin
+  select u.nome into v_nome from usuarios u where u.id = v_uid;
+
+  delete from item_reservas ir2 where ir2.expira_em < now() - interval '1 hour';
+
+  insert into item_reservas as r (produto_codigo, inventario_id, usuario, usuario_id, criado_em, expira_em)
+  values (p_produto_codigo, p_inventario_id, coalesce(v_nome, 'Desconhecido'), v_uid, now(), now() + (p_minutos || ' minutes')::interval)
+  on conflict (produto_codigo) do update
+    set inventario_id = excluded.inventario_id,
+        usuario = excluded.usuario,
+        usuario_id = excluded.usuario_id,
+        criado_em = excluded.criado_em,
+        expira_em = excluded.expira_em
+    where r.expira_em < now() or r.usuario_id = v_uid;
+
+  return query
+    select ir.produto_codigo, ir.inventario_id, ir.usuario, ir.usuario_id, ir.criado_em, ir.expira_em,
+           (ir.usuario_id = v_uid) as reservado_por_mim
+    from item_reservas ir where ir.produto_codigo = p_produto_codigo;
+end;
+$$;
+
+-- Libera a reserva (contagem finalizada, item pulado, ou operador saiu da
+-- tela) — só remove se for a reserva de quem está chamando (protege contra
+-- um aparelho liberar por engano a reserva de outro operador).
+create or replace function liberar_item_reserva(p_produto_codigo text)
+returns void
+language sql
+as $$
+  delete from item_reservas where produto_codigo = p_produto_codigo and usuario_id = auth.uid();
+$$;
