@@ -9059,3 +9059,37 @@ eu comparar lado a lado, já que eu tinha perdido o acesso a ele.
   declarações de background próprias). **Verificação visual de ponta a ponta
   fica a cargo do cliente** — mesma limitação de sempre (login exige
   Supabase Auth real, não simulável no sandbox sem rede).
+
+## Vão vazio no fundo de "Contagens na Semana"/"Acuracidade Semanal"/"Acuracidade Mensal"
+
+Cliente mandou print circulando em vermelho um espaço vazio no fundo de 3
+painéis (os de gráfico de altura fixa) que não aparecia em "Valores por
+Armazém"/"Divergência por Família/Grupo" (os de mais conteúdo). Causa: CSS
+Grid, por padrão, estica (`align-items:stretch`) TODO item da linha pra bater
+com a altura do mais alto — como "Valores por Armazém"/"Divergência por
+Família/Grupo" têm mais conteúdo (cards aninhados / 8 barras), eles ditavam a
+altura da linha inteira, e os painéis de gráfico (altura fixa do SVG) ficavam
+esticados além do próprio conteúdo, sobrando vão vazio embaixo.
+
+- **`align-items:start`** adicionado nos dois grids (`.weekly-top-row`/
+  `.weekly-bottom-row`, dentro do `@media (min-width:900px)`) — cada painel
+  passa a crescer só até a altura do próprio conteúdo, sem esticar pra bater
+  com o vizinho mais alto. Efeito colateral esperado e aceito: os painéis de
+  uma mesma linha podem terminar em alturas diferentes agora (bordas de
+  baixo não alinhadas entre si) — trade-off direto de eliminar o vão vazio,
+  mesmo padrão comum em dashboards com painéis de conteúdo bem diferente.
+- Testado via harness (jsdom + react-dom/client + `act()`, os 2 já
+  existentes das rodadas anteriores) sem quebrar nada — o jsdom não calcula
+  layout real, então o vão em si só é confirmável visualmente. Transpile
+  Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos
+  (661/661, sem mudança — só uma propriedade a mais em 2 regras já
+  existentes). **Verificação visual de ponta a ponta fica a cargo do
+  cliente** — mesma limitação de sempre (login exige Supabase Auth real, não
+  simulável no sandbox sem rede).
+- **Pendente esclarecer**: o mesmo print também tinha 2 setas apontando pros
+  cards "Armazém 04"/"Armazém 05" (dentro de "Valores por Armazém") com a
+  pergunta "cor da fonte?" — não identifiquei nenhuma diferença de estilo
+  entre esses 2 cards e os outros 3 da mesma fileira (`.va-small`, todos com
+  o mesmo `--ink-dim` no rótulo/percentual) — perguntei ao cliente o que
+  exatamente parecia errado ali antes de mexer, pra não arriscar uma mudança
+  de cor sem saber qual texto/elemento é o alvo.
