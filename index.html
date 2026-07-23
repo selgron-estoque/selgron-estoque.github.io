@@ -6037,6 +6037,17 @@ function InventoryList({inventories, goto, role, counts, onDelete, onCancel, onT
     setUrgenteBusyId(null);
     if(!res || !res.ok) setUrgenteErro(prev=>({...prev, [inv.id]: (res && res.erro) || 'Não foi possível salvar — tente novamente.'}));
   }
+  // Menu "⋮" pra "Marcar urgente" — mesmo padrão já usado em Recontagens/
+  // Itens Divergentes/Aprovação de Ajustes, em vez de um botão sempre visível.
+  const [menuAbertoId, setMenuAbertoId] = useState(null);
+  useEffect(()=>{
+    if(!menuAbertoId) return;
+    function handleClickOutside(e){
+      if(!e.target.closest('.count-card-menu')) setMenuAbertoId(null);
+    }
+    document.addEventListener('click', handleClickOutside);
+    return ()=>document.removeEventListener('click', handleClickOutside);
+  }, [menuAbertoId]);
 
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   // `onDelete` agora aguarda confirmação do Supabase antes de sumir com o
@@ -6141,10 +6152,23 @@ function InventoryList({inventories, goto, role, counts, onDelete, onCancel, onT
           </div>
           <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:6}}>
             {inv.urgente && <span className="urgente-chip"><Ic>🔥</Ic> Urgente</span>}
-            <StatusTag status={concluido ? 'ok' : 'warn'} text={concluido ? 'Concluído' : (inv.contados>0 ? 'Em andamento' : 'Pendente')} />
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <StatusTag status={concluido ? 'ok' : 'warn'} text={concluido ? 'Concluído' : (inv.contados>0 ? 'Em andamento' : 'Pendente')} />
+              {canMark && (
+                <div className="count-card-menu" onClick={e=>e.stopPropagation()}>
+                  <button type="button" className="count-card-menu-btn" onClick={()=>setMenuAbertoId(menuAbertoId===inv.id ? null : inv.id)}>⋮</button>
+                  {menuAbertoId===inv.id && (
+                    <div className="count-card-menu-dropdown">
+                      <button type="button" disabled={urgenteBusyId===inv.id} onClick={()=>{ handleToggleUrgente(inv); setMenuAbertoId(null); }}><Ic>🔥</Ic> {urgenteBusyId===inv.id ? 'Salvando…' : (inv.urgente ? 'Remover urgência' : 'Marcar urgente')}</button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
         <div style={{padding:'14px 18px'}}>
+          {urgenteErro[inv.id] && <div className="divergence-alert" style={{marginBottom:10}} onClick={e=>e.stopPropagation()}><Ic>⚠</Ic><span>{urgenteErro[inv.id]}</span></div>}
           <div style={{display:'flex',justifyContent:'space-between',fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>
             <span>{inv.tipo}</span>
             <span>{inv.data}</span>
@@ -6152,14 +6176,6 @@ function InventoryList({inventories, goto, role, counts, onDelete, onCancel, onT
           <div className="progress-bar"><div className="fill" style={{width:pct+'%', background: pct>=100 ? 'var(--ok)' : 'var(--safety)'}}></div></div>
           <div style={{fontFamily:'var(--font-mono)',fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:6}}>{inv.contados}/{inv.qtdItens} itens contados ({pct}%)</div>
         </div>
-        {canMark && (
-          <div style={{padding:'0 18px 14px'}} onClick={e=>e.stopPropagation()}>
-            <button type="button" className="btn btn-outline" style={{width:'auto',padding:'6px 14px',fontSize:'var(--text-sm)'}} disabled={urgenteBusyId===inv.id} onClick={()=>handleToggleUrgente(inv)}>
-              <Ic>🔥</Ic> {urgenteBusyId===inv.id ? 'Salvando…' : (inv.urgente ? 'Remover urgência' : 'Marcar urgente')}
-            </button>
-            {urgenteErro[inv.id] && <div className="divergence-alert" style={{marginTop:8}}><Ic>⚠</Ic><span>{urgenteErro[inv.id]}</span></div>}
-          </div>
-        )}
         {temListaItens && (
           <div style={{padding:'0 18px 14px'}} onClick={e=>e.stopPropagation()}>
             <button type="button" className="btn btn-outline" style={{width:'auto',padding:'6px 14px',fontSize:'var(--text-sm)'}} onClick={()=>toggleItens(inv.id)}>

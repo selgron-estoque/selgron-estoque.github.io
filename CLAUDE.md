@@ -8569,3 +8569,35 @@ resolvida, gerando dois documentos abertos pro mesmo item ao mesmo tempo.
   quebrar nada. **Verificação visual/funcional de ponta a ponta fica a
   cargo do cliente** — mesma limitação de sempre (login exige Supabase
   Auth real, não simulável no sandbox sem rede).
+
+## "Marcar urgente" em Inventários Pendentes vira menu "⋮" (mesmo padrão das outras telas)
+
+Cliente pediu: "marcar urgente pode ser igual das outras telas, nos 3
+pontinhos" — a versão anterior (mesma rodada) tinha um botão "Marcar
+urgente"/"Remover urgência" sempre visível, solto abaixo do card; nas
+outras 3 telas (Recontagens/Itens Divergentes/Aprovação de Ajustes) essa
+mesma ação já mora dentro de um menu "⋮" no canto do cabeçalho do card.
+
+- **`InventoryList`** ganhou o mesmo mecanismo já usado nas outras 3 telas
+  (`menuAbertoId`, `useEffect` de clique-fora fechando o menu via
+  `.count-card-menu`) — o botão solto foi removido, e "Marcar urgente"/
+  "Remover urgência" passou a morar dentro de um `.count-card-menu`/
+  `.count-card-menu-btn` ("⋮") posicionado ao lado do `StatusTag`, no
+  cabeçalho do card — mesmas classes CSS já existentes (`count-card-menu*`),
+  nenhuma classe nova.
+- **`onClick={e=>e.stopPropagation()}`** no container do menu — necessário
+  porque, diferente dos outros 3 painéis (cujo card não é clicável),
+  `InventoryList` navega pro fluxo de contagem ao clicar em QUALQUER lugar
+  do card; sem isso, abrir o menu "⋮" também dispararia a navegação.
+- O alerta de erro (`urgenteErro[inv.id]`) que antes ficava embaixo do
+  botão removido passou pro topo do bloco de conteúdo do card.
+- Testado via harness real (jsdom + react-dom/client + `act()`): botão
+  "Marcar urgente" não aparece solto em lugar nenhum (só dentro do
+  dropdown); o "⋮" existe 1x por card; clicar nele não navega
+  (`stopPropagation` confirmado); o dropdown mostra "Marcar urgente";
+  clicar chama `onToggleUrgente` certo e fecha o menu; o card volta a
+  subir pro topo/ganhar a classe/chip depois de marcado; operador não vê
+  o "⋮". Transpile Babel do arquivo inteiro e balanceamento de chaves do
+  CSS conferidos (651/651, sem mudança — nenhuma classe CSS nova).
+  **Verificação visual fica a cargo do cliente** — mesma limitação de
+  sempre.
