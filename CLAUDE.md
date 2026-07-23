@@ -9978,3 +9978,68 @@ fica pausado).
   de sempre (sandbox sem rede) — mas diferente da 1ª tentativa, esta versão
   não depende de nenhum comportamento "esperançoso" de renovação automática:
   sempre força uma renovação de verdade antes de qualquer ação administrativa.
+
+## "Contagens Concluídas" — botão de excluir vira menu "⋮" e pergunta qual rodada excluir
+
+Cliente pediu: "os botões de excluir pode por nos 3 pontinhos, quando eu clicar
+em excluir ele pergunta qual contagem que desejo excluir ou se é para excluir
+ambas" — até aqui, cada RODADA (1ª contagem, recontagens) dentro do painel
+"Detalhes" de uma cadeia tinha seu próprio botão solto "🗑 Excluir esta
+contagem", diferente do padrão já estabelecido nas outras telas de contagem
+(Recontagens/Itens Divergentes/Inventários Pendentes), que consolidam a ação
+de excluir dentro de um menu "⋮" no cabeçalho do card.
+
+- **Menu "⋮" novo no cabeçalho do card** (`.count-card-menu`/`.count-card-menu-btn`/
+  `.count-card-menu-dropdown`, mesmas classes CSS já existentes, reaproveitadas
+  sem nenhuma regra nova) — mesmo padrão exato de `RecountsPanel`/
+  `DivergentItemsPanel`/`InventoryList` (estado `menuAbertoId`, fecha ao clicar
+  fora via `.closest('.count-card-menu')`). Só aparece quando `onDeleteCount`
+  existe (admin) **e** a cadeia tem pelo menos 1 rodada deletável
+  (`rodadasDeletaveis = cd.rodadas.filter(r=>!r._fromHistorico)` — uma linha
+  vinda do histórico importado nunca teve botão de excluir, e continua sem
+  ter, mesmo critério de sempre).
+- **Botão "Excluir esta contagem" solto, dentro de cada `round-panel` do
+  detalhe expandido, foi removido por completo** — a ação saiu de all local
+  pra existir só uma vez, no cabeçalho do card, clicando "Excluir contagem"
+  no dropdown do "⋮".
+- **Pergunta qual rodada excluir, ou se é pra excluir todas** (pedido
+  explícito): clicar "Excluir contagem" abre um bloco de confirmação (mesmo
+  lugar visual de sempre, `divergence-alert` + `btn-row`) que:
+  - Se a cadeia tem **só 1 rodada** (a maioria dos casos — item sem
+    divergência, ou já resolvido numa única contagem): mostra direto "Excluir
+    esta contagem? Essa ação não pode ser desfeita..." com um único botão
+    "Excluir a 1ª contagem ({data})" — sem perguntar "qual", já que só existe
+    uma opção.
+  - Se a cadeia tem **2+ rodadas** (1ª contagem + recontagem(ns)): mostra
+    "Esse item tem N contagens registradas. Qual deseja excluir?" com um
+    botão por rodada ("Excluir a 1ª contagem (data)", "Excluir a 2ª contagem
+    (data)"...) **mais** um botão "Excluir todas as N contagens" — cobrindo
+    literalmente os dois casos pedidos ("qual" ou "ambas").
+  - "Cancelar" fecha sem fazer nada, em qualquer um dos dois casos.
+- **`handleConfirmDelete(id)`** (já existente) passou a fechar
+  `confirmDeleteChaveId` (renomeado de `confirmDeleteId`, que agora identifica
+  a CADEIA cujo passo de confirmação está aberto, não mais uma rodada
+  específica) em vez de um id de rodada.
+- **`handleConfirmDeleteTodas(rodadasDeletaveis)`** (nova) — exclui as rodadas
+  em SEQUÊNCIA (`for...of` com `await`), parando no 1º erro (sem deixar a
+  exclusão pela metade sem avisar — como `deleteCount` já remove do estado
+  local a cada sucesso, as rodadas já excluídas antes do erro não "voltam", só
+  a mensagem de erro explica que uma delas falhou). Ao excluir TODAS as
+  rodadas de uma cadeia, o card inteiro desaparece sozinho da lista (mesmo
+  mecanismo de sempre — `buildConcludedChains` recalcula a partir de `counts`,
+  que já não tem mais nenhuma rodada daquele item).
+- Testado via harness novo (`harness_concluidas_delete_menu.js`, jsdom +
+  react-dom/client + `act()`, mesma técnica rigorosa de sempre): cadeia com 2
+  rodadas — nenhum botão solto aparece de cara, "⋮" existe, dropdown mostra
+  "Excluir contagem", clicar pergunta "qual das 2" com os 2 botões certos mais
+  "Excluir todas as 2 contagens"; clicar só na 1ª chama `onDeleteCount` com o
+  id certo, uma vez só; "Excluir todas" chama `onDeleteCount` com os 2 ids, na
+  ordem certa; cadeia com 1 rodada só — não pergunta "qual", não mostra
+  "Excluir todas", mostra direto o botão único, e excluir funciona. Transpile
+  Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos
+  (641/641, sem mudança — nenhuma classe CSS nova, tudo reaproveitado). Rodei
+  de novo alguns harnesses de regressão próximos (`harness_liberar_
+  recontagem_original.js`/`harness_today_counts_panel.js`) sem quebrar nada.
+  **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma
+  limitação de sempre (login exige Supabase Auth real, não simulável no
+  sandbox sem rede).

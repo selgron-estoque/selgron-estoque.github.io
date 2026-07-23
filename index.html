@@ -9594,7 +9594,22 @@ function historicoRowToConcludedChain(h){
 
 function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDeleteCount, onReprovarAjusteHistorico, onRefresh}){
   const [busca, setBusca] = useState('');
-  const [confirmDeleteId, setConfirmDeleteId] = useState(null); // id da RODADA (r.id), não da cadeia
+  // Excluir virou uma ação do menu "⋮" no cabeçalho do card (mesmo padrão já
+  // usado em RecountsPanel/DivergentItemsPanel/InventoryList), não mais um
+  // botão solto dentro de cada rodada — como uma CADEIA pode ter mais de uma
+  // contagem (1ª + recontagens), `confirmDeleteChaveId` (id da CADEIA) abre
+  // um passo intermediário perguntando qual rodada específica excluir, ou
+  // se é para excluir todas de uma vez.
+  const [confirmDeleteChaveId, setConfirmDeleteChaveId] = useState(null);
+  const [menuAbertoId, setMenuAbertoId] = useState(null);
+  useEffect(()=>{
+    if(!menuAbertoId) return;
+    function onDocClick(e){
+      if(!e.target.closest('.count-card-menu')) setMenuAbertoId(null);
+    }
+    document.addEventListener('click', onDocClick);
+    return ()=>document.removeEventListener('click', onDocClick);
+  }, [menuAbertoId]);
   const [excluindo, setExcluindo] = useState(false);
   const [erroExclusao, setErroExclusao] = useState('');
   const [atualizando, setAtualizando] = useState(false);
@@ -9644,10 +9659,31 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
     const res = await onDeleteCount(id);
     setExcluindo(false);
     if(res && res.ok){
-      setConfirmDeleteId(null);
+      setConfirmDeleteChaveId(null);
     } else {
       setErroExclusao((res && res.erro) || 'Não foi possível excluir — tente novamente.');
     }
+  }
+
+  // "Excluir ambas"/"excluir todas" — exclui, em sequência, TODAS as rodadas
+  // deletáveis da cadeia (nunca uma linha vinda do histórico importado, que
+  // não tem `onDeleteCount` aplicável). Para no 1º erro (sem deixar a
+  // exclusão pela metade sem avisar) — como `deleteCount` já remove do
+  // estado local a cada sucesso, as rodadas já excluídas antes do erro não
+  // "voltam", só a mensagem de erro explica que uma delas falhou.
+  async function handleConfirmDeleteTodas(rodadasDeletaveis){
+    setExcluindo(true);
+    setErroExclusao('');
+    for(const r of rodadasDeletaveis){
+      const res = await onDeleteCount(r.id);
+      if(!res || !res.ok){
+        setExcluindo(false);
+        setErroExclusao((res && res.erro) || 'Não foi possível excluir uma das contagens — tente novamente.');
+        return;
+      }
+    }
+    setExcluindo(false);
+    setConfirmDeleteChaveId(null);
   }
 
   async function handleConfirmReprovar(chaveId, historicoRaw){
@@ -9746,6 +9782,10 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
         const ehAjustado = statusCatConcluido==='ajustado';
         const ehSemAjuste = statusCatConcluido==='sem_ajuste';
         const ehSaldoOk = statusCatConcluido==='saldo_ok';
+        // Uma linha vinda do histórico importado não pode ser excluída (não
+        // existe `onDeleteCount` aplicável a ela, só a contagem ao vivo) —
+        // o menu "⋮" só aparece quando sobra pelo menos 1 rodada deletável.
+        const rodadasDeletaveis = cd.rodadas.filter(r=>!r._fromHistorico);
         return (
           <div key={cd.chaveId} className={"count-card"+(ehSemAjuste ? ' sem-ajuste-destaque' : '')}>
             <div className="count-card-bar" style={{background:sev.color}}></div>
@@ -9777,7 +9817,19 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
                     <span className="category-chip" style={{background:'var(--ok-bg)',color:'var(--ok)'}}>SALDO OK</span>
                   )}
                 </div>
-                <span className="count-card-date">{tip.data ? tip.data+(tip.hora?' '+tip.hora:'') : 'Sem data registrada'}</span>
+                <div className="count-card-head-right">
+                  <span className="count-card-date">{tip.data ? tip.data+(tip.hora?' '+tip.hora:'') : 'Sem data registrada'}</span>
+                  {onDeleteCount && rodadasDeletaveis.length>0 && (
+                    <div className="count-card-menu">
+                      <button type="button" className="count-card-menu-btn" onClick={()=>setMenuAbertoId(menuAbertoId===cd.chaveId ? null : cd.chaveId)}>⋮</button>
+                      {menuAbertoId===cd.chaveId && (
+                        <div className="count-card-menu-dropdown">
+                          <button type="button" className="menu-item-danger" onClick={()=>{ setConfirmDeleteChaveId(cd.chaveId); setErroExclusao(''); setMenuAbertoId(null); }}><Ic>🗑</Ic> Excluir contagem</button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="count-card-toprow">
                 <div className="count-card-title">
@@ -9786,6 +9838,32 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
                 </div>
                 <div className="count-card-address-badge"><DIcon name="mapPin" size={16} /> {tip.endereco || tip.enderecoContado || 'não cadastrado'}</div>
               </div>
+              {confirmDeleteChaveId===cd.chaveId && (
+                <div style={{padding:'0 16px 16px'}}>
+                  <div className="divergence-alert" style={{marginBottom:10}}>
+                    <Ic>⚠</Ic>
+                    <span>
+                      {rodadasDeletaveis.length>1
+                        ? 'Esse item tem '+rodadasDeletaveis.length+' contagens registradas. Qual deseja excluir? Essa ação não pode ser desfeita e não deixa rastro.'
+                        : 'Excluir esta contagem? Essa ação não pode ser desfeita e não deixa rastro.'}
+                    </span>
+                  </div>
+                  {erroExclusao && <div className="divergence-alert" style={{marginBottom:10}}><Ic>⚠</Ic><span>{erroExclusao}</span></div>}
+                  <div className="btn-row" style={{flexWrap:'wrap'}}>
+                    {rodadasDeletaveis.map((r,idx)=>(
+                      <button key={r.id} type="button" className="btn btn-danger" disabled={excluindo} onClick={()=>handleConfirmDelete(r.id)}>
+                        {excluindo ? 'Excluindo…' : 'Excluir a '+(idx+1)+'ª contagem ('+(r.data||'sem data')+')'}
+                      </button>
+                    ))}
+                    {rodadasDeletaveis.length>1 && (
+                      <button type="button" className="btn btn-danger" disabled={excluindo} onClick={()=>handleConfirmDeleteTodas(rodadasDeletaveis)}>
+                        {excluindo ? 'Excluindo…' : 'Excluir todas as '+rodadasDeletaveis.length+' contagens'}
+                      </button>
+                    )}
+                    <button type="button" className="btn btn-secondary" disabled={excluindo} onClick={()=>{ setConfirmDeleteChaveId(null); setErroExclusao(''); }}>Cancelar</button>
+                  </div>
+                </div>
+              )}
               <div className="count-card-main" style={{alignItems:'center'}}>
                 <div className="count-card-content">
                   <div className="result-grid result-grid-4col" style={{marginTop:0,gridTemplateColumns:'repeat(4,1fr)'}}>
@@ -9876,22 +9954,6 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
                             {r.documento && <>Doc: {r.documento} · </>}
                             {r.diasSemMovimento!=null && <>Dias s/ movimento: {r.diasSemMovimento}</>}
                           </div>
-                        )}
-                        {onDeleteCount && !r._fromHistorico && (
-                          confirmDeleteId===r.id ? (
-                            <div>
-                              <div className="divergence-alert" style={{marginBottom:10}}>
-                                <Ic>⚠</Ic><span>Excluir esta {idx+1}ª contagem? Essa ação não pode ser desfeita e não deixa rastro.</span>
-                              </div>
-                              {erroExclusao && <div className="divergence-alert" style={{marginBottom:10}}><Ic>⚠</Ic><span>{erroExclusao}</span></div>}
-                              <div className="btn-row">
-                                <button className="btn btn-secondary" disabled={excluindo} onClick={()=>{setConfirmDeleteId(null); setErroExclusao('');}}>Cancelar</button>
-                                <button className="btn btn-danger" disabled={excluindo} onClick={()=>handleConfirmDelete(r.id)}>{excluindo ? 'Excluindo…' : 'Confirmar exclusão'}</button>
-                              </div>
-                            </div>
-                          ) : (
-                            <button className="btn btn-danger" style={{alignSelf:'flex-start'}} onClick={()=>setConfirmDeleteId(r.id)}><Ic>🗑</Ic> Excluir esta contagem</button>
-                          )
                         )}
                       </div>
                     );
