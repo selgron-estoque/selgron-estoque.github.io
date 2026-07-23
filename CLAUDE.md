@@ -8816,3 +8816,31 @@ a tela "menos poluída possível".
   fila/reserva de item (`RandomCountFlow`/`RouteCountFlow`, e o bloqueio de
   reserva com "Pular este item") sem quebrar nada. **Verificação visual
   fica a cargo do cliente** — mesma limitação de sempre.
+
+## Bug real: nome do inventário "Itens Específicos" duplicado no cabeçalho da fila
+
+Cliente mandou print mostrando "Fila de itens específicos de Itens
+Específicos — 22/07/2026 #2 — ordem em que foram adicionados" — texto
+repetindo "Itens Específicos" duas vezes. Causa: o `role-note` de
+`ImportedListCountFlow` monta o texto como `'Fila de itens específicos' +
+' de ' + inv.nome`, mas `inv.nome` pra esse tipo já vem PRÉ-FIXADO com
+"Itens Específicos" (gerado por `nomeEspecificos` em `NewInventory`, ex.
+"Itens Específicos — 22/07/2026 #2") — o prefixo fixo somado ao nome já
+prefixado duplicava o texto.
+
+- Corrigido: o texto agora usa só `inv.nome` direto (que já diz "Itens
+  Específicos..."), sem o prefixo "Fila de itens específicos de" — vira
+  "Itens Específicos — 22/07/2026 #2 — ordem em que foram adicionados".
+  Fallback pro texto "Itens Específicos" puro no caso (teórico) de `inv`
+  existir sem `nome`.
+- **"Lista Importada (Excel)" não tinha esse bug** — o nome desse tipo é
+  digitado livremente pelo líder na criação (campo `nome`, sem prefixo
+  automático), então "Lista importada de {nome}" continua correto, não
+  foi tocado.
+- Testado via harness real (jsdom + react-dom/client + `act()`): o texto
+  não repete mais "Itens Específicos" duas vezes, mostra exatamente
+  "Itens Específicos — 22/07/2026 #2 — ordem em que foram adicionados"
+  pro cenário exato do print do cliente. Transpile Babel do arquivo
+  inteiro e balanceamento de chaves do CSS conferidos (635/635, sem
+  mudança — só texto). **Verificação visual fica a cargo do cliente** —
+  mesma limitação de sempre.
