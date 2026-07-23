@@ -8764,3 +8764,55 @@ inteiro e balanceamento de chaves do CSS conferidos (651/651, sem mudança —
 nenhuma classe CSS nova). **Verificação contra o Supabase real fica a cargo
 do cliente** — mesma limitação de sempre (sandbox sem rede) — falta rodar o
 SQL novo (`item_reservas` + as 2 funções) no projeto real.
+
+## Tela de contagem: remove o quadro decorativo de scan e o card de info duplicado
+
+Cliente mandou 2 prints da tela de contagem e pediu pra remover: (1) o
+quadro preto com cantos laranja animados (`.scan-box`/`.scan-frame`/
+`.scan-laser`) que aparecia ANTES do operador tocar em "Escanear com a
+câmera" — sem função nenhuma, já que o operador precisa clicar no botão de
+qualquer jeito pra ler o código; (2) o card "Unidade/Família/Almoxarifado/
+Endereço" (`infoComplementar`), que aparecia em até 3 telas diferentes
+durante a MESMA contagem (etapa de escanear, e as duas variações da etapa
+de resultado do scan — confirmado/divergente) — pedido explícito de deixar
+a tela "menos poluída possível".
+
+- **Quadro decorativo removido** — `.scan-box`/`.scan-frame`/
+  `.scan-corner-b1`/`.scan-corner-b2`/`.scan-laser` (+ o `@keyframes laser`
+  que só essa classe usava) saíram do CSS por completo, e o `<div
+  className="scan-box">...` + o parágrafo "Toque em 'Escanear' e aponte a
+  câmera..." saíram do JSX da etapa `scan` — sobrou só o botão "Escanear
+  com a câmera" e os 2 botões de simulação (sem câmera). **Não confundir
+  com `.scanner-hint`** (classe DIFERENTE, texto "Aponte a câmera para o
+  QR Code..." mostrado DENTRO do `CameraScanner` enquanto a câmera já está
+  ativa) — essa continua existindo, é outra tela, com função de verdade
+  (orienta durante a leitura de verdade, não antes dela).
+- **`infoComplementar` removido por completo** (definição + os 4 pontos
+  que a renderizavam: etapa `enderecoManual`, etapa `scan`, e as 2
+  variações de `scanResult`) — Unidade/Família/Almoxarifado/Endereço já
+  aparecem de novo, uma vez só, no mini-grid próprio da etapa `count`
+  (`.cs-mini-grid`, que já existia desde o redesenho "coletor industrial")
+  — mostrar o mesmo dado 2-3 vezes na mesma sessão de contagem era
+  redundância pura, sem nenhuma informação a mais.
+  - **Efeito colateral, sinalizado aqui pra não se perder**: `infoComplementar`
+    também mostrava "Valor em estoque: R$ X" + "sem saída recente" quando
+    aplicável — esse dado NÃO existe em nenhum outro lugar da tela de
+    contagem (o `cs-mini-grid` da etapa `count` só tem Unidade/Família/
+    Almox/Endereço, não valor financeiro) — removido junto, já que estava
+    "pendurado" no mesmo bloco. Se o cliente sentir falta desse dado
+    específico, o próximo passo seria adicioná-lo como um 5º mini-card
+    dentro do `cs-mini-grid` já existente, não trazer `infoComplementar`
+    de volta.
+  - CSS órfão removido junto: `.item-meta`/`.item-meta .m/.k/.v` (só
+    existiam pra estilizar o card que acabou de sair, sem mais nenhum uso).
+- Testado via harness real (jsdom + react-dom/client + `act()`): etapa
+  `scan` não mostra mais `.scan-box` nem o texto "Toque em 'Escanear'...",
+  mas o botão "Escanear com a câmera" continua funcionando; nenhuma das 3
+  etapas (`scan`/`scanResult`/`enderecoManual`) mostra mais `.item-meta`;
+  a etapa `count` continua mostrando seu próprio `.cs-mini-grid`
+  normalmente, sem regressão. Transpile Babel do arquivo inteiro e
+  balanceamento de chaves do CSS conferidos (635/635 — caiu de 651, várias
+  regras órfãs removidas junto). Rodei de novo as suítes de regressão de
+  fila/reserva de item (`RandomCountFlow`/`RouteCountFlow`, e o bloqueio de
+  reserva com "Pular este item") sem quebrar nada. **Verificação visual
+  fica a cargo do cliente** — mesma limitação de sempre.

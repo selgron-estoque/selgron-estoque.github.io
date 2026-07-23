@@ -294,10 +294,6 @@
   .item-card-head{padding:16px 18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
   .item-code{font-family:var(--font-mono);font-size:var(--text-sm);color:var(--safety);letter-spacing:0.5px;}
   .item-desc{font-family:var(--font-display);font-size:18px;font-weight:600;margin:4px 0 0 0;text-transform:uppercase;}
-  .item-meta{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:16px 18px;}
-  .item-meta .m{background:var(--panel-raised);border-radius:8px;padding:10px 12px;}
-  .item-meta .m .k{font-family:var(--font-mono);font-size:var(--text-2xs);text-transform:uppercase;color:var(--ink-dim);letter-spacing:0.6px;}
-  .item-meta .m .v{font-size:var(--text-md);font-weight:600;margin-top:3px;}
   .address-chip{font-family:var(--font-mono);font-size:20px;font-weight:700;letter-spacing:2px;background:var(--panel-raised);border:1px dashed var(--line);border-radius:8px;padding:14px;text-align:center;margin-bottom:14px;}
 
   /* COUNT CARD (Recontagens/Itens Divergentes/Concluídas) — shell visual
@@ -404,17 +400,6 @@
   .round-panel.current .round-eyebrow .label{color:var(--safety-ink);}
   .round-eyebrow .badge{font-family:var(--font-mono);font-size:var(--text-2xs);font-weight:700;text-transform:uppercase;padding:4px 9px;border-radius:var(--radius);background:var(--safety);color:#fff;}
   .round-who{font-size:var(--text-xs);color:var(--ink-dim);margin-left:auto;}
-
-  /* QR SCAN VISUAL */
-  .scan-box{position:relative;background:#0A0B0D;border:1px solid var(--line);border-radius:var(--radius);height:180px;display:flex;align-items:center;justify-content:center;overflow:hidden;margin-bottom:14px;}
-  .scan-frame{width:120px;height:120px;position:relative;}
-  .scan-frame::before,.scan-frame::after,.scan-corner-b1,.scan-corner-b2{content:'';position:absolute;width:26px;height:26px;border-color:var(--safety);}
-  .scan-frame::before{top:0;left:0;border-top:3px solid var(--safety);border-left:3px solid var(--safety);}
-  .scan-frame::after{top:0;right:0;border-top:3px solid var(--safety);border-right:3px solid var(--safety);}
-  .scan-corner-b1{bottom:0;left:0;border-bottom:3px solid var(--safety);border-left:3px solid var(--safety);}
-  .scan-corner-b2{bottom:0;right:0;border-bottom:3px solid var(--safety);border-right:3px solid var(--safety);}
-  .scan-laser{position:absolute;left:6px;right:6px;height:2px;background:var(--safety);box-shadow:0 0 8px var(--safety);animation:laser 1.8s ease-in-out infinite;}
-  @keyframes laser{0%{top:6px;}50%{top:110px;}100%{top:6px;}}
 
   /* LIVE CAMERA SCANNER (html5-qrcode) */
   .scanner-wrap{background:#0A0B0D;border-radius:var(--radius);overflow:hidden;margin-bottom:14px;border:1px solid var(--line);position:relative;}
@@ -7361,29 +7346,6 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
     onComplete(count);
   }
 
-  // Cabeçalho compacto (código + descrição) fica em cima só pra confirmar
-  // qual item é, durante as etapas de endereço (que continuam exatamente
-  // como eram — ver CLAUDE.md "Recontar Item vira coletor industrial").
-  // A etapa 'count' (redesenhada) tem seu PRÓPRIO card de material, bem
-  // maior — não repete este cabeçalho compacto, senão o código apareceria
-  // duas vezes na mesma tela.
-  const infoComplementar = (
-    <div className="item-card">
-      <div className="item-meta">
-        <div className="m"><div className="k">Unidade</div><div className="v">{product.unidade || 'não informado'}</div></div>
-        <div className="m"><div className="k">Família</div><div className="v">{product.familia}</div></div>
-        <div className="m"><div className="k">Almoxarifado</div><div className="v">{product.almoxarifado}</div></div>
-        <div className="m"><div className="k">Endereço</div><div className="v">{product.endereco || 'não cadastrado'}</div></div>
-      </div>
-      {typeof product.valorFinanceiro === 'number' && product.valorFinanceiro > 0 && (
-        <div style={{padding:'0 18px 16px',display:'flex',gap:10,fontSize:'var(--text-xs)',color:'var(--ink-dim)',fontFamily:'var(--font-mono)',flexWrap:'wrap'}}>
-          <span>Valor em estoque: R$ {product.valorFinanceiro.toLocaleString('pt-BR',{minimumFractionDigits:2})}</span>
-          {product.semMovimentoRecente && <span style={{color:'var(--warn)'}}>· sem saída recente</span>}
-        </div>
-      )}
-    </div>
-  );
-
   // Mensagem de feedback ao vivo, assim que existe um número digitado —
   // mesmos 3 níveis de `classifyDivergence`/`classifyDivergenceSemCusto`
   // (ok/warn/danger), que já é a regra de negócio real (aprovação
@@ -7478,7 +7440,6 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
             <button className="btn btn-primary" style={{marginBottom:14}} onClick={()=>setScanning(true)}><Ic>📷</Ic> Escanear código do endereço</button>
           )}
           <div className="divergence-alert" style={{marginBottom:14}}><Ic>📍</Ic><span>Este item ainda não tem endereço cadastrado no sistema. Escaneie a etiqueta da prateleira ou informe onde você encontrou — o endereço é obrigatório para contar, e essa informação será enviada para validação do líder.</span></div>
-          {infoComplementar}
           <button className="btn btn-primary" disabled={!ENDERECO_REGEX.test(enderecoInformado)} onClick={confirmEnderecoManual}>Confirmar e continuar</button>
         </div>
       )}
@@ -7490,12 +7451,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
             <CameraScanner onDetected={handleAddressScanDetected} onCancel={()=>setScanning(false)} />
           ) : (
             <div>
-              <div className="scan-box">
-                <div className="scan-frame"><div className="scan-corner-b1"></div><div className="scan-corner-b2"></div><div className="scan-laser"></div></div>
-              </div>
-              <p className="scanner-hint">Toque em "Escanear" e aponte a câmera para o QR Code do endereço</p>
               <button className="btn btn-primary" style={{marginBottom:10}} onClick={()=>setScanning(true)}><Ic>📷</Ic> Escanear com a câmera</button>
-              {infoComplementar}
               <div className="scan-toggle-row">
                 <button className="btn btn-outline" style={{fontSize:'var(--text-xs)'}} onClick={()=>{simulateScan(false); setStep('scanResult');}}>Sem câmera: simular leitura errada</button>
                 <button className="btn btn-outline" style={{fontSize:'var(--text-xs)'}} onClick={()=>{simulateScan(true); setStep('scanResult');}}>Sem câmera: simular leitura certa</button>
@@ -7512,7 +7468,6 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
               <div className="rb-title"><Ic>✅</Ic> Endereço confirmado</div>
               <div className="rb-sub">Código lido: {scannedCode}</div>
             </div>
-            {infoComplementar}
             <button className="btn btn-primary" onClick={()=>setStep('count')}>Continuar</button>
           </div>
         ) : (
@@ -7521,7 +7476,6 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
               <div className="rb-title"><Ic>⚠</Ic> Atenção</div>
               <div className="rb-sub">Você está no endereço: <strong>{scannedCode}</strong><br/>O item está cadastrado no: <strong>{product.endereco}</strong></div>
             </div>
-            {infoComplementar}
             <div className="btn-row">
               <button className="btn btn-secondary" onClick={()=>setStep('scan')}>Escanear novamente</button>
               <button className="btn btn-primary" onClick={()=>setStep('count')}>Contar mesmo assim</button>
