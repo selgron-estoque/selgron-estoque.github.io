@@ -371,6 +371,7 @@ create table contagens (
   observacao text,
   almoxarifado text,                       -- armazém onde o item foi contado (null pra contagens antigas, de antes desta coluna)
   familia text,                            -- família/grupo do produto (ex: "MAT EXPEDIENTE"), null pra contagens antigas
+  ultima_saida date,                       -- data da última saída registrada em estoque_saldo, capturada no momento da contagem (null se o item não tiver esse dado)
   data date not null,
   hora text,
   aprovado_por text,                       -- nome de quem aprovou a divergência (líder/admin), se houver
@@ -1172,3 +1173,20 @@ language sql
 as $$
   delete from item_reservas where produto_codigo = p_produto_codigo and usuario_id = auth.uid();
 $$;
+
+-- =============================================================================
+-- "ÚLTIMA MOVIMENTAÇÃO" + "DIAS PARADO" EM ITENS DIVERGENTES — cliente pediu
+-- pra ver, junto do Valor Divergente, quando foi a última saída do item e há
+-- quanto tempo ele está parado, pra ajudar a decidir a tratativa da
+-- divergência. A data em si (`ultima_saida`) é capturada no momento da
+-- CONTAGEM (a partir de `estoque_saldo.data_ultima_saida`, via
+-- `estoqueRowToProduct`/`product.ultimaSaida`) e congelada na própria linha —
+-- "quantos dias parado" é sempre calculado no front-end em cima de "hoje" (não
+-- uma coluna própria), pra continuar crescendo enquanto a divergência
+-- permanecer em aberto sem ser resolvida.
+-- Contagens já existentes (antes desta coluna) ficam com `ultima_saida = null`
+-- — a tela só mostra a linha quando esse dado existir, sem inventar nada.
+-- Introspecção antes de rodar:
+--   select column_name from information_schema.columns where table_name = 'contagens' and column_name = 'ultima_saida';
+-- =============================================================================
+alter table contagens add column if not exists ultima_saida date;

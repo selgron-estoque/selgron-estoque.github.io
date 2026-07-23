@@ -1271,6 +1271,7 @@ async function saveContagemToSupabase(count){
       observacao: count.observacao,
       almoxarifado: count.almoxarifado || null,
       familia: count.familia || null,
+      ultima_saida: count.ultimaSaida || null,
       data: count.data,
       hora: count.hora,
       diferenca_confirmada: !!count.diferencaConfirmada,
@@ -1350,6 +1351,7 @@ function contagemRowToLocal(row){
     observacao: row.observacao,
     almoxarifado: row.almoxarifado,
     familia: row.familia,
+    ultimaSaida: row.ultima_saida,
     data: row.data,
     hora: row.hora,
     inventario: row.inventario_id,
@@ -7375,6 +7377,12 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
       // por Família/Grupo" em Indicadores (Resumo da Operação) sem precisar
       // de uma consulta extra ao catálogo na hora de montar esse indicador.
       familia: product.familia || null,
+      // Data da última saída registrada do item (vem de `estoque_saldo`,
+      // ver `estoqueRowToProduct`) — pedido do cliente: quer ver "última
+      // movimentação" e "quantos dias parado" (`diasParado`, calculado a
+      // partir desta data) direto em "Itens Divergentes", pra ajudar a
+      // decidir a tratativa da divergência.
+      ultimaSaida: product.ultimaSaida || null,
       data: hojeLocalStr(),
       hora: new Date().toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'}),
       inventario: inv ? inv.id : '—',
@@ -8971,6 +8979,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSend
               )}
               {c.motivo && <div style={{padding:'10px 16px 0',fontSize:'var(--text-sm)'}}>Motivo: <strong>{c.motivo}</strong></div>}
               {c.valorDivergente!=null && Number(c.valorDivergente)!==0 && <div style={{padding:'6px 16px 0',fontSize:'var(--text-sm)'}}>Valor divergente: <strong>R$ {Number(c.valorDivergente).toFixed(2)}</strong></div>}
+              {c.ultimaSaida && <div style={{padding:'6px 16px 0',fontSize:'var(--text-sm)'}}>Última movimentação: <strong>{fmtDataBR(c.ultimaSaida)}</strong> · <strong>{diasParado(c.ultimaSaida)} dias parado</strong></div>}
               {/* Bug real corrigido aqui: esta tela nunca mostrava `observacao`
                   em lugar nenhum (só `motivo`) — passava batido pra qualquer
                   contagem ao vivo com observação preenchida, e ficava
@@ -10079,6 +10088,21 @@ function fmtDataBR(dataStr){
   if(!dataStr) return '—';
   const [ano,mes,dia] = dataStr.split('-');
   return dia+'/'+mes+'/'+ano;
+}
+
+// Quantos dias o item está parado — calculado SEMPRE em cima de "hoje"
+// (não congelado no momento da contagem), pra crescer sozinho enquanto a
+// divergência continua em aberto sem ser resolvida. `ultimaSaida` é uma
+// data "YYYY-MM-DD" (mesmo formato de `data_ultima_saida` em
+// `estoque_saldo`) — `null` quando o item nunca teve saída registrada ou o
+// dado não veio carregado (item fora do catálogo/sem saldo).
+function diasParado(ultimaSaida){
+  if(!ultimaSaida) return null;
+  const hoje = new Date(hojeLocalStr()+'T00:00:00');
+  const saida = new Date(ultimaSaida+'T00:00:00');
+  const diffMs = hoje - saida;
+  if(isNaN(diffMs)) return null;
+  return Math.max(0, Math.round(diffMs/86400000));
 }
 
 // Data de HOJE no formato YYYY-MM-DD, sempre pelo horário LOCAL do aparelho

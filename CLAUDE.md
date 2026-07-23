@@ -9700,3 +9700,46 @@ pra Diretoria).
   conferidos (637/637, sem mudança — só JSX). **Verificação visual fica a
   cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth
   real, não simulável no sandbox sem rede).
+
+## "Itens Divergentes" ganha "Última movimentação" + "dias parado"
+
+Na sequência do pedido anterior (Valor Divergente), o cliente pediu: "Incluir
+também ultima movimentação e ao lado quantos dias material está parado" —
+mais um dado real que ajuda a decidir a tratativa de cada divergência (item
+parado há muito tempo pode ter uma causa diferente de um item com giro
+recente).
+
+- **`diasParado(ultimaSaida)`** (função nova, perto de `fmtDataBR`) —
+  calcula os dias corridos entre a data de última saída e HOJE, sempre em
+  cima do momento atual (não congelado na hora da contagem) — cresce
+  sozinho enquanto a divergência continuar em aberto sem ser resolvida.
+  `null` quando não há data de última saída (item sem esse dado).
+- **`CountStep.finalize()`** ganhou `ultimaSaida: product.ultimaSaida || null`
+  — mesmo padrão já usado pra `familia`/`almoxarifado` (captura o dado do
+  produto na própria contagem, sem precisar de consulta extra depois).
+  `product.ultimaSaida` já existia (vem de `estoque_saldo.data_ultima_saida`
+  via `estoqueRowToProduct`), só nunca tinha sido salvo dentro da contagem.
+- **`saveContagemToSupabase`/`contagemRowToLocal`** ganharam o mapeamento da
+  coluna nova (`ultima_saida`) — mesmo padrão de sempre pra campo novo em
+  `contagens`.
+- **`backend/schema.sql`**: `contagens.ultima_saida date` na definição da
+  tabela + bloco de migração `alter table contagens add column if not
+  exists ultima_saida date;` pro projeto já aplicado, com a mesma
+  introspecção de sempre documentada no comentário.
+- **`DivergentItemsPanel`**: linha nova "Última movimentação: {data em
+  pt-BR} · {N} dias parado", logo abaixo de "Valor divergente" — só
+  aparece quando `c.ultimaSaida` existe (contagens já existentes, feitas
+  antes desta mudança, ou de item sem esse dado no catálogo, ficam sem a
+  linha — nunca mostra "0 dias parado" inventado).
+- **Só vale pra contagens NOVAS, feitas a partir de agora** — mesma
+  limitação já aceita em `familia` (não há como preencher retroativamente
+  contagens já salvas sem esse campo).
+- Testado via `harness_diretoria.js` (3 asserções novas: um item com
+  `ultimaSaida` 12 dias atrás mostra a data formatada certa e "12 dias
+  parado"; um item sem `ultimaSaida` não mostra a linha nenhuma). Transpile
+  Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos
+  (637/637, sem mudança — só JS/JSX). **Falta o cliente rodar o SQL novo**
+  (`alter table contagens add column if not exists ultima_saida date;`) no
+  projeto real — até lá, a linha simplesmente não aparece pra nenhuma
+  contagem nova (mesmo tratamento "fire and forget" de sempre, não quebra a
+  contagem se a coluna ainda não existir no banco).
