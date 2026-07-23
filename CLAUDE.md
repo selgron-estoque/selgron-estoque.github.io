@@ -8921,3 +8921,29 @@ remover os 4 KPIs "Operação" também, não só o painel de armazém.
   ponta a ponta (comparar com a referência do cliente) fica a cargo dele**
   — mesma limitação de sempre (login exige Supabase Auth real, não
   simulável no sandbox sem rede).
+
+## "Valores por Armazém" — bug real de layout: última linha incompleta deixava buraco na lateral
+
+Cliente testou em produção e mandou print mostrando exatamente o sintoma
+esperado num caso real (8 armazéns): a fileira de cards pequenos (`.va-small-row`)
+tinha 5 itens — 3 numa linha, 2 na linha seguinte — e a 2ª linha (Armazém 04/
+Armazém 05) deixava um espaço vazio à direita, onde caberia uma 3ª coluna sem
+item nenhum. Causa: `.va-medium-row`/`.va-small-row` usavam CSS Grid com
+colunas de largura FIXA (`grid-template-columns:1fr 1fr` / `repeat(auto-fit,
+minmax(90px,1fr))`) — o grid só colapsa colunas totalmente vazias em TODAS as
+linhas; uma coluna que tem item na 1ª linha mas não na 2ª continua reservando o
+espaço, gerando o buraco.
+
+- **Corrigido trocando Grid por Flexbox com `flex-wrap`+`flex-grow`** — nas
+  duas fileiras (`.va-medium-row`/`.va-small-row`), os cards agora crescem
+  (`flex:1 1 130px`/`flex:1 1 90px`) pra preencher o espaço que sobraria vazio
+  numa linha incompleta, em vez de deixar uma célula de grid reservada sem
+  conteúdo. Mesmo princípio (linha incompleta ocupa o espaço todo, não deixa
+  buraco) — só a técnica CSS mudou.
+- Testado via transpile Babel do arquivo inteiro e balanceamento de chaves do
+  CSS (653/653 — 2 regras novas, `.va-medium`/`.va-small` como seletores
+  próprios). Rodei de novo o harness da rodada anterior (mesmo cenário de 8
+  armazéns do print) — as 9 asserções de estrutura continuam passando (o
+  jsdom não calcula layout real de CSS, então o "buraco" em si só é
+  confirmável visualmente). **Verificação visual de ponta a ponta fica a
+  cargo do cliente** — mesma limitação de sempre.
