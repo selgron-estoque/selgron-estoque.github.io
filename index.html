@@ -8113,15 +8113,6 @@ function ImportedListCountFlow({inv, user, onRegisterCount, onFinish, onAddressP
 
   return (
     <div>
-      <div className="role-note">
-        {inv && inv.tipo==='Itens Específicos'
-          // `inv.nome` já vem prefixado com "Itens Específicos" (ver
-          // `nomeEspecificos` em NewInventory) — um prefixo fixo aqui
-          // duplicava o texto ("Fila de itens específicos de Itens
-          // Específicos — ..."), bug real reportado pelo cliente.
-          ? ((inv.nome || 'Itens Específicos')+' — ordem em que foram adicionados')
-          : ('Lista importada'+(inv?' de '+inv.nome:'')+' — ordem original da planilha')}
-      </div>
       <CountStep
         key={q.current.codigo}
         product={q.current}

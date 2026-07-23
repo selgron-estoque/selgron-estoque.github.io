@@ -8844,3 +8844,24 @@ prefixado duplicava o texto.
   inteiro e balanceamento de chaves do CSS conferidos (635/635, sem
   mudança — só texto). **Verificação visual fica a cargo do cliente** —
   mesma limitação de sempre.
+
+## Removido por completo o texto "ordem em que foram adicionados"/"ordem original da planilha"
+
+Logo depois da correção do texto duplicado (seção acima), o cliente disse
+que não precisa dessa descrição ali de jeito nenhum — não era só o bug de
+duplicação, o `role-note` inteiro no topo da fila de "Itens Específicos"/
+"Lista Importada (Excel)" (nome do inventário + "— ordem em que foram
+adicionados"/"— ordem original da planilha") saiu por completo.
+
+- `ImportedListCountFlow` perdeu o `<div className="role-note">...</div>`
+  que ficava logo acima do `<CountStep>` — a tela agora vai direto pro
+  card do item, sem nenhum texto de contexto acima. Mesmo padrão das
+  outras remoções desta sessão (quadro decorativo do scan, card de info
+  duplicado) — reduzir a tela ao mínimo necessário.
+- Testado via harness real (jsdom + react-dom/client + `act()`):
+  `.role-note` não existe mais nessa tela, o texto "ordem em que foram
+  adicionados" não aparece em lugar nenhum, e o card do item continua
+  renderizando normalmente (nada mais quebrou). Transpile Babel do
+  arquivo inteiro e balanceamento de chaves do CSS conferidos (635/635,
+  sem mudança). **Verificação visual fica a cargo do cliente** — mesma
+  limitação de sempre.
