@@ -571,59 +571,15 @@
   .weekly-charts-grid{margin-bottom:14px;}
   .chart-meta-badge{font-family:var(--font-mono);font-size:var(--text-xs);font-weight:700;color:var(--teal);background:rgba(13,148,136,0.12);border-radius:6px;padding:4px 9px;white-space:nowrap;}
 
-  /* "Valores por Armazém" — cards aninhados (1 grande + resto médio/pequeno,
-     por ordem de valor) — pedido do cliente com imagem de referência, ver
-     CLAUDE.md. */
-  /* Reescrito pra reproduzir fielmente a referência do cliente (spec bem
-     detalhada: grid 58/42, card grande com altura = soma da coluna direita,
-     4 colunas na fileira de cards pequenos, tipografia em px literal por
-     nível). Cores/raio reaproveitam os tokens já existentes do projeto
-     (--ok-bg/--line/--radius já batem quase exato com os hex pedidos —
-     "usar só cores já existentes", não introduzir tom novo) — só os
-     tamanhos de fonte usam px literal (12/28/22/18/14), fora da escala
-     --text-* padrão, porque a fidelidade ao mockup pedia valores exatos. */
-  /* Composição MANUAL via Flexbox, não CSS Grid — nomenclatura de classe
-     ditada literalmente pelo cliente (.warehouse-card/.warehouse-left/
-     .warehouse-right/.row.row-N/.card.medium/.card.small). A coluna direita
-     não é um grid uniforme: são fileiras (.row) próprias e independentes
-     (row-1 = 2 médios, row-2/row-3/... = grupos de 4 pequenos, o último
-     podendo ficar incompleto), cada uma um flex row separado. O JSX já
-     entrega os dados pré-fatiados nesse formato (`armazensMedios`/
-     `armazensSmallRows`) — o CSS só desenha cada fileira, nunca decide
-     quantas colunas cabem sozinho. */
-  .warehouse-card{display:flex;flex-direction:column;gap:10px;}
-  @media (min-width:520px){.warehouse-card{flex-direction:row;align-items:stretch;}}
-  /* min-width:0 nos cards: sem isso, um valor "R$ 1,84 milhões" (texto sem
-     ponto de quebra) força o item flex a ficar mais largo que a fração
-     pedida — o gotcha clássico de item de flex/grid com min-width:auto
-     (padrão) — e o texto ainda assim pode quebrar linha de um jeito feio,
-     inflando a altura do card (e, em cascata, do card esquerdo, que estica
-     pra bater com essa altura via align-items:stretch, também padrão do
-     flex — é o que dá "altura igual à soma da coluna direita" de graça,
-     sem regra extra). nowrap+ellipsis nos valores é rede de segurança:
-     nunca mais quebra em 2 linhas, na pior hipótese trunca com "…". */
-  .warehouse-left{flex:0 0 58%;background:var(--ok-bg);border:1px solid var(--line);border-radius:var(--radius);padding:24px;display:flex;flex-direction:column;justify-content:flex-end;gap:4px;min-width:0;}
-  .warehouse-left .va-name{font-size:12px;color:var(--ink-dim);}
-  .warehouse-left .va-value{font-family:var(--font-mono);font-size:24px;font-weight:700;color:var(--navy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .warehouse-left .va-pct{font-size:14px;font-weight:700;color:var(--ok);}
-  .warehouse-right{flex:1 1 0%;display:flex;flex-direction:column;gap:8px;min-width:0;}
-  .row{display:flex;gap:8px;}
-  .card.medium{flex:1 1 0%;}
-  /* `.card.small` usa flex:0 0 calc(...) (não flex:1) — fixa a largura de
-     CADA card em exatamente 1/4 da fileira, então uma fileira com só 1
-     item (row-3, quando sobra 1 armazém) não estica pra ocupar o espaço
-     todo: fica do tamanho certo, encostado à esquerda, com vazio à
-     direita — exatamente como a referência do cliente mostra (nunca
-     centraliza nem expande o card sozinho da última linha). */
-  .card.small{flex:0 0 calc((100% - 24px)/4);}
-  .card.medium,.card.small{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);display:flex;flex-direction:column;justify-content:flex-end;gap:2px;min-width:0;}
-  .card.medium{padding:12px;}
-  .card.small{padding:8px 6px;}
-  .card.medium .va-name,.card.small .va-name{font-size:12px;color:var(--ink-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  .card.medium .va-value{font-family:var(--font-mono);font-size:15px;font-weight:700;color:var(--navy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .card.medium .va-pct{font-size:14px;font-weight:700;color:var(--ok);}
-  .card.small .va-value{font-family:var(--font-mono);font-size:12.5px;font-weight:700;color:var(--navy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .card.small .va-pct{font-size:11px;font-weight:700;color:var(--ok);}
+  /* "Valores por Armazém" virou treemap (`WarehouseTreemap`, componente
+     React perto de `MonthlyAccuracyBarChart`) — cliente pediu
+     explicitamente essa troca depois de várias rodadas de fidelidade à
+     composição manual de cards ("ficou uma merda, altera para um
+     indicador estilo treemap"). Renderizado em SVG (mesmo padrão dos
+     outros gráficos do app — `viewBox` + `width:100%;height:auto` pra
+     escalar responsivo), então não precisa de nenhuma classe CSS própria
+     aqui — toda a cor/tamanho/posição dos retângulos é calculada e
+     aplicada inline no componente. */
 
   /* Card "Saúde do Inventário" — pedido do cliente com imagem de referência
      (selo + variação vs. período anterior + mini gráfico + acuracidade
@@ -10402,6 +10358,130 @@ function MonthlyAccuracyBarChart({months, meta=META_ACURACIDADE_SEMANAL}){
   );
 }
 
+// Algoritmo "squarified treemap" padrão (Bruls/Huizing/van Wijk) — cada
+// item vira um retângulo com ÁREA proporcional ao peso, empacotados pra
+// manter a proporção largura/altura de cada retângulo o mais próxima de
+// 1:1 possível (evita fatias compridas/finas quando dá pra evitar).
+// `valores` já vem ORDENADO decrescente por peso — o algoritmo depende
+// disso. Retorna [{codigo, x, y, width, height}] nas mesmas unidades de
+// width/height recebidas.
+function computeTreemapRects(valores, width, height){
+  const totalPeso = valores.reduce((s,v)=>s+v.peso, 0);
+  if(totalPeso<=0 || !valores.length) return [];
+  const escala = (width*height) / totalPeso;
+  const itens = valores.map(v=>({...v, area: v.peso*escala}));
+
+  function worst(row, side){
+    const sum = row.reduce((a,b)=>a+b.area, 0);
+    const maxA = Math.max(...row.map(r=>r.area));
+    const minA = Math.min(...row.map(r=>r.area));
+    return Math.max((side*side*maxA)/(sum*sum), (sum*sum)/(side*side*minA));
+  }
+  function layoutRow(row, x, y, w, h, horizontal){
+    const rowSum = row.reduce((a,b)=>a+b.area, 0);
+    const rects = [];
+    if(horizontal){
+      const rowHeight = rowSum/w;
+      let cx = x;
+      for(const it of row){
+        const rw = it.area/rowHeight;
+        rects.push({codigo:it.codigo, x:cx, y, width:rw, height:rowHeight});
+        cx += rw;
+      }
+    } else {
+      const rowWidth = rowSum/h;
+      let cy = y;
+      for(const it of row){
+        const rh = it.area/rowWidth;
+        rects.push({codigo:it.codigo, x, y:cy, width:rowWidth, height:rh});
+        cy += rh;
+      }
+    }
+    return rects;
+  }
+
+  const result = [];
+  let rest = itens.slice();
+  let cx=0, cy=0, cw=width, ch=height, row=[];
+  while(rest.length){
+    const candidate = rest[0];
+    const shortSide = Math.min(cw, ch);
+    const newRow = [...row, candidate];
+    if(row.length===0 || worst(row, shortSide) >= worst(newRow, shortSide)){
+      row = newRow;
+      rest = rest.slice(1);
+    } else {
+      const horizontal = cw>=ch;
+      result.push(...layoutRow(row, cx, cy, cw, ch, horizontal));
+      const rowSum = row.reduce((a,b)=>a+b.area, 0);
+      if(horizontal){ const rowHeight=rowSum/cw; cy+=rowHeight; ch-=rowHeight; }
+      else { const rowWidth=rowSum/ch; cx+=rowWidth; cw-=rowWidth; }
+      row = [];
+    }
+  }
+  if(row.length){
+    const horizontal = cw>=ch;
+    result.push(...layoutRow(row, cx, cy, cw, ch, horizontal));
+  }
+  return result;
+}
+
+// Sombreamento de teal por posição (0=mais escuro/maior valor, 1=mais
+// claro/menor) — mesma cor de destaque já usada no resto de "Tendência"
+// (WEEKLY_CHART_COLOR), sem introduzir paleta nova.
+function treemapShade(rank, total){
+  const t = total>1 ? rank/(total-1) : 0;
+  const lightness = 28 + t*54; // 28% (quase o teal puro) até 82% (bem clara)
+  const fill = `hsl(175, 55%, ${lightness}%)`;
+  const textColor = lightness < 55 ? '#fff' : 'var(--ink)';
+  return {fill, textColor};
+}
+
+// "Valores por Armazém" como treemap — pedido explícito do cliente
+// (substituiu a composição manual de cards em linhas fixas das rodadas
+// anteriores). Peso de área usa RAIZ QUADRADA do valor, não o valor cru:
+// com um armazém líder respondendo por ~82% do total (caso real do
+// cliente), área linear deixaria os outros 7 armazéns praticamente
+// invisíveis (fatias de poucos pixels) — sqrt comprime a proporção
+// (~29:1 em vez de ~800:1) mantendo a hierarquia visual (o maior continua
+// visivelmente maior) sem tornar os menores ilegíveis. Documentado que
+// isso NÃO é um treemap de área linearmente proporcional ao valor — é uma
+// escolha consciente de legibilidade sobre precisão matemática estrita.
+function WarehouseTreemap({dados, modoValor}){
+  const W = 760, H = 300;
+  if(!dados.length){
+    return <div style={{color:'var(--ink-dim)',fontSize:'var(--text-sm)',padding:'20px 0'}}>Nenhum saldo carregado ainda. Envie a planilha SB2 em Configurações pra ver o valor em estoque por armazém.</div>;
+  }
+  const comPeso = dados.map(d=>({...d, peso:Math.sqrt(Math.max(d.valor,0))}));
+  const rects = computeTreemapRects(comPeso, W, H);
+  const porCodigo = {};
+  dados.forEach(d=>{ porCodigo[d.codigo] = d; });
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'auto',display:'block'}} role="img" aria-label="Distribuição do valor em estoque por armazém (treemap)">
+      {rects.map((r,i)=>{
+        const d = porCodigo[r.codigo];
+        const {fill, textColor} = treemapShade(i, rects.length);
+        const linha2 = modoValor==='valor' ? d.valorLabel : d.pctLabel;
+        const mostraNome = r.width>=54 && r.height>=20;
+        const mostraValor = r.width>=64 && r.height>=34;
+        return (
+          <g key={r.codigo}>
+            <rect x={r.x} y={r.y} width={Math.max(0,r.width-1.5)} height={Math.max(0,r.height-1.5)} rx={3} fill={fill} stroke="var(--panel)" strokeWidth={1.5}>
+              <title>{d.nome}: {d.valorLabel} ({d.pctLabel})</title>
+            </rect>
+            {mostraNome && (
+              <text x={r.x+8} y={r.y+16} fontSize={12} fontWeight={700} fill={textColor} fontFamily="var(--font-corp)">{d.nome}</text>
+            )}
+            {mostraValor && (
+              <text x={r.x+8} y={r.y+31} fontSize={11} fill={textColor} fontFamily="var(--font-mono)" opacity={0.9}>{linha2}</text>
+            )}
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
 // Mini gráfico de linha, mais enxuto que WeeklyLineChart (sem meta, sem
 // rótulo "Sem N" em cima da data, sem % grande em cada ponto) — pensado pra
 // caber dentro do card "Saúde do Inventário", não como painel próprio.
@@ -10732,23 +10812,19 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
     return 'R$ ' + Math.round(n).toLocaleString('pt-BR');
   };
   const armazensAtivos = Number(resumoGeral?.armazens_ativos || armazens.length);
-  // "Valores por Armazém" (cards aninhados: 1 grande + 2 médios + resto
-  // pequeno) precisa dos armazéns ordenados por VALOR decrescente (o maior
-  // vira o card grande) — `armazens` continua ordenado alfabeticamente
-  // (código cru), usado só pra somatórios.
+  // "Valores por Armazém" (armazens ordenados por VALOR decrescente, o
+  // maior primeiro) — `armazens` continua ordenado alfabeticamente (código
+  // cru), usado só pra somatórios. Vira dado pro treemap (`WarehouseTreemap`
+  // abaixo) — cada item já leva o rótulo/valor formatado, o componente só
+  // desenha os retângulos.
   const armazensPorValor = [...armazens].sort((a,b)=>porArmazem[b]-porArmazem[a]);
-  // Composição MANUAL de "Valores por Armazém" (pedido explícito do
-  // cliente, com imagem de referência): não é grid automático — o 2º/3º
-  // colocado vão numa fileira de 2 cards médios, e todo o resto entra em
-  // fileiras de EXATAMENTE 4 cards pequenos cada (a última pode ficar
-  // incompleta, ex: sobrar só 1 — fica sozinho, sem esticar, igual a
-  // referência mostra). `armazensSmallRows` já vem pré-fatiado em grupos de
-  // 4, pronto pro JSX só percorrer sem recalcular nada.
-  const armazensMedios = armazensPorValor.slice(1,3);
-  const armazensSmallRows = [];
-  for(let i=3;i<armazensPorValor.length;i+=4){
-    armazensSmallRows.push(armazensPorValor.slice(i,i+4));
-  }
+  const armazensTreemapData = armazensPorValor.map(a=>({
+    codigo: a,
+    nome: formatArmazemLabel(a),
+    valor: porArmazem[a],
+    valorLabel: fmtReaisAbrev(porArmazem[a]),
+    pctLabel: (valorTotalEstoque>0 ? (porArmazem[a]/valorTotalEstoque*100).toFixed(1) : '0.0')+'%',
+  }));
 
   const porOperador = {};
   counts.forEach(c=>{ porOperador[c.usuario] = (porOperador[c.usuario]||0)+1; });
@@ -10877,45 +10953,9 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
                   <button onClick={()=>setModoValor('percentual')} style={{border:'none',padding:'6px 12px',fontSize:'var(--text-xs)',cursor:'pointer',background:modoValor==='percentual'?'var(--ink)':'transparent',color:modoValor==='percentual'?'#fff':'var(--ink-dim)'}}>% do Total</button>
                 </div>
               </div>
-              {armazens.length===0 ? (
-                <div style={{color:'var(--ink-dim)',fontSize:'var(--text-sm)'}}>
-                  Nenhum saldo carregado ainda. Envie a planilha SB2 em Configurações pra ver o valor em estoque por armazém.
-                </div>
-              ) : (
-                <div className="warehouse-card">
-                  <div className="warehouse-left">
-                    <div className="va-name">{formatArmazemLabel(armazensPorValor[0])}</div>
-                    <div className="va-value">{modoValor==='valor' ? fmtReaisAbrev(porArmazem[armazensPorValor[0]]) : ((valorTotalEstoque>0 ? (porArmazem[armazensPorValor[0]]/valorTotalEstoque*100).toFixed(1) : '0.0')+'%')}</div>
-                    {modoValor==='valor' && <div className="va-pct">{valorTotalEstoque>0 ? (porArmazem[armazensPorValor[0]]/valorTotalEstoque*100).toFixed(1) : '0.0'}%</div>}
-                  </div>
-                  <div className="warehouse-right">
-                    {armazensMedios.length>0 && (
-                      <div className="row row-1">
-                        {armazensMedios.map(a=>(
-                          <div key={a} className="card medium">
-                            <div className="va-name">{formatArmazemLabel(a)}</div>
-                            <div className="va-value">{modoValor==='valor' ? fmtReaisAbrev(porArmazem[a]) : ((valorTotalEstoque>0 ? (porArmazem[a]/valorTotalEstoque*100).toFixed(1) : '0.0')+'%')}</div>
-                            {modoValor==='valor' && <div className="va-pct">{valorTotalEstoque>0 ? (porArmazem[a]/valorTotalEstoque*100).toFixed(1) : '0.0'}%</div>}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    {armazensSmallRows.map((linha,li)=>(
-                      <div key={li} className={'row row-'+(li+2)}>
-                        {linha.map(a=>(
-                          <div key={a} className="card small">
-                            <div className="va-name">{formatArmazemLabel(a)}</div>
-                            <div className="va-value">{modoValor==='valor' ? fmtReaisAbrev(porArmazem[a]) : ((valorTotalEstoque>0 ? (porArmazem[a]/valorTotalEstoque*100).toFixed(1) : '0.0')+'%')}</div>
-                            {modoValor==='valor' && <div className="va-pct">{valorTotalEstoque>0 ? (porArmazem[a]/valorTotalEstoque*100).toFixed(1) : '0.0'}%</div>}
-                          </div>
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+              <WarehouseTreemap dados={armazensTreemapData} modoValor={modoValor} />
               <div style={{marginTop:14,paddingTop:10,borderTop:'1px solid var(--line)',fontSize:'var(--text-xs)',color:'var(--ink-dim)'}}>
-                <Ic>ℹ</Ic> Os valores consideram o custo médio dos itens em estoque, conforme o último upload da planilha SB2.
+                <Ic>ℹ</Ic> Os valores consideram o custo médio dos itens em estoque, conforme o último upload da planilha SB2. Tamanho de cada bloco é proporcional à raiz quadrada do valor (não ao valor cru) pra manter os armazéns menores legíveis.
               </div>
             </div>
             <div className="panel" style={{margin:0}}>

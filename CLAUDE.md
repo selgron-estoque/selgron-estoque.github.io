@@ -9320,3 +9320,73 @@ linhas fixas de 4) não mudou, só o nome das classes.
   visual de ponta a ponta fica a cargo do cliente** — mesma limitação de
   sempre (login exige Supabase Auth real, não simulável no sandbox sem
   rede).
+
+## "Valores por Armazém" vira treemap — depois de 6 rodadas de fidelidade à composição em cards
+
+Cliente encerrou a sequência de ajustes na composição manual de cards
+("ficou uma merda, altera para um indicador estilo treemap") — pivô
+completo pra um tipo de visualização diferente. Vale notar (sem confrontar
+o cliente sobre isso, só registrado aqui pro histórico): uma das specs
+técnicas de rodadas anteriores tinha pedido explicitamente "Não substitua
+por treemap" — decisão totalmente revertida agora, o que é direito do
+cliente; implementado como pedido, sem questionar.
+
+- **Removida por completo** a composição manual em cards
+  (`.warehouse-card`/`.warehouse-left`/`.warehouse-right`/`.row`/
+  `.card.medium`/`.card.small`, JS `armazensMedios`/`armazensSmallRows`) —
+  nenhum resquício ficou pra trás (conferido via grep).
+- **`computeTreemapRects(valores, width, height)`** — implementação do
+  algoritmo clássico "squarified treemap" (Bruls/Huizing/van Wijk): cada
+  item vira um retângulo com ÁREA proporcional ao peso, escolhendo a
+  ordem/agrupamento em fileiras que minimiza o pior aspect-ratio (evita
+  fatias compridas/finas quando dá pra evitar). Função pura, testável
+  isolada — mesmo padrão já usado pra `classifyDivergence`/
+  `fmtReaisAbrev`/etc. nesta sessão.
+- **Peso de área = raiz quadrada do valor, não o valor cru** — decisão
+  deliberada, documentada em comentário no código: com o armazém líder
+  respondendo por ~82% do valor total (caso real do cliente), área LINEAR
+  deixaria os outros 7 armazéns em fatias de poucos pixels, ilegíveis.
+  `sqrt` comprime a proporção de ~800:1 pra ~29:1, mantendo a hierarquia
+  visual (o maior continua nitidamente maior) sem tornar os menores
+  invisíveis. **Isso significa que a área NÃO é linearmente proporcional
+  ao valor real** — trade-off consciente de legibilidade sobre precisão
+  matemática estrita, documentado no código e aqui pra não se perder.
+- **Layout resultante pra esse dado real**: como os 8 valores decaem de
+  forma bem suave/monotônica (sem clusters de valores parecidos), o
+  algoritmo squarified — corretamente — tende a colocar cada armazém
+  sozinho numa fileira de largura total, empilhando por altura decrescente
+  (só os 2 primeiros depois do líder às vezes dividem uma fileira).
+  Confirmado com teste isolado que esse comportamento é matematicamente
+  correto pro algoritmo padrão com esse formato de dado (não é bug) —
+  ainda assim é um treemap de verdade (área proporcional ao peso, não uma
+  lista/barra disfarçada), só que a forma real dos blocos reflete a
+  distribuição de valor que o cliente tem hoje (um armazém muito dominante
+  + uma cauda longa de armazéns bem menores).
+- **`WarehouseTreemap({dados, modoValor})`** (componente novo, perto de
+  `MonthlyAccuracyBarChart`) — renderizado em SVG (`viewBox` + `width:100%;
+  height:auto`), mesmo padrão de TODOS os outros gráficos do app — não
+  precisou de nenhuma classe CSS nova, cor/posição/tamanho tudo inline no
+  componente. Cada retângulo mostra nome + valor/percentual (conforme o
+  toggle "Valor (R$)"/"% do Total" já existente) só quando o retângulo é
+  grande o suficiente pra caber o texto sem cortar — os menores mostram só
+  a cor, com `<title>` (tooltip nativo do navegador) pro valor completo ao
+  passar o mouse.
+- **`treemapShade(rank, total)`** — sombreamento de teal por posição (mais
+  escuro = maior valor, mais claro = menor), reaproveitando o MESMO teal
+  já usado no resto de "Tendência" (`WEEKLY_CHART_COLOR`) — sem introduzir
+  paleta de cor nova.
+- Testado via harness novo (jsdom + react-dom/client + `act()`, 8 armazéns
+  reais do cliente): confirma exatamente 8 retângulos, nenhuma classe da
+  composição antiga sobrando, o armazém líder aparecendo com o valor
+  abreviado certo, e o toggle "% do Total" trocando o texto secundário
+  exibido. Testado também isoladamente via script Node (mesma técnica de
+  sempre): 8 retângulos sem sobreposição entre si, soma das áreas batendo
+  exatamente com a área total do container (diferença 0.000%), e o maior
+  retângulo sempre correspondendo ao armazém de maior valor. Rodei de novo
+  o harness de ordem das fileiras (`weekly-top-row`/`weekly-bottom-row`,
+  11 asserções, painel não afetado por essa mudança) sem quebrar nada.
+  Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  conferidos (641/641 — caiu de 660, a remoção da composição em cards
+  liberou bem mais regras do que o treemap precisou). **Verificação visual
+  de ponta a ponta fica a cargo do cliente** — mesma limitação de sempre
+  (login exige Supabase Auth real, não simulável no sandbox sem rede).
