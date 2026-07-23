@@ -8747,11 +8747,16 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSend
   counts.forEach(c=>{ if(c.contagemAnteriorId) byOriginal[c.contagemAnteriorId]=c; });
   const aguardandoAnalise = counts.filter(c=>c.statusAprovacao==='aguardando_analise_lider' && !byOriginal[c.id]);
   const canApprove = role==='lider' || role==='admin';
-  // Revertido: essa tela não tem nenhum "valor" (R$) exibido — só quadro de
-  // quantidades/percentual e o Motivo — então não há o que restringir pra
-  // operação aqui. O toggle `operadorVeValoresRecontagem` (Diretoria) só
-  // se aplica ao bloco de detalhes extras de `RecountsPanel`, que É onde
-  // "Valor divergente" aparece.
+  // "Valor divergente" (R$) É mostrado aqui, sem nenhuma restrição por
+  // perfil — pedido explícito do cliente: "cada valor eu tenho uma
+  // tratativa diferente" (a escala de severidade em si já é calculada a
+  // partir desse valor, ver `classifySeverity4`/`severidadeDe` — R$100/500/
+  // 2000 — então esconder o número cru enquanto já expõe o chip de cor
+  // derivado dele seria inconsistente). Diferente de `RecountsPanel`, esta
+  // tela nunca teve nenhum mecanismo de restrição por perfil (o quadro
+  // Sistema/Físico/Diferença/% já é sempre visível pra todo mundo, ver
+  // "Correção: virou configuração SEPARADA" no CLAUDE.md) — `Valor
+  // divergente` segue o mesmo padrão, sem gate nenhum.
 
   // `onApprove`/`onRequestRecount`/`onToggleUrgente` aguardam confirmação do
   // Supabase — `busyId` desabilita só o card em ação (não a tela inteira),
@@ -8965,6 +8970,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSend
                 </div>
               )}
               {c.motivo && <div style={{padding:'10px 16px 0',fontSize:'var(--text-sm)'}}>Motivo: <strong>{c.motivo}</strong></div>}
+              {c.valorDivergente!=null && Number(c.valorDivergente)!==0 && <div style={{padding:'6px 16px 0',fontSize:'var(--text-sm)'}}>Valor divergente: <strong>R$ {Number(c.valorDivergente).toFixed(2)}</strong></div>}
               {/* Bug real corrigido aqui: esta tela nunca mostrava `observacao`
                   em lugar nenhum (só `motivo`) — passava batido pra qualquer
                   contagem ao vivo com observação preenchida, e ficava

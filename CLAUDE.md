@@ -9671,3 +9671,32 @@ o que nem sempre é o caso na prática (a SA às vezes só é emitida depois).
   Supabase real** (mesma limitação de sempre, sandbox sem rede) — a coluna
   `numero_sa` já existe desde a implementação original da SA de Ajuste, não
   precisa de SQL novo, só confirmar visualmente o fluxo funcionando.
+
+## "Itens Divergentes" volta a mostrar "Valor divergente" (R$)
+
+Cliente pediu, logo em seguida: "em itens divergentes precisa ter o valor,
+pois cada valor eu tenho uma tratativa diferente" — essa tela nunca mostrou
+o valor em R$ da divergência (só o quadro Sistema/Físico/Diferença/% e o
+Motivo), mesmo a classificação de severidade já sendo calculada a partir
+desse valor (`classifySeverity4`, limiares R$100/500/2000 — ver "Classificação
+de severidade... passa a ser por valor" no histórico) — o líder via a COR do
+chip (derivada do R$), mas não o número em si, que é exatamente o dado que
+ele precisa pra decidir a tratativa (aprovar sozinho, recontagem, encaminhar
+pra Diretoria).
+
+- **`{c.valorDivergente!=null && Number(c.valorDivergente)!==0 && <div>Valor
+  divergente: R$ {…}</div>}`** — adicionado logo depois do "Motivo", mesmo
+  formato/posição já usado em `DiretoriaApprovalPanel` (que já mostrava esse
+  valor desde que essa tela foi criada). **Sem nenhuma restrição por
+  perfil** — diferente de `RecountsPanel` (que tem o toggle
+  `operador_ve_valores_recontagem` escondendo esse mesmo dado do operador
+  num bloco "Detalhes"), `DivergentItemsPanel` nunca teve NENHUM mecanismo
+  de restrição (o quadro Sistema/Físico/Diferença/% já é sempre visível pra
+  qualquer perfil, decisão já confirmada numa rodada anterior) — "Valor
+  divergente" segue o mesmo padrão dessa tela específica, sem gate.
+- Testado via `harness_diretoria.js` (nova asserção: o card do teste, que já
+  tinha `valorDivergente:2500`, mostra "Valor divergente: R$ 2500.00").
+  Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  conferidos (637/637, sem mudança — só JSX). **Verificação visual fica a
+  cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth
+  real, não simulável no sandbox sem rede).
