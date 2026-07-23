@@ -8947,3 +8947,66 @@ espaço, gerando o buraco.
   jsdom não calcula layout real de CSS, então o "buraco" em si só é
   confirmável visualmente). **Verificação visual de ponta a ponta fica a
   cargo do cliente** — mesma limitação de sempre.
+
+## Espaço lateral vazio no `.content` (monitor largo) + layout de "Indicadores" fiel à referência (2 painéis em cima, 3 embaixo)
+
+Cliente mandou 3 prints: o 1º e o 2º circulando em vermelho os vãos vazios nas
+laterais da tela inteira de Indicadores (não o "buraco" já corrigido dentro do
+próprio card "Valores por Armazém" — outro problema, mais estrutural); o 3º um
+mockup de referência mostrando a arrangement das seções: "Valores por Armazém"
+ao lado de "Contagens na Semana" (2 colunas), e "Acuracidade Semanal" +
+"Acuracidade Mensal" + "Divergência por Família/Grupo" numa fileira de 3
+colunas logo abaixo — pedido explícito de fidelidade a esse padrão.
+
+### 1. `.content{max-width:1400px;margin:0 auto}` — cap deixando vão morto
+
+Causa das faixas cinzas vazias: o container `.content` (usado por TODA tela do
+app no layout desktop, dentro do bloco `@media (min-width:360px)`) tinha um
+teto de 1400px centralizado — num monitor comum (~1900px de largura, sidebar
+de 264px, sobrando ~1636px pra `.app-main`), isso deixava ~120px de vão morto
+de cada lado, exatamente o que o cliente circulou.
+
+- **Removido o `max-width`/`margin:0 auto`** — `.content` passou a ocupar
+  100% da largura disponível de `.app-main`, sem teto nenhum. Como o
+  conteúdo do app é quase todo grid/card (não texto corrido longo, onde uma
+  linha muito larga prejudicaria leitura), deixar a largura livre não
+  compromete legibilidade em nenhuma tela conhecida do app — os grids
+  (`kpi-grid`/`weekly-top-row`/`weekly-bottom-row`/etc.) já reagem à largura
+  disponível via `grid-template-columns`, então mais espaço só significa
+  cards mais largos ou mais colunas cabendo, nunca quebra de layout.
+- Afeta o app inteiro (não só Indicadores), já que `.content` é compartilhado
+  — mesmo espírito de sempre ("CSS decide, nunca branching por tela").
+
+### 2. `weekly-charts-grid` virou duas fileiras (`weekly-top-row`/`weekly-bottom-row`)
+
+Antes era um único grid de 2 colunas com 5 painéis em sequência (Valores por
+Armazém, Acuracidade Semanal, Contagens na Semana, Acuracidade Mensal,
+Divergência por Família/Grupo) — o 5º item caía sozinho numa 3ª linha, aceito
+como trade-off numa rodada anterior. A referência agora pede uma composição
+diferente E com contagem de colunas DIFERENTE por fileira (2 em cima, 3
+embaixo) — CSS Grid não faz isso dentro de um único container sem técnica bem
+mais complexa (`grid-template-areas` nomeada, por exemplo), então a solução
+mais direta foi dividir em dois containers de grid separados:
+
+- **`.weekly-top-row`** (2 colunas a partir de 900px, mesma janela já usada
+  pelo grid antigo) — "Valores por Armazém" + "Contagens na Semana" (que
+  precisou SUBIR de posição, era o 3º item da sequência antiga).
+- **`.weekly-bottom-row`** (2 colunas a partir de 900px, **3 colunas a partir
+  de 1300px** — breakpoint novo, mesma faixa já usada em outras partes do app
+  pra "3 colunas só em telas realmente largas", ex. `.ops-kpi-row`) —
+  "Acuracidade Semanal" (desceu de posição) + "Acuracidade Mensal" +
+  "Divergência por Família/Grupo" (sem mudança de posição relativa entre
+  essas duas).
+- `.weekly-charts-grid` (a classe antiga) virou só um wrapper com
+  `margin-bottom` — não é mais grid em si, só agrupa as duas fileiras novas.
+- Testado via harness novo (jsdom + react-dom/client + `act()`): confirmei que
+  `.weekly-top-row` tem exatamente 2 painéis (Valores por Armazém + Contagens
+  na Semana, nenhum vazamento de "Acuracidade Semanal" pra essa fileira) e
+  `.weekly-bottom-row` tem exatamente 3 (Acuracidade Semanal/Mensal +
+  Divergência, sem "Contagens na Semana" vazando pra cá). Rodei de novo o
+  harness da rodada anterior ("Valores por Armazém", 9 asserções) sem quebrar
+  nada. Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  conferidos (659/659). **Verificação visual de ponta a ponta (comparar com a
+  referência do cliente, testar em monitor largo de verdade) fica a cargo
+  dele** — mesma limitação de sempre (login exige Supabase Auth real, não
+  simulável no sandbox sem rede).
