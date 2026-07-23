@@ -9390,3 +9390,45 @@ cliente; implementado como pedido, sem questionar.
   liberou bem mais regras do que o treemap precisou). **Verificação visual
   de ponta a ponta fica a cargo do cliente** — mesma limitação de sempre
   (login exige Supabase Auth real, não simulável no sandbox sem rede).
+
+## "Valores por Armazém" volta ao formato de barras — treemap durou 1 rodada
+
+Cliente viu o treemap ao vivo e confirmou o problema já sinalizado na
+entrega anterior (armazém líder concentra ~82% do valor, o resto vira
+faixas finas quase ilegíveis) — pediu pra voltar ao formato de barras
+horizontais e "corrigir o tamanho dos demais" (os armazéns menores
+ficavam praticamente invisíveis no treemap, sem rótulo visível).
+
+- **Treemap removido por completo**: `computeTreemapRects`/
+  `treemapShade`/`WarehouseTreemap` apagados do JS (conferido via grep,
+  nenhuma referência sobra) — não deixei como código morto, mesmo padrão
+  de sempre nesta sessão (remover, não só desconectar).
+- **Voltou a usar `.bar-row`/`.bar-track`/`.bar-fill`** — o MESMO
+  componente visual já usado por "Divergência por Família/Grupo"/
+  "Principais Causas de Erro"/"Produtividade por Operador" nesta mesma
+  tela (nenhuma classe CSS nova) — rótulo (`.bl`) sempre visível À
+  ESQUERDA da barra, fora dela — resolve de vez o problema de "armazém
+  pequeno demais pra mostrar o nome" que tanto o treemap quanto a
+  composição em cards (rodadas anteriores) tinham: como o texto não fica
+  DENTRO do espaço proporcional ao valor, um armazém de valor baixo ainda
+  mostra nome e valor perfeitamente legíveis, só com uma barra fina.
+- **`maxArmazemValor`** (tinha sido removido como código morto numa
+  limpeza anterior, quando a lista de barras virou cards) — recriado, é
+  a mesma conta de sempre (`Math.max(1, ...valores)`), usada pra
+  normalizar a largura de cada barra em % do maior valor.
+- **Largura mínima de 4%** no `.bar-fill` (`Math.max(4, ...)`) — evita
+  que o armazém bem menor (Armazém 05, ~0,1% do total) vire uma barra de
+  espessura zero/invisível — sempre sobra uma faixa mínima de cor visível,
+  mesmo pro valor mais baixo.
+- Testado via harness novo (jsdom + react-dom/client + `act()`, 8 armazéns
+  reais do cliente): confirma que o SVG do treemap não existe mais, que a
+  lista tem exatamente 8 `.bar-row` (maior primeiro, menor por último),
+  que o valor abreviado aparece certo, que a barra do maior é bem mais
+  larga que a do menor, e que mesmo a menor barra tem uma largura mínima
+  visível (≥4%). Rodei de novo o harness de ordem das fileiras (11
+  asserções) sem quebrar nada. Transpile Babel do arquivo inteiro e
+  balanceamento de chaves do CSS conferidos (641/641, sem mudança — o
+  formato de barras já reaproveita CSS existente, não precisou de
+  nenhuma regra nova). **Verificação visual de ponta a ponta fica a cargo
+  do cliente** — mesma limitação de sempre (login exige Supabase Auth
+  real, não simulável no sandbox sem rede).
