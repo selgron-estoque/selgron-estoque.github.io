@@ -9093,3 +9093,60 @@ esticados além do próprio conteúdo, sobrando vão vazio embaixo.
   o mesmo `--ink-dim` no rótulo/percentual) — perguntei ao cliente o que
   exatamente parecia errado ali antes de mexer, pra não arriscar uma mudança
   de cor sem saber qual texto/elemento é o alvo.
+
+## "Valores por Armazém" — reescrito com especificação técnica completa do cliente
+
+Em vez de mais uma rodada de "circula e aponta", o cliente mandou uma
+especificação de fidelidade bem detalhada (grid 58/42, cores/raio exatos,
+tipografia px por nível, alinhamento, o que NÃO fazer) pedindo replicar o
+card exatamente como o mockup, "apenas utilizando os componentes existentes
+do projeto" — ou seja, mapear os valores pedidos (hex/px) pros TOKENS já
+existentes quando já baterem de perto, não introduzir cor/raio novos.
+
+- **Cores/raio reaproveitados de tokens já existentes** (a instrução do
+  cliente pedia isso explicitamente): `#EEF9F5`→`var(--ok-bg)` (já
+  `#E3F6EA`, praticamente idêntico), `#E5E7EB`→`var(--line)` (já `#D7DBE1`,
+  mesma família), `10px`→`var(--radius)` (já é exatamente 10px) — nenhum
+  hex/valor novo foi criado.
+- **Grid 58/42** — `.va-grid{grid-template-columns:58fr 42fr}` (a partir de
+  520px) — `fr` com esses números dá exatamente a proporção pedida, sem
+  precisar de `%` fixo (que quebraria com o `gap`).
+- **Card grande com altura = soma da coluna direita**: conseguido só com o
+  `align-items:stretch` PADRÃO do CSS Grid (não precisou de regra nova) —
+  como o conteúdo da coluna direita (2 fileiras de cards) é naturalmente
+  mais alto que o texto do card grande, o grid estica o card grande pra
+  bater com essa altura sozinho.
+- **Conteúdo alinhado embaixo-à-esquerda**: `.va-big`/`.va-medium`/
+  `.va-small` viraram `flex-direction:column;justify-content:flex-end` (sem
+  `align-items` — o padrão `stretch` já preenche a largura toda, permitindo
+  o nome do armazém usar `text-overflow:ellipsis` sem quebrar, e o texto em
+  si já é left-aligned por padrão do bloco).
+- **Fileira de médios virou grid de 2 colunas fixas, fileira de pequenos
+  virou grid de 4 colunas fixas** (`.va-medium-row`/`.va-small-row`) — troca
+  deliberada da técnica flex+flex-grow (usada 2 rodadas atrás pra eliminar
+  o "buraco" numa linha incompleta) por CSS Grid puro, mesmo que isso
+  REINTRODUZA uma célula vazia quando a última linha de pequenos não fecha
+  (ex: 5 armazéns = 4+1, sobra espaço ao lado do 5º) — **decisão consciente,
+  não regressão**: é exatamente como a referência do cliente mostra ("Almox
+  05" sozinho numa 3ª linha, sem esticar), e o cliente pediu explicitamente
+  "Utilizar: display: grid, grid-template-columns... Não reinterprete o
+  design."
+- **Cards médios voltam a ser BRANCOS** (`var(--panel)`, não mais
+  `var(--ok-bg)`) — revertendo a escolha de 2 rodadas atrás (que tinha sido
+  um palpite meu, não confirmado) — a spec deste cliente é explícita:
+  "Todos os cards [da coluna direita] usam a mesma identidade visual...
+  Fundo branco."
+- **Tipografia em px literal por nível** (fora da escala `--text-*` padrão
+  do projeto, deliberado — a fidelidade ao mockup pedia números exatos):
+  nome do armazém 12px em todos os níveis; valor 28px (grande)/22px
+  (médio)/18px (pequeno), todos peso 700; percentual 14px verde
+  (`var(--ok)`) em todos os níveis — antes cada nível tinha um tamanho
+  menor/diferente (ex: percentual em cinza nos médios/pequenos).
+- Testado via harness já existente (jsdom + react-dom/client + `act()`) —
+  9 asserções de estrutura continuam passando (o jsdom não calcula layout
+  real de CSS Grid — proporção 58/42, altura igual, alinhamento — então
+  isso só é confirmável visualmente). Transpile Babel do arquivo inteiro e
+  balanceamento de chaves do CSS conferidos (657/657 — caiu de 661, a
+  reescrita consolidou algumas regras). **Verificação visual de ponta a
+  ponta fica a cargo do cliente** — mesma limitação de sempre (login exige
+  Supabase Auth real, não simulável no sandbox sem rede).
