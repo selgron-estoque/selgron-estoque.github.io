@@ -11106,14 +11106,15 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   // (`dataInicioStr`/`dataFimStr`, já calculado nesta função pra alimentar
   // os gráficos semanais) — item sem `data` fica de fora do filtro, mesmo
   // critério já usado em "Contagens Concluídas"/"Itens Divergentes". Cortado
-  // em Top 5 (mesmo padrão de "Top 5 Maiores Divergências" já usado nesta
-  // tela) — antes mostrava TODAS as famílias sem limite, o que deixava o
-  // painel desproporcionalmente mais alto que os vizinhos de tamanho fixo
+  // em Top 10 (cliente pediu explicitamente esse número, depois de aprovar
+  // o corte em Top 5 — mesma ideia, só o limite mudou) — antes mostrava
+  // TODAS as famílias sem limite, o que deixava o painel desproporcionalmente
+  // mais alto que os vizinhos de tamanho fixo
   // no mesmo grid (ex.: "Acuracidade Mensal").
   const divergentesNoPeriodo = divergentes.filter(c=>c.data && c.data>=dataInicioStr && c.data<=dataFimStr);
   const porFamiliaObj = {};
   divergentesNoPeriodo.forEach(c=>{ if(c.familia) porFamiliaObj[c.familia] = (porFamiliaObj[c.familia]||0)+1; });
-  const porFamilia = Object.entries(porFamiliaObj).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  const porFamilia = Object.entries(porFamiliaObj).sort((a,b)=>b[1]-a[1]).slice(0,10);
   const maxFamilia = Math.max(1, ...porFamilia.map(([,n])=>n));
 
   return (
@@ -11239,7 +11240,7 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
               <MonthlyAccuracyBarChart months={monthlyStats} meta={META_ACURACIDADE_SEMANAL} />
             </div>
             <div className="panel" style={{margin:0}}>
-              <div style={{fontSize:'var(--text-sm)',fontWeight:700,marginBottom:16}}>Divergência por Família/Grupo (Top 5)</div>
+              <div style={{fontSize:'var(--text-sm)',fontWeight:700,marginBottom:16}}>Divergência por Família/Grupo (Top 10)</div>
               {porFamilia.length===0 ? (
                 <div style={{color:'var(--ink-dim)',fontSize:'var(--text-sm)'}}>
                   Ainda sem dado suficiente pra esse indicador — a família/grupo do produto

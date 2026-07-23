@@ -10188,3 +10188,11 @@ valer pra esse indicador também.
   visual de ponta a ponta fica a cargo do cliente** — mesma limitação de
   sempre (login exige Supabase Auth real, não simulável no sandbox sem
   rede).
+
+**Atualização — Top 5 virou Top 10**: cliente pediu logo em seguida pra
+aumentar o limite. `porFamilia` trocou `.slice(0,5)` por `.slice(0,10)`,
+título do painel virou "Divergência por Família/Grupo (Top 10)". Harness
+atualizado (mesmo arquivo, agora com 12 famílias sintéticas pra testar o
+corte em 10) — mesmas 8 asserções de antes, adaptadas pro número novo, todas
+passando. Transpile Babel do arquivo inteiro e balanceamento de chaves do
+CSS conferidos (641/641, sem mudança).
