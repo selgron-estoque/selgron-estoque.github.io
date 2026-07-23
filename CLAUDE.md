@@ -9280,3 +9280,43 @@ itens.
   visual de ponta a ponta fica a cargo do cliente** — mesma limitação de
   sempre (login exige Supabase Auth real, não simulável no sandbox sem
   rede).
+
+## Nomenclatura de classe ditada literalmente pelo cliente (`.warehouse-card`/`.row`/`.card`)
+
+Cliente mandou o esqueleto HTML exato que queria, com nomes de classe
+específicos — `.warehouse-card` > `.warehouse-left` + `.warehouse-right` >
+`.row.row-1` (2 `.card.medium`) / `.row.row-2` (4 `.card.small`) /
+`.row.row-3` (1 `.card.small`). Renomeei as classes CSS/JSX pra bater
+exatamente com isso — a lógica de layout (Flexbox, composição manual em
+linhas fixas de 4) não mudou, só o nome das classes.
+
+- `.va-grid`→`.warehouse-card`, `.va-big`→`.warehouse-left`,
+  `.va-side`→`.warehouse-right`, `.va-medium-row`→`.row.row-1`,
+  `.va-medium`→`.card.medium`, `.va-small`→`.card.small`. `.va-name`/
+  `.va-value`/`.va-pct` (os 3 campos de TEXTO dentro de cada card) foram
+  mantidos como estavam — o pedido do cliente só especificava as classes
+  dos CONTAINERS/cards (`warehouse-*`/`row`/`card`), o "..." dentro de
+  `.warehouse-left` no esqueleto dele já indicava que o conteúdo interno
+  fica a meu critério.
+- **Fileiras de "pequenos" além da 1ª**: como o esqueleto do cliente só
+  nomeia até `.row-3` (a composição real de hoje, 8 armazéns = 1 grande +
+  2 médios + 4 pequenos + 1 pequeno, cabe exatamente nisso), a numeração
+  virou dinâmica a partir da 2ª fileira de pequenos
+  (`className={'row row-'+(li+2)}`) — se um dia existir armazém suficiente
+  pra uma 4ª fileira, ela vira `.row-4` automaticamente, sem quebrar o
+  padrão nem esconder dado (mesmo raciocínio já documentado na rodada
+  anterior: a composição VISUAL fica travada em exatamente 4 por linha,
+  só a quantidade de linhas continua honesta com o dado real).
+- **`.row` virou a classe-base compartilhada** (`display:flex;gap:8px`)
+  pras 3 fileiras — não precisou de CSS específico por `.row-1`/`.row-2`/
+  `.row-3` além da classe base, já que o comportamento diferente
+  (2 cards `flex:1` vs. N cards `flex:0 0 calc(25%)`) vem inteiramente de
+  `.card.medium` vs. `.card.small`, não da fileira em si.
+- Testado atualizando os 2 harnesses das rodadas anteriores pros seletores
+  novos (`.warehouse-left`/`.warehouse-right`/`.row-1`/`.row:not(.row-1)`/
+  `.card.medium`/`.card.small`) — as mesmas 9+7 asserções continuam
+  passando com a estrutura renomeada. Transpile Babel do arquivo inteiro e
+  balanceamento de chaves do CSS conferidos (660/660). **Verificação
+  visual de ponta a ponta fica a cargo do cliente** — mesma limitação de
+  sempre (login exige Supabase Auth real, não simulável no sandbox sem
+  rede).

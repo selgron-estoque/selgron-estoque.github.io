@@ -582,49 +582,48 @@
      "usar só cores já existentes", não introduzir tom novo) — só os
      tamanhos de fonte usam px literal (12/28/22/18/14), fora da escala
      --text-* padrão, porque a fidelidade ao mockup pedia valores exatos. */
-  /* Composição MANUAL via Flexbox, não CSS Grid — pedido explícito do
-     cliente (com spec técnica detalhada): a coluna direita não é um grid
-     uniforme, é 3 fileiras próprias e independentes (2 médios / grupos de 4
-     pequenos), cada uma um flex row separado. O JSX já entrega os dados
-     pré-fatiados nesse formato (`armazensMedios`/`armazensSmallRows`) — o
-     CSS só precisa desenhar cada fileira, nunca decidir quantas colunas
-     cabem sozinho. */
-  .va-grid{display:flex;flex-direction:column;gap:10px;}
-  @media (min-width:520px){.va-grid{flex-direction:row;align-items:stretch;}}
-  /* min-width:0 nos 3 níveis de card: sem isso, um valor "R$ 1,84 milhões"
-     (texto sem ponto de quebra) força o item flex a ficar mais largo que a
-     fração pedida — o gotcha clássico de item de flex/grid com
-     min-width:auto (padrão) — e o texto ainda assim pode quebrar linha de
-     um jeito feio, inflando a altura do card (e, em cascata, do card
-     grande, que estica pra bater com essa altura via align-items:stretch,
-     também padrão do flex — é o que dá "altura igual à soma da coluna
-     direita" de graça, sem regra extra). nowrap+ellipsis nos valores é
-     rede de segurança: nunca mais quebra em 2 linhas, na pior hipótese
-     trunca com "…". */
-  .va-big{flex:0 0 58%;background:var(--ok-bg);border:1px solid var(--line);border-radius:var(--radius);padding:24px;display:flex;flex-direction:column;justify-content:flex-end;gap:4px;min-width:0;}
-  .va-big .va-name{font-size:12px;color:var(--ink-dim);}
-  .va-big .va-value{font-family:var(--font-mono);font-size:24px;font-weight:700;color:var(--navy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .va-big .va-pct{font-size:14px;font-weight:700;color:var(--ok);}
-  .va-side{flex:1 1 0%;display:flex;flex-direction:column;gap:8px;min-width:0;}
-  .va-medium-row{display:flex;gap:8px;}
-  .va-medium{flex:1 1 0%;}
-  /* Fileira de "pequenos" reutilizada tanto pro grupo de 4 quanto pro
-     restante incompleto (ex: 1 sobrando) — `flex:0 0 calc(...)` (não
-     `flex:1`) fixa a largura de CADA card em exatamente 1/4 da fileira,
-     então uma fileira com só 1 item não estica pra ocupar o espaço todo:
-     fica do tamanho certo, encostado à esquerda, com vazio à direita —
-     exatamente como a referência do cliente mostra (o card sozinho da
-     última linha nunca se expande nem centraliza). */
-  .va-small-row{display:flex;gap:8px;}
-  .va-small{flex:0 0 calc((100% - 24px)/4);}
-  .va-medium,.va-small{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);display:flex;flex-direction:column;justify-content:flex-end;gap:2px;min-width:0;}
-  .va-medium{padding:12px;}
-  .va-small{padding:8px 6px;}
-  .va-medium .va-name,.va-small .va-name{font-size:12px;color:var(--ink-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  .va-medium .va-value{font-family:var(--font-mono);font-size:15px;font-weight:700;color:var(--navy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .va-medium .va-pct{font-size:14px;font-weight:700;color:var(--ok);}
-  .va-small .va-value{font-family:var(--font-mono);font-size:12.5px;font-weight:700;color:var(--navy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .va-small .va-pct{font-size:11px;font-weight:700;color:var(--ok);}
+  /* Composição MANUAL via Flexbox, não CSS Grid — nomenclatura de classe
+     ditada literalmente pelo cliente (.warehouse-card/.warehouse-left/
+     .warehouse-right/.row.row-N/.card.medium/.card.small). A coluna direita
+     não é um grid uniforme: são fileiras (.row) próprias e independentes
+     (row-1 = 2 médios, row-2/row-3/... = grupos de 4 pequenos, o último
+     podendo ficar incompleto), cada uma um flex row separado. O JSX já
+     entrega os dados pré-fatiados nesse formato (`armazensMedios`/
+     `armazensSmallRows`) — o CSS só desenha cada fileira, nunca decide
+     quantas colunas cabem sozinho. */
+  .warehouse-card{display:flex;flex-direction:column;gap:10px;}
+  @media (min-width:520px){.warehouse-card{flex-direction:row;align-items:stretch;}}
+  /* min-width:0 nos cards: sem isso, um valor "R$ 1,84 milhões" (texto sem
+     ponto de quebra) força o item flex a ficar mais largo que a fração
+     pedida — o gotcha clássico de item de flex/grid com min-width:auto
+     (padrão) — e o texto ainda assim pode quebrar linha de um jeito feio,
+     inflando a altura do card (e, em cascata, do card esquerdo, que estica
+     pra bater com essa altura via align-items:stretch, também padrão do
+     flex — é o que dá "altura igual à soma da coluna direita" de graça,
+     sem regra extra). nowrap+ellipsis nos valores é rede de segurança:
+     nunca mais quebra em 2 linhas, na pior hipótese trunca com "…". */
+  .warehouse-left{flex:0 0 58%;background:var(--ok-bg);border:1px solid var(--line);border-radius:var(--radius);padding:24px;display:flex;flex-direction:column;justify-content:flex-end;gap:4px;min-width:0;}
+  .warehouse-left .va-name{font-size:12px;color:var(--ink-dim);}
+  .warehouse-left .va-value{font-family:var(--font-mono);font-size:24px;font-weight:700;color:var(--navy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .warehouse-left .va-pct{font-size:14px;font-weight:700;color:var(--ok);}
+  .warehouse-right{flex:1 1 0%;display:flex;flex-direction:column;gap:8px;min-width:0;}
+  .row{display:flex;gap:8px;}
+  .card.medium{flex:1 1 0%;}
+  /* `.card.small` usa flex:0 0 calc(...) (não flex:1) — fixa a largura de
+     CADA card em exatamente 1/4 da fileira, então uma fileira com só 1
+     item (row-3, quando sobra 1 armazém) não estica pra ocupar o espaço
+     todo: fica do tamanho certo, encostado à esquerda, com vazio à
+     direita — exatamente como a referência do cliente mostra (nunca
+     centraliza nem expande o card sozinho da última linha). */
+  .card.small{flex:0 0 calc((100% - 24px)/4);}
+  .card.medium,.card.small{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);display:flex;flex-direction:column;justify-content:flex-end;gap:2px;min-width:0;}
+  .card.medium{padding:12px;}
+  .card.small{padding:8px 6px;}
+  .card.medium .va-name,.card.small .va-name{font-size:12px;color:var(--ink-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .card.medium .va-value{font-family:var(--font-mono);font-size:15px;font-weight:700;color:var(--navy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .card.medium .va-pct{font-size:14px;font-weight:700;color:var(--ok);}
+  .card.small .va-value{font-family:var(--font-mono);font-size:12.5px;font-weight:700;color:var(--navy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .card.small .va-pct{font-size:11px;font-weight:700;color:var(--ok);}
 
   /* Card "Saúde do Inventário" — pedido do cliente com imagem de referência
      (selo + variação vs. período anterior + mini gráfico + acuracidade
@@ -10883,17 +10882,17 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
                   Nenhum saldo carregado ainda. Envie a planilha SB2 em Configurações pra ver o valor em estoque por armazém.
                 </div>
               ) : (
-                <div className="va-grid">
-                  <div className="va-big">
+                <div className="warehouse-card">
+                  <div className="warehouse-left">
                     <div className="va-name">{formatArmazemLabel(armazensPorValor[0])}</div>
                     <div className="va-value">{modoValor==='valor' ? fmtReaisAbrev(porArmazem[armazensPorValor[0]]) : ((valorTotalEstoque>0 ? (porArmazem[armazensPorValor[0]]/valorTotalEstoque*100).toFixed(1) : '0.0')+'%')}</div>
                     {modoValor==='valor' && <div className="va-pct">{valorTotalEstoque>0 ? (porArmazem[armazensPorValor[0]]/valorTotalEstoque*100).toFixed(1) : '0.0'}%</div>}
                   </div>
-                  <div className="va-side">
+                  <div className="warehouse-right">
                     {armazensMedios.length>0 && (
-                      <div className="va-medium-row">
+                      <div className="row row-1">
                         {armazensMedios.map(a=>(
-                          <div key={a} className="va-medium">
+                          <div key={a} className="card medium">
                             <div className="va-name">{formatArmazemLabel(a)}</div>
                             <div className="va-value">{modoValor==='valor' ? fmtReaisAbrev(porArmazem[a]) : ((valorTotalEstoque>0 ? (porArmazem[a]/valorTotalEstoque*100).toFixed(1) : '0.0')+'%')}</div>
                             {modoValor==='valor' && <div className="va-pct">{valorTotalEstoque>0 ? (porArmazem[a]/valorTotalEstoque*100).toFixed(1) : '0.0'}%</div>}
@@ -10902,9 +10901,9 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
                       </div>
                     )}
                     {armazensSmallRows.map((linha,li)=>(
-                      <div key={li} className="va-small-row">
+                      <div key={li} className={'row row-'+(li+2)}>
                         {linha.map(a=>(
-                          <div key={a} className="va-small">
+                          <div key={a} className="card small">
                             <div className="va-name">{formatArmazemLabel(a)}</div>
                             <div className="va-value">{modoValor==='valor' ? fmtReaisAbrev(porArmazem[a]) : ((valorTotalEstoque>0 ? (porArmazem[a]/valorTotalEstoque*100).toFixed(1) : '0.0')+'%')}</div>
                             {modoValor==='valor' && <div className="va-pct">{valorTotalEstoque>0 ? (porArmazem[a]/valorTotalEstoque*100).toFixed(1) : '0.0'}%</div>}
