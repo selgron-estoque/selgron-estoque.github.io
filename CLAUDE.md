@@ -9191,3 +9191,34 @@ médios ("R$ 1,84 / milhões") quebrando em 2 linhas.
   ainda houver truncamento incômodo em alguma tela real, o próximo ajuste
   seria encolher mais 1-2px ou reconsiderar o formato abreviado pros
   armazéns médios/pequenos (ex: "R$1,8M" mais curto que "R$ 1,84 milhões").
+
+## Card do armazém líder menor + padding interno reduzido + cor de fonte navy
+
+Cliente mandou nova referência (a mesma composição, mas com o card grande
+visualmente mais estreito e os cards médios/pequenos mais compactos/
+próximos) e pediu 3 ajustes específicos: encolher o card do armazém líder
+pra redistribuir mais espaço pros demais; remover o espaçamento interno de
+cada card de armazém; e copiar a cor da fonte dos valores da imagem.
+
+- **Proporção 58/42 → 42/58** (`.va-grid`) — o card do armazém líder
+  (esquerda) ficou menor, a coluna direita (médios+pequenos) ganhou mais
+  espaço — direção oposta à 1ª especificação de fidelidade, mas o cliente
+  viu o resultado real e pediu pra inverter.
+- **Padding interno dos cards médios/pequenos reduzido** (`.va-medium`
+  16px→12px, `.va-small` 10px/8px→8px/6px) — "remova os espaçamentos em
+  cada armazém": cards mais compactos, mais próximos do texto.
+- **Cor dos valores virou `var(--navy)`** (era a cor de texto padrão,
+  `--ink`, herdada por não ter regra própria) — a referência mostra os
+  valores ("R$ 1,84 milhões" etc.) num tom azul-marinho escuro, não preto
+  neutro — `--navy` já é o token usado no resto da identidade corporativa
+  do app (login/Dashboard), reaproveitado aqui, sem cor nova. Aplicado nos
+  3 níveis (grande/médio/pequeno) — o nome do armazém e o percentual
+  continuam com as cores de antes (cinza/verde), só o VALOR mudou.
+- Testado via harnesses já existentes (jsdom + react-dom/client + `act()`)
+  — 9+11 asserções de estrutura continuam passando (proporção/padding/cor
+  não são verificáveis por jsdom, que não calcula layout/CSS computado real
+  — só a estrutura). Transpile Babel do arquivo inteiro e balanceamento de
+  chaves do CSS conferidos (659/659, sem mudança — só valores dentro de
+  regras já existentes). **Verificação visual de ponta a ponta fica a cargo
+  do cliente** — mesma limitação de sempre (login exige Supabase Auth real,
+  não simulável no sandbox sem rede).

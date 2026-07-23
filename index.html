@@ -583,7 +583,10 @@
      tamanhos de fonte usam px literal (12/28/22/18/14), fora da escala
      --text-* padrão, porque a fidelidade ao mockup pedia valores exatos. */
   .va-grid{display:grid;grid-template-columns:1fr;gap:10px;}
-  @media (min-width:520px){.va-grid{grid-template-columns:58fr 42fr;}}
+  /* Proporção 58/42 (pedida na 1ª rodada de fidelidade) deixava o card do
+     armazém líder grande demais — cliente pediu pra encolher e redistribuir
+     mais espaço pros demais armazéns. */
+  @media (min-width:520px){.va-grid{grid-template-columns:42fr 58fr;}}
   /* min-width:0 nos 3 níveis de card: sem isso, um valor "R$ 1,84 milhões"
      (texto sem ponto de quebra) força a coluna/track do grid a ficar mais
      larga que a fração (fr) pedida — o gotcha clássico de grid item com
@@ -594,7 +597,7 @@
      2 linhas, na pior hipótese trunca com "…". */
   .va-big{background:var(--ok-bg);border:1px solid var(--line);border-radius:var(--radius);padding:20px;display:flex;flex-direction:column;justify-content:flex-end;gap:4px;min-width:0;}
   .va-big .va-name{font-size:12px;color:var(--ink-dim);}
-  .va-big .va-value{font-family:var(--font-mono);font-size:24px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .va-big .va-value{font-family:var(--font-mono);font-size:24px;font-weight:700;color:var(--navy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .va-big .va-pct{font-size:14px;font-weight:700;color:var(--ok);}
   .va-side{display:flex;flex-direction:column;gap:8px;min-width:0;}
   .va-medium-row{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;}
@@ -607,15 +610,16 @@
      mockup). */
   .va-small-row{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;}
   .va-medium,.va-small{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);display:flex;flex-direction:column;justify-content:flex-end;gap:2px;min-width:0;}
-  .va-medium{padding:16px;}
-  /* Pequenos ganham padding menor (não os 16px do resto) — 4 colunas numa
-     coluna de 42% do card deixam pouca largura por card; padding menor
-     sobra mais espaço útil pro texto, evitando truncar à toa. */
-  .va-small{padding:10px 8px;}
+  /* Padding interno reduzido (era 16px/10px 8px) — cliente pediu pra tirar
+     o espaçamento "em cada armazém", cards mais compactos/próximos do
+     conteúdo. Coluna direita também ficou mais larga (42→58%), então sobra
+     mais espaço útil pro texto mesmo com padding menor. */
+  .va-medium{padding:12px;}
+  .va-small{padding:8px 6px;}
   .va-medium .va-name,.va-small .va-name{font-size:12px;color:var(--ink-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  .va-medium .va-value{font-family:var(--font-mono);font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .va-medium .va-value{font-family:var(--font-mono);font-size:15px;font-weight:700;color:var(--navy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .va-medium .va-pct{font-size:14px;font-weight:700;color:var(--ok);}
-  .va-small .va-value{font-family:var(--font-mono);font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .va-small .va-value{font-family:var(--font-mono);font-size:12.5px;font-weight:700;color:var(--navy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .va-small .va-pct{font-size:11px;font-weight:700;color:var(--ok);}
 
   /* Card "Saúde do Inventário" — pedido do cliente com imagem de referência
