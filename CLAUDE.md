@@ -9814,3 +9814,56 @@ a senha (o painel mostrava "Sessão inválida ou expirada.").
   do layout no celular fica a cargo do cliente** — jsdom não calcula
   layout real (largura/wrap), mesma limitação de sempre (login exige
   Supabase Auth real, não simulável no sandbox sem rede).
+
+## KPI "Contagens Concluídas Hoje" (Home) leva pra "Contagens de Hoje", não pro painel de auditoria
+
+Cliente pediu: "No card da tela de início, Contagens concluídas Hoje eu
+quero que ao clicar ali ele me mostre todas as contagens do dia
+indiferente do status" — o número do KPI (`concluidasHoje`) sempre foi
+`counts.filter(c=>c.data===hojeStr).length`, sem filtro de status (decisão
+já documentada antes: "o número em si continua sendo 'quantas contagens
+foram registradas hoje'"), mas o CLIQUE caía em `ConcludedCountsPanel`
+("Contagens Concluídas") — um painel de AUDITORIA que só mostra cadeias já
+RESOLVIDAS (`buildConcludedChains` filtra por `!OPEN_STATUSES.includes(...)`)
+— um item contado hoje mas ainda `aguardando_analise_lider`/
+`aguardando_segunda`/`aguardando_aprovacao_diretoria` não aparecia lá,
+criando uma divergência entre o número do card e o que se via ao clicar.
+
+- **`TodayCountsPanel`** (componente novo, perto de "RELATÓRIOS") — painel
+  simples, SEM o conceito de "cadeia" (agrupar rodadas do mesmo item):
+  lista `counts.filter(c=>c.data===hojeStr)` direto, 1 card por CONTAGEM
+  (cada rodada aparece separada, com o próprio status via `STATUS_INFO`),
+  ordenado por hora decrescente (mais recente primeiro). Reaproveita o
+  mesmo shell visual já usado em outras telas de contagem
+  (`count-card`/`StatusTag`/`SearchWithScanner`/`result-grid-4col`/
+  `PaginationControls`/`categoriaDoInventario`) — nenhum CSS novo.
+- **Só o KPI da Home muda de destino** (`goto('contagensHoje')` em vez de
+  `goto('concluidas')`) — os OUTROS 3 lugares que já levavam pra
+  "Contagens Concluídas" (atalho "Ações Rápidas", "Ver todas" na tabela
+  "Últimas Contagens", card de atalho mobile) continuam indo pro painel de
+  auditoria de sempre, sem mudança — são atalhos gerais de navegação, não
+  específicos de "hoje", então não faz sentido restringi-los.
+- **`contagensHoje` não entrou em `TODOS_OS_MENUS`/`ACESSOS_RESTRITOS`** —
+  mesmo padrão já usado por outras views alcançáveis só por um fluxo
+  específico (ex.: `recount`/`userForm`), não um item de menu — acessível a
+  qualquer perfil, já que o próprio KPI que leva até ela também é visível a
+  todos (inclusive operador, diferente de "Aprovação de Ajustes" logo
+  acima, que só aparece pra líder/admin).
+- **`VIEW_TITLES.contagensHoje = 'Contagens de Hoje'`** — título do header
+  desktop.
+- **Bug real pego durante o teste, antes de subir**: o texto do contador
+  ("N contagens hoje, qualquer status") tinha `contagem{n===1?'':'s'}` —
+  concatenar "contagem" + "s" dá "contagems" (errado; o plural certo em
+  português troca o "m" final por "ns": "contagens"). Corrigido pra um
+  ternário com a palavra inteira (`{n===1?'contagem':'contagens'}`) em vez
+  de stem+sufixo.
+- Testado via `harness_today_counts_panel.js` (novo): um item de hoje
+  ainda pendente (`aguardando_analise_lider`) aparece normalmente, lado a
+  lado com um já resolvido (`aprovado_auto`) — os dois do mesmo dia; um
+  item de outra data não aparece; contador mostra "2 contagens hoje,
+  qualquer status" (plural corrigido); ordenação por hora (10:30 antes de
+  09:00); empty-state certo quando não há nada hoje. Transpile Babel do
+  arquivo inteiro e balanceamento de chaves do CSS conferidos (641/641, sem
+  mudança — só JS/JSX, nenhuma classe CSS nova). **Verificação visual de
+  ponta a ponta fica a cargo do cliente** — mesma limitação de sempre
+  (login exige Supabase Auth real, não simulável no sandbox sem rede).

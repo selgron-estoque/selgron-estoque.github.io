@@ -5005,6 +5005,7 @@ function App(){
         {view==='aprovacaoDiretoria' && hasAccess(currentUser,'aprovacaoDiretoria') && <DiretoriaApprovalPanel counts={counts} inventories={inventories} role={role} onApproveSA={aprovarAjusteDiretoria} onRejectSA={reprovarAjusteDiretoria} onToggleUrgente={toggleUrgente} />}
         {view==='todasDivergencias' && <AllDivergencesPanel counts={counts} historicoConcluidas={historicoConcluidas} goto={goto} />}
         {view==='concluidas' && hasAccess(currentUser,'concluidas') && <ConcludedCountsPanel counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} onDeleteCount={role==='admin' ? deleteCount : undefined} onReprovarAjusteHistorico={role==='admin' ? reprovarAjusteHistorico : undefined} onRefresh={refreshHistoricoConcluidas} />}
+        {view==='contagensHoje' && <TodayCountsPanel counts={counts} inventories={inventories} />}
         {view==='recount' && flowState && <RecountFlow original={flowState} user={currentUser} onAddressProposed={addAddressProposal} onFinish={(c)=>{registerFinishedCount(c); goto('recounts');}} operadorVeSaldo={operadorVeSaldo} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
         {view==='dashboard' && hasAccess(currentUser,'dashboard') && <Dashboard counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} historicoParaTendencia={historicoParaTendencia} goto={goto} />}
         {view==='relatorios' && hasAccess(currentUser,'relatorios') && <ReportsScreen counts={counts} inventories={inventories} currentUser={currentUser} sendHistory={reportSendHistory} onLogSend={logReportSend} role={role} onHistoricoImportado={refreshHistoricoConcluidas} />}
@@ -5503,6 +5504,7 @@ const VIEW_TITLES = {
   aprovacaoDiretoria:'Aprovação de Ajustes',
   todasDivergencias:'Todas as Divergências',
   concluidas:'Contagens Concluídas',
+  contagensHoje:'Contagens de Hoje',
   enderecos:'Endereços Pendentes',
   usuarios:'Usuários',
   recount:'Recontar Item',
@@ -5857,7 +5859,13 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
       key:'concluidas', icon:'checkCircle', bg:'var(--ok-bg)', color:'var(--ok)',
       label:'Contagens Concluídas Hoje', value:concluidasHoje,
       trend:<KpiTrend pct={concluidasTrendPct} />,
-      onClick:()=>goto('concluidas'),
+      // Vai pra "Contagens de Hoje" (TodayCountsPanel) — todas as contagens
+      // do dia, qualquer status — não pra "Contagens Concluídas"
+      // (ConcludedCountsPanel), que é um painel de auditoria só de itens já
+      // RESOLVIDOS e escondia justamente o que ainda está pendente, criando
+      // uma divergência com o número mostrado no próprio KPI (que já conta
+      // qualquer status, ver `concluidasHoje` acima). Pedido do cliente.
+      onClick:()=>goto('contagensHoje'),
     },
     {
       key:'acuracidade', icon:'percent', bg:'var(--purple-bg)', color:'var(--purple)',
@@ -9845,6 +9853,84 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
         );
       })}
       <PaginationControls pagina={pagina} setPagina={setPagina} totalPaginas={totalPaginas} tamanhoPagina={tamanhoPagina} setTamanhoPagina={setTamanhoPagina} totalItens={cadeiasFiltradas.length} itemLabel="itens" />
+    </div>
+  );
+}
+
+// "Contagens de Hoje" — pedido do cliente: clicar no KPI "Contagens
+// Concluídas Hoje" (Home) precisa mostrar TODAS as contagens do dia, sem
+// filtrar por status — diferente de "Contagens Concluídas" (ver
+// `ConcludedCountsPanel` acima), que é um painel de AUDITORIA só de itens
+// já resolvidos (agrupados em cadeias, escondendo o que ainda está
+// pendente). O número do próprio KPI (`concluidasHoje` em `Home`) já é
+// `counts.filter(c=>c.data===hojeStr).length` — sem filtro de status — mas
+// o clique caía nesse painel de auditoria, que escondia justamente os
+// itens ainda em aberto, criando uma divergência entre o número mostrado e
+// o que aparecia ao clicar. Painel novo, simples: 1 card por CONTAGEM
+// (não por cadeia — cada rodada aparece separada, com o próprio status),
+// sem agrupar rodadas do mesmo item.
+function TodayCountsPanel({counts, inventories}){
+  const hojeStr = hojeLocalStr();
+  const deHoje = useMemo(()=>
+    counts.filter(c=>c.data===hojeStr).sort((a,b)=>(b.hora||'').localeCompare(a.hora||'')),
+  [counts, hojeStr]);
+
+  const [busca, setBusca] = useState('');
+  const buscaNorm = busca.trim().toLowerCase();
+  const porBusca = buscaNorm
+    ? deHoje.filter(c => c.productCode.toLowerCase().includes(buscaNorm) || (c.descricao||'').toLowerCase().includes(buscaNorm))
+    : deHoje;
+
+  const {pagina, setPagina, tamanhoPagina, setTamanhoPagina, listaPaginada, totalPaginas} = usePaginacaoLista(porBusca, 50);
+
+  return (
+    <div>
+      <SearchWithScanner value={busca} onChange={setBusca} placeholder="Código ou descrição do material" />
+
+      <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)',marginBottom:10}}>
+        <strong style={{color:'var(--ink)'}}>{deHoje.length}</strong> {deHoje.length===1?'contagem':'contagens'} hoje, qualquer status
+      </div>
+
+      {deHoje.length===0 ? (
+        <div className="empty-state">Nenhuma contagem registrada hoje ainda.</div>
+      ) : porBusca.length===0 ? (
+        <div className="empty-state">Nenhum item encontrado para essa busca.</div>
+      ) : listaPaginada.map(c=>{
+        const info = STATUS_INFO[c.statusAprovacao] || {level:'ok', text:c.statusAprovacao||'—'};
+        const corBarra = info.level==='danger' ? 'var(--danger)' : info.level==='warn' ? 'var(--warn)' : 'var(--ok)';
+        return (
+          <div key={c.id} className="count-card">
+            <div className="count-card-bar" style={{background:corBarra}}></div>
+            <div className="count-card-body">
+              <div className="count-card-head">
+                <div className="count-card-badges">
+                  <StatusTag status={info.level} text={info.text} />
+                  <span className="category-chip">{categoriaDoInventario(c, inventories)}</span>
+                  {c.numeroContagem>1 && <span className="category-chip">{c.numeroContagem}ª contagem</span>}
+                </div>
+                <div className="count-card-head-right">
+                  <span className="count-card-date">{c.hora || ''}</span>
+                </div>
+              </div>
+              <div className="count-card-toprow">
+                <div className="count-card-title">
+                  <div className="item-code">{c.productCode}</div>
+                  <div className="item-desc">{c.descricao}</div>
+                </div>
+                <div className="count-card-address-badge"><DIcon name="mapPin" size={16} /> {c.endereco || 'não cadastrado'}</div>
+              </div>
+              <div className="result-grid result-grid-4col" style={{gridTemplateColumns:'repeat(4,1fr)'}}>
+                <div className="rg"><div className="k">Sistema</div><div className="v">{c.saldoSistema==null ? '—' : c.saldoSistema}</div></div>
+                <div className="rg"><div className="k">Físico</div><div className="v">{c.qtdContada}</div></div>
+                <div className="rg"><div className="k">Diferença</div><div className="v">{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div></div>
+                <div className="rg"><div className="k">%</div><div className="v">{c.percentual==null ? '—' : Math.round(c.percentual)+'%'}</div></div>
+              </div>
+              <div style={{padding:'10px 16px 16px',fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>Contado por {c.usuario}</div>
+            </div>
+          </div>
+        );
+      })}
+      <PaginationControls pagina={pagina} setPagina={setPagina} totalPaginas={totalPaginas} tamanhoPagina={tamanhoPagina} setTamanhoPagina={setTamanhoPagina} totalItens={porBusca.length} itemLabel="contagens" />
     </div>
   );
 }
