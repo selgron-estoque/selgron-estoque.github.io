@@ -9479,3 +9479,57 @@ já ter pedido isso антes) que o espaço vazio continuava lá.
   **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma
   limitação de sempre (login exige Supabase Auth real, não simulável no
   sandbox sem rede).
+
+## Layout "masonry" (2 colunas independentes) resolve o vão cinza E o espaço em branco de uma vez
+
+Cliente reportou, na sequência direta da correção anterior, o efeito colateral já
+esperado: "E esses espaços em branco, como vai corrigir sem voltar a deixar
+aqueles espaçamentos de antes?" — ou seja, nenhuma das duas tentativas anteriores
+(`align-items:start` → vão cinza da página aparecendo entre painéis de altura
+diferente; `align-items:stretch` → espaço em branco vazio DENTRO do painel mais
+curto) resolvia o problema de verdade, só trocava um sintoma pelo outro.
+
+- **Causa raiz de fundo**: "Valores por Armazém"/"Divergência por Família/Grupo"
+  (listas de barra, altura cresce com a quantidade de dado) e "Contagens na
+  Semana"/"Acuracidade Semanal"/"Acuracidade Mensal" (gráficos SVG de altura
+  fixa) são conteúdos ESTRUTURALMENTE diferentes em altura — colocar os dois
+  tipos numa mesma FILEIRA de grid (`weekly-top-row`/`weekly-bottom-row`,
+  criadas numa rodada anterior) sempre vai exigir reconciliar a altura de algum
+  jeito, e nenhum valor de `align-items` faz isso sem sobrar alguma coisa (vão
+  vazio ou fundo aparecendo).
+- **Correção**: as duas fileiras de grid viraram **duas COLUNAS independentes**
+  (`.weekly-masonry` com dois `.weekly-col` dentro) — mesmo princípio de um
+  mural "masonry" (Pinterest/Trello): cada coluna é só um `display:flex;
+  flex-direction:column` empilhando os próprios painéis com `gap` normal, sem
+  NENHUM vizinho de lado precisando bater altura. Como não existe mais nenhuma
+  fileira compartilhada, não existe mais nenhum "vão" possível — cada painel
+  sempre termina exatamente na altura do próprio conteúdo.
+  - **Coluna 1**: "Valores por Armazém" + "Divergência por Família/Grupo" (as
+    duas listas de barra, que crescem com o dado).
+  - **Coluna 2**: "Contagens na Semana" + "Acuracidade Semanal (%)" +
+    "Acuracidade Mensal (%)" (os três gráficos SVG de altura fixa).
+  - `.weekly-masonry` é `flex-direction:column` (empilha as 2 colunas, mobile) e
+    vira `display:grid;grid-template-columns:1fr 1fr;align-items:start` a
+    partir de 900px — esse `align-items:start` aqui é seguro/correto porque
+    agora se aplica às duas COLUNAS (que masonry já espera terminar em alturas
+    diferentes uma da outra, sem ser bug), não a painéis individuais que
+    precisassem bater altura entre si.
+- **Trade-off, esperado e normal pra esse estilo de layout**: as duas colunas
+  podem terminar em alturas TOTAIS diferentes (ex: coluna 1 mais alta que a
+  coluna 2, se tiver mais armazéns cadastrados) — isso é o comportamento
+  correto de um masonry, não uma regressão do vão cinza corrigido antes (o
+  fundo da página só aparecia ali quando painéis DENTRO da MESMA fileira
+  terminavam em alturas diferentes; colunas inteiras terminando em alturas
+  diferentes uma da outra é a base do próprio conceito de masonry).
+- Testado via harness atualizado (`harness_dashboard_row_order.js`, reescrito
+  pra checar `.weekly-masonry`/`.weekly-col` em vez das fileiras antigas — 12
+  asserções, todas `true`: `.weekly-top-row`/`.weekly-bottom-row` não existem
+  mais, coluna 1 tem exatamente os 2 painéis certos, coluna 2 tem exatamente os
+  3 painéis certos, nenhum painel vazou pra coluna errada) e
+  `harness_warehouse_barlist.js` (sem regressão — a lista de barras dentro do
+  painel "Valores por Armazém" continua idêntica, já que só a moldura ao redor
+  mudou). Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  conferidos (637/637, mudança líquida negativa — trocou 2 regras de fileira
+  por 3 regras de coluna, mas removeu a regra de correção anterior). **Verificação
+  visual de ponta a ponta fica a cargo do cliente** — mesma limitação de sempre
+  (login exige Supabase Auth real, não simulável no sandbox sem rede).
