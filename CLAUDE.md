@@ -8865,3 +8865,59 @@ adicionados"/"— ordem original da planilha") saiu por completo.
   arquivo inteiro e balanceamento de chaves do CSS conferidos (635/635,
   sem mudança). **Verificação visual fica a cargo do cliente** — mesma
   limitação de sempre.
+
+## "Operação" (4 KPIs) removida + "Valor por Armazém" vira cards aninhados, move pra dentro de "Tendência"
+
+Cliente mandou 2 prints: o 1º mostrando os 4 cards "Operação" (Itens
+Planejados/Contados/Pendentes/Tempo Médio) + o painel "Valor por Armazém"
+como estava (lista de barras coloridas por armazém); o 2º, uma referência
+de layout mostrando "Valores por Armazém" em formato de cards aninhados (1
+grande + 2 médios + o resto pequeno), posicionado dentro do MESMO grid de
+2 colunas onde já vivem "Contagens na Semana"/"Acuracidade Semanal"/
+"Acuracidade Mensal"/"Divergência por Família" — ou seja, "abaixo do campo
+de filtro" (a barra "Filtros"). Confirmado o escopo via `AskUserQuestion`:
+remover os 4 KPIs "Operação" também, não só o painel de armazém.
+
+- **4 KPIs "Operação" removidos por completo** (`.kpi-grid` com Itens
+  Planejados/Contados/Pendentes/Tempo Médio) — achado no caminho: "Tempo
+  Médio" **nunca foi dado real**, sempre mostrou um valor fixo hardcoded
+  (`counts.length ? '4.2min' : '—'`) — nenhuma conta de verdade por trás.
+  Removê-lo junto resolve essa inconsistência de quebra (contraria o
+  critério "só dado real, nada fabricado" já seguido no resto do app).
+  `planejados`/`contados`/`pendentes` (as 3 variáveis locais do `Dashboard`
+  que só alimentavam esses 4 cards) também saíram, por ficarem sem uso.
+- **"Valor por Armazém" virou "Valores por Armazém"** — o antigo painel
+  (lista de linhas com badge colorido + barra + valor) foi substituído por
+  um layout de cards aninhados: `armazensPorValor` (novo, `armazens`
+  reordenado por VALOR decrescente — `armazens` em si continua ordenado
+  alfabeticamente pelo código cru, usado só pra somatórios) — o de maior
+  valor vira o **card grande** (`.va-big`, fundo verde suave), o 2º/3º
+  viram **cards médios** lado a lado (`.va-medium-row`), o resto vira uma
+  fileira de **cards pequenos** (`.va-small-row`, `grid-template-columns:
+  repeat(auto-fit,minmax(90px,1fr))` — se ajusta sozinho ao número de
+  armazéns, sem precisar de breakpoint manual). O toggle "Valor (R$)"/"%
+  do Total" (`modoValor`, estado já existente) e a nota de rodapé sobre a
+  planilha SB2 continuam, sem mudança de comportamento.
+- **Moveu de posição**: saiu de logo abaixo dos 4 KPIs "Operação" (removidos)
+  e virou o 1º item dentro do `weekly-charts-grid` (mesmo grid de 2
+  colunas de "Contagens na Semana"/"Acuracidade Semanal"/"Acuracidade
+  Mensal"/"Divergência por Família", que já existia e nunca tinha sido
+  restruturado) — não recriei o layout "2 em cima + 3 embaixo" exato do
+  print de referência (exigiria uma grade assimétrica só pra este caso);
+  optei por reaproveitar o mesmo grid de 2 colunas já usado pelos outros 4
+  painéis (mesmo trade-off já aceito antes neste projeto quando um 5º item
+  entrou nesse grid — "Divergência por Família/Grupo" — cai sozinho numa
+  3ª linha, sem CSS especial).
+- Testado via harness real (jsdom + react-dom/client + `act()`, com o
+  mesmo cenário exato do print do cliente — 8 armazéns, Armazém 01 com
+  R$13,3 milhões): confirmei que os 4 KPIs "Operação" sumiram, que
+  "Valores por Armazém" aparece dentro do mesmo grid que "Contagens na
+  Semana", que o card grande mostra o armazém de maior valor (Armazém 01,
+  R$ 13.329.778) formatado certo, que os 2 cards médios mostram os 2º/3º
+  maiores (Armazém EX/Armazém 06), que os 5 restantes caem nos cards
+  pequenos, e que o toggle "% do Total" muda o card grande pra percentual.
+  Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  conferidos (651/651 — 16 regras novas, `.va-*`). **Verificação visual de
+  ponta a ponta (comparar com a referência do cliente) fica a cargo dele**
+  — mesma limitação de sempre (login exige Supabase Auth real, não
+  simulável no sandbox sem rede).
