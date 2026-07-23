@@ -10141,3 +10141,50 @@ Divergentes/Contagens Concluídas, todas com suas ações dentro do "⋮").
   — nenhuma classe CSS nova, tudo reaproveitado). **Verificação visual de
   ponta a ponta fica a cargo do cliente** — mesma limitação de sempre (login
   exige Supabase Auth real, não simulável no sandbox sem rede).
+
+## "Divergência por Família/Grupo" — Top 5 + filtro de período funcional
+
+Cliente reportou que o painel "Divergência por Família/Grupo" (Indicadores,
+grid "Tendência", ao lado de "Acuracidade Mensal") tinha ficado "fora do
+padrão dos outros indicadores, em um tamanho desproporcional" e pediu pra
+mostrar só "os X maiores" e o filtro de data ("Filtros", o mesmo painel que
+já governa os gráficos de Acuracidade Semanal/Contagens na Semana) passar a
+valer pra esse indicador também.
+
+- **Causa do tamanho desproporcional**: `porFamilia.map(...)` renderizava
+  UMA barra pra CADA família com alguma divergência, sem nenhum corte — como
+  o painel vizinho no mesmo grid ("Acuracidade Mensal") é um gráfico de
+  altura fixa, um cliente com muitas famílias distintas via esse painel
+  crescer bem mais alto que o resto da fileira.
+- **Corrigido**: `porFamilia` agora corta em **Top 5** (`.slice(0,5)`, mesmo
+  padrão já usado por "Top 5 Maiores Divergências" nesta mesma tela) — título
+  do painel virou "Divergência por Família/Grupo (Top 5)", deixando o corte
+  explícito. Em caso de empate na contagem, o `sort` estável do JS preserva a
+  ordem de inserção (ordem de `divergentesNoPeriodo`), sem crash nem
+  comportamento surpreendente.
+- **Filtro de período passou a valer pra esse indicador**: o cálculo de
+  `porFamiliaObj`/`porFamilia`/`maxFamilia` foi movido pra DEPOIS de
+  `dataInicioStr`/`dataFimStr` serem calculados (o mesmo par que já alimenta
+  `computeWeeklyStats` pros outros gráficos dessa seção) — antes ficava
+  ANTES desse cálculo no código, então nem tinha como consultar esses
+  valores. Um novo `divergentesNoPeriodo = divergentes.filter(c=>c.data &&
+  c.data>=dataInicioStr && c.data<=dataFimStr)` alimenta a tabulação por
+  família, em vez do `divergentes` (todo o histórico, sem filtro) de antes —
+  mesmo critério de "item sem `data` fica de fora do filtro" já usado em
+  outras telas (Contagens Concluídas/Itens Divergentes/etc.). **"Acuracidade
+  Mensal" (o vizinho no mesmo grid) continua INDEPENDENTE desse filtro, de
+  propósito** — decisão já tomada antes, não foi revista aqui.
+- Testado via harness novo (`harness_divergencia_familia_top5_filtro.js`,
+  jsdom + react-dom/client + `act()`, mesma técnica rigorosa de sempre): 6
+  famílias distintas com divergência no mesmo dia — o painel mostra
+  exatamente 5 barras (corte funcionando), a família com maior divergência
+  aparece, a de menor (6ª) foi cortada; um item de 2020 fica de fora com o
+  filtro padrão ("Últimos 30 dias"), passa a aparecer com um período
+  personalizado desde 2019, e o corte em 5 continua valendo mesmo com 7
+  famílias no período quando o filtro é "Todo o período". Transpile Babel
+  do arquivo inteiro e balanceamento de chaves do CSS conferidos (641/641,
+  sem mudança — só JS/JSX, nenhuma classe CSS nova). Rodei de novo
+  `harness_home_kpi.js` (regressão próxima) sem quebrar nada. **Verificação
+  visual de ponta a ponta fica a cargo do cliente** — mesma limitação de
+  sempre (login exige Supabase Auth real, não simulável no sandbox sem
+  rede).
