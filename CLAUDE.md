@@ -9432,3 +9432,50 @@ ficavam praticamente invisíveis no treemap, sem rótulo visível).
   nenhuma regra nova). **Verificação visual de ponta a ponta fica a cargo
   do cliente** — mesma limitação de sempre (login exige Supabase Auth
   real, não simulável no sandbox sem rede).
+
+## Bug real: fundo cinza da página aparecendo entre painéis de alturas diferentes (`align-items:start` revertido)
+
+Cliente mandou print circulando faixas de fundo CINZA (não branco) entre
+"Contagens na Semana" e a fileira seguinte, e entre "Acuracidade Semanal"/
+"Acuracidade Mensal" e o que vem depois — reclamando (com razão, depois de
+já ter pedido isso антes) que o espaço vazio continuava lá.
+
+- **Causa raiz**: `align-items:start` (adicionado numa rodada anterior
+  pra resolver um vão vazio DIFERENTE — vão branco DENTRO de um painel de
+  gráfico mais curto, quando ele esticava além da altura do próprio SVG)
+  faz cada painel da fileira crescer só até a altura do PRÓPRIO conteúdo,
+  em vez de bater com o vizinho mais alto. Isso resolvia aquele vão
+  branco, mas criava um problema pior agora que "Valores por Armazém"
+  (lista de 8 barras + rodapé) ficou bem mais alto que "Contagens na
+  Semana" (gráfico de altura fixa) — o painel curto termina bem antes da
+  linha da fileira, expondo o FUNDO CINZA da página (não do painel) no
+  vão entre um painel e o próximo. Mesmo problema entre "Acuracidade
+  Semanal"/"Acuracidade Mensal" (gráficos) e "Divergência por Família/
+  Grupo" (8 linhas de barra, painel mais alto) na fileira de baixo.
+- **Correção**: `align-items:start` REMOVIDO de `.weekly-top-row`/
+  `.weekly-bottom-row` — volta ao `stretch` padrão do grid, então os 2-3
+  painéis de cada fileira sempre terminam na MESMA altura (caixa branca
+  cheia, sem fundo cinza aparecendo entre eles). **Trade-off aceito
+  conscientemente**: o painel mais curto agora pode sobrar um respiro
+  branco DENTRO da própria caixa (o problema que motivou o `start` na
+  rodada anterior) — mas isso é preferível a expor o fundo da página,
+  que é visualmente pior (uma caixa branca com um pouco de respiro a mais
+  parece só "um painel folgado"; fundo cinza vazando entre painéis parece
+  um bug de layout de verdade).
+- **Bug pego no mesmo print, corrigido junto**: o valor "R$ 1,84 milhões"
+  (barra "Armazém EX") quebrava em 2 linhas dentro de uma barra estreita
+  — `.bar-fill span` ganhou `white-space:nowrap` (não tinha isso antes,
+  porque os outros usos de `.bar-row`/`.bar-fill` no app sempre tiveram
+  valores curtos, tipo "3"/"2"/"1", que nunca precisaram disso). Com
+  nowrap, um valor mais longo que a barra transborda pra fora do
+  preenchimento em vez de quebrar feio — mesmo efeito visual comum em
+  bar charts com barra curta + rótulo longo.
+- Testado via harnesses já existentes (jsdom + react-dom/client +
+  `act()`) — as mesmas asserções de sempre continuam passando (jsdom não
+  calcula layout real, então o vão em si e a quebra de texto só são
+  confirmáveis visualmente). Transpile Babel do arquivo inteiro e
+  balanceamento de chaves do CSS conferidos (641/641, sem mudança — só
+  removeu uma propriedade e acrescentou outra em regras já existentes).
+  **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma
+  limitação de sempre (login exige Supabase Auth real, não simulável no
+  sandbox sem rede).

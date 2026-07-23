@@ -557,16 +557,23 @@
      container sem técnica mais complexa; duas fileiras próprias resolve
      direto. */
   .weekly-top-row{display:flex;flex-direction:column;gap:14px;}
-  /* align-items:start (não o "stretch" padrão do grid) — sem isso, o grid
-     estica TODO painel da fileira pra bater com a altura do mais alto (ex:
-     "Valores por Armazém"/"Divergência por Família/Grupo", que têm mais
-     conteúdo), deixando um vão vazio no fundo dos painéis mais curtos
-     (gráficos de altura fixa, ex: "Contagens na Semana"/"Acuracidade
-     Semanal"/"Acuracidade Mensal") — cliente reportou esse vão com print.
-     Com start, cada painel só cresce até a altura do próprio conteúdo. */
-  @media (min-width:900px){.weekly-top-row{display:grid;grid-template-columns:1fr 1fr;align-items:start;}}
+  /* `align-items:stretch` (o padrão do grid, SEM `start`) — histórico: uma
+     rodada anterior tinha trocado pra `start` pra evitar vão vazio DENTRO
+     de um painel de gráfico mais curto (o painel esticava além da altura
+     do próprio SVG). Mas com "Valores por Armazém"/"Divergência por
+     Família/Grupo" tendo bem mais conteúdo que os painéis de gráfico ao
+     lado, `start` criava um problema pior: o painel curto passava a
+     terminar bem antes da linha da fileira, expondo o FUNDO CINZA da
+     página entre um painel e o de baixo — visualmente pior que o vão
+     branco de antes (cliente reportou com print, duas vezes). Voltado pra
+     `stretch`: os dois painéis de uma linha sempre terminam na mesma
+     altura (caixa branca cheia, sem fundo cinza aparecendo), ao custo de
+     sobrar um respiro branco dentro do painel mais curto quando o
+     conteúdo dele é bem menor que o do vizinho — troca aceita de
+     propósito, é preferível a expor o fundo da página. */
+  @media (min-width:900px){.weekly-top-row{display:grid;grid-template-columns:1fr 1fr;}}
   .weekly-bottom-row{display:flex;flex-direction:column;gap:14px;margin-top:14px;}
-  @media (min-width:900px){.weekly-bottom-row{display:grid;grid-template-columns:1fr 1fr;align-items:start;}}
+  @media (min-width:900px){.weekly-bottom-row{display:grid;grid-template-columns:1fr 1fr;}}
   @media (min-width:1300px){.weekly-bottom-row{grid-template-columns:1fr 1fr 1fr;}}
   .weekly-charts-grid{margin-bottom:14px;}
   .chart-meta-badge{font-family:var(--font-mono);font-size:var(--text-xs);font-weight:700;color:var(--teal);background:rgba(13,148,136,0.12);border-radius:6px;padding:4px 9px;white-space:nowrap;}
@@ -663,7 +670,14 @@
   .bar-row .bl{width:110px;font-size:var(--text-sm);color:var(--ink-dim);flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .bar-track{flex:1;height:20px;background:var(--panel-raised);border-radius:5px;overflow:hidden;}
   .bar-fill{height:100%;background:var(--safety);border-radius:5px;display:flex;align-items:center;justify-content:flex-end;padding-right:6px;}
-  .bar-fill span{font-family:var(--font-mono);font-size:var(--text-2xs);font-weight:700;color:var(--safety-ink);}
+  /* white-space:nowrap — sem isso, um valor mais longo (ex: "R$ 1,84
+     milhões" em "Valores por Armazém") quebra em 2 linhas dentro de uma
+     barra estreita; com nowrap, o texto só transborda pra fora do
+     preenchimento (barra sem overflow:hidden) em vez de quebrar feio —
+     mesmo efeito visual de outros bar charts com barra curta+rótulo
+     longo. Não afeta os outros usos de `.bar-row` (valores curtos, tipo
+     "3"/"2"/"1", nunca chegam perto de precisar disso). */
+  .bar-fill span{font-family:var(--font-mono);font-size:var(--text-2xs);font-weight:700;color:var(--safety-ink);white-space:nowrap;}
   .rank-table{width:100%;border-collapse:collapse;}
   .rank-table th{text-align:left;font-family:var(--font-mono);font-size:var(--text-2xs);text-transform:uppercase;color:var(--ink-dim);padding:8px 6px;border-bottom:1px solid var(--line);}
   .rank-table td{padding:10px 6px;border-bottom:1px solid var(--line);font-size:var(--text-sm);}
