@@ -9533,3 +9533,42 @@ curto) resolvia o problema de verdade, só trocava um sintoma pelo outro.
   por 3 regras de coluna, mas removeu a regra de correção anterior). **Verificação
   visual de ponta a ponta fica a cargo do cliente** — mesma limitação de sempre
   (login exige Supabase Auth real, não simulável no sandbox sem rede).
+
+## Ordem de "Tendência" trocada de novo: pedido explícito do cliente supera o masonry
+
+Logo depois do masonry ser publicado, o cliente pediu uma composição
+ESPECÍFICA, diferente de qualquer arranjo anterior: "coloque o gráfico de
+Valores por Armazém sozinho, em baixo dele a esquerda Acuracidade Semanal (%) a
+direita deste Contagens na Semana e os outros dois embaixo deste" — ou seja,
+3 fileiras: (1) "Valores por Armazém" sozinho, largura total; (2) "Acuracidade
+Semanal (%)" à esquerda + "Contagens na Semana" à direita; (3) "Acuracidade
+Mensal (%)" à esquerda + "Divergência por Família/Grupo" à direita.
+
+- **`.weekly-masonry`/`.weekly-col` (2 colunas independentes) foram
+  substituídos** por essa composição fixa — não fazia mais sentido manter o
+  masonry (que existia justamente pra permitir que colunas terminassem em
+  alturas diferentes sem gerar vão/fundo aparecendo) quando o cliente pediu uma
+  ordem exata linha por linha, não um agrupamento por tipo de conteúdo.
+- **`.weekly-solo-row`** — a fileira 1 ("Valores por Armazém"), só um wrapper
+  com `margin-bottom`, sem grid nenhum (painel único, largura total, não tem
+  vizinho pra bater altura — nenhum risco do bug de vão de rodadas anteriores).
+- **`.weekly-pair-row`** — classe compartilhada pelas fileiras 2 e 3 (2
+  colunas a partir de 900px, `align-items` no padrão `stretch` do grid — não
+  precisou de nenhum ajuste especial, já que cada fileira agora só tem 2
+  painéis, e a diferença de altura entre eles tende a ser pequena o bastante
+  pra não reproduzir o bug de vão/fundo das rodadas anteriores; se o cliente
+  notar isso de novo, o próximo ajuste seria olhar caso a caso, já que a causa
+  de fundo — parear conteúdo de altura MUITO diferente numa fileira — não
+  existe mais aqui do jeito extremo de antes, com uma lista de N barras ao lado
+  de um SVG fixo).
+- Testado via harness atualizado (`harness_dashboard_row_order.js`, reescrito
+  de novo — agora 15 asserções: fileira 1 tem só 1 painel e é "Valores por
+  Armazém"; fileira 2 tem exatamente "Acuracidade Semanal" à esquerda e
+  "Contagens na Semana" à direita; fileira 3 tem "Acuracidade Mensal" à
+  esquerda e "Divergência por Família/Grupo" à direita; nenhuma classe da era
+  masonry sobra) e `harness_warehouse_barlist.js` (sem regressão). Transpile
+  Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos
+  (637/637, sem mudança líquida — trocou 2 regras de coluna por 2 regras de
+  fileira). **Verificação visual de ponta a ponta fica a cargo do cliente** —
+  mesma limitação de sempre (login exige Supabase Auth real, não simulável no
+  sandbox sem rede).

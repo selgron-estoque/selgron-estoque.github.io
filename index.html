@@ -551,25 +551,14 @@
   /* DASHBOARD */
   .kpi-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px;}
   @media (min-width:640px){.kpi-grid{grid-template-columns:repeat(4,1fr);}}
-  /* Layout tipo "masonry" (2 colunas INDEPENDENTES, cada uma empilhando
-     seus próprios painéis) — substitui as duas fileiras de grid
-     (`weekly-top-row`/`weekly-bottom-row`) que existiam antes. Motivo:
-     alinhar painéis de conteúdo MUITO diferente (uma lista de N barras,
-     que cresce com o dado, vs. um gráfico de altura fixa) numa mesma
-     LINHA de grid nunca dava certo — `align-items:stretch` deixava vão
-     branco vazio dentro do painel curto; `align-items:start` deixava o
-     fundo cinza da página aparecer no vão até o painel de baixo (cliente
-     reportou os dois, em rodadas seguidas, como bug). Numa coluna
-     (empilhamento vertical simples, sem nenhum vizinho de LADO
-     precisando bater altura), cada painel sempre termina exatamente na
-     altura do próprio conteúdo — não existe "vão" possível, porque não
-     há mais nenhum elemento tentando casar altura com outro. As duas
-     colunas podem terminar em alturas TOTAIS diferentes uma da outra
-     (comportamento normal de masonry, tipo Pinterest/Trello) — isso é
-     esperado e não é bug. */
-  .weekly-masonry{display:flex;flex-direction:column;gap:14px;}
-  @media (min-width:900px){.weekly-masonry{display:grid;grid-template-columns:1fr 1fr;align-items:start;}}
-  .weekly-col{display:flex;flex-direction:column;gap:14px;}
+  /* "Valores por Armazém" sozinho numa fileira de largura total (pedido
+     explícito do cliente), seguido de duas fileiras de 2 colunas cada
+     (Acuracidade Semanal + Contagens na Semana; Acuracidade Mensal +
+     Divergência por Família/Grupo) — `.weekly-pair-row` é o par
+     compartilhado pelas duas fileiras de 2 colunas. */
+  .weekly-solo-row{margin-bottom:14px;}
+  .weekly-pair-row{display:flex;flex-direction:column;gap:14px;margin-bottom:14px;}
+  @media (min-width:900px){.weekly-pair-row{display:grid;grid-template-columns:1fr 1fr;}}
   .weekly-charts-grid{margin-bottom:14px;}
   .chart-meta-badge{font-family:var(--font-mono);font-size:var(--text-xs);font-weight:700;color:var(--teal);background:rgba(13,148,136,0.12);border-radius:6px;padding:4px 9px;white-space:nowrap;}
 
@@ -10828,78 +10817,83 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
           não precisa de guard condicional aqui. */}
       <div>
         <div className="weekly-charts-grid">
-          <div className="weekly-masonry">
-            <div className="weekly-col">
-              <div className="panel" style={{margin:0}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'wrap',gap:8,marginBottom:16}}>
-                  <div>
-                    <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Valores por Armazém</div>
-                    <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:2}}>Distribuição do valor total em estoque por armazém.</div>
-                  </div>
-                  <div style={{display:'flex',border:'1px solid var(--line)',borderRadius:8,overflow:'hidden',flexShrink:0}}>
-                    <button onClick={()=>setModoValor('valor')} style={{border:'none',padding:'6px 12px',fontSize:'var(--text-xs)',cursor:'pointer',background:modoValor==='valor'?'var(--ink)':'transparent',color:modoValor==='valor'?'#fff':'var(--ink-dim)'}}>Valor (R$)</button>
-                    <button onClick={()=>setModoValor('percentual')} style={{border:'none',padding:'6px 12px',fontSize:'var(--text-xs)',cursor:'pointer',background:modoValor==='percentual'?'var(--ink)':'transparent',color:modoValor==='percentual'?'#fff':'var(--ink-dim)'}}>% do Total</button>
-                  </div>
+          {/* Fileira 1: "Valores por Armazém" sozinho, largura total. */}
+          <div className="weekly-solo-row">
+            <div className="panel" style={{margin:0}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'wrap',gap:8,marginBottom:16}}>
+                <div>
+                  <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Valores por Armazém</div>
+                  <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:2}}>Distribuição do valor total em estoque por armazém.</div>
                 </div>
-                {armazensTreemapData.length===0 ? (
-                  <div style={{color:'var(--ink-dim)',fontSize:'var(--text-sm)'}}>
-                    Nenhum saldo carregado ainda. Envie a planilha SB2 em Configurações pra ver o valor em estoque por armazém.
-                  </div>
-                ) : armazensTreemapData.map(d=>(
-                  <div key={d.codigo} className="bar-row">
-                    <div className="bl">{d.nome}</div>
-                    <div className="bar-track">
-                      <div className="bar-fill" style={{width:Math.max(4,(d.valor/maxArmazemValor*100))+'%'}}>
-                        <span>{modoValor==='valor' ? d.valorLabel : d.pctLabel}</span>
-                      </div>
+                <div style={{display:'flex',border:'1px solid var(--line)',borderRadius:8,overflow:'hidden',flexShrink:0}}>
+                  <button onClick={()=>setModoValor('valor')} style={{border:'none',padding:'6px 12px',fontSize:'var(--text-xs)',cursor:'pointer',background:modoValor==='valor'?'var(--ink)':'transparent',color:modoValor==='valor'?'#fff':'var(--ink-dim)'}}>Valor (R$)</button>
+                  <button onClick={()=>setModoValor('percentual')} style={{border:'none',padding:'6px 12px',fontSize:'var(--text-xs)',cursor:'pointer',background:modoValor==='percentual'?'var(--ink)':'transparent',color:modoValor==='percentual'?'#fff':'var(--ink-dim)'}}>% do Total</button>
+                </div>
+              </div>
+              {armazensTreemapData.length===0 ? (
+                <div style={{color:'var(--ink-dim)',fontSize:'var(--text-sm)'}}>
+                  Nenhum saldo carregado ainda. Envie a planilha SB2 em Configurações pra ver o valor em estoque por armazém.
+                </div>
+              ) : armazensTreemapData.map(d=>(
+                <div key={d.codigo} className="bar-row">
+                  <div className="bl">{d.nome}</div>
+                  <div className="bar-track">
+                    <div className="bar-fill" style={{width:Math.max(4,(d.valor/maxArmazemValor*100))+'%'}}>
+                      <span>{modoValor==='valor' ? d.valorLabel : d.pctLabel}</span>
                     </div>
                   </div>
-                ))}
-                <div style={{marginTop:14,paddingTop:10,borderTop:'1px solid var(--line)',fontSize:'var(--text-xs)',color:'var(--ink-dim)'}}>
-                  <Ic>ℹ</Ic> Os valores consideram o custo médio dos itens em estoque, conforme o último upload da planilha SB2.
                 </div>
-              </div>
-              <div className="panel" style={{margin:0}}>
-                <div style={{fontSize:'var(--text-sm)',fontWeight:700,marginBottom:16}}>Divergência por Família/Grupo</div>
-                {porFamilia.length===0 ? (
-                  <div style={{color:'var(--ink-dim)',fontSize:'var(--text-sm)'}}>
-                    Ainda sem dado suficiente pra esse indicador — a família/grupo do produto
-                    só é gravada em contagens feitas a partir de agora, aparece aqui conforme
-                    itens divergentes forem sendo contados.
-                  </div>
-                ) : porFamilia.map(([fam,n])=>(
-                  <div key={fam} className="bar-row">
-                    <div className="bl" style={{width:160}}>{fam}</div>
-                    <div className="bar-track"><div className="bar-fill" style={{width:(n/maxFamilia*100)+'%', background:'var(--teal)'}}><span style={{color:'#fff'}}>{n}</span></div></div>
-                  </div>
-                ))}
+              ))}
+              <div style={{marginTop:14,paddingTop:10,borderTop:'1px solid var(--line)',fontSize:'var(--text-xs)',color:'var(--ink-dim)'}}>
+                <Ic>ℹ</Ic> Os valores consideram o custo médio dos itens em estoque, conforme o último upload da planilha SB2.
               </div>
             </div>
-            <div className="weekly-col">
-              <div className="panel" style={{margin:0}}>
-                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:16}}>
-                  <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Contagens na Semana</div>
-                  <span className="chart-meta-badge">Meta: {META_CONTAGENS_SEMANAL}</span>
-                </div>
-                <WeeklyCountChart weeks={weeklyStats} meta={META_CONTAGENS_SEMANAL} />
+          </div>
+
+          {/* Fileira 2: Acuracidade Semanal (esquerda) + Contagens na Semana (direita). */}
+          <div className="weekly-pair-row">
+            <div className="panel" style={{margin:0}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:16}}>
+                <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Acuracidade Semanal (%)</div>
+                <span className="chart-meta-badge">Meta: {META_ACURACIDADE_SEMANAL}%</span>
               </div>
-              <div className="panel" style={{margin:0}}>
-                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:16}}>
-                  <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Acuracidade Semanal (%)</div>
-                  <span className="chart-meta-badge">Meta: {META_ACURACIDADE_SEMANAL}%</span>
-                </div>
-                <WeeklyLineChart weeks={weeklyStats} meta={META_ACURACIDADE_SEMANAL} />
+              <WeeklyLineChart weeks={weeklyStats} meta={META_ACURACIDADE_SEMANAL} />
+            </div>
+            <div className="panel" style={{margin:0}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:16}}>
+                <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Contagens na Semana</div>
+                <span className="chart-meta-badge">Meta: {META_CONTAGENS_SEMANAL}</span>
               </div>
-              <div className="panel" style={{margin:0}}>
-                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:16}}>
-                  <div>
-                    <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Acuracidade Mensal (%)</div>
-                    <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:2}}>Todos os meses de {new Date().getFullYear()} com dado registrado</div>
-                  </div>
-                  <span className="chart-meta-badge">Meta: {META_ACURACIDADE_SEMANAL}%</span>
+              <WeeklyCountChart weeks={weeklyStats} meta={META_CONTAGENS_SEMANAL} />
+            </div>
+          </div>
+
+          {/* Fileira 3: Acuracidade Mensal (esquerda) + Divergência por Família/Grupo (direita). */}
+          <div className="weekly-pair-row">
+            <div className="panel" style={{margin:0}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:16}}>
+                <div>
+                  <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Acuracidade Mensal (%)</div>
+                  <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:2}}>Todos os meses de {new Date().getFullYear()} com dado registrado</div>
                 </div>
-                <MonthlyAccuracyBarChart months={monthlyStats} meta={META_ACURACIDADE_SEMANAL} />
+                <span className="chart-meta-badge">Meta: {META_ACURACIDADE_SEMANAL}%</span>
               </div>
+              <MonthlyAccuracyBarChart months={monthlyStats} meta={META_ACURACIDADE_SEMANAL} />
+            </div>
+            <div className="panel" style={{margin:0}}>
+              <div style={{fontSize:'var(--text-sm)',fontWeight:700,marginBottom:16}}>Divergência por Família/Grupo</div>
+              {porFamilia.length===0 ? (
+                <div style={{color:'var(--ink-dim)',fontSize:'var(--text-sm)'}}>
+                  Ainda sem dado suficiente pra esse indicador — a família/grupo do produto
+                  só é gravada em contagens feitas a partir de agora, aparece aqui conforme
+                  itens divergentes forem sendo contados.
+                </div>
+              ) : porFamilia.map(([fam,n])=>(
+                <div key={fam} className="bar-row">
+                  <div className="bl" style={{width:160}}>{fam}</div>
+                  <div className="bar-track"><div className="bar-fill" style={{width:(n/maxFamilia*100)+'%', background:'var(--teal)'}}><span style={{color:'#fff'}}>{n}</span></div></div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
