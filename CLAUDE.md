@@ -10104,3 +10104,40 @@ era exatamente o caso do INV-678.
   cliente** — mesma limitação de sempre (sandbox sem rede) — depois do
   deploy, o admin pode abrir "Inventários Pendentes" → "Itens" no card do
   INV-678 e remover o item que nunca foi encontrado.
+
+## "Inventários Pendentes" — Baixar/Cancelar/Excluir também vão pro menu "⋮"
+
+Cliente pediu: "botões de Baixar, Cancelar e Excluir colocar todos nos 3
+pontinhos" — até aqui, o card de cada inventário já tinha um menu "⋮" (criado
+numa rodada anterior só pra "Marcar urgente"), mas Baixar/Cancelar/Excluir
+continuavam como uma fileira de botões sempre visível embaixo do card,
+destoando do padrão já consolidado nas outras telas (Recontagens/Itens
+Divergentes/Contagens Concluídas, todas com suas ações dentro do "⋮").
+
+- **As 3 ações entraram no mesmo dropdown já existente**, logo abaixo de
+  "Marcar urgente"/"Remover urgência" — `role==='admin'` continua sendo a
+  mesma condição de sempre (nenhuma mudança de permissão: essas 3 ações já
+  eram só-admin antes, "Marcar urgente" continua líder+admin). "Cancelar" só
+  aparece quando o inventário ainda não está concluído (`!concluido`), mesmo
+  critério de antes.
+- **Fileira de botões solta, embaixo do card, foi removida por completo** —
+  o `else` do ternário `confirmDeleteId`/`confirmCancelId` (que renderizava
+  "Baixar"/"Cancelar"/"Excluir" quando nenhuma confirmação estava aberta)
+  virou `null`. Os blocos de CONFIRMAÇÃO (o "tem certeza?" com `divergence-
+  alert` + botões "Voltar"/"Confirmar") continuam exatamente como estavam —
+  só passaram a ser abertos a partir do clique no item do menu, em vez de um
+  botão solto.
+- **"Excluir contagem"/"Excluir" reaproveita `.menu-item-danger`** (mesma
+  classe já usada em Recontagens/Contagens Concluídas pro item de exclusão
+  do dropdown — texto vermelho, sem precisar de CSS novo).
+- Testado via harness novo (`harness_inventory_menu_consolidado.js`, jsdom +
+  react-dom/client + `act()`, mesma técnica rigorosa de sempre): admin vê as
+  4 opções dentro do "⋮" (Marcar urgente/Baixar/Cancelar/Excluir), nenhum
+  botão "Baixar" solto fora do dropdown, clicar "Excluir"/"Cancelar" no menu
+  abre a mesma confirmação de sempre e fecha o dropdown; líder vê só "Marcar
+  urgente" (sem Baixar/Excluir, mesma permissão de antes); operador não vê
+  nenhum "⋮" nem essas ações em lugar nenhum. Transpile Babel do arquivo
+  inteiro e balanceamento de chaves do CSS conferidos (641/641, sem mudança
+  — nenhuma classe CSS nova, tudo reaproveitado). **Verificação visual de
+  ponta a ponta fica a cargo do cliente** — mesma limitação de sempre (login
+  exige Supabase Auth real, não simulável no sandbox sem rede).

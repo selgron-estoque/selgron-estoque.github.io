@@ -6371,6 +6371,13 @@ function InventoryList({inventories, goto, role, counts, onDelete, onCancel, onT
                   {menuAbertoId===inv.id && (
                     <div className="count-card-menu-dropdown">
                       <button type="button" disabled={urgenteBusyId===inv.id} onClick={()=>{ handleToggleUrgente(inv); setMenuAbertoId(null); }}><Ic>🔥</Ic> {urgenteBusyId===inv.id ? 'Salvando…' : (inv.urgente ? 'Remover urgência' : 'Marcar urgente')}</button>
+                      {role==='admin' && (
+                        <>
+                          <button type="button" onClick={()=>{ handleDownload(inv); setMenuAbertoId(null); }}><Ic>⬇</Ic> Baixar</button>
+                          {!concluido && <button type="button" onClick={()=>{ setConfirmCancelId(inv.id); setMenuAbertoId(null); }}><Ic>⛔</Ic> Cancelar</button>}
+                          <button type="button" className="menu-item-danger" onClick={()=>{ setConfirmDeleteId(inv.id); setMenuAbertoId(null); }}><Ic>🗑</Ic> Excluir</button>
+                        </>
+                      )}
                     </div>
                   )}
                 </div>
@@ -6477,13 +6484,7 @@ function InventoryList({inventories, goto, role, counts, onDelete, onCancel, onT
                 <button className="btn btn-danger" disabled={cancelando} onClick={()=>handleConfirmCancel(inv.id)}>{cancelando ? 'Cancelando…' : 'Confirmar cancelamento'}</button>
               </div>
             </div>
-          ) : (
-            <div className="btn-row" style={{padding:'0 18px 16px'}} onClick={e=>e.stopPropagation()}>
-              <button className="btn btn-secondary" onClick={()=>handleDownload(inv)}><Ic>⬇</Ic> Baixar</button>
-              {!concluido && <button className="btn btn-secondary" onClick={()=>setConfirmCancelId(inv.id)}><Ic>⛔</Ic> Cancelar</button>}
-              <button className="btn btn-danger" onClick={()=>setConfirmDeleteId(inv.id)}><Ic>🗑</Ic> Excluir</button>
-            </div>
-          )
+          ) : null
         )}
       </div>
     );
