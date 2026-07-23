@@ -1380,6 +1380,11 @@ function contagemRowToLocal(row){
     recontagemSolicitadaPor: row.recontagem_solicitada_por,
     recontagemSolicitadaEm: row.recontagem_solicitada_em,
     urgente: !!row.urgente,
+    // Pedido do cliente: por padrão, o operador que já contou o item some
+    // da fila de recontagem dele mesmo — só volta a aparecer pra ele se o
+    // líder liberar explicitamente essa exceção (ver toggleLiberarRecontagemOriginal
+    // em App(), menu "⋮" de RecountsPanel).
+    recontagemLiberadaParaOriginal: !!row.recontagem_liberada_para_original,
     diferencaConfirmada: !!row.diferenca_confirmada,
     // Fluxo de SA de Ajuste/aprovação da Diretoria (ver App()) — `solicitacaoAjuste`
     // reaproveita o MESMO nome de campo já usado por `historicoRowToCountLike`
@@ -4526,6 +4531,19 @@ function App(){
     return res;
   }
 
+  // Libera (ou bloqueia de novo) o mesmo operador que já contou o item pra
+  // também poder recontá-lo — pedido do cliente: por padrão, um item
+  // enviado pra recontagem some da tela do PRÓPRIO operador que fez a
+  // contagem original (`c.usuario`), pra forçar uma segunda pessoa
+  // conferir de verdade; o líder pode liberar a exceção item a item, pelo
+  // menu "⋮" de "Recontagens Pendentes" (ver RecountsPanel). Mesmo padrão
+  // de `toggleUrgente` — reaproveita `updateContagemStatusToSupabase`.
+  async function toggleLiberarRecontagemOriginal(countId, liberado){
+    const res = await updateContagemStatusToSupabase(countId, {recontagem_liberada_para_original: liberado});
+    if(res.ok) setCounts(prev=>prev.map(c=>c.id===countId ? {...c, recontagemLiberadaParaOriginal: liberado} : c));
+    return res;
+  }
+
   // Editar motivo/observação de uma contagem já registrada — pedido do
   // cliente: essas informações pararam de ser capturadas na própria tela de
   // contagem (redesenho "coletor industrial") com a intenção de virem a ser
@@ -5000,7 +5018,7 @@ function App(){
         {view==='manualCount' && <ManualCountFlow user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('home');}} onAddressProposed={addAddressProposal} operadorVeSaldo={operadorVeSaldo} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
         {view==='routeCount' && <RouteCountFlow inv={flowState} user={currentUser} counts={counts} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} gruposExcluidos={gruposExcluidos} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
         {view==='importedListCount' && <ImportedListCountFlow inv={flowState} user={currentUser} counts={counts} inventories={inventories} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
-        {view==='recounts' && hasAccess(currentUser,'recounts') && <RecountsPanel counts={counts} inventories={inventories} role={role} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onEditarMotivoObservacao={editarMotivoObservacaoContagem} operadorVeValoresRecontagem={operadorVeValoresRecontagem} />}
+        {view==='recounts' && hasAccess(currentUser,'recounts') && <RecountsPanel counts={counts} inventories={inventories} role={role} currentUser={currentUser} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onToggleLiberarOriginal={toggleLiberarRecontagemOriginal} onEditarMotivoObservacao={editarMotivoObservacaoContagem} operadorVeValoresRecontagem={operadorVeValoresRecontagem} />}
         {view==='divergentes' && hasAccess(currentUser,'divergentes') && <DivergentItemsPanel counts={counts} inventories={inventories} role={role} goto={goto} onApprove={approveDivergence} onSendToDiretoria={enviarParaAprovacaoDiretoria} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onEditarMotivoObservacao={editarMotivoObservacaoContagem} />}
         {view==='aprovacaoDiretoria' && hasAccess(currentUser,'aprovacaoDiretoria') && <DiretoriaApprovalPanel counts={counts} inventories={inventories} role={role} onApproveSA={aprovarAjusteDiretoria} onRejectSA={reprovarAjusteDiretoria} onToggleUrgente={toggleUrgente} />}
         {view==='todasDivergencias' && <AllDivergencesPanel counts={counts} historicoConcluidas={historicoConcluidas} goto={goto} />}
@@ -8447,7 +8465,7 @@ function PaginationControls({pagina, setPagina, totalPaginas, tamanhoPagina, set
   );
 }
 
-function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggleUrgente, onEditarMotivoObservacao, operadorVeValoresRecontagem}){
+function RecountsPanel({counts, inventories, role, currentUser, goto, onDeleteCount, onToggleUrgente, onToggleLiberarOriginal, onEditarMotivoObservacao, operadorVeValoresRecontagem}){
   const canMark = role==='lider' || role==='admin';
   // Escopo AJUSTADO (cliente pediu pra restringir depois de ver o resultado
   // inicial): o quadro Sistema/Físico/Diferença/% fica visível pra QUALQUER
@@ -8461,7 +8479,19 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
   const byOriginal = {};
   counts.forEach(c=>{ if(c.contagemAnteriorId) byOriginal[c.contagemAnteriorId]=c; });
 
-  const aguardandoSegunda = counts.filter(c=>c.statusAprovacao==='aguardando_segunda' && !byOriginal[c.id]);
+  // Pedido do cliente: item enviado pra recontagem some da tela do PRÓPRIO
+  // operador que já contou (`c.usuario`), a não ser que o líder libere essa
+  // exceção item a item (`recontagemLiberadaParaOriginal`, menu "⋮" abaixo)
+  // — força uma SEGUNDA pessoa conferir de verdade, por padrão. Só se aplica
+  // ao perfil operador; líder/admin sempre veem a fila inteira (são eles
+  // que decidem liberar a exceção, não faria sentido esconder deles
+  // também). Comparação por NOME (`c.usuario`/`currentUser.nome`) — mesmo
+  // critério já usado no resto do app pra "quem contou", já que a contagem
+  // não guarda o id do usuário, só o nome.
+  const aguardandoSegundaTudo = counts.filter(c=>c.statusAprovacao==='aguardando_segunda' && !byOriginal[c.id]);
+  const aguardandoSegunda = role==='operador'
+    ? aguardandoSegundaTudo.filter(c => c.usuario!==currentUser.nome || c.recontagemLiberadaParaOriginal)
+    : aguardandoSegundaTudo;
 
   // Filtro de período ("Filtros"), mesmo componente já usado em Indicadores/
   // Contagens Concluídas. Essa tela já teve um filtro de período antes,
@@ -8535,6 +8565,18 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
     const res = await onToggleUrgente(c.id, !c.urgente);
     setUrgenteBusyId(null);
     if(!res || !res.ok) setUrgenteErro(prev=>({...prev, [c.id]: (res && res.erro) || 'Não foi possível salvar — tente novamente.'}));
+  }
+
+  // "Liberar para o mesmo operador" — mesmo padrão de handleToggleUrgente,
+  // só o líder/admin vê essa opção (canMark).
+  const [liberarBusyId, setLiberarBusyId] = useState(null);
+  const [liberarErro, setLiberarErro] = useState({});
+  async function handleToggleLiberar(c){
+    setLiberarBusyId(c.id);
+    setLiberarErro(prev=>({...prev, [c.id]: null}));
+    const res = await onToggleLiberarOriginal(c.id, !c.recontagemLiberadaParaOriginal);
+    setLiberarBusyId(null);
+    if(!res || !res.ok) setLiberarErro(prev=>({...prev, [c.id]: (res && res.erro) || 'Não foi possível salvar — tente novamente.'}));
   }
 
   // Editar motivo/observação — opção nova no menu "⋮", pedido do cliente
@@ -8658,6 +8700,7 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
                   : c.recontagemSolicitadaPeloLider
                   ? <span className="severity-chip" style={{background:'var(--danger-bg)',color:'var(--danger)'}}><Ic>⚠</Ic> Rejeitada</span>
                   : <span className="severity-chip" style={{background:sev.bg,color:sev.color}}><Ic>{sev.icon}</Ic> {sev.label}</span>}
+                {c.recontagemLiberadaParaOriginal && <span className="category-chip"><DIcon name="lock" size={13}/> Liberado p/ {c.usuario}</span>}
               </div>
               <div className="count-card-head-right">
                 <span className="category-chip">{categoriaDoInventario(c, inventories)}</span>
@@ -8669,6 +8712,9 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
                       <div className="count-card-menu-dropdown">
                         {canMark && (
                           <button type="button" disabled={urgenteBusyId===c.id} onClick={()=>{ handleToggleUrgente(c); setMenuAbertoId(null); }}><Ic>🔥</Ic> {urgenteBusyId===c.id ? 'Salvando…' : (c.urgente ? 'Remover urgência' : 'Marcar urgente')}</button>
+                        )}
+                        {canMark && (
+                          <button type="button" disabled={liberarBusyId===c.id} onClick={()=>{ handleToggleLiberar(c); setMenuAbertoId(null); }}><DIcon name="lock" size={16}/> {liberarBusyId===c.id ? 'Salvando…' : (c.recontagemLiberadaParaOriginal ? 'Bloquear para o mesmo operador' : 'Liberar para o mesmo operador')}</button>
                         )}
                         {canMark && (
                           <button type="button" onClick={()=>abrirEdicaoMotivo(c)}><DIcon name="edit" size={16}/> Editar motivo/observação</button>
@@ -8769,6 +8815,9 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
             )}
             {urgenteErro[c.id] && (
               <div className="divergence-alert"><Ic>⚠</Ic><span>{urgenteErro[c.id]}</span></div>
+            )}
+            {liberarErro[c.id] && (
+              <div className="divergence-alert"><Ic>⚠</Ic><span>{liberarErro[c.id]}</span></div>
             )}
           </div>
         </div>

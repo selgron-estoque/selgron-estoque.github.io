@@ -379,6 +379,7 @@ create table contagens (
   recontagem_solicitada_pelo_lider boolean not null default false, -- true quando o líder REJEITOU a divergência (ver requestRecountFromOperator)
   recontagem_solicitada_por text,
   recontagem_solicitada_em text,
+  recontagem_liberada_para_original boolean not null default false, -- true = o líder liberou o MESMO operador que já contou (usuario) pra recontar também (ver toggleLiberarRecontagemOriginal)
   criado_em timestamptz not null default now(),
   atualizado_em timestamptz not null default now()
 );
@@ -1190,3 +1191,18 @@ $$;
 --   select column_name from information_schema.columns where table_name = 'contagens' and column_name = 'ultima_saida';
 -- =============================================================================
 alter table contagens add column if not exists ultima_saida date;
+
+-- =============================================================================
+-- "LIBERAR PARA O MESMO OPERADOR" EM RECONTAGENS — pedido do cliente: por
+-- padrão, um item enviado pra recontagem (`aguardando_segunda`) some da
+-- tela do PRÓPRIO operador que já contou (`usuario`), forçando uma segunda
+-- pessoa conferir de verdade — o líder pode liberar essa exceção item a
+-- item, pelo menu "⋮" de "Recontagens Pendentes" (ver toggleLiberarRecontagemOriginal
+-- em App(), RecountsPanel no index.html). A checagem em si é feita no
+-- FRONT-END (comparando `usuario` com o nome de quem está logado) — esta
+-- coluna só guarda a decisão do líder, sem RLS por linha (mesma ressalva de
+-- sempre, sem Supabase Auth por papel granular ainda).
+-- Introspecção antes de rodar:
+--   select column_name from information_schema.columns where table_name = 'contagens' and column_name = 'recontagem_liberada_para_original';
+-- =============================================================================
+alter table contagens add column if not exists recontagem_liberada_para_original boolean not null default false;

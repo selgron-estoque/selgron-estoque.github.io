@@ -9867,3 +9867,67 @@ criando uma divergência entre o número do card e o que se via ao clicar.
   mudança — só JS/JSX, nenhuma classe CSS nova). **Verificação visual de
   ponta a ponta fica a cargo do cliente** — mesma limitação de sempre
   (login exige Supabase Auth real, não simulável no sandbox sem rede).
+
+## "Recontagens Pendentes" esconde do operador o item que ELE MESMO contou
+
+Cliente pediu: "Para os itens que eu mandar para recontagem, quero que
+ocultem da tela do operador que já contou, a não ser que eu libere a
+contagem para o mesmo operador, opção nos 3 pontinhos" — hoje, qualquer
+operador via a fila inteira de `aguardando_segunda` e podia clicar
+"Recontar" em qualquer item, incluindo um que ELE MESMO tinha contado na
+1ª rodada (quando na prática o objetivo de uma recontagem é ter uma
+SEGUNDA pessoa conferindo, não a mesma).
+
+- **`recontagem_liberada_para_original`** — coluna nova em `contagens`
+  (`backend/schema.sql`), `boolean not null default false`. `false` =
+  comportamento padrão (esconde do operador original); `true` = líder
+  liberou a exceção pra esse item específico.
+- **`toggleLiberarRecontagemOriginal(countId, liberado)`** (`App()`, perto
+  de `toggleUrgente`) — mesmo padrão exato de `toggleUrgente`: `await
+  updateContagemStatusToSupabase(...)`, só atualiza o estado local se
+  `res.ok`.
+- **`RecountsPanel`**: ganhou os props `currentUser`/`onToggleLiberarOriginal`.
+  A lista (`aguardandoSegunda`) agora filtra, só quando `role==='operador'`:
+  `c.usuario!==currentUser.nome || c.recontagemLiberadaParaOriginal` — ou
+  seja, esconde um item da tela do operador só quando as DUAS condições
+  batem (foi ELE quem contou E ninguém liberou a exceção ainda). Líder/admin
+  sempre veem a fila inteira, sem esconder nada — são eles que decidem a
+  liberação, não faria sentido esconder deles também. Comparação por NOME
+  (`c.usuario`/`currentUser.nome`), mesmo critério já usado em todo o resto
+  do app pra "quem contou" (a contagem não guarda o id do usuário, só o
+  nome).
+- **Menu "⋮" ganhou "Liberar para o mesmo operador"** (líder/admin, mesmo
+  padrão de "Marcar urgente"/"Remover urgência" — um toggle nos dois
+  sentidos, com "Bloquear para o mesmo operador" quando já liberado, pra
+  poder reverter uma liberação feita por engano). Reaproveita o ícone
+  `lock` já existente (mesmo usado em "Bloquear"/"Desbloquear" de
+  Usuários) — sem ícone novo.
+- **Badge "Liberado p/ {nome do operador}"** no card, visível pra
+  líder/admin (que continuam vendo tudo), quando `recontagemLiberadaParaOriginal`
+  é `true` — confirmação visual de que a exceção foi concedida e pra quem.
+- **Escopo consciente**: a restrição só se aplica dentro de "Recontagens
+  Pendentes" (única tela onde o operador clicaria "Recontar" pra esse
+  status) — não precisou mexer em `RecountFlow` em si, já que sem o card
+  visível na lista o operador nunca chega lá. O total "N pendentes" no
+  cabeçalho da tela não muda pro operador (continua contando TODOS os
+  itens em aberto no sistema, não só os que ele vê) — mesmo critério já
+  usado no filtro de período desta mesma tela (mostrar a diferença, nunca
+  esconder o número real da pendência total).
+- Testado via `harness_liberar_recontagem_original.js` (novo): operador
+  logada não vê o próprio item ainda não liberado, vê normalmente um item
+  contado por outro operador, e vê um item seu já liberado; líder vê os 3
+  itens sempre, incluindo o badge "Liberado p/ {nome}"; menu "⋮" oferece
+  "Liberar para o mesmo operador" num item ainda não liberado (chama
+  `onToggleLiberarOriginal(id, true)`) e "Bloquear para o mesmo operador"
+  num item já liberado (chama com `false`, revertendo). Transpile Babel do
+  arquivo inteiro e balanceamento de chaves do CSS conferidos (641/641, sem
+  mudança — só JS/JSX, nenhuma classe CSS nova). **Falta o cliente rodar o
+  SQL novo** (`alter table contagens add column if not exists
+  recontagem_liberada_para_original boolean not null default false;`) no
+  projeto real — até lá, `updateContagemStatusToSupabase` falha (a coluna
+  não existe ainda) e o botão "Liberar"/"Bloquear" mostra o erro inline sem
+  mudar nada (mesmo tratamento de erro visível já usado nas outras ações
+  desta tela — nunca finge sucesso quando a gravação remota falha).
+  **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma
+  limitação de sempre (login exige Supabase Auth real, não simulável no
+  sandbox sem rede).
