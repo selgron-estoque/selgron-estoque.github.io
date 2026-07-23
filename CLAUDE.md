@@ -9150,3 +9150,44 @@ existentes quando já baterem de perto, não introduzir cor/raio novos.
   reescrita consolidou algumas regras). **Verificação visual de ponta a
   ponta fica a cargo do cliente** — mesma limitação de sempre (login exige
   Supabase Auth real, não simulável no sandbox sem rede).
+
+## Bug real: valor "R$ 1,84 milhões" quebrando linha e inflando o card grande num vão gigante
+
+Cliente testou a reescrita anterior e reportou "ficou completamente
+diferente" — print mostrando o card grande com um vão verde vazio enorme no
+topo (texto só no rodapé, muito abaixo do esperado) e os valores dos cards
+médios ("R$ 1,84 / milhões") quebrando em 2 linhas.
+
+- **Causa raiz**: os tamanhos de fonte literais pedidos na especificação
+  (28px/22px/18px) foram escritos olhando só a IMAGEM de referência, sem
+  testar contra a largura real que esses cards têm dentro do layout de
+  verdade do app (painel de ~metade da tela, coluna direita = 42% disso,
+  ainda dividida em 2 ou 4 colunas) — 22px em fonte mono pra um texto tipo
+  "R$ 1,84 milhões" (15 caracteres) não cabe numa coluna de ~130px, quebra
+  linha. Como o card grande usa `align-items:stretch` (padrão do grid) pra
+  bater a altura da coluna direita — a mecânica CERTA, pedida pelo cliente
+  — quando a coluna direita inflava por causa da quebra de linha, o card
+  grande inflava junto, virando o vão vazio gigante do print.
+- **Correção**: reduzidos os tamanhos de fonte dos valores pros níveis
+  médio (22px→15px) e pequeno (18px→12,5px) — na prática, próximos dos
+  valores que já existiam ANTES desta rodada de fidelidade (que já cabiam
+  sem quebrar). O valor do card grande também caiu um pouco (28px→24px),
+  com mais folga. **`white-space:nowrap;overflow:hidden;text-overflow:
+  ellipsis`** virou rede de segurança nos 3 níveis de valor — nunca mais
+  quebra em 2 linhas, na pior hipótese trunca com "…" (melhor que um valor
+  partido ao meio). **`min-width:0`** nos 3 níveis de card — sem isso, um
+  texto sem ponto de quebra ("R$1,84milhões" tratado como uma palavra só)
+  força a coluna do grid a ficar mais larga que a fração (`fr`) pedida,
+  gotcha clássico de item de grid/flex com `min-width:auto` padrão.
+  Padding dos cards pequenos caiu de 16px pra 10px/8px (a coluna de 4
+  colunas fixas sobra pouca largura útil por card; padding menor dá mais
+  espaço real pro texto, reduzindo a chance de truncar).
+- Testado via harness já existente — 9 asserções continuam passando (jsdom
+  não calcula largura/quebra de texto real, então a correção em si só é
+  confirmável visualmente). Transpile Babel do arquivo inteiro e
+  balanceamento de chaves do CSS conferidos (659/659). **Verificação visual
+  de ponta a ponta fica a cargo do cliente** — mesma limitação de sempre
+  (login exige Supabase Auth real, não simulável no sandbox sem rede). Se
+  ainda houver truncamento incômodo em alguma tela real, o próximo ajuste
+  seria encolher mais 1-2px ou reconsiderar o formato abreviado pros
+  armazéns médios/pequenos (ex: "R$1,8M" mais curto que "R$ 1,84 milhões").

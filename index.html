@@ -584,11 +584,19 @@
      --text-* padrão, porque a fidelidade ao mockup pedia valores exatos. */
   .va-grid{display:grid;grid-template-columns:1fr;gap:10px;}
   @media (min-width:520px){.va-grid{grid-template-columns:58fr 42fr;}}
-  .va-big{background:var(--ok-bg);border:1px solid var(--line);border-radius:var(--radius);padding:20px;display:flex;flex-direction:column;justify-content:flex-end;gap:4px;}
+  /* min-width:0 nos 3 níveis de card: sem isso, um valor "R$ 1,84 milhões"
+     (texto sem ponto de quebra) força a coluna/track do grid a ficar mais
+     larga que a fração (fr) pedida — o gotcha clássico de grid item com
+     min-width:auto (padrão) — e o texto ainda assim pode quebrar linha de
+     um jeito feio, inflando a altura do card (e, em cascata, do card
+     grande, que estica pra bater com essa altura via align-items:stretch).
+     nowrap+ellipsis nos valores é rede de segurança: nunca mais quebra em
+     2 linhas, na pior hipótese trunca com "…". */
+  .va-big{background:var(--ok-bg);border:1px solid var(--line);border-radius:var(--radius);padding:20px;display:flex;flex-direction:column;justify-content:flex-end;gap:4px;min-width:0;}
   .va-big .va-name{font-size:12px;color:var(--ink-dim);}
-  .va-big .va-value{font-family:var(--font-mono);font-size:28px;font-weight:700;}
+  .va-big .va-value{font-family:var(--font-mono);font-size:24px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .va-big .va-pct{font-size:14px;font-weight:700;color:var(--ok);}
-  .va-side{display:flex;flex-direction:column;gap:8px;}
+  .va-side{display:flex;flex-direction:column;gap:8px;min-width:0;}
   .va-medium-row{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;}
   /* 4 colunas fixas (não flex/auto-fit) — de propósito, mesmo que a última
      linha fique incompleta e sobre espaço vazio ao lado (ex: 5 armazéns
@@ -597,13 +605,18 @@
      inteira) — não é o mesmo "buraco lateral" corrigido antes (aquele era
      no CONTAINER da página, `.content`; aqui é fidelidade deliberada ao
      mockup). */
-  .va-small-row{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
-  .va-medium,.va-small{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;display:flex;flex-direction:column;justify-content:flex-end;gap:2px;}
+  .va-small-row{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;}
+  .va-medium,.va-small{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);display:flex;flex-direction:column;justify-content:flex-end;gap:2px;min-width:0;}
+  .va-medium{padding:16px;}
+  /* Pequenos ganham padding menor (não os 16px do resto) — 4 colunas numa
+     coluna de 42% do card deixam pouca largura por card; padding menor
+     sobra mais espaço útil pro texto, evitando truncar à toa. */
+  .va-small{padding:10px 8px;}
   .va-medium .va-name,.va-small .va-name{font-size:12px;color:var(--ink-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  .va-medium .va-value{font-family:var(--font-mono);font-size:22px;font-weight:700;}
+  .va-medium .va-value{font-family:var(--font-mono);font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .va-medium .va-pct{font-size:14px;font-weight:700;color:var(--ok);}
-  .va-small .va-value{font-family:var(--font-mono);font-size:18px;font-weight:700;}
-  .va-small .va-pct{font-size:14px;font-weight:700;color:var(--ok);}
+  .va-small .va-value{font-family:var(--font-mono);font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .va-small .va-pct{font-size:11px;font-weight:700;color:var(--ok);}
 
   /* Card "Saúde do Inventário" — pedido do cliente com imagem de referência
      (selo + variação vs. período anterior + mini gráfico + acuracidade
