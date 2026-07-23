@@ -9614,3 +9614,60 @@ estoque, conforme o último upload da planilha SB2.'"
   valores dentro de regras/JSX já existentes). **Verificação visual de
   ponta a ponta fica a cargo do cliente** — mesma limitação de sempre (login
   exige Supabase Auth real, não simulável no sandbox sem rede).
+
+## SA de Ajuste vira opcional nas duas telas — digitada na Aprovação, não em Itens Divergentes
+
+Cliente pediu: "Em itens divergentes liberar eu enviar a contagem para
+aprovação sem digitar a SA, pois em aprovação eu digito a SA e não deixar o
+preenchimento de SA obrigatório". Até aqui, "Gerar SA de Ajuste"
+(`DivergentItemsPanel`) abria um campo inline EXIGINDO o número da SA antes
+de liberar "Enviar para aprovação da Diretoria" — o líder precisava saber o
+número da SA no momento em que só estava decidindo QUE precisava de ajuste,
+o que nem sempre é o caso na prática (a SA às vezes só é emitida depois).
+
+- **`DivergentItemsPanel`**: o campo inline de SA (`saAbertoId`/`saValor`)
+  foi removido por completo — o botão que antes abria esse campo
+  ("Gerar SA de Ajuste") virou **"Enviar para Aprovação da Diretoria"**,
+  chamando `onSendToDiretoria(countId)` direto, sem nenhum número de SA.
+  `handleEnviarParaDiretoria` não exige mais nada preenchido.
+- **`App().enviarParaAprovacaoDiretoria(countId, numeroSa)`**: `numeroSa`
+  virou opcional — só grava a coluna `numero_sa` no Supabase quando vem
+  preenchido (`patch.numero_sa` só é setado se `numeroSaLimpo` existir), sem
+  quebrar nada quando não vem (a maioria dos casos agora, já que
+  `DivergentItemsPanel` nunca mais passa esse argumento).
+- **`DiretoriaApprovalPanel`**: ganhou um campo "Número da SA de Ajuste
+  (opcional)" (`saInputs`, estado por id de contagem — pré-preenchido com
+  `c.solicitacaoAjuste` se o líder já tiver digitado algo antes desta
+  mudança, senão vazio) logo acima dos botões de decisão — quem aprova pode
+  digitar a SA ali, na hora, ou deixar em branco e aprovar mesmo assim (o
+  botão "Aprovar" NUNCA fica desabilitado por causa desse campo).
+- **`App().aprovarAjusteDiretoria(countId, numeroSa)`**: ganhou o mesmo
+  segundo parâmetro opcional — só grava `numero_sa` se vier preenchido,
+  igual ao padrão acima.
+- **Textos resilientes a SA ausente**: o chip de status
+  (`DiretoriaApprovalPanel`) mostra "SA pendente" em vez de "SA undefined"
+  quando ainda não tem número; os dois alertas de "A Diretoria reprovou..."
+  (`RecountsPanel`/`DivergentItemsPanel`) e o texto de confirmação de
+  reprovação (`DiretoriaApprovalPanel`) trocam "a SA {numero}" por "o
+  ajuste" quando `solicitacaoAjuste` está vazio — nenhum lugar mais quebra
+  ou mostra um buraco no texto por falta desse dado, que agora é
+  genuinamente opcional em qualquer ponto do fluxo.
+- A linha "SA gerada por {…} em {…}" (`DiretoriaApprovalPanel`) virou
+  "Enviado para aprovação por {…} em {…}" — texto mais preciso, já que nesse
+  momento pode não existir SA nenhuma ainda, só o encaminhamento em si.
+- **`ConcludedCountsPanel`/badge "Ajustado · SA X"** já era condicional
+  desde que foi criado (só mostra o "· SA X" se `solicitacaoAjuste`
+  existir) — não precisou de nenhuma mudança, já tolerava SA ausente.
+- Testado via `harness_diretoria.js` (reescrito — cobre: enviar pra
+  aprovação sem nenhum campo de SA na tela; aprovar com a SA já preenchida
+  antes, sem editar; aprovar um item SEM NENHUMA SA, confirmando que o botão
+  nunca trava e que o valor enviado é vazio; digitar a SA na hora de aprovar
+  e confirmar que o valor certo é enviado; os dois textos "o ajuste"/"a SA
+  X" nos alertas de reprovação, com e sem SA; badges de "Contagens
+  Concluídas" sem regressão) e `harness_home_kpi.js` (sem regressão, KPI de
+  Aprovação de Ajustes não foi tocado). Transpile Babel do arquivo inteiro e
+  balanceamento de chaves do CSS conferidos (637/637, sem mudança de CSS
+  nesta rodada — só JS/JSX). **Falta o cliente rodar novamente contra o
+  Supabase real** (mesma limitação de sempre, sandbox sem rede) — a coluna
+  `numero_sa` já existe desde a implementação original da SA de Ajuste, não
+  precisa de SQL novo, só confirmar visualmente o fluxo funcionando.

@@ -4371,25 +4371,32 @@ function App(){
   // conta como resolvido de verdade. "Sem Ajuste Necessário" continua sendo
   // `approveDivergence`, sem passar por nada disso — ver DivergentItemsPanel.
 
-  // Líder gera a SA e encaminha — item sai de "Itens Divergentes" e entra em
+  // Líder encaminha pra Diretoria — item sai de "Itens Divergentes" e entra em
   // "Aprovação de Ajustes" (`aguardando_aprovacao_diretoria`, um estado ABERTO
-  // como qualquer outro em OPEN_STATUSES).
+  // como qualquer outro em OPEN_STATUSES). `numeroSa` é OPCIONAL aqui de
+  // propósito — pedido do cliente: o líder não precisa saber/digitar o número
+  // da SA nesse momento, só decide QUE precisa de ajuste; quem digita a SA de
+  // verdade é a Diretoria, na tela de aprovação, na hora de decidir (ver
+  // `aprovarAjusteDiretoria` abaixo) — e mesmo lá continua opcional, não
+  // trava a aprovação por falta desse número.
   async function enviarParaAprovacaoDiretoria(countId, numeroSa){
     const saGeradaPor = currentUser ? currentUser.nome : '—';
     const saGeradaEm = new Date().toLocaleString('pt-BR');
-    const res = await updateContagemStatusToSupabase(countId, {
+    const numeroSaLimpo = (numeroSa||'').trim();
+    const patch = {
       status_aprovacao: 'aguardando_aprovacao_diretoria',
-      numero_sa: numeroSa,
       sa_gerada_por: saGeradaPor,
       sa_gerada_em: saGeradaEm,
-    });
+    };
+    if(numeroSaLimpo) patch.numero_sa = numeroSaLimpo;
+    const res = await updateContagemStatusToSupabase(countId, patch);
     if(res.ok){
       setCounts(prev=>prev.map(c=>c.id===countId?{
         ...c,
         statusAprovacao:'aguardando_aprovacao_diretoria',
-        solicitacaoAjuste: numeroSa,
         saGeradaPor,
         saGeradaEm,
+        ...(numeroSaLimpo ? {solicitacaoAjuste: numeroSaLimpo} : {}),
       }:c));
     }
     return res;
@@ -4398,17 +4405,27 @@ function App(){
   // Diretoria aprova — ajuste efetivado, item vira final (aparece em
   // "Contagens Concluídas" como "Ajustado"). Reaproveita `aprovado_por`/
   // `aprovado_em` (mesmas colunas que `approveDivergence` já usa) com o
-  // sentido de "quem resolveu essa divergência definitivamente".
-  async function aprovarAjusteDiretoria(countId){
+  // sentido de "quem resolveu essa divergência definitivamente". `numeroSa`
+  // também é OPCIONAL aqui — grava só se vier preenchido, sem exigir nada.
+  async function aprovarAjusteDiretoria(countId, numeroSa){
     const aprovadoPor = currentUser ? currentUser.nome : '—';
     const aprovadoEm = new Date().toLocaleString('pt-BR');
-    const res = await updateContagemStatusToSupabase(countId, {
+    const numeroSaLimpo = (numeroSa||'').trim();
+    const patch = {
       status_aprovacao: 'ajuste_aprovado_diretoria',
       aprovado_por: aprovadoPor,
       aprovado_em: aprovadoEm,
-    });
+    };
+    if(numeroSaLimpo) patch.numero_sa = numeroSaLimpo;
+    const res = await updateContagemStatusToSupabase(countId, patch);
     if(res.ok){
-      setCounts(prev=>prev.map(c=>c.id===countId?{...c, statusAprovacao:'ajuste_aprovado_diretoria', aprovadoPor, aprovadoEm}:c));
+      setCounts(prev=>prev.map(c=>c.id===countId?{
+        ...c,
+        statusAprovacao:'ajuste_aprovado_diretoria',
+        aprovadoPor,
+        aprovadoEm,
+        ...(numeroSaLimpo ? {solicitacaoAjuste: numeroSaLimpo} : {}),
+      }:c));
     }
     return res;
   }
@@ -8622,7 +8639,7 @@ function RecountsPanel({counts, inventories, role, goto, onDeleteCount, onToggle
             </div>
             {c.reprovadoPelaDiretoria && (
               <div className="divergence-alert" style={{background:'var(--purple-bg)',borderColor:'var(--purple)',color:'var(--purple)'}}>
-                <Ic>⛔</Ic><span>A Diretoria reprovou a SA {c.solicitacaoAjuste} em {c.reprovadoEm} — reenviado para nova análise.{c.motivoReprovacaoDiretoria && <><br/><strong>Motivo da reprovação:</strong> <span style={{color:'var(--danger)'}}>{c.motivoReprovacaoDiretoria}</span></>}</span>
+                <Ic>⛔</Ic><span>A Diretoria reprovou {c.solicitacaoAjuste ? ('a SA '+c.solicitacaoAjuste) : 'o ajuste'} em {c.reprovadoEm} — reenviado para nova análise.{c.motivoReprovacaoDiretoria && <><br/><strong>Motivo da reprovação:</strong> <span style={{color:'var(--danger)'}}>{c.motivoReprovacaoDiretoria}</span></>}</span>
               </div>
             )}
             {/* Motivo de um ajuste reprovado — pedido do cliente: vermelho só
@@ -8742,11 +8759,6 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSend
   const [busyId, setBusyId] = useState(null);
   const [erros, setErros] = useState({});
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
-  // Campo inline pra digitar o número da SA de Ajuste antes de encaminhar pra
-  // aprovação da Diretoria (mesmo padrão de "confirmar" inline já usado pra
-  // excluir) — guarda o id do card com o campo aberto e o valor digitado.
-  const [saAbertoId, setSaAbertoId] = useState(null);
-  const [saValor, setSaValor] = useState('');
   // Menu "⋮" (Marcar urgente + Excluir, mesmo padrão do RecountsPanel) —
   // guarda só o id do card com o menu aberto no momento.
   const [menuAbertoId, setMenuAbertoId] = useState(null);
@@ -8798,17 +8810,11 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSend
   }
 
   async function handleEnviarParaDiretoria(countId){
-    if(!saValor.trim()) return;
     setBusyId(countId);
     setErros(prev=>({...prev, [countId]: null}));
-    const res = await onSendToDiretoria(countId, saValor.trim());
+    const res = await onSendToDiretoria(countId);
     setBusyId(null);
-    if(res && res.ok){
-      setSaAbertoId(null);
-      setSaValor('');
-    } else {
-      setErros(prev=>({...prev, [countId]: (res && res.erro) || 'Não foi possível enviar — tente novamente.'}));
-    }
+    if(!res || !res.ok) setErros(prev=>({...prev, [countId]: (res && res.erro) || 'Não foi possível enviar — tente novamente.'}));
   }
 
   async function handleConfirmDelete(countId){
@@ -8971,7 +8977,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSend
               {limparObservacaoExibicao(c.observacao) && <div style={{padding:'6px 16px 0',fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>Observação: {limparObservacaoExibicao(c.observacao)}</div>}
               {c.reprovadoPelaDiretoria && (
                 <div className="divergence-alert" style={{margin:'10px 16px 0',background:'var(--purple-bg)',borderColor:'var(--purple)',color:'var(--purple)'}}>
-                  <Ic>⛔</Ic><span>A Diretoria reprovou a SA {c.solicitacaoAjuste} em {c.reprovadoEm} — reenviado para nova análise.{c.motivoReprovacaoDiretoria && <><br/><strong>Motivo da reprovação:</strong> <span style={{color:'var(--danger)'}}>{c.motivoReprovacaoDiretoria}</span></>}</span>
+                  <Ic>⛔</Ic><span>A Diretoria reprovou {c.solicitacaoAjuste ? ('a SA '+c.solicitacaoAjuste) : 'o ajuste'} em {c.reprovadoEm} — reenviado para nova análise.{c.motivoReprovacaoDiretoria && <><br/><strong>Motivo da reprovação:</strong> <span style={{color:'var(--danger)'}}>{c.motivoReprovacaoDiretoria}</span></>}</span>
                 </div>
               )}
               {/* Motivo de um ajuste reprovado — vermelho só aqui, não no
@@ -9019,24 +9025,12 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSend
                     <button className="btn btn-danger" disabled={busyId===c.id} onClick={()=>handleConfirmDelete(c.id)}>{busyId===c.id ? 'Excluindo…' : 'Confirmar exclusão'}</button>
                   </div>
                 </div>
-              ) : saAbertoId===c.id ? (
-                <div className="count-card-actions">
-                  <div className="field" style={{marginBottom:10}}>
-                    <label>Número da SA de Ajuste</label>
-                    <input type="text" value={saValor} onChange={e=>setSaValor(e.target.value)} placeholder="Ex: SA-2026-00123" autoFocus />
-                  </div>
-                  {erros[c.id] && <div className="divergence-alert" style={{marginBottom:10}}><Ic>⚠</Ic><span>{erros[c.id]}</span></div>}
-                  <div className="btn-row">
-                    <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>{setSaAbertoId(null); setSaValor('');}}>Cancelar</button>
-                    <button className="btn btn-primary" disabled={busyId===c.id || !saValor.trim()} onClick={()=>handleEnviarParaDiretoria(c.id)}>{busyId===c.id ? 'Enviando…' : 'Enviar para aprovação da Diretoria'}</button>
-                  </div>
-                </div>
               ) : canApprove ? (
                 <div className="btn-row count-card-actions-row">
                   <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>handleRequestRecount(c.id)}>{busyId===c.id ? 'Enviando…' : 'Solicitar nova contagem'}</button>
                   <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>goto('recount', c)}><Ic>🔁</Ic> Recontar</button>
                   <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>handleApprove(c.id)}>{busyId===c.id ? 'Enviando…' : 'Sem Ajuste Necessário'}</button>
-                  <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>{setSaAbertoId(c.id); setSaValor('');}}><Ic>📋</Ic> Gerar SA de Ajuste</button>
+                  <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>handleEnviarParaDiretoria(c.id)}><Ic>📋</Ic> {busyId===c.id ? 'Enviando…' : 'Enviar para Aprovação da Diretoria'}</button>
                 </div>
               ) : (
                 <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>Aguardando decisão do líder de estoque.</div>
@@ -9052,11 +9046,15 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSend
 
 // "Aprovação de Ajustes" — tela nova, pedido do cliente: o fluxo real de
 // ajuste de estoque da Selgron não termina no líder aprovar a divergência.
-// Quando o líder decide que HÁ ajuste necessário (botão "Gerar SA de Ajuste"
-// em DivergentItemsPanel), o item cai aqui até a Diretoria decidir — hoje
-// isso é manual, feito pelo próprio admin dentro do app (não existe perfil
-// "Diretoria" nem integração externa). Mesmo shell visual das outras 3 telas
-// de contagem (count-card/SearchWithScanner/TrendFilterBar/result-grid-4col).
+// Quando o líder decide que HÁ ajuste necessário (botão "Enviar para
+// Aprovação da Diretoria" em DivergentItemsPanel), o item cai aqui até a
+// Diretoria decidir — hoje isso é manual, feito pelo próprio admin dentro do
+// app (não existe perfil "Diretoria" nem integração externa). O número da SA
+// de Ajuste é OPCIONAL e digitado AQUI (não em Itens Divergentes) — o líder
+// só decide QUE precisa de ajuste, quem preenche o número da SA de verdade é
+// quem aprova, e mesmo assim sem ser obrigatório (ver `saInputs` abaixo).
+// Mesmo shell visual das outras 3 telas de contagem (count-card/
+// SearchWithScanner/TrendFilterBar/result-grid-4col).
 function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejectSA, onToggleUrgente}){
   const canDecide = role==='admin';
   // "Marcar urgente" — mesmo padrão já usado em Recontagens/Itens
@@ -9113,12 +9111,21 @@ function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejec
   // por vez) — reseta ao abrir uma reprovação nova ou ao cancelar.
   const [motivoRejeicao, setMotivoRejeicao] = useState('');
 
-  async function handleApprove(countId){
-    setBusyId(countId);
-    setErros(prev=>({...prev, [countId]: null}));
-    const res = await onApproveSA(countId);
+  // Número da SA de Ajuste — OPCIONAL, digitado aqui (não mais em "Itens
+  // Divergentes", ver App().enviarParaAprovacaoDiretoria/`aprovarAjusteDiretoria`).
+  // `saInputs` guarda só o que foi editado nesta sessão da tela, por id de
+  // contagem; enquanto não editado, o campo mostra o valor que já veio
+  // salvo (`c.solicitacaoAjuste`, caso o líder já tenha digitado antes desta
+  // mudança) — nunca trava "Aprovar" por estar vazio.
+  const [saInputs, setSaInputs] = useState({});
+  function saInputValue(c){ return saInputs[c.id] !== undefined ? saInputs[c.id] : (c.solicitacaoAjuste || ''); }
+
+  async function handleApprove(c){
+    setBusyId(c.id);
+    setErros(prev=>({...prev, [c.id]: null}));
+    const res = await onApproveSA(c.id, saInputValue(c).trim());
     setBusyId(null);
-    if(!res || !res.ok) setErros(prev=>({...prev, [countId]: (res && res.erro) || 'Não foi possível aprovar — tente novamente.'}));
+    if(!res || !res.ok) setErros(prev=>({...prev, [c.id]: (res && res.erro) || 'Não foi possível aprovar — tente novamente.'}));
   }
 
   async function handleConfirmReject(countId){
@@ -9173,7 +9180,7 @@ function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejec
               <div className="count-card-head">
                 <div className="count-card-badges">
                   {c.urgente && <span className="urgente-chip"><Ic>🔥</Ic> Urgente</span>}
-                  <span className="severity-chip" style={{background:'var(--purple-bg)',color:'var(--purple)'}}><Ic>📋</Ic> SA {c.solicitacaoAjuste}</span>
+                  <span className="severity-chip" style={{background:'var(--purple-bg)',color:'var(--purple)'}}><Ic>📋</Ic> {c.solicitacaoAjuste ? ('SA '+c.solicitacaoAjuste) : 'SA pendente'}</span>
                   <span className="category-chip">{categoriaDoInventario(c, inventories)}</span>
                 </div>
                 <div className="count-card-head-right">
@@ -9203,16 +9210,22 @@ function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejec
                 <div className="rg"><div className="k">Diferença</div><div className="v" style={{color:sev.color}}>{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div></div>
                 <div className="rg"><div className="k">%</div><div className="v" style={{color:sev.color}}>{c.percentual==null ? '—' : Math.round(c.percentual)+'%'}</div></div>
               </div>
-              <div style={{padding:'10px 16px 0',fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>SA gerada por {c.saGeradaPor||'—'} em {c.saGeradaEm||'—'}</div>
+              <div style={{padding:'10px 16px 0',fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>Enviado para aprovação por {c.saGeradaPor||'—'} em {c.saGeradaEm||'—'}</div>
               {c.motivo && <div style={{padding:'6px 16px 0',fontSize:'var(--text-sm)'}}>Motivo: <strong>{c.motivo}</strong></div>}
               {c.valorDivergente!=null && Number(c.valorDivergente)!==0 && <div style={{padding:'6px 16px 0',fontSize:'var(--text-sm)'}}>Valor divergente: <strong>R$ {Number(c.valorDivergente).toFixed(2)}</strong></div>}
+              {canDecide && !confirmRejectId && (
+                <div className="field" style={{padding:'10px 16px 0',marginBottom:0}}>
+                  <label>Número da SA de Ajuste (opcional)</label>
+                  <input type="text" value={saInputValue(c)} onChange={e=>setSaInputs(prev=>({...prev, [c.id]: e.target.value}))} placeholder="Ex: SA-2026-00123" disabled={busyId===c.id} />
+                </div>
+              )}
               {erros[c.id] && (
                 <div className="divergence-alert" style={{margin:'10px 16px 0'}}><Ic>⚠</Ic><span>{erros[c.id]}</span></div>
               )}
               {confirmRejectId===c.id ? (
                 <div className="count-card-actions">
                   <div className="divergence-alert" style={{marginBottom:10}}>
-                    <Ic>⚠</Ic><span>Reprovar a SA {c.solicitacaoAjuste}? O item volta pra fila de recontagem, marcado como reprovado pela Diretoria.</span>
+                    <Ic>⚠</Ic><span>Reprovar {c.solicitacaoAjuste ? ('a SA '+c.solicitacaoAjuste) : 'o ajuste'}? O item volta pra fila de recontagem, marcado como reprovado pela Diretoria.</span>
                   </div>
                   <div className="field" style={{marginBottom:10}}>
                     <label>Motivo da reprovação</label>
@@ -9231,7 +9244,7 @@ function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejec
               ) : canDecide ? (
                 <div className="btn-row count-card-actions-row">
                   <button className="btn btn-danger" disabled={busyId===c.id} onClick={()=>{ setConfirmRejectId(c.id); setMotivoRejeicao(''); }}>Reprovar</button>
-                  <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>handleApprove(c.id)}>{busyId===c.id ? 'Enviando…' : 'Aprovar'}</button>
+                  <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>handleApprove(c)}>{busyId===c.id ? 'Enviando…' : 'Aprovar'}</button>
                 </div>
               ) : (
                 <div style={{padding:'10px 16px 16px',fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>Aguardando decisão da Diretoria.</div>
