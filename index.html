@@ -4607,6 +4607,38 @@ function App(){
     return res;
   }
 
+  // Remove UM item ainda PENDENTE (nunca contado) da lista fixa de um
+  // inventário "Itens Específicos"/"Lista Importada" — destrava um documento
+  // travado por um item que genuinamente não existe fisicamente/nunca vai
+  // ser contado. "Pular contagem" (CountStep) só adia DENTRO da mesma
+  // sessão — o item volta a bloquear a fila assim que o inventário é
+  // reaberto, porque `contados` nunca avança pra ele (ver CLAUDE.md "Botão
+  // 'Pular contagem'"). Removendo de vez da lista e decrementando `qtdItens`
+  // em 1, o inventário passa a considerar esse item resolvido pra sempre —
+  // sem mexer em `contados`, que continua correto (representa quantos itens
+  // já têm uma contagem real registrada; os itens que vinham DEPOIS do
+  // removido continuam alcançáveis normalmente, já que a fila sempre lê a
+  // partir da posição `contados` do array, e só o item removido nunca tinha
+  // uma contagem ali).
+  // Proteção: só deixa remover um item que NUNCA teve nenhuma contagem
+  // registrada neste inventário (cross-referenciando `counts`, não a posição
+  // no array) — nunca um já contado, mesmo que sua posição no array esteja
+  // "antes" da fronteira atual de `contados`.
+  async function removerItemPendenteDaLista(invId, codigo){
+    const inv = inventories.find(i=>i.id===invId);
+    if(!inv || !inv.itensImportados) return {ok:false, erro:'Inventário não encontrado.'};
+    const jaContado = counts.some(c=>c.inventario===invId && c.productCode===codigo);
+    if(jaContado) return {ok:false, erro:'Este item já tem uma contagem registrada — não pode ser removido da lista.'};
+    const novaLista = inv.itensImportados.filter(it=>it.codigo!==codigo);
+    if(novaLista.length===inv.itensImportados.length) return {ok:false, erro:'Item não encontrado nesta lista.'};
+    const patch = {itens_importados: novaLista, qtd_itens: Math.max(0, inv.qtdItens-1)};
+    const res = await updateInventarioToSupabase(invId, patch);
+    if(res.ok){
+      setInventories(prev=>prev.map(i=>i.id===invId ? {...i, itensImportados: novaLista, qtdItens: Math.max(0, i.qtdItens-1)} : i));
+    }
+    return res;
+  }
+
   // Exclusão definitiva de uma contagem (lançada por engano) — mesmo padrão
   // de `deleteInventory`: aguarda confirmação do Supabase antes de sumir da
   // tela, pra não "ressuscitar" via sincronização se a exclusão remota tiver
@@ -5009,7 +5041,7 @@ function App(){
       {view!=='home' && !COUNT_SCREEN_VIEWS.includes(view) && <SubBar view={view} goto={goto} />}
       <div className="content">
         {view==='home' && <Home role={role} user={currentUser} inventories={inventories} counts={counts} historicoConcluidas={historicoConcluidas} enderecosPropostos={enderecosPropostos} goto={goto} />}
-        {view==='inventories' && hasAccess(currentUser,'inventories') && <InventoryList inventories={inventories} goto={goto} role={role} counts={counts} onDelete={deleteInventory} onCancel={cancelInventory} onToggleUrgente={toggleInventarioUrgente} />}
+        {view==='inventories' && hasAccess(currentUser,'inventories') && <InventoryList inventories={inventories} goto={goto} role={role} counts={counts} onDelete={deleteInventory} onCancel={cancelInventory} onToggleUrgente={toggleInventarioUrgente} onRemoverItemPendente={role==='admin' ? removerItemPendenteDaLista : undefined} />}
         {view==='pickCountType' && hasAccess(currentUser,'pickCountType') && <PickCountType role={role} goto={goto} inventories={inventories} gruposExcluidos={gruposExcluidos} onCreate={async(inv)=>{
           const res = await saveInventarioToSupabase(inv);
           if(res.ok){ setInventories(prev=>[inv,...prev]); goto('inventories'); }
@@ -6184,7 +6216,7 @@ function inventarioConcluido(inv){
   return inv.qtdItens>0 && inv.contados>=inv.qtdItens;
 }
 
-function InventoryList({inventories, goto, role, counts, onDelete, onCancel, onToggleUrgente}){
+function InventoryList({inventories, goto, role, counts, onDelete, onCancel, onToggleUrgente, onRemoverItemPendente}){
   const canMark = role==='lider' || role==='admin';
   const [urgenteBusyId, setUrgenteBusyId] = useState(null);
   const [urgenteErro, setUrgenteErro] = useState({});
@@ -6237,6 +6269,27 @@ function InventoryList({inventories, goto, role, counts, onDelete, onCancel, onT
       if(next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
+  }
+
+  // "Remover da lista" (só admin) — destrava um inventário "Itens
+  // Específicos"/"Lista Importada" preso por um item pendente que
+  // genuinamente não existe fisicamente/nunca vai ser contado (ver
+  // `removerItemPendenteDaLista` em App()). Estado por código dentro do
+  // inventário (`{invId, codigo}`), mesmo padrão de confirmação inline já
+  // usado pra excluir/cancelar.
+  const [confirmRemoverItem, setConfirmRemoverItem] = useState(null);
+  const [removendoItem, setRemovendoItem] = useState(false);
+  const [erroRemoverItem, setErroRemoverItem] = useState('');
+  async function handleConfirmRemoverItem(invId, codigo){
+    setRemovendoItem(true);
+    setErroRemoverItem('');
+    const res = await onRemoverItemPendente(invId, codigo);
+    setRemovendoItem(false);
+    if(res && res.ok){
+      setConfirmRemoverItem(null);
+    } else {
+      setErroRemoverItem((res && res.erro) || 'Não foi possível remover — tente novamente.');
+    }
   }
 
   if(inventories.length===0){
@@ -6355,16 +6408,38 @@ function InventoryList({inventories, goto, role, counts, onDelete, onCancel, onT
                     const countItem = ultimaPorCodigo[it.codigo];
                     const contado = !!countItem;
                     const divergente = contado && countItem.diferenca!=null && countItem.diferenca!==0;
+                    const confirmandoEsse = confirmRemoverItem && confirmRemoverItem.invId===inv.id && confirmRemoverItem.codigo===it.codigo;
                     return (
-                      <div key={it.codigo} className="list-row" style={{cursor:'default',margin:0}}>
-                        <div>
-                          <div className="lr-title">{it.codigo} · {it.descricao || '—'}</div>
-                          <div className="lr-sub">{it.endereco || 'sem endereço'}</div>
+                      <div key={it.codigo} style={{border: confirmandoEsse ? '1px solid var(--danger)' : 'none', borderRadius:8}}>
+                        <div className="list-row" style={{cursor:'default',margin:0}}>
+                          <div>
+                            <div className="lr-title">{it.codigo} · {it.descricao || '—'}</div>
+                            <div className="lr-sub">{it.endereco || 'sem endereço'}</div>
+                          </div>
+                          <div style={{display:'flex',alignItems:'center',gap:8}}>
+                            <StatusTag
+                              status={!contado ? 'warn' : (divergente ? 'danger' : 'ok')}
+                              text={!contado ? 'Pendente' : (divergente ? (<><Ic>⚠</Ic> Contado</>) : 'Contado')}
+                            />
+                            {onRemoverItemPendente && !contado && !confirmandoEsse && (
+                              <button type="button" className="btn btn-outline" style={{width:'auto',padding:'4px 8px',fontSize:'var(--text-2xs)'}} title="Remover este item da lista — pra item que não existe fisicamente/nunca vai ser contado" onClick={()=>{setConfirmRemoverItem({invId:inv.id, codigo:it.codigo}); setErroRemoverItem('');}}>
+                                <Ic>🗑</Ic> Remover
+                              </button>
+                            )}
+                          </div>
                         </div>
-                        <StatusTag
-                          status={!contado ? 'warn' : (divergente ? 'danger' : 'ok')}
-                          text={!contado ? 'Pendente' : (divergente ? (<><Ic>⚠</Ic> Contado</>) : 'Contado')}
-                        />
+                        {confirmandoEsse && (
+                          <div style={{padding:'0 4px 8px'}}>
+                            <div className="divergence-alert" style={{marginBottom:8}}>
+                              <Ic>⚠</Ic><span>Remover {it.codigo} da lista pra sempre? O item sai do inventário sem nunca ser contado (não conta como pendência) — essa ação não pode ser desfeita.</span>
+                            </div>
+                            {erroRemoverItem && <div className="divergence-alert" style={{marginBottom:8}}><Ic>⚠</Ic><span>{erroRemoverItem}</span></div>}
+                            <div className="btn-row">
+                              <button type="button" className="btn btn-secondary" disabled={removendoItem} onClick={()=>{setConfirmRemoverItem(null); setErroRemoverItem('');}}>Cancelar</button>
+                              <button type="button" className="btn btn-danger" disabled={removendoItem} onClick={()=>handleConfirmRemoverItem(inv.id, it.codigo)}>{removendoItem ? 'Removendo…' : 'Confirmar remoção'}</button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })}

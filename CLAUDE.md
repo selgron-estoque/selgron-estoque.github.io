@@ -10043,3 +10043,64 @@ de excluir dentro de um menu "⋮" no cabeçalho do card.
   **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma
   limitação de sempre (login exige Supabase Auth real, não simulável no
   sandbox sem rede).
+
+## Bug real: item "não encontrado" travava um inventário pra sempre — "Remover da lista" (admin)
+
+Cliente reportou o INV-678 travado, sem conseguir prosseguir, com um item que
+"não foi encontrado" e nunca foi contado. Investigando o mecanismo de "Pular
+contagem" (ver seção acima, "Botão 'Pular contagem'") achei a causa raiz: o
+pulo é DELIBERADAMENTE só de sessão (documentado desde que foi criado) — ele
+avança o cursor LOCAL da fila (`q.next()`), mas nunca toca em `inv.contados`
+(o cursor PERSISTIDO). Isso significa que, pra um item que genuinamente nunca
+vai ser contado (não existe fisicamente), toda vez que o inventário é
+reaberto ele volta a aparecer na FRENTE da fila — o operador precisa pular o
+MESMO item de novo a cada sessão, e o inventário nunca sai de "pendente"
+(`contados` nunca alcança `qtdItens`), travando o documento pra sempre. Esse
+era exatamente o caso do INV-678.
+
+- **`removerItemPendenteDaLista(invId, codigo)`** (`App()`, perto de
+  `cancelInventory`) — nova, só pra "Itens Específicos"/"Lista Importada"
+  (únicos tipos que guardam uma lista fixa em `itensImportados`; os outros
+  tipos nunca travam desse jeito, já que a fila deles é recalculada por RPC a
+  cada vez, sem lista fixa pra "sobrar" um item preso). Remove o código de
+  `itensImportados` **de vez** e decrementa `qtdItens` em 1 — diferente de
+  "Pular", isso resolve o item PERMANENTEMENTE, não só pra sessão atual.
+- **Proteção central**: só permite remover um item que **nunca teve nenhuma
+  contagem registrada** neste inventário (cruza contra `counts`, não a
+  posição no array) — nunca deixa remover um item já contado por engano,
+  mesmo que sua posição no array já tenha ficado "pra trás" da fronteira
+  atual de `contados`.
+- **Por que isso não quebra a fila**: a fila sempre lê a partir da posição
+  `contados` do array (`allItems.slice(contados)`) — como só um item
+  PENDENTE (nunca contado) pode ser removido, e `contados` não muda,
+  removê-lo só "puxa" os itens seguintes uma posição pra frente no array,
+  exatamente onde a fila já esperava encontrar o próximo pendente. Testado
+  isoladamente (script Node com a mesma lógica): antes de remover, a fila
+  esperava `[C,D,E]` a partir de `contados=2`; depois de remover C, a lista
+  vira `[A,B,D,E]` e a fila (mesmo `contados=2`) passa a mostrar `[D,E]` —
+  sem duplicar D, sem perder E.
+- **UI**: dentro do "Itens (N)" já existente em `InventoryList` (mesmo painel
+  que já mostrava Contado/Pendente por item), cada item **Pendente** ganhou
+  um botão pequeno "🗑 Remover" (só admin, `onRemoverItemPendente` passado só
+  quando `role==='admin'`) — itens já Contados nunca mostram esse botão.
+  Confirmação inline por item (mesmo padrão de excluir/cancelar já usado no
+  resto do app), com o texto deixando claro que é definitivo: "Remover
+  {código} da lista pra sempre? O item sai do inventário sem nunca ser
+  contado (não conta como pendência)".
+- **Nenhuma coluna nova no Supabase** — reaproveita `itens_importados`/
+  `qtd_itens`, já existentes e já usados por `cancelInventory`.
+- Testado via harness novo (`harness_remover_item_pendente.js`, jsdom +
+  react-dom/client + `act()`, mesma técnica rigorosa de sempre): itens já
+  contados (000.11111/000.22222) nunca mostram o botão; o item pendente
+  (000.33333) mostra; a confirmação aparece com o texto certo; confirmar
+  chama `onRemoverItemPendente` com o invId/código certos; perfil operador
+  (prop `undefined`, mesmo padrão de `App()`) não vê o botão em lugar nenhum.
+  Lógica de `removerItemPendenteDaLista` conferida à parte via script Node
+  isolado (recusa remover item já contado, recusa código inexistente, e a
+  matemática da fila continua coerente depois da remoção). Transpile Babel do
+  arquivo inteiro e balanceamento de chaves do CSS conferidos (641/641, sem
+  mudança — nenhuma classe CSS nova, tudo reaproveitado). **Verificação
+  contra o Supabase real e resolução efetiva do INV-678 ficam a cargo do
+  cliente** — mesma limitação de sempre (sandbox sem rede) — depois do
+  deploy, o admin pode abrir "Inventários Pendentes" → "Itens" no card do
+  INV-678 e remover o item que nunca foi encontrado.
