@@ -7180,6 +7180,16 @@ function CameraScanner({onDetected, onCancel}){
 
   useEffect(()=>{
     let cancelled = false;
+    // Guarda a promise do `scanner.start()` — a limpeza (botão "Cancelar
+    // leitura" ou a tela sendo desmontada) NUNCA chama `stop()` antes dela
+    // terminar (sucesso ou erro). Bug real da biblioteca html5-qrcode: parar
+    // a câmera enquanto o início ainda está em andamento deixa o stream de
+    // vídeo "preso" — o navegador nunca libera a câmera de verdade, e a
+    // PRÓXIMA vez que qualquer tela tenta abrir a câmera, `getUserMedia`
+    // trava pra sempre (só reiniciar o app inteiro resolve). Isso é fácil de
+    // disparar na prática: abrir a câmera e cancelar rápido, antes dela
+    // terminar de inicializar.
+    let startPromise = Promise.resolve();
     async function start(){
       if(!window.Html5Qrcode){
         setStatus('error');
@@ -7208,7 +7218,7 @@ function CameraScanner({onDetected, onCancel}){
           useBarCodeDetectorIfSupported: true,
         });
         scannerRef.current = scanner;
-        await scanner.start(
+        startPromise = scanner.start(
           {facingMode:'environment'},
           {fps:10, qrbox:{width:260, height:160}},
           (decodedText)=>{
@@ -7218,6 +7228,7 @@ function CameraScanner({onDetected, onCancel}){
           },
           ()=>{ /* ignora falhas de leitura por frame — é o comportamento normal enquanto mira */ }
         );
+        await startPromise;
         if(!cancelled) setStatus('scanning');
       } catch(err){
         if(!cancelled) setStatus('error');
@@ -7226,9 +7237,11 @@ function CameraScanner({onDetected, onCancel}){
     start();
     return ()=>{
       cancelled = true;
-      if(scannerRef.current){
-        scannerRef.current.stop().then(()=>scannerRef.current.clear()).catch(()=>{});
-      }
+      startPromise.catch(()=>{}).then(()=>{
+        if(scannerRef.current){
+          scannerRef.current.stop().then(()=>scannerRef.current.clear()).catch(()=>{});
+        }
+      });
     };
   }, []);
 

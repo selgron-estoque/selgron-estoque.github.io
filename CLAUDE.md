@@ -10645,3 +10645,61 @@ usado em "Indicadores" (seção "Resumo da Operação", `.ops-kpi-*`).
   no arquivo. **Verificação visual de ponta a ponta fica a cargo do
   cliente** — mesma limitação de sempre (login exige Supabase Auth real,
   não simulável no sandbox sem rede).
+
+## Bug real: câmera travava o app inteiro ao cancelar rápido demais
+
+Cliente reportou: "a câmera está com bug, quando abro ela e tento sair ela bug e
+tenho que reiniciar o app" — em qualquer uma das 5 telas que usam o leitor de QR/
+código de barras (`CameraScanner`, componente compartilhado).
+
+- **Causa raiz**: `useEffect` do `CameraScanner` chamava `await scanner.start(...)`
+  e só definia a função de limpeza (`return ()=>{...}`) já pronta pra chamar
+  `scannerRef.current.stop()` incondicionalmente assim que o componente
+  desmontasse (botão "Cancelar leitura" ou trocar de tela) — sem esperar o
+  `start()` (que é assíncrono, a câmera leva um tempo real pra inicializar)
+  terminar primeiro. É um bug conhecido da biblioteca `html5-qrcode`: chamar
+  `stop()` enquanto `start()` ainda está em andamento deixa o stream de vídeo
+  "preso" — o navegador nunca libera a câmera de verdade, e a PRÓXIMA vez que
+  qualquer tela tenta abrir a câmera, `getUserMedia` trava pra sempre (só
+  reiniciar o app resolve). Fácil de disparar na prática: abrir a câmera e
+  cancelar rápido, antes dela terminar de inicializar — exatamente o cenário
+  que o cliente descreveu.
+- **Correção**: a promise de `scanner.start(...)` passou a ser guardada numa
+  variável (`startPromise`, capturada pela função de limpeza via closure) — a
+  limpeza agora sempre `await` (via `.then()`) essa promise ANTES de chamar
+  `stop()`/`clear()`, não importa se o componente já desmontou no meio do
+  caminho. `cancelled`/`doneRef` continuam controlando os outros efeitos
+  colaterais (não marcar leitura como concluída depois de cancelado), sem
+  mudança nesse comportamento.
+- **Verificação teve um desvio no caminho**: a 1ª rodada de teste (harness
+  jsdom+react-dom/client+`act()` simulando `start()` pendente e desmontando o
+  componente antes dele resolver) reportou falha — `stop()` disparando
+  imediatamente, mesmo com `start()` ainda pendente, contradizendo a correção.
+  Escrevi um repro mínimo isolado (mesmo padrão de closure, sem carregar o
+  app transpilado) que passou corretamente, provando que a semântica de JS
+  usada na correção está certa. Investigando a diferença, achei a causa real:
+  o script que extraía o `<script type="text/babel">` do `index.html` usava
+  uma regex gulosa (`.*` sem `re.S` não-guloso) que, por causa de haver mais de
+  um `<script>` no arquivo (o service worker, mais abaixo), capturava até o
+  **último** `</script>` do documento inteiro em vez do primeiro — gerando um
+  build (`app.notmount.js`) corrompido/misturado com HTML fora de contexto.
+  Corrigido a extração (`.*?` não-guloso) e refeito o build — com o arquivo
+  certo, o harness passou 100%: `stop()` nunca dispara antes do `start()`
+  resolver, mesmo com o componente já desmontado nesse meio-tempo; depois que
+  `start()` resolve, `stop()`+`clear()` disparam exatamente uma vez cada.
+- **Lição pro futuro**: sempre que um script de extração/verificação usar
+  regex sobre o `index.html` inteiro (que tem mais de um `<script>`), usar
+  `.*?` (não-guloso) ou isolar pelo índice do primeiro `<script
+  type="text/babel">` — a versão gulosa pode silenciosamente produzir um
+  build errado sem nenhum erro óbvio, dando a impressão de que o CÓDIGO tem
+  bug quando na verdade é só o próprio processo de teste que está quebrado.
+- Testado via harness real (jsdom + react-dom/client + `act()`, mesma técnica
+  rigorosa de sempre): simulei o cenário exato do relato do cliente — abrir a
+  câmera (start pendente), cancelar/desmontar ANTES do `start()` resolver, e
+  só depois deixar o `start()` resolver — confirmado que `stop()`/`clear()`
+  disparam certinho depois, uma vez cada, nunca antes. Transpile Babel do
+  arquivo inteiro e balanceamento de chaves do CSS conferidos (641/641, sem
+  mudança — só JS dentro do `useEffect`, nenhuma classe CSS nova). **Teste com
+  câmera de verdade no tablet fica a cargo do cliente** — mesma limitação de
+  sempre (sandbox sem câmera/hardware real), mas o cenário exato relatado
+  (abrir e cancelar rápido) foi reproduzido e corrigido de forma verificável.
