@@ -11228,3 +11228,43 @@ apenas voltar, ele esta fechando o app".
   mesma limitação de sempre (sandbox sem hardware real), mas o mecanismo
   (pushState/popstate) é padrão de navegador, não algo específico de
   dispositivo — deve funcionar igual em qualquer aparelho/navegador.
+
+## Lote de migrações pendentes confirmado em produção (SA de Ajuste, reserva de item, atribuição)
+
+**Confirmado em produção**: o cliente rodou com sucesso o lote de SQL que tinha
+ficado pendente ao longo de várias rodadas anteriores — todas as colunas/tabela/
+funções a partir da seção "FLUXO REAL DE AJUSTE DE ESTOQUE DA SELGRON" até o fim
+do `backend/schema.sql` (ver seção "SA de Ajuste + aprovação da Diretoria" acima):
+`numero_sa`/`sa_gerada_por`/`sa_gerada_em`/`reprovado_pela_diretoria`/
+`reprovado_por`/`reprovado_em` e `motivo_reprovacao_diretoria` em `contagens`;
+`urgente` em `inventarios`; a tabela `item_reservas` + as funções `reservar_item`/
+`liberar_item_reserva`; `ultima_saida` e `recontagem_liberada_para_original` em
+`contagens`; e `atribuido_a` em `inventarios`/`contagens`.
+
+- **Bug real pego na 1ª tentativa, corrigido antes da 2ª**: a tabela
+  `item_reservas` (com as duas policies "leitura autenticada"/"escrita
+  autenticada") já existia de uma tentativa anterior não documentada — `create
+  policy` não aceita `if not exists` no Postgres, então rodar o bloco de novo
+  falhou com `policy "leitura autenticada" for table "item_reservas" already
+  exists`. Como o SQL Editor do Supabase roda o script colado inteiro como uma
+  única transação implícita (sem `BEGIN`/`COMMIT` explícito no meio), esse erro
+  no meio do lote desfez TUDO que vinha antes dele também — nada tinha sido
+  salvo na 1ª tentativa, mesmo as colunas de SA de Ajuste que vêm bem antes no
+  script. Corrigido em `backend/schema.sql` (e reenviado ao cliente) com
+  `drop policy if exists "leitura autenticada"/"escrita autenticada" on
+  item_reservas;` antes de cada `create policy` — mesmo padrão já usado no
+  endurecimento de RLS (`drop policy` → `create policy`), agora aplicado aqui
+  também. Reexecutado do zero com a correção, sem erro.
+- **Lição pro futuro**: sempre que um bloco de migração incluir `create
+  policy` (não só `create table`/`alter table add column`, que já são
+  idempotentes por natureza com `if not exists`), preceder com `drop policy if
+  exists` — do contrário, qualquer reexecução do script (ex.: cliente rodando
+  de novo por engano, ou uma tabela que já foi parcialmente criada numa
+  tentativa anterior sem eu saber) derruba o lote inteiro por causa de um erro
+  bem no meio, escondendo o quanto do resto já tinha (ou não) sido aplicado.
+- **Funcionalidades que passam a valer de verdade em produção a partir de
+  agora**: SA de Ajuste + aprovação da Diretoria (incluindo o motivo de
+  reprovação); marcar inventário urgente em "Em Execução"; reserva real de
+  item durante a contagem (trava de 5 min); "Última movimentação"/"dias
+  parado" em Itens Divergentes; "Liberar para o mesmo operador" em
+  Recontagens; e atribuir inventário/recontagem a um operador específico.
