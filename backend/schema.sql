@@ -1122,6 +1122,11 @@ create table if not exists item_reservas (
 );
 
 alter table item_reservas enable row level security;
+-- drop antes de recriar: `create policy` não aceita `if not exists` no Postgres —
+-- sem isso, rodar este bloco de novo (ex.: reimportar o schema inteiro depois de
+-- já ter criado a tabela numa tentativa anterior) falha com "policy already exists"
+drop policy if exists "leitura autenticada" on item_reservas;
+drop policy if exists "escrita autenticada" on item_reservas;
 create policy "leitura autenticada" on item_reservas for select using (auth.role() = 'authenticated');
 create policy "escrita autenticada" on item_reservas for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 
