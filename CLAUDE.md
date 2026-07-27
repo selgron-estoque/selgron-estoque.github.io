@@ -10703,3 +10703,59 @@ código de barras (`CameraScanner`, componente compartilhado).
   câmera de verdade no tablet fica a cargo do cliente** — mesma limitação de
   sempre (sandbox sem câmera/hardware real), mas o cenário exato relatado
   (abrir e cancelar rápido) foi reproduzido e corrigido de forma verificável.
+
+## "Nova Contagem Manual" — armazém pré-selecionado na própria tela, sem tela separada
+
+Cliente mandou print da tela de busca manual ("Contando no Armazém 01" / "Trocar
+armazém") e pediu: colocar a opção de escolher o armazém NESSA MESMA tela, com
+"Armazém 01" já vindo pré-selecionado — ideia explícita de reduzir a quantidade
+de telas que o operador precisa passar.
+
+- **Antes**: `ManualCountFlow` (Nova Contagem → Manual) sempre abria com uma
+  TELA própria (`ArmazemGate`, um `<select>` + botão "Confirmar armazém") antes
+  de mostrar a busca — só depois de confirmar é que aparecia a tela de
+  escanear/buscar, com "Contando no Armazém X" + um link "Trocar armazém" que
+  voltava pra aquela 1ª tela caso precisasse trocar.
+- **Agora**: `armazem` nasce com o valor `'1'` (Armazém 01) já pré-selecionado
+  — `ArmazemGate` (a tela separada) deixou de ser mostrada pra este fluxo, o
+  operador cai direto na tela de busca/escanear, já contando no Armazém 01. O
+  link "Trocar armazém" virou um `<select>` inline, bem ali no topo da mesma
+  tela (mesma lista de armazéns com saldo carregado que `ArmazemGate` já
+  buscava, via `fetchEstoqueValorPorAlmoxarifado`) — trocar de armazém não sai
+  mais da tela nenhuma vez, só troca o valor ali mesmo.
+- **`ArmazemGate` continua existindo, sem nenhuma mudança** — ainda é usada
+  por `RandomCountFlow`/`RouteCountFlow` (contagem avulsa Aleatória/Curva
+  ABC/Grupo e Rota de Endereço), que não fizeram parte deste pedido — só
+  `ManualCountFlow` teve a tela mesclada.
+- **`'1'` (Armazém 01) sempre aparece como opção no `<select>`**, mesmo antes
+  da lista de armazéns terminar de carregar (`fetchEstoqueValorPorAlmoxarifado`
+  é assíncrona) — como é o padrão de fábrica e o armazém dominante na prática
+  (ver "Cards de estoque no modelo de referência" acima, ~82-99% do valor em
+  estoque real do cliente), não faz sentido bloquear a busca esperando a lista
+  completa só pra oferecer a opção que quase sempre é a certa de qualquer
+  jeito — a busca já funciona normalmente com "1" mesmo que a lista de opções
+  ainda esteja carregando por trás.
+- **Achado/corrigido no processo de teste, sem relação com a funcionalidade em
+  si**: 2 dos harnesses jsdom+react-dom/client desta sessão (`CameraScanner`/
+  esta rodada) tinham `require('react-dom/client')` chamado ANTES de
+  `global.window`/`global.document` serem definidos — isso não afeta cliques
+  em botão (funcionou certo pro teste da câmera), mas quebra silenciosamente a
+  simulação de digitação em `<input>` via `setNativeValue`+evento `input`
+  (o valor mudava no DOM, mas o `onChange` do React nunca disparava,
+  `useState` nunca atualizava) — sem nenhum erro visível, só o teste "não
+  via" a busca disparar. Corrigido invertendo a ordem (jsdom primeiro, depois
+  os `require` de `react`/`react-dom/client`) — mesma lição já registrada
+  outras vezes neste histórico: quando um teste "não bate" sem erro nenhum,
+  suspeitar do PRÓPRIO teste antes de reabrir o código já corrigido.
+- Testado via harness real (jsdom + react-dom/client + `act()`, ordem de
+  `require` corrigida): confirmei que a tela principal aparece direto (sem
+  "Confirmar armazém" em lugar nenhum), que o `<select>` já nasce com valor
+  `'1'` e o texto mostra "Armazém 01", que buscar um item com o armazém
+  padrão dispara a busca com `armazem='1'`, e que trocar o `<select>` pra
+  outro armazém (ex. "4") atualiza o texto pra "Armazém 04" sem reabrir
+  nenhuma tela separada, com a busca seguinte já usando o armazém novo.
+  Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  conferidos (641/641, sem mudança — `<select>` estilizado via `style` inline,
+  nenhuma classe CSS nova). **Verificação visual de ponta a ponta fica a cargo
+  do cliente** — mesma limitação de sempre (login exige Supabase Auth real,
+  não simulável no sandbox sem rede).

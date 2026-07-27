@@ -8054,19 +8054,40 @@ function ArmazemGate({onSelected, titulo}){
 }
 
 function ManualCountFlow({user, onFinish, onAddressProposed, counts, operadorVeSaldo, onReservarItem, onLiberarItemReserva}){
-  const [armazem, setArmazem] = useState('');
+  // Armazém já nasce pré-selecionado em "1" (Armazém 01, disparado sozinho
+  // na esmagadora maioria dos casos reais — ver CLAUDE.md "Cards de estoque
+  // no modelo de referência") — pedido do cliente pra reduzir a quantidade
+  // de telas do operador: a seleção de armazém deixou de ser uma TELA
+  // própria (ArmazemGate) antes desta e virou um seletor dentro da mesma
+  // tela, com o valor mais comum já escolhido de fábrica. Quem contar em
+  // outro armazém troca ali mesmo, sem sair da tela.
+  const [armazem, setArmazem] = useState('1');
+  const [armazens, setArmazens] = useState(null); // null = carregando a lista de opções
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState(null);
   const [scanning, setScanning] = useState(false);
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
 
+  // Lista de armazéns com saldo carregado, pro <select> — mesma fonte que
+  // `ArmazemGate` já usava. Roda uma vez, em paralelo com o resto da tela
+  // (não bloqueia nada — "1" já é um valor válido pra buscar mesmo antes
+  // dessa lista terminar de carregar).
+  useEffect(()=>{
+    let cancelado = false;
+    fetchEstoqueValorPorAlmoxarifado().then(rows=>{
+      if(cancelado) return;
+      const codigos = (rows||[]).map(r=>String(r.almoxarifado));
+      setArmazens(Array.from(new Set(['1', ...codigos])).sort());
+    });
+    return ()=>{ cancelado = true; };
+  }, []);
+
   // Busca só no catálogo real via Supabase (produtos + estoque_saldo +
   // estoque_enderecos, ver searchSupabaseCatalog) — o cache local estático
   // de 300 SKUs foi removido (ver CLAUDE.md "cache local removido"), o
   // Supabase é a única fonte agora. Debounce de 350ms pra não disparar uma
-  // requisição a cada tecla. Só dispara depois do armazém escolhido — a
-  // busca precisa saber em qual armazém comparar o saldo.
+  // requisição a cada tecla.
   useEffect(()=>{
     if(!armazem || !query){ setResults([]); setLoading(false); return; }
     let cancelado = false;
@@ -8077,10 +8098,6 @@ function ManualCountFlow({user, onFinish, onAddressProposed, counts, operadorVeS
     }, 350);
     return ()=>{ cancelado = true; clearTimeout(timer); };
   }, [query, armazem]);
-
-  if(!armazem){
-    return <ArmazemGate onSelected={setArmazem} />;
-  }
 
   if(selected){
     return <CountStep product={selected} user={user} counts={counts} onAddressProposed={onAddressProposed} onComplete={(c)=>onFinish(c)} expectAddressCheck={true} operadorVeSaldo={operadorVeSaldo} onReservarItem={onReservarItem} onLiberarItemReserva={onLiberarItemReserva} />;
@@ -8095,7 +8112,15 @@ function ManualCountFlow({user, onFinish, onAddressProposed, counts, operadorVeS
     <div>
       <div className="role-note" style={{marginBottom:14,display:'flex',justifyContent:'space-between',alignItems:'center',gap:10}}>
         <span>Contando no <strong>Armazém {armazem.padStart(2,'0')}</strong></span>
-        <button type="button" className="back-btn" style={{marginBottom:0}} onClick={()=>{ setArmazem(''); setQuery(''); setResults([]); }}>Trocar armazém</button>
+        <select
+          value={armazem}
+          onChange={e=>{ setArmazem(e.target.value); setQuery(''); setResults([]); }}
+          style={{background:'var(--panel-raised)', border:'1px solid var(--line)', color:'var(--ink)', borderRadius:8, padding:'6px 10px', fontSize:'var(--text-xs)', fontFamily:'var(--font-mono)'}}
+        >
+          {(armazens || ['1']).map(a=>(
+            <option key={a} value={a}>Armazém {a.padStart(2,'0')}</option>
+          ))}
+        </select>
       </div>
       {scanning ? (
         <CameraScanner onDetected={handleScanDetected} onCancel={()=>setScanning(false)} />
