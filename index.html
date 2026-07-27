@@ -5083,9 +5083,9 @@ function App(){
           if(res.ok){ setInventories(prev=>[inv,...prev]); goto('inventories'); }
           return res;
         }} />}
-        {view==='randomCount' && <RandomCountFlow inv={flowState} user={currentUser} counts={counts} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} gruposExcluidos={gruposExcluidos} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
-        {view==='manualCount' && <ManualCountFlow user={currentUser} counts={counts} onRegisterCount={registerFinishedCount} onAddressProposed={addAddressProposal} operadorVeSaldo={operadorVeSaldo} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
-        {view==='routeCount' && <RouteCountFlow inv={flowState} user={currentUser} counts={counts} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} gruposExcluidos={gruposExcluidos} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
+        {view==='randomCount' && <RandomCountFlow inv={flowState} user={currentUser} counts={counts} inventories={inventories} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} gruposExcluidos={gruposExcluidos} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
+        {view==='manualCount' && <ManualCountFlow user={currentUser} counts={counts} inventories={inventories} onRegisterCount={registerFinishedCount} onAddressProposed={addAddressProposal} operadorVeSaldo={operadorVeSaldo} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
+        {view==='routeCount' && <RouteCountFlow inv={flowState} user={currentUser} counts={counts} inventories={inventories} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} gruposExcluidos={gruposExcluidos} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
         {view==='importedListCount' && <ImportedListCountFlow inv={flowState} user={currentUser} counts={counts} inventories={inventories} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
         {view==='recounts' && hasAccess(currentUser,'recounts') && <RecountsPanel counts={counts} inventories={inventories} role={role} currentUser={currentUser} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onToggleLiberarOriginal={toggleLiberarRecontagemOriginal} onEditarMotivoObservacao={editarMotivoObservacaoContagem} operadorVeValoresRecontagem={operadorVeValoresRecontagem} />}
         {view==='divergentes' && hasAccess(currentUser,'divergentes') && <DivergentItemsPanel counts={counts} inventories={inventories} role={role} goto={goto} onApprove={approveDivergence} onSendToDiretoria={enviarParaAprovacaoDiretoria} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onEditarMotivoObservacao={editarMotivoObservacaoContagem} />}
@@ -7892,7 +7892,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
 
 /* ---------------- MÓDULO 2: CONTAGEM ALEATÓRIA ---------------- */
 
-function RandomCountFlow({inv, user, onRegisterCount, onFinish, onAddressProposed, setInventories, counts, operadorVeSaldo, gruposExcluidos, onReservarItem, onLiberarItemReserva}){
+function RandomCountFlow({inv, user, onRegisterCount, onFinish, onAddressProposed, setInventories, counts, operadorVeSaldo, gruposExcluidos, onReservarItem, onLiberarItemReserva, inventories}){
   // Armazém obrigatório em TODA contagem por este motor (pedido do
   // cliente: item com saldo em mais de um armazém nunca batia, porque a
   // busca não era presa a um armazém físico específico). Um inventário
@@ -7978,6 +7978,17 @@ function RandomCountFlow({inv, user, onRegisterCount, onFinish, onAddressPropose
     );
   }
 
+  // Mesmo bloqueio já usado em `ImportedListCountFlow` (`getOpenInventoryItemConflict`)
+  // — item que já faz parte de um inventário "Lista Importada"/"Itens
+  // Específicos" ainda pendente, mas não contado ali. Antes desta correção,
+  // Aleatória/Curva ABC/Grupo (este motor) nunca checavam isso — só a
+  // presença do item na fila de outro inventário do MESMO tipo (Lista
+  // Importada/Itens Específicos) é detectável (essas duas guardam uma lista
+  // fixa de itens; os outros tipos recalculam a fila via RPC a cada vez, sem
+  // lista fixa pra cruzar — limitação já conhecida, documentada no
+  // CLAUDE.md).
+  const conflitoInventario = inventories ? getOpenInventoryItemConflict(inventories, counts, inv ? inv.id : null, q.current.codigo) : null;
+
   return (
     <div>
       <div className="role-note">Armazém {almoxarifadosFiltro.map(a=>a.padStart(2,'0')).join(', ')} · Itens ainda não contados primeiro, depois por sequência de endereço{inv && inv.grupo ? (' · Grupo: ' + inv.grupo.split(',').filter(Boolean).map(formatGrupoLabel).join(', ')) : ''}</div>
@@ -7992,6 +8003,7 @@ function RandomCountFlow({inv, user, onRegisterCount, onFinish, onAddressPropose
         onAddressProposed={onAddressProposed}
         operadorVeSaldo={operadorVeSaldo}
         onSkip={()=>q.next()}
+        conflitoInventario={conflitoInventario}
         onReservarItem={onReservarItem}
         onLiberarItemReserva={onLiberarItemReserva}
         onComplete={(c)=>{
@@ -8047,7 +8059,7 @@ function ArmazemGate({onSelected, titulo}){
   );
 }
 
-function ManualCountFlow({user, onRegisterCount, onAddressProposed, counts, operadorVeSaldo, onReservarItem, onLiberarItemReserva}){
+function ManualCountFlow({user, onRegisterCount, onAddressProposed, counts, operadorVeSaldo, onReservarItem, onLiberarItemReserva, inventories}){
   // Armazém já nasce pré-selecionado em "1" (Armazém 01, disparado sozinho
   // na esmagadora maioria dos casos reais — ver CLAUDE.md "Cards de estoque
   // no modelo de referência") — pedido do cliente pra reduzir a quantidade
@@ -8100,6 +8112,13 @@ function ManualCountFlow({user, onRegisterCount, onAddressProposed, counts, oper
     // Sair de fato continua possível pelos mesmos caminhos de sempre
     // (`MobileNavBar`/sidebar) — nenhuma tela de contagem tinha um botão de
     // "concluir" próprio antes disso.
+    // Mesmo bloqueio já usado em `ImportedListCountFlow`/`RandomCountFlow`/
+    // `RouteCountFlow` — item selecionado aqui que já faz parte de um
+    // inventário "Lista Importada"/"Itens Específicos" ainda pendente (ver
+    // comentário em `RandomCountFlow` pra causa raiz/limitação). Antes desta
+    // correção, a busca manual avulsa nunca checava isso — era possível
+    // contar aqui um item que já estava aberto em outro documento.
+    const conflitoInventario = inventories ? getOpenInventoryItemConflict(inventories, counts, null, selected.codigo) : null;
     return (
       <CountStep
         key={selected.codigo}
@@ -8107,6 +8126,8 @@ function ManualCountFlow({user, onRegisterCount, onAddressProposed, counts, oper
         user={user}
         counts={counts}
         onAddressProposed={onAddressProposed}
+        conflitoInventario={conflitoInventario}
+        onSkip={()=>{ setSelected(null); setQuery(''); setResults([]); }}
         onComplete={(c)=>{
           onRegisterCount(c);
           setSelected(null);
@@ -8166,7 +8187,7 @@ function ManualCountFlow({user, onRegisterCount, onAddressProposed, counts, oper
 
 /* ---------------- MÓDULO 4: CONTAGEM POR ROTA ---------------- */
 
-function RouteCountFlow({inv, user, onRegisterCount, onFinish, onAddressProposed, setInventories, counts, operadorVeSaldo, gruposExcluidos, onReservarItem, onLiberarItemReserva}){
+function RouteCountFlow({inv, user, onRegisterCount, onFinish, onAddressProposed, setInventories, counts, operadorVeSaldo, gruposExcluidos, onReservarItem, onLiberarItemReserva, inventories}){
   // Armazém obrigatório (mesmo motivo do RandomCountFlow) — se `inv` já vem
   // de um inventário criado do tipo "Contagem por Rota de Endereço" (ver
   // InventoryList), o almoxarifado já está definido ali; a versão avulsa
@@ -8299,6 +8320,10 @@ function RouteCountFlow({inv, user, onRegisterCount, onFinish, onAddressProposed
     );
   }
 
+  // Mesmo bloqueio já usado em `ImportedListCountFlow`/`RandomCountFlow` —
+  // ver comentário lá pra causa raiz/limitação.
+  const conflitoInventario = inventories ? getOpenInventoryItemConflict(inventories, counts, inv ? inv.id : null, q.current.codigo) : null;
+
   return (
     <div>
       <div className="role-note" style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,flexWrap:'wrap'}}>
@@ -8315,6 +8340,7 @@ function RouteCountFlow({inv, user, onRegisterCount, onFinish, onAddressProposed
         queueTotal={q.total}
         onAddressProposed={onAddressProposed}
         onSkip={()=>q.next()}
+        conflitoInventario={conflitoInventario}
         operadorVeSaldo={operadorVeSaldo}
         onReservarItem={onReservarItem}
         onLiberarItemReserva={onLiberarItemReserva}

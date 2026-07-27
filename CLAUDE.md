@@ -10851,3 +10851,70 @@ cadastrado)".
   **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma
   limitação de sempre (login exige Supabase Auth real, não simulável no
   sandbox sem rede).
+
+## Bug real: 3 dos 7 tipos de contagem nunca checavam item já planejado em outro inventário pendente
+
+Cliente pediu pra revisar todos os tipos de contagem: "tem tipo deixando eu
+abrir contagem para item que já tem inventário aberto". Investigando, o
+mecanismo que deveria impedir isso (`conflitoInventario`/
+`getOpenInventoryItemConflict`, criado numa rodada anterior — ver seção
+"Novo tipo de inventário: 'Itens Específicos'"/histórico de bloqueio de
+contagem duplicada) só estava conectado num único fluxo:
+`ImportedListCountFlow` ("Lista Importada"/"Itens Específicos"). Os outros 3
+motores de contagem — `RandomCountFlow` (Aleatória/Curva ABC/Grupo),
+`ManualCountFlow` (Nova Contagem → Manual avulsa) e `RouteCountFlow`
+(Contagem por Rota de Endereço) — nem RECEBIAM a lista de inventários
+(`inventories`) como prop, então não tinham nem como calcular esse
+conflito: contar um item que já fazia parte de um "Itens Específicos"/
+"Lista Importada" ainda pendente (mas ainda não contado ali) passava batido
+por qualquer um desses 3 fluxos.
+
+- **Importante distinguir dos dois bloqueios que JÁ existiam e continuam
+  funcionando normalmente**: `getOpenCountForProduct` (bloqueia item que já
+  tem uma CONTAGEM lançada em aberto — `aguardando_segunda`/`aguardando_
+  analise_lider`/etc., em QUALQUER tipo de inventário) já funciona nos 7
+  tipos, sem alteração nesta correção. O gap era especificamente sobre item
+  ainda **sem nenhuma contagem**, só **planejado** (presente na lista
+  `itensImportados`) num inventário "Itens Específicos"/"Lista Importada"
+  que ainda não chegou nele.
+- **Correção**: `RandomCountFlow`/`ManualCountFlow`/`RouteCountFlow`
+  ganharam a prop `inventories` (passada de `App()`, mesma lista que
+  `ImportedListCountFlow` já recebia) e, cada um, calcula
+  `getOpenInventoryItemConflict(inventories, counts, inv ? inv.id : null,
+  <código do item atual>)` — no item da fila (`q.current.codigo`) nos dois
+  primeiros, no item selecionado (`selected.codigo`) no `ManualCountFlow` —
+  e passa pro `<CountStep conflitoInventario={...}>`, mesma tela de
+  bloqueio (🔒 "já está em outro inventário pendente") que já existia,
+  reaproveitada sem nenhuma mudança visual.
+- **`ManualCountFlow` também ganhou `onSkip`** (chama `setSelected(null);
+  setQuery(''); setResults([]);`) — sem isso, a tela de bloqueio não tinha
+  nenhum jeito de voltar pra busca a não ser navegando pra fora do fluxo
+  inteiro (essa tela nunca teve um botão de "pular" antes, porque nunca
+  tinha chegado nesse bloqueio). `RandomCountFlow`/`RouteCountFlow` já
+  tinham `onSkip` (pula pro próximo item da fila), não precisou de mudança
+  ali.
+- **Limitação que continua existindo, documentada desde que o mecanismo foi
+  criado, não resolvida nesta rodada**: `getOpenInventoryItemConflict` só
+  consegue detectar conflito contra inventários do tipo "Itens
+  Específicos"/"Lista Importada" (os únicos que guardam uma lista FIXA de
+  itens, `itensImportados`) — um item planejado só implicitamente numa
+  Aleatória/Curva ABC/Manual/Rota/Grupo pendente (que recalculam a fila via
+  RPC a cada vez, sem lista fixa nenhuma pra cruzar) continua não sendo
+  detectável por este mecanismo. Se o cliente reproduzir o mesmo problema
+  especificamente com uma Aleatória/Rota/Grupo como inventário de ORIGEM do
+  conflito (não como destino — isso já funciona agora), é um problema
+  diferente e maior, que exigiria desenhar um jeito de "reservar" o
+  item nessas filas geradas dinamicamente — não implementado aqui.
+- Testado via harness real (jsdom + react-dom/client + `act()`, mesma
+  técnica rigorosa de sempre — carrega o `index.html` inteiro transpilado
+  numa `vm.Script`): criei um inventário "Itens Específicos" pendente com um
+  item na lista, ainda sem nenhuma contagem em lugar nenhum, e confirmei que
+  os 3 fluxos corrigidos (busca manual selecionando o item; fila
+  Aleatória chegando nele; escolher o corredor da Rota que contém ele)
+  mostram a tela de bloqueio "já está em outro inventário pendente" em vez
+  de deixar contar — antes desta correção, os 3 deixavam passar batido
+  (`inventories` nem existia como prop pra eles). Transpile Babel do arquivo
+  inteiro e balanceamento de chaves do CSS conferidos (638/638, sem
+  mudança — nenhuma classe CSS nova, só JS/props). **Verificação visual de
+  ponta a ponta fica a cargo do cliente** — mesma limitação de sempre
+  (login exige Supabase Auth real, não simulável no sandbox sem rede).
