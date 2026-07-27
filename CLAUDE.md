@@ -11067,3 +11067,89 @@ pessoa.
   não simulável no sandbox sem rede). Falta o cliente rodar o SQL novo
   (`alter table inventarios add column if not exists atribuido_a text;`) no
   projeto Supabase real antes de usar em produção.
+
+## Bug real: ícone "🎯" da atribuição sem mapeamento + atribuição estendida pra Recontagens
+
+Cliente reportou, com print do menu "⋮" de "Em Execução": "botão de atribuir não
+está no padrão" — o item "Trocar atribuição" aparecia com o emoji 🎯 cru (colorido,
+"cartunesco"), destoando dos outros itens do mesmo menu ("Remover urgência"/
+"Baixar"/"Cancelar"/"Excluir"), que já usam ícones lineares SVG. Também pediu pra
+estender a mesma opção de atribuir pros itens de "Recontagens Pendentes".
+
+### Bug do ícone
+
+- **Causa**: `<Ic>🎯</Ic>` (usado no botão de atribuir e no indicador "Atribuído
+  a: X", ver seção anterior) só renderiza o ícone linear quando o emoji tem uma
+  entrada em `EMOJI_TO_DICON` — sem entrada, cai no fallback (`<span>{children}
+  </span>`, o emoji cru). 🎯 nunca tinha sido adicionado a esse mapa (foi
+  introduzido só na rodada anterior, sem seguir o padrão de unificação de
+  ícones já estabelecido no resto do app).
+- **Corrigido**: novo ícone `target` em `DICON_PATHS` (3 círculos concêntricos,
+  mesmo estilo Lucide-ish dos outros 30+ ícones — outer r=9.5, meio r=5.5,
+  centro preenchido r=1.5) + entrada `'🎯':'target'` em `EMOJI_TO_DICON`. Como
+  `Ic` é um componente único compartilhado, essa correção já vale automaticamente
+  pros DOIS lugares que usam 🎯 (o botão "Atribuir a..."/"Trocar atribuição" e o
+  indicador "Atribuído a: X"), tanto em `InventoryList` quanto no `RecountsPanel`
+  novo abaixo — não precisou tocar nenhum dos dois componentes de novo.
+
+### Atribuir uma recontagem individual a um operador
+
+Mesma ideia da atribuição de inventário (seção anterior), só que no nível de
+uma CONTAGEM individual em "Recontagens Pendentes" — "seguindo a mesma linha".
+
+- **`filtrarPorAtribuicao(itens, role, nomeUsuario)`** (função nova, extraída
+  de dentro de `inventariosPendentesVisiveis`) — a mesma regra de atribuição
+  (líder/admin vê tudo; operador com algo atribuído a ele vê SÓ isso; sem nada
+  atribuído, vê tudo MENOS o que é de outro operador) generalizada pra
+  qualquer array de itens com campo `atribuidoA`, não só inventários.
+  `inventariosPendentesVisiveis` virou um wrapper fino:
+  `filtrarPorAtribuicao(inventories.filter(inv=>!inventarioConcluido(inv)),
+  role, nomeUsuario)`.
+- **`contagens.atribuido_a text`** (nova coluna, `backend/schema.sql`, no
+  `create table` e em migração `alter table add column if not exists`) —
+  mesmo padrão da coluna equivalente em `inventarios`: nome em texto puro, sem
+  FK, `null`/vazio = aberto pra qualquer operador.
+- **`contagemRowToLocal`** ganhou o mapeamento `atribuido_a`→`atribuidoA`.
+- **`atribuirContagem(countId, nomeOperador)`** (`App()`, perto de
+  `toggleLiberarRecontagemOriginal`) — mesmo padrão `await`
+  `updateContagemStatusToSupabase` → só atualiza o estado local se `res.ok`.
+- **`RecountsPanel`**: `aguardandoSegundaSemOriginal` (a lista já filtrada pela
+  regra existente de "esconde do próprio operador que contou", ver seção
+  "Liberar para o mesmo operador em Recontagens") passa AGORA por
+  `filtrarPorAtribuicao` antes de virar `aguardandoSegunda` — as duas regras
+  se somam (um item pode estar escondido por qualquer uma das duas, ou por
+  nenhuma). Como `aguardandoSegunda` já era a base de tudo que vem depois
+  (filtro de período, busca, severidade, ordenação, paginação, contador do
+  cabeçalho, empty-state), essa única mudança de origem já propaga a
+  atribuição pra tela inteira, sem precisar tocar cada um desses pontos.
+  - Banner "🎯 Você tem N recontagem(ns) atribuída(s)..." (mesmo texto/
+    padrão do banner de `InventoryList`), mostrado quando
+    `modoRestritoAtribuicao` é true.
+  - Indicador "🎯 Atribuído a: X" no card, logo abaixo da faixa de menu/
+    badges, acima do título do item.
+  - Menu "⋮" ganhou "Atribuir a..."/"Trocar atribuição" (`canMark`, líder OU
+    admin — mesma permissão de "Marcar urgente"/"Liberar para o mesmo
+    operador", não restrita a admin) — só aparece se existir pelo menos 1
+    operador cadastrado. Abre o mesmo painel inline (select + Confirmar) já
+    usado em `InventoryList`, reaproveitando a mesma estrutura de estado
+    (`atribuirAbertoId`/`atribuirValor`/`atribuindo`/`erroAtribuir`).
+- **`App()`**: `<RecountsPanel>` ganhou as props `users`/`onAtribuir=
+  {atribuirContagem}`.
+- Testado via harness real (jsdom + react-dom/client + `act()`, mesma técnica
+  rigorosa de sempre): `filtrarPorAtribuicao` isolada nos 3 cenários (admin
+  vê tudo; operador com item atribuído vê só o dele, restrito; operador sem
+  nada atribuído vê só os sem dono); `RecountsPanel` renderizado de verdade —
+  como admin, vê os 2 itens, o indicador "Atribuído a: Sophia..." aparece
+  certo, o menu tem "Atribuir a...", selecionar um operador e confirmar chama
+  `onAtribuir` com o id/nome certos; como a operadora com uma recontagem
+  atribuída a ela, vê SÓ essa (não a outra, sem dono) e mostra o aviso de
+  modo restrito. Confirmei também, inspecionando o HTML gerado, que o botão
+  "Atribuir a..." agora renderiza um `<svg>` (o ícone `target` novo) em vez
+  do emoji 🎯 cru — o bug de ícone reportado está mesmo corrigido. Transpile
+  Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos
+  (638/638, sem mudança — nenhuma classe CSS nova, reaproveita
+  `.count-card-actions`/`.field`/`.btn-row` já existentes). **Verificação
+  visual de ponta a ponta fica a cargo do cliente** — mesma limitação de
+  sempre (login exige Supabase Auth real, não simulável no sandbox sem
+  rede). Falta o cliente rodar o SQL novo (`alter table contagens add
+  column if not exists atribuido_a text;`) no projeto Supabase real.

@@ -381,6 +381,7 @@ create table contagens (
   recontagem_solicitada_por text,
   recontagem_solicitada_em text,
   recontagem_liberada_para_original boolean not null default false, -- true = o líder liberou o MESMO operador que já contou (usuario) pra recontar também (ver toggleLiberarRecontagemOriginal)
+  atribuido_a text,                        -- nome do operador destinado a recontar este item, sem FK — null = aberto pra qualquer um (ver atribuirContagem)
   criado_em timestamptz not null default now(),
   atualizado_em timestamptz not null default now()
 );
@@ -1223,3 +1224,17 @@ alter table contagens add column if not exists recontagem_liberada_para_original
 --   select column_name from information_schema.columns where table_name = 'inventarios' and column_name = 'atribuido_a';
 -- =============================================================================
 alter table inventarios add column if not exists atribuido_a text;
+
+-- =============================================================================
+-- "ATRIBUIR RECONTAGEM A UM OPERADOR" — mesma ideia da atribuição de
+-- inventário acima, só que no nível de uma CONTAGEM individual em
+-- "Recontagens Pendentes" (item aguardando segunda contagem, ver
+-- RecountsPanel no index.html). Enquanto o operador tiver QUALQUER item
+-- pendente atribuído especificamente a ele, a tela de Recontagens dele
+-- mostra SÓ esse(s) (mesma função `filtrarPorAtribuicao`, reaproveitada do
+-- caso de inventário). Mesma convenção: nome em texto puro, sem FK; null/
+-- vazio = aberto pra qualquer operador.
+-- Introspecção antes de rodar:
+--   select column_name from information_schema.columns where table_name = 'contagens' and column_name = 'atribuido_a';
+-- =============================================================================
+alter table contagens add column if not exists atribuido_a text;

@@ -1398,6 +1398,7 @@ function contagemRowToLocal(row){
     // líder liberar explicitamente essa exceção (ver toggleLiberarRecontagemOriginal
     // em App(), menu "⋮" de RecountsPanel).
     recontagemLiberadaParaOriginal: !!row.recontagem_liberada_para_original,
+    atribuidoA: row.atribuido_a || null,
     diferencaConfirmada: !!row.diferenca_confirmada,
     // Fluxo de SA de Ajuste/aprovação da Diretoria (ver App()) — `solicitacaoAjuste`
     // reaproveita o MESMO nome de campo já usado por `historicoRowToCountLike`
@@ -3901,7 +3902,7 @@ const EMOJI_TO_DICON = {
   '🏷':'tag', '🎲':'shuffle', '➕':'plus', '✉':'mail', '⛔':'ban',
   '⚙':'settings', '⏻':'logOut', '⌨':'keyboard', '⌂':'home',
   '🏢':'building', '🏭':'building', '✓':'checkCircle', '—':'minus',
-  '!':'alertTriangle', '🔥':'flame',
+  '!':'alertTriangle', '🔥':'flame', '🎯':'target',
 };
 const Ic = ({children, size=16}) => {
   const name = EMOJI_TO_DICON[children];
@@ -4583,6 +4584,16 @@ function App(){
     return res;
   }
 
+  // Destina uma recontagem (item individual aguardando segunda contagem) a
+  // um operador específico — mesma ideia de `atribuirInventario`, só que no
+  // nível da contagem em vez do documento inteiro (menu "⋮" em
+  // RecountsPanel). `nomeOperador` vazio/null remove a atribuição.
+  async function atribuirContagem(countId, nomeOperador){
+    const res = await updateContagemStatusToSupabase(countId, {atribuido_a: nomeOperador || null});
+    if(res.ok) setCounts(prev=>prev.map(c=>c.id===countId ? {...c, atribuidoA: nomeOperador || null} : c));
+    return res;
+  }
+
   // Editar motivo/observação de uma contagem já registrada — pedido do
   // cliente: essas informações pararam de ser capturadas na própria tela de
   // contagem (redesenho "coletor industrial") com a intenção de virem a ser
@@ -5102,7 +5113,7 @@ function App(){
         {view==='manualCount' && <ManualCountFlow user={currentUser} counts={counts} inventories={inventories} onRegisterCount={registerFinishedCount} onAddressProposed={addAddressProposal} operadorVeSaldo={operadorVeSaldo} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
         {view==='routeCount' && <RouteCountFlow inv={flowState} user={currentUser} counts={counts} inventories={inventories} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} gruposExcluidos={gruposExcluidos} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
         {view==='importedListCount' && <ImportedListCountFlow inv={flowState} user={currentUser} counts={counts} inventories={inventories} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
-        {view==='recounts' && hasAccess(currentUser,'recounts') && <RecountsPanel counts={counts} inventories={inventories} role={role} currentUser={currentUser} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onToggleLiberarOriginal={toggleLiberarRecontagemOriginal} onEditarMotivoObservacao={editarMotivoObservacaoContagem} operadorVeValoresRecontagem={operadorVeValoresRecontagem} />}
+        {view==='recounts' && hasAccess(currentUser,'recounts') && <RecountsPanel counts={counts} inventories={inventories} role={role} currentUser={currentUser} users={users} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onToggleLiberarOriginal={toggleLiberarRecontagemOriginal} onEditarMotivoObservacao={editarMotivoObservacaoContagem} onAtribuir={atribuirContagem} operadorVeValoresRecontagem={operadorVeValoresRecontagem} />}
         {view==='divergentes' && hasAccess(currentUser,'divergentes') && <DivergentItemsPanel counts={counts} inventories={inventories} role={role} goto={goto} onApprove={approveDivergence} onSendToDiretoria={enviarParaAprovacaoDiretoria} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onEditarMotivoObservacao={editarMotivoObservacaoContagem} />}
         {view==='aprovacaoDiretoria' && hasAccess(currentUser,'aprovacaoDiretoria') && <DiretoriaApprovalPanel counts={counts} inventories={inventories} role={role} onApproveSA={aprovarAjusteDiretoria} onRejectSA={reprovarAjusteDiretoria} onToggleUrgente={toggleUrgente} />}
         {view==='todasDivergencias' && <AllDivergencesPanel counts={counts} historicoConcluidas={historicoConcluidas} goto={goto} />}
@@ -5274,6 +5285,7 @@ const DICON_PATHS = {
   calculator: <><rect x="4" y="2" width="16" height="20" rx="2"/><rect x="7" y="5" width="10" height="4" rx="0.5"/><path d="M7 13h.01"/><path d="M12 13h.01"/><path d="M17 13h.01"/><path d="M7 17h.01"/><path d="M12 17h.01"/><path d="M17 17h.01"/></>,
   flame: <><path d="M12 22c4.4 0 7.5-3 7.5-7 0-3-1.7-5-3-6.7C15.8 10 15 11.3 14 11.3c-1 0-1-1.5-1-3 0-2.3-1.2-4.3-3-5.3C10.5 5 8 7.5 8 11c0-1 .3-2 .8-2.8C6.5 9.7 4.5 12.3 4.5 15c0 4 3.1 7 7.5 7Z"/></>,
   arrowsUpDown: <><path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/></>,
+  target: <><circle cx="12" cy="12" r="9.5"/><circle cx="12" cy="12" r="5.5"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/></>,
 };
 
 function DIcon({name, size=18, strokeWidth=1.8, style}){
@@ -6280,21 +6292,29 @@ function inventarioConcluido(inv){
   return inv.qtdItens>0 && inv.contados>=inv.qtdItens;
 }
 
+// Filtra qualquer lista de itens com campo `atribuidoA` (inventários,
+// contagens em recontagem, etc.) pela regra de atribuição — função genérica,
+// reaproveitada por `inventariosPendentesVisiveis` (abaixo) e por
+// `RecountsPanel` (recontagens atribuídas a um operador específico). Líder/
+// admin sempre veem tudo (precisam gerenciar/monitorar, independente de
+// atribuição). Operador: se tiver QUALQUER item atribuído especificamente a
+// ele, vê SÓ esse(s) (`restrito:true`) — os demais (mesmo os sem dono
+// nenhum) ficam ocultos até ele concluir o que foi destinado. Sem nada
+// atribuído a ele, vê a lista normal, só excluindo o que foi atribuído a
+// OUTRO operador (não faz sentido alguém pegar um item que já é de outra
+// pessoa).
+function filtrarPorAtribuicao(itens, role, nomeUsuario){
+  if(role!=='operador') return {lista: itens, restrito:false};
+  const atribuidosAMim = itens.filter(it=>it.atribuidoA===nomeUsuario);
+  if(atribuidosAMim.length>0) return {lista: atribuidosAMim, restrito:true};
+  return {lista: itens.filter(it=>!it.atribuidoA), restrito:false};
+}
+
 // Decide quais inventários PENDENTES um usuário deve ver — usado tanto por
 // `InventoryList` (a lista em si) quanto por `Home` (o contador/badge), como
-// única fonte de verdade pra não divergir entre os dois. Líder/admin sempre
-// veem tudo (precisam gerenciar/monitorar). Operador: se tiver QUALQUER
-// inventário pendente atribuído especificamente a ele (`atribuidoA`), vê SÓ
-// esse(s) — os demais (mesmo os sem dono nenhum) ficam ocultos até ele
-// concluir o que foi destinado. Sem nada atribuído a ele, vê a lista normal,
-// só excluindo o que foi atribuído a OUTRO operador (não faz sentido alguém
-// começar a contar um inventário que já é de outra pessoa).
+// única fonte de verdade pra não divergir entre os dois.
 function inventariosPendentesVisiveis(inventories, role, nomeUsuario){
-  const pendentesTodos = inventories.filter(inv=>!inventarioConcluido(inv));
-  if(role!=='operador') return {lista: pendentesTodos, restrito:false};
-  const atribuidosAMim = pendentesTodos.filter(inv=>inv.atribuidoA===nomeUsuario);
-  if(atribuidosAMim.length>0) return {lista: atribuidosAMim, restrito:true};
-  return {lista: pendentesTodos.filter(inv=>!inv.atribuidoA), restrito:false};
+  return filtrarPorAtribuicao(inventories.filter(inv=>!inventarioConcluido(inv)), role, nomeUsuario);
 }
 
 function InventoryList({inventories, goto, role, counts, users, currentUser, onDelete, onCancel, onToggleUrgente, onRemoverItemPendente, onAtribuir}){
@@ -8768,7 +8788,7 @@ function PaginationControls({pagina, setPagina, totalPaginas, tamanhoPagina, set
   );
 }
 
-function RecountsPanel({counts, inventories, role, currentUser, goto, onDeleteCount, onToggleUrgente, onToggleLiberarOriginal, onEditarMotivoObservacao, operadorVeValoresRecontagem}){
+function RecountsPanel({counts, inventories, role, currentUser, users, goto, onDeleteCount, onToggleUrgente, onToggleLiberarOriginal, onEditarMotivoObservacao, onAtribuir, operadorVeValoresRecontagem}){
   const canMark = role==='lider' || role==='admin';
   // Escopo AJUSTADO (cliente pediu pra restringir depois de ver o resultado
   // inicial): o quadro Sistema/Físico/Diferença/% fica visível pra QUALQUER
@@ -8792,9 +8812,15 @@ function RecountsPanel({counts, inventories, role, currentUser, goto, onDeleteCo
   // critério já usado no resto do app pra "quem contou", já que a contagem
   // não guarda o id do usuário, só o nome.
   const aguardandoSegundaTudo = counts.filter(c=>c.statusAprovacao==='aguardando_segunda' && !byOriginal[c.id]);
-  const aguardandoSegunda = role==='operador'
+  const aguardandoSegundaSemOriginal = role==='operador'
     ? aguardandoSegundaTudo.filter(c => c.usuario!==currentUser.nome || c.recontagemLiberadaParaOriginal)
     : aguardandoSegundaTudo;
+  // Pedido do cliente ("itens de recontagem eu também gostaria de ter a
+  // opção de atribuir, seguindo a mesma linha") — mesma regra de
+  // `inventariosPendentesVisiveis`, reaproveitando `filtrarPorAtribuicao`:
+  // operador com QUALQUER recontagem atribuída especificamente a ele vê SÓ
+  // essa(s), escondendo o resto até concluir.
+  const { lista: aguardandoSegunda, restrito: modoRestritoAtribuicao } = filtrarPorAtribuicao(aguardandoSegundaSemOriginal, role, currentUser ? currentUser.nome : null);
 
   // Filtro de período ("Filtros"), mesmo componente já usado em Indicadores/
   // Contagens Concluídas. Essa tela já teve um filtro de período antes,
@@ -8882,6 +8908,25 @@ function RecountsPanel({counts, inventories, role, currentUser, goto, onDeleteCo
     if(!res || !res.ok) setLiberarErro(prev=>({...prev, [c.id]: (res && res.erro) || 'Não foi possível salvar — tente novamente.'}));
   }
 
+  // "Atribuir a..." — mesmo padrão inline (seletor + confirmar) já usado em
+  // InventoryList, aqui no nível da contagem individual.
+  const [atribuirAbertoId, setAtribuirAbertoId] = useState(null);
+  const [atribuirValor, setAtribuirValor] = useState('');
+  const [atribuindo, setAtribuindo] = useState(false);
+  const [erroAtribuir, setErroAtribuir] = useState({});
+  const operadores = (users||[]).filter(u=>u.perfil==='operador');
+  async function handleConfirmAtribuir(countId){
+    setAtribuindo(true);
+    setErroAtribuir(prev=>({...prev, [countId]: null}));
+    const res = await onAtribuir(countId, atribuirValor || null);
+    setAtribuindo(false);
+    if(res && res.ok){
+      setAtribuirAbertoId(null);
+    } else {
+      setErroAtribuir(prev=>({...prev, [countId]: (res && res.erro) || 'Não foi possível salvar — tente novamente.'}));
+    }
+  }
+
   // Editar motivo/observação — opção nova no menu "⋮", pedido do cliente
   // (nunca existiu antes: esses campos nascem vazios em toda contagem ao
   // vivo desde que a captura foi tirada da tela de contagem). Nunca é
@@ -8954,6 +8999,11 @@ function RecountsPanel({counts, inventories, role, currentUser, goto, onDeleteCo
 
   return (
     <div>
+      {modoRestritoAtribuicao && (
+        <div className="role-note" style={{marginBottom:14}}>
+          <Ic>🎯</Ic> Você tem {aguardandoSegunda.length===1 ? 'uma recontagem atribuída' : `${aguardandoSegunda.length} recontagens atribuídas`} especificamente a você — as demais ficam ocultas até você concluir {aguardandoSegunda.length===1 ? 'esta' : 'estas'}.
+        </div>
+      )}
       <TrendFilterBar
         trendFilter={trendFilter}
         setTrendFilter={setTrendFilter}
@@ -9022,6 +9072,9 @@ function RecountsPanel({counts, inventories, role, currentUser, goto, onDeleteCo
                         {canMark && (
                           <button type="button" onClick={()=>abrirEdicaoMotivo(c)}><DIcon name="edit" size={16}/> Editar motivo/observação</button>
                         )}
+                        {canMark && operadores.length>0 && (
+                          <button type="button" onClick={()=>{ setAtribuirValor(c.atribuidoA || ''); setAtribuirAbertoId(c.id); setMenuAbertoId(null); }}><Ic>🎯</Ic> {c.atribuidoA ? 'Trocar atribuição' : 'Atribuir a...'}</button>
+                        )}
                         {onDeleteCount && (
                           <button type="button" className="menu-item-danger" onClick={()=>{ setConfirmDeleteId(c.id); setMenuAbertoId(null); }}><Ic>🗑</Ic> Excluir contagem</button>
                         )}
@@ -9031,6 +9084,9 @@ function RecountsPanel({counts, inventories, role, currentUser, goto, onDeleteCo
                 )}
               </div>
             </div>
+            {c.atribuidoA && (
+              <div style={{fontSize:'var(--text-xs)',color:'var(--safety)',fontWeight:700,marginBottom:6}}><Ic>🎯</Ic> Atribuído a: {c.atribuidoA}</div>
+            )}
             <div className="count-card-toprow">
               <div className="count-card-title">
                 <div className="item-code">{c.productCode}</div>
@@ -9083,6 +9139,21 @@ function RecountsPanel({counts, inventories, role, currentUser, goto, onDeleteCo
                 <div className="btn-row">
                   <button className="btn btn-secondary" disabled={excluindo} onClick={()=>{setConfirmDeleteId(null); setErroExclusao('');}}>Cancelar</button>
                   <button className="btn btn-danger" disabled={excluindo} onClick={()=>handleConfirmDelete(c.id)}>{excluindo ? 'Excluindo…' : 'Confirmar exclusão'}</button>
+                </div>
+              </div>
+            ) : atribuirAbertoId===c.id ? (
+              <div className="count-card-actions">
+                <div className="field" style={{marginBottom:10}}>
+                  <label>Atribuir esta recontagem a um operador</label>
+                  <select value={atribuirValor} onChange={e=>setAtribuirValor(e.target.value)}>
+                    <option value="">Nenhum (aberto pra qualquer operador)</option>
+                    {operadores.map(u=>(<option key={u.id} value={u.nome}>{u.nome}</option>))}
+                  </select>
+                </div>
+                {erroAtribuir[c.id] && <div className="divergence-alert" style={{marginBottom:10}}><Ic>⚠</Ic><span>{erroAtribuir[c.id]}</span></div>}
+                <div className="btn-row">
+                  <button className="btn btn-secondary" disabled={atribuindo} onClick={()=>{ setAtribuirAbertoId(null); setErroAtribuir(prev=>({...prev, [c.id]:null})); }}>Cancelar</button>
+                  <button className="btn btn-primary" disabled={atribuindo} onClick={()=>handleConfirmAtribuir(c.id)}>{atribuindo ? 'Salvando…' : 'Confirmar'}</button>
                 </div>
               </div>
             ) : (
