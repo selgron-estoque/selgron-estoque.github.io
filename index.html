@@ -1188,8 +1188,10 @@ function sincronizarAuthRealtime(session){
 // CLAUDE.md "Remoção do cache local de 300 SKUs"). Enriquece com saldo
 // (estoque_saldo) e endereço (estoque_enderecos/enderecos) quando existirem;
 // sem saldo carregado ainda pro código, o produto sintético monta com
-// saldoSistema:null — CountStep já sabe tratar isso como "sem saldo pra
-// comparar" (ver hasSaldoLocal).
+// saldoSistema:0 (tratado como saldo real zero, ver CLAUDE.md "Item sem
+// saldo passa a ser tratado como saldo real 0") — CountStep (hasSaldoLocal)
+// entra na comparação normal em vez de cair no aviso "sem saldo pra
+// comparar".
 //
 // `almoxarifado` (obrigatório na prática — `ManualCountFlow` sempre pede
 // pra escolher o armazém antes de liberar a busca) filtra o saldo pro
@@ -1255,11 +1257,11 @@ async function searchSupabaseCatalog(query, almoxarifado){
       almoxarifado: almoxarifado || '—',
       corredor: null,
       rua: null,
-      // Sem saldo pra ESTE armazém específico = sem saldo pra comparar (não
-      // é o mesmo que "código não existe no catálogo") — CountStep trata os
-      // dois casos igual (hasSaldoLocal), mas aqui é importante não fingir
-      // um saldo de outro armazém.
-      saldoSistema: Object.prototype.hasOwnProperty.call(saldoPorCodigo, row.codigo) ? saldoPorCodigo[row.codigo] : null,
+      // Sem saldo pra ESTE armazém específico — pedido do cliente pra
+      // tratar como saldo real 0 em vez de "sem comparação" (ver mesma
+      // decisão em estoqueRowToProduct) — não é fingir o saldo de outro
+      // armazém, é assumir 0 quando não há nenhum dado carregado pra este.
+      saldoSistema: Object.prototype.hasOwnProperty.call(saldoPorCodigo, row.codigo) ? saldoPorCodigo[row.codigo] : 0,
       custoUnit: 0,
       valorFinanceiro: 0,
       semMovimentoRecente: false,
@@ -2905,12 +2907,16 @@ async function limparSeedsHistoricoDesatualizados(linhas, onProgress){
 // real), já que nem `estoque_saldo` nem `produtos` guardam custo unitário
 // direto.
 function estoqueRowToProduct(row){
-  // row.saldo pode ser null (código sem NENHUMA linha em estoque_saldo — não
-  // sabemos o saldo) vs. 0 (linha existe, saldo real é zero) — os dois casos
-  // são diferentes pra CountStep (hasSaldoLocal checa `typeof===number`),
-  // então null tem que continuar null, nunca virar 0 por engano.
+  // Pedido do cliente: item sem saldo carregado (nenhuma linha em
+  // estoque_saldo, ou ambíguo entre mais de um armazém) deve ser TRATADO como
+  // saldo real 0, não ficar "sem comparação" (null) — CountStep (hasSaldoLocal
+  // checa `typeof===number`) passa a considerar esses itens normalmente:
+  // entram na comparação/classificação de divergência em vez de cair no
+  // aviso "sem saldo pra comparar". custoUnit continua 0 nesse caso (não tem
+  // como saber o custo sem saldo real) — classifyDivergenceSemCusto já cobre
+  // esse caso mandando qualquer diferença de quantidade pra análise do líder.
   const temSaldo = row.saldo!=null;
-  const saldo = temSaldo ? Number(row.saldo) : null;
+  const saldo = temSaldo ? Number(row.saldo) : 0;
   const valorFinanceiro = Number(row.valor_financeiro||0);
   return {
     codigo: row.codigo,
@@ -7458,7 +7464,14 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   // todo mundo — não há nada sensível a esconder nesse caso.
   const mostrarSaldo = hasSaldoLocal && (user.perfil !== 'operador' || operadorVeSaldo);
   const diffAbs = (qty!=='' && hasSaldoLocal) ? Number(qty) - product.saldoSistema : 0;
-  const diffPct = (qty!=='' && hasSaldoLocal) ? (product.saldoSistema===0 ? 100 : (diffAbs/product.saldoSistema)*100) : 0;
+  // Sistema=0 e diferença=0 (contagem bateu, 0 físico = 0 sistema) tem que
+  // mostrar 0%, não 100% — bug real exposto com mais frequência depois de
+  // "item sem saldo passa a ser tratado como saldo real 0" (ver CLAUDE.md),
+  // já que agora qualquer item sem saldo carregado usa este ramo. Só quando
+  // há diferença de verdade (diffAbs!==0) com sistema=0 é que a divisão por
+  // zero precisa do valor sentinela 100% (não dá pra calcular um percentual
+  // real de "quanto a mais que zero").
+  const diffPct = (qty!=='' && hasSaldoLocal) ? (product.saldoSistema===0 ? (diffAbs===0 ? 0 : 100) : (diffAbs/product.saldoSistema)*100) : 0;
   // `diffValor` (R$) é o que decide a classificação agora, não mais
   // `diffPct` — ver `classifyDivergence`. `diffPct`/`percentual` continuam
   // calculados e salvos na contagem (usados em indicadores/tendência
@@ -8259,9 +8272,10 @@ function ImportedListCountFlow({inv, user, onRegisterCount, onFinish, onAddressP
         }
         // código não está no catálogo — monta o item a partir do que a
         // própria planilha trouxe (fallback documentado no CLAUDE.md). A
-        // coluna "Sistema" da planilha (item.saldoSistema) é o que permite
-        // comparar o saldo mesmo assim — sem ela, fica null e a contagem vai
-        // sem comparação automática para revisão do líder.
+        // coluna "Sistema" da planilha (item.saldoSistema) prevalece quando
+        // informada; sem ela, trata como saldo real 0 (pedido do cliente,
+        // mesma decisão de estoqueRowToProduct/searchSupabaseCatalog) em vez
+        // de deixar sem comparação automática.
         return {
           codigo: item.codigo,
           descricao: item.descricao || item.codigo,
@@ -8272,7 +8286,7 @@ function ImportedListCountFlow({inv, user, onRegisterCount, onFinish, onAddressP
           almoxarifado: item.almoxarifado || (inv ? inv.almoxarifado : '—'),
           corredor: null,
           rua: null,
-          saldoSistema: item.saldoSistema,
+          saldoSistema: item.saldoSistema!=null ? item.saldoSistema : 0,
           custoUnit: 0,
           valorFinanceiro: 0,
           semMovimentoRecente: false,
@@ -8373,7 +8387,10 @@ function RecountFlow({original, user, onFinish, onAddressProposed, operadorVeSal
         almoxarifado: original.almoxarifado || '—',
         corredor: null,
         rua: null,
-        saldoSistema: original.saldoSistema,
+        // Saldo real 0 quando a contagem original também não tinha (pedido
+        // do cliente, mesma decisão de estoqueRowToProduct) — contagens
+        // antigas gravadas antes dessa mudança ainda podem trazer null aqui.
+        saldoSistema: original.saldoSistema!=null ? original.saldoSistema : 0,
         custoUnit: 0,
         valorFinanceiro: 0,
         semMovimentoRecente: false,
@@ -11179,15 +11196,14 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   // (`dataInicioStr`/`dataFimStr`, já calculado nesta função pra alimentar
   // os gráficos semanais) — item sem `data` fica de fora do filtro, mesmo
   // critério já usado em "Contagens Concluídas"/"Itens Divergentes". Cortado
-  // em Top 10 (cliente pediu explicitamente esse número, depois de aprovar
-  // o corte em Top 5 — mesma ideia, só o limite mudou) — antes mostrava
-  // TODAS as famílias sem limite, o que deixava o painel desproporcionalmente
-  // mais alto que os vizinhos de tamanho fixo
+  // em Top 5 (cliente experimentou Top 10 numa rodada anterior e voltou pra
+  // Top 5) — antes mostrava TODAS as famílias sem limite, o que deixava o
+  // painel desproporcionalmente mais alto que os vizinhos de tamanho fixo
   // no mesmo grid (ex.: "Acuracidade Mensal").
   const divergentesNoPeriodo = divergentes.filter(c=>c.data && c.data>=dataInicioStr && c.data<=dataFimStr);
   const porFamiliaObj = {};
   divergentesNoPeriodo.forEach(c=>{ if(c.familia) porFamiliaObj[c.familia] = (porFamiliaObj[c.familia]||0)+1; });
-  const porFamilia = Object.entries(porFamiliaObj).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  const porFamilia = Object.entries(porFamiliaObj).sort((a,b)=>b[1]-a[1]).slice(0,5);
   const maxFamilia = Math.max(1, ...porFamilia.map(([,n])=>n));
 
   return (
@@ -11313,7 +11329,7 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
               <MonthlyAccuracyBarChart months={monthlyStats} meta={META_ACURACIDADE_SEMANAL} />
             </div>
             <div className="panel" style={{margin:0}}>
-              <div style={{fontSize:'var(--text-sm)',fontWeight:700,marginBottom:16}}>Divergência por Família/Grupo (Top 10)</div>
+              <div style={{fontSize:'var(--text-sm)',fontWeight:700,marginBottom:16}}>Divergência por Família/Grupo (Top 5)</div>
               {porFamilia.length===0 ? (
                 <div style={{color:'var(--ink-dim)',fontSize:'var(--text-sm)'}}>
                   Ainda sem dado suficiente pra esse indicador — a família/grupo do produto

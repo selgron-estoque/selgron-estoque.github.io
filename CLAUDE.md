@@ -10330,3 +10330,141 @@ não em qualquer item.
   a cargo do cliente** — mesma limitação de sempre (sandbox sem rede) — mas
   não depende de nenhuma migração de SQL, só recarregar a página já deve
   mostrar as datas certas na próxima busca manual.
+
+## Investigação de "000.65158 tem movimentação mas mostra sem registro" — não é bug, item sem saldo carregado
+
+Depois da correção acima, o cliente deu um exemplo concreto (`000.65158`) que
+continuava mostrando "Sem registro de movimentação" mesmo já com a correção
+publicada. Investigação em 3 passos, cada um confirmado com consulta SQL do
+próprio cliente (sandbox sem rede, não dá pra consultar o Supabase real
+diretamente):
+
+1. **A coluna `contagens.ultima_saida` já existe** no `backend/schema.sql`
+   (definição da tabela + `alter table ... add column if not exists`) e o
+   cliente confirmou (`select column_name from information_schema.columns
+   where table_name='contagens' and column_name='ultima_saida'`) que ela já
+   existe no projeto real — não era coluna faltando.
+2. **A contagem específica do item** (`select * from contagens where
+   produto_codigo='000.65158'`) veio com `ultima_saida: null` **e**
+   `almoxarifado: null` — os dois juntos apontam pra uma causa específica:
+   `CountStep.finalize()` só grava `null` em `almoxarifado` quando
+   `product.almoxarifado` era exatamente `'—'` (placeholder), o que só
+   acontece quando o código não tinha NENHUMA linha em `estoque_saldo` no
+   momento da contagem (`fetchProdutosByCodigos`/`estoqueRowToProduct`).
+3. **Confirmado com o cliente, em duas consultas**: `select * from
+   estoque_saldo where produto_codigo='000.65158'` veio vazia; e uma segunda
+   consulta com `regexp_replace(produto_codigo,'[^0-9]','','g')` (compara só
+   os dígitos, ignorando pontuação — descarta a hipótese de bug de
+   formatação de código, recorrente neste projeto) também veio vazia.
+
+**Conclusão**: não é bug nenhum — o item genuinamente não tem NENHUM saldo
+carregado no Supabase (em nenhum armazém, com nenhuma formatação de código).
+O app está correto ao avisar "sem registro" porque não há dado nenhum pra
+mostrar. A causa real está na origem: ou a planilha SB2 de saldo que já foi
+subida não tinha esse código, ou existe uma planilha mais nova (com esse item
+já com movimentação) que ainda não foi subida em Configurações. Nenhuma
+mudança de código foi feita por essa investigação.
+
+## Item sem saldo passa a ser tratado como saldo real 0 (não mais "sem comparação")
+
+Na sequência da investigação acima, o cliente pediu mais um passo: "tem uns
+itens sem saldo retornando apenas `-` em vez de um valor real, preciso que
+corrija para retornar um valor numérico nem que seja um zero". Perguntado via
+`AskUserQuestion` (2 perguntas) — confirmado que isso deveria acontecer nas 3
+telas de listagem de contagem (Recontagens/Itens Divergentes/Concluídas) **e**
+que a mudança deveria ser de comportamento de verdade, não só de exibição: o
+item passa a ENTRAR na comparação/classificação de divergência normalmente
+(como se o sistema tivesse 0 em estoque), em vez de cair no aviso "sem saldo
+pra comparar".
+
+- **Um único ponto de decisão controla isso**: `hasSaldoLocal = typeof
+  product.saldoSistema === 'number'`, dentro de `CountStep` — com
+  `saldoSistema` deixando de ser `null` e virando sempre um número (0 quando
+  não há dado), `hasSaldoLocal` passa a ser `true` sozinho, sem precisar
+  mexer em mais nada da regra de negócio (`classifyDivergence`/
+  `classifyDivergenceSemCusto`/`computeStatus` continuam exatamente como
+  estavam — só passam a RODAR pra esses itens, em vez de serem puladas).
+- **4 pontos de origem corrigidos** (todos os lugares que hoje montam
+  `saldoSistema: null` quando não há linha de `estoque_saldo` — ou
+  ambígua entre mais de um armazém, ou nenhuma):
+  - `estoqueRowToProduct` (usada por `fetchProdutosByCodigos`/
+    `fetchContagemItensPrioritarios`) — `const saldo = temSaldo ?
+    Number(row.saldo) : 0` (era `: null`). Esse é o ponto raiz — cobre a
+    maioria dos fluxos de contagem (Aleatória/Curva ABC/Rota/Grupo/Lista
+    Importada/Itens Específicos/Recontagem quando o código está no
+    catálogo).
+  - `searchSupabaseCatalog` (Nova Contagem avulsa) — mesmo fallback, `: 0`
+    em vez de `: null`.
+  - `ImportedListCountFlow` (fallback sintético quando o código NÃO está no
+    catálogo) — `saldoSistema: item.saldoSistema!=null ? item.saldoSistema
+    : 0` — a coluna "Sistema" da própria planilha importada continua
+    prevalecendo quando informada (mesma prioridade de sempre), só o
+    fallback final virou 0 em vez de `null`.
+  - `RecountFlow` (mesmo tipo de fallback, quando recontando um item fora do
+    catálogo) — mesmo padrão, herda `original.saldoSistema` ou cai pra 0.
+  - **Deliberadamente NÃO tocado**: `parseImportedListRows` (o parser que lê
+    a coluna "Sistema" da planilha de Lista Importada/Itens Específicos) —
+    o `null` ali tem um significado DIFERENTE e importante de preservar:
+    "a planilha não trouxe valor pra este item, então usa o que o catálogo
+    já sabe" (`ImportedListCountFlow` só sobrescreve o catálogo quando
+    `item.saldoSistema!=null`). Se esse `null` virasse 0 também, qualquer
+    item sem "Sistema" preenchido na planilha passaria a SOBRESCREVER um
+    saldo real do catálogo com um zero falso — perda de dado real, não
+    corrigido.
+- **Bug real exposto (e corrigido) durante o teste**: a proteção contra
+  divisão por zero em `diffPct` (`product.saldoSistema===0 ? 100 :
+  (diffAbs/product.saldoSistema)*100`) forçava 100% incondicionalmente
+  sempre que `saldoSistema` era 0 — mesmo quando a contagem bateu exatamente
+  (`diffAbs===0`, contando 0 unidades de um item sem saldo). Isso já existia
+  antes desta mudança (pra um item com saldo REAL confirmado igual a zero),
+  mas ficou muito mais visível agora que todo item "sem saldo" passa por
+  esse caminho. Corrigido para `product.saldoSistema===0 ? (diffAbs===0 ? 0
+  : 100) : ...` — só usa o valor sentinela de 100% quando existe uma
+  diferença de verdade a ser expressa; contagem que bateu mostra 0%, não
+  100%.
+- **Efeitos colaterais identificados e aceitos, documentados aqui pra não
+  surpreender depois**:
+  - Contando exatamente **0 unidades** de um item sem saldo agora **aprova
+    automaticamente** (`aprovado_auto`) — antes, `!hasSaldoLocal` sempre
+    forçava `aguardando_analise_lider`, mesmo pra contagem zero. Contando
+    qualquer quantidade **diferente de 0**, o destino continua o MESMO de
+    antes (`aguardando_analise_lider`, via `classifyDivergenceSemCusto` —
+    custo continua desconhecido nesses itens, então qualquer diferença de
+    quantidade ainda vai direto pro líder).
+  - Nas 3 telas de listagem, o quadro Sistema/Diferença/% desses itens
+    passa a mostrar números reais (ex.: "Sistema: 0") em vez de "-" — os
+    `.result-grid`/`.rg` já tinham a lógica `c.saldoSistema==null ? '-' :
+    ...` pronta pros dois casos, então nenhuma tela precisou de mudança de
+    exibição, só a origem do dado parou de ser `null`.
+  - O filtro de severidade (`classifySeverity4`/`severidadeDe`, baseado em
+    `percentual==null` pra decidir a categoria "Sem saldo") deixa de
+    classificar esses itens como "Sem saldo" — como `valorDivergente`
+    continua 0 (custo desconhecido, `diffValor = diferença × custoUnit =
+    diferença × 0 = 0`), eles caem na faixa "Baixa" (R$0-100) do filtro de
+    severidade daqui pra frente.
+  - Contagens JÁ SALVAS antes desta mudança continuam com `saldoSistema:
+    null` no banco (não há como voltar no tempo) — só contagens NOVAS (a
+    partir do próximo deploy) vêm com o valor 0 já embutido.
+- Testado via harness Node (mesma técnica de sempre — carrega o arquivo
+  transpilado numa `vm.Script`): `estoqueRowToProduct` com `saldo:null`
+  agora retorna `saldoSistema:0`/`custoUnit:0` (era `null`); `saldo:0` real
+  continua `0` (sem regressão); `saldo:15` real continua `15`/`custoUnit`
+  calculado certo (sem regressão); `searchSupabaseCatalog` sem linha de
+  `estoque_saldo` retorna `saldoSistema:0` em vez de `null`;
+  `classifyDivergence`/`computeStatus` sem mudança. Réplica isolada da
+  lógica de `CountStep` (mesma fórmula usada em produção) confirmando: item
+  sem saldo contando 0 → 0%/`aprovado_auto`; item sem saldo contando 12 →
+  100%/`aguardando_analise_lider` (mesmo destino de antes); item com saldo
+  real 15 contando 15/10 → sem mudança de comportamento. Transpile Babel do
+  arquivo inteiro e balanceamento de chaves do CSS conferidos (641/641, sem
+  mudança — só JS, nenhuma classe CSS tocada). **Verificação visual/
+  funcional de ponta a ponta fica a cargo do cliente** — mesma limitação de
+  sempre (login exige Supabase Auth real, não simulável no sandbox sem
+  rede).
+
+## "Divergência por Família/Grupo" volta de Top 10 pra Top 5
+
+Cliente pediu de volta o corte em Top 5 (tinha experimentado Top 10 numa
+rodada anterior, ver "Indicador de 'Divergência por Família/Grupo'..." mais
+acima) — só troca de `.slice(0,10)` pra `.slice(0,5)` e o título "(Top 10)"
+→ "(Top 5)", sem nenhuma outra mudança.
