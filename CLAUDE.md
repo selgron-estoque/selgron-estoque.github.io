@@ -10587,3 +10587,9 @@ com físico 0 e sistema 3); agora, "100%" é que significa "bateu exato", e
   conferidos (641/641, sem mudança — só JS). **Verificação visual de ponta
   a ponta fica a cargo do cliente** — mesma limitação de sempre (login
   exige Supabase Auth real, não simulável no sandbox sem rede).
+
+## Ícone de "Nova Contagem" na Sidebar vira "+"
+
+Cliente achou que fazia mais sentido — troca só o ícone (`ic:'search'` →
+`ic:'plus'`, já existia em `DICON_PATHS`) do item `pickCountType` em
+`buildSidebarGroups`, sem nenhuma outra mudança.

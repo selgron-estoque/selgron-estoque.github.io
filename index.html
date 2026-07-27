@@ -5676,7 +5676,7 @@ function buildSidebarGroups(user){
   const homeItems = podeVer('home') ? [{id:'home', ic:'home', label:'Início'}] : [];
   const contagemItems = [
     ...(podeVer('inventories') ? [{id:'inventories', ic:'box', label:'Inventários'}] : []),
-    ...(podeVer('pickCountType') ? [{id:'pickCountType', ic:'search', label:'Nova Contagem'}] : []),
+    ...(podeVer('pickCountType') ? [{id:'pickCountType', ic:'plus', label:'Nova Contagem'}] : []),
     ...(podeVer('recounts') ? [{id:'recounts', ic:'repeat', label:'Recontagens'}] : []),
     ...(podeVer('divergentes') ? [{id:'divergentes', ic:'alertTriangle', label:'Itens Divergentes'}] : []),
     ...(podeVer('aprovacaoDiretoria') ? [{id:'aprovacaoDiretoria', ic:'clipboardList', label:'Aprovação de Ajustes'}] : []),
