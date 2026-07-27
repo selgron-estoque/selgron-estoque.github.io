@@ -10918,3 +10918,56 @@ por qualquer um desses 3 fluxos.
   mudança — nenhuma classe CSS nova, só JS/props). **Verificação visual de
   ponta a ponta fica a cargo do cliente** — mesma limitação de sempre
   (login exige Supabase Auth real, não simulável no sandbox sem rede).
+
+## Busca por operador em Recontagens/Itens Divergentes/Aprovação de Ajustes/Contagens Concluídas
+
+Cliente pediu, apontando os 4 itens do menu (Recontagens/Itens Divergentes/
+Aprovação de Ajustes/Contagens Concluídas): "quero que tenha a opção de eu
+pesquisar a contagem por operador". As 4 telas já tinham um campo de busca
+único (`SearchWithScanner`), filtrando por código/descrição — estendido pra
+também aceitar o nome do operador, sem criar um campo/filtro novo (mesmo
+padrão de "um campo só, várias colunas" já usado no resto do app).
+
+- **`RecountsPanel`/`DivergentItemsPanel`/`DiretoriaApprovalPanel`**: o
+  `porBusca` de cada uma ganhou `|| (c.usuario||'').toLowerCase().includes(buscaNorm)`
+  — mesmo critério case-insensitive de sempre, sem normalização de acento.
+- **`ConcludedCountsPanel`**: diferente das outras 3 (que filtram contagens
+  individuais), esta filtra CADEIAS (`cd.tip`/`cd.rodadas` — o "tip" é só a
+  rodada final, mas uma cadeia pode ter operadores DIFERENTES em rodadas
+  diferentes, ex. 1ª contagem por um operador, recontagem por outro). A
+  busca por operador aqui checa `cd.rodadas.some(r=>...)` — QUALQUER rodada
+  da cadeia, não só a final — senão buscar pelo operador da 1ª contagem
+  não encontraria uma cadeia já recontada por outra pessoa.
+- **Placeholder do campo atualizado** nas 4 telas, pra deixar a capacidade
+  nova descoberta ("Código, descrição ou operador" / "Código, descrição,
+  operador ou nº da SA" em Contagens Concluídas, que já buscava por SA) —
+  sem mudar o rótulo fixo "Buscar item" do componente `SearchWithScanner`
+  em si (compartilhado, sem prop de label).
+- **`TodayCountsPanel`** ("Contagens de Hoje", destino do KPI "Contagens
+  Concluídas Hoje" na Home) tem seu próprio `SearchWithScanner`, mas ficou
+  de fora — o cliente apontou especificamente os 4 itens do menu no print,
+  não essa tela.
+- **Achado no processo, sem relação com a funcionalidade em si**: o bug de
+  reversão do ambiente (já documentado várias vezes nesta sessão — o
+  checkout local de `/home/user/selgron-estoque.github.io` volta sozinho pra
+  um commit antigo, `cb6142c`, revertendo dezenas de commits só localmente)
+  aconteceu de novo DURANTE esta tarefa — pego a tempo (o resultado do
+  transpile Babel ficou ~60KB menor que o esperado, um sinal de alerta que
+  levou a checar `git log` na hora) antes de eu confirmar/documentar
+  qualquer coisa incorreta. Recuperado com o mesmo procedimento de sempre:
+  `git diff` pra salvar as mudanças pendentes num patch, `git fetch`+`git
+  reset --hard github-pat/main` pra restaurar o estado real (que nunca foi
+  perdido, já que sempre commito e dou push imediatamente depois de cada
+  mudança), e `git apply` do patch de volta em cima do estado correto —
+  confirmado que aplicou exatamente nos mesmos 4 pontos, sem conflito.
+- Testado via harness real (jsdom + react-dom/client + `act()`, mesma
+  técnica rigorosa de sempre — carrega o `index.html` inteiro transpilado
+  numa `vm.Script`): em `RecountsPanel`, 2 itens de operadores diferentes —
+  buscar pelo nome de um esconde o outro; em `ConcludedCountsPanel`, uma
+  cadeia de 2 rodadas com operadores diferentes — buscar pelo operador da
+  1ª rodada (não a rodada final/"tip") encontra a cadeia normalmente.
+  Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  conferidos (638/638, sem mudança — nenhuma classe CSS nova, só lógica de
+  filtro/texto). **Verificação visual de ponta a ponta fica a cargo do
+  cliente** — mesma limitação de sempre (login exige Supabase Auth real,
+  não simulável no sandbox sem rede).

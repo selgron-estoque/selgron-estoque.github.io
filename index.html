@@ -8743,7 +8743,7 @@ function RecountsPanel({counts, inventories, role, currentUser, goto, onDeleteCo
   const [busca, setBusca] = useState('');
   const buscaNorm = busca.trim().toLowerCase();
   const porBusca = buscaNorm
-    ? aguardandoSegundaNoPeriodo.filter(c => c.productCode.toLowerCase().includes(buscaNorm) || (c.descricao||'').toLowerCase().includes(buscaNorm))
+    ? aguardandoSegundaNoPeriodo.filter(c => c.productCode.toLowerCase().includes(buscaNorm) || (c.descricao||'').toLowerCase().includes(buscaNorm) || (c.usuario||'').toLowerCase().includes(buscaNorm))
     : aguardandoSegundaNoPeriodo;
 
   const [severidade, setSeveridade] = useState('todos');
@@ -8878,7 +8878,7 @@ function RecountsPanel({counts, inventories, role, currentUser, goto, onDeleteCo
         subtitle="Selecione o período para filtrar a fila de recontagem"
       />
 
-      <SearchWithScanner value={busca} onChange={setBusca} placeholder="Buscar por código ou descrição do material" />
+      <SearchWithScanner value={busca} onChange={setBusca} placeholder="Código, descrição ou operador" />
 
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8,marginBottom:10}}>
         <span style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>
@@ -9107,7 +9107,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSend
   const [busca, setBusca] = useState('');
   const buscaNorm = busca.trim().toLowerCase();
   const porBusca = buscaNorm
-    ? aguardandoAnaliseNoPeriodo.filter(c => c.productCode.toLowerCase().includes(buscaNorm) || (c.descricao||'').toLowerCase().includes(buscaNorm))
+    ? aguardandoAnaliseNoPeriodo.filter(c => c.productCode.toLowerCase().includes(buscaNorm) || (c.descricao||'').toLowerCase().includes(buscaNorm) || (c.usuario||'').toLowerCase().includes(buscaNorm))
     : aguardandoAnaliseNoPeriodo;
 
   const [severidade, setSeveridade] = useState('todos');
@@ -9193,7 +9193,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSend
         subtitle="Selecione o período para filtrar as divergências pendentes"
       />
 
-      <SearchWithScanner value={busca} onChange={setBusca} placeholder="Código ou descrição do material" />
+      <SearchWithScanner value={busca} onChange={setBusca} placeholder="Código, descrição ou operador" />
 
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8,marginBottom:10}}>
         <span style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>
@@ -9405,7 +9405,7 @@ function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejec
   const [busca, setBusca] = useState('');
   const buscaNorm = busca.trim().toLowerCase();
   const porBusca = buscaNorm
-    ? aguardandoDiretoriaNoPeriodo.filter(c => c.productCode.toLowerCase().includes(buscaNorm) || (c.descricao||'').toLowerCase().includes(buscaNorm))
+    ? aguardandoDiretoriaNoPeriodo.filter(c => c.productCode.toLowerCase().includes(buscaNorm) || (c.descricao||'').toLowerCase().includes(buscaNorm) || (c.usuario||'').toLowerCase().includes(buscaNorm))
     : aguardandoDiretoriaNoPeriodo;
 
   const [severidade, setSeveridade] = useState('todos');
@@ -9482,7 +9482,7 @@ function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejec
         subtitle="Selecione o período para filtrar as SAs aguardando aprovação"
       />
 
-      <SearchWithScanner value={busca} onChange={setBusca} placeholder="Código ou descrição do material" />
+      <SearchWithScanner value={busca} onChange={setBusca} placeholder="Código, descrição ou operador" />
 
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8,marginBottom:10}}>
         <span style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>
@@ -9974,7 +9974,7 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
   // ajuste específico foi feito.
   const buscaNorm = busca.trim().toLowerCase();
   const cadeiasPorBusca = buscaNorm
-    ? cadeiasNoPeriodo.filter(cd => cd.tip.productCode.toLowerCase().includes(buscaNorm) || (cd.tip.descricao||'').toLowerCase().includes(buscaNorm) || (cd.tip.solicitacaoAjuste||'').toLowerCase().includes(buscaNorm))
+    ? cadeiasNoPeriodo.filter(cd => cd.tip.productCode.toLowerCase().includes(buscaNorm) || (cd.tip.descricao||'').toLowerCase().includes(buscaNorm) || (cd.tip.solicitacaoAjuste||'').toLowerCase().includes(buscaNorm) || cd.rodadas.some(r=>(r.usuario||'').toLowerCase().includes(buscaNorm)))
     : cadeiasNoPeriodo;
 
   const [severidade, setSeveridade] = useState('todos');
@@ -10000,7 +10000,7 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
         subtitle="Selecione o período para filtrar as contagens concluídas"
       />
 
-      <SearchWithScanner value={busca} onChange={setBusca} placeholder="Código, descrição ou nº da SA" />
+      <SearchWithScanner value={busca} onChange={setBusca} placeholder="Código, descrição, operador ou nº da SA" />
 
       <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
         <SeverityFilterRow counts={cadeiasPorBusca.map(cd=>cd.tip)} value={severidade} onChange={setSeveridade} />
