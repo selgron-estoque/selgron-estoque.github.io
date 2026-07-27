@@ -10468,3 +10468,12 @@ Cliente pediu de volta o corte em Top 5 (tinha experimentado Top 10 numa
 rodada anterior, ver "Indicador de 'Divergência por Família/Grupo'..." mais
 acima) — só troca de `.slice(0,10)` pra `.slice(0,5)` e o título "(Top 10)"
 → "(Top 5)", sem nenhuma outra mudança.
+
+## "Divergência por Família/Grupo" ajustado de Top 5 pra Top 7
+
+Mais um ajuste de número (3ª rodada — já foi Top 10, depois Top 5, agora
+Top 7) — só troca de `.slice(0,5)` pra `.slice(0,7)` e o título "(Top 5)"
+→ "(Top 7)", sem nenhuma outra mudança. Cuidado tomado ao editar: existe
+outro painel do Dashboard, "Top 5 Maiores Divergências" (`topDivergentes`,
+componente diferente, lista os itens com maior divergência absoluta em R$,
+não por família/grupo) — continua com 5 fixo, não foi tocado por engano.
