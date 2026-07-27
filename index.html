@@ -527,9 +527,6 @@
   .cs-qty-input.ok{border-color:var(--ok);}
   .cs-qty-input.warn{border-color:var(--warn);}
   .cs-qty-input.danger{border-color:var(--danger);}
-  .cs-shortcuts{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;}
-  .cs-shortcuts button{height:48px;border-radius:12px;border:1px solid var(--line);background:var(--panel-raised);color:var(--ink);font-weight:700;font-size:var(--text-md);font-family:var(--font-mono);}
-  .cs-shortcuts button:active{background:var(--line);}
 
   .cs-compare{border-radius:16px;padding:16px;border:1px solid;}
   .cs-compare.ok{background:var(--ok-bg);border-color:var(--ok);}
@@ -5087,7 +5084,7 @@ function App(){
           return res;
         }} />}
         {view==='randomCount' && <RandomCountFlow inv={flowState} user={currentUser} counts={counts} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} gruposExcluidos={gruposExcluidos} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
-        {view==='manualCount' && <ManualCountFlow user={currentUser} counts={counts} onFinish={(c)=>{registerFinishedCount(c); goto('home');}} onAddressProposed={addAddressProposal} operadorVeSaldo={operadorVeSaldo} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
+        {view==='manualCount' && <ManualCountFlow user={currentUser} counts={counts} onRegisterCount={registerFinishedCount} onAddressProposed={addAddressProposal} operadorVeSaldo={operadorVeSaldo} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
         {view==='routeCount' && <RouteCountFlow inv={flowState} user={currentUser} counts={counts} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} gruposExcluidos={gruposExcluidos} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
         {view==='importedListCount' && <ImportedListCountFlow inv={flowState} user={currentUser} counts={counts} inventories={inventories} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
         {view==='recounts' && hasAccess(currentUser,'recounts') && <RecountsPanel counts={counts} inventories={inventories} role={role} currentUser={currentUser} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onToggleLiberarOriginal={toggleLiberarRecontagemOriginal} onEditarMotivoObservacao={editarMotivoObservacaoContagem} operadorVeValoresRecontagem={operadorVeValoresRecontagem} />}
@@ -7392,10 +7389,6 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
     setItemScanFeedback({ok:bate, text: bate ? 'Código confere com o item em contagem.' : `Código lido (${clean}) não bate com ${product.codigo}.`});
   }
 
-  function bumpQty(n){
-    setQty(prev => String((Number(prev)||0) + n));
-  }
-
   // Calculadora inline — pedido do cliente: itens contados em mais de um
   // lugar (ex: paletes/prateleiras diferentes) exigem somar antes de
   // lançar a quantidade final; em vez de fazer conta de cabeça ou trocar
@@ -7613,7 +7606,15 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   // warn/danger (em vez de frase fixa assumindo sempre a regra por R$) —
   // assim a mensagem fica certa tanto na regra normal quanto na rede de
   // segurança por percentual (item sem custo cadastrado).
-  const feedbackTexto = !hasSaldoLocal
+  // Pedido do cliente: no caso "sem custo cadastrado" especificamente, essa
+  // mensagem some (fica só a cor do card, sem o texto) — o roteamento pra
+  // análise do líder continua acontecendo normalmente por trás
+  // (`classification`/`statusAprovacao` não mudaram), só a frase técnica
+  // deixou de aparecer pro operador durante a contagem.
+  const semCustoCadastrado = hasSaldoLocal && diffAbs!==0 && !custoConhecido;
+  const feedbackTexto = semCustoCadastrado
+    ? null
+    : !hasSaldoLocal
     ? classification.rule
     : classification.level==='ok' ? 'Contagem confere com o sistema.'
     : classification.rule;
@@ -7834,13 +7835,6 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
               <button type="button" className="btn btn-primary" style={{width:'100%',marginTop:10}} onClick={calcUsarValor}>Usar valor na quantidade</button>
             </div>
           )}
-          <div className="cs-shortcuts">
-            <button type="button" onClick={()=>bumpQty(1)}>+1</button>
-            <button type="button" onClick={()=>bumpQty(5)}>+5</button>
-            <button type="button" onClick={()=>bumpQty(10)}>+10</button>
-            <button type="button" onClick={()=>setQty('')}>Limpar</button>
-          </div>
-
           {mostrarSaldo && qty!=='' && (
             <div className={"cs-compare "+classification.level}>
               <div className="cs-compare-grid">
@@ -7848,7 +7842,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
                 <div className="cs-compare-cell"><div className="k">Informado</div><div className="v">{qty}</div></div>
                 <div className="cs-compare-cell"><div className="k">Diferença</div><div className="v">{(diffAbs>0?'+':'')+diffAbs}</div></div>
               </div>
-              <div className="cs-feedback"><span className="cs-dot"></span>{feedbackTexto}</div>
+              {feedbackTexto && <div className="cs-feedback"><span className="cs-dot"></span>{feedbackTexto}</div>}
             </div>
           )}
           {mostrarSaldo===false && hasSaldoLocal && user.perfil==='operador' && qty!=='' && (
@@ -8053,7 +8047,7 @@ function ArmazemGate({onSelected, titulo}){
   );
 }
 
-function ManualCountFlow({user, onFinish, onAddressProposed, counts, operadorVeSaldo, onReservarItem, onLiberarItemReserva}){
+function ManualCountFlow({user, onRegisterCount, onAddressProposed, counts, operadorVeSaldo, onReservarItem, onLiberarItemReserva}){
   // Armazém já nasce pré-selecionado em "1" (Armazém 01, disparado sozinho
   // na esmagadora maioria dos casos reais — ver CLAUDE.md "Cards de estoque
   // no modelo de referência") — pedido do cliente pra reduzir a quantidade
@@ -8100,7 +8094,31 @@ function ManualCountFlow({user, onFinish, onAddressProposed, counts, operadorVeS
   }, [query, armazem]);
 
   if(selected){
-    return <CountStep product={selected} user={user} counts={counts} onAddressProposed={onAddressProposed} onComplete={(c)=>onFinish(c)} expectAddressCheck={true} operadorVeSaldo={operadorVeSaldo} onReservarItem={onReservarItem} onLiberarItemReserva={onLiberarItemReserva} />;
+    // Pedido do cliente: ao confirmar a contagem, volta pra ESTA MESMA tela
+    // de busca/escanear (não navega pra Home) — o operador pode continuar
+    // contando outros itens manualmente em sequência, sem sair do fluxo.
+    // Sair de fato continua possível pelos mesmos caminhos de sempre
+    // (`MobileNavBar`/sidebar) — nenhuma tela de contagem tinha um botão de
+    // "concluir" próprio antes disso.
+    return (
+      <CountStep
+        key={selected.codigo}
+        product={selected}
+        user={user}
+        counts={counts}
+        onAddressProposed={onAddressProposed}
+        onComplete={(c)=>{
+          onRegisterCount(c);
+          setSelected(null);
+          setQuery('');
+          setResults([]);
+        }}
+        expectAddressCheck={true}
+        operadorVeSaldo={operadorVeSaldo}
+        onReservarItem={onReservarItem}
+        onLiberarItemReserva={onLiberarItemReserva}
+      />
+    );
   }
 
   function handleScanDetected(text){

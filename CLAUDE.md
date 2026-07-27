@@ -10759,3 +10759,95 @@ de telas que o operador precisa passar.
   nenhuma classe CSS nova). **Verificação visual de ponta a ponta fica a cargo
   do cliente** — mesma limitação de sempre (login exige Supabase Auth real,
   não simulável no sandbox sem rede).
+
+## "Nova Contagem Manual" — volta pra tela de busca ao confirmar + remove atalhos +1/+5/+10 e um texto técnico
+
+Cliente pediu 3 ajustes na mesma tela: (1) depois de confirmar a contagem de um
+item, voltar pra tela de digitar/buscar o próximo item (em vez de sair do
+fluxo), caso o operador queira continuar contando manualmente em sequência;
+(2) remover os botões de atalho "+1"/"+5"/"+10"/"Limpar" do campo de
+quantidade; (3) tirar o texto "Enviado para análise do líder (sem custo
+cadastrado)".
+
+### 1. Fica no fluxo depois de confirmar, em vez de navegar pra fora
+
+- **Antes**: `ManualCountFlow` recebia `onFinish` de `App()`
+  (`onFinish={(c)=>{registerFinishedCount(c); goto('home');}}`) e repassava
+  direto pro `onComplete` do `CountStep` — toda contagem confirmada gravava o
+  dado E navegava pra Home, mesmo se o operador só quisesse contar mais um
+  item manualmente em seguida (obrigando reabrir "Nova Contagem" → "Manual" do
+  zero a cada item).
+- **Agora**: `ManualCountFlow` recebe uma prop nova, `onRegisterCount`
+  (mapeada direto pra `registerFinishedCount`, SEM navegação nenhuma — mesmo
+  padrão já usado em `RandomCountFlow`/`RouteCountFlow`/`ImportedListCountFlow`
+  desde a correção "fila de contagem não avançava sozinha", ver seção acima) —
+  `onComplete` do `CountStep` chama `onRegisterCount(c)` e depois
+  `setSelected(null); setQuery(''); setResults([]);`, o que faz o componente
+  renderizar de novo a MESMA tela de busca/escanear, limpa, pronta pro próximo
+  item. `onFinish` (a prop antiga) foi removida por completo — não sobrou
+  nenhuma referência a ela.
+- **`key={selected.codigo}` no `<CountStep>`** — mesmo cuidado já registrado
+  na correção de fila (o componente agora fica MONTADO entre um item e outro,
+  em vez de sempre desmontar via navegação) — força uma instância nova do
+  `CountStep` a cada item, sem herdar estado (quantidade digitada, etapa de
+  endereço, etc.) do item anterior.
+- **Sair do fluxo continua possível pelos mesmos caminhos de sempre**
+  (`MobileNavBar`/botão "Voltar" no celular, sidebar no desktop) — esta tela
+  nunca teve um botão de "concluir"/"finalizar" próprio, então não precisou
+  de nenhum botão novo pra isso.
+
+### 2. Atalhos +1/+5/+10/Limpar removidos
+
+- `.cs-shortcuts` (o bloco de 4 botões, JSX) e a função `bumpQty` (só usada
+  ali) foram removidos por completo, junto com as 3 regras CSS órfãs
+  (`.cs-shortcuts`/`.cs-shortcuts button`/`.cs-shortcuts button:active`).
+- **A calculadora inline (ícone 🧮 ao lado do rótulo "Informe a
+  quantidade"/"Quantidade encontrada") não foi tocada** — é um recurso
+  diferente (soma valores antes de lançar, pedido numa rodada anterior),
+  meio visualmente próximo mas funcionalmente independente dos atalhos que
+  saíram agora.
+
+### 3. Texto "Enviado para análise do líder (sem custo cadastrado)" removido
+
+- Essa frase é o `.rule` de `classifyDivergenceSemCusto()` — a REDE DE
+  SEGURANÇA que já existia pra item sem custo cadastrado (`custoUnit===0`,
+  ver seção "Bug crítico real: item sem custo cadastrado nunca era
+  classificado como divergente" mais acima) — qualquer diferença de
+  quantidade nesse caso sempre vai direto pra análise do líder, sem régua de
+  valor nenhuma.
+- **Só a FRASE mostrada durante a contagem mudou — a regra de negócio por
+  trás continua 100% igual**: `classification`/`statusAprovacao` não foram
+  tocados, o item continua indo pra "Itens Divergentes" exatamente como
+  antes. Só o texto vermelho que aparecia embaixo do card Sistema/Informado/
+  Diferença (`feedbackTexto`) deixou de mostrar essa frase especificamente —
+  o card em si (com as cores/bordas que já indicam a classificação)
+  continua aparecendo normalmente, só sem esse texto técnico.
+- **Escopo restrito só a esse caso específico** (`semCustoCadastrado =
+  hasSaldoLocal && diffAbs!==0 && !custoConhecido`) — as outras mensagens de
+  `feedbackTexto` (ex. "Contagem confere com o sistema.", a mensagem normal
+  de `classifyDivergence` pra item COM custo cadastrado, "Nenhum saldo
+  carregado para este código...") continuam aparecendo normalmente, sem
+  mudança — o pedido citou essa frase específica, não o mecanismo de
+  feedback como um todo.
+- Testado via harness real (jsdom + react-dom/client + `act()`, mesma
+  técnica rigorosa de sempre — carrega o `index.html` inteiro transpilado
+  numa `vm.Script`): reproduzi o cenário exato do print do cliente (Sistema
+  2, informa 0, sem custo cadastrado) — confirmei que os botões +1/+5/+10/
+  Limpar não existem mais, que o texto "sem custo cadastrado" não aparece
+  em lugar nenhum, e que o card de comparação (Sistema/Informado/Diferença)
+  continua aparecendo normalmente (só o texto sumiu, não o card). Testei
+  também o `ManualCountFlow` de ponta a ponta (busca → seleciona item →
+  confirma endereço → conta → confirma) e confirmei que, depois de
+  confirmar, a tela volta pra busca (não navega pra Home), com o campo de
+  busca e a lista de resultados anteriores já limpos. **Achado no processo**:
+  um teste inicial (isolando só `CountStep`, sem `operadorVeSaldo`) mostrou
+  o card de comparação sumido por completo — investigado e confirmado que
+  não é regressão: com `perfil==='operador'` e `operadorVeSaldo` desligado
+  (padrão de fábrica), o card já não aparece mesmo (regra de "contagem
+  cega" já existente, sem relação com esta mudança) — o teste foi corrigido
+  pra usar um perfil que vê o saldo, batendo com o cenário real do print do
+  cliente. Transpile Babel do arquivo inteiro e balanceamento de chaves do
+  CSS conferidos (638/638, caiu 3 pelas regras `.cs-shortcuts` removidas).
+  **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma
+  limitação de sempre (login exige Supabase Auth real, não simulável no
+  sandbox sem rede).
