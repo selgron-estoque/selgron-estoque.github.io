@@ -10609,3 +10609,39 @@ continua no cabeçalho da tela em si. O item de mesmo nome no `BottomNav`
 (menu mobile legado, só aparece abaixo de 360px de largura — praticamente
 inatingível hoje) também não foi tocado, mesmo critério já usado na troca
 de ícone anterior.
+
+## Home: remove o card "Inventários em Andamento" + cards menores (padrão de "Indicadores")
+
+Cliente pediu dois ajustes nos KPIs da Home: excluir o card "Inventários
+em Andamento" e reduzir a altura dos demais, padronizando com o tamanho já
+usado em "Indicadores" (seção "Resumo da Operação", `.ops-kpi-*`).
+
+- **Card removido** do array `kpis` (era o 1º, `key:'andamento'`) — a
+  variável `pendentesInicio` (só existia pra alimentar o texto "N
+  aguardando início" desse card) foi removida junto, sem uso nenhum. A
+  variável `emAndamento` **não** foi removida — continua alimentando o
+  donut "Situação Geral dos Inventários" (`statusRows`), mais abaixo na
+  mesma tela, único lugar que ainda precisa dela.
+- **`.pnl-kpi`/`.pnl-kpi-icon`/`.pnl-kpi-value`/`.pnl-kpi-top`/
+  `.pnl-kpi-label` reduzidos pros MESMOS valores já usados em
+  `.ops-kpi-card`/`.ops-kpi-icon`/`.ops-kpi-value`** (Indicadores): padding
+  18px→14px 16px, ícone 36px→30px, valor 28px→23px, margem entre
+  ícone/valor 16px→10px, margem entre rótulo/tendência 12px→8px — os dois
+  componentes continuam sendo classes CSS SEPARADAS (`.pnl-kpi` guarda a
+  estrutura de card+badge de tendência que a Home usa, `.ops-kpi-card` a
+  estrutura de card+barra que Indicadores usa, decisão já tomada na rodada
+  que criou o segundo — só os NÚMEROS de tamanho passaram a bater, não a
+  estrutura). `.pnl-kpi-icon` manteve o formato quadrado (`border-radius:
+  8px`, diferente do círculo de `.ops-kpi-icon`) — o pedido era sobre
+  altura/tamanho, não sobre trocar a forma do ícone.
+- Com 1 card a menos, a fileira de KPIs da Home passa a ter no máximo 5
+  cards (era 6 pra líder/admin) — cabe inteira numa linha só no grid de 5
+  colunas (`.pnl-kpi-row`) sem precisar quebrar pro card "Acuracidade do
+  Estoque" cair sozinho numa 2ª linha, como acontecia antes.
+- Testado via transpile Babel do arquivo inteiro e balanceamento de chaves
+  do CSS (641/641, sem mudança — só valores dentro de regras já
+  existentes). Conferido que `emAndamento` continua com uso real (donut) e
+  que nenhuma outra referência a `pendentesInicio`/ao card removido sobrou
+  no arquivo. **Verificação visual de ponta a ponta fica a cargo do
+  cliente** — mesma limitação de sempre (login exige Supabase Auth real,
+  não simulável no sandbox sem rede).
