@@ -10971,3 +10971,99 @@ padrão de "um campo só, várias colunas" já usado no resto do app).
   filtro/texto). **Verificação visual de ponta a ponta fica a cargo do
   cliente** — mesma limitação de sempre (login exige Supabase Auth real,
   não simulável no sandbox sem rede).
+
+## Atribuir um inventário inteiro a um operador específico
+
+Cliente perguntou: "é possível destinar alguma contagem para alguém? e
+quando destinado aparecer no tablete deles apenas o que foi destinado?
+depois de finalizado o que foi direcionado para ele ai sim libera os
+demais?" — confirmado via `AskUserQuestion` (3 perguntas, todas as opções
+recomendadas escolhidas): (1) atribui-se um **inventário inteiro**
+(documento), não itens avulsos dentro dele; (2) a atribuição acontece num
+**botão no inventário já criado** (não na criação); (3) enquanto o operador
+tiver QUALQUER inventário pendente atribuído a ele, a tela dele mostra **só
+esse(s)** — esconde até os inventários SEM dono nenhum, não só os de outra
+pessoa.
+
+- **`inventarios.atribuido_a text`** (nova coluna, `backend/schema.sql`,
+  tanto no `create table` quanto num bloco `alter table add column if not
+  exists` de migração) — nome do operador em texto puro, sem FK (mesmo
+  padrão de `responsavel`/`usuario` nas outras tabelas — login continua
+  local, sem Supabase Auth por papel granular). `null`/vazio = aberto pra
+  qualquer operador contar, como sempre foi.
+- **`saveInventarioToSupabase`/`inventarioRowToLocal`** ganharam o
+  mapeamento `atribuido_a`↔`atribuidoA` (snake_case↔camelCase, mesmo padrão
+  de sempre).
+- **`atribuirInventario(invId, nomeOperador)`** (`App()`, perto de
+  `removerItemPendenteDaLista`) — mesmo padrão `await` Supabase → só
+  atualiza o estado local se `res.ok`, já usado por `cancelInventory`/
+  `deleteInventory`. `nomeOperador` vazio/`null` remove a atribuição.
+- **`inventariosPendentesVisiveis(inventories, role, nomeUsuario)`** (função
+  nova, perto de `inventarioConcluido`) — ÚNICA fonte de verdade pra decidir
+  o que um usuário vê, reaproveitada tanto por `InventoryList` (a lista em
+  si) quanto por `Home` (o contador `pendentes` usado no badge do menu
+  mobile) — sem isso, os dois números podiam divergir (o badge mostrando
+  "N pendentes" mas a lista de fato mostrando menos). Regra: líder/admin
+  sempre veem tudo (precisam gerenciar/monitorar, independente de
+  atribuição); operador com QUALQUER inventário pendente atribuído a ele
+  (`atribuidoA===nomeUsuario`) vê SÓ esse(s) (`restrito:true`); operador sem
+  nada atribuído a ele vê a lista normal, só excluindo o que foi atribuído a
+  OUTRO operador (não faz sentido alguém começar a contar um documento que
+  já é de outra pessoa) — retorna `{lista, restrito}`, o `restrito` alimenta
+  o aviso na tela (ver abaixo). Assim que o operador CONCLUI o(s)
+  inventário(s) atribuído(s) a ele, a próxima chamada da função já volta a
+  mostrar a lista normal sozinha (a condição é sempre recalculada a partir
+  de `inventarioConcluido`, não guarda nenhum estado próprio) — é isso que
+  implementa o "libera os demais depois de finalizado" pedido.
+- **`InventoryList`** ganhou 3 props novas (`users`, `currentUser`,
+  `onAtribuir`) e:
+  - **Aviso de modo restrito** (`role-note`, acima da lista) quando
+    `restrito===true`: "Você tem N inventário(s) atribuído(s)
+    especificamente a você — os demais inventários pendentes ficam ocultos
+    até você concluir [este/estes]." — transparência de propósito (mesmo
+    critério de honestidade já seguido em todo o app), pro operador entender
+    POR QUE a lista está mais curta do que ele talvez esperasse.
+  - **Indicador "🎯 Atribuído a: {nome}"** no card, visível pra qualquer
+    perfil que consiga ver aquele card (líder/admin sempre; o próprio
+    operador atribuído, no card dele) — sem esconder essa informação de
+    ninguém que já tem acesso ao card.
+  - **Menu "⋮" ganhou o item "Atribuir a..."/"Trocar atribuição"** (líder OU
+    admin — `canMark`, mesmo grupo que já usa "Marcar urgente", não
+    restrito só a admin como Baixar/Cancelar/Excluir — atribuir não é uma
+    ação destrutiva) — só aparece se existir pelo menos 1 operador cadastrado
+    e o inventário ainda não estiver concluído. Abre um painel inline (mesmo
+    padrão visual de confirmar exclusão/cancelamento já usado no
+    componente): `<select>` com "Nenhum (aberto pra qualquer operador)" +
+    a lista de operadores, e um botão "Confirmar" — sem confirmação extra
+    tipo "tem certeza?", já que atribuir/trocar/remover não é destrutivo.
+- **`Home`**: `pendentes` (usado no badge de "Inventários"/"Em Execução" do
+  menu mobile) trocou de `inventories.filter(i=>!inventarioConcluido(i))
+  .length` pra `inventariosPendentesVisiveis(inventories, role, user.nome)
+  .lista.length` — mesma função, garante consistência com o que
+  `InventoryList` de fato mostra.
+- **Fora de escopo, por decisão do cliente**: atribuição de itens
+  individuais dentro de um inventário (só o documento inteiro, por enquanto);
+  atribuir já na criação do inventário (só depois, via botão no documento já
+  existente).
+- Testado via harness real (jsdom + react-dom/client + `act()`, mesma
+  técnica rigorosa de sempre — carrega o `index.html` inteiro transpilado
+  numa `vm.Script`): `inventariosPendentesVisiveis` isolada nos 5 cenários
+  (admin vê tudo sem restrição; operador com atribuição pendente vê só a
+  dela, restrito; outro operador com atribuição pendente vê só a dele,
+  restrito; operador sem nada atribuído vê só os sem dono, sem restrição;
+  operador cuja atribuição já foi CONCLUÍDA volta a ver só os sem dono, sem
+  restrição — confirma o "libera os demais" funcionando). `InventoryList`
+  renderizado de verdade: como admin, vê os 3 cards pendentes, o indicador
+  "Atribuído a: Sophia..." aparece no card certo, o menu "⋮" tem "Atribuir
+  a...", abrir o painel mostra o `<select>` com as opções certas, escolher
+  um operador e confirmar chama `onAtribuir` com o id/nome certos; como a
+  operadora com atribuição pendente, vê SÓ o card dela (não os outros 2),
+  mostra o aviso de modo restrito, e não vê o menu "⋮" (sem permissão).
+  Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  conferidos (638/638, sem mudança — nenhuma classe CSS nova, reaproveita
+  `.role-note`/`.count-card-menu-dropdown`/`.field`/`.btn-row` já
+  existentes). **Verificação visual de ponta a ponta fica a cargo do
+  cliente** — mesma limitação de sempre (login exige Supabase Auth real,
+  não simulável no sandbox sem rede). Falta o cliente rodar o SQL novo
+  (`alter table inventarios add column if not exists atribuido_a text;`) no
+  projeto Supabase real antes de usar em produção.

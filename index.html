@@ -1486,6 +1486,7 @@ async function saveInventarioToSupabase(inv){
       contados: inv.contados,
       itens_importados: inv.itensImportados || null,
       grupo: inv.grupo || null,
+      atribuido_a: inv.atribuidoA || null,
     });
     if(error) return {ok:false, erro:error.message};
     return {ok:true};
@@ -1644,6 +1645,7 @@ function inventarioRowToLocal(row){
     contados: row.contados,
     ...(row.itens_importados ? {itensImportados: row.itens_importados} : {}),
     ...(row.grupo ? {grupo: row.grupo} : {}),
+    atribuidoA: row.atribuido_a || null,
     urgente: !!row.urgente,
   };
 }
@@ -4675,6 +4677,19 @@ function App(){
     return res;
   }
 
+  // Destina um inventário inteiro a um operador específico (líder/admin, menu
+  // "⋮" em InventoryList) — enquanto o operador tiver QUALQUER inventário
+  // pendente atribuído a ele, a tela dele mostra SÓ esse(s), escondendo os
+  // demais até concluir (ver `inventariosPendentesVisiveis`). `nomeOperador`
+  // vazio/null remove a atribuição (volta a ficar aberto pra qualquer um).
+  async function atribuirInventario(invId, nomeOperador){
+    const res = await updateInventarioToSupabase(invId, {atribuido_a: nomeOperador || null});
+    if(res.ok){
+      setInventories(prev=>prev.map(i=>i.id===invId ? {...i, atribuidoA: nomeOperador || null} : i));
+    }
+    return res;
+  }
+
   // Exclusão definitiva de uma contagem (lançada por engano) — mesmo padrão
   // de `deleteInventory`: aguarda confirmação do Supabase antes de sumir da
   // tela, pra não "ressuscitar" via sincronização se a exclusão remota tiver
@@ -5077,7 +5092,7 @@ function App(){
       {view!=='home' && !COUNT_SCREEN_VIEWS.includes(view) && <SubBar view={view} goto={goto} />}
       <div className="content">
         {view==='home' && hasAccess(currentUser,'home') && <Home role={role} user={currentUser} inventories={inventories} counts={counts} historicoConcluidas={historicoConcluidas} enderecosPropostos={enderecosPropostos} goto={goto} />}
-        {view==='inventories' && hasAccess(currentUser,'inventories') && <InventoryList inventories={inventories} goto={goto} role={role} counts={counts} onDelete={deleteInventory} onCancel={cancelInventory} onToggleUrgente={toggleInventarioUrgente} onRemoverItemPendente={role==='admin' ? removerItemPendenteDaLista : undefined} />}
+        {view==='inventories' && hasAccess(currentUser,'inventories') && <InventoryList inventories={inventories} goto={goto} role={role} counts={counts} users={users} currentUser={currentUser} onDelete={deleteInventory} onCancel={cancelInventory} onToggleUrgente={toggleInventarioUrgente} onRemoverItemPendente={role==='admin' ? removerItemPendenteDaLista : undefined} onAtribuir={atribuirInventario} />}
         {view==='pickCountType' && hasAccess(currentUser,'pickCountType') && <PickCountType role={role} goto={goto} inventories={inventories} gruposExcluidos={gruposExcluidos} onCreate={async(inv)=>{
           const res = await saveInventarioToSupabase(inv);
           if(res.ok){ setInventories(prev=>[inv,...prev]); goto('inventories'); }
@@ -5860,8 +5875,12 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
   // verdade. Deriva de `contados`/`qtdItens` via `inventarioConcluido`
   // (mesma função usada em `InventoryList`, mesmo critério do donut do
   // Dashboard), não do campo morto — senão esse badge/contador nunca
-  // descontava um inventário 100% contado.
-  const pendentes = inventories.filter(i=>!inventarioConcluido(i)).length;
+  // descontava um inventário 100% contado. `inventariosPendentesVisiveis`
+  // (mesma função que filtra a lista em InventoryList) garante que este
+  // número bate com o que o operador de fato vê ao clicar — sem isso, um
+  // operador com inventário atribuído veria um total maior aqui do que a
+  // quantidade de cards que a tela seguinte realmente mostra.
+  const pendentes = inventariosPendentesVisiveis(inventories, role, user.nome).lista.length;
   const byOriginal = {};
   counts.forEach(c=>{ if(c.contagemAnteriorId) byOriginal[c.contagemAnteriorId]=true; });
   // Bug real corrigido aqui: este KPI ("Recontagens Pendentes", clica e vai
@@ -6261,7 +6280,24 @@ function inventarioConcluido(inv){
   return inv.qtdItens>0 && inv.contados>=inv.qtdItens;
 }
 
-function InventoryList({inventories, goto, role, counts, onDelete, onCancel, onToggleUrgente, onRemoverItemPendente}){
+// Decide quais inventários PENDENTES um usuário deve ver — usado tanto por
+// `InventoryList` (a lista em si) quanto por `Home` (o contador/badge), como
+// única fonte de verdade pra não divergir entre os dois. Líder/admin sempre
+// veem tudo (precisam gerenciar/monitorar). Operador: se tiver QUALQUER
+// inventário pendente atribuído especificamente a ele (`atribuidoA`), vê SÓ
+// esse(s) — os demais (mesmo os sem dono nenhum) ficam ocultos até ele
+// concluir o que foi destinado. Sem nada atribuído a ele, vê a lista normal,
+// só excluindo o que foi atribuído a OUTRO operador (não faz sentido alguém
+// começar a contar um inventário que já é de outra pessoa).
+function inventariosPendentesVisiveis(inventories, role, nomeUsuario){
+  const pendentesTodos = inventories.filter(inv=>!inventarioConcluido(inv));
+  if(role!=='operador') return {lista: pendentesTodos, restrito:false};
+  const atribuidosAMim = pendentesTodos.filter(inv=>inv.atribuidoA===nomeUsuario);
+  if(atribuidosAMim.length>0) return {lista: atribuidosAMim, restrito:true};
+  return {lista: pendentesTodos.filter(inv=>!inv.atribuidoA), restrito:false};
+}
+
+function InventoryList({inventories, goto, role, counts, users, currentUser, onDelete, onCancel, onToggleUrgente, onRemoverItemPendente, onAtribuir}){
   const canMark = role==='lider' || role==='admin';
   const [urgenteBusyId, setUrgenteBusyId] = useState(null);
   const [urgenteErro, setUrgenteErro] = useState({});
@@ -6296,6 +6332,27 @@ function InventoryList({inventories, goto, role, counts, onDelete, onCancel, onT
   const [confirmCancelId, setConfirmCancelId] = useState(null);
   const [cancelando, setCancelando] = useState(false);
   const [erroCancelamento, setErroCancelamento] = useState('');
+  // "Atribuir a..." (líder/admin, menu "⋮") — abre um seletor inline de
+  // operador, mesmo padrão de confirmação inline já usado pra excluir/
+  // cancelar. `atribuirValor` já nasce preenchido com o dono atual (se
+  // houver) ao abrir, pra "trocar" não obrigar escolher tudo de novo do
+  // zero; selecionar "Nenhum" e confirmar remove a atribuição.
+  const [atribuirAbertoId, setAtribuirAbertoId] = useState(null);
+  const [atribuirValor, setAtribuirValor] = useState('');
+  const [atribuindo, setAtribuindo] = useState(false);
+  const [erroAtribuir, setErroAtribuir] = useState({});
+  const operadores = (users||[]).filter(u=>u.perfil==='operador');
+  async function handleConfirmAtribuir(invId){
+    setAtribuindo(true);
+    setErroAtribuir(prev=>({...prev, [invId]: null}));
+    const res = await onAtribuir(invId, atribuirValor || null);
+    setAtribuindo(false);
+    if(res && res.ok){
+      setAtribuirAbertoId(null);
+    } else {
+      setErroAtribuir(prev=>({...prev, [invId]: (res && res.erro) || 'Não foi possível salvar — tente novamente.'}));
+    }
+  }
   // Seção "Concluídos" começa FECHADA (pedido do cliente) — o usuário
   // expande clicando na seta só quando quiser ver o que já foi finalizado,
   // sem isso ocupar espaço por padrão na tela. Estado puramente de UI, não
@@ -6376,7 +6433,8 @@ function InventoryList({inventories, goto, role, counts, onDelete, onCancel, onT
   // Inventários marcados urgentes sempre aparecem primeiro — mesmo critério
   // já usado nas telas de contagem (Recontagens/Itens Divergentes/Aprovação
   // de Ajustes). Só entre os pendentes — "Concluídos" não tem fila pra furar.
-  const pendentes = inventories.filter(inv=>!inventarioConcluido(inv)).sort((a,b)=>(b.urgente?1:0)-(a.urgente?1:0));
+  const { lista: pendentesVisiveis, restrito: modoRestrito } = inventariosPendentesVisiveis(inventories, role, currentUser ? currentUser.nome : null);
+  const pendentes = [...pendentesVisiveis].sort((a,b)=>(b.urgente?1:0)-(a.urgente?1:0));
   const concluidos = inventories.filter(inventarioConcluido);
   // Concluídos só interessa a quem gerencia — pro operador, ver documentos
   // já fechados ali misturado com o que ainda precisa contar só gera
@@ -6416,6 +6474,9 @@ function InventoryList({inventories, goto, role, counts, onDelete, onCancel, onT
                   {menuAbertoId===inv.id && (
                     <div className="count-card-menu-dropdown">
                       <button type="button" disabled={urgenteBusyId===inv.id} onClick={()=>{ handleToggleUrgente(inv); setMenuAbertoId(null); }}><Ic>🔥</Ic> {urgenteBusyId===inv.id ? 'Salvando…' : (inv.urgente ? 'Remover urgência' : 'Marcar urgente')}</button>
+                      {!concluido && operadores.length>0 && (
+                        <button type="button" onClick={()=>{ setAtribuirValor(inv.atribuidoA || ''); setAtribuirAbertoId(inv.id); setMenuAbertoId(null); }}><Ic>🎯</Ic> {inv.atribuidoA ? 'Trocar atribuição' : 'Atribuir a...'}</button>
+                      )}
                       {role==='admin' && (
                         <>
                           <button type="button" onClick={()=>{ handleDownload(inv); setMenuAbertoId(null); }}><Ic>⬇</Ic> Baixar</button>
@@ -6432,6 +6493,9 @@ function InventoryList({inventories, goto, role, counts, onDelete, onCancel, onT
         </div>
         <div style={{padding:'14px 18px'}}>
           {urgenteErro[inv.id] && <div className="divergence-alert" style={{marginBottom:10}} onClick={e=>e.stopPropagation()}><Ic>⚠</Ic><span>{urgenteErro[inv.id]}</span></div>}
+          {inv.atribuidoA && (
+            <div style={{fontSize:'var(--text-xs)',color:'var(--safety)',fontWeight:700,marginBottom:6}}><Ic>🎯</Ic> Atribuído a: {inv.atribuidoA}</div>
+          )}
           <div style={{display:'flex',justifyContent:'space-between',fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>
             <span>{inv.tipo}</span>
             <span>{inv.data}</span>
@@ -6500,6 +6564,22 @@ function InventoryList({inventories, goto, role, counts, onDelete, onCancel, onT
             })()}
           </div>
         )}
+        {canMark && atribuirAbertoId===inv.id && (
+          <div style={{padding:'0 18px 16px'}} onClick={e=>e.stopPropagation()}>
+            <div className="field" style={{marginBottom:10}}>
+              <label>Atribuir este inventário a um operador</label>
+              <select value={atribuirValor} onChange={e=>setAtribuirValor(e.target.value)}>
+                <option value="">Nenhum (aberto pra qualquer operador)</option>
+                {operadores.map(u=>(<option key={u.id} value={u.nome}>{u.nome}</option>))}
+              </select>
+            </div>
+            {erroAtribuir[inv.id] && <div className="divergence-alert" style={{marginBottom:10}}><Ic>⚠</Ic><span>{erroAtribuir[inv.id]}</span></div>}
+            <div className="btn-row">
+              <button className="btn btn-secondary" disabled={atribuindo} onClick={()=>{ setAtribuirAbertoId(null); setErroAtribuir(prev=>({...prev, [inv.id]:null})); }}>Cancelar</button>
+              <button className="btn btn-primary" disabled={atribuindo} onClick={()=>handleConfirmAtribuir(inv.id)}>{atribuindo ? 'Salvando…' : 'Confirmar'}</button>
+            </div>
+          </div>
+        )}
         {role==='admin' && (
           confirmDeleteId===inv.id ? (
             <div style={{padding:'0 18px 16px'}} onClick={e=>e.stopPropagation()}>
@@ -6541,6 +6621,11 @@ function InventoryList({inventories, goto, role, counts, onDelete, onCancel, onT
         <button className="btn btn-primary" style={{marginBottom:16}} onClick={()=>goto('pickCountType')}>
           <Ic>➕</Ic> Criar Inventário
         </button>
+      )}
+      {modoRestrito && (
+        <div className="role-note" style={{marginBottom:14}}>
+          <Ic>🎯</Ic> Você tem {pendentes.length===1 ? 'um inventário atribuído' : `${pendentes.length} inventários atribuídos`} especificamente a você — os demais inventários pendentes ficam ocultos até você concluir {pendentes.length===1 ? 'este' : 'estes'}.
+        </div>
       )}
       {pendentes.length===0 ? (
         <div className="empty-state" style={{marginBottom:16}}>Nenhum inventário pendente no momento.</div>

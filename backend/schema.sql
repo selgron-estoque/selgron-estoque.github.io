@@ -303,6 +303,7 @@ create table inventarios (
   contados int not null default 0,
   itens_importados jsonb,           -- só preenchido quando tipo = 'Lista Importada (Excel)'
   grupo text,                       -- só preenchido quando tipo = 'Contagem por Grupo' (código do grupo/família, tabela produtos)
+  atribuido_a text,                 -- nome do operador destinado a este inventário, sem FK — null = aberto pra qualquer um
   criado_em timestamptz not null default now()
 );
 
@@ -1206,3 +1207,19 @@ alter table contagens add column if not exists ultima_saida date;
 --   select column_name from information_schema.columns where table_name = 'contagens' and column_name = 'recontagem_liberada_para_original';
 -- =============================================================================
 alter table contagens add column if not exists recontagem_liberada_para_original boolean not null default false;
+
+-- =============================================================================
+-- "ATRIBUIR INVENTÁRIO A UM OPERADOR" — pedido do cliente: líder/admin pode
+-- destinar um inventário inteiro a um operador específico (botão "Atribuir
+-- a..." no menu "⋮" de cada card, ver InventoryList no index.html). Enquanto
+-- o operador tiver QUALQUER inventário pendente atribuído especificamente a
+-- ele, a tela "Em Execução" dele mostra SÓ esse(s) — os demais (mesmo os
+-- sem dono nenhum, abertos pra qualquer um) ficam ocultos até ele concluir
+-- o que foi destinado (ver `inventariosPendentesVisiveis` no index.html).
+-- Guarda o NOME em texto puro (mesmo padrão de `responsavel`/`usuario` em
+-- outras tabelas, sem FK — login continua local, sem Supabase Auth por
+-- papel granular). `null`/vazio = aberto pra qualquer operador, sem dono.
+-- Introspecção antes de rodar:
+--   select column_name from information_schema.columns where table_name = 'inventarios' and column_name = 'atribuido_a';
+-- =============================================================================
+alter table inventarios add column if not exists atribuido_a text;
