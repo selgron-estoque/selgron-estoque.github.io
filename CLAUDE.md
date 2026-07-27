@@ -10542,3 +10542,48 @@ mesma regra dos outros 11 itens.
   (641/641, sem mudança — só JS). **Verificação visual/funcional de ponta a
   ponta fica a cargo do cliente** — mesma limitação de sempre (login exige
   Supabase Auth real, não simulável no sandbox sem rede).
+
+## Campo "%" do quadro Sistema/Físico/Diferença/% vira acurácia do item (0-100%)
+
+Cliente mandou print de "Itens Divergentes" apontando pro campo "%" e
+pediu: mostrar a ACURÁCIA do item (0 a 100%) em vez do % de DIFERENÇA —
+com exemplos exatos (5 de 10 → 50%; 0 de 10 → 0%; 12 de 10 → 80%). Isso é
+uma mudança de SENTIDO, não só de fórmula: antes, "0%" significava "bateu
+exato" (podia ir bem abaixo de 0%, ex. o print mostrava "-100%" pra um item
+com físico 0 e sistema 3); agora, "100%" é que significa "bateu exato", e
+"0%" vira "nada bateu".
+
+- **`fmtAcuraciaItem(c)`** (função nova, logo depois de `acuracidadeItem`)
+  — reaproveita `acuracidadeItem` (a MESMA fórmula "Acc" já usada no export
+  do relatório Excel, `max(0, 1-|diferença|/sistema)`, confirmada contra a
+  planilha real do cliente numa rodada bem anterior) só formatando o
+  resultado (0-1) como "0-100%" pro card, com `'—'` no lugar de `''` quando
+  não há saldo pra calcular (`acuracidadeItem` já retorna `''` nesse caso).
+  Sem saldo (`saldoSistema===0`, tratado como saldo real 0 desde a rodada
+  anterior) já era um caso coberto pela fórmula original: bate exato (diff
+  0) → 100%; qualquer diferença → 0%.
+- **7 pontos de exibição trocados** (todos os `.rg`/`.k`+`.v` "%" das telas
+  de contagem — `RecountsPanel`, `DivergentItemsPanel` (rodada anterior E
+  atual no comparativo 1ª/2ª contagem, mais o card de rodada única),
+  `DiretoriaApprovalPanel`, `ConcludedCountsPanel` (detalhe por rodada e a
+  lista principal)) — de `c.percentual==null ? '—' : Math.round(c.percentual)+'%'`
+  pra `{fmtAcuraciaItem(c)}`, sem mexer no `style={{color:sev.color}}` que
+  já colore a célula pela severidade (baseada em valor R$, não afetada por
+  essa mudança).
+- **Deliberadamente NÃO tocado**: a coluna "Divergência (%)" do export
+  Excel (`buildCountRows`, linha com `(c.percentual||0).toFixed(2)`) —
+  continua mostrando o % de diferença bruto, mesmo formato que a planilha
+  original do cliente sempre usou (`BD_Contagens`); só a exibição em TELA
+  mudou de sentido, o relatório exportado continua com a convenção antiga.
+  `c.percentual` (o dado em si, salvo na contagem) também não muda — só a
+  forma de EXIBIR esse mesmo dado nos cards.
+- Testado via harness Node (mesma técnica de sempre): os 3 exemplos exatos
+  do cliente (10/5→50%, 10/0→0%, 10/12→80%) batem certinho; contagem exata
+  (bateu) → 100%; sistema=0 com diferença=0 → 100%, sistema=0 com
+  diferença≠0 → 0%; sem saldo (`null`) → "—"; os 2 cenários do print
+  original do cliente (sistema 3/físico 0 → antes "-100%", agora "0%";
+  sistema 2/físico 2 → antes "0%", agora "100%") conferidos manualmente.
+  Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  conferidos (641/641, sem mudança — só JS). **Verificação visual de ponta
+  a ponta fica a cargo do cliente** — mesma limitação de sempre (login
+  exige Supabase Auth real, não simulável no sandbox sem rede).

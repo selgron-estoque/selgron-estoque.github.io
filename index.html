@@ -3647,6 +3647,22 @@ function acuracidadeItem(c){
   return Math.max(0, 1 - Math.abs(c.diferenca) / c.saldoSistema);
 }
 
+// Formata a acurácia do item (0 a 100%) pro quadro Sistema/Físico/
+// Diferença/% das telas de contagem (Recontagens/Itens Divergentes/
+// Aprovação de Ajustes/Contagens Concluídas) — pedido do cliente pra trocar
+// o que essa célula mostra: era o % de DIFERENÇA (podia ir bem abaixo de
+// 0%, ex. "-100%" quando o físico é bem menor que o sistema), passou a ser
+// % de ACERTO — 100% = bateu exato, 0% = nada bate, e valores
+// intermediários proporcionais ao quanto errou. Exemplos confirmados com o
+// cliente: sistema 10/físico 5 → 50%; sistema 10/físico 0 → 0%; sistema
+// 10/físico 12 → 80% (mesma fórmula em qualquer direção do erro, pra mais
+// ou pra menos). Reaproveita `acuracidadeItem` (mesma fórmula "Acc" já usada
+// no export do relatório) em vez de calcular de novo.
+function fmtAcuraciaItem(c){
+  const acc = acuracidadeItem(c);
+  return acc==='' ? '—' : Math.round(acc*100)+'%';
+}
+
 // "Doc" na planilha do cliente é só a própria data reformatada DDMMYY (não
 // é um identificador à parte — confirmado comparando as duas colunas linha
 // a linha no arquivo original).
@@ -8918,7 +8934,7 @@ function RecountsPanel({counts, inventories, role, currentUser, goto, onDeleteCo
                         <div className="rg"><div className="k">Sistema</div><div className="v">{c.saldoSistema==null ? '—' : c.saldoSistema}</div></div>
                         <div className="rg"><div className="k">Físico</div><div className="v">{c.qtdContada}</div></div>
                         <div className="rg"><div className="k">Diferença</div><div className="v" style={{color:sev.color}}>{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div></div>
-                        <div className="rg"><div className="k">%</div><div className="v" style={{color:sev.color}}>{c.percentual==null ? '—' : Math.round(c.percentual)+'%'}</div></div>
+                        <div className="rg"><div className="k">%</div><div className="v" style={{color:sev.color}}>{fmtAcuraciaItem(c)}</div></div>
                       </div>
                       {podeVerDetalhes && (
                         <div className="count-card-extra">
@@ -9173,7 +9189,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSend
                       <div className="rg"><div className="k">Sistema</div><div className="v">{anterior.saldoSistema==null ? '—' : anterior.saldoSistema}</div></div>
                       <div className="rg"><div className="k">Físico</div><div className="v">{anterior.qtdContada}</div></div>
                       <div className="rg"><div className="k">Diferença</div><div className="v">{anterior.diferenca==null ? '—' : (anterior.diferenca>0?'+':'')+anterior.diferenca}</div></div>
-                      <div className="rg"><div className="k">%</div><div className="v">{anterior.percentual==null ? '—' : Math.round(anterior.percentual)+'%'}</div></div>
+                      <div className="rg"><div className="k">%</div><div className="v">{fmtAcuraciaItem(anterior)}</div></div>
                     </div>
                   </div>
                   <div className="round-panel current">
@@ -9185,7 +9201,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSend
                       <div className="rg"><div className="k">Sistema</div><div className="v">{c.saldoSistema==null ? '—' : c.saldoSistema}</div></div>
                       <div className="rg"><div className="k">Físico</div><div className="v">{c.qtdContada}</div></div>
                       <div className="rg"><div className="k">Diferença</div><div className="v" style={{color:sev.color}}>{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div></div>
-                      <div className="rg"><div className="k">%</div><div className="v" style={{color:sev.color}}>{c.percentual==null ? '—' : Math.round(c.percentual)+'%'}</div></div>
+                      <div className="rg"><div className="k">%</div><div className="v" style={{color:sev.color}}>{fmtAcuraciaItem(c)}</div></div>
                     </div>
                   </div>
                 </div>
@@ -9194,7 +9210,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSend
                   <div className="rg"><div className="k">Sistema</div><div className="v">{c.saldoSistema==null ? '—' : c.saldoSistema}</div></div>
                   <div className="rg"><div className="k">Físico</div><div className="v">{c.qtdContada}</div></div>
                   <div className="rg"><div className="k">Diferença</div><div className="v" style={{color:sev.color}}>{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div></div>
-                  <div className="rg"><div className="k">%</div><div className="v" style={{color:sev.color}}>{c.percentual==null ? '—' : Math.round(c.percentual)+'%'}</div></div>
+                  <div className="rg"><div className="k">%</div><div className="v" style={{color:sev.color}}>{fmtAcuraciaItem(c)}</div></div>
                 </div>
               )}
               {c.motivo && <div style={{padding:'10px 16px 0',fontSize:'var(--text-sm)'}}>Motivo: <strong>{c.motivo}</strong></div>}
@@ -9447,7 +9463,7 @@ function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejec
                 <div className="rg"><div className="k">Sistema</div><div className="v">{c.saldoSistema==null ? '—' : c.saldoSistema}</div></div>
                 <div className="rg"><div className="k">Físico</div><div className="v">{c.qtdContada}</div></div>
                 <div className="rg"><div className="k">Diferença</div><div className="v" style={{color:sev.color}}>{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div></div>
-                <div className="rg"><div className="k">%</div><div className="v" style={{color:sev.color}}>{c.percentual==null ? '—' : Math.round(c.percentual)+'%'}</div></div>
+                <div className="rg"><div className="k">%</div><div className="v" style={{color:sev.color}}>{fmtAcuraciaItem(c)}</div></div>
               </div>
               <div style={{padding:'10px 16px 0',fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>Enviado para aprovação por {c.saGeradaPor||'—'} em {c.saGeradaEm||'—'}</div>
               {c.motivo && <div style={{padding:'6px 16px 0',fontSize:'var(--text-sm)'}}>Motivo: <strong>{c.motivo}</strong></div>}
@@ -10094,7 +10110,7 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
                           <div className="rg"><div className="k">Sistema</div><div className="v">{r.saldoSistema==null ? '—' : r.saldoSistema}</div></div>
                           <div className="rg"><div className="k">Físico</div><div className="v">{r.qtdContada}</div></div>
                           <div className="rg"><div className="k">Diferença</div><div className="v">{r.diferenca==null ? '—' : (r.diferenca>0?'+':'')+r.diferenca}</div></div>
-                          <div className="rg"><div className="k">%</div><div className="v">{r.percentual==null ? '—' : Math.round(r.percentual)+'%'}</div></div>
+                          <div className="rg"><div className="k">%</div><div className="v">{fmtAcuraciaItem(r)}</div></div>
                         </div>
                         {(r.endereco || r.enderecoContado) && <div style={{fontSize:'var(--text-sm)'}}>Endereço: <strong>{r.endereco || r.enderecoContado}</strong></div>}
                         {r.valorDivergente!=null && r.valorDivergente!==0 && <div style={{fontSize:'var(--text-sm)'}}>Valor divergente: <strong>R$ {Number(r.valorDivergente).toFixed(2)}</strong></div>}
@@ -10220,7 +10236,7 @@ function TodayCountsPanel({counts, inventories}){
                 <div className="rg"><div className="k">Sistema</div><div className="v">{c.saldoSistema==null ? '—' : c.saldoSistema}</div></div>
                 <div className="rg"><div className="k">Físico</div><div className="v">{c.qtdContada}</div></div>
                 <div className="rg"><div className="k">Diferença</div><div className="v">{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div></div>
-                <div className="rg"><div className="k">%</div><div className="v">{c.percentual==null ? '—' : Math.round(c.percentual)+'%'}</div></div>
+                <div className="rg"><div className="k">%</div><div className="v">{fmtAcuraciaItem(c)}</div></div>
               </div>
               <div style={{padding:'10px 16px 16px',fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>Contado por {c.usuario}</div>
             </div>
