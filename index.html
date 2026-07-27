@@ -5530,7 +5530,7 @@ const ACESSOS_RESTRITOS = {
 // acesso — em vez de cair numa Home bloqueada.
 const TODOS_OS_MENUS = [
   {id:'home', label:'Início'},
-  {id:'inventories', label:'Inventários'},
+  {id:'inventories', label:'Em Execução'},
   {id:'pickCountType', label:'Nova Contagem'},
   {id:'recounts', label:'Recontagens'},
   {id:'divergentes', label:'Itens Divergentes'},
@@ -5675,7 +5675,7 @@ function buildSidebarGroups(user){
   // Sidebar igual qualquer outro item quando removido.
   const homeItems = podeVer('home') ? [{id:'home', ic:'home', label:'Início'}] : [];
   const contagemItems = [
-    ...(podeVer('inventories') ? [{id:'inventories', ic:'box', label:'Inventários'}] : []),
+    ...(podeVer('inventories') ? [{id:'inventories', ic:'box', label:'Em Execução'}] : []),
     ...(podeVer('pickCountType') ? [{id:'pickCountType', ic:'plus', label:'Nova Contagem'}] : []),
     ...(podeVer('recounts') ? [{id:'recounts', ic:'repeat', label:'Recontagens'}] : []),
     ...(podeVer('divergentes') ? [{id:'divergentes', ic:'alertTriangle', label:'Itens Divergentes'}] : []),

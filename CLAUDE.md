@@ -10593,3 +10593,19 @@ com físico 0 e sistema 3); agora, "100%" é que significa "bateu exato", e
 Cliente achou que fazia mais sentido — troca só o ícone (`ic:'search'` →
 `ic:'plus'`, já existia em `DICON_PATHS`) do item `pickCountType` em
 `buildSidebarGroups`, sem nenhuma outra mudança.
+
+## Item "Inventários" da Sidebar renomeado pra "Em Execução"
+
+Rótulo curto da Sidebar/menu — `buildSidebarGroups` (`{id:'inventories',
+ic:'box', label:'Em Execução'}`) e `TODOS_OS_MENUS` (o mesmo rótulo usado
+no dual-list de "Acesso por tela" em Editar Usuário) trocados juntos, pelo
+mesmo motivo já documentado antes ("Bug real: 'Recontagens' ficou com nome
+desatualizado no dual-list") — as duas listas de rótulo precisam ficar em
+sincronia, senão o dual-list mostraria o nome antigo. **`VIEW_TITLES.
+inventories`** (o título "Inventários Pendentes" que aparece no topo da
+página) **não mudou** — mesmo critério já usado antes pra "Recontagens
+Pendentes"/"Recontagens": rótulo curto só na navegação, título completo
+continua no cabeçalho da tela em si. O item de mesmo nome no `BottomNav`
+(menu mobile legado, só aparece abaixo de 360px de largura — praticamente
+inatingível hoje) também não foi tocado, mesmo critério já usado na troca
+de ícone anterior.
