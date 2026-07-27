@@ -4219,14 +4219,17 @@ function App(){
   // A navegação (view) sobrevive a recarregar a página — se o usuário
   // perdeu acesso à tela em que estava (perfil trocado, acesso removido pelo
   // admin em `acessosRemovidos`, ou a navegação persistida de antes de
-  // alguma tela virar restrita), volta pra Home em vez de deixar a tela em
-  // branco (nenhuma rota bate a condição de acesso, `.content` renderiza
-  // vazio). Checa `hasAccess` direto (sem depender de `view` estar em
-  // ACESSOS_RESTRITOS) — agora QUALQUER tela do menu principal pode ser
-  // bloqueada por usuário, não só as que tinham entrada nesse mapa antes.
+  // alguma tela virar restrita), volta pra uma tela que ele TEM acesso, em
+  // vez de deixar a tela em branco (nenhuma rota bate a condição de acesso,
+  // `.content` renderiza vazio). Checa `hasAccess` direto (sem depender de
+  // `view` estar em ACESSOS_RESTRITOS) — QUALQUER tela do menu principal
+  // pode ser bloqueada por usuário. Usa `primeiraTelaAcessivel` em vez de
+  // sempre `'home'` — desde que "Início" também virou opcional (ver
+  // TODOS_OS_MENUS), simplesmente forçar 'home' aqui poderia cair numa Home
+  // igualmente bloqueada.
   useEffect(()=>{
     if(currentUser && !hasAccess(currentUser, view)){
-      setView('home');
+      setView(primeiraTelaAcessivel(currentUser));
       setFlowState(null);
     }
   }, [currentUser, view]);
@@ -5060,7 +5063,7 @@ function App(){
       )}
       {view!=='home' && !COUNT_SCREEN_VIEWS.includes(view) && <SubBar view={view} goto={goto} />}
       <div className="content">
-        {view==='home' && <Home role={role} user={currentUser} inventories={inventories} counts={counts} historicoConcluidas={historicoConcluidas} enderecosPropostos={enderecosPropostos} goto={goto} />}
+        {view==='home' && hasAccess(currentUser,'home') && <Home role={role} user={currentUser} inventories={inventories} counts={counts} historicoConcluidas={historicoConcluidas} enderecosPropostos={enderecosPropostos} goto={goto} />}
         {view==='inventories' && hasAccess(currentUser,'inventories') && <InventoryList inventories={inventories} goto={goto} role={role} counts={counts} onDelete={deleteInventory} onCancel={cancelInventory} onToggleUrgente={toggleInventarioUrgente} onRemoverItemPendente={role==='admin' ? removerItemPendenteDaLista : undefined} />}
         {view==='pickCountType' && hasAccess(currentUser,'pickCountType') && <PickCountType role={role} goto={goto} inventories={inventories} gruposExcluidos={gruposExcluidos} onCreate={async(inv)=>{
           const res = await saveInventarioToSupabase(inv);
@@ -5502,12 +5505,15 @@ const ACESSOS_RESTRITOS = {
 // TODAS as telas do menu principal que podem ser ligadas/desligadas por
 // usuário (pedido do cliente: "todos os menus, tenham a opção de eu
 // selecionar por operador se ele pode ter acesso ou não") — usada pelo
-// toggle em UserForm. "Início" fica de fora de propósito: é o destino de
+// toggle em UserForm. "Início" também entrou nessa lista (pedido posterior
+// do cliente) — antes ficava de fora de propósito, já que era o destino de
 // segurança pra onde o app redireciona sozinho quando alguém perde acesso à
-// tela em que estava (ver useEffect logo abaixo de goto/voltarUmPasso em
-// App()) — não pode ser ela mesma bloqueável, senão não sobraria destino
-// nenhum pra redirecionar.
+// tela em que estava; agora que ela também pode ser removida,
+// `primeiraTelaAcessivel` (logo abaixo de `hasAccess`) resolve um destino
+// alternativo — a PRIMEIRA tela desta mesma lista que o usuário ainda tem
+// acesso — em vez de cair numa Home bloqueada.
 const TODOS_OS_MENUS = [
+  {id:'home', label:'Início'},
   {id:'inventories', label:'Inventários'},
   {id:'pickCountType', label:'Nova Contagem'},
   {id:'recounts', label:'Recontagens'},
@@ -5542,6 +5548,19 @@ function hasAccess(user, viewId){
   if((user.acessosRemovidos||[]).includes(viewId)) return false;
   if(perfilLiberaPorPadrao(user.perfil, viewId)) return true;
   return (user.acessosExtras||[]).includes(viewId);
+}
+
+// Destino de fallback quando a tela atual (inclusive "Início", agora que
+// também pode ser removida — ver TODOS_OS_MENUS) deixa de ser acessível:
+// primeira tela da MESMA lista que o usuário ainda tem liberada. Admin
+// sempre tem acesso a tudo (hasAccess já garante isso), então pra ele isso
+// sempre resolve pra 'home' (primeiro item da lista). Só no caso extremo de
+// um líder/operador sem NENHUM item liberado (o admin removeu tudo,
+// inclusive Início) é que sobra o fallback final pra 'home' mesmo — melhor
+// mostrar a Home (ainda que bloqueada) do que travar sem destino nenhum.
+function primeiraTelaAcessivel(user){
+  const encontrada = TODOS_OS_MENUS.find(m=>hasAccess(user, m.id));
+  return encontrada ? encontrada.id : 'home';
 }
 
 function TopBar({user, role, onHome, onLogout}){
@@ -5636,7 +5655,9 @@ function buildSidebarGroups(user){
   // TODOS os itens de menu agora passam por `podeVer` (não só os 4 que já
   // tinham essa checagem antes) — pedido do cliente: "todos os menus, tenham
   // a opção de eu selecionar por operador se ele pode ter acesso ou não".
-  // "Início" é a única exceção (ver TODOS_OS_MENUS) — sempre aparece.
+  // "Início" também entrou nessa regra (ver TODOS_OS_MENUS) — some da
+  // Sidebar igual qualquer outro item quando removido.
+  const homeItems = podeVer('home') ? [{id:'home', ic:'home', label:'Início'}] : [];
   const contagemItems = [
     ...(podeVer('inventories') ? [{id:'inventories', ic:'box', label:'Inventários'}] : []),
     ...(podeVer('pickCountType') ? [{id:'pickCountType', ic:'search', label:'Nova Contagem'}] : []),
@@ -5657,9 +5678,7 @@ function buildSidebarGroups(user){
     ...(podeVer('settings') ? [{id:'settings', ic:'settings', label:'Configurações'}] : []),
   ];
   return [
-    { label: null, items: [
-      {id:'home', ic:'home', label:'Início'},
-    ]},
+    ...(homeItems.length>0 ? [{ label: null, items: homeItems }] : []),
     ...(contagemItems.length>0 ? [{ label: 'Gestão de Inventário', items: contagemItems }] : []),
     ...(cadastrosItems.length>0 ? [{ label: 'Cadastros', items: cadastrosItems }] : []),
     ...(analiseItems.length>0 ? [{ label: 'Análise', items: analiseItems }] : []),

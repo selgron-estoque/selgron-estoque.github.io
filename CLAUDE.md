@@ -10477,3 +10477,68 @@ Top 7) — só troca de `.slice(0,5)` pra `.slice(0,7)` e o título "(Top 5)"
 outro painel do Dashboard, "Top 5 Maiores Divergências" (`topDivergentes`,
 componente diferente, lista os itens com maior divergência absoluta em R$,
 não por família/grupo) — continua com 5 fixo, não foi tocado por engano.
+
+## "Início" também vira opcional em "Acesso por tela"
+
+Desde a rodada "Acesso por tela — TODOS os menus" (ver acima), "Início" era
+a ÚNICA tela do menu que ficava de fora do toggle — documentado como
+proposital, já que era o destino de segurança pra onde o app redireciona
+sozinho quando alguém perde acesso à tela em que estava (senão não sobraria
+destino nenhum). O cliente pediu explicitamente pra "Início" entrar na
+mesma regra dos outros 11 itens.
+
+- **`TODOS_OS_MENUS`** ganhou `{id:'home', label:'Início'}` como primeiro
+  item — sem entrada em `ACESSOS_RESTRITOS` (nenhum perfil restringe por
+  padrão), então continua liberado pra todo mundo por padrão, só passa a
+  ser removível via `acessosRemovidos` (mesmo mecanismo dos outros itens).
+- **`primeiraTelaAcessivel(user)`** (função nova, logo depois de
+  `hasAccess`) — resolve o problema de "Início" agora poder ficar
+  bloqueada: percorre `TODOS_OS_MENUS` e retorna a PRIMEIRA tela que o
+  usuário ainda tem acesso (pra admin, sempre resolve pra `'home'`, já que
+  ele nunca é bloqueado por `acessosRemovidos`); no caso extremo de um
+  líder/operador sem NENHUM item liberado, cai no fallback final `'home'`
+  mesmo — melhor mostrar a Home (ainda que bloqueada) do que travar sem
+  destino nenhum.
+- **`useEffect` de redirecionamento automático** (App(), o mesmo que já
+  existia pra "perdeu acesso à tela atual, volta pra Home") trocou
+  `setView('home')` fixo por `setView(primeiraTelaAcessivel(currentUser))`
+  — sem essa troca, um usuário com "Início" removido cairia numa Home
+  igualmente bloqueada (`view==='home'` mas sem `hasAccess`), preso num
+  loop de tela vazia. Login (`attemptLogin`) e logout continuam fazendo
+  `setView('home')` sem mudança — esse MESMO `useEffect` já corrige sozinho
+  pra `primeiraTelaAcessivel` no próximo render se "Início" estiver
+  bloqueado, sem precisar duplicar a lógica no login.
+- **Guard de render acrescentado**: `{view==='home' && hasAccess(currentUser,'home') && <Home .../>}`
+  — mesmo padrão já usado pras outras telas, só que "Início" nunca tinha
+  esse guard antes (não precisava, era sempre liberada).
+- **`buildSidebarGroups`**: o item "Início" (1º grupo, sem título) virou
+  condicional (`homeItems = podeVer('home') ? [...] : []`), e o próprio
+  grupo só aparece quando `homeItems.length>0` — mesmo padrão já usado
+  pelos outros 4 grupos (Gestão de Inventário/Cadastros/Análise/Sistema).
+- **Dual-list de "Editar Usuário"** (`UserForm`) não precisou de nenhuma
+  mudança de código — já itera `TODOS_OS_MENUS` genericamente
+  (`ordemLiberados`, `toggleAcessoMenu`), então "Início" passou a aparecer
+  como mais uma linha em "Comandos Disponíveis"/"Comandos Liberados"
+  automaticamente.
+- **Fora de escopo, decisão consciente**: `MobileNavBar` (o botão "Início"
+  fixo do rodapé mobile durante as telas de contagem) e `BottomNav` (menu
+  inferior do layout mobile antigo, praticamente inatingível hoje — ver
+  "Dashboard novo funciona em qualquer largura de tela") não foram tocados
+  — nenhum dos dois filtra os próprios itens por `hasAccess` hoje (nem os
+  outros botões deles, como "Inventários"/"Contar"), então não seria
+  consistente só o "Início" ganhar esse tratamento ali. Clicar em "Início"
+  nesses lugares com a tela bloqueada ainda funciona sem quebrar — só
+  redireciona pra `primeiraTelaAcessivel` no próximo render, via o mesmo
+  `useEffect`.
+- Testado via harness Node (mesma técnica de sempre): `hasAccess` confirma
+  operador normal com Início liberado e operador com `acessosRemovidos:
+  ['home']` sem acesso; `primeiraTelaAcessivel` resolve `'home'` pro
+  operador normal, `'inventories'` pro operador sem Início (e também pro
+  operador sem Início E sem mais nada além de Inventários), e `'home'` pro
+  admin mesmo com `acessosRemovidos` incluindo home (confirma que admin
+  nunca é afetado); `buildSidebarGroups` omite o 1º grupo (e o item
+  "Início") quando bloqueado, mantém normal quando liberado. Transpile
+  Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos
+  (641/641, sem mudança — só JS). **Verificação visual/funcional de ponta a
+  ponta fica a cargo do cliente** — mesma limitação de sempre (login exige
+  Supabase Auth real, não simulável no sandbox sem rede).
