@@ -2589,6 +2589,39 @@ async function fetchContagensHistoricoParaTendencia(){
   }
 }
 
+// Cliente pediu um relatório em Excel com "todas as contagens feitas, todas
+// sem exceção" — usado só por ReportsScreen ("Baixar Relatório"), diferente
+// de `fetchContagensHistoricoConcluidas` (só 3 status, alimenta as telas de
+// UI) e de `fetchContagensHistoricoParaTendencia` (poucas colunas, só pro
+// cálculo dos gráficos). Este busca a linha INTEIRA (`select('*')`), com
+// todos os campos que `historicoRowToCountLike` sabe mapear pro mesmo
+// formato de `count` usado no export (Causa/OBS/Classe/SA/Documento/Dias
+// s/ Mov., além dos campos básicos).
+//
+// MESMO filtro de exclusão que `fetchContagensHistoricoParaTendencia` já usa
+// (`Recontar`/`Ajustar` de fora) — e pelo MESMO motivo: esses dois status já
+// têm uma linha "gêmea" viva em `contagens` (via
+// buildRecontarSeedsFromHistorico/buildAjustarSeedsFromHistorico), com os
+// MESMOS número/código/data. Incluir as duas aqui pareceria duplicata pro
+// cliente analisando no Excel (mesma linha, dois status diferentes) sem
+// ser — a fusão counts+histórico (ver ReportsScreen) já cobre esse evento
+// através da versão AO VIVO, mais atualizada (reflete se já foi recontado/
+// decidido). Nenhum evento real fica de fora — só não aparece duas vezes.
+async function fetchContagensHistoricoTudo(){
+  if(!supabaseClient) return [];
+  try{
+    const data = await fetchTodasPaginado(() => supabaseClient
+      .from('contagens_historico')
+      .select('*')
+      .order('data', {ascending:false})
+      .order('id', {ascending:true}));
+    return data.filter(row => !['Recontar','Ajustar'].includes(String(row.status||'').trim()));
+  }catch(err){
+    console.warn('Falha ao buscar histórico completo pra exportação:', err);
+    return [];
+  }
+}
+
 // Itens da planilha com Status="Recontar" não estão resolvidos de verdade —
 // o cliente confirmou que ainda precisam ser recontados. Diferente do resto
 // do histórico (que só vai pra `contagens_historico`, sem tocar no app ao
@@ -3625,7 +3658,11 @@ const STATUS_LABEL_PADRAO = {
   ajuste_aprovado_diretoria: 'Ajustado',
 };
 function statusLabelPadrao(c){
-  return STATUS_LABEL_PADRAO[c.statusAprovacao] || '';
+  // Contagem ao vivo do app: mapeia pelo vocabulário curto do cliente.
+  // Contagem vinda do histórico importado (`_fromHistorico`, statusAprovacao
+  // sempre null): o próprio `_statusOriginal` já É o Status da planilha
+  // original, no vocabulário exato do cliente — mais fiel que tentar mapear.
+  return STATUS_LABEL_PADRAO[c.statusAprovacao] || c._statusOriginal || '';
 }
 
 // "Custo" na planilha do cliente é o valor divergente COM SINAL (diferença ×
@@ -3697,11 +3734,13 @@ function buildSummaryRows(counts, inventories){
 // pode colar/importar direto na análise dele sem reformatar — seguidas das
 // colunas extras que só o app tem (rastro de operador, rodada, endereço
 // realmente contado etc.), que não existem na planilha original.
-// "Classe" (ABC) e "SA" (nº de solicitação de ajuste) ficam sempre em
-// branco — o app não captura nenhum dos dois no fluxo de contagem hoje
-// (decisão consciente, ver CLAUDE.md "Padrão de planilha do cliente");
-// "Dias S/ Mov." também fica em branco pelo mesmo motivo — não é salvo
-// dentro do objeto `count`, só existe hoje em `estoque_saldo`.
+// "SA" (nº de solicitação de ajuste) já é capturada de verdade pro fluxo ao
+// vivo desde o recurso de SA de Ajuste/aprovação da Diretoria (`c.solicitacaoAjuste`)
+// — só "Classe" (ABC) continua sem equivalente no fluxo de contagem do app
+// (nenhuma tela captura isso hoje). Os dois, junto com "Dias S/ Mov.", saem
+// preenchidos pra contagem vinda do histórico importado (`_fromHistorico`),
+// que já carrega esses campos direto da planilha antiga — ver
+// historicoRowToCountLike.
 function buildCountRows(counts){
   return counts.map(c=>({
     'Código': c.productCode,
@@ -3715,11 +3754,11 @@ function buildCountRows(counts){
     'Data': c.data,
     'Sem.': c.data ? getWeekInfo(c.data).weekNumber : '',
     'Status': statusLabelPadrao(c),
-    'Classe': '',
+    'Classe': c.classe || '',
     'Causa': c.motivo || '',
     'OBS': c.observacao || '',
     'SA': c.solicitacaoAjuste || '',
-    'Dias S/ Mov.': '',
+    'Dias S/ Mov.': c.diasSemMovimento!=null ? c.diasSemMovimento : '',
     'Doc': formatDocFromData(c.data),
     'ID Contagem': c.id,
     'Inventário': c.inventario,
@@ -4384,6 +4423,11 @@ function App(){
   // volume/acuracidade real de contagens feitas, não status de decisão. Ver
   // fetchContagensHistoricoParaTendencia.
   const [historicoParaTendencia, setHistoricoParaTendencia] = useState([]);
+  // Pool completo (linha inteira, todos os status exceto Recontar/Ajustar —
+  // já representados ao vivo), só pra "Baixar Relatório" (ReportsScreen),
+  // que precisa de "todas as contagens, sem exceção" no Excel. Ver
+  // fetchContagensHistoricoTudo.
+  const [historicoTudo, setHistoricoTudo] = useState([]);
   function refreshHistoricoConcluidas(){
     // Retorna a Promise combinada (não só fire-and-forget) — o botão
     // "Atualizar" do painel "Contagens Concluídas" espera essa promise pra
@@ -4392,6 +4436,7 @@ function App(){
     return Promise.all([
       fetchContagensHistoricoConcluidas().then(setHistoricoConcluidas),
       fetchContagensHistoricoParaTendencia().then(setHistoricoParaTendencia),
+      fetchContagensHistoricoTudo().then(setHistoricoTudo),
     ]);
   }
 
@@ -5151,7 +5196,7 @@ function App(){
         {view==='contagensHoje' && <TodayCountsPanel counts={counts} inventories={inventories} />}
         {view==='recount' && flowState && <RecountFlow original={flowState} user={currentUser} onAddressProposed={addAddressProposal} onFinish={(c)=>{registerFinishedCount(c); goto('recounts');}} operadorVeSaldo={operadorVeSaldo} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
         {view==='dashboard' && hasAccess(currentUser,'dashboard') && <Dashboard counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} historicoParaTendencia={historicoParaTendencia} goto={goto} />}
-        {view==='relatorios' && hasAccess(currentUser,'relatorios') && <ReportsScreen counts={counts} inventories={inventories} currentUser={currentUser} sendHistory={reportSendHistory} onLogSend={logReportSend} role={role} onHistoricoImportado={refreshHistoricoConcluidas} />}
+        {view==='relatorios' && hasAccess(currentUser,'relatorios') && <ReportsScreen counts={counts} historicoTudo={historicoTudo} inventories={inventories} currentUser={currentUser} sendHistory={reportSendHistory} onLogSend={logReportSend} role={role} onHistoricoImportado={refreshHistoricoConcluidas} />}
         {view==='settings' && hasAccess(currentUser,'settings') && <Settings role={role} currentUser={currentUser} operadorVeSaldo={operadorVeSaldo} onSetOperadorVeSaldo={updateOperadorVeSaldo} operadorVeValoresRecontagem={operadorVeValoresRecontagem} onSetOperadorVeValoresRecontagem={updateOperadorVeValoresRecontagem} gruposExcluidos={gruposExcluidos} onSetGruposExcluidos={updateGruposExcluidos} sessionTimeoutMin={sessionTimeoutMin} onSetSessionTimeoutMin={updateSessionTimeoutMin} />}
         {view==='usuarios' && hasAccess(currentUser,'usuarios') && (
           <UsuariosScreen
@@ -9921,11 +9966,19 @@ const HISTORICO_STATUS_DISPLAY = {
   'OK': {level:'ok', text:'Aprovado (histórico importado)'},
   'Sem Ajuste': {level:'ok', text:'Aprovado — sem ajuste necessário (histórico importado)'},
   'Ajustado': {level:'ok', text:'Ajuste já aplicado no Protheus (histórico importado)'},
+  'Pendente': {level:'warn', text:'Pendente de decisão (histórico importado)'},
+  'Recontar': {level:'warn', text:'Recontagem pendente (histórico importado)'},
+  'Ajustar': {level:'danger', text:'Aguardando decisão de ajuste (histórico importado)'},
 };
 function historicoRowToCountLike(h){
   const statusNorm = String(h.status||'').trim();
-  const display = HISTORICO_STATUS_DISPLAY[statusNorm];
-  if(!display || !h.produto_codigo) return null;
+  // Fallback pra qualquer status fora do vocabulário conhecido (ex.: valor
+  // sujo/inédito na planilha) — nunca descarta a linha silenciosamente só
+  // por causa do texto do Status; usado pelo relatório "todas as contagens,
+  // sem exceção" (ReportsScreen), que precisa representar QUALQUER linha do
+  // histórico, não só as 3-6 categorias já conhecidas.
+  const display = HISTORICO_STATUS_DISPLAY[statusNorm] || {level:'warn', text:(statusNorm||'Status desconhecido')+' (histórico importado)'};
+  if(!h.produto_codigo) return null;
   const percentual = (h.saldo_sistema!=null && h.saldo_sistema!==0 && h.diferenca!=null)
     ? (h.diferenca / h.saldo_sistema) * 100
     : null;
@@ -10511,7 +10564,7 @@ function TodayCountsPanel({counts, inventories}){
 
 /* ---------------- RELATÓRIOS (Excel + e-mail) ---------------- */
 
-function ReportsScreen({counts, inventories, currentUser, sendHistory, onLogSend, role, onHistoricoImportado}){
+function ReportsScreen({counts, historicoTudo=[], inventories, currentUser, sendHistory, onLogSend, role, onHistoricoImportado}){
   const isAdmin = role==='admin';
   const [email, setEmail] = useState('');
   const [assunto, setAssunto] = useState('Gestão de Estoques — Relatório de Inventário Cíclico');
@@ -10522,7 +10575,14 @@ function ReportsScreen({counts, inventories, currentUser, sendHistory, onLogSend
   // "todas as contagens", sem filtro nenhum (comportamento de antes).
   const [filtroData, setFiltroData] = useState('');
 
-  const countsFiltrados = filtroData ? counts.filter(c=>c.data===filtroData) : counts;
+  // "Todas as contagens, sem exceção" (pedido do cliente) — junta a contagem
+  // AO VIVO do app (`counts`) com TODO o histórico importado da planilha
+  // antiga (`historicoTudo`, já sem os status Recontar/Ajustar, que têm uma
+  // versão viva "gêmea" em `counts` — ver fetchContagensHistoricoTudo). Sem
+  // isso, o relatório só cobria o que foi contado dentro do app, deixando de
+  // fora milhares de linhas de antes do Inventário 360 existir.
+  const todasContagens = [...counts, ...historicoTudo.map(historicoRowToCountLike).filter(Boolean)];
+  const countsFiltrados = filtroData ? todasContagens.filter(c=>c.data===filtroData) : todasContagens;
   const divergentesCount = countsFiltrados.filter(c=>c.diferenca!==0).length;
 
   function downloadWorkbook(){
@@ -10563,7 +10623,7 @@ function ReportsScreen({counts, inventories, currentUser, sendHistory, onLogSend
       <div className="role-note">
         {filtroData
           ? <>{countsFiltrados.length} contagens em {filtroData} · {divergentesCount} com divergência</>
-          : <>{counts.length} contagens registradas · {divergentesCount} com divergência</>}
+          : <>{todasContagens.length} contagens registradas (app + histórico importado) · {divergentesCount} com divergência</>}
       </div>
       {feedback && <div className="login-success" style={{marginBottom:16}}>{feedback}</div>}
 
@@ -10571,8 +10631,9 @@ function ReportsScreen({counts, inventories, currentUser, sendHistory, onLogSend
         <div className="section-title" style={{marginTop:0}}>Baixar Relatório</div>
         <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)',marginBottom:14,lineHeight:1.6}}>
           Gera uma planilha Excel (.xlsx) com 4 abas: <strong>Resumo</strong> (indicadores gerais),
-          <strong> Contagens</strong> (todas as contagens realizadas, com histórico completo de
-          rodadas e o endereço onde cada item foi fisicamente contado), <strong>Contar</strong>{' '}
+          <strong> Contagens</strong> (todas as contagens realizadas — sem exceção, junta o que foi
+          contado dentro do app com o histórico importado da planilha antiga, com histórico completo
+          de rodadas e o endereço onde cada item foi fisicamente contado), <strong>Contar</strong>{' '}
           (mesmo formato da planilha de importação — Produto, Descrição, End, Sistema, Fisico —
           já com a quantidade contada e o endereço contado preenchidos) e
           <strong> Solicitação de Ajuste</strong> (só os itens com divergência — pronta para

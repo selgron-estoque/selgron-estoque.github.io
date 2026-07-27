@@ -11268,3 +11268,89 @@ do `backend/schema.sql` (ver seção "SA de Ajuste + aprovação da Diretoria" a
   item durante a contagem (trava de 5 min); "Última movimentação"/"dias
   parado" em Itens Divergentes; "Liberar para o mesmo operador" em
   Recontagens; e atribuir inventário/recontagem a um operador específico.
+
+## Relatório Excel passa a incluir "todas as contagens, sem exceção" — junta app + histórico importado
+
+Cliente pediu: "preciso que seja possível tirar um relatório de todas as
+contagens feitas, todas sem exceção... preciso disso no padrão de
+BD_Contagens". Investigando `ReportsScreen` ("Baixar Relatório"), a exportação
+só recebia `counts` (contagem AO VIVO do app) — nunca incluía as milhares de
+linhas de `contagens_historico` (a planilha `BD_Contagens` antiga, importada
+antes do app existir, ver "Padrão de planilha do cliente" no histórico acima).
+O relatório sempre teve o LAYOUT de colunas certo (`buildCountRows` já monta
+Código/Descrição/.../SA/Doc no mesmo formato da planilha original), mas nunca
+teve a COBERTURA de dado certa — faltava a maior parte da história completa
+de contagens da empresa.
+
+- **`fetchContagensHistoricoTudo()`** (nova, perto de
+  `fetchContagensHistoricoParaTendencia`) — busca `contagens_historico`
+  inteira (`select('*')`, paginada via `fetchTodasPaginado`, sem limite),
+  com o MESMO filtro que `fetchContagensHistoricoParaTendencia` já usa
+  (exclui só `Recontar`/`Ajustar`) — pelo MESMO motivo: esses dois status já
+  têm uma linha "gêmea" viva em `contagens`
+  (`buildRecontarSeedsFromHistorico`/`buildAjustarSeedsFromHistorico`), com
+  o MESMO código/data/número. Incluir os dois lados pareceria duplicata pro
+  cliente analisando no Excel (mesma linha, "Status" diferente) sem ser —
+  nenhum evento real fica de fora, a versão AO VIVO (mais atualizada, reflete
+  se já foi recontado/decidido) já cobre esse caso. `OK`/`Sem Ajuste`/
+  `Ajustado`/`Pendente` (e qualquer status futuro, ver abaixo) entram
+  inteiros, sem esse tipo de sobreposição.
+- **`HISTORICO_STATUS_DISPLAY`** (usado por `historicoRowToCountLike`) só
+  tinha 3 entradas (`OK`/`Sem Ajuste`/`Ajustado` — o suficiente pras telas
+  que já usavam essa função, sempre alimentadas com listas JÁ filtradas por
+  status). Ganhou mais 3 (`Pendente`/`Recontar`/`Ajustar`, pro caso de esta
+  função ser chamada em algum lugar novo que não pré-filtra) **e**
+  `historicoRowToCountLike` ganhou um fallback pra QUALQUER status fora do
+  vocabulário conhecido (`{level:'warn', text: status+' (histórico
+  importado)'}`) em vez de descartar a linha silenciosamente — pedido
+  explícito "sem exceção" significa que nem um valor de Status inédito na
+  planilha (dado sujo, digitado errado, etc.) pode fazer uma linha
+  desaparecer do relatório. Só uma linha SEM `produto_codigo` continua
+  descartada — isso é integridade de dado (não dá pra montar a coluna
+  "Código"), não uma exclusão por status.
+- **`statusLabelPadrao(c)` corrigido** — antes só mapeava
+  `c.statusAprovacao` (sempre `null` pra contagem vinda do histórico,
+  `historicoRowToCountLike` nunca preenche esse campo — o vocabulário de
+  status da planilha antiga não bate 1:1 com os states do app), então TODA
+  linha do histórico saía com a coluna "Status" em branco no export, mesmo
+  a informação existindo (`c._statusOriginal`). Ganhou o fallback
+  `STATUS_LABEL_PADRAO[c.statusAprovacao] || c._statusOriginal || ''` — pra
+  contagem do histórico, `_statusOriginal` já É o texto exato da planilha
+  original ("OK"/"Pendente"/etc.), mais fiel que tentar traduzir.
+- **`buildCountRows`**: `'Classe'`/`'Dias S/ Mov.'` deixaram de ser sempre
+  `''` (o comentário dizia "o app não captura nenhum dos dois" — desatualizado,
+  esses campos JÁ existem em `historicoRowToCountLike` desde a rodada de
+  "Histórico ganha todos os campos pra auditoria", só nunca tinham sido lidos
+  aqui) — agora usam `c.classe || ''`/`c.diasSemMovimento!=null ?
+  c.diasSemMovimento : ''`. Contagem AO VIVO continua saindo com essas duas
+  colunas vazias (dado que genuinamente não existe nesse fluxo, não é
+  fabricado). `'SA'` já vinha certa desde o recurso de SA de Ajuste — só o
+  comentário acima da função estava desatualizado, corrigido junto.
+- **`App()`**: novo estado `historicoTudo`, buscado no mesmo ponto/ciclo de
+  `historicoConcluidas`/`historicoParaTendencia` (`refreshHistoricoConcluidas`,
+  uma vez por login + depois de reimportar a planilha em Configurações — o
+  histórico não muda em tempo real, mesmo critério de sempre). Passado como
+  prop nova pra `<ReportsScreen>`.
+- **`ReportsScreen`**: `todasContagens = [...counts, ...historicoTudo.map(historicoRowToCountLike).filter(Boolean)]`
+  — essa é a fonte usada em TUDO (filtro por dia, contador no topo, as 4
+  abas do Excel via `generateReportWorkbook`) em vez de só `counts`. Textos
+  atualizados pra deixar isso explícito ("N contagens registradas (app +
+  histórico importado)", descrição do painel "Baixar Relatório" menciona
+  "sem exceção, junta o que foi contado dentro do app com o histórico
+  importado da planilha antiga").
+- Testado via harness Node isolado (mesma técnica de sempre): os 6 status
+  conhecidos + 1 status inédito nunca vistos antes passam por
+  `historicoRowToCountLike` sem serem descartados; linha sem código continua
+  descartada; `statusLabelPadrao` usa o mapa pra contagem ao vivo e
+  `_statusOriginal` pro histórico (inclusive status inédito); `buildCountRows`
+  preenche Classe/Dias S/Mov./SA/Status certos vindos do histórico, e
+  continua com Classe vazia pra contagem ao vivo (sem fabricar dado); o
+  filtro de exclusão (Recontar/Ajustar fora, resto dentro) confirmado
+  isoladamente; a fusão counts+histórico soma corretamente; e um render de
+  verdade de `ReportsScreen` (jsdom + react-dom/client + `act()`) confirma
+  o contador combinado aparecendo na tela. Transpile Babel do arquivo
+  inteiro e balanceamento de chaves do CSS conferidos (638/638, sem mudança
+  — nenhuma classe CSS nova). **Verificação visual/funcional de ponta a
+  ponta (abrir o Excel gerado e conferir as linhas do histórico) fica a
+  cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth
+  real, não simulável no sandbox sem rede).
