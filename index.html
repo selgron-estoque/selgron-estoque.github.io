@@ -4219,17 +4219,47 @@ function App(){
     setFlowState(params||null);
     setView(v);
     window.scrollTo(0,0);
+    // Empurra uma entrada REAL no histórico do navegador a cada navegação
+    // pra frente — sem isso, o app inteiro (por mais telas que `goto()` já
+    // tenha trocado por dentro) sempre foi UMA ÚNICA entrada do ponto de
+    // vista do navegador, então o botão de voltar físico do tablet/celular
+    // (ou o gesto/botão do navegador) não tinha NADA pra "consumir" e saía
+    // do app direto, em vez de voltar uma tela (bug reportado pelo
+    // cliente). Ver o `useEffect` de `popstate` logo abaixo — é ele que
+    // reage a essa entrada sendo consumida.
+    try{ window.history.pushState({stock360Nav:true}, '', window.location.href); }catch(e){}
   }
 
+  // Único lugar que de fato muda `view`/`flowState` pra VOLTAR uma tela —
+  // reage tanto ao botão físico/gesto do navegador (evento `popstate`
+  // nativo) quanto ao botão "Voltar" do próprio app (`voltarUmPasso`, que
+  // só chama `history.back()` agora, ver abaixo) — unificar os dois no
+  // MESMO handler garante que a pilha do navegador e `navHistory` nunca
+  // saem de sincronia (evita voltar 2 telas de uma vez ou o botão físico
+  // "não fazer nada" depois de usar o botão do app, ou vice-versa).
+  useEffect(()=>{
+    function handlePopState(){
+      setNavHistory(prev=>{
+        if(prev.length===0) return prev;
+        const anterior = prev[prev.length-1];
+        setFlowState(anterior.flowState);
+        setView(anterior.view);
+        window.scrollTo(0,0);
+        return prev.slice(0,-1);
+      });
+    }
+    window.addEventListener('popstate', handlePopState);
+    return ()=>window.removeEventListener('popstate', handlePopState);
+  }, []);
+
   function voltarUmPasso(){
-    setNavHistory(prev=>{
-      if(prev.length===0) return prev;
-      const anterior = prev[prev.length-1];
-      setFlowState(anterior.flowState);
-      setView(anterior.view);
-      window.scrollTo(0,0);
-      return prev.slice(0,-1);
-    });
+    // Delega pro `popstate` acima (via `history.back()`) em vez de mexer no
+    // estado direto — é o que mantém a pilha do navegador em sincronia com
+    // `navHistory`, pro botão físico continuar funcionando certo depois de
+    // usar este botão. Sem nada pra voltar, não faz nada (mesmo guard de
+    // antes — `MobileNavBar` já desabilita este botão nesse caso via
+    // `podeVoltar`, isso aqui é só uma segunda trava).
+    if(navHistory.length>0) window.history.back();
   }
 
   // A navegação (view) sobrevive a recarregar a página — se o usuário

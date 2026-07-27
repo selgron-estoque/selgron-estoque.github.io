@@ -11153,3 +11153,78 @@ uma CONTAGEM individual em "Recontagens Pendentes" — "seguindo a mesma linha".
   sempre (login exige Supabase Auth real, não simulável no sandbox sem
   rede). Falta o cliente rodar o SQL novo (`alter table contagens add
   column if not exists atribuido_a text;`) no projeto Supabase real.
+
+## Bug real: botão de voltar do tablet/celular/navegador fechava o app inteiro
+
+Cliente reportou: "botão de voltar do tablet, celular ou navegador precisa
+apenas voltar, ele esta fechando o app".
+
+- **Causa raiz**: a navegação inteira do app (`goto`/`voltarUmPasso`/
+  `navHistory`, ver "Menu lateral (celular) vira rodapé com 2 ícones" no
+  histórico acima) sempre foi 100% interna — um array `navHistory` em
+  `useState`, sem NUNCA tocar a History API real do navegador
+  (`window.history`). Do ponto de vista do navegador/WebView do tablet, não
+  importa quantas telas o `goto()` já tinha trocado por dentro do app — a
+  sessão inteira sempre foi UMA ÚNICA entrada de histórico (a carga inicial
+  da página). O botão físico de voltar (ou o gesto/botão do navegador) não
+  tinha NADA pra "consumir" nessa entrada única, então o sistema operacional/
+  navegador caía pro comportamento padrão: sair do app/fechar a aba, em vez
+  de voltar uma tela dentro dele.
+- **Correção**: `goto()` passou a chamar `window.history.pushState(...)` a
+  cada navegação pra frente (empurra uma entrada REAL no histórico do
+  navegador, em paralelo ao já existente `navHistory`). Um `useEffect` novo
+  escuta o evento `popstate` (disparado pelo navegador sempre que uma entrada
+  de histórico é "consumida" — seja pelo botão físico do aparelho, pelo botão
+  de voltar do navegador, ou por um gesto de deslizar) e é o ÚNICO lugar que
+  de fato muda `view`/`flowState` pra voltar uma tela (mesma lógica que já
+  existia dentro de `voltarUmPasso`, só que movida pra cá).
+- **`voltarUmPasso()` (o botão "Voltar" do PRÓPRIO app, no rodapé mobile)
+  virou um wrapper fino** — em vez de mexer no estado diretamente, agora só
+  chama `window.history.back()` (quando há algo pra voltar). Unificar os
+  dois caminhos (botão físico e botão do app) no MESMO handler de `popstate`
+  é o que garante que as duas pilhas — a do navegador e a `navHistory` do
+  app — nunca saem de sincronia: sem essa unificação, usar o botão do app
+  UMA vez e depois o botão físico OUTRA vez arriscaria voltar 2 telas de
+  uma vez, ou o botão físico "não fazer nada" na sequência errada.
+- **Na tela raiz (Home, sem nada em `navHistory`), o botão físico continua
+  saindo do app normalmente** — de propósito: como `goto()` só empurra uma
+  entrada nova quando navega pra ALGUM lugar, no início da sessão (ou depois
+  de já ter voltado todo o caminho) não existe nenhuma entrada extra
+  empurrada além da carga inicial da página — pressionar voltar nesse ponto
+  se comporta exatamente como sair de qualquer app nativo no botão "Home"/
+  voltar da tela inicial, sem ficar preso sem conseguir sair.
+- **Limitação conhecida, de baixa gravidade, não resolvida nesta rodada**:
+  `logout()` já limpava `navHistory` (volta pra `[]`), mas não "esvazia" as
+  entradas que o navegador já tinha empurrado antes do logout — se o usuário
+  tinha navegado fundo antes de sair, o navegador ainda guarda essas
+  entradas extras. Isso não vaza dado nenhum (a tela de login sempre
+  aparece igual, `view`/`flowState` não importam sem sessão), só pode exigir
+  alguns toques a mais no botão físico logo depois de um logout antes dele
+  voltar a "sair de verdade" — pequeno, cosmético, não mexi nisso agora pra
+  não complicar o fluxo de logout com lógica de `history.go(-N)`.
+- **Verificação teve que lidar com um detalhe de timing do teste**: a
+  primeira rodada do harness (jsdom + `window.history` real, não mockada)
+  mostrou os resultados sempre "atrasados em 1 passo" — não era bug na
+  lógica, era o `history.back()` do jsdom disparando `popstate` de forma
+  assíncrona, e meu primeiro `await` (só um `setTimeout(0)`) não dava tempo
+  suficiente pro evento realmente disparar antes de eu checar o estado.
+  Aumentar a espera pra 50ms resolveu (mesmo evento, só mais tempo pra
+  disparar) — em um navegador/tablet real esse disparo é instantâneo, o
+  atraso era só uma característica da simulação em jsdom.
+- Testado via repro fiel do padrão (mesma lógica goto/voltarUmPasso/
+  popstate, copiada pra um componente React isolado, rodando com a History
+  API REAL do jsdom — não mockada, já que o comportamento de
+  pushState/popstate/back() em si é exatamente o que precisa ser validado):
+  confirmei que 2 navegações pra frente empurram 2 entradas; que "voltar"
+  físico (`window.history.back()`, simulando o botão do aparelho) desfaz UM
+  passo por vez, na ordem certa; que o botão "Voltar" do próprio app
+  produz EXATAMENTE o mesmo resultado que o botão físico (mesmo destino);
+  que na raiz (nada pra desfazer) o handler não quebra nem muda a tela; e
+  que uma sequência de 3 navegações seguida de 3 "voltar" desfaz uma de
+  cada vez, sem pular nem duplicar (c→b→a→home). Transpile Babel do
+  arquivo inteiro e balanceamento de chaves do CSS conferidos (638/638, sem
+  mudança — só JS dentro de `App()`, nenhuma classe CSS nova). **Teste com
+  o botão físico de verdade num tablet/celular fica a cargo do cliente** —
+  mesma limitação de sempre (sandbox sem hardware real), mas o mecanismo
+  (pushState/popstate) é padrão de navegador, não algo específico de
+  dispositivo — deve funcionar igual em qualquer aparelho/navegador.
