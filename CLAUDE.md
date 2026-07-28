@@ -11631,3 +11631,58 @@ O fluxo agora tem 3 etapas, cada uma com sua ação/tela:
   necessária** — reaproveita colunas já existentes. **Verificação visual de
   ponta a ponta fica a cargo do cliente** — mesma limitação de sempre (login
   exige Supabase Auth real, não simulável no sandbox sem rede).
+
+## Correção do fluxo SA: número deixa de ser exigido na 1ª etapa
+
+Logo depois de subir a rodada anterior, o cliente corrigiu o entendimento:
+"na verdade, quando eu aprovo ele precisa sair de item divergente para outro
+lugar aguardando o número da SA, quando eu tiver o número da SA aí sim vai
+para aprovação da diretoria" — a rodada anterior tinha ficado exigindo o
+número da SA logo ao sair de "Itens Divergentes" (1ª etapa), mas na prática o
+NÚMERO só existe depois: quem emite/devolve o número da SA é o próprio
+Armazém, num processo fora do app — o líder só sabe, no momento da análise,
+QUE o item precisa de ajuste, ainda sem número nenhum em mãos.
+
+- **`gerarSolicitacaoArmazem(countId, numeroSa)` virou `enviarParaArmazem(countId)`**
+  — sem parâmetro de SA, sem gravar `numero_sa` — só muda o status pra
+  `aguardando_solicitacao_armazem` e registra quem/quando decidiu que precisa
+  de ajuste (reaproveita `sa_gerada_por`/`sa_gerada_em`, mesmas colunas de
+  sempre, só o rótulo de exibição mudou de "SA gerada por" pra "Enviado ao
+  Armazém por" — mais preciso, já que nenhuma SA foi de fato gerada ainda
+  nesse momento).
+- **`enviarParaAprovacaoDiretoria(countId, numeroSa)` voltou a receber o
+  número** (agora nesta etapa, não mais na 1ª) — valida obrigatório
+  (`if(!numeroSaLimpo) return {ok:false,...}`) e, num só `update`, grava
+  `numero_sa` E muda o status direto pra `aguardando_aprovacao_diretoria` —
+  é literalmente "quando eu tiver o número da SA aí sim vai para aprovação
+  da diretoria", uma ação só, como o cliente descreveu.
+- **`DivergentItemsPanel`**: removido por completo o campo inline de SA
+  (`saAbertoId`/`saValor`) — o botão (renomeado "Gerar SA de Ajuste" →
+  **"Necessita Ajuste"**, pra não sugerir que uma SA foi gerada ali) chama
+  `onEnviarParaArmazem(countId)` direto, sem abrir formulário nenhum — o item
+  já sai na hora pra "Aguardando Armazém".
+- **`SolicitacaoArmazemPanel`**: ganhou o campo que tinha sido removido da
+  etapa anterior — `saInputs`/`saInputValue` (mesmo padrão já usado antes em
+  `DiretoriaApprovalPanel`, antes de ser removido de lá), campo "Número da SA
+  (assim que o Armazém devolver)" + botão "Enviar para Aprovação da
+  Diretoria" **desabilitado até o campo ser preenchido** — só então chama
+  `onEnviarParaDiretoria(id, numero)`. O chip de severidade mostra "Aguardando
+  número da SA" (em vez de "SA {numero}") enquanto o item está aqui, já que
+  por definição nenhum item nesta tela ainda tem número.
+- **Nenhuma migração de SQL nova** — mesmas 3 colunas de sempre
+  (`numero_sa`/`sa_gerada_por`/`sa_gerada_em`), só o MOMENTO em que cada uma é
+  preenchida mudou (agora `sa_gerada_por`/`sa_gerada_em` na etapa 1 sem
+  `numero_sa`, e `numero_sa` só na etapa 2).
+- Testado via harness real (jsdom + react-dom/client + `act()`, mesma técnica
+  de sempre): confirmei que "Necessita Ajuste" chama `onEnviarParaArmazem`
+  direto, sem abrir nenhum campo de SA antes ou depois do clique; que
+  `SolicitacaoArmazemPanel` mostra "Aguardando número da SA" e o botão de
+  enviar vem desabilitado até o campo ser preenchido, habilitando e chamando
+  `onEnviarParaDiretoria` com o id+número certos assim que digitado; e que
+  `OPEN_STATUSES` continua cobrindo o status intermediário. 10 asserções,
+  todas passando, mais as 6 de Sidebar/`hasAccess` da rodada anterior
+  (intocadas, continuam passando). Transpile Babel do arquivo inteiro e
+  balanceamento de chaves do CSS conferidos (638/638, sem mudança — só JS).
+  **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma
+  limitação de sempre (login exige Supabase Auth real, não simulável no
+  sandbox sem rede).
