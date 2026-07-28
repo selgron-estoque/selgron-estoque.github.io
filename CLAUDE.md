@@ -11519,3 +11519,38 @@ de sempre — sandbox sem acesso de rede ao banco real):
 (integer);` com sucesso — só a versão atual (`integer,text[],text[]`)
 continua existindo no projeto real, sem mais ambiguidade em consultas
 manuais posicionais.
+
+## "Aprovação de Ajustes" renomeada pra "Aguardando Aprovação"
+
+Cliente mandou um print da Sidebar destacando duas telas ("Itens Divergentes" e
+"Aprovação de Ajustes") e descreveu o fluxo completo que já existe hoje: "Itens
+Divergentes é onde eu faço a minha analise se eu concordo ou não, Após isso vai
+para criação de SA, após SA criada aí sim eu mando para aprovação da Diretoria,
+somente após a aprovação da Diretoria o documento é concluído" — confirmando
+(depois de eu perguntar via `AskUserQuestion`) que isso já bate exatamente com o
+fluxo implementado na rodada "Fluxo real de ajuste de estoque da Selgron — SA de
+Ajuste + aprovação da Diretoria" (ver seção acima): "Itens Divergentes" → "Gerar
+SA de Ajuste" → tela `aprovacaoDiretoria` → aprovar/reprovar. Não era um pedido
+de tela nova, só de renomear o rótulo — reforçado pelo fato de o KPI da Home já
+usar "Aguardando Aprovação da Diretoria" pra esse mesmo status
+(`aguardando_aprovacao_diretoria`), então "Aprovação de Ajustes" já soava
+inconsistente com o nome que o resto do app usa pra essa mesma fila.
+
+- **Só o RÓTULO exibido mudou, em 4 lugares** — o id interno da view
+  (`aprovacaoDiretoria`) foi deliberadamente mantido, pra não precisar tocar em
+  `hasAccess`/`goto()`/`ACESSOS_RESTRITOS`/nenhuma outra referência interna:
+  `TODOS_OS_MENUS` (rótulo usado no dual-list "Editar Usuário"), `VIEW_TITLES`
+  (título do `DesktopTopbar` ao entrar na tela), `buildSidebarGroups` (rótulo do
+  item no menu lateral) e o texto descritivo do painel "Regras de Divergência"
+  (Relatórios). Mais 8 ocorrências em comentários de código, trocadas via
+  find/replace direto (sem efeito em runtime).
+- Testado via harness real (jsdom + `vm.Script` no mesmo contexto, mesma técnica
+  rigorosa de sempre — carrega o `index.html` inteiro transpilado): confirmei
+  `VIEW_TITLES.aprovacaoDiretoria==='Aguardando Aprovação'`, o rótulo certo em
+  `TODOS_OS_MENUS`, o id interno intocado (`'aprovacaoDiretoria'`), e que a
+  `Sidebar` (perfil admin) mostra "Aguardando Aprovação" no item de menu.
+  Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos
+  (638/638, sem mudança — troca só de texto, nenhuma classe/regra CSS nova).
+  **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma
+  limitação de sempre (login exige Supabase Auth real, não simulável no sandbox
+  sem rede).

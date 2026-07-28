@@ -3709,7 +3709,7 @@ function acuracidadeItem(c){
 
 // Formata a acurácia do item (0 a 100%) pro quadro Sistema/Físico/
 // Diferença/% das telas de contagem (Recontagens/Itens Divergentes/
-// Aprovação de Ajustes/Contagens Concluídas) — pedido do cliente pra trocar
+// Aguardando Aprovação/Contagens Concluídas) — pedido do cliente pra trocar
 // o que essa célula mostra: era o % de DIFERENÇA (podia ir bem abaixo de
 // 0%, ex. "-100%" quando o físico é bem menor que o sistema), passou a ser
 // % de ACERTO — 100% = bateu exato, 0% = nada bate, e valores
@@ -4553,7 +4553,7 @@ function App(){
   // `approveDivergence`, sem passar por nada disso — ver DivergentItemsPanel.
 
   // Líder encaminha pra Diretoria — item sai de "Itens Divergentes" e entra em
-  // "Aprovação de Ajustes" (`aguardando_aprovacao_diretoria`, um estado ABERTO
+  // "Aguardando Aprovação" (`aguardando_aprovacao_diretoria`, um estado ABERTO
   // como qualquer outro em OPEN_STATUSES). `numeroSa` é OPCIONAL aqui de
   // propósito — pedido do cliente: o líder não precisa saber/digitar o número
   // da SA nesse momento, só decide QUE precisa de ajuste; quem digita a SA de
@@ -4706,7 +4706,7 @@ function App(){
 
   // Marca/desmarca um INVENTÁRIO inteiro como urgente, em "Inventários
   // Pendentes" — mesma ideia de "Marcar urgente" já usada nas contagens
-  // (Recontagens/Itens Divergentes/Aprovação de Ajustes), estendida aqui pro
+  // (Recontagens/Itens Divergentes/Aguardando Aprovação), estendida aqui pro
   // cliente sinalizar qual documento o operador deve priorizar. Mesmo padrão:
   // aguarda confirmação do Supabase antes de atualizar o cache local.
   async function toggleInventarioUrgente(invId, urgente){
@@ -5656,7 +5656,7 @@ const TODOS_OS_MENUS = [
   {id:'pickCountType', label:'Nova Contagem'},
   {id:'recounts', label:'Recontagens'},
   {id:'divergentes', label:'Itens Divergentes'},
-  {id:'aprovacaoDiretoria', label:'Aprovação de Ajustes'},
+  {id:'aprovacaoDiretoria', label:'Aguardando Aprovação'},
   {id:'concluidas', label:'Contagens Concluídas'},
   {id:'usuarios', label:'Usuários'},
   {id:'enderecos', label:'Endereços Pendentes'},
@@ -5729,7 +5729,7 @@ const VIEW_TITLES = {
   importedListCount:'Lista Importada',
   recounts:'Recontagens Pendentes',
   divergentes:'Itens Divergentes',
-  aprovacaoDiretoria:'Aprovação de Ajustes',
+  aprovacaoDiretoria:'Aguardando Aprovação',
   todasDivergencias:'Todas as Divergências',
   concluidas:'Contagens Concluídas',
   contagensHoje:'Contagens de Hoje',
@@ -5801,7 +5801,7 @@ function buildSidebarGroups(user){
     ...(podeVer('pickCountType') ? [{id:'pickCountType', ic:'plus', label:'Nova Contagem'}] : []),
     ...(podeVer('recounts') ? [{id:'recounts', ic:'repeat', label:'Recontagens'}] : []),
     ...(podeVer('divergentes') ? [{id:'divergentes', ic:'alertTriangle', label:'Itens Divergentes'}] : []),
-    ...(podeVer('aprovacaoDiretoria') ? [{id:'aprovacaoDiretoria', ic:'clipboardList', label:'Aprovação de Ajustes'}] : []),
+    ...(podeVer('aprovacaoDiretoria') ? [{id:'aprovacaoDiretoria', ic:'clipboardList', label:'Aguardando Aprovação'}] : []),
     ...(podeVer('concluidas') ? [{id:'concluidas', ic:'checkCircle', label:'Contagens Concluídas'}] : []),
   ];
   const cadastrosItems = [
@@ -6011,7 +6011,7 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
   // divergência que AINDA não entrou em processo de recontagem. Assim que o
   // item vira aguardando_segunda, some daqui (mesma regra da tela).
   const itensDivergentesPendentes = counts.filter(c=>c.statusAprovacao==='aguardando_analise_lider').length;
-  // "Aprovação de Ajustes" (KPI + tela própria, ver DiretoriaApprovalPanel) —
+  // "Aguardando Aprovação" (KPI + tela própria, ver DiretoriaApprovalPanel) —
   // SAs de ajuste geradas pelo líder, aguardando decisão da Diretoria. Não
   // interessa ao operador (ele não participa dessa etapa), mesmo critério de
   // ACESSOS_RESTRITOS.aprovacaoDiretoria.
@@ -6427,7 +6427,7 @@ function InventoryList({inventories, goto, role, counts, users, currentUser, onD
     if(!res || !res.ok) setUrgenteErro(prev=>({...prev, [inv.id]: (res && res.erro) || 'Não foi possível salvar — tente novamente.'}));
   }
   // Menu "⋮" pra "Marcar urgente" — mesmo padrão já usado em Recontagens/
-  // Itens Divergentes/Aprovação de Ajustes, em vez de um botão sempre visível.
+  // Itens Divergentes/Aguardando Aprovação, em vez de um botão sempre visível.
   const [menuAbertoId, setMenuAbertoId] = useState(null);
   useEffect(()=>{
     if(!menuAbertoId) return;
@@ -8882,7 +8882,7 @@ function SearchWithScanner({value, onChange, placeholder}){
 }
 
 // Paginação client-side pras 4 telas de contagem (Recontagens/Itens
-// Divergentes/Aprovação de Ajustes/Contagens Concluídas) — cliente notou um
+// Divergentes/Aguardando Aprovação/Contagens Concluídas) — cliente notou um
 // delay pequeno ao trocar de filtro/tela depois que o padrão de período virou
 // "Todos os períodos" (ver seção anterior no CLAUDE.md): sem a janela de 30
 // dias escondendo a maior parte, essas listas podem renderizar centenas de
@@ -9670,7 +9670,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSend
   );
 }
 
-// "Aprovação de Ajustes" — tela nova, pedido do cliente: o fluxo real de
+// "Aguardando Aprovação" — tela nova, pedido do cliente: o fluxo real de
 // ajuste de estoque da Selgron não termina no líder aprovar a divergência.
 // Quando o líder decide que HÁ ajuste necessário (botão "Enviar para
 // Aprovação da Diretoria" em DivergentItemsPanel), o item cai aqui até a
@@ -10146,7 +10146,7 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
   const [reprovando, setReprovando] = useState(false);
   const [erroReprovar, setErroReprovar] = useState('');
   // Motivo da reprovação — mesmo pedido do cliente já aplicado no fluxo de
-  // "Aprovação de Ajustes" (ver DiretoriaApprovalPanel): registrar POR QUE o
+  // "Aguardando Aprovação" (ver DiretoriaApprovalPanel): registrar POR QUE o
   // ajuste não foi aceito, não só QUE foi reprovado.
   const [motivoReprovar, setMotivoReprovar] = useState('');
   // Mesmo padrão de toggle "Detalhes"/"Ocultar" já usado em RecontagensPanel
@@ -10778,7 +10778,7 @@ function ReportsScreen({counts, historicoTudo=[], inventories, currentUser, send
           <div style={{marginTop:8,fontSize:'var(--text-sm)'}}>Na recontagem, se a diferença bater exata com a da 1ª contagem, vai
           direto pro líder com o aviso "Diferença confirmada, seguir com ajuste".</div>
           <div style={{marginTop:8,fontSize:'var(--text-sm)'}}>Se o líder confirmar que HÁ ajuste necessário, ele gera uma SA de
-          Ajuste e encaminha pra aprovação da Diretoria ("Aprovação de Ajustes") — só depois de
+          Ajuste e encaminha pra aprovação da Diretoria ("Aguardando Aprovação") — só depois de
           aprovada o item conta como resolvido. Se a Diretoria reprovar, volta pra recontagem.
           "Sem Ajuste Necessário" não passa por essa etapa.</div>
         </div>
