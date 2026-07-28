@@ -3611,17 +3611,17 @@ const STATUS_INFO = {
   aguardando_analise_lider: {level:'danger', text:'Enviado para análise do líder de estoque'},
   aprovado_lider: {level:'ok', text:'Divergência aprovada pelo líder de estoque — sem ajuste necessário'},
   // Fluxo real de ajuste de estoque da Selgron (pedido do cliente, esclarecido
-  // em 2 rodadas): SA = "Solicitação ao Armazém", um documento à parte,
-  // distinto de "pedir aprovação da Diretoria" — o líder decide que precisa
-  // de ajuste (`enviarParaArmazem` em App()), AINDA SEM número (quem emite é
-  // o Armazém, depois); só quando o número chega, numa ação separada do
-  // líder/admin (`enviarParaAprovacaoDiretoria`, que já grava o número E
-  // encaminha), o item entra na fila da Diretoria; só depois da Diretoria
-  // decidir o item conta como resolvido (`aprovarAjusteDiretoria`) ou volta
-  // pra recontagem (`reprovarAjusteDiretoria`, que grava o status de volta
-  // como `aguardando_segunda`, ver OPEN_STATUSES).
-  aguardando_solicitacao_armazem: {level:'warn', text:'Aguardando o Armazém devolver o número da SA de Ajuste'},
-  aguardando_aprovacao_diretoria: {level:'warn', text:'SA de ajuste enviada — aguardando aprovação da Diretoria'},
+  // em 3 rodadas): SA = "Solicitação ao Armazém", um documento à parte,
+  // distinto de "pedir aprovação da Diretoria" — o líder só FINALIZA A
+  // ANÁLISE (`enviarParaArmazem` em App()), sem decidir nada ainda; só
+  // quando o número da SA chega, numa ação separada do líder/admin
+  // (`enviarParaAprovacaoDiretoria`, que grava o número E decide Ajuste ou
+  // Devolução na mesma hora), o item entra na fila da Diretoria; só depois
+  // da Diretoria decidir o item conta como resolvido (`aprovarAjusteDiretoria`)
+  // ou volta pra recontagem (`reprovarAjusteDiretoria`, que grava o status de
+  // volta como `aguardando_segunda`, ver OPEN_STATUSES).
+  aguardando_solicitacao_armazem: {level:'warn', text:'Aguardando o Armazém devolver o número da SA'},
+  aguardando_aprovacao_diretoria: {level:'warn', text:'SA enviada — aguardando aprovação da Diretoria'},
   ajuste_aprovado_diretoria: {level:'ok', text:'Ajuste aprovado pela Diretoria e efetivado no estoque'},
 };
 
@@ -4558,28 +4558,30 @@ function App(){
   }
 
   // ---- Fluxo real de ajuste de estoque da Selgron (SA → Armazém → Diretoria) ----
-  // Esclarecido pelo cliente numa 2ª rodada, depois de eu ter feito a SA
-  // obrigatória logo na 1ª etapa: "quando eu aprovo ele precisa sair de item
-  // divergente para outro lugar aguardando o número da SA, quando eu tiver o
-  // número da SA aí sim vai para aprovação da diretoria" — ou seja, o líder
-  // decide QUE precisa de ajuste sem ainda saber o número (quem emite/
-  // devolve o número é o próprio Armazém, depois, fora do app); só quando
-  // esse número chega é que dá pra encaminhar pra Diretoria. Fluxo em 3
-  // etapas, cada uma sua ação/tela:
-  //   1. Líder decide que precisa de ajuste (SEM número ainda) →
-  //      `enviarParaArmazem` → item sai de "Itens Divergentes" e entra em
-  //      "Aguardando Armazém" (`aguardando_solicitacao_armazem`), sem SA.
-  //   2. Líder/admin digita o número da SA assim que o Armazém devolver e
-  //      encaminha pra Diretoria, tudo numa ação só → `enviarParaAprovacaoDiretoria`
-  //      (agora recebe `numeroSa`, obrigatório) → item entra em "Aguardando
-  //      Aprovação" (`aguardando_aprovacao_diretoria`), já com a SA registrada.
+  // Esclarecido pelo cliente numa 3ª rodada: "em 'Itens Divergentes' eu só
+  // analiso, quando finalizo a análise aí sim vai para fila de gerar SA, só
+  // quando tiver o número da SA que eu faço a decisão de ajuste ou
+  // devolução" — ou seja, a escolha entre "Ajuste" e "Devolução" NÃO é mais
+  // decidida pelo sinal da diferença em "Itens Divergentes" (rodada
+  // anterior, revertida) — é decidida DEPOIS, junto com o número da SA, na
+  // fila "Aguardando Armazém". Fluxo em 3 etapas, cada uma sua ação/tela:
+  //   1. Líder finaliza a análise, SEM decidir nada ainda (nem número, nem
+  //      Ajuste/Devolução) → `enviarParaArmazem` → item sai de "Itens
+  //      Divergentes" e entra em "Aguardando Armazém"
+  //      (`aguardando_solicitacao_armazem`).
+  //   2. Líder/admin digita o número da SA assim que o Armazém devolver E
+  //      decide, na mesma ação, se é Ajuste ou Devolução →
+  //      `enviarParaAprovacaoDiretoria` (recebe `numeroSa` obrigatório +
+  //      `ehDevolucao`) → item entra em "Aguardando Aprovação"
+  //      (`aguardando_aprovacao_diretoria`), já com SA e classificação.
   //   3. Diretoria decide → `aprovarAjusteDiretoria`/`reprovarAjusteDiretoria`.
   // "Sem Ajuste Necessário" continua sendo `approveDivergence`, sem passar
   // por nada disso — ver DivergentItemsPanel.
 
-  // Etapa 1 — líder decide que o item precisa de ajuste, SEM saber o número
-  // da SA ainda (quem emite é o Armazém, depois). Item sai de "Itens
-  // Divergentes" e entra em "Aguardando Armazém", só aguardando o número.
+  // Etapa 1 — líder finaliza a análise (decide que precisa de SA), sem saber
+  // ainda o número nem se vai virar Ajuste ou Devolução — isso só é decidido
+  // na etapa 2, junto com o número. Item sai de "Itens Divergentes" e entra
+  // em "Aguardando Armazém".
   async function enviarParaArmazem(countId){
     const saGeradaPor = currentUser ? currentUser.nome : '—';
     const saGeradaEm = new Date().toLocaleString('pt-BR');
@@ -4599,47 +4601,20 @@ function App(){
     return res;
   }
 
-  // Etapa 2 — líder/admin digita o número da SA (chegou do Armazém) e já
-  // encaminha pra decisão da Diretoria, na mesma ação — é o número que
-  // "libera" o item pra seguir, exatamente como o cliente descreveu.
-  async function enviarParaAprovacaoDiretoria(countId, numeroSa){
+  // Etapa 2 — líder/admin digita o número da SA (chegou do Armazém) e, na
+  // MESMA ação, decide se o caso é Ajuste ou Devolução (`ehDevolucao`) — já
+  // encaminha direto pra decisão da Diretoria. É o número que "libera" as
+  // duas decisões juntas, exatamente como o cliente descreveu.
+  async function enviarParaAprovacaoDiretoria(countId, numeroSa, ehDevolucao){
     const numeroSaLimpo = (numeroSa||'').trim();
     if(!numeroSaLimpo) return {ok:false, erro:'Informe o número da SA.'};
     const res = await updateContagemStatusToSupabase(countId, {
       status_aprovacao: 'aguardando_aprovacao_diretoria',
       numero_sa: numeroSaLimpo,
+      eh_devolucao: !!ehDevolucao,
     });
     if(res.ok){
-      setCounts(prev=>prev.map(c=>c.id===countId?{...c, statusAprovacao:'aguardando_aprovacao_diretoria', solicitacaoAjuste: numeroSaLimpo}:c));
-    }
-    return res;
-  }
-
-  // Item com SOBRA (diferença positiva) não gera SA — é só uma devolução
-  // física, sem protocolo/número (pedido do cliente: "para os itens
-  // positivos não gero número de SA é feito apenas uma devolução"). AINDA
-  // precisa de aprovação da Diretoria (confirmado via `AskUserQuestion`), só
-  // que pula por completo a etapa "Aguardando Armazém" — vai direto de
-  // "Itens Divergentes" pra "Aguardando Aprovação", já marcado
-  // `eh_devolucao:true` (campo explícito, não inferido pela ausência de SA —
-  // mesma lição já aplicada várias vezes neste projeto).
-  async function registrarDevolucao(countId){
-    const registradoPor = currentUser ? currentUser.nome : '—';
-    const registradoEm = new Date().toLocaleString('pt-BR');
-    const res = await updateContagemStatusToSupabase(countId, {
-      status_aprovacao: 'aguardando_aprovacao_diretoria',
-      eh_devolucao: true,
-      sa_gerada_por: registradoPor,
-      sa_gerada_em: registradoEm,
-    });
-    if(res.ok){
-      setCounts(prev=>prev.map(c=>c.id===countId?{
-        ...c,
-        statusAprovacao:'aguardando_aprovacao_diretoria',
-        ehDevolucao:true,
-        saGeradaPor: registradoPor,
-        saGeradaEm: registradoEm,
-      }:c));
+      setCounts(prev=>prev.map(c=>c.id===countId?{...c, statusAprovacao:'aguardando_aprovacao_diretoria', solicitacaoAjuste: numeroSaLimpo, ehDevolucao: !!ehDevolucao}:c));
     }
     return res;
   }
@@ -5264,7 +5239,7 @@ function App(){
         {view==='routeCount' && <RouteCountFlow inv={flowState} user={currentUser} counts={counts} inventories={inventories} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} gruposExcluidos={gruposExcluidos} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
         {view==='importedListCount' && <ImportedListCountFlow inv={flowState} user={currentUser} counts={counts} inventories={inventories} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
         {view==='recounts' && hasAccess(currentUser,'recounts') && <RecountsPanel counts={counts} inventories={inventories} role={role} currentUser={currentUser} users={users} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onToggleLiberarOriginal={toggleLiberarRecontagemOriginal} onEditarMotivoObservacao={editarMotivoObservacaoContagem} onAtribuir={atribuirContagem} operadorVeValoresRecontagem={operadorVeValoresRecontagem} />}
-        {view==='divergentes' && hasAccess(currentUser,'divergentes') && <DivergentItemsPanel counts={counts} inventories={inventories} role={role} goto={goto} onApprove={approveDivergence} onEnviarParaArmazem={enviarParaArmazem} onRegistrarDevolucao={registrarDevolucao} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onEditarMotivoObservacao={editarMotivoObservacaoContagem} />}
+        {view==='divergentes' && hasAccess(currentUser,'divergentes') && <DivergentItemsPanel counts={counts} inventories={inventories} role={role} goto={goto} onApprove={approveDivergence} onEnviarParaArmazem={enviarParaArmazem} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onEditarMotivoObservacao={editarMotivoObservacaoContagem} />}
         {view==='solicitacaoArmazem' && hasAccess(currentUser,'solicitacaoArmazem') && <SolicitacaoArmazemPanel counts={counts} inventories={inventories} role={role} onEnviarParaDiretoria={enviarParaAprovacaoDiretoria} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} />}
         {view==='aprovacaoDiretoria' && hasAccess(currentUser,'aprovacaoDiretoria') && <DiretoriaApprovalPanel counts={counts} inventories={inventories} role={role} onApproveSA={aprovarAjusteDiretoria} onRejectSA={reprovarAjusteDiretoria} onToggleUrgente={toggleUrgente} />}
         {view==='todasDivergencias' && <AllDivergencesPanel counts={counts} historicoConcluidas={historicoConcluidas} goto={goto} />}
@@ -9419,7 +9394,7 @@ function RecountsPanel({counts, inventories, role, currentUser, users, goto, onD
 // aparecer só em "Recontagens". Visível pra todos os papéis (antes ficava
 // escondida inteira do operador) — mas as ações (aprovar/solicitar
 // recontagem) continuam só pra líder/admin, operador vê em modo leitura.
-function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onEnviarParaArmazem, onRegistrarDevolucao, onRequestRecount, onDeleteCount, onToggleUrgente, onEditarMotivoObservacao}){
+function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onEnviarParaArmazem, onRequestRecount, onDeleteCount, onToggleUrgente, onEditarMotivoObservacao}){
   // Bug real corrigido aqui: faltava a mesma checagem de "ponta da
   // corrente" que RecountsPanel já tinha (`byOriginal`/`!byOriginal[c.id]`)
   // — sem isso, uma linha com status 'aguardando_analise_lider' continuava
@@ -9504,14 +9479,6 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onEnvi
     const res = await onEnviarParaArmazem(countId);
     setBusyId(null);
     if(!res || !res.ok) setErros(prev=>({...prev, [countId]: (res && res.erro) || 'Não foi possível enviar — tente novamente.'}));
-  }
-
-  async function handleRegistrarDevolucao(countId){
-    setBusyId(countId);
-    setErros(prev=>({...prev, [countId]: null}));
-    const res = await onRegistrarDevolucao(countId);
-    setBusyId(null);
-    if(!res || !res.ok) setErros(prev=>({...prev, [countId]: (res && res.erro) || 'Não foi possível registrar — tente novamente.'}));
   }
 
   async function handleConfirmDelete(countId){
@@ -9733,15 +9700,12 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onEnvi
                   <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>handleRequestRecount(c.id)}>{busyId===c.id ? 'Enviando…' : 'Solicitar nova contagem'}</button>
                   <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>goto('recount', c)}><Ic>🔁</Ic> Recontar</button>
                   <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>handleApprove(c.id)}>{busyId===c.id ? 'Enviando…' : 'Sem Ajuste Necessário'}</button>
-                  {/* Sobra (diferença positiva) = devolução, sem SA nenhuma
-                      — pula "Aguardando Armazém", vai direto pra Diretoria.
-                      Falta (diferença negativa, ou null/0 por segurança) =
-                      fluxo de SA de sempre, via "Aguardando Armazém". */}
-                  {c.diferenca>0 ? (
-                    <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>handleRegistrarDevolucao(c.id)}><Ic>📦</Ic> {busyId===c.id ? 'Enviando…' : 'Registrar Devolução'}</button>
-                  ) : (
-                    <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>handleEnviarParaArmazem(c.id)}><Ic>📋</Ic> {busyId===c.id ? 'Enviando…' : 'Necessita Ajuste'}</button>
-                  )}
+                  {/* Análise finalizada, mas ainda precisa de SA — a decisão
+                      entre Ajuste/Devolução só acontece depois, junto com o
+                      número da SA, na tela "Aguardando Armazém" (pedido do
+                      cliente: "só quando tiver o número da SA que eu faço a
+                      decisão de ajuste ou devolução"). */}
+                  <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>handleEnviarParaArmazem(c.id)}><Ic>📋</Ic> {busyId===c.id ? 'Enviando…' : 'Enviar para SA'}</button>
                 </div>
               ) : (
                 <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>Aguardando decisão do líder de estoque.</div>
@@ -9756,15 +9720,15 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onEnvi
 }
 
 // "Aguardando Armazém" — 2ª etapa do fluxo real de ajuste da Selgron (SA →
-// Armazém → Diretoria). O item chega aqui assim que o líder decide que
-// precisa de ajuste em "Itens Divergentes" (`App().enviarParaArmazem`) —
-// ainda SEM número de SA, porque quem emite/devolve esse número é o próprio
-// Armazém, fora do app. Fica aqui até o número chegar: o líder/admin digita
-// o número assim que souber e já encaminha pra Diretoria, numa ação só (ver
-// `App().enviarParaAprovacaoDiretoria` — é o número que "libera" o item pra
-// seguir, exatamente como o cliente descreveu). Mesmo shell visual das
-// outras telas de contagem (count-card/SearchWithScanner/TrendFilterBar/
-// result-grid-4col).
+// Armazém → Diretoria). O item chega aqui assim que o líder finaliza a
+// análise em "Itens Divergentes" (`App().enviarParaArmazem`) — ainda SEM
+// número de SA nem decisão nenhuma (Ajuste/Devolução), porque quem emite/
+// devolve o número é o próprio Armazém, fora do app. Fica aqui até o número
+// chegar: o líder/admin digita o número E decide, na mesma ação, se é
+// Ajuste ou Devolução (ver `App().enviarParaAprovacaoDiretoria` — é o
+// número que "libera" as duas decisões juntas, exatamente como o cliente
+// descreveu). Mesmo shell visual das outras telas de contagem (count-card/
+// SearchWithScanner/TrendFilterBar/result-grid-4col).
 function SolicitacaoArmazemPanel({counts, inventories, role, onEnviarParaDiretoria, onDeleteCount, onToggleUrgente}){
   const canDecide = role==='lider' || role==='admin';
   const aguardandoArmazem = counts.filter(c=>c.statusAprovacao==='aguardando_solicitacao_armazem');
@@ -9804,9 +9768,9 @@ function SolicitacaoArmazemPanel({counts, inventories, role, onEnviarParaDiretor
 
   // Número da SA — digitado aqui, assim que o Armazém devolver (por id de
   // contagem, guarda só o que foi editado nesta sessão da tela). É o número
-  // que libera o botão "Enviar para Aprovação da Diretoria" — enquanto
-  // vazio, o botão fica desabilitado (pedido do cliente: "quando eu tiver o
-  // número da SA aí sim vai para aprovação da diretoria").
+  // que libera os dois botões de decisão (Ajuste/Devolução) — enquanto
+  // vazio, os dois ficam desabilitados (pedido do cliente: "só quando tiver
+  // o número da SA que eu faço a decisão de ajuste ou devolução").
   const [saInputs, setSaInputs] = useState({});
   function saInputValue(c){ return saInputs[c.id] !== undefined ? saInputs[c.id] : (c.solicitacaoAjuste || ''); }
 
@@ -9818,12 +9782,14 @@ function SolicitacaoArmazemPanel({counts, inventories, role, onEnviarParaDiretor
     if(!res || !res.ok) setErros(prev=>({...prev, [c.id]: (res && res.erro) || 'Não foi possível salvar — tente novamente.'}));
   }
 
-  async function handleEnviar(c){
+  // Decisão de Ajuste ou Devolução acontece AQUI, junto com o número da SA
+  // (não mais em "Itens Divergentes") — `ehDevolucao` decide qual das duas.
+  async function handleEnviar(c, ehDevolucao){
     const numeroSa = saInputValue(c).trim();
     if(!numeroSa) return;
     setBusyId(c.id);
     setErros(prev=>({...prev, [c.id]: null}));
-    const res = await onEnviarParaDiretoria(c.id, numeroSa);
+    const res = await onEnviarParaDiretoria(c.id, numeroSa, ehDevolucao);
     setBusyId(null);
     if(!res || !res.ok) setErros(prev=>({...prev, [c.id]: (res && res.erro) || 'Não foi possível enviar — tente novamente.'}));
   }
@@ -9937,7 +9903,8 @@ function SolicitacaoArmazemPanel({counts, inventories, role, onEnviarParaDiretor
                 </div>
               ) : canDecide ? (
                 <div className="btn-row count-card-actions-row">
-                  <button className="btn btn-primary" disabled={busyId===c.id || !saInputValue(c).trim()} onClick={()=>handleEnviar(c)}><DIcon name="arrowRight" size={16} /> {busyId===c.id ? 'Enviando…' : 'Enviar para Aprovação da Diretoria'}</button>
+                  <button className="btn btn-secondary" disabled={busyId===c.id || !saInputValue(c).trim()} onClick={()=>handleEnviar(c, false)}><Ic>📋</Ic> {busyId===c.id ? 'Enviando…' : 'Registrar como Ajuste'}</button>
+                  <button className="btn btn-primary" disabled={busyId===c.id || !saInputValue(c).trim()} onClick={()=>handleEnviar(c, true)}><Ic>📦</Ic> {busyId===c.id ? 'Enviando…' : 'Registrar como Devolução'}</button>
                 </div>
               ) : (
                 <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>Aguardando o Armazém devolver o número da SA.</div>
@@ -9954,15 +9921,15 @@ function SolicitacaoArmazemPanel({counts, inventories, role, onEnviarParaDiretor
 // "Aguardando Aprovação" — tela nova, pedido do cliente: o fluxo real de
 // ajuste de estoque da Selgron não termina no líder aprovar a divergência.
 // O item chega aqui só depois de passar por DUAS etapas anteriores: o líder
-// decidiu que precisa de ajuste (ver DivergentItemsPanel/App().enviarParaArmazem,
-// ainda sem número de SA) e, assim que o Armazém devolveu o número, o
-// líder/admin já digitou e encaminhou pra Diretoria numa ação só (ver
-// SolicitacaoArmazemPanel/App().enviarParaAprovacaoDiretoria). A Diretoria só
-// decide Aprovar/Reprovar — o número da SA já vem pronto desde a 2ª etapa,
-// não se digita nada aqui. Hoje isso é manual, feito pelo próprio admin
-// dentro do app (não existe perfil "Diretoria" nem integração externa).
-// Mesmo shell visual das outras telas de contagem (count-card/
-// SearchWithScanner/TrendFilterBar/result-grid-4col).
+// finalizou a análise (ver DivergentItemsPanel/App().enviarParaArmazem,
+// sem decisão nenhuma ainda) e, assim que o Armazém devolveu o número, o
+// líder/admin já digitou o número E decidiu Ajuste ou Devolução, numa ação
+// só (ver SolicitacaoArmazemPanel/App().enviarParaAprovacaoDiretoria). A
+// Diretoria só decide Aprovar/Reprovar — número e classificação já vêm
+// prontos desde a 2ª etapa, não se digita/decide nada aqui. Hoje isso é
+// manual, feito pelo próprio admin dentro do app (não existe perfil
+// "Diretoria" nem integração externa). Mesmo shell visual das outras telas
+// de contagem (count-card/SearchWithScanner/TrendFilterBar/result-grid-4col).
 function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejectSA, onToggleUrgente}){
   const canDecide = role==='admin';
   // "Marcar urgente" — mesmo padrão já usado em Recontagens/Itens
@@ -10079,7 +10046,7 @@ function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejec
               <div className="count-card-head">
                 <div className="count-card-badges">
                   {c.urgente && <span className="urgente-chip"><Ic>🔥</Ic> Urgente</span>}
-                  <span className="severity-chip" style={{background:'var(--purple-bg)',color:'var(--purple)'}}><Ic>📋</Ic> {c.ehDevolucao ? 'Devolução' : (c.solicitacaoAjuste ? ('SA '+c.solicitacaoAjuste) : 'SA pendente')}</span>
+                  <span className="severity-chip" style={{background:'var(--purple-bg)',color:'var(--purple)'}}><Ic>📋</Ic> {c.ehDevolucao ? ('Devolução'+(c.solicitacaoAjuste ? (' · SA '+c.solicitacaoAjuste) : '')) : (c.solicitacaoAjuste ? ('SA '+c.solicitacaoAjuste) : 'SA pendente')}</span>
                   <span className="category-chip">{categoriaDoInventario(c, inventories)}</span>
                 </div>
                 <div className="count-card-head-right">
@@ -10634,7 +10601,7 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
                     <span className="category-chip" style={{background:'var(--ok-bg)',color:'var(--ok)'}}>Ajustado{tip.solicitacaoAjuste ? (' · SA '+tip.solicitacaoAjuste) : ''}</span>
                   )}
                   {ehDevolucao && (
-                    <span className="category-chip" style={{background:'var(--ok-bg)',color:'var(--ok)'}}><Ic>📦</Ic> Devolução</span>
+                    <span className="category-chip" style={{background:'var(--ok-bg)',color:'var(--ok)'}}><Ic>📦</Ic> Devolução{tip.solicitacaoAjuste ? (' · SA '+tip.solicitacaoAjuste) : ''}</span>
                   )}
                   {ehSemAjuste && (
                     <span className="category-chip" style={{background:'var(--panel-raised)',color:'var(--ink-dim)'}}>Sem Ajuste</span>

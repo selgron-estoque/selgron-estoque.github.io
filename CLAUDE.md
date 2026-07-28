@@ -11752,3 +11752,69 @@ completo a etapa "Aguardando Armazém"; e não tem número/protocolo nenhum —
   antes de usar em produção. **Verificação visual de ponta a ponta fica a
   cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth
   real, não simulável no sandbox sem rede).
+
+## 3ª correção do fluxo de SA: decisão Ajuste/Devolução move pra "Aguardando Armazém"
+
+Cliente corrigiu de novo, logo depois da rodada anterior: "Não, em 'Itens
+Divergentes' eu só analiso quando finalizo a análise aí sim vai para fila de
+gerar SA só quando tiver o número da SA que eu faço a decisão de ajuste ou
+devolução, ajustar isso" — a rodada anterior tinha feito o líder decidir
+Ajuste-ou-Devolução JÁ em "Itens Divergentes" (pelo sinal da diferença); o
+cliente esclareceu que isso está errado: em "Itens Divergentes" o líder só
+ANALISA — a decisão de Ajuste ou Devolução só acontece DEPOIS, junto com o
+número da SA, na fila. Confirmado via `AskUserQuestion` (1 pergunta, opção
+recomendada aceita) antes de reimplementar, dado que essa é a 3ª rodada
+seguida ajustando o mesmo fluxo.
+
+- **`DivergentItemsPanel`**: os dois botões da rodada anterior ("Necessita
+  Ajuste"/"Registrar Devolução", com branch por `c.diferenca>0`) viraram UM
+  botão só, **"Enviar para SA"** — não decide nada, só finaliza a análise e
+  manda o item pra "Aguardando Armazém" (chama `onEnviarParaArmazem`,
+  função que já existia, sem nenhuma mudança nela). Removidos por completo:
+  `onRegistrarDevolucao` (prop), `handleRegistrarDevolucao`, e a lógica de
+  branch por sinal.
+- **`App().registrarDevolucao`** (função da rodada anterior, que resolvia
+  devolução direto em "Itens Divergentes", pulando "Aguardando Armazém")
+  foi **removida por completo** — não existe mais um caminho que pule a
+  etapa de SA; toda divergência (falta ou sobra) passa por "Aguardando
+  Armazém" agora, sempre com número de SA.
+- **`App().enviarParaAprovacaoDiretoria`** ganhou um 3º parâmetro,
+  `ehDevolucao` — grava `numero_sa` E `eh_devolucao` na MESMA chamada (é o
+  número que "libera" as duas decisões juntas, exatamente como o cliente
+  descreveu: "só quando tiver o número da SA que eu faço a decisão").
+- **`SolicitacaoArmazemPanel`** ("Aguardando Armazém"): o único botão
+  "Enviar para Aprovação da Diretoria" virou DOIS — **"Registrar como
+  Ajuste"** e **"Registrar como Devolução"** — os dois exigem o mesmo campo
+  de número da SA preenchido (ambos desabilitados enquanto vazio, ambos
+  habilitam juntos assim que digitado), cada um chamando
+  `onEnviarParaDiretoria(id, numero, ehDevolucao)` com o booleano certo.
+- **Achado no caminho, corrigido**: como agora TODA devolução passa por
+  "Aguardando Armazém" (diferente da rodada anterior, onde devolução nunca
+  tinha número de SA), o número passou a existir sempre — mas
+  `DiretoriaApprovalPanel`/`ConcludedCountsPanel` ainda mostravam só
+  "Devolução" no badge, sem o número, um resquício da rodada anterior. Os
+  dois badges corrigidos pra mostrar "Devolução · SA {número}" quando
+  disponível — mesmo padrão já usado em "Ajustado · SA {número}".
+- **Textos/comentários atualizados** em `STATUS_INFO` (a entrada de
+  `aguardando_solicitacao_armazem` não presume mais "de Ajuste", já que
+  agora pode virar Devolução também) e nos cabeçalhos de
+  `SolicitacaoArmazemPanel`/`DiretoriaApprovalPanel`, refletindo o fluxo
+  novo de 3 etapas.
+- Testado via harness real (jsdom + react-dom/client + `act()`, mesma
+  técnica rigorosa de sempre — carrega o `index.html` inteiro transpilado
+  numa `vm.Script`): confirmei que nenhum botão "Registrar Devolução"/
+  "Necessita Ajuste" sobra em "Itens Divergentes" — só "Enviar para SA",
+  igual pra item com sobra e com falta; que `onEnviarParaArmazem` é chamado
+  pro item de sobra também (antes pulava direto pra Diretoria); que
+  "Aguardando Armazém" mostra os DOIS botões de decisão, ambos desabilitados
+  sem número e habilitando juntos; que clicar "Registrar como Devolução"
+  chama `onEnviarParaDiretoria` com `ehDevolucao:true` e o número certo; e
+  que `DiretoriaApprovalPanel` continua mostrando "Devolução" corretamente,
+  agora COM o número da SA junto (achado corrigido nesta mesma rodada). 12
+  asserções, todas passando. Transpile Babel do arquivo inteiro e
+  balanceamento de chaves do CSS conferidos (638/638, sem mudança — nenhuma
+  classe CSS nova, só JSX/JS). **Nenhuma migração de SQL nova** (a coluna
+  `eh_devolucao` da rodada anterior continua sendo suficiente — só o MOMENTO
+  em que é preenchida mudou). **Verificação visual de ponta a ponta fica a
+  cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth
+  real, não simulável no sandbox sem rede).
