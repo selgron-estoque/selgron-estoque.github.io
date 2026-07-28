@@ -11513,3 +11513,9 @@ de sempre — sandbox sem acesso de rede ao banco real):
   antiga) com `drop function contagem_itens_prioritarios(integer);` —
   mantém só a versão atual `(integer,text[],text[])`, que já é a que está
   em `backend/schema.sql`.
+
+**Confirmado em produção**: o cliente rodou a introspecção (confirmou as
+2 versões sobrepostas) e o `drop function contagem_itens_prioritarios
+(integer);` com sucesso — só a versão atual (`integer,text[],text[]`)
+continua existindo no projeto real, sem mais ambiguidade em consultas
+manuais posicionais.
