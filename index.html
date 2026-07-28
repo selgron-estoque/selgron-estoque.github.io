@@ -1210,11 +1210,14 @@ async function searchSupabaseCatalog(query, almoxarifado){
 
   // Busca o saldo REAL (coluna "Saldo Atual" da planilha SB2, gravada em
   // estoque_saldo.saldo pelo upload manual — ver StockSyncPanel/
-  // parseSB2Rows) pros códigos encontrados, restrito ao armazém informado —
-  // no máximo 1 linha por código+armazém, então não precisa somar nada,
-  // só pegar o valor direto. `estoque_saldo` não tem FK pra `produtos` (ver
-  // backend/schema.sql), então é uma consulta separada, não um join
-  // automático do PostgREST.
+  // parseSB2Rows) pros códigos encontrados. Com armazém informado, restringe
+  // a ele (no máximo 1 linha por código+armazém, valor direto). SEM armazém
+  // informado (caso de "Itens Específicos", que não tem um armazém único —
+  // ver NewInventory.addItemEspecifico), busca em TODOS os armazéns e só usa
+  // o valor quando for inequívoco (código existe em só 1 armazém) — mesmo
+  // critério já usado por `fetchProdutosByCodigos` pro mesmo cenário.
+  // `estoque_saldo` não tem FK pra `produtos` (ver backend/schema.sql), então
+  // é uma consulta separada, não um join automático do PostgREST.
   //
   // Bug real corrigido aqui: `data_ultima_saida` nunca era buscada nesta
   // consulta (só `saldo`/`almoxarifado`), e `ultimaSaida` do produto
@@ -1227,18 +1230,38 @@ async function searchSupabaseCatalog(query, almoxarifado){
   // `fetchContagemItensPrioritarios` (os outros dois caminhos que resolvem
   // produto a partir do Supabase) já buscavam e propagavam esse campo
   // corretamente — só esta função ficou pra trás.
+  //
+  // 2º bug real corrigido aqui: quando `almoxarifado` não é informado (todo
+  // uso por "Itens Específicos"), o código antigo simplesmente PULAVA a
+  // busca de saldo por completo (`if(... && almoxarifado)`) e todo item
+  // caía direto no fallback de 0 — mesmo quando existia um saldo real e
+  // sem ambiguidade em algum armazém. Cliente reportou item com saldo real
+  // 0,942 aparecendo congelado como 0 em duas contagens "Itens Específicos"
+  // — a causa era exatamente esta: o valor 0 (não `null`) ficava gravado em
+  // `itensImportados` no momento de adicionar o item, e depois vencia a
+  // busca ao vivo (mais atual) na hora de contar — ver correção irmã em
+  // `ImportedListCountFlow`, que parou de confiar nesse valor congelado
+  // especificamente pra este tipo de inventário.
   const codigos = data.map(row=>row.codigo);
   const saldoPorCodigo = {};
   const ultimaSaidaPorCodigo = {};
-  if(codigos.length>0 && almoxarifado){
-    const { data: saldoRows } = await supabaseClient
+  if(codigos.length>0){
+    let saldoQuery = supabaseClient
       .from('estoque_saldo')
       .select('produto_codigo, saldo, almoxarifado, data_ultima_saida')
-      .in('produto_codigo', codigos)
-      .eq('almoxarifado', almoxarifado);
+      .in('produto_codigo', codigos);
+    if(almoxarifado) saldoQuery = saldoQuery.eq('almoxarifado', almoxarifado);
+    const { data: saldoRows } = await saldoQuery;
+    const linhasPorCodigo = {};
     (saldoRows||[]).forEach(r=>{
-      saldoPorCodigo[r.produto_codigo] = Number(r.saldo||0);
-      ultimaSaidaPorCodigo[r.produto_codigo] = r.data_ultima_saida || null;
+      (linhasPorCodigo[r.produto_codigo] = linhasPorCodigo[r.produto_codigo] || []).push(r);
+    });
+    Object.keys(linhasPorCodigo).forEach(codigo=>{
+      const linhas = linhasPorCodigo[codigo];
+      if(linhas.length===1){
+        saldoPorCodigo[codigo] = Number(linhas[0].saldo||0);
+        ultimaSaidaPorCodigo[codigo] = linhas[0].data_ultima_saida || null;
+      }
     });
   }
 
@@ -8588,8 +8611,18 @@ function ImportedListCountFlow({inv, user, onRegisterCount, onFinish, onAddressP
             ...doCatalogo,
             // planilha trouxe um endereço e o catálogo ainda não tem — usa o da planilha
             ...(item.endereco && !doCatalogo.enderecoCadastrado ? {endereco:item.endereco, enderecoCadastrado:true} : {}),
-            // saldo da própria planilha é mais recente que o catálogo — prevalece quando informado
-            ...(item.saldoSistema!=null ? {saldoSistema:item.saldoSistema} : {}),
+            // Saldo da PLANILHA (Lista Importada) prevalece sobre o catálogo
+            // quando informado — pode ser mais recente que o que já está no
+            // Supabase. Bug real corrigido: "Itens Específicos" NUNCA deveria
+            // entrar nesta regra — o item foi adicionado buscando no MESMO
+            // catálogo/estoque_saldo que `fetchProdutosByCodigos` acabou de
+            // consultar de novo agora, então o valor congelado no momento do
+            // "Adicionar" nunca é mais atual que uma busca ao vivo, só mais
+            // velho (e pode estar 0 por um bug de origem, já corrigido em
+            // `searchSupabaseCatalog`, que os itens JÁ adicionados antes da
+            // correção continuam carregando congelado). Só "Lista Importada
+            // (Excel)" (dado de fora do app) mantém a prioridade de sempre.
+            ...(inv.tipo!=='Itens Específicos' && item.saldoSistema!=null ? {saldoSistema:item.saldoSistema} : {}),
           };
         }
         // código não está no catálogo — monta o item a partir do que a

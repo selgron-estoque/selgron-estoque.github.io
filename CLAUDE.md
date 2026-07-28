@@ -11419,3 +11419,97 @@ Afeta qualquer item com unidade fracionária de verdade (KG/M/L — não só
   causa raiz (HTML5 `type="number"` exigindo ponto, incompatível com
   teclado decimal pt-BR) é um comportamento documentado do próprio padrão,
   não uma suposição.
+
+## Bug real: saldo do sistema aparecia congelado como 0 em "Itens Específicos" (item real 0,942)
+
+Cliente reportou outro caso de "quantidade 0,93 aparecendo como 0" — desta
+vez não era o campo digitado pelo operador (já corrigido na seção anterior),
+mas o **saldo do Sistema** mostrado ANTES de digitar qualquer coisa, no
+próprio card de referência (`.cs-sistema-v`). Investigação profunda, com o
+cliente rodando consultas SQL diretas no Supabase a cada passo (mesmo padrão
+de sempre — sandbox sem acesso de rede ao banco real):
+
+1. **`estoque_saldo` tinha o valor certo**: `select * from estoque_saldo
+   where produto_codigo='000.03392'` devolveu `saldo: 0.942` — a planilha
+   SB2 e o upload estavam corretos, o dado real nunca foi perdido.
+2. **A função `contagem_itens_prioritarios` não devolvia esse item de jeito
+   nenhum** (mesmo com `p_limit=2000` e sem filtro de grupo/armazém) — ela
+   nunca foi a origem, então não era Contagem Aleatória/Rota/Grupo.
+3. **Descoberta lateral, não a causa final, mas real e corrigida**: existiam
+   DUAS versões sobrepostas de `contagem_itens_prioritarios` no banco
+   (`(integer)` e `(integer,text[],text[])`) — sobra de uma migração antiga
+   nunca dropada, que quebrava qualquer chamada posicional simples
+   ("function ... is not unique"). Não era a causa do bug do cliente (o app
+   sempre chama com parâmetros NOMEADOS, que resolvem sem ambiguidade), mas
+   é uma limpeza necessária — ver "Falta rodar" mais abaixo.
+4. **Confirmado que o inventário era "Itens Específicos"** — e aí a causa
+   real apareceu ao inspecionar o JSON congelado dentro do próprio
+   inventário: `select * from inventarios, jsonb_array_elements(itens_
+   importados) as item where item->>'codigo' ilike '%3392%'` mostrou
+   `"saldoSistema": 0` — **um zero de verdade, gravado no momento em que o
+   item foi adicionado**, não um valor ausente (`null`).
+
+### Causa raiz, dois bugs juntos
+
+- **Bug 1 — `searchSupabaseCatalog`** (usada por `NewInventory.
+  addItemEspecifico`, a busca de "Itens Específicos"): recebia `almoxarifado`
+  como `undefined` (esse tipo de inventário não tem um armazém único — os
+  itens escolhidos podem vir de qualquer lugar) e o código antigo tinha
+  `if(codigos.length>0 && almoxarifado){ ...busca o saldo... }` — sem
+  armazém informado, o bloco inteiro era PULADO, e todo item caía direto no
+  fallback "sem saldo pra este armazém = 0" (regra deliberada de uma rodada
+  anterior, "Item sem saldo passa a ser tratado como saldo real 0") — mesmo
+  quando existia um saldo real e SEM AMBIGUIDADE nenhuma (código presente
+  em só 1 armazém). Corrigido: agora, sem armazém informado, busca em TODOS
+  os armazéns e usa o valor só quando é inequívoco (código existe em
+  exatamente 1 armazém) — mesmo critério que `fetchProdutosByCodigos` já
+  usava pro mesmo cenário (única diferença: aqui a ambiguidade de verdade
+  — código em 2+ armazéns — continua caindo em 0, não inventa um valor).
+- **Bug 2 — `ImportedListCountFlow`** (motor de contagem de "Itens
+  Específicos"/"Lista Importada"): a regra "saldo da planilha prevalece
+  sobre o catálogo quando informado" (`item.saldoSistema!=null ? ... :
+  {}`) tratava os dois tipos de inventário como equivalentes — mas fazem
+  sentido opostos. "Lista Importada (Excel)" é dado que vem de FORA do app
+  (a planilha do cliente pode genuinamente ser mais atual que o Supabase
+  naquele instante) — faz sentido prevalecer. "Itens Específicos" é
+  montado buscando no MESMO catálogo/`estoque_saldo` que o app vai
+  consultar de novo na hora de contar — o valor congelado no momento do
+  "Adicionar" NUNCA é mais atual que uma busca ao vivo, só mais velho (e,
+  por causa do Bug 1, podia estar 0 por engano). Corrigido: a regra de
+  "planilha prevalece" agora só vale para `inv.tipo !== 'Itens
+  Específicos'` — esse tipo sempre usa a busca ao vivo mais recente.
+- **Por que a correção do Bug 2 já resolve os inventários JÁ criados com o
+  problema, sem precisar de nenhum SQL**: como o merge deixa de confiar no
+  valor congelado, ele passa a usar `fetchProdutosByCodigos` (chamada de
+  novo a cada vez que a tela de contagem é aberta) — que já calculava o
+  saldo corretamente pra este cenário (código em 1 armazém só), só que
+  antes esse valor certo era descartado em favor do 0 congelado. Os dois
+  inventários reportados pelo cliente (`INV-958`, `INV-308`) passam a
+  mostrar `0,942` automaticamente, sem precisar reimportar nada.
+- Testado via harness real (jsdom + react-dom/client + `act()`, Supabase
+  mockado reproduzindo os dados exatos confirmados pelo cliente via SQL):
+  `searchSupabaseCatalog` sem armazém resolve 0,942 (não mais 0) pro código
+  com saldo inequívoco, continua funcionando com armazém informado
+  (regressão), e continua devolvendo 0 pra um código genuinamente ambíguo
+  (2 armazéns — não inventa valor onde não pode saber qual é o certo);
+  `ImportedListCountFlow` com o EXATO payload congelado do cliente
+  (`saldoSistema:0` num inventário "Itens Específicos") mostra `0,942` na
+  tela (avançando de verdade pela etapa de endereço via o botão de teste
+  "simular leitura certa"); e uma "Lista Importada (Excel)" com valor
+  próprio na planilha (123,45) continua prevalecendo, sem regressão.
+  Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  conferidos (638/638, sem mudança — só JS, nenhuma classe CSS nova).
+- **Falta rodar no Supabase**: a limpeza da função duplicada
+  `contagem_itens_prioritarios(integer)` (a versão antiga órfã) — não é a
+  causa deste bug específico, mas quebra qualquer consulta manual/futura
+  chamada de forma posicional simples. Introspecção sugerida antes de
+  apagar:
+  ```sql
+  select p.oid::regprocedure as assinatura
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where p.proname = 'contagem_itens_prioritarios' and n.nspname = 'public';
+  ```
+  Se aparecer mais de uma linha, apagar a versão só com `(integer)` (a
+  antiga) com `drop function contagem_itens_prioritarios(integer);` —
+  mantém só a versão atual `(integer,text[],text[])`, que já é a que está
+  em `backend/schema.sql`.
