@@ -7626,6 +7626,34 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
     calcClear();
   }
 
+  // Bug real do cliente: item com quantidade fracionária (ex: 0,93 — comum em
+  // unidades como KG/M/L, não só "un.") era gravado como 0. Causa: o campo
+  // usava `type="number"`, que em tablets Android configurados em pt-BR
+  // mostra vírgula como tecla decimal no teclado numérico — mas o HTML5
+  // exige PONTO como separador decimal pra esse tipo de campo; ao digitar
+  // "0,93", o navegador considera o valor inválido e zera o `value` (ou
+  // trunca antes da vírgula, dependendo da versão do WebView), então
+  // `Number(qty)` virava 0 ou NaN sem nenhum aviso. Corrigido trocando pra
+  // `type="text"` (mantém o teclado numérico via `inputMode="decimal"`, só
+  // deixa de depender da validação nativa do navegador) — `qty` continua
+  // guardado internamente com PONTO (mesmo formato que `Number(qty)` já
+  // espera em todo o resto do componente), aceitando tanto vírgula quanto
+  // ponto na hora de digitar; a EXIBIÇÃO pro operador (`fmtQtyBR`) sempre
+  // mostra vírgula, convenção brasileira, mesmo padrão já usado pela
+  // calculadora (`calcCurrent.replace('.', ',')`, acima).
+  function sanitizeQtyInput(raw){
+    if(raw==null) return '';
+    let s = String(raw).replace(/,/g, '.').replace(/[^0-9.]/g, '');
+    const primeiroPonto = s.indexOf('.');
+    if(primeiroPonto !== -1){
+      s = s.slice(0, primeiroPonto+1) + s.slice(primeiroPonto+1).replace(/\./g, '');
+    }
+    return s;
+  }
+  function fmtQtyBR(v){
+    return v==='' ? '' : String(v).replace('.', ',');
+  }
+
   function simulateScan(match){
     if(match){
       setScannedCode(product.endereco);
@@ -7677,7 +7705,12 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   // ex. item fora do catálogo), o fallback "sem saldo" sempre aparece pra
   // todo mundo — não há nada sensível a esconder nesse caso.
   const mostrarSaldo = hasSaldoLocal && (user.perfil !== 'operador' || operadorVeSaldo);
-  const diffAbs = (qty!=='' && hasSaldoLocal) ? Number(qty) - product.saldoSistema : 0;
+  // Arredonda pra 3 casas — subtração de dois números fracionários em JS
+  // pode gerar ruído de ponto flutuante (ex: 20 - 19.07 = 0.9299999999999997,
+  // não 0.93) que apareceria feio na tela e se propagaria pro valor
+  // divergente/relatório. 3 casas cobre qualquer precisão real que a Selgron
+  // usa hoje (kg/m/l, no máximo 2-3 casas) sem cortar nada legítimo.
+  const diffAbs = (qty!=='' && hasSaldoLocal) ? Math.round((Number(qty) - product.saldoSistema) * 1000) / 1000 : 0;
   // Sistema=0 e diferença=0 (contagem bateu, 0 físico = 0 sistema) tem que
   // mostrar 0%, não 100% — bug real exposto com mais frequência depois de
   // "item sem saldo passa a ser tratado como saldo real 0" (ver CLAUDE.md),
@@ -7966,7 +7999,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
           {mostrarSaldo && (
             <div className="cs-sistema-ref">
               <div className="cs-sistema-k">Sistema</div>
-              <div className="cs-sistema-v">{product.saldoSistema} {product.unidade || 'un.'}</div>
+              <div className="cs-sistema-v">{fmtQtyBR(product.saldoSistema)} {product.unidade || 'un.'}</div>
             </div>
           )}
           {mostrarSaldo && <div className="cs-sistema-arrow"><DIcon name="arrowDown" size={18} /></div>}
@@ -7978,11 +8011,10 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
           </div>
           <input
             className={"cs-qty-input"+(((mostrarSaldo || !hasSaldoLocal) && qty!=='') ? ' '+classification.level : '')}
-            type="number"
+            type="text"
             inputMode="decimal"
-            value={qty}
-            onChange={e=>setQty(e.target.value)}
-            onWheel={e=>e.target.blur()}
+            value={fmtQtyBR(qty)}
+            onChange={e=>setQty(sanitizeQtyInput(e.target.value))}
             placeholder="0"
             autoFocus
           />
@@ -8018,9 +8050,9 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
           {mostrarSaldo && qty!=='' && (
             <div className={"cs-compare "+classification.level}>
               <div className="cs-compare-grid">
-                <div className="cs-compare-cell"><div className="k">Sistema</div><div className="v">{product.saldoSistema}</div></div>
-                <div className="cs-compare-cell"><div className="k">Informado</div><div className="v">{qty}</div></div>
-                <div className="cs-compare-cell"><div className="k">Diferença</div><div className="v">{(diffAbs>0?'+':'')+diffAbs}</div></div>
+                <div className="cs-compare-cell"><div className="k">Sistema</div><div className="v">{fmtQtyBR(product.saldoSistema)}</div></div>
+                <div className="cs-compare-cell"><div className="k">Informado</div><div className="v">{fmtQtyBR(qty)}</div></div>
+                <div className="cs-compare-cell"><div className="k">Diferença</div><div className="v">{(diffAbs>0?'+':'')+fmtQtyBR(diffAbs)}</div></div>
               </div>
               {feedbackTexto && <div className="cs-feedback"><span className="cs-dot"></span>{feedbackTexto}</div>}
             </div>
@@ -8059,7 +8091,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
             <div className="cs-footer-row">
               <div className="cs-footer-qtywrap">
                 <div className="cs-footer-label">Quantidade</div>
-                <div className="cs-footer-qty">{qty===''?'0':qty}</div>
+                <div className="cs-footer-qty">{qty===''?'0':fmtQtyBR(qty)}</div>
               </div>
               <button className="btn btn-primary cs-footer-btn" disabled={qty===''} onClick={finalize}>Confirmar Contagem</button>
             </div>

@@ -11354,3 +11354,68 @@ de contagens da empresa.
   ponta (abrir o Excel gerado e conferir as linhas do histórico) fica a
   cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth
   real, não simulável no sandbox sem rede).
+
+## Bug real: quantidade fracionária (0,93) era gravada como 0 na contagem
+
+Cliente reportou: "Item com quantidade 0,93 o app está considerando como
+zerado = 0". O campo de quantidade (`CountStep`, motor de contagem
+compartilhado por todos os fluxos) sempre usou `<input type="number">` —
+funciona bem em desktop, mas em tablets Android configurados em pt-BR o
+teclado numérico virtual mostra **vírgula** como tecla decimal (convenção
+brasileira), enquanto o HTML5 exige **ponto** como separador decimal pra
+esse tipo de campo. Ao digitar "0,93", o navegador considera o valor
+inválido — dependendo da versão do WebView, `value` zera por completo ou
+trunca antes da vírgula — e `Number(qty)` virava `0`/`NaN` sem nenhum erro
+visível, exatamente o tipo de bug silencioso já visto várias vezes neste
+projeto (RLS sem policy, coluna com espaço no cabeçalho da SB2, etc.).
+Afeta qualquer item com unidade fracionária de verdade (KG/M/L — não só
+"un."), não é um caso raro.
+
+- **Corrigido trocando `type="number"` por `type="text"`** (mantém
+  `inputMode="decimal"`, que ainda abre o teclado numérico no mobile) — sem
+  depender mais da validação nativa do navegador pra número, que é
+  inconsistente entre versões de WebView pro separador decimal.
+  `sanitizeQtyInput(raw)` (novo, perto de `calcUsarValor`) aceita vírgula OU
+  ponto digitado, converte pra ponto internamente, filtra qualquer caractere
+  que não seja dígito, e mantém só o PRIMEIRO separador decimal (se o
+  operador digitar mais de um por engano). `qty` continua guardado com
+  ponto — mesmo formato que `Number(qty)` já espera em todo o resto do
+  componente (`diffAbs`/`diffValor`/`qtdContada`), nenhuma outra conta
+  precisou mudar.
+- **`fmtQtyBR(v)`** (novo, ao lado) — só pra EXIBIÇÃO: troca ponto por
+  vírgula na hora de mostrar pro operador (convenção brasileira), mesmo
+  padrão que a calculadora inline já usava (`calcCurrent.replace('.', ',')`)
+  só que agora aplicado também no próprio campo de quantidade, no card de
+  comparação (Sistema/Informado/Diferença) e no rodapé — os 4 pontos que
+  antes mostravam o valor cru (com ponto, se o operador tivesse digitado
+  ponto, ou vazio/errado se tivesse digitado vírgula, dado o bug).
+- **`onWheel={e=>e.target.blur()}` removido deste campo** — existia pra
+  neutralizar o comportamento nativo do Chrome de incrementar/decrementar
+  um `type="number"` ao rolar a roda do mouse sobre o campo focado (bug
+  corrigido antes, ver "Bug real: rolagem do mouse..."); um `type="text"`
+  não tem esse comportamento nativo nenhum, então manter o handler só
+  causaria um efeito colateral novo (o campo perder o foco à toa ao rolar a
+  tela perto dele, sem nenhum motivo pra isso acontecer mais).
+- **Ruído de ponto flutuante corrigido de quebra**: `diffAbs` (Sistema −
+  Informado) passou a arredondar pra 3 casas
+  (`Math.round(x*1000)/1000`) — subtração de dois números fracionários em
+  JS pode gerar erro de representação binária (ex: `20 - 19.07` dá
+  `0.9299999999999997` em JS puro, não `0.93`), que apareceria feio na tela
+  e se propagaria pro valor divergente/relatório assim que quantidade
+  fracionária passasse a funcionar de verdade. 3 casas cobre qualquer
+  precisão real que a Selgron usa hoje (kg/m/l, no máximo 2-3 casas) sem
+  cortar nada legítimo.
+- Testado via harness real (jsdom + react-dom/client + `act()`, mesma
+  técnica rigorosa de sempre): digitar "0,93" com vírgula (cenário exato do
+  relato do cliente) grava `qtdContada:0.93` de verdade (não mais 0), com a
+  diferença calculada certa e sem ruído de ponto flutuante; digitar com
+  ponto continua funcionando (compatibilidade); caracteres inválidos e
+  separador duplicado são filtrados; o card de comparação e o rodapé
+  mostram "0,93" (vírgula) ao operador. Transpile Babel do arquivo inteiro
+  e balanceamento de chaves do CSS conferidos (638/638, sem mudança — só
+  JS/JSX dentro de `CountStep`, nenhuma classe CSS nova). **Verificação num
+  tablet Android real (teclado com vírgula de verdade) fica a cargo do
+  cliente** — mesma limitação de sempre (sandbox sem hardware real), mas a
+  causa raiz (HTML5 `type="number"` exigindo ponto, incompatível com
+  teclado decimal pt-BR) é um comportamento documentado do próprio padrão,
+  não uma suposição.
