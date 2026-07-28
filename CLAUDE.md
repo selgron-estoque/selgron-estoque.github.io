@@ -11554,3 +11554,80 @@ inconsistente com o nome que o resto do app usa pra essa mesma fila.
   **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma
   limitação de sempre (login exige Supabase Auth real, não simulável no sandbox
   sem rede).
+
+## SA de Ajuste vira etapa PRÓPRIA, antes da Diretoria — "Aguardando Armazém"
+
+Cliente testou a tela "Aguardando Aprovação" e apontou uma inconsistência
+conceitual: "onde eu coloco o número da SA? visto que se eu salvar o número
+aqui ela manda para concluído? sendo que SA é apenas o documento de
+Solicitação ao Armazém, e só depois com a SA que acontece a aprovação" — uma
+rodada anterior (não documentada com uma seção própria neste histórico) tinha
+simplificado o fluxo original de "SA de Ajuste + aprovação da Diretoria" de
+um jeito que não bate com o processo real: o número da SA tinha virado
+OPCIONAL, digitado só na hora da Diretoria decidir (ou nem digitado). O
+cliente esclareceu que a SA é um documento PRÓPRIO — "Solicitação ao
+Armazém", pedindo pro armazém processar o ajuste fisicamente — e só depois
+desse processamento é que faz sentido mandar pra aprovação da Diretoria.
+Confirmado via `AskUserQuestion`: "SA vira uma etapa própria, antes da
+Diretoria" (não só ajuste de texto, um estágio novo de verdade).
+
+O fluxo agora tem 3 etapas, cada uma com sua ação/tela:
+1. **Líder GERA a SA** (número obrigatório, documento real) em "Itens
+   Divergentes" → `gerarSolicitacaoArmazem` → item sai de lá e entra em
+   **"Aguardando Armazém"** (tela nova).
+2. **Líder/admin confirma que o Armazém processou** a SA e encaminha pra
+   Diretoria, dentro da tela nova → `enviarParaAprovacaoDiretoria` (agora só
+   recebe o id, sem número de SA — já foi registrado na etapa 1) → item entra
+   em "Aguardando Aprovação" (tela já existente, sem mudança de comportamento
+   além de não pedir mais o número da SA — já vem pronto).
+3. **Diretoria aprova/reprova** — `aprovarAjusteDiretoria`/
+   `reprovarAjusteDiretoria`, sem mudança de comportamento (só o parâmetro
+   extra de número de SA foi removido de `aprovarAjusteDiretoria`, já que não
+   faz mais sentido decidir o número nesse momento).
+
+- **Novo status `aguardando_solicitacao_armazem`** (`OPEN_STATUSES`/
+  `STATUS_INFO`/`STATUS_LABEL_PADRAO`) — nenhuma coluna nova no Supabase foi
+  necessária: as mesmas 3 colunas já existentes (`numero_sa`/`sa_gerada_por`/
+  `sa_gerada_em`, criadas na rodada original de "SA de Ajuste + aprovação da
+  Diretoria") já cobrem tudo que essa etapa precisa gravar — só o MOMENTO em
+  que são preenchidas mudou (na geração da SA, não mais na aprovação).
+- **`DivergentItemsPanel`**: o botão único "Enviar para Aprovação da
+  Diretoria" (que ia direto pra Diretoria) voltou a ser "Gerar SA de Ajuste",
+  reabrindo o campo inline de número da SA — **agora obrigatório de verdade**
+  (botão de confirmar fica desabilitado até o campo ser preenchido, mesmo
+  padrão de campo obrigatório já usado noutros lugares do app). Prop renomeada
+  de `onSendToDiretoria` pra `onGerarSA`, refletindo o que a ação realmente
+  faz agora.
+- **`SolicitacaoArmazemPanel`** (componente novo, view `solicitacaoArmazem`,
+  Sidebar "Aguardando Armazém", ícone `building`) — mesmo shell visual das
+  outras telas de contagem (count-card/SearchWithScanner/TrendFilterBar/
+  result-grid-4col/paginação/urgente/menu "⋮" com excluir). Mostra a SA já
+  gerada (número, quem gerou, quando) e um único botão, "Enviar para
+  Aprovação da Diretoria", disponível pra líder/admin.
+- **`DiretoriaApprovalPanel`**: removido o campo de digitar/editar o número da
+  SA (`saInputs`/`saInputValue`) — a SA já chega pronta desde a etapa 1, não
+  tem mais nada pra digitar aqui, só decidir Aprovar/Reprovar. O texto "SA
+  gerada por X em Y" (que tinha virado "Enviado para aprovação por X em Y" na
+  rodada anterior) voltou a refletir quem GEROU a SA, não quem a encaminhou.
+- **Wiring**: `ACESSOS_RESTRITOS`/`TODOS_OS_MENUS`/`VIEW_TITLES`/
+  `buildSidebarGroups` ganharam a entrada `solicitacaoArmazem` (mesmo padrão
+  já usado 4x neste projeto pra extrair uma tela nova — grupo "Gestão de
+  Inventário" da Sidebar, entre "Itens Divergentes" e "Aguardando Aprovação").
+  Home ganhou um 7º KPI ("Aguardando Armazém", cor âmbar, só visível pra
+  líder/admin), inserido entre "Itens Divergentes" e "Aguardando Aprovação da
+  Diretoria" — mesmo critério dos KPIs de fila de pendência já existentes.
+- Testado via harness real (jsdom + react-dom/client + `act()`, mesma técnica
+  rigorosa de sempre — carrega o `index.html` inteiro transpilado numa
+  `vm.Script`): confirmei que "Gerar SA de Ajuste" exige o número (botão
+  desabilitado até preencher) e chama `onGerarSA` com o valor certo, sem mais
+  nenhum botão "Enviar para Aprovação da Diretoria" em Itens Divergentes;
+  que `SolicitacaoArmazemPanel` mostra a SA/quem gerou e que "Enviar para
+  Aprovação da Diretoria" chama `onEnviarParaDiretoria` com o id certo; que
+  `DiretoriaApprovalPanel` mostra a SA já pronta sem nenhum campo de edição, e
+  que "Aprovar" chama `onApproveSA` só com o id; que a Sidebar/`hasAccess`
+  tratam a tela nova com o mesmo critério de líder/admin (+ exceção via
+  `acessosExtras` pro operador). 24 asserções, todas passando. Transpile Babel
+  do arquivo inteiro conferido (sem erro). **Nenhuma migração de SQL
+  necessária** — reaproveita colunas já existentes. **Verificação visual de
+  ponta a ponta fica a cargo do cliente** — mesma limitação de sempre (login
+  exige Supabase Auth real, não simulável no sandbox sem rede).

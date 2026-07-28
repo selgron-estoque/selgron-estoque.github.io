@@ -3603,19 +3603,24 @@ const STATUS_INFO = {
   aguardando_segunda: {level:'warn', text:'Segunda contagem solicitada — deve ser feita por outro operador'},
   aguardando_analise_lider: {level:'danger', text:'Enviado para análise do líder de estoque'},
   aprovado_lider: {level:'ok', text:'Divergência aprovada pelo líder de estoque — sem ajuste necessário'},
-  // Fluxo real de ajuste de estoque da Selgron (pedido do cliente): o líder
-  // não finaliza mais uma divergência confirmada direto — gera uma SA de
-  // Ajuste e manda pra aprovação da Diretoria (`enviarParaAprovacaoDiretoria`
-  // em App()); só depois da Diretoria decidir o item conta como resolvido
+  // Fluxo real de ajuste de estoque da Selgron (pedido do cliente, esclarecido
+  // de novo depois de uma rodada anterior que tinha simplificado demais): SA
+  // = "Solicitação ao Armazém", um documento à parte, distinto de "pedir
+  // aprovação da Diretoria" — o líder GERA a SA (número obrigatório, próprio
+  // documento) e o item fica aguardando o Armazém processá-la
+  // (`gerarSolicitacaoArmazem` em App()); só DEPOIS disso, numa ação separada
+  // do líder/admin (`enviarParaAprovacaoDiretoria`), o item entra na fila da
+  // Diretoria; só depois da Diretoria decidir o item conta como resolvido
   // (`aprovarAjusteDiretoria`) ou volta pra recontagem (`reprovarAjusteDiretoria`,
   // que grava o status de volta como `aguardando_segunda`, ver OPEN_STATUSES).
+  aguardando_solicitacao_armazem: {level:'warn', text:'SA de ajuste gerada — aguardando processamento do Armazém'},
   aguardando_aprovacao_diretoria: {level:'warn', text:'SA de ajuste enviada — aguardando aprovação da Diretoria'},
   ajuste_aprovado_diretoria: {level:'ok', text:'Ajuste aprovado pela Diretoria e efetivado no estoque'},
 };
 
 // Status que ainda não foram resolvidos — enquanto um item estiver num
 // desses, existe um "documento de contagem em aberto" pra ele.
-const OPEN_STATUSES = ['aguardando_segunda', 'aguardando_analise_lider', 'aguardando_aprovacao_diretoria'];
+const OPEN_STATUSES = ['aguardando_segunda', 'aguardando_analise_lider', 'aguardando_solicitacao_armazem', 'aguardando_aprovacao_diretoria'];
 
 // Encontra o documento de contagem em aberto (se houver) mais recente pra um
 // código de produto — usado pra bloquear lançar uma contagem NOVA (1ª
@@ -3677,6 +3682,7 @@ const STATUS_LABEL_PADRAO = {
   aguardando_segunda: 'Recontar',
   aguardando_analise_lider: 'Pendente',
   aprovado_lider: 'Sem Ajuste',
+  aguardando_solicitacao_armazem: 'Pendente',
   aguardando_aprovacao_diretoria: 'Pendente',
   ajuste_aprovado_diretoria: 'Ajustado',
 };
@@ -4544,41 +4550,56 @@ function App(){
     return res;
   }
 
-  // ---- Fluxo real de ajuste de estoque da Selgron (SA → Diretoria) ----
-  // O líder não finaliza mais uma divergência confirmada sozinho quando decide
-  // que precisa mexer no saldo — gera uma SA de Ajuste (número digitado por
-  // ele mesmo) e encaminha pra aprovação da Diretoria; só depois da decisão da
-  // Diretoria (hoje: manual, feita pelo próprio admin dentro do app) o item
-  // conta como resolvido de verdade. "Sem Ajuste Necessário" continua sendo
-  // `approveDivergence`, sem passar por nada disso — ver DivergentItemsPanel.
+  // ---- Fluxo real de ajuste de estoque da Selgron (SA → Armazém → Diretoria) ----
+  // Esclarecido de novo pelo cliente depois de uma rodada anterior ter
+  // simplificado demais (SA virando "opcional, digitada pela Diretoria"): a
+  // SA é o documento de "Solicitação ao Armazém" — um pedido pro armazém
+  // processar fisicamente o ajuste — DISTINTO de "pedir aprovação da
+  // Diretoria". São 3 etapas agora, cada uma sua própria ação/tela:
+  //   1. Líder GERA a SA (número obrigatório) → `gerarSolicitacaoArmazem` →
+  //      item sai de "Itens Divergentes" e entra em "Aguardando Armazém"
+  //      (`aguardando_solicitacao_armazem`).
+  //   2. Líder/admin confirma que o Armazém processou a SA e ENCAMINHA pra
+  //      Diretoria → `enviarParaAprovacaoDiretoria` → item entra em
+  //      "Aguardando Aprovação" (`aguardando_aprovacao_diretoria`).
+  //   3. Diretoria decide → `aprovarAjusteDiretoria`/`reprovarAjusteDiretoria`.
+  // "Sem Ajuste Necessário" continua sendo `approveDivergence`, sem passar
+  // por nada disso — ver DivergentItemsPanel.
 
-  // Líder encaminha pra Diretoria — item sai de "Itens Divergentes" e entra em
-  // "Aguardando Aprovação" (`aguardando_aprovacao_diretoria`, um estado ABERTO
-  // como qualquer outro em OPEN_STATUSES). `numeroSa` é OPCIONAL aqui de
-  // propósito — pedido do cliente: o líder não precisa saber/digitar o número
-  // da SA nesse momento, só decide QUE precisa de ajuste; quem digita a SA de
-  // verdade é a Diretoria, na tela de aprovação, na hora de decidir (ver
-  // `aprovarAjusteDiretoria` abaixo) — e mesmo lá continua opcional, não
-  // trava a aprovação por falta desse número.
-  async function enviarParaAprovacaoDiretoria(countId, numeroSa){
+  // Etapa 1 — líder gera a SA de Ajuste (documento real, número obrigatório).
+  // Item sai de "Itens Divergentes" e entra em "Aguardando Armazém".
+  async function gerarSolicitacaoArmazem(countId, numeroSa){
+    const numeroSaLimpo = (numeroSa||'').trim();
+    if(!numeroSaLimpo) return {ok:false, erro:'Informe o número da SA.'};
     const saGeradaPor = currentUser ? currentUser.nome : '—';
     const saGeradaEm = new Date().toLocaleString('pt-BR');
-    const numeroSaLimpo = (numeroSa||'').trim();
-    const patch = {
-      status_aprovacao: 'aguardando_aprovacao_diretoria',
+    const res = await updateContagemStatusToSupabase(countId, {
+      status_aprovacao: 'aguardando_solicitacao_armazem',
+      numero_sa: numeroSaLimpo,
       sa_gerada_por: saGeradaPor,
       sa_gerada_em: saGeradaEm,
-    };
-    if(numeroSaLimpo) patch.numero_sa = numeroSaLimpo;
-    const res = await updateContagemStatusToSupabase(countId, patch);
+    });
     if(res.ok){
       setCounts(prev=>prev.map(c=>c.id===countId?{
         ...c,
-        statusAprovacao:'aguardando_aprovacao_diretoria',
+        statusAprovacao:'aguardando_solicitacao_armazem',
+        solicitacaoAjuste: numeroSaLimpo,
         saGeradaPor,
         saGeradaEm,
-        ...(numeroSaLimpo ? {solicitacaoAjuste: numeroSaLimpo} : {}),
       }:c));
+    }
+    return res;
+  }
+
+  // Etapa 2 — líder/admin confirma que o Armazém já processou a SA e
+  // encaminha pra decisão da Diretoria. Não recebe mais número de SA (já foi
+  // registrado na etapa 1, é o mesmo documento) — só muda o status.
+  async function enviarParaAprovacaoDiretoria(countId){
+    const res = await updateContagemStatusToSupabase(countId, {
+      status_aprovacao: 'aguardando_aprovacao_diretoria',
+    });
+    if(res.ok){
+      setCounts(prev=>prev.map(c=>c.id===countId?{...c, statusAprovacao:'aguardando_aprovacao_diretoria'}:c));
     }
     return res;
   }
@@ -4586,27 +4607,18 @@ function App(){
   // Diretoria aprova — ajuste efetivado, item vira final (aparece em
   // "Contagens Concluídas" como "Ajustado"). Reaproveita `aprovado_por`/
   // `aprovado_em` (mesmas colunas que `approveDivergence` já usa) com o
-  // sentido de "quem resolveu essa divergência definitivamente". `numeroSa`
-  // também é OPCIONAL aqui — grava só se vier preenchido, sem exigir nada.
-  async function aprovarAjusteDiretoria(countId, numeroSa){
+  // sentido de "quem resolveu essa divergência definitivamente". A SA já foi
+  // registrada na etapa 1 — não recebe número nenhum aqui.
+  async function aprovarAjusteDiretoria(countId){
     const aprovadoPor = currentUser ? currentUser.nome : '—';
     const aprovadoEm = new Date().toLocaleString('pt-BR');
-    const numeroSaLimpo = (numeroSa||'').trim();
-    const patch = {
+    const res = await updateContagemStatusToSupabase(countId, {
       status_aprovacao: 'ajuste_aprovado_diretoria',
       aprovado_por: aprovadoPor,
       aprovado_em: aprovadoEm,
-    };
-    if(numeroSaLimpo) patch.numero_sa = numeroSaLimpo;
-    const res = await updateContagemStatusToSupabase(countId, patch);
+    });
     if(res.ok){
-      setCounts(prev=>prev.map(c=>c.id===countId?{
-        ...c,
-        statusAprovacao:'ajuste_aprovado_diretoria',
-        aprovadoPor,
-        aprovadoEm,
-        ...(numeroSaLimpo ? {solicitacaoAjuste: numeroSaLimpo} : {}),
-      }:c));
+      setCounts(prev=>prev.map(c=>c.id===countId?{...c, statusAprovacao:'ajuste_aprovado_diretoria', aprovadoPor, aprovadoEm}:c));
     }
     return res;
   }
@@ -5212,7 +5224,8 @@ function App(){
         {view==='routeCount' && <RouteCountFlow inv={flowState} user={currentUser} counts={counts} inventories={inventories} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} gruposExcluidos={gruposExcluidos} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
         {view==='importedListCount' && <ImportedListCountFlow inv={flowState} user={currentUser} counts={counts} inventories={inventories} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
         {view==='recounts' && hasAccess(currentUser,'recounts') && <RecountsPanel counts={counts} inventories={inventories} role={role} currentUser={currentUser} users={users} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onToggleLiberarOriginal={toggleLiberarRecontagemOriginal} onEditarMotivoObservacao={editarMotivoObservacaoContagem} onAtribuir={atribuirContagem} operadorVeValoresRecontagem={operadorVeValoresRecontagem} />}
-        {view==='divergentes' && hasAccess(currentUser,'divergentes') && <DivergentItemsPanel counts={counts} inventories={inventories} role={role} goto={goto} onApprove={approveDivergence} onSendToDiretoria={enviarParaAprovacaoDiretoria} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onEditarMotivoObservacao={editarMotivoObservacaoContagem} />}
+        {view==='divergentes' && hasAccess(currentUser,'divergentes') && <DivergentItemsPanel counts={counts} inventories={inventories} role={role} goto={goto} onApprove={approveDivergence} onGerarSA={gerarSolicitacaoArmazem} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onEditarMotivoObservacao={editarMotivoObservacaoContagem} />}
+        {view==='solicitacaoArmazem' && hasAccess(currentUser,'solicitacaoArmazem') && <SolicitacaoArmazemPanel counts={counts} inventories={inventories} role={role} onEnviarParaDiretoria={enviarParaAprovacaoDiretoria} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} />}
         {view==='aprovacaoDiretoria' && hasAccess(currentUser,'aprovacaoDiretoria') && <DiretoriaApprovalPanel counts={counts} inventories={inventories} role={role} onApproveSA={aprovarAjusteDiretoria} onRejectSA={reprovarAjusteDiretoria} onToggleUrgente={toggleUrgente} />}
         {view==='todasDivergencias' && <AllDivergencesPanel counts={counts} historicoConcluidas={historicoConcluidas} goto={goto} />}
         {view==='concluidas' && hasAccess(currentUser,'concluidas') && <ConcludedCountsPanel counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} onDeleteCount={role==='admin' ? deleteCount : undefined} onReprovarAjusteHistorico={role==='admin' ? reprovarAjusteHistorico : undefined} onRefresh={refreshHistoricoConcluidas} onEditarMotivoObservacao={role==='admin' ? editarMotivoObservacaoContagem : undefined} />}
@@ -5634,9 +5647,11 @@ const ACESSOS_RESTRITOS = {
   relatorios: ['lider','admin'],
   enderecos: ['lider','admin'],
   usuarios: ['admin'],
-  // Aprovação de SA de Ajuste não interessa ao operador por padrão — ele não
-  // participa dessa etapa do fluxo (líder gera a SA, Diretoria/admin decide)
-  // — mas o admin agora pode conceder a exceção como qualquer outra tela.
+  // Aprovação de SA de Ajuste (e a etapa anterior, aguardando o Armazém) não
+  // interessam ao operador por padrão — ele não participa dessas etapas do
+  // fluxo (líder gera a SA, Armazém processa, Diretoria/admin decide) — mas
+  // o admin agora pode conceder a exceção como qualquer outra tela.
+  solicitacaoArmazem: ['lider','admin'],
   aprovacaoDiretoria: ['lider','admin'],
 };
 
@@ -5656,6 +5671,7 @@ const TODOS_OS_MENUS = [
   {id:'pickCountType', label:'Nova Contagem'},
   {id:'recounts', label:'Recontagens'},
   {id:'divergentes', label:'Itens Divergentes'},
+  {id:'solicitacaoArmazem', label:'Aguardando Armazém'},
   {id:'aprovacaoDiretoria', label:'Aguardando Aprovação'},
   {id:'concluidas', label:'Contagens Concluídas'},
   {id:'usuarios', label:'Usuários'},
@@ -5729,6 +5745,7 @@ const VIEW_TITLES = {
   importedListCount:'Lista Importada',
   recounts:'Recontagens Pendentes',
   divergentes:'Itens Divergentes',
+  solicitacaoArmazem:'Aguardando Armazém',
   aprovacaoDiretoria:'Aguardando Aprovação',
   todasDivergencias:'Todas as Divergências',
   concluidas:'Contagens Concluídas',
@@ -5801,6 +5818,7 @@ function buildSidebarGroups(user){
     ...(podeVer('pickCountType') ? [{id:'pickCountType', ic:'plus', label:'Nova Contagem'}] : []),
     ...(podeVer('recounts') ? [{id:'recounts', ic:'repeat', label:'Recontagens'}] : []),
     ...(podeVer('divergentes') ? [{id:'divergentes', ic:'alertTriangle', label:'Itens Divergentes'}] : []),
+    ...(podeVer('solicitacaoArmazem') ? [{id:'solicitacaoArmazem', ic:'building', label:'Aguardando Armazém'}] : []),
     ...(podeVer('aprovacaoDiretoria') ? [{id:'aprovacaoDiretoria', ic:'clipboardList', label:'Aguardando Aprovação'}] : []),
     ...(podeVer('concluidas') ? [{id:'concluidas', ic:'checkCircle', label:'Contagens Concluídas'}] : []),
   ];
@@ -6011,8 +6029,13 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
   // divergência que AINDA não entrou em processo de recontagem. Assim que o
   // item vira aguardando_segunda, some daqui (mesma regra da tela).
   const itensDivergentesPendentes = counts.filter(c=>c.statusAprovacao==='aguardando_analise_lider').length;
+  // "Aguardando Armazém" (KPI + tela própria, ver SolicitacaoArmazemPanel) —
+  // SA de Ajuste (Solicitação ao Armazém) já gerada pelo líder, aguardando o
+  // Armazém processar antes de seguir pra Diretoria. Não interessa ao
+  // operador, mesmo critério de ACESSOS_RESTRITOS.solicitacaoArmazem.
+  const aguardandoArmazem = counts.filter(c=>c.statusAprovacao==='aguardando_solicitacao_armazem').length;
   // "Aguardando Aprovação" (KPI + tela própria, ver DiretoriaApprovalPanel) —
-  // SAs de ajuste geradas pelo líder, aguardando decisão da Diretoria. Não
+  // SA já processada pelo Armazém, aguardando decisão da Diretoria. Não
   // interessa ao operador (ele não participa dessa etapa), mesmo critério de
   // ACESSOS_RESTRITOS.aprovacaoDiretoria.
   const aguardandoDiretoria = counts.filter(c=>c.statusAprovacao==='aguardando_aprovacao_diretoria').length;
@@ -6074,6 +6097,12 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
       trend:<span className={"pnl-kpi-trend "+(itensDivergentesPendentes>0?'bad':'good')}>{itensDivergentesPendentes>0?'Requer atenção':'Nenhuma pendência'}</span>,
       onClick:()=>goto('divergentes'),
     },
+    ...(role!=='operador' ? [{
+      key:'solicitacaoArmazem', icon:'building', bg:'var(--warn-bg)', color:'var(--warn)',
+      label:'Aguardando Armazém', value:aguardandoArmazem,
+      trend:<span className={"pnl-kpi-trend "+(aguardandoArmazem>0?'bad':'good')}>{aguardandoArmazem>0?'Requer atenção':'Nenhuma pendência'}</span>,
+      onClick:()=>goto('solicitacaoArmazem'),
+    }] : []),
     ...(role!=='operador' ? [{
       key:'aprovacaoDiretoria', icon:'clipboardList', bg:'var(--warn-bg)', color:'var(--warn)',
       label:'Aguardando Aprovação da Diretoria', value:aguardandoDiretoria,
@@ -9350,7 +9379,7 @@ function RecountsPanel({counts, inventories, role, currentUser, users, goto, onD
 // aparecer só em "Recontagens". Visível pra todos os papéis (antes ficava
 // escondida inteira do operador) — mas as ações (aprovar/solicitar
 // recontagem) continuam só pra líder/admin, operador vê em modo leitura.
-function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSendToDiretoria, onRequestRecount, onDeleteCount, onToggleUrgente, onEditarMotivoObservacao}){
+function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onGerarSA, onRequestRecount, onDeleteCount, onToggleUrgente, onEditarMotivoObservacao}){
   // Bug real corrigido aqui: faltava a mesma checagem de "ponta da
   // corrente" que RecountsPanel já tinha (`byOriginal`/`!byOriginal[c.id]`)
   // — sem isso, uma linha com status 'aguardando_analise_lider' continuava
@@ -9379,6 +9408,13 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSend
   const [busyId, setBusyId] = useState(null);
   const [erros, setErros] = useState({});
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  // Campo inline pra digitar o número da SA de Ajuste (Solicitação ao
+  // Armazém) — documento real, obrigatório, gerado pelo líder ANTES de
+  // encaminhar pro Armazém processar (ver App().gerarSolicitacaoArmazem —
+  // essa etapa NÃO manda direto pra Diretoria, só o item sai daqui e entra
+  // em "Aguardando Armazém"). Mesmo padrão inline já usado pra excluir.
+  const [saAbertoId, setSaAbertoId] = useState(null);
+  const [saValor, setSaValor] = useState('');
   // Menu "⋮" (Marcar urgente + Excluir, mesmo padrão do RecountsPanel) —
   // guarda só o id do card com o menu aberto no momento.
   const [menuAbertoId, setMenuAbertoId] = useState(null);
@@ -9429,12 +9465,18 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSend
     if(!res || !res.ok) setErros(prev=>({...prev, [countId]: (res && res.erro) || 'Não foi possível solicitar a recontagem — tente novamente.'}));
   }
 
-  async function handleEnviarParaDiretoria(countId){
+  async function handleGerarSA(countId){
+    if(!saValor.trim()) return;
     setBusyId(countId);
     setErros(prev=>({...prev, [countId]: null}));
-    const res = await onSendToDiretoria(countId);
+    const res = await onGerarSA(countId, saValor.trim());
     setBusyId(null);
-    if(!res || !res.ok) setErros(prev=>({...prev, [countId]: (res && res.erro) || 'Não foi possível enviar — tente novamente.'}));
+    if(res && res.ok){
+      setSaAbertoId(null);
+      setSaValor('');
+    } else {
+      setErros(prev=>({...prev, [countId]: (res && res.erro) || 'Não foi possível gerar a SA — tente novamente.'}));
+    }
   }
 
   async function handleConfirmDelete(countId){
@@ -9651,12 +9693,24 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSend
                     <button className="btn btn-danger" disabled={busyId===c.id} onClick={()=>handleConfirmDelete(c.id)}>{busyId===c.id ? 'Excluindo…' : 'Confirmar exclusão'}</button>
                   </div>
                 </div>
+              ) : saAbertoId===c.id ? (
+                <div className="count-card-actions">
+                  <div className="field" style={{marginBottom:10}}>
+                    <label>Número da SA (Solicitação ao Armazém)</label>
+                    <input type="text" value={saValor} onChange={e=>setSaValor(e.target.value)} placeholder="Ex: SA-2026-00123" autoFocus />
+                  </div>
+                  {erros[c.id] && <div className="divergence-alert" style={{marginBottom:10}}><Ic>⚠</Ic><span>{erros[c.id]}</span></div>}
+                  <div className="btn-row">
+                    <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>{setSaAbertoId(null); setSaValor('');}}>Cancelar</button>
+                    <button className="btn btn-primary" disabled={busyId===c.id || !saValor.trim()} onClick={()=>handleGerarSA(c.id)}>{busyId===c.id ? 'Gerando…' : 'Registrar SA e enviar ao Armazém'}</button>
+                  </div>
+                </div>
               ) : canApprove ? (
                 <div className="btn-row count-card-actions-row">
                   <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>handleRequestRecount(c.id)}>{busyId===c.id ? 'Enviando…' : 'Solicitar nova contagem'}</button>
                   <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>goto('recount', c)}><Ic>🔁</Ic> Recontar</button>
                   <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>handleApprove(c.id)}>{busyId===c.id ? 'Enviando…' : 'Sem Ajuste Necessário'}</button>
-                  <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>handleEnviarParaDiretoria(c.id)}><Ic>📋</Ic> {busyId===c.id ? 'Enviando…' : 'Enviar para Aprovação da Diretoria'}</button>
+                  <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>{setSaAbertoId(c.id); setSaValor('');}}><Ic>📋</Ic> Gerar SA de Ajuste</button>
                 </div>
               ) : (
                 <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>Aguardando decisão do líder de estoque.</div>
@@ -9670,16 +9724,194 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onSend
   );
 }
 
+// "Aguardando Armazém" — 2ª etapa do fluxo real de ajuste da Selgron (SA →
+// Armazém → Diretoria). O item chega aqui assim que o líder gera a SA
+// (Solicitação ao Armazém, número obrigatório) em "Itens Divergentes" — fica
+// aqui até o líder/admin confirmar que o Armazém já processou o pedido e
+// encaminhar pra decisão da Diretoria (ver App().enviarParaAprovacaoDiretoria).
+// Mesmo shell visual das outras telas de contagem (count-card/
+// SearchWithScanner/TrendFilterBar/result-grid-4col).
+function SolicitacaoArmazemPanel({counts, inventories, role, onEnviarParaDiretoria, onDeleteCount, onToggleUrgente}){
+  const canDecide = role==='lider' || role==='admin';
+  const aguardandoArmazem = counts.filter(c=>c.statusAprovacao==='aguardando_solicitacao_armazem');
+
+  // Mesmo critério das demais telas de contagem — `useState` puro (não
+  // persiste) e padrão "Todos os períodos".
+  const [trendFilter, setTrendFilter] = useState({tipo:'todos', from:'', to:''});
+  const hojeStr = hojeLocalStr();
+  const { from: dataInicioStr, to: dataFimStr } = computeTrendRange(trendFilter.tipo, hojeStr, trendFilter.from, trendFilter.to);
+  const aguardandoArmazemNoPeriodo = aguardandoArmazem.filter(c=>c.data && c.data>=dataInicioStr && c.data<=dataFimStr);
+
+  const [busca, setBusca] = useState('');
+  const buscaNorm = busca.trim().toLowerCase();
+  const porBusca = buscaNorm
+    ? aguardandoArmazemNoPeriodo.filter(c => c.productCode.toLowerCase().includes(buscaNorm) || (c.descricao||'').toLowerCase().includes(buscaNorm) || (c.usuario||'').toLowerCase().includes(buscaNorm) || (c.solicitacaoAjuste||'').toLowerCase().includes(buscaNorm))
+    : aguardandoArmazemNoPeriodo;
+
+  const [severidade, setSeveridade] = useState('todos');
+  const listaFiltradaSemOrdenar = severidade==='todos' ? porBusca : porBusca.filter(c=>classifySeverity4(severidadeDe(c)).level===severidade);
+  // Itens marcados como urgentes sempre aparecem primeiro — mesmo critério
+  // já usado em RecountsPanel/DivergentItemsPanel/DiretoriaApprovalPanel.
+  const listaFiltrada = [...listaFiltradaSemOrdenar].sort((a,b)=>(b.urgente?1:0)-(a.urgente?1:0));
+  const {pagina, setPagina, tamanhoPagina, setTamanhoPagina, listaPaginada, totalPaginas} = usePaginacaoLista(listaFiltrada, 50);
+
+  const [busyId, setBusyId] = useState(null);
+  const [erros, setErros] = useState({});
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [menuAbertoId, setMenuAbertoId] = useState(null);
+  useEffect(()=>{
+    if(!menuAbertoId) return;
+    function handleClickOutside(e){
+      if(!e.target.closest('.count-card-menu')) setMenuAbertoId(null);
+    }
+    document.addEventListener('click', handleClickOutside);
+    return ()=>document.removeEventListener('click', handleClickOutside);
+  }, [menuAbertoId]);
+
+  async function handleToggleUrgente(c){
+    setBusyId(c.id);
+    setErros(prev=>({...prev, [c.id]: null}));
+    const res = await onToggleUrgente(c.id, !c.urgente);
+    setBusyId(null);
+    if(!res || !res.ok) setErros(prev=>({...prev, [c.id]: (res && res.erro) || 'Não foi possível salvar — tente novamente.'}));
+  }
+
+  async function handleEnviar(countId){
+    setBusyId(countId);
+    setErros(prev=>({...prev, [countId]: null}));
+    const res = await onEnviarParaDiretoria(countId);
+    setBusyId(null);
+    if(!res || !res.ok) setErros(prev=>({...prev, [countId]: (res && res.erro) || 'Não foi possível enviar — tente novamente.'}));
+  }
+
+  async function handleConfirmDelete(countId){
+    setBusyId(countId);
+    setErros(prev=>({...prev, [countId]: null}));
+    const res = await onDeleteCount(countId);
+    setBusyId(null);
+    if(res && res.ok){
+      setConfirmDeleteId(null);
+    } else {
+      setErros(prev=>({...prev, [countId]: (res && res.erro) || 'Não foi possível excluir — tente novamente.'}));
+    }
+  }
+
+  return (
+    <div>
+      <TrendFilterBar
+        trendFilter={trendFilter}
+        setTrendFilter={setTrendFilter}
+        dataInicioStr={dataInicioStr}
+        dataFimStr={dataFimStr}
+        hojeStr={hojeStr}
+        subtitle="Selecione o período para filtrar as SAs aguardando o Armazém"
+      />
+
+      <SearchWithScanner value={busca} onChange={setBusca} placeholder="Código, descrição, operador ou nº da SA" />
+
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8,marginBottom:10}}>
+        <span style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>
+          <strong style={{color:'var(--ink)'}}>{aguardandoArmazem.length}</strong> pendentes
+          {aguardandoArmazemNoPeriodo.length!==aguardandoArmazem.length && <> · <strong style={{color:'var(--ink)'}}>{aguardandoArmazemNoPeriodo.length}</strong> no período selecionado</>}
+        </span>
+      </div>
+
+      <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+        <SeverityFilterRow counts={porBusca} value={severidade} onChange={setSeveridade} />
+      </div>
+
+      {listaFiltrada.length===0 ? (
+        <div className="empty-state">
+          {aguardandoArmazem.length===0
+            ? 'Nenhuma SA aguardando o Armazém no momento.'
+            : (aguardandoArmazemNoPeriodo.length===0 ? 'Nenhuma SA aguardando o Armazém nesse período.' : 'Nenhum item encontrado para esse filtro.')}
+        </div>
+      ) : listaPaginada.map(c=>{
+        const sev = classifySeverity4(severidadeDe(c));
+        return (
+          <div key={c.id} className={"count-card"+(c.urgente?' urgente':'')}>
+            <div className="count-card-bar" style={{background:sev.color}}></div>
+            <div className="count-card-body">
+              <div className="count-card-head">
+                <div className="count-card-badges">
+                  {c.urgente && <span className="urgente-chip"><Ic>🔥</Ic> Urgente</span>}
+                  <span className="severity-chip" style={{background:'var(--purple-bg)',color:'var(--purple)'}}><Ic>📋</Ic> SA {c.solicitacaoAjuste}</span>
+                  <span className="category-chip">{categoriaDoInventario(c, inventories)}</span>
+                </div>
+                <div className="count-card-head-right">
+                  <span className="count-card-date">{c.data}</span>
+                  {(canDecide || onDeleteCount) && (
+                    <div className="count-card-menu">
+                      <button type="button" className="count-card-menu-btn" onClick={()=>setMenuAbertoId(menuAbertoId===c.id ? null : c.id)}>⋮</button>
+                      {menuAbertoId===c.id && (
+                        <div className="count-card-menu-dropdown">
+                          {canDecide && (
+                            <button type="button" disabled={busyId===c.id} onClick={()=>{ handleToggleUrgente(c); setMenuAbertoId(null); }}><Ic>🔥</Ic> {busyId===c.id ? 'Salvando…' : (c.urgente ? 'Remover urgência' : 'Marcar urgente')}</button>
+                          )}
+                          {onDeleteCount && (
+                            <button type="button" className="menu-item-danger" onClick={()=>{ setConfirmDeleteId(c.id); setMenuAbertoId(null); }}><Ic>🗑</Ic> Excluir contagem</button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="count-card-toprow">
+                <div className="count-card-title">
+                  <div className="item-code">{c.productCode}</div>
+                  <div className="item-desc">{c.descricao}</div>
+                </div>
+                <div className="count-card-address-badge"><DIcon name="mapPin" size={16} /> {c.endereco || 'não cadastrado'}</div>
+              </div>
+              <div className="result-grid result-grid-4col" style={{gridTemplateColumns:'repeat(4,1fr)'}}>
+                <div className="rg"><div className="k">Sistema</div><div className="v">{c.saldoSistema==null ? '—' : c.saldoSistema}</div></div>
+                <div className="rg"><div className="k">Físico</div><div className="v">{c.qtdContada}</div></div>
+                <div className="rg"><div className="k">Diferença</div><div className="v" style={{color:sev.color}}>{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div></div>
+                <div className="rg"><div className="k">%</div><div className="v" style={{color:sev.color}}>{fmtAcuraciaItem(c)}</div></div>
+              </div>
+              <div style={{padding:'10px 16px 0',fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>SA gerada por {c.saGeradaPor||'—'} em {c.saGeradaEm||'—'}</div>
+              {c.motivo && <div style={{padding:'6px 16px 0',fontSize:'var(--text-sm)'}}>Motivo: <strong>{c.motivo}</strong></div>}
+              {erros[c.id] && (
+                <div className="divergence-alert" style={{margin:'10px 16px 0'}}><Ic>⚠</Ic><span>{erros[c.id]}</span></div>
+              )}
+              {confirmDeleteId===c.id ? (
+                <div className="count-card-actions">
+                  <div className="divergence-alert" style={{marginBottom:10}}>
+                    <Ic>⚠</Ic><span>Excluir esta contagem de {c.productCode}? Essa ação não pode ser desfeita e não deixa rastro.</span>
+                  </div>
+                  <div className="btn-row">
+                    <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>setConfirmDeleteId(null)}>Cancelar</button>
+                    <button className="btn btn-danger" disabled={busyId===c.id} onClick={()=>handleConfirmDelete(c.id)}>{busyId===c.id ? 'Excluindo…' : 'Confirmar exclusão'}</button>
+                  </div>
+                </div>
+              ) : canDecide ? (
+                <div className="btn-row count-card-actions-row">
+                  <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>handleEnviar(c.id)}><DIcon name="arrowRight" size={16} /> {busyId===c.id ? 'Enviando…' : 'Enviar para Aprovação da Diretoria'}</button>
+                </div>
+              ) : (
+                <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>Aguardando processamento do Armazém.</div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+      <PaginationControls pagina={pagina} setPagina={setPagina} totalPaginas={totalPaginas} tamanhoPagina={tamanhoPagina} setTamanhoPagina={setTamanhoPagina} totalItens={listaFiltrada.length} itemLabel="itens" />
+    </div>
+  );
+}
+
 // "Aguardando Aprovação" — tela nova, pedido do cliente: o fluxo real de
 // ajuste de estoque da Selgron não termina no líder aprovar a divergência.
-// Quando o líder decide que HÁ ajuste necessário (botão "Enviar para
-// Aprovação da Diretoria" em DivergentItemsPanel), o item cai aqui até a
-// Diretoria decidir — hoje isso é manual, feito pelo próprio admin dentro do
-// app (não existe perfil "Diretoria" nem integração externa). O número da SA
-// de Ajuste é OPCIONAL e digitado AQUI (não em Itens Divergentes) — o líder
-// só decide QUE precisa de ajuste, quem preenche o número da SA de verdade é
-// quem aprova, e mesmo assim sem ser obrigatório (ver `saInputs` abaixo).
-// Mesmo shell visual das outras 3 telas de contagem (count-card/
+// O item chega aqui só depois de passar por DUAS etapas anteriores: o líder
+// gerou a SA (Solicitação ao Armazém, número obrigatório — ver
+// DivergentItemsPanel/App().gerarSolicitacaoArmazem) e, já com o Armazém
+// tendo processado, o líder/admin encaminhou pra Diretoria (ver
+// SolicitacaoArmazemPanel/App().enviarParaAprovacaoDiretoria). A Diretoria só
+// decide Aprovar/Reprovar — o número da SA já vem pronto desde a 1ª etapa,
+// não se digita nada aqui. Hoje isso é manual, feito pelo próprio admin
+// dentro do app (não existe perfil "Diretoria" nem integração externa).
+// Mesmo shell visual das outras telas de contagem (count-card/
 // SearchWithScanner/TrendFilterBar/result-grid-4col).
 function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejectSA, onToggleUrgente}){
   const canDecide = role==='admin';
@@ -9737,19 +9969,10 @@ function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejec
   // por vez) — reseta ao abrir uma reprovação nova ou ao cancelar.
   const [motivoRejeicao, setMotivoRejeicao] = useState('');
 
-  // Número da SA de Ajuste — OPCIONAL, digitado aqui (não mais em "Itens
-  // Divergentes", ver App().enviarParaAprovacaoDiretoria/`aprovarAjusteDiretoria`).
-  // `saInputs` guarda só o que foi editado nesta sessão da tela, por id de
-  // contagem; enquanto não editado, o campo mostra o valor que já veio
-  // salvo (`c.solicitacaoAjuste`, caso o líder já tenha digitado antes desta
-  // mudança) — nunca trava "Aprovar" por estar vazio.
-  const [saInputs, setSaInputs] = useState({});
-  function saInputValue(c){ return saInputs[c.id] !== undefined ? saInputs[c.id] : (c.solicitacaoAjuste || ''); }
-
   async function handleApprove(c){
     setBusyId(c.id);
     setErros(prev=>({...prev, [c.id]: null}));
-    const res = await onApproveSA(c.id, saInputValue(c).trim());
+    const res = await onApproveSA(c.id);
     setBusyId(null);
     if(!res || !res.ok) setErros(prev=>({...prev, [c.id]: (res && res.erro) || 'Não foi possível aprovar — tente novamente.'}));
   }
@@ -9836,15 +10059,9 @@ function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejec
                 <div className="rg"><div className="k">Diferença</div><div className="v" style={{color:sev.color}}>{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div></div>
                 <div className="rg"><div className="k">%</div><div className="v" style={{color:sev.color}}>{fmtAcuraciaItem(c)}</div></div>
               </div>
-              <div style={{padding:'10px 16px 0',fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>Enviado para aprovação por {c.saGeradaPor||'—'} em {c.saGeradaEm||'—'}</div>
+              <div style={{padding:'10px 16px 0',fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>SA gerada por {c.saGeradaPor||'—'} em {c.saGeradaEm||'—'}</div>
               {c.motivo && <div style={{padding:'6px 16px 0',fontSize:'var(--text-sm)'}}>Motivo: <strong>{c.motivo}</strong></div>}
               {c.valorDivergente!=null && Number(c.valorDivergente)!==0 && <div style={{padding:'6px 16px 0',fontSize:'var(--text-sm)'}}>Valor divergente: <strong>R$ {Number(c.valorDivergente).toFixed(2)}</strong></div>}
-              {canDecide && !confirmRejectId && (
-                <div className="field" style={{padding:'10px 16px 0',marginBottom:0}}>
-                  <label>Número da SA de Ajuste (opcional)</label>
-                  <input type="text" value={saInputValue(c)} onChange={e=>setSaInputs(prev=>({...prev, [c.id]: e.target.value}))} placeholder="Ex: SA-2026-00123" disabled={busyId===c.id} />
-                </div>
-              )}
               {erros[c.id] && (
                 <div className="divergence-alert" style={{margin:'10px 16px 0'}}><Ic>⚠</Ic><span>{erros[c.id]}</span></div>
               )}
