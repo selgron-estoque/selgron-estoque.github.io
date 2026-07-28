@@ -1243,3 +1243,28 @@ alter table inventarios add column if not exists atribuido_a text;
 --   select column_name from information_schema.columns where table_name = 'contagens' and column_name = 'atribuido_a';
 -- =============================================================================
 alter table contagens add column if not exists atribuido_a text;
+
+-- =============================================================================
+-- DEVOLUÇÃO (item com sobra) NÃO GERA SA — pula direto pra Diretoria
+--
+-- Cliente esclareceu que o fluxo de SA/Armazém (ver bloco "FLUXO REAL DE
+-- AJUSTE..." acima) só se aplica a item com FALTA (diferença negativa —
+-- contagem física menor que o sistema). Item com SOBRA (diferença positiva)
+-- não gera número de SA nenhum — é só uma devolução física, sem
+-- protocolo/documento próprio — mas AINDA precisa da aprovação da Diretoria
+-- (confirmado via `AskUserQuestion`), só que pula por completo a etapa
+-- "Aguardando Armazém": o líder registra a devolução em "Itens Divergentes"
+-- e o item já entra direto em `aguardando_aprovacao_diretoria`, sem passar
+-- por `aguardando_solicitacao_armazem`.
+--
+-- `eh_devolucao` marca esse caso de forma EXPLÍCITA — não é inferido por
+-- `numero_sa` estar vazio (mesma lição já aprendida várias vezes neste
+-- projeto: inferir por ausência de dado é frágil, sempre que possível grava
+-- um campo real e explícito). `sa_gerada_por`/`sa_gerada_em` (colunas já
+-- existentes) são reaproveitadas aqui também, com o sentido mais genérico de
+-- "quem iniciou o processo de ajuste" — SA ou devolução, os dois casos.
+--
+-- Introspecção antes de rodar:
+--   select column_name from information_schema.columns where table_name = 'contagens' and column_name = 'eh_devolucao';
+-- =============================================================================
+alter table contagens add column if not exists eh_devolucao boolean not null default false;

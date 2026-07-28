@@ -11686,3 +11686,69 @@ QUE o item precisa de ajuste, ainda sem número nenhum em mãos.
   **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma
   limitação de sempre (login exige Supabase Auth real, não simulável no
   sandbox sem rede).
+
+## Item com sobra (diferença positiva) vira "Devolução" — sem SA, sem Armazém
+
+Cliente esclareceu mais uma distinção do processo real: "Para os itens
+negativos eu preciso de uma SA e para os itens positivos não gero número de
+SA é feito apenas uma devolução" — ou seja, o fluxo de SA/Armazém (2 rodadas
+anteriores) só vale pra item com FALTA (diferença negativa, contagem física
+menor que o sistema). Item com SOBRA (diferença positiva) é resolvido só com
+uma devolução física, sem nenhum número/protocolo. Confirmado via
+`AskUserQuestion` (2 perguntas): a devolução AINDA passa pela aprovação da
+Diretoria (mesmo nível de controle que a SA tem hoje), só que pula por
+completo a etapa "Aguardando Armazém"; e não tem número/protocolo nenhum —
+é só uma ação de 1 clique que já marca como devolvido.
+
+- **`eh_devolucao boolean`** (coluna nova em `contagens`, default `false`) —
+  marca esse caso de forma EXPLÍCITA, não inferida pela ausência de
+  `numero_sa` (mesma lição já aprendida várias vezes neste projeto: inferir
+  por dado ausente é frágil — ver histórico de bugs silenciosos por RLS sem
+  policy, coluna com espaço no cabeçalho, etc.). Sem policy nova — mesma
+  UPDATE já existente em `contagens` cobre.
+- **`registrarDevolucao(countId)`** (App(), ao lado de `enviarParaArmazem`/
+  `enviarParaAprovacaoDiretoria`) — pula direto pra
+  `aguardando_aprovacao_diretoria`, gravando `eh_devolucao:true` +
+  `sa_gerada_por`/`sa_gerada_em` (mesmas colunas já existentes, reaproveitadas
+  aqui com o sentido mais genérico de "quem iniciou o processo de ajuste",
+  seja SA ou devolução).
+- **`DivergentItemsPanel`**: o botão único ("Necessita Ajuste") virou
+  condicional pelo SINAL de `c.diferenca` — sobra (`>0`) mostra "Registrar
+  Devolução" (chama `onRegistrarDevolucao` direto, 1 clique, sem nenhum
+  campo — mesmo padrão de "Sem Ajuste Necessário", que já era assim); falta
+  (`<0`, ou `null`/`0` por segurança/fallback) continua mostrando "Necessita
+  Ajuste" (fluxo de SA de sempre, via "Aguardando Armazém").
+- **`DiretoriaApprovalPanel`**: chip de severidade mostra "Devolução" em vez
+  de "SA {número}"/"SA pendente" quando `c.ehDevolucao`; a linha "SA gerada
+  por X em Y" vira "Devolução registrada por X em Y"; o texto de confirmação
+  de reprovar ("Reprovar a SA X?") vira "Reprovar a devolução?". Nenhuma
+  mudança nos botões Aprovar/Reprovar em si — continuam funcionando
+  exatamente igual (aprovar não pede nada, reprovar exige motivo).
+- **Alertas "A Diretoria reprovou..."** (`RecountsPanel`/`DivergentItemsPanel`,
+  mostrados quando um item reprovado volta pra recontagem) também passaram a
+  dizer "reprovou a devolução" quando aplicável, em vez de "reprovou o
+  ajuste" genérico ou tentar mostrar um número de SA que não existe.
+- **`ConcludedCountsPanel`**: nova categoria **"Devolução"** — badge verde
+  com ícone de caixa, checada ANTES de "Ajustado" em `classificarStatusConcluido`
+  (os dois compartilham o mesmo `statusAprovacao` final,
+  `ajuste_aprovado_diretoria`; só o flag `ehDevolucao` os separa) — e novo
+  chip no filtro `StatusConcluidoFilterRow` ("Ajustado"/**"Devolução"**/"Sem
+  Ajuste"/"SALDO OK"), pra achar rápido só as devoluções entre as concluídas.
+- Testado via harness real (jsdom + react-dom/client + `act()`, mesma técnica
+  rigorosa de sempre — carrega o `index.html` inteiro transpilado numa
+  `vm.Script`): confirmei que `classificarStatusConcluido` reconhece
+  "devolucao" separado de "ajustado" (regressão do caso normal conferida);
+  que um item com sobra mostra só o botão "Registrar Devolução" (não
+  "Necessita Ajuste") e vice-versa pro item com falta; que clicar em
+  "Registrar Devolução" chama só `onRegistrarDevolucao` (não
+  `onEnviarParaArmazem`); que `DiretoriaApprovalPanel` mostra o badge
+  "Devolução" e "Devolução registrada por..." pro item marcado, sem nunca
+  mostrar "SA pendente"; e que "Aprovar" continua funcionando normalmente
+  pra devolução, sem exigir nenhum número. 11 asserções, todas passando.
+  Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  conferidos (638/638, sem mudança — nenhuma classe CSS nova, só JSX/JS).
+  **Falta o cliente rodar o SQL novo** (`alter table contagens add column if
+  not exists eh_devolucao boolean not null default false;`) no projeto real
+  antes de usar em produção. **Verificação visual de ponta a ponta fica a
+  cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth
+  real, não simulável no sandbox sem rede).

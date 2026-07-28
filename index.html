@@ -1430,6 +1430,9 @@ function contagemRowToLocal(row){
     solicitacaoAjuste: row.numero_sa,
     saGeradaPor: row.sa_gerada_por,
     saGeradaEm: row.sa_gerada_em,
+    // Item com sobra: devolução direta, sem SA — marcado explicitamente
+    // (não inferido pela ausência de `numero_sa`, ver schema.sql).
+    ehDevolucao: !!row.eh_devolucao,
     reprovadoPelaDiretoria: !!row.reprovado_pela_diretoria,
     reprovadoPor: row.reprovado_por,
     reprovadoEm: row.reprovado_em,
@@ -3567,6 +3570,10 @@ function limparObservacaoExibicao(obs){
 // filtro e no badge. "outros" cobre o resto (item sem divergência nenhuma,
 // que não ganha badge nenhum — decisão já tomada antes, ver CLAUDE.md).
 function classificarStatusConcluido(tip){
+  // Devolução (item com sobra, sem SA) é um resultado próprio — checado
+  // ANTES de "ajustado", já que os dois compartilham o mesmo status final
+  // (`ajuste_aprovado_diretoria`), só o flag explícito `ehDevolucao` separa.
+  if(tip.statusAprovacao==='ajuste_aprovado_diretoria' && tip.ehDevolucao) return 'devolucao';
   if(tip.statusAprovacao==='ajuste_aprovado_diretoria' || (tip._fromHistorico && tip._statusOriginal==='Ajustado')) return 'ajustado';
   if((tip.statusAprovacao==='aprovado_lider' && tip.diferenca!=null && tip.diferenca!==0) || (tip._fromHistorico && tip._statusOriginal==='Sem Ajuste')) return 'sem_ajuste';
   if(tip._fromHistorico && tip._statusOriginal==='OK') return 'saldo_ok';
@@ -4608,6 +4615,35 @@ function App(){
     return res;
   }
 
+  // Item com SOBRA (diferença positiva) não gera SA — é só uma devolução
+  // física, sem protocolo/número (pedido do cliente: "para os itens
+  // positivos não gero número de SA é feito apenas uma devolução"). AINDA
+  // precisa de aprovação da Diretoria (confirmado via `AskUserQuestion`), só
+  // que pula por completo a etapa "Aguardando Armazém" — vai direto de
+  // "Itens Divergentes" pra "Aguardando Aprovação", já marcado
+  // `eh_devolucao:true` (campo explícito, não inferido pela ausência de SA —
+  // mesma lição já aplicada várias vezes neste projeto).
+  async function registrarDevolucao(countId){
+    const registradoPor = currentUser ? currentUser.nome : '—';
+    const registradoEm = new Date().toLocaleString('pt-BR');
+    const res = await updateContagemStatusToSupabase(countId, {
+      status_aprovacao: 'aguardando_aprovacao_diretoria',
+      eh_devolucao: true,
+      sa_gerada_por: registradoPor,
+      sa_gerada_em: registradoEm,
+    });
+    if(res.ok){
+      setCounts(prev=>prev.map(c=>c.id===countId?{
+        ...c,
+        statusAprovacao:'aguardando_aprovacao_diretoria',
+        ehDevolucao:true,
+        saGeradaPor: registradoPor,
+        saGeradaEm: registradoEm,
+      }:c));
+    }
+    return res;
+  }
+
   // Diretoria aprova — ajuste efetivado, item vira final (aparece em
   // "Contagens Concluídas" como "Ajustado"). Reaproveita `aprovado_por`/
   // `aprovado_em` (mesmas colunas que `approveDivergence` já usa) com o
@@ -5228,7 +5264,7 @@ function App(){
         {view==='routeCount' && <RouteCountFlow inv={flowState} user={currentUser} counts={counts} inventories={inventories} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} gruposExcluidos={gruposExcluidos} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
         {view==='importedListCount' && <ImportedListCountFlow inv={flowState} user={currentUser} counts={counts} inventories={inventories} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
         {view==='recounts' && hasAccess(currentUser,'recounts') && <RecountsPanel counts={counts} inventories={inventories} role={role} currentUser={currentUser} users={users} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onToggleLiberarOriginal={toggleLiberarRecontagemOriginal} onEditarMotivoObservacao={editarMotivoObservacaoContagem} onAtribuir={atribuirContagem} operadorVeValoresRecontagem={operadorVeValoresRecontagem} />}
-        {view==='divergentes' && hasAccess(currentUser,'divergentes') && <DivergentItemsPanel counts={counts} inventories={inventories} role={role} goto={goto} onApprove={approveDivergence} onEnviarParaArmazem={enviarParaArmazem} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onEditarMotivoObservacao={editarMotivoObservacaoContagem} />}
+        {view==='divergentes' && hasAccess(currentUser,'divergentes') && <DivergentItemsPanel counts={counts} inventories={inventories} role={role} goto={goto} onApprove={approveDivergence} onEnviarParaArmazem={enviarParaArmazem} onRegistrarDevolucao={registrarDevolucao} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onEditarMotivoObservacao={editarMotivoObservacaoContagem} />}
         {view==='solicitacaoArmazem' && hasAccess(currentUser,'solicitacaoArmazem') && <SolicitacaoArmazemPanel counts={counts} inventories={inventories} role={role} onEnviarParaDiretoria={enviarParaAprovacaoDiretoria} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} />}
         {view==='aprovacaoDiretoria' && hasAccess(currentUser,'aprovacaoDiretoria') && <DiretoriaApprovalPanel counts={counts} inventories={inventories} role={role} onApproveSA={aprovarAjusteDiretoria} onRejectSA={reprovarAjusteDiretoria} onToggleUrgente={toggleUrgente} />}
         {view==='todasDivergencias' && <AllDivergencesPanel counts={counts} historicoConcluidas={historicoConcluidas} goto={goto} />}
@@ -8873,13 +8909,13 @@ function SeverityFilterRow({counts, value, onChange}){
 // classificando por `classificarStatusConcluido` em vez de valor — os dois
 // filtros funcionam em conjunto (AND), não um substituindo o outro.
 function StatusConcluidoFilterRow({tips, value, onChange}){
-  const categorias = ['ajustado','sem_ajuste','saldo_ok'];
-  const porCategoria = {ajustado:0, sem_ajuste:0, saldo_ok:0};
+  const categorias = ['ajustado','devolucao','sem_ajuste','saldo_ok'];
+  const porCategoria = {ajustado:0, devolucao:0, sem_ajuste:0, saldo_ok:0};
   tips.forEach(tip=>{
     const cat = classificarStatusConcluido(tip);
     if(porCategoria[cat]!==undefined) porCategoria[cat]++;
   });
-  const LABELS = {ajustado:'Ajustado', sem_ajuste:'Sem Ajuste', saldo_ok:'SALDO OK'};
+  const LABELS = {ajustado:'Ajustado', devolucao:'Devolução', sem_ajuste:'Sem Ajuste', saldo_ok:'SALDO OK'};
   return (
     <div style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:14}}>
       <button type="button" className={'btn '+(value==='todos'?'btn-primary':'btn-outline')+' btn-sm'} onClick={()=>onChange('todos')}>Todos ({tips.length})</button>
@@ -9269,7 +9305,7 @@ function RecountsPanel({counts, inventories, role, currentUser, users, goto, onD
             </div>
             {c.reprovadoPelaDiretoria && (
               <div className="divergence-alert" style={{background:'var(--purple-bg)',borderColor:'var(--purple)',color:'var(--purple)'}}>
-                <Ic>⛔</Ic><span>A Diretoria reprovou {c.solicitacaoAjuste ? ('a SA '+c.solicitacaoAjuste) : 'o ajuste'} em {c.reprovadoEm} — reenviado para nova análise.{c.motivoReprovacaoDiretoria && <><br/><strong>Motivo da reprovação:</strong> <span style={{color:'var(--danger)'}}>{c.motivoReprovacaoDiretoria}</span></>}</span>
+                <Ic>⛔</Ic><span>A Diretoria reprovou {c.ehDevolucao ? 'a devolução' : (c.solicitacaoAjuste ? ('a SA '+c.solicitacaoAjuste) : 'o ajuste')} em {c.reprovadoEm} — reenviado para nova análise.{c.motivoReprovacaoDiretoria && <><br/><strong>Motivo da reprovação:</strong> <span style={{color:'var(--danger)'}}>{c.motivoReprovacaoDiretoria}</span></>}</span>
               </div>
             )}
             {/* Motivo de um ajuste reprovado — pedido do cliente: vermelho só
@@ -9383,7 +9419,7 @@ function RecountsPanel({counts, inventories, role, currentUser, users, goto, onD
 // aparecer só em "Recontagens". Visível pra todos os papéis (antes ficava
 // escondida inteira do operador) — mas as ações (aprovar/solicitar
 // recontagem) continuam só pra líder/admin, operador vê em modo leitura.
-function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onEnviarParaArmazem, onRequestRecount, onDeleteCount, onToggleUrgente, onEditarMotivoObservacao}){
+function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onEnviarParaArmazem, onRegistrarDevolucao, onRequestRecount, onDeleteCount, onToggleUrgente, onEditarMotivoObservacao}){
   // Bug real corrigido aqui: faltava a mesma checagem de "ponta da
   // corrente" que RecountsPanel já tinha (`byOriginal`/`!byOriginal[c.id]`)
   // — sem isso, uma linha com status 'aguardando_analise_lider' continuava
@@ -9468,6 +9504,14 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onEnvi
     const res = await onEnviarParaArmazem(countId);
     setBusyId(null);
     if(!res || !res.ok) setErros(prev=>({...prev, [countId]: (res && res.erro) || 'Não foi possível enviar — tente novamente.'}));
+  }
+
+  async function handleRegistrarDevolucao(countId){
+    setBusyId(countId);
+    setErros(prev=>({...prev, [countId]: null}));
+    const res = await onRegistrarDevolucao(countId);
+    setBusyId(null);
+    if(!res || !res.ok) setErros(prev=>({...prev, [countId]: (res && res.erro) || 'Não foi possível registrar — tente novamente.'}));
   }
 
   async function handleConfirmDelete(countId){
@@ -9636,7 +9680,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onEnvi
               {limparObservacaoExibicao(c.observacao) && <div style={{padding:'6px 16px 0',fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>Observação: {limparObservacaoExibicao(c.observacao)}</div>}
               {c.reprovadoPelaDiretoria && (
                 <div className="divergence-alert" style={{margin:'10px 16px 0',background:'var(--purple-bg)',borderColor:'var(--purple)',color:'var(--purple)'}}>
-                  <Ic>⛔</Ic><span>A Diretoria reprovou {c.solicitacaoAjuste ? ('a SA '+c.solicitacaoAjuste) : 'o ajuste'} em {c.reprovadoEm} — reenviado para nova análise.{c.motivoReprovacaoDiretoria && <><br/><strong>Motivo da reprovação:</strong> <span style={{color:'var(--danger)'}}>{c.motivoReprovacaoDiretoria}</span></>}</span>
+                  <Ic>⛔</Ic><span>A Diretoria reprovou {c.ehDevolucao ? 'a devolução' : (c.solicitacaoAjuste ? ('a SA '+c.solicitacaoAjuste) : 'o ajuste')} em {c.reprovadoEm} — reenviado para nova análise.{c.motivoReprovacaoDiretoria && <><br/><strong>Motivo da reprovação:</strong> <span style={{color:'var(--danger)'}}>{c.motivoReprovacaoDiretoria}</span></>}</span>
                 </div>
               )}
               {/* Motivo de um ajuste reprovado — vermelho só aqui, não no
@@ -9689,7 +9733,15 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onEnvi
                   <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>handleRequestRecount(c.id)}>{busyId===c.id ? 'Enviando…' : 'Solicitar nova contagem'}</button>
                   <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>goto('recount', c)}><Ic>🔁</Ic> Recontar</button>
                   <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>handleApprove(c.id)}>{busyId===c.id ? 'Enviando…' : 'Sem Ajuste Necessário'}</button>
-                  <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>handleEnviarParaArmazem(c.id)}><Ic>📋</Ic> {busyId===c.id ? 'Enviando…' : 'Necessita Ajuste'}</button>
+                  {/* Sobra (diferença positiva) = devolução, sem SA nenhuma
+                      — pula "Aguardando Armazém", vai direto pra Diretoria.
+                      Falta (diferença negativa, ou null/0 por segurança) =
+                      fluxo de SA de sempre, via "Aguardando Armazém". */}
+                  {c.diferenca>0 ? (
+                    <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>handleRegistrarDevolucao(c.id)}><Ic>📦</Ic> {busyId===c.id ? 'Enviando…' : 'Registrar Devolução'}</button>
+                  ) : (
+                    <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>handleEnviarParaArmazem(c.id)}><Ic>📋</Ic> {busyId===c.id ? 'Enviando…' : 'Necessita Ajuste'}</button>
+                  )}
                 </div>
               ) : (
                 <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>Aguardando decisão do líder de estoque.</div>
@@ -10015,8 +10067,8 @@ function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejec
       {listaFiltrada.length===0 ? (
         <div className="empty-state">
           {aguardandoDiretoria.length===0
-            ? 'Nenhuma SA de ajuste aguardando aprovação no momento.'
-            : (aguardandoDiretoriaNoPeriodo.length===0 ? 'Nenhuma SA aguardando aprovação nesse período.' : 'Nenhum item encontrado para esse filtro.')}
+            ? 'Nenhum ajuste (SA ou devolução) aguardando aprovação no momento.'
+            : (aguardandoDiretoriaNoPeriodo.length===0 ? 'Nenhum ajuste aguardando aprovação nesse período.' : 'Nenhum item encontrado para esse filtro.')}
         </div>
       ) : listaPaginada.map(c=>{
         const sev = classifySeverity4(severidadeDe(c));
@@ -10027,7 +10079,7 @@ function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejec
               <div className="count-card-head">
                 <div className="count-card-badges">
                   {c.urgente && <span className="urgente-chip"><Ic>🔥</Ic> Urgente</span>}
-                  <span className="severity-chip" style={{background:'var(--purple-bg)',color:'var(--purple)'}}><Ic>📋</Ic> {c.solicitacaoAjuste ? ('SA '+c.solicitacaoAjuste) : 'SA pendente'}</span>
+                  <span className="severity-chip" style={{background:'var(--purple-bg)',color:'var(--purple)'}}><Ic>📋</Ic> {c.ehDevolucao ? 'Devolução' : (c.solicitacaoAjuste ? ('SA '+c.solicitacaoAjuste) : 'SA pendente')}</span>
                   <span className="category-chip">{categoriaDoInventario(c, inventories)}</span>
                 </div>
                 <div className="count-card-head-right">
@@ -10057,7 +10109,7 @@ function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejec
                 <div className="rg"><div className="k">Diferença</div><div className="v" style={{color:sev.color}}>{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div></div>
                 <div className="rg"><div className="k">%</div><div className="v" style={{color:sev.color}}>{fmtAcuraciaItem(c)}</div></div>
               </div>
-              <div style={{padding:'10px 16px 0',fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>SA gerada por {c.saGeradaPor||'—'} em {c.saGeradaEm||'—'}</div>
+              <div style={{padding:'10px 16px 0',fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>{c.ehDevolucao ? 'Devolução registrada' : 'SA gerada'} por {c.saGeradaPor||'—'} em {c.saGeradaEm||'—'}</div>
               {c.motivo && <div style={{padding:'6px 16px 0',fontSize:'var(--text-sm)'}}>Motivo: <strong>{c.motivo}</strong></div>}
               {c.valorDivergente!=null && Number(c.valorDivergente)!==0 && <div style={{padding:'6px 16px 0',fontSize:'var(--text-sm)'}}>Valor divergente: <strong>R$ {Number(c.valorDivergente).toFixed(2)}</strong></div>}
               {erros[c.id] && (
@@ -10066,7 +10118,7 @@ function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejec
               {confirmRejectId===c.id ? (
                 <div className="count-card-actions">
                   <div className="divergence-alert" style={{marginBottom:10}}>
-                    <Ic>⚠</Ic><span>Reprovar {c.solicitacaoAjuste ? ('a SA '+c.solicitacaoAjuste) : 'o ajuste'}? O item volta pra fila de recontagem, marcado como reprovado pela Diretoria.</span>
+                    <Ic>⚠</Ic><span>Reprovar {c.ehDevolucao ? 'a devolução' : (c.solicitacaoAjuste ? ('a SA '+c.solicitacaoAjuste) : 'o ajuste')}? O item volta pra fila de recontagem, marcado como reprovado pela Diretoria.</span>
                   </div>
                   <div className="field" style={{marginBottom:10}}>
                     <label>Motivo da reprovação</label>
@@ -10550,6 +10602,7 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
         // `null` pra linha de histórico).
         const statusCatConcluido = classificarStatusConcluido(tip);
         const ehAjustado = statusCatConcluido==='ajustado';
+        const ehDevolucao = statusCatConcluido==='devolucao';
         const ehSemAjuste = statusCatConcluido==='sem_ajuste';
         const ehSaldoOk = statusCatConcluido==='saldo_ok';
         // Uma linha vinda do histórico importado não pode ser excluída (não
@@ -10579,6 +10632,9 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
                       não teve divergência nenhuma, não só "sem ajuste". */}
                   {ehAjustado && (
                     <span className="category-chip" style={{background:'var(--ok-bg)',color:'var(--ok)'}}>Ajustado{tip.solicitacaoAjuste ? (' · SA '+tip.solicitacaoAjuste) : ''}</span>
+                  )}
+                  {ehDevolucao && (
+                    <span className="category-chip" style={{background:'var(--ok-bg)',color:'var(--ok)'}}><Ic>📦</Ic> Devolução</span>
                   )}
                   {ehSemAjuste && (
                     <span className="category-chip" style={{background:'var(--panel-raised)',color:'var(--ink-dim)'}}>Sem Ajuste</span>
