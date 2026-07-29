@@ -405,9 +405,13 @@
      flex-direction:column acima quando combinada com .btn-row no mesmo
      elemento. Mesmo padding/font-size de `.count-card-actions-col .btn`
      acima (era text-xs aqui, ficava menor que os outros painéis — cliente
-     apontou tamanhos/formatos diferentes entre as 5 telas de contagem). */
-  .count-card-actions-row.btn-row .btn{width:auto;padding:8px 14px;font-size:var(--text-sm);flex:1 1 auto;}
-  .count-card-actions-row.btn-row .btn-danger{flex:0 0 auto;}
+     apontou tamanhos/formatos diferentes entre as 5 telas de contagem).
+     `flex:0 1 auto` (nunca cresce) em vez do `flex:1 1 auto` antigo — com
+     só 2 botões na fileira (Aguardando Aprovação/Aguardando Armazém), o
+     único que não fosse `.btn-danger` esticava sozinho pra ocupar todo o
+     espaço sobrando, ficando gigante — agora nenhum botão cresce além do
+     próprio conteúdo, com 2 ou 4 na fileira. */
+  .count-card-actions-row.btn-row .btn{width:auto;padding:8px 14px;font-size:var(--text-sm);flex:0 1 auto;}
 
   /* Comparativo 1ª/2ª contagem (item que já tem uma rodada anterior, ver
      "anterior" em DivergentItemsPanel) — as duas rodadas empilhadas, cada
