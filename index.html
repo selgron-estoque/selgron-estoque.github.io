@@ -3251,6 +3251,30 @@ async function fetchContagemItensPrioritarios(limit, grupos, almoxarifados, grup
   }
 }
 
+// Bug real corrigido: "Contagem por Rota de Endereço" (RouteCountFlow)
+// reaproveitava `fetchContagemItensPrioritarios` — que corta por prioridade
+// de valor/movimento ANTES de filtrar por endereço, deixando itens de baixo
+// valor mas JÁ ENDEREÇADOS de fora da rota (ver comentário da RPC
+// `contagem_itens_por_endereco` no backend/schema.sql). Rota precisa de
+// cobertura EXAUSTIVA — INNER JOIN garante que toda linha já tem endereço, e
+// `fetchTodasPaginado` busca TUDO, sem nenhum limite artificial (mesmo
+// padrão já usado em toda busca "não pode ter limite" deste projeto).
+async function fetchItensPorEnderecoCompleto(grupos, almoxarifados, gruposExcluidos){
+  if(!supabaseClient) return [];
+  try{
+    const rows = await fetchTodasPaginado(() => supabaseClient.rpc('contagem_itens_por_endereco', {
+      p_grupos: (grupos && grupos.length) ? grupos : null,
+      p_almoxarifados: (almoxarifados && almoxarifados.length) ? almoxarifados : null,
+    }));
+    let produtos = rows.map(estoqueRowToProduct);
+    if(gruposExcluidos && gruposExcluidos.length) produtos = produtos.filter(p => !gruposExcluidos.includes(String(p.grupo)));
+    return produtos;
+  }catch(err){
+    console.warn('Falha ao buscar itens por endereço para rota:', err);
+    return [];
+  }
+}
+
 // Grupos que realmente têm algum item com saldo carregado (não os ~248
 // grupos possíveis do catálogo, a maioria ainda sem saldo importado) —
 // alimenta o seletor de grupo em "Contagem por Grupo". `label` já vem
@@ -8696,9 +8720,11 @@ function RouteCountFlow({inv, user, onRegisterCount, onFinish, onAddressProposed
   const [armazemAdHoc, setArmazemAdHoc] = useState('');
   const almoxarifadosFiltro = invAlmoxarifados || (armazemAdHoc ? [armazemAdHoc] : null);
 
-  // Busca itens priorizados no Supabase (mesma RPC do RandomCountFlow, com
-  // limite maior já que aqui interessa toda a rota, não só `qtdItens`) e
-  // agrupa por corredor/rua os que já têm endereço cadastrado.
+  // Busca EXAUSTIVA no Supabase (contagem_itens_por_endereco, sem corte por
+  // prioridade — ver comentário de fetchItensPorEnderecoCompleto: reaproveitar
+  // a RPC de Aleatória/Curva ABC aqui deixava itens de baixo valor mas já
+  // endereçados de fora da rota) e agrupa por corredor/rua os que já têm
+  // endereço cadastrado.
   const [anyAddress, setAnyAddress] = useState(null); // null = carregando
   const [grouped, setGrouped] = useState(null);
   useEffect(()=>{
@@ -8709,7 +8735,7 @@ function RouteCountFlow({inv, user, onRegisterCount, onFinish, onAddressProposed
       if(cancelado) return;
       setAnyAddress(hasAny);
       if(!hasAny) return;
-      const itens = await fetchContagemItensPrioritarios(200, gruposFiltro, almoxarifadosFiltro, gruposExcluidos);
+      const itens = await fetchItensPorEnderecoCompleto(gruposFiltro, almoxarifadosFiltro, gruposExcluidos);
       if(cancelado) return;
       // Agrupa por corredor/rua extraídos da STRING do endereço (não das
       // colunas `p.corredor`/`p.rua`, que nunca são preenchidas — ver

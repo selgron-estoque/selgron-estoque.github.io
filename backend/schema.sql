@@ -1268,3 +1268,48 @@ alter table contagens add column if not exists atribuido_a text;
 --   select column_name from information_schema.columns where table_name = 'contagens' and column_name = 'eh_devolucao';
 -- =============================================================================
 alter table contagens add column if not exists eh_devolucao boolean not null default false;
+
+-- =============================================================================
+-- "CONTAGEM POR ROTA DE ENDEREÇO" NÃO CONSIDERAVA TODOS OS ITENS DO ENDEREÇO
+--
+-- Bug real reportado pelo cliente. `RouteCountFlow` (index.html) reaproveitava
+-- `contagem_itens_prioritarios` (a mesma RPC de Aleatória/Curva ABC/Grupo) —
+-- ela ordena por (sem_movimento_recente desc, valor_financeiro desc) e CORTA
+-- em `p_limit` (200, ou até 2000 com grupos excluídos) ANTES de qualquer
+-- filtro por endereço. Como o LEFT JOIN inclui QUALQUER item do armazém (com
+-- ou sem endereço), um item de baixo valor que JÁ TEM endereço cadastrado
+-- podia nunca aparecer na rota — perdia a "corrida de prioridade" contra
+-- milhares de outros itens do mesmo armazém sem endereço nenhum, mesmo o
+-- armazém tendo bem menos de 200 itens endereçados no total.
+--
+-- Rota de Endereço precisa de cobertura EXAUSTIVA — o operador percorre uma
+-- posição física e precisa ver TODO item que está ali, não uma amostra por
+-- prioridade (que faz sentido só pra Aleatória/Curva ABC/Grupo, onde a ideia
+-- é justamente NÃO contar tudo). Função nova, dedicada:
+--   - INNER JOIN em vez de LEFT JOIN em estoque_enderecos/enderecos — toda
+--     linha devolvida já tem endereço de verdade, sem precisar competir por
+--     prioridade com item sem endereço.
+--   - SEM nenhum LIMIT — paginada no cliente via fetchTodasPaginado (mesmo
+--     padrão já usado em toda busca "não pode ter limite" deste projeto,
+--     ver comentário de fetchTodasPaginado no index.html).
+--   - Ordenação com tiebreaker (e.codigo, p.codigo) — paginação estável.
+-- =============================================================================
+create or replace function contagem_itens_por_endereco(p_grupos text[] default null, p_almoxarifados text[] default null)
+returns table(
+  codigo text, descricao text, unidade text, grupo text, almoxarifado text, saldo numeric,
+  valor_financeiro numeric, data_ultima_saida date, sem_movimento_recente boolean,
+  endereco_codigo text, corredor text, rua text
+) as $$
+  select
+    p.codigo, p.descricao, p.unidade, p.grupo, es.almoxarifado, es.saldo, es.valor_financeiro,
+    es.data_ultima_saida,
+    (es.data_ultima_saida is null or es.data_ultima_saida < current_date - interval '90 days'),
+    e.codigo, e.corredor, e.rua
+  from estoque_saldo es
+  join produtos p on p.codigo = es.produto_codigo
+  join estoque_enderecos ee on ee.produto_codigo = es.produto_codigo
+  join enderecos e on e.id = ee.endereco_id
+  where (p_grupos is null or p.grupo = any(p_grupos))
+    and (p_almoxarifados is null or es.almoxarifado = any(p_almoxarifados))
+  order by e.codigo, p.codigo;
+$$ language sql stable;
