@@ -1010,7 +1010,15 @@
        navy, laranja Selgron, grid de 12 colunas, espaçamento em múltiplos de 8) ---- */
     .pnl-wrap{display:block;font-family:var(--font-corp);color:var(--navy);}
     .mobile-home-menu{display:none;}
-    .pnl-kpi-row{display:grid;grid-template-columns:repeat(5,1fr);gap:16px;margin-bottom:24px;}
+    /* auto-fit em vez de um número fixo de colunas — o array `kpis` (Home)
+       varia de 4 (operador) a 6 (líder/admin, com "Aguardando Armazém"/
+       "Aguardando Aprovação da Diretoria") itens, e um `repeat(5,1fr)` fixo
+       deixava o 6º card sobrar sozinho numa 2ª linha (cliente reportou:
+       "criar uma regra para que o card não pode passar de 1 linha").
+       minmax(150px,1fr) garante que até 6 colunas cabem numa linha só a
+       partir do breakpoint de 1360px logo abaixo (6×150px + 5×16px de gap
+       ≈ 980px, bem dentro do espaço disponível mesmo com a sidebar). */
+    .pnl-kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px;margin-bottom:24px;}
     .pnl-kpi{display:block;width:100%;text-align:left;font:inherit;background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius);padding:14px 16px;box-shadow:0 1px 2px rgba(15,23,42,.03);transition:box-shadow .15s, transform .15s;}
     .pnl-kpi:hover{box-shadow:0 6px 16px rgba(15,23,42,.08);transform:translateY(-1px);}
     .pnl-kpi-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
