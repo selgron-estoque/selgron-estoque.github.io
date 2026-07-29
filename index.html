@@ -1428,24 +1428,63 @@ function buildTsplEndereco(codigo){
   ].join('\r\n');
 }
 
-// Etiqueta de PRODUTO — mesmo tamanho/DPI/símbolo da etiqueta de endereço,
-// com código + descrição (truncada em 28 caracteres pra não estourar a
-// largura de 50mm num font pequeno) acima do código de barras do código do
-// produto.
-function buildTsplProduto(codigo, descricao){
+// Etiqueta de PRODUTO — layout de recebimento pedido pelo cliente (mandou
+// foto de referência): faixa "CODIGO" + código gigante, "Qtd: N PC" no
+// canto, "DESCRICAO"/"DATA RECEBIMENTO" lado a lado, divisórias, código de
+// barras e o código repetido embaixo dele. `quantidade`/`dataRecebimento`
+// (já formatada dd/mm/aaaa, ver `fmtDataBR`) são opcionais — ficam de fora
+// da etiqueta quando não informadas (`EtiquetasPanel` deixa os 2 campos em
+// branco por padrão, só pra "Produto"). 50mm×30mm, 203dpi (8 dots/mm →
+// 400×240 dots).
+//
+// O rótulo de cada campo (CODIGO/DESCRICAO/DATA RECEBIMENTO) era uma faixa
+// preta sólida com texto branco por cima (mesma técnica de `REVERSE` já
+// usada nas etiquetas — ver prévia anterior) — o cliente pediu pra tirar a
+// caixa preta mas manter o rótulo "em destaque". Como a TSPL não tem um
+// flag de negrito de verdade, a solução foi imprimir o mesmo texto 2 vezes
+// com 1 dot de deslocamento em x (técnica clássica de "negrito simulado"
+// em impressora térmica) + um traço fino embaixo (mesmo papel visual de um
+// sublinhado) — ver `rotulo()`. A largura do traço é uma ESTIMATIVA por
+// quantidade de caracteres (fonte "1" ≈ 8 dots/caractere) — como as outras
+// etiquetas, pode precisar de ajuste fino depois da 1ª impressão real.
+function buildTsplProduto(codigo, descricao, quantidade, dataRecebimento){
   const cod = escapaTspl(codigo);
   const desc = escapaTspl((descricao||'').slice(0, 28));
-  return [
+  const qtdTexto = quantidade ? ('Qtd: '+escapaTspl(quantidade)+' PC') : '';
+  const dataTexto = escapaTspl(dataRecebimento || '');
+
+  const linhas = [
     'SIZE 50 mm,30 mm',
     'GAP 2 mm,0 mm',
     'DIRECTION 1',
     'CLS',
-    'TEXT 30,15,"1",0,1,1,"'+desc+'"',
-    'TEXT 30,45,"3",0,1,1,"'+cod+'"',
-    'BARCODE 30,95,"128",70,1,0,2,2,"'+cod+'"',
-    'PRINT 1,1',
-    '',
-  ].join('\r\n');
+    'BOX 4,4,396,236,10',
+  ];
+
+  function rotulo(x, y, texto){
+    linhas.push('TEXT '+x+','+y+',"1",0,1,1,"'+texto+'"');
+    linhas.push('TEXT '+(x+1)+','+y+',"1",0,1,1,"'+texto+'"');
+    linhas.push('BAR '+x+','+(y+16)+','+(texto.length*8+4)+',2');
+  }
+
+  rotulo(16, 12, 'CODIGO');
+  if(qtdTexto){
+    const qtdX = Math.max(160, 380 - qtdTexto.length*12);
+    linhas.push('TEXT '+qtdX+',10,"2",0,1,1,"'+qtdTexto+'"');
+  }
+  linhas.push('TEXT 16,44,"3",0,2,1,"'+cod+'"');
+  linhas.push('BAR 16,80,368,2');
+  rotulo(16, 90, 'DESCRICAO');
+  rotulo(224, 90, 'DATA RECEBIMENTO');
+  linhas.push('BAR 216,90,2,44');
+  linhas.push('TEXT 16,122,"2",0,1,1,"'+desc+'"');
+  if(dataTexto) linhas.push('TEXT 224,122,"2",0,1,1,"'+dataTexto+'"');
+  linhas.push('BAR 16,152,368,2');
+  linhas.push('BARCODE 16,160,"128",50,1,0,2,2,"'+cod+'"');
+  linhas.push('TEXT 16,214,"1",0,1,1,"'+cod+'"');
+  linhas.push('PRINT 1,1');
+  linhas.push('');
+  return linhas.join('\r\n');
 }
 
 
@@ -12736,6 +12775,12 @@ function EtiquetasPanel(){
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [selecionado, setSelecionado] = useState(null);
+  // Só a etiqueta de PRODUTO tem esses 2 campos (pedido do cliente, layout
+  // de recebimento) — endereço não tem quantidade/data nenhuma pra mostrar.
+  // Os dois são opcionais: `buildTsplProduto` já lida com eles vazios,
+  // deixando de fora da etiqueta em vez de imprimir "Qtd: PC" quebrado.
+  const [quantidade, setQuantidade] = useState('');
+  const [dataRecebimento, setDataRecebimento] = useState(()=> new Date().toISOString().slice(0,10));
 
   const [impressoraConectada, setImpressoraConectada] = useState(false);
   const [conectando, setConectando] = useState(false);
@@ -12763,6 +12808,7 @@ function EtiquetasPanel(){
     setResults([]);
     setSelecionado(null);
     setQuery('');
+    setQuantidade('');
   }, [aba]);
 
   // Debounce de 350ms, mesmo padrão já usado em ManualCountFlow/
@@ -12792,7 +12838,9 @@ function EtiquetasPanel(){
     setImprimindo(true);
     setErroImpressao(null);
     setSucessoImpressao(false);
-    const tspl = aba==='endereco' ? buildTsplEndereco(selecionado.codigo) : buildTsplProduto(selecionado.codigo, selecionado.descricao);
+    const tspl = aba==='endereco'
+      ? buildTsplEndereco(selecionado.codigo)
+      : buildTsplProduto(selecionado.codigo, selecionado.descricao, quantidade, dataRecebimento ? fmtDataBR(dataRecebimento) : '');
     const res = await enviarTsplParaImpressora(tspl);
     setImprimindo(false);
     if(res.ok){
@@ -12840,7 +12888,7 @@ function EtiquetasPanel(){
       {!loading && query && results.length===0 && <div className="empty-state">Nenhum resultado encontrado.</div>}
 
       {!selecionado && results.map(item=>(
-        <div key={item.codigo || item.id} className="list-row" onClick={()=>{ setSelecionado(item); setSucessoImpressao(false); setErroImpressao(null); }}>
+        <div key={item.codigo || item.id} className="list-row" onClick={()=>{ setSelecionado(item); setSucessoImpressao(false); setErroImpressao(null); setQuantidade(''); }}>
           <div>
             <div className="lr-title">{aba==='endereco' ? item.codigo : item.descricao}</div>
             {aba==='produto' && <div className="lr-sub">{item.codigo}</div>}
@@ -12855,6 +12903,18 @@ function EtiquetasPanel(){
           <div className="item-code">{selecionado.codigo}</div>
           {aba==='produto' && <div className="item-desc">{selecionado.descricao}</div>}
           {aba==='endereco' && selecionado.almoxarifado && <div className="lr-sub" style={{marginTop:4}}>Armazém {selecionado.almoxarifado}</div>}
+          {aba==='produto' && (
+            <div style={{display:'flex',gap:10,marginTop:12}}>
+              <div className="field" style={{flex:1,marginBottom:0}}>
+                <label>Quantidade recebida</label>
+                <input type="text" inputMode="numeric" value={quantidade} onChange={e=>setQuantidade(e.target.value.replace(/[^0-9]/g,''))} placeholder="Ex: 500" />
+              </div>
+              <div className="field" style={{flex:1,marginBottom:0}}>
+                <label>Data de recebimento</label>
+                <input type="date" value={dataRecebimento} onChange={e=>setDataRecebimento(e.target.value)} />
+              </div>
+            </div>
+          )}
           {erroImpressao && (
             <div className="divergence-alert" style={{margin:'10px 0'}}><Ic>⚠</Ic><span>{erroImpressao}</span></div>
           )}

@@ -11931,3 +11931,102 @@ mais 1 ícone novo em `DICON_PATHS`). **Nenhuma migração de SQL necessária**
 do cliente** — mais que a limitação de sempre (login/Supabase Auth): aqui
 nem uma simulação de rede ajuda, é hardware de verdade (USB, driver do SO,
 alinhamento físico da etiqueta) que só existe no ambiente real dele.
+
+## Etiqueta de produto no layout de recebimento — campos de Qtd/Data + rótulo sem caixa
+
+Cliente mandou uma foto de referência de uma etiqueta física já usada na Selgron
+(faixa "CÓDIGO" preta com o código gigante embaixo, "Qtd: N PC" no canto,
+"DESCRIÇÃO"/"DATA RECEBIMENTO" lado a lado, divisórias, código de barras e o
+código repetido por extenso embaixo dele) e pediu pra replicar exatamente esse
+layout na etiqueta de PRODUTO (`buildTsplProduto`, ver seção anterior). Antes de
+mexer no código, gerei uma prévia visual (canvas, publicada como Artifact) pra
+validar o desenho — e aproveitei pra levantar 2 pontos que a foto sozinha não
+respondia, confirmados com o cliente antes de implementar:
+
+1. **"Qtd" e "Data Recebimento" viram campos novos**, digitados na hora de
+   imprimir (não existiam em lugar nenhum do catálogo/app até então).
+2. **A faixa preta "com ponta de seta" da foto vira só destaque tipográfico,
+   sem caixa** — pedido explícito do cliente depois de ver a 1ª prévia (que já
+   avisava que TSPL não desenha forma com bico, só retângulo — a solução que eu
+   tinha proposto era um retângulo preto sólido com `REVERSE`; o cliente
+   preferiu tirar a caixa por completo, mantendo o rótulo em destaque de outro
+   jeito).
+
+### `EtiquetasPanel` ganha 2 campos, só na aba "Produto"
+
+`quantidade` (`useState('')`, filtrado pra só dígito no `onChange` —
+`e.target.value.replace(/[^0-9]/g,'')`, mesmo padrão de sanitização já usado
+em outros campos numéricos do app) e `dataRecebimento` (`useState`, já
+inicializa com a data de hoje via `new Date().toISOString().slice(0,10)`,
+`<input type="date">` mesmo padrão já usado no filtro de data de
+`ReportsScreen`). Aparecem lado a lado, logo abaixo da descrição do item, só
+quando `aba==='produto'` — a aba "Endereço" nunca ganhou esses campos, não
+fazem sentido pra etiqueta de endereço. Resetam pra vazio ao trocar de aba ou
+selecionar um item novo (mesmo critério de "campo de sessão de impressão", não
+persiste entre etiquetas). **Os dois são opcionais** — se ficarem em branco,
+a etiqueta sai sem essas 2 linhas (`buildTsplProduto` já tolera isso, não
+imprime "Qtd:  PC" quebrado).
+
+### `buildTsplProduto(codigo, descricao, quantidade, dataRecebimento)` — assinatura nova, rótulo sem caixa
+
+Reescrita por completo. Onde antes tinha (na prévia inicial, nunca chegou a
+virar código de verdade) uma faixa preta sólida com `REVERSE` pra simular o
+texto branco da foto, agora usa **negrito simulado + traço fino**: o helper
+interno `rotulo(x, y, texto)` imprime o mesmo texto 2× com 1 dot de
+deslocamento em x (`TEXT x,y,...` seguido de `TEXT x+1,y,...` — técnica
+clássica de "negrito" em impressora térmica, já que TSPL não tem um flag de
+negrito de verdade) e desenha um `BAR` fino logo abaixo (mesmo papel visual de
+um sublinhado) — largura do traço estimada por quantidade de caracteres
+(fonte "1" ≈ 8 dots/caractere), mesma ressalva de sempre sobre precisar de
+ajuste fino depois da 1ª impressão real. Usado nos 3 rótulos ("CODIGO",
+"DESCRICAO", "DATA RECEBIMENTO") — "Qtd: N PC" continua só texto normal
+(nunca teve caixa na foto de referência, sem mudança nesse ponto).
+
+Layout final (400×240 dots, 50×30mm@203dpi): `BOX` arredondado ao redor da
+etiqueta inteira (a moldura preta da foto, essa sim continua — só a faixa
+dos RÓTULOS internos perdeu a caixa, não a borda externa), rótulo
+"CODIGO"+"Qtd" no topo, código gigante (`font "3"` com `x-mult 2`) logo
+abaixo, divisor, rótulos "DESCRICAO"/"DATA RECEBIMENTO" lado a lado com
+divisor vertical entre as colunas, valores de descrição/data, divisor,
+código de barras Code128 e o código por extenso embaixo dele (mesmo padrão
+já usado na 1ª versão da etiqueta).
+
+### Prévia (Artifact) reconstruída pra bater 1:1 com o TSPL real
+
+A prévia publicada não é mais um desenho "livre" — o canvas usa uma escala
+fixa (`DOT_SCALE = 1.6`, já que o canvas de 640×384px dividido pelos
+400×240 dots reais da etiqueta dá exatamente 1.6 nos dois eixos) e desenha
+cada elemento na MESMA coordenada em dots que `buildTsplProduto` usa de
+verdade — se a posição de algo mudar no app, mudar o mesmo número na prévia
+mantém os dois em sincronia, sem precisar redesenhar de olho. O bloco TSPL
+mostrado abaixo do desenho também não é mais rascunho — é literalmente a
+saída de `buildTsplProduto('021.030.00023', 'PF PH C PAN M4X6 BICR
+BELENUS', '500', '24/07/2025')` copiada do teste real (conferida rodando a
+função de verdade via Node, não escrita à mão).
+
+### Verificação
+
+Testado via harness real (jsdom + react-dom/client + `act()`, mesma técnica
+rigorosa de sempre — extrai o `<script type="text/babel">` do `index.html`
+com regex não-gulosa, transpila via `@babel/core`+`@babel/preset-react` em
+modo `runtime:'classic'` — Babel 8 mudou o padrão pra `transformSync`/JSX
+automático, precisou fixar os dois — e carrega numa `vm.Script`): confirmei
+que `buildTsplProduto` sem quantidade/data não imprime "Qtd:" nenhum
+(protege contra "Qtd:  PC" quebrado) e não sobra `REVERSE` nenhum no TSPL
+gerado (a caixa preta foi mesmo removida); com os campos preenchidos, "Qtd:
+500 PC" e a data aparecem certos, o rótulo "CODIGO" é impresso 2× (x e
+x+1) pra simular negrito, e o traço embaixo dele existe; aspas dentro da
+quantidade continuam escapadas (mesma proteção de sempre). Testei também
+`EtiquetasPanel` de ponta a ponta: os campos "Quantidade recebida"/"Data de
+recebimento" aparecem só depois de selecionar um item na aba "Produto" (não
+aparecem em "Endereço"), o campo de quantidade filtra caractere não-numérico
+(digitou "abc123", ficou "123"), e o TSPL enviado de verdade pra impressora
+(via clique real no botão "Imprimir Etiqueta", com o mock de `navigator.usb`
+já usado desde a 1ª versão desta feature) inclui a quantidade digitada e não
+tem `REVERSE` nenhum. 25 asserções, todas passando — rodei de novo o harness
+já existente da etiqueta de endereço (`buildTsplEndereco`, não tocado nesta
+rodada) e confirmei que continua passando sem regressão. Transpile Babel do
+arquivo inteiro e balanceamento de chaves do CSS conferidos (638/638, sem
+mudança — nenhuma classe CSS nova, só JS/JSX). **Verificação visual/física
+com a impressora real fica a cargo do cliente** — mesma limitação de sempre,
+sandbox sem hardware.
