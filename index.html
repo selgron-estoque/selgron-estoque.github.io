@@ -9809,82 +9809,107 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onEnvi
                 </div>
                 <div className="count-card-address-badge"><DIcon name="mapPin" size={16} /> {c.endereco || 'não cadastrado'}</div>
               </div>
-              {anterior ? (
-                <div className="rounds-stack" style={{padding:'8px 16px 0'}}>
-                  <div className="round-panel previous">
-                    <div className="round-eyebrow">
-                      <span className="label">{anterior.numeroContagem}ª Contagem</span>
-                      <span className="round-who">{anterior.usuario} · {anterior.data} {anterior.hora||''}</span>
+              {/* Conteúdo (comparativo de rodadas/quadro único + motivo/
+                  valor/movimentação/observação/alertas) fica ao lado dos
+                  botões dentro do MESMO .count-card-main (conteúdo mais
+                  estreito à esquerda, botões empilhados à direita) — mesmo
+                  padrão de RecountsPanel/ConcludedCountsPanel. Antes o
+                  conteúdo ocupava a largura toda do card e os botões
+                  sobravam soltos embaixo, com um vão vazio entre os dois
+                  (print do cliente apontando exatamente isso). */}
+              <div className="count-card-main">
+                <div className="count-card-content">
+                  {anterior ? (
+                    <div className="rounds-stack" style={{padding:'8px 16px 0'}}>
+                      <div className="round-panel previous">
+                        <div className="round-eyebrow">
+                          <span className="label">{anterior.numeroContagem}ª Contagem</span>
+                          <span className="round-who">{anterior.usuario} · {anterior.data} {anterior.hora||''}</span>
+                        </div>
+                        <div className="result-grid" style={{marginTop:0,gridTemplateColumns:'repeat(4,1fr)'}}>
+                          <div className="rg"><div className="k">Sistema</div><div className="v">{anterior.saldoSistema==null ? '—' : anterior.saldoSistema}</div></div>
+                          <div className="rg"><div className="k">Físico</div><div className="v">{anterior.qtdContada}</div></div>
+                          <div className="rg"><div className="k">Diferença</div><div className="v">{anterior.diferenca==null ? '—' : (anterior.diferenca>0?'+':'')+anterior.diferenca}</div></div>
+                          <div className="rg"><div className="k">%</div><div className="v">{fmtAcuraciaItem(anterior)}</div></div>
+                        </div>
+                      </div>
+                      <div className="round-panel current">
+                        <div className="round-eyebrow">
+                          <span className="label">{c.numeroContagem}ª Contagem</span><span className="badge">Atual</span>
+                          <span className="round-who">{c.usuario} · {c.data} {c.hora||''}</span>
+                        </div>
+                        <div className="result-grid" style={{marginTop:0,gridTemplateColumns:'repeat(4,1fr)'}}>
+                          <div className="rg"><div className="k">Sistema</div><div className="v">{c.saldoSistema==null ? '—' : c.saldoSistema}</div></div>
+                          <div className="rg"><div className="k">Físico</div><div className="v">{c.qtdContada}</div></div>
+                          <div className="rg"><div className="k">Diferença</div><div className="v" style={{color:sev.color}}>{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div></div>
+                          <div className="rg"><div className="k">%</div><div className="v" style={{color:sev.color}}>{fmtAcuraciaItem(c)}</div></div>
+                        </div>
+                      </div>
                     </div>
-                    <div className="result-grid" style={{marginTop:0,gridTemplateColumns:'repeat(4,1fr)'}}>
-                      <div className="rg"><div className="k">Sistema</div><div className="v">{anterior.saldoSistema==null ? '—' : anterior.saldoSistema}</div></div>
-                      <div className="rg"><div className="k">Físico</div><div className="v">{anterior.qtdContada}</div></div>
-                      <div className="rg"><div className="k">Diferença</div><div className="v">{anterior.diferenca==null ? '—' : (anterior.diferenca>0?'+':'')+anterior.diferenca}</div></div>
-                      <div className="rg"><div className="k">%</div><div className="v">{fmtAcuraciaItem(anterior)}</div></div>
-                    </div>
-                  </div>
-                  <div className="round-panel current">
-                    <div className="round-eyebrow">
-                      <span className="label">{c.numeroContagem}ª Contagem</span><span className="badge">Atual</span>
-                      <span className="round-who">{c.usuario} · {c.data} {c.hora||''}</span>
-                    </div>
-                    <div className="result-grid" style={{marginTop:0,gridTemplateColumns:'repeat(4,1fr)'}}>
+                  ) : (
+                    <div className="result-grid result-grid-4col" style={{gridTemplateColumns:'repeat(4,1fr)'}}>
                       <div className="rg"><div className="k">Sistema</div><div className="v">{c.saldoSistema==null ? '—' : c.saldoSistema}</div></div>
                       <div className="rg"><div className="k">Físico</div><div className="v">{c.qtdContada}</div></div>
                       <div className="rg"><div className="k">Diferença</div><div className="v" style={{color:sev.color}}>{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div></div>
                       <div className="rg"><div className="k">%</div><div className="v" style={{color:sev.color}}>{fmtAcuraciaItem(c)}</div></div>
                     </div>
+                  )}
+                  {c.motivo && <div style={{padding:'10px 16px 0',fontSize:'var(--text-sm)'}}>Motivo: <strong>{c.motivo}</strong></div>}
+                  {c.valorDivergente!=null && Number(c.valorDivergente)!==0 && <div style={{padding:'6px 16px 0',fontSize:'var(--text-sm)'}}>Valor divergente: <strong>R$ {Number(c.valorDivergente).toFixed(2)}</strong></div>}
+                  <div style={{padding:'6px 16px 0',fontSize:'var(--text-sm)'}}>
+                    {c.ultimaSaida
+                      ? <>Última movimentação: <strong>{fmtDataBR(c.ultimaSaida)}</strong> · <strong>{diasParado(c.ultimaSaida)} dias parado</strong></>
+                      : <strong style={{color:'var(--danger)'}}>Sem registro de movimentação</strong>}
                   </div>
+                  {/* Bug real corrigido aqui: esta tela nunca mostrava `observacao`
+                      em lugar nenhum (só `motivo`) — passava batido pra qualquer
+                      contagem ao vivo com observação preenchida, e ficava
+                      especialmente errado pro item semeado por "Reprovar ajuste"
+                      (ConcludedCountsPanel/reprovarAjusteHistoricoNaLinha), cuja
+                      observação registra justamente POR QUE o item voltou a
+                      aparecer aqui. `limparObservacaoExibicao` (perto de
+                      `severidadeDe`) remove a frase padronizada que essa função
+                      costumava embutir aqui — cliente achou redundante. */}
+                  {limparObservacaoExibicao(c.observacao) && <div style={{padding:'6px 16px 0',fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>Observação: {limparObservacaoExibicao(c.observacao)}</div>}
+                  {c.reprovadoPelaDiretoria && (
+                    <div className="divergence-alert" style={{margin:'10px 16px 0',background:'var(--purple-bg)',borderColor:'var(--purple)',color:'var(--purple)'}}>
+                      <Ic>⛔</Ic><span>A Diretoria reprovou {c.ehDevolucao ? 'a devolução' : (c.solicitacaoAjuste ? ('a SA '+c.solicitacaoAjuste) : 'o ajuste')} em {c.reprovadoEm} — reenviado para nova análise.{c.motivoReprovacaoDiretoria && <><br/><strong>Motivo da reprovação:</strong> <span style={{color:'var(--danger)'}}>{c.motivoReprovacaoDiretoria}</span></>}</span>
+                    </div>
+                  )}
+                  {/* Motivo de um ajuste reprovado — vermelho só aqui, não no
+                      "Motivo:" comum (causa da divergência), que continua neutro
+                      (pedido do cliente, ver seção "'Motivo' em vermelho..." no
+                      CLAUDE.md). Só quando NÃO veio pelo fluxo de SA/Diretoria
+                      acima (esse já mostra o motivo embutido no próprio alerta
+                      roxo) — cobre o caso de "Reprovar ajuste" em Contagens
+                      Concluídas (reprovarAjusteHistoricoNaLinha), que reabre o
+                      item aqui sem SA nenhuma envolvida. */}
+                  {!c.reprovadoPelaDiretoria && c.motivoReprovacaoDiretoria && (
+                    <div style={{padding:'6px 16px 0',fontSize:'var(--text-sm)',color:'var(--danger)'}}>Motivo da reprovação: <strong>{c.motivoReprovacaoDiretoria}</strong></div>
+                  )}
+                  {c.diferencaConfirmada && (
+                    <div className="divergence-alert" style={{margin:'10px 16px 0'}}>
+                      <Ic>⚠</Ic><span>Diferença confirmada: <strong>{c.diferenca>0?'+':''}{c.diferenca}</strong> nas duas rodadas.</span>
+                    </div>
+                  )}
+                  {erros[c.id] && (
+                    <div className="divergence-alert" style={{margin:'10px 16px 0'}}><Ic>⚠</Ic><span>{erros[c.id]}</span></div>
+                  )}
                 </div>
-              ) : (
-                <div className="result-grid result-grid-4col" style={{gridTemplateColumns:'repeat(4,1fr)'}}>
-                  <div className="rg"><div className="k">Sistema</div><div className="v">{c.saldoSistema==null ? '—' : c.saldoSistema}</div></div>
-                  <div className="rg"><div className="k">Físico</div><div className="v">{c.qtdContada}</div></div>
-                  <div className="rg"><div className="k">Diferença</div><div className="v" style={{color:sev.color}}>{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div></div>
-                  <div className="rg"><div className="k">%</div><div className="v" style={{color:sev.color}}>{fmtAcuraciaItem(c)}</div></div>
-                </div>
-              )}
-              {c.motivo && <div style={{padding:'10px 16px 0',fontSize:'var(--text-sm)'}}>Motivo: <strong>{c.motivo}</strong></div>}
-              {c.valorDivergente!=null && Number(c.valorDivergente)!==0 && <div style={{padding:'6px 16px 0',fontSize:'var(--text-sm)'}}>Valor divergente: <strong>R$ {Number(c.valorDivergente).toFixed(2)}</strong></div>}
-              <div style={{padding:'6px 16px 0',fontSize:'var(--text-sm)'}}>
-                {c.ultimaSaida
-                  ? <>Última movimentação: <strong>{fmtDataBR(c.ultimaSaida)}</strong> · <strong>{diasParado(c.ultimaSaida)} dias parado</strong></>
-                  : <strong style={{color:'var(--danger)'}}>Sem registro de movimentação</strong>}
+                {canApprove && editandoMotivoId!==c.id && confirmDeleteId!==c.id && (
+                  <div className="count-card-actions-col">
+                    <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>handleRequestRecount(c.id)}>{busyId===c.id ? 'Enviando…' : 'Solicitar nova contagem'}</button>
+                    <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>goto('recount', c)}><Ic>🔁</Ic> Recontar</button>
+                    <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>handleApprove(c.id)}>{busyId===c.id ? 'Enviando…' : 'Sem Ajuste Necessário'}</button>
+                    {/* Análise finalizada, mas ainda precisa de SA — a decisão
+                        entre Ajuste/Devolução só acontece depois, junto com o
+                        número da SA, na tela "Aguardando Armazém" (pedido do
+                        cliente: "só quando tiver o número da SA que eu faço a
+                        decisão de ajuste ou devolução"). */}
+                    <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>handleEnviarParaArmazem(c.id)}><Ic>📋</Ic> {busyId===c.id ? 'Enviando…' : 'Enviar para SA'}</button>
+                  </div>
+                )}
               </div>
-              {/* Bug real corrigido aqui: esta tela nunca mostrava `observacao`
-                  em lugar nenhum (só `motivo`) — passava batido pra qualquer
-                  contagem ao vivo com observação preenchida, e ficava
-                  especialmente errado pro item semeado por "Reprovar ajuste"
-                  (ConcludedCountsPanel/reprovarAjusteHistoricoNaLinha), cuja
-                  observação registra justamente POR QUE o item voltou a
-                  aparecer aqui. `limparObservacaoExibicao` (perto de
-                  `severidadeDe`) remove a frase padronizada que essa função
-                  costumava embutir aqui — cliente achou redundante. */}
-              {limparObservacaoExibicao(c.observacao) && <div style={{padding:'6px 16px 0',fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>Observação: {limparObservacaoExibicao(c.observacao)}</div>}
-              {c.reprovadoPelaDiretoria && (
-                <div className="divergence-alert" style={{margin:'10px 16px 0',background:'var(--purple-bg)',borderColor:'var(--purple)',color:'var(--purple)'}}>
-                  <Ic>⛔</Ic><span>A Diretoria reprovou {c.ehDevolucao ? 'a devolução' : (c.solicitacaoAjuste ? ('a SA '+c.solicitacaoAjuste) : 'o ajuste')} em {c.reprovadoEm} — reenviado para nova análise.{c.motivoReprovacaoDiretoria && <><br/><strong>Motivo da reprovação:</strong> <span style={{color:'var(--danger)'}}>{c.motivoReprovacaoDiretoria}</span></>}</span>
-                </div>
-              )}
-              {/* Motivo de um ajuste reprovado — vermelho só aqui, não no
-                  "Motivo:" comum (causa da divergência), que continua neutro
-                  (pedido do cliente, ver seção "'Motivo' em vermelho..." no
-                  CLAUDE.md). Só quando NÃO veio pelo fluxo de SA/Diretoria
-                  acima (esse já mostra o motivo embutido no próprio alerta
-                  roxo) — cobre o caso de "Reprovar ajuste" em Contagens
-                  Concluídas (reprovarAjusteHistoricoNaLinha), que reabre o
-                  item aqui sem SA nenhuma envolvida. */}
-              {!c.reprovadoPelaDiretoria && c.motivoReprovacaoDiretoria && (
-                <div style={{padding:'6px 16px 0',fontSize:'var(--text-sm)',color:'var(--danger)'}}>Motivo da reprovação: <strong>{c.motivoReprovacaoDiretoria}</strong></div>
-              )}
-              {c.diferencaConfirmada && (
-                <div className="divergence-alert" style={{margin:'10px 16px 0'}}>
-                  <Ic>⚠</Ic><span>Diferença confirmada: <strong>{c.diferenca>0?'+':''}{c.diferenca}</strong> nas duas rodadas.</span>
-                </div>
-              )}
-              {erros[c.id] && (
-                <div className="divergence-alert" style={{margin:'10px 16px 0'}}><Ic>⚠</Ic><span>{erros[c.id]}</span></div>
-              )}
               {editandoMotivoId===c.id ? (
                 <div className="count-card-actions">
                   <div className="field" style={{marginBottom:10}}>
@@ -9911,27 +9936,9 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onEnvi
                     <button className="btn btn-danger" disabled={busyId===c.id} onClick={()=>handleConfirmDelete(c.id)}>{busyId===c.id ? 'Excluindo…' : 'Confirmar exclusão'}</button>
                   </div>
                 </div>
-              ) : canApprove ? (
-                <div className="count-card-main" style={{justifyContent:'flex-end'}}>
-                  {/* Botões empilhados à direita, mesmo padrão de
-                      RecountsPanel/ConcludedCountsPanel — pedido do cliente:
-                      padronizar o formato entre as 5 telas de contagem
-                      (antes era uma fileira horizontal só aqui). */}
-                  <div className="count-card-actions-col">
-                    <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>handleRequestRecount(c.id)}>{busyId===c.id ? 'Enviando…' : 'Solicitar nova contagem'}</button>
-                    <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>goto('recount', c)}><Ic>🔁</Ic> Recontar</button>
-                    <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>handleApprove(c.id)}>{busyId===c.id ? 'Enviando…' : 'Sem Ajuste Necessário'}</button>
-                    {/* Análise finalizada, mas ainda precisa de SA — a decisão
-                        entre Ajuste/Devolução só acontece depois, junto com o
-                        número da SA, na tela "Aguardando Armazém" (pedido do
-                        cliente: "só quando tiver o número da SA que eu faço a
-                        decisão de ajuste ou devolução"). */}
-                    <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>handleEnviarParaArmazem(c.id)}><Ic>📋</Ic> {busyId===c.id ? 'Enviando…' : 'Enviar para SA'}</button>
-                  </div>
-                </div>
-              ) : (
+              ) : !canApprove ? (
                 <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>Aguardando decisão do líder de estoque.</div>
-              )}
+              ) : null}
             </div>
           </div>
         );
@@ -10096,23 +10103,45 @@ function SolicitacaoArmazemPanel({counts, inventories, role, onEnviarParaDiretor
                 </div>
                 <div className="count-card-address-badge"><DIcon name="mapPin" size={16} /> {c.endereco || 'não cadastrado'}</div>
               </div>
-              <div className="result-grid result-grid-4col" style={{gridTemplateColumns:'repeat(4,1fr)'}}>
-                <div className="rg"><div className="k">Sistema</div><div className="v">{c.saldoSistema==null ? '—' : c.saldoSistema}</div></div>
-                <div className="rg"><div className="k">Físico</div><div className="v">{c.qtdContada}</div></div>
-                <div className="rg"><div className="k">Diferença</div><div className="v" style={{color:sev.color}}>{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div></div>
-                <div className="rg"><div className="k">%</div><div className="v" style={{color:sev.color}}>{fmtAcuraciaItem(c)}</div></div>
-              </div>
-              <div style={{padding:'10px 16px 0',fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>Enviado ao Armazém por {c.saGeradaPor||'—'} em {c.saGeradaEm||'—'}</div>
-              {c.motivo && <div style={{padding:'6px 16px 0',fontSize:'var(--text-sm)'}}>Motivo: <strong>{c.motivo}</strong></div>}
-              {canDecide && !confirmDeleteId && (
-                <div className="field" style={{padding:'10px 16px 0',marginBottom:0}}>
-                  <label>Número da SA (assim que o Armazém devolver)</label>
-                  <input type="text" value={saInputValue(c)} onChange={e=>setSaInputs(prev=>({...prev, [c.id]: e.target.value}))} placeholder="Ex: SA-2026-00123" disabled={busyId===c.id} />
+              {/* Conteúdo (quadro + "Enviado ao Armazém por"/Motivo/campo do
+                  número da SA) ao lado dos botões dentro do MESMO
+                  .count-card-main — mesmo padrão das demais 4 telas de
+                  contagem (conteúdo mais estreito à esquerda, botões
+                  empilhados à direita). */}
+              <div className="count-card-main">
+                <div className="count-card-content">
+                  <div className="result-grid result-grid-4col" style={{gridTemplateColumns:'repeat(4,1fr)'}}>
+                    <div className="rg"><div className="k">Sistema</div><div className="v">{c.saldoSistema==null ? '—' : c.saldoSistema}</div></div>
+                    <div className="rg"><div className="k">Físico</div><div className="v">{c.qtdContada}</div></div>
+                    <div className="rg"><div className="k">Diferença</div><div className="v" style={{color:sev.color}}>{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div></div>
+                    <div className="rg"><div className="k">%</div><div className="v" style={{color:sev.color}}>{fmtAcuraciaItem(c)}</div></div>
+                  </div>
+                  <div style={{padding:'10px 16px 0',fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>Enviado ao Armazém por {c.saGeradaPor||'—'} em {c.saGeradaEm||'—'}</div>
+                  {c.motivo && <div style={{padding:'6px 16px 0',fontSize:'var(--text-sm)'}}>Motivo: <strong>{c.motivo}</strong></div>}
+                  {/* `confirmDeleteId!==c.id` (era `!confirmDeleteId`) — bug
+                      real corrigido no caminho: `confirmDeleteId` guarda o id
+                      de UM card por vez, então `!confirmDeleteId` escondia o
+                      campo de SA de TODOS os outros cards assim que qualquer
+                      um deles abrisse "confirmar exclusão", não só o próprio.
+                      A comparação por id corrige isso, mesmo critério já
+                      usado no ternário de baixo. */}
+                  {canDecide && confirmDeleteId!==c.id && (
+                    <div className="field" style={{padding:'10px 16px 0',marginBottom:0}}>
+                      <label>Número da SA (assim que o Armazém devolver)</label>
+                      <input type="text" value={saInputValue(c)} onChange={e=>setSaInputs(prev=>({...prev, [c.id]: e.target.value}))} placeholder="Ex: SA-2026-00123" disabled={busyId===c.id} />
+                    </div>
+                  )}
+                  {erros[c.id] && (
+                    <div className="divergence-alert" style={{margin:'10px 16px 0'}}><Ic>⚠</Ic><span>{erros[c.id]}</span></div>
+                  )}
                 </div>
-              )}
-              {erros[c.id] && (
-                <div className="divergence-alert" style={{margin:'10px 16px 0'}}><Ic>⚠</Ic><span>{erros[c.id]}</span></div>
-              )}
+                {canDecide && confirmDeleteId!==c.id && (
+                  <div className="count-card-actions-col">
+                    <button className="btn btn-secondary" disabled={busyId===c.id || !saInputValue(c).trim()} onClick={()=>handleEnviar(c, false)}><Ic>📋</Ic> {busyId===c.id ? 'Enviando…' : 'Registrar como Ajuste'}</button>
+                    <button className="btn btn-primary" disabled={busyId===c.id || !saInputValue(c).trim()} onClick={()=>handleEnviar(c, true)}><Ic>📦</Ic> {busyId===c.id ? 'Enviando…' : 'Registrar como Devolução'}</button>
+                  </div>
+                )}
+              </div>
               {confirmDeleteId===c.id ? (
                 <div className="count-card-actions">
                   <div className="divergence-alert" style={{marginBottom:10}}>
@@ -10123,16 +10152,9 @@ function SolicitacaoArmazemPanel({counts, inventories, role, onEnviarParaDiretor
                     <button className="btn btn-danger" disabled={busyId===c.id} onClick={()=>handleConfirmDelete(c.id)}>{busyId===c.id ? 'Excluindo…' : 'Confirmar exclusão'}</button>
                   </div>
                 </div>
-              ) : canDecide ? (
-                <div className="count-card-main" style={{justifyContent:'flex-end'}}>
-                  <div className="count-card-actions-col">
-                    <button className="btn btn-secondary" disabled={busyId===c.id || !saInputValue(c).trim()} onClick={()=>handleEnviar(c, false)}><Ic>📋</Ic> {busyId===c.id ? 'Enviando…' : 'Registrar como Ajuste'}</button>
-                    <button className="btn btn-primary" disabled={busyId===c.id || !saInputValue(c).trim()} onClick={()=>handleEnviar(c, true)}><Ic>📦</Ic> {busyId===c.id ? 'Enviando…' : 'Registrar como Devolução'}</button>
-                  </div>
-                </div>
-              ) : (
+              ) : !canDecide ? (
                 <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>Aguardando o Armazém devolver o número da SA.</div>
-              )}
+              ) : null}
             </div>
           </div>
         );
@@ -10294,18 +10316,31 @@ function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejec
                 </div>
                 <div className="count-card-address-badge"><DIcon name="mapPin" size={16} /> {c.endereco || 'não cadastrado'}</div>
               </div>
-              <div className="result-grid result-grid-4col" style={{gridTemplateColumns:'repeat(4,1fr)'}}>
-                <div className="rg"><div className="k">Sistema</div><div className="v">{c.saldoSistema==null ? '—' : c.saldoSistema}</div></div>
-                <div className="rg"><div className="k">Físico</div><div className="v">{c.qtdContada}</div></div>
-                <div className="rg"><div className="k">Diferença</div><div className="v" style={{color:sev.color}}>{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div></div>
-                <div className="rg"><div className="k">%</div><div className="v" style={{color:sev.color}}>{fmtAcuraciaItem(c)}</div></div>
+              {/* Conteúdo (quadro + "SA gerada por"/Motivo/Valor divergente)
+                  ao lado dos botões dentro do MESMO .count-card-main —
+                  mesmo padrão das demais 4 telas de contagem. */}
+              <div className="count-card-main">
+                <div className="count-card-content">
+                  <div className="result-grid result-grid-4col" style={{gridTemplateColumns:'repeat(4,1fr)'}}>
+                    <div className="rg"><div className="k">Sistema</div><div className="v">{c.saldoSistema==null ? '—' : c.saldoSistema}</div></div>
+                    <div className="rg"><div className="k">Físico</div><div className="v">{c.qtdContada}</div></div>
+                    <div className="rg"><div className="k">Diferença</div><div className="v" style={{color:sev.color}}>{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div></div>
+                    <div className="rg"><div className="k">%</div><div className="v" style={{color:sev.color}}>{fmtAcuraciaItem(c)}</div></div>
+                  </div>
+                  <div style={{padding:'10px 16px 0',fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>{c.ehDevolucao ? 'Devolução registrada' : 'SA gerada'} por {c.saGeradaPor||'—'} em {c.saGeradaEm||'—'}</div>
+                  {c.motivo && <div style={{padding:'6px 16px 0',fontSize:'var(--text-sm)'}}>Motivo: <strong>{c.motivo}</strong></div>}
+                  {c.valorDivergente!=null && Number(c.valorDivergente)!==0 && <div style={{padding:'6px 16px 0',fontSize:'var(--text-sm)'}}>Valor divergente: <strong>R$ {Number(c.valorDivergente).toFixed(2)}</strong></div>}
+                  {erros[c.id] && (
+                    <div className="divergence-alert" style={{margin:'10px 16px 0'}}><Ic>⚠</Ic><span>{erros[c.id]}</span></div>
+                  )}
+                </div>
+                {canDecide && confirmRejectId!==c.id && (
+                  <div className="count-card-actions-col">
+                    <button className="btn btn-danger" disabled={busyId===c.id} onClick={()=>{ setConfirmRejectId(c.id); setMotivoRejeicao(''); }}>Reprovar</button>
+                    <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>handleApprove(c)}>{busyId===c.id ? 'Enviando…' : 'Aprovar'}</button>
+                  </div>
+                )}
               </div>
-              <div style={{padding:'10px 16px 0',fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>{c.ehDevolucao ? 'Devolução registrada' : 'SA gerada'} por {c.saGeradaPor||'—'} em {c.saGeradaEm||'—'}</div>
-              {c.motivo && <div style={{padding:'6px 16px 0',fontSize:'var(--text-sm)'}}>Motivo: <strong>{c.motivo}</strong></div>}
-              {c.valorDivergente!=null && Number(c.valorDivergente)!==0 && <div style={{padding:'6px 16px 0',fontSize:'var(--text-sm)'}}>Valor divergente: <strong>R$ {Number(c.valorDivergente).toFixed(2)}</strong></div>}
-              {erros[c.id] && (
-                <div className="divergence-alert" style={{margin:'10px 16px 0'}}><Ic>⚠</Ic><span>{erros[c.id]}</span></div>
-              )}
               {confirmRejectId===c.id ? (
                 <div className="count-card-actions">
                   <div className="divergence-alert" style={{marginBottom:10}}>
@@ -10325,16 +10360,9 @@ function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejec
                     <button className="btn btn-danger" disabled={busyId===c.id || !motivoRejeicao.trim()} onClick={()=>handleConfirmReject(c.id)}>{busyId===c.id ? 'Enviando…' : 'Confirmar reprovação'}</button>
                   </div>
                 </div>
-              ) : canDecide ? (
-                <div className="count-card-main" style={{justifyContent:'flex-end'}}>
-                  <div className="count-card-actions-col">
-                    <button className="btn btn-danger" disabled={busyId===c.id} onClick={()=>{ setConfirmRejectId(c.id); setMotivoRejeicao(''); }}>Reprovar</button>
-                    <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>handleApprove(c)}>{busyId===c.id ? 'Enviando…' : 'Aprovar'}</button>
-                  </div>
-                </div>
-              ) : (
+              ) : !canDecide ? (
                 <div style={{padding:'10px 16px 16px',fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>Aguardando decisão da Diretoria.</div>
-              )}
+              ) : null}
             </div>
           </div>
         );
