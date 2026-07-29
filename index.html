@@ -136,6 +136,11 @@
   .btn-secondary:active{background:#2b2f36;}
   .btn-outline{background:transparent;color:var(--ink-dim);border:1px solid var(--line);}
   .btn-danger{background:var(--danger);color:#fff;}
+  /* .btn-ok — botão de aprovação, verde (var(--ok)) — pedido do cliente:
+     "Aprovado" em "Aguardando Aprovação" precisa se destacar do laranja
+     padrão (.btn-primary, cor de ação genérica), já que aqui é
+     especificamente uma aprovação positiva. */
+  .btn-ok{background:var(--ok);color:#fff;}
   /* Modificadores de tamanho — absorvem os padrões de padding/font-size mais
      repetidos entre botões secundários pequenos em JSX (ver CLAUDE.md
      "Padronização... Fase 5"), em vez de cada call site reinventar o próprio
@@ -10336,8 +10341,8 @@ function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejec
                 </div>
                 {canDecide && confirmRejectId!==c.id && (
                   <div className="count-card-actions-col">
-                    <button className="btn btn-danger" disabled={busyId===c.id} onClick={()=>{ setConfirmRejectId(c.id); setMotivoRejeicao(''); }}>Reprovar</button>
-                    <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>handleApprove(c)}>{busyId===c.id ? 'Enviando…' : 'Aprovar'}</button>
+                    <button className="btn btn-danger" disabled={busyId===c.id} onClick={()=>{ setConfirmRejectId(c.id); setMotivoRejeicao(''); }}>Reprovado</button>
+                    <button className="btn btn-ok" disabled={busyId===c.id} onClick={()=>handleApprove(c)}>{busyId===c.id ? 'Enviando…' : 'Aprovado'}</button>
                   </div>
                 )}
               </div>
