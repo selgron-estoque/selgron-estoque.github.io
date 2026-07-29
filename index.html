@@ -9911,7 +9911,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onEnvi
                         número da SA, na tela "Aguardando Armazém" (pedido do
                         cliente: "só quando tiver o número da SA que eu faço a
                         decisão de ajuste ou devolução"). */}
-                    <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>handleEnviarParaArmazem(c.id)}><Ic>📋</Ic> {busyId===c.id ? 'Enviando…' : 'Enviar para SA'}</button>
+                    <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>handleEnviarParaArmazem(c.id)}><Ic>📋</Ic> {busyId===c.id ? 'Enviando…' : 'Ajustar'}</button>
                   </div>
                 )}
               </div>
