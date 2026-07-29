@@ -380,8 +380,13 @@
   /* Botões empilhados à direita usam o mesmo .btn/.btn-primary/.btn-outline
      do resto do app (não criei classe nova), mas o tamanho padrão (pensado
      pro card espaçado antigo) fica desproporcional aqui — reduzido só
-     neste contexto, sem mudar o botão em nenhum outro lugar. */
-  .count-card-actions-col .btn{width:100%;padding:11px 14px;font-size:var(--text-sm);}
+     neste contexto, sem mudar o botão em nenhum outro lugar. Mesmo valor
+     (padding 8px 14px / text-sm) de `.count-card-actions`/
+     `.count-card-actions-row` logo abaixo — pedido do cliente: padronizar
+     tamanho/formato dos botões entre Recontagens/Itens Divergentes/
+     Aguardando Armazém/Aguardando Aprovação/Contagens Concluídas, todos
+     pequenos, batendo com `.btn-sm` já usado no resto do app. */
+  .count-card-actions-col .btn{width:100%;padding:8px 14px;font-size:var(--text-sm);}
   .count-card-extra{border-top:1px solid var(--line);padding-top:8px;font-size:var(--text-sm);color:var(--ink-dim);}
   .count-card-extra strong{color:var(--ink);}
   @media (max-width:640px){
@@ -393,13 +398,15 @@
      isolado, nunca combinado direto com .btn-row no mesmo elemento (ver
      .count-card-actions-row abaixo pra esse outro caso). */
   .count-card-actions{padding:0;display:flex;flex-direction:column;gap:8px;width:100%;}
-  .count-card-actions .btn{width:100%;padding:11px 14px;font-size:var(--text-sm);}
+  .count-card-actions .btn{width:100%;padding:8px 14px;font-size:var(--text-sm);}
   /* .count-card-actions-row — fileira de botões lado a lado (Itens
      Divergentes pode ter até 4 ações) — classe SEPARADA de
      .count-card-actions de propósito, pra não colidir com o
      flex-direction:column acima quando combinada com .btn-row no mesmo
-     elemento. */
-  .count-card-actions-row.btn-row .btn{width:auto;padding:11px 14px;font-size:var(--text-xs);flex:1 1 auto;}
+     elemento. Mesmo padding/font-size de `.count-card-actions-col .btn`
+     acima (era text-xs aqui, ficava menor que os outros painéis — cliente
+     apontou tamanhos/formatos diferentes entre as 5 telas de contagem). */
+  .count-card-actions-row.btn-row .btn{width:auto;padding:8px 14px;font-size:var(--text-sm);flex:1 1 auto;}
   .count-card-actions-row.btn-row .btn-danger{flex:0 0 auto;}
 
   /* Comparativo 1ª/2ª contagem (item que já tem uma rodada anterior, ver
