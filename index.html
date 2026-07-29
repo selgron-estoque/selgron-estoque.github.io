@@ -10154,7 +10154,7 @@ function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejec
   const [busca, setBusca] = useState('');
   const buscaNorm = busca.trim().toLowerCase();
   const porBusca = buscaNorm
-    ? aguardandoDiretoriaNoPeriodo.filter(c => c.productCode.toLowerCase().includes(buscaNorm) || (c.descricao||'').toLowerCase().includes(buscaNorm) || (c.usuario||'').toLowerCase().includes(buscaNorm))
+    ? aguardandoDiretoriaNoPeriodo.filter(c => c.productCode.toLowerCase().includes(buscaNorm) || (c.descricao||'').toLowerCase().includes(buscaNorm) || (c.usuario||'').toLowerCase().includes(buscaNorm) || (c.solicitacaoAjuste||'').toLowerCase().includes(buscaNorm))
     : aguardandoDiretoriaNoPeriodo;
 
   const [severidade, setSeveridade] = useState('todos');
@@ -10222,7 +10222,7 @@ function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejec
         subtitle="Selecione o período para filtrar as SAs aguardando aprovação"
       />
 
-      <SearchWithScanner value={busca} onChange={setBusca} placeholder="Código, descrição ou operador" />
+      <SearchWithScanner value={busca} onChange={setBusca} placeholder="Código, descrição, operador ou nº da SA" />
 
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8,marginBottom:10}}>
         <span style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>
