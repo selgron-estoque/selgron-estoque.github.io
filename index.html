@@ -1291,7 +1291,164 @@ async function searchSupabaseCatalog(query, almoxarifado){
   });
 }
 
-// Grava a contagem também no Supabase (além do localStorage, que continua
+// Busca de endereços cadastrados (tabela `enderecos`, mesma que já é
+// alimentada pelo upload de catálogo — ver "Catálogo ganha Unidade de
+// Medida e Endereço em massa" no CLAUDE.md) — usada só pela tela de
+// Etiquetas, pra achar um endereço físico e imprimir a etiqueta dele. Não
+// existia nenhuma função de busca direta sobre essa tabela até aqui (as
+// outras consultas sempre chegavam em `enderecos` via join a partir de
+// `produtos`/`estoque_enderecos`).
+async function searchEnderecosCatalogo(query){
+  if(!supabaseClient || !query || query.trim().length < 2) return [];
+  try{
+    const { data, error } = await supabaseClient
+      .from('enderecos')
+      .select('id, codigo, almoxarifado')
+      .ilike('codigo', `%${query.trim()}%`)
+      .order('codigo', {ascending:true})
+      .limit(20);
+    if(error) throw error;
+    return data || [];
+  }catch(err){
+    console.warn('Falha ao buscar endereços pra etiqueta:', err);
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// IMPRESSÃO DE ETIQUETA VIA IMPRESSORA TSC (TSPL) — pedido do cliente:
+// "conseguimos criar uma forma de ter um campo novo para impressão de
+// etiqueta? Impressora TSC? Com código de barra e tal?" — testado/confirmado
+// com o modelo real do cliente: TSC TE200 (203dpi, comandos TSPL, mesmo
+// dialeto usado por praticamente toda impressora de etiqueta TSC de mesa).
+//
+// Conexão via WebUSB (`navigator.usb`) — só funciona no Chrome/Chromium
+// (Android incluso, é o navegador alvo do app) com a impressora ligada por
+// cabo USB no mesmo aparelho; NÃO funciona no Safari/iOS (WebUSB não é
+// suportado lá), diferente do resto do app (câmera/PWA), que funciona nos
+// dois. Isso é uma limitação da própria API do navegador, não do app.
+//
+// `TSC_USB_VENDOR_ID = 0x1203` é o vendor ID USB oficial da TSC Auto ID
+// Technology — mesmo em modelos diferentes (TE200, TTP-244, TX300 etc.),
+// então o filtro de pareamento vale pra qualquer impressora TSC, não só a
+// TE200 usada aqui.
+const TSC_USB_VENDOR_ID = 0x1203;
+let tscUsbDevice = null;
+
+function suportaImpressaoUSB(){
+  return typeof navigator !== 'undefined' && !!navigator.usb;
+}
+
+// Abre o diálogo do navegador pra escolher/parear a impressora (ação
+// explícita do usuário, exigida pela WebUSB por segurança — não dá pra
+// conectar sozinho sem esse gesto). Depois de parear uma vez, o navegador
+// lembra a permissão pra esse mesmo dispositivo+origem, e
+// `reconectarImpressoraTSC` consegue reabrir sem pedir de novo.
+async function conectarImpressoraTSC(){
+  if(!suportaImpressaoUSB()) return {ok:false, erro:'Este navegador não suporta impressão USB (WebUSB). Use o Chrome — não funciona no Safari/iOS.'};
+  try{
+    const device = await navigator.usb.requestDevice({filters:[{vendorId: TSC_USB_VENDOR_ID}]});
+    await device.open();
+    if(device.configuration===null) await device.selectConfiguration(1);
+    await device.claimInterface(0);
+    tscUsbDevice = device;
+    return {ok:true};
+  }catch(err){
+    return {ok:false, erro:(err && err.message) || 'Não foi possível conectar à impressora.'};
+  }
+}
+
+// Tenta reconectar automaticamente num dispositivo já pareado antes (sem
+// abrir o diálogo de novo) — chamado sozinho ao tentar imprimir, se
+// `tscUsbDevice` ainda não estiver setado (ex: depois de recarregar a
+// página, a permissão persiste mas a conexão em si não).
+async function reconectarImpressoraTSC(){
+  if(!suportaImpressaoUSB()) return null;
+  try{
+    const devices = await navigator.usb.getDevices();
+    const device = devices.find(d=>d.vendorId===TSC_USB_VENDOR_ID);
+    if(!device) return null;
+    await device.open();
+    if(device.configuration===null) await device.selectConfiguration(1);
+    await device.claimInterface(0);
+    tscUsbDevice = device;
+    return device;
+  }catch(err){
+    console.warn('Falha ao reconectar impressora TSC:', err);
+    return null;
+  }
+}
+
+// Manda um script TSPL cru (texto) pra impressora já conectada — encontra o
+// endpoint OUT da interface reivindicada (não assume um número fixo, varia
+// por modelo/driver) e transfere os bytes crus via `transferOut`.
+async function enviarTsplParaImpressora(tspl){
+  if(!tscUsbDevice){
+    const reconectado = await reconectarImpressoraTSC();
+    if(!reconectado) return {ok:false, erro:'Impressora não conectada. Clique em "Conectar Impressora" primeiro.'};
+  }
+  try{
+    const iface = tscUsbDevice.configuration.interfaces[0];
+    const outEndpoint = iface.alternate.endpoints.find(e=>e.direction==='out');
+    if(!outEndpoint) return {ok:false, erro:'Não foi possível encontrar a porta de envio da impressora.'};
+    const data = new TextEncoder().encode(tspl);
+    await tscUsbDevice.transferOut(outEndpoint.endpointNumber, data);
+    return {ok:true};
+  }catch(err){
+    return {ok:false, erro:(err && err.message) || 'Falha ao enviar para a impressora.'};
+  }
+}
+
+// Escapa aspas duplas dentro do conteúdo (TSPL usa "..." pra delimitar texto
+// em TEXT/BARCODE — uma aspa dupla sem escapar quebraria o comando).
+function escapaTspl(texto){
+  return String(texto==null ? '' : texto).replace(/"/g, "'");
+}
+
+// Etiqueta de ENDEREÇO — 50mm×30mm, 203dpi (8 dots/mm → 400×240 dots),
+// código de barras Code128 (pedido explícito do cliente, "código de barra"),
+// já compatível com o mesmo formato que `CameraScanner`/`CountStep` leem na
+// etapa de escaneamento de endereço (a lib de leitura já suporta CODE_128,
+// ver formatsToSupport). Coordenadas/tamanhos são um ponto de partida
+// razoável pro layout — como o sandbox não tem a impressora física pra
+// testar (só o cliente tem), pode precisar de ajuste fino de posição depois
+// da 1ª impressão real.
+function buildTsplEndereco(codigo){
+  const cod = escapaTspl(codigo);
+  return [
+    'SIZE 50 mm,30 mm',
+    'GAP 2 mm,0 mm',
+    'DIRECTION 1',
+    'CLS',
+    'TEXT 30,20,"2",0,1,1,"ENDERECO"',
+    'TEXT 30,55,"4",0,1,1,"'+cod+'"',
+    'BARCODE 30,110,"128",70,1,0,2,2,"'+cod+'"',
+    'PRINT 1,1',
+    '',
+  ].join('\r\n');
+}
+
+// Etiqueta de PRODUTO — mesmo tamanho/DPI/símbolo da etiqueta de endereço,
+// com código + descrição (truncada em 28 caracteres pra não estourar a
+// largura de 50mm num font pequeno) acima do código de barras do código do
+// produto.
+function buildTsplProduto(codigo, descricao){
+  const cod = escapaTspl(codigo);
+  const desc = escapaTspl((descricao||'').slice(0, 28));
+  return [
+    'SIZE 50 mm,30 mm',
+    'GAP 2 mm,0 mm',
+    'DIRECTION 1',
+    'CLS',
+    'TEXT 30,15,"1",0,1,1,"'+desc+'"',
+    'TEXT 30,45,"3",0,1,1,"'+cod+'"',
+    'BARCODE 30,95,"128",70,1,0,2,2,"'+cod+'"',
+    'PRINT 1,1',
+    '',
+  ].join('\r\n');
+}
+
+
 // sendo a fonte de verdade do app hoje). Sem Supabase Auth ainda — usuário e
 // inventário vão como texto puro, sem FK pra usuarios/inventarios (esses
 // continuam só locais). Continua "fire and forget" NO PONTO DE CHAMADA — quem
@@ -5266,6 +5423,7 @@ function App(){
         {view==='enderecos' && hasAccess(currentUser,'enderecos') && (
           <AddressValidationPanel enderecosPropostos={enderecosPropostos} onResolve={resolveAddressProposal} />
         )}
+        {view==='etiquetas' && hasAccess(currentUser,'etiquetas') && <EtiquetasPanel />}
         {view==='userForm' && hasAccess(currentUser,'usuarios') && flowState && (
           <UserForm
             mode={flowState.mode}
@@ -5412,6 +5570,7 @@ const DICON_PATHS = {
   flame: <><path d="M12 22c4.4 0 7.5-3 7.5-7 0-3-1.7-5-3-6.7C15.8 10 15 11.3 14 11.3c-1 0-1-1.5-1-3 0-2.3-1.2-4.3-3-5.3C10.5 5 8 7.5 8 11c0-1 .3-2 .8-2.8C6.5 9.7 4.5 12.3 4.5 15c0 4 3.1 7 7.5 7Z"/></>,
   arrowsUpDown: <><path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/></>,
   target: <><circle cx="12" cy="12" r="9.5"/><circle cx="12" cy="12" r="5.5"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/></>,
+  printer: <><path d="M6 9V3h12v6"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="7"/></>,
 };
 
 function DIcon({name, size=18, strokeWidth=1.8, style}){
@@ -5668,6 +5827,9 @@ const ACESSOS_RESTRITOS = {
   // o admin agora pode conceder a exceção como qualquer outra tela.
   solicitacaoArmazem: ['lider','admin'],
   aprovacaoDiretoria: ['lider','admin'],
+  // Impressão de etiqueta não interessa ao operador por padrão (ferramenta
+  // administrativa de cadastro/organização física do almoxarifado).
+  etiquetas: ['lider','admin'],
 };
 
 // TODAS as telas do menu principal que podem ser ligadas/desligadas por
@@ -5691,6 +5853,7 @@ const TODOS_OS_MENUS = [
   {id:'concluidas', label:'Contagens Concluídas'},
   {id:'usuarios', label:'Usuários'},
   {id:'enderecos', label:'Endereços Pendentes'},
+  {id:'etiquetas', label:'Etiquetas'},
   {id:'dashboard', label:'Indicadores'},
   {id:'relatorios', label:'Relatórios'},
   {id:'settings', label:'Configurações'},
@@ -5766,6 +5929,7 @@ const VIEW_TITLES = {
   concluidas:'Contagens Concluídas',
   contagensHoje:'Contagens de Hoje',
   enderecos:'Endereços Pendentes',
+  etiquetas:'Etiquetas',
   usuarios:'Usuários',
   recount:'Recontar Item',
   dashboard:'Indicadores',
@@ -5840,6 +6004,7 @@ function buildSidebarGroups(user){
   const cadastrosItems = [
     ...(podeVer('usuarios') ? [{id:'usuarios', ic:'user', label:'Usuários'}] : []),
     ...(podeVer('enderecos') ? [{id:'enderecos', ic:'mapPin', label:'Endereços Pendentes'}] : []),
+    ...(podeVer('etiquetas') ? [{id:'etiquetas', ic:'printer', label:'Etiquetas'}] : []),
   ];
   const analiseItems = [
     ...(podeVer('dashboard') ? [{id:'dashboard', ic:'barChart', label:'Indicadores'}] : []),
@@ -12552,6 +12717,156 @@ function PasswordRequestRow({req, onResolve}){
           <button className="btn btn-primary" style={{padding:'0 14px',fontSize:'var(--text-xs)',width:'auto'}} disabled={pwValue.length<6} onClick={()=>onResolve(req.id,'definir',pwValue)}>Definir</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ---------------- ETIQUETAS (impressora TSC via WebUSB) ---------------- */
+// Tela nova, pedido do cliente: "conseguimos criar uma forma de ter um campo
+// novo para impressão de etiqueta? Impressora TSC? Com código de barra e
+// tal?" — busca um endereço ou produto já cadastrado e manda a etiqueta pra
+// uma TSC TE200 ligada por USB, via WebUSB (funções `conectarImpressoraTSC`/
+// `enviarTsplParaImpressora`/`buildTsplEndereco`/`buildTsplProduto`, perto de
+// `searchSupabaseCatalog`). Tela dedicada, não amarrada a nenhum fluxo de
+// contagem — o líder/admin busca e imprime quando precisar, avulso. Só
+// líder/admin (ver ACESSOS_RESTRITOS.etiquetas).
+function EtiquetasPanel(){
+  const [aba, setAba] = useState('endereco'); // 'endereco' | 'produto'
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [selecionado, setSelecionado] = useState(null);
+
+  const [impressoraConectada, setImpressoraConectada] = useState(false);
+  const [conectando, setConectando] = useState(false);
+  const [erroConexao, setErroConexao] = useState(null);
+  const [imprimindo, setImprimindo] = useState(false);
+  const [erroImpressao, setErroImpressao] = useState(null);
+  const [sucessoImpressao, setSucessoImpressao] = useState(false);
+
+  // Tenta reconectar sozinho a um dispositivo já pareado antes, assim que a
+  // tela abre — evita o usuário precisar clicar "Conectar" de novo toda vez
+  // que reabre a tela dentro da mesma sessão do navegador (a permissão de
+  // pareamento do WebUSB persiste, só a conexão em si precisa ser reaberta).
+  useEffect(()=>{
+    let cancelado = false;
+    reconectarImpressoraTSC().then(device=>{
+      if(!cancelado && device) setImpressoraConectada(true);
+    });
+    return ()=>{ cancelado = true; };
+  }, []);
+
+  // Trocar de aba limpa a busca/seleção — endereço e produto são catálogos
+  // diferentes, não faz sentido manter resultado de um enquanto troca pro
+  // outro.
+  useEffect(()=>{
+    setResults([]);
+    setSelecionado(null);
+    setQuery('');
+  }, [aba]);
+
+  // Debounce de 350ms, mesmo padrão já usado em ManualCountFlow/
+  // NewInventory pra busca no catálogo Supabase.
+  useEffect(()=>{
+    if(!query || query.trim().length<2){ setResults([]); setLoading(false); return; }
+    let cancelado = false;
+    setLoading(true);
+    const timer = setTimeout(async ()=>{
+      const found = aba==='endereco' ? await searchEnderecosCatalogo(query) : await searchSupabaseCatalog(query);
+      if(!cancelado){ setResults(found); setLoading(false); }
+    }, 350);
+    return ()=>{ cancelado = true; clearTimeout(timer); };
+  }, [query, aba]);
+
+  async function handleConectar(){
+    setConectando(true);
+    setErroConexao(null);
+    const res = await conectarImpressoraTSC();
+    setConectando(false);
+    if(res.ok) setImpressoraConectada(true);
+    else setErroConexao(res.erro);
+  }
+
+  async function handleImprimir(){
+    if(!selecionado) return;
+    setImprimindo(true);
+    setErroImpressao(null);
+    setSucessoImpressao(false);
+    const tspl = aba==='endereco' ? buildTsplEndereco(selecionado.codigo) : buildTsplProduto(selecionado.codigo, selecionado.descricao);
+    const res = await enviarTsplParaImpressora(tspl);
+    setImprimindo(false);
+    if(res.ok){
+      setSucessoImpressao(true);
+      setImpressoraConectada(true);
+    } else {
+      setErroImpressao(res.erro);
+      // Se o erro foi por falta de conexão, atualiza o indicador — sem isso
+      // o usuário via "Conectada" mesmo depois da impressora ter caído.
+      if((res.erro||'').includes('não conectada')) setImpressoraConectada(false);
+    }
+  }
+
+  return (
+    <div>
+      {!suportaImpressaoUSB() && (
+        <div className="divergence-alert" style={{marginBottom:14}}>
+          <Ic>⚠</Ic><span>Este navegador não suporta impressão USB (WebUSB) — use o Chrome. Não funciona no Safari/iOS.</span>
+        </div>
+      )}
+      <div className="list-row" style={{cursor:'default'}}>
+        <div>
+          <div className="lr-title"><DIcon name="printer" size={18} style={{verticalAlign:-4,marginRight:6}}/> Impressora TSC</div>
+          <div className="lr-sub">{impressoraConectada ? 'Conectada' : 'Não conectada'}</div>
+        </div>
+        <button className="btn btn-outline btn-sm" disabled={conectando || !suportaImpressaoUSB()} onClick={handleConectar}>
+          {conectando ? 'Conectando…' : (impressoraConectada ? 'Reconectar' : 'Conectar Impressora')}
+        </button>
+      </div>
+      {erroConexao && (
+        <div className="divergence-alert" style={{marginBottom:14}}><Ic>⚠</Ic><span>{erroConexao}</span></div>
+      )}
+
+      <div style={{display:'flex',gap:8,marginBottom:14,marginTop:14}}>
+        <button className={'btn '+(aba==='endereco'?'btn-primary':'btn-outline')+' btn-sm'} onClick={()=>setAba('endereco')}>Endereço</button>
+        <button className={'btn '+(aba==='produto'?'btn-primary':'btn-outline')+' btn-sm'} onClick={()=>setAba('produto')}>Produto</button>
+      </div>
+
+      <div className="field">
+        <label>{aba==='endereco' ? 'Buscar endereço' : 'Buscar produto (código ou descrição)'}</label>
+        <input type="text" value={query} onChange={e=>{ setQuery(e.target.value); setSelecionado(null); setSucessoImpressao(false); }} placeholder={aba==='endereco' ? 'Ex: 035-A-1' : 'Ex: 000.35310 ou parafuso'} />
+      </div>
+
+      {loading && <div className="empty-state">Buscando…</div>}
+      {!loading && query && results.length===0 && <div className="empty-state">Nenhum resultado encontrado.</div>}
+
+      {!selecionado && results.map(item=>(
+        <div key={item.codigo || item.id} className="list-row" onClick={()=>{ setSelecionado(item); setSucessoImpressao(false); setErroImpressao(null); }}>
+          <div>
+            <div className="lr-title">{aba==='endereco' ? item.codigo : item.descricao}</div>
+            {aba==='produto' && <div className="lr-sub">{item.codigo}</div>}
+            {aba==='endereco' && item.almoxarifado && <div className="lr-sub">Armazém {item.almoxarifado}</div>}
+          </div>
+          <span className="chevron"><Ic>›</Ic></span>
+        </div>
+      ))}
+
+      {selecionado && (
+        <div style={{background:'var(--panel)',border:'1px solid var(--line)',borderRadius:'var(--radius)',padding:16,marginTop:4}}>
+          <div className="item-code">{selecionado.codigo}</div>
+          {aba==='produto' && <div className="item-desc">{selecionado.descricao}</div>}
+          {aba==='endereco' && selecionado.almoxarifado && <div className="lr-sub" style={{marginTop:4}}>Armazém {selecionado.almoxarifado}</div>}
+          {erroImpressao && (
+            <div className="divergence-alert" style={{margin:'10px 0'}}><Ic>⚠</Ic><span>{erroImpressao}</span></div>
+          )}
+          {sucessoImpressao && (
+            <div className="divergence-alert" style={{margin:'10px 0',background:'var(--ok-bg)',borderColor:'var(--ok)',color:'var(--ok)'}}><Ic>✅</Ic><span>Etiqueta enviada pra impressora.</span></div>
+          )}
+          <div className="btn-row" style={{marginTop:14}}>
+            <button className="btn btn-secondary" onClick={()=>{ setSelecionado(null); setSucessoImpressao(false); }}>Voltar</button>
+            <button className="btn btn-primary" disabled={imprimindo} onClick={handleImprimir}><DIcon name="printer" size={16}/> {imprimindo ? 'Imprimindo…' : 'Imprimir Etiqueta'}</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

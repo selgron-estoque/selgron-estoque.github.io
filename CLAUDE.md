@@ -11818,3 +11818,116 @@ seguida ajustando o mesmo fluxo.
   em que é preenchida mudou). **Verificação visual de ponta a ponta fica a
   cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth
   real, não simulável no sandbox sem rede).
+
+## Impressão de etiqueta via impressora TSC (TE200) por WebUSB
+
+Cliente perguntou como exploração ("não suba para o app, é só ideia"):
+"conseguimos criar uma forma de ter um campo novo para impressão de
+etiqueta? Impressora TSC? Com código de barra e tal?" — respondi as opções
+técnicas (2-3 frases, sem implementar, como já é o padrão pra perguntas
+exploratórias) e, confirmado o interesse ("Vamos seguir"), levantei os
+detalhes que mudam a implementação via `AskUserQuestion` em duas rodadas:
+tipo de etiqueta (endereço E produto, as duas), modelo exato da impressora
+(inicialmente TTP-244 Pro, corrigido pelo cliente no meio da conversa pra
+**TSC TE200** — mesmo dialeto TSPL, sem diferença de implementação),
+tamanho da etiqueta (50mm×30mm), tipo de código (código de barras Code128,
+não QR) e de onde dispara (tela dedicada "Etiquetas", não amarrada a
+nenhuma tela existente).
+
+### Conexão: WebUSB, não impressão via driver do SO
+
+Decisão técnica (não perguntada ao cliente, escolhida por mim entre as
+opções já expostas na resposta exploratória): usar a API **WebUSB**
+(`navigator.usb`) pra mandar comandos TSPL crus direto pro USB da
+impressora, em vez de depender de driver instalado + diálogo de impressão
+do navegador. Motivo: TSPL dá controle exato de posição/tamanho/símbolo do
+código de barras (importante numa etiqueta pequena de 50×30mm), enquanto
+`window.print()` dependeria de CSS bater EXATAMENTE com o tamanho físico do
+rolo, sem controle real sobre o driver da impressora térmica.
+
+- **Só funciona no Chrome/Chromium** (Android incluso, é o navegador alvo
+  do app) — **NÃO funciona no Safari/iOS**, WebUSB não é suportado lá,
+  diferente do resto do app (câmera/PWA), que funciona nos dois. Isso é uma
+  limitação da própria API do navegador, documentada explicitamente na tela
+  (`suportaImpressaoUSB()` mostra um aviso quando `navigator.usb` não
+  existe) — não dá pra contornar do lado do app.
+- **`TSC_USB_VENDOR_ID = 0x1203`** — vendor ID USB oficial da TSC Auto ID
+  Technology, o mesmo em qualquer modelo TSC (TE200, TTP-244, TX300 etc.),
+  então o filtro de pareamento (`conectarImpressoraTSC`) funciona pra
+  qualquer impressora da marca, não só a TE200 usada aqui.
+- **Pareamento é uma ação explícita do usuário** (`navigator.usb.
+  requestDevice`, exigido pela própria API por segurança — não dá pra
+  conectar sozinho sem um clique) — depois de parear uma vez, o navegador
+  lembra a permissão pra aquele dispositivo+origem, e
+  `reconectarImpressoraTSC` (chamada sozinha ao abrir a tela, e de novo se
+  tentar imprimir sem estar conectado) reabre sem pedir de novo.
+
+### Funções novas (perto de `searchSupabaseCatalog`, index.html)
+
+- `searchEnderecosCatalogo(query)` — busca direta na tabela `enderecos`
+  (`ilike` no código) — não existia nenhuma consulta assim até aqui, as
+  outras sempre chegavam em `enderecos` via join a partir de `produtos`/
+  `estoque_enderecos`. RLS já tinha "leitura pública" nessa tabela desde o
+  upload de catálogo (ver "Catálogo ganha Unidade de Medida e Endereço em
+  massa" no histórico acima) — nenhuma policy nova precisou ser criada.
+- `conectarImpressoraTSC()` / `reconectarImpressoraTSC()` /
+  `enviarTsplParaImpressora(tspl)` — ciclo de vida da conexão USB (parear →
+  abrir → reivindicar interface → mandar bytes crus pro endpoint OUT, que é
+  descoberto dinamicamente, não assumido por número fixo, já que varia por
+  modelo/driver).
+- `buildTsplEndereco(codigo)` / `buildTsplProduto(codigo, descricao)` —
+  monta o script TSPL (SIZE/GAP/DIRECTION/CLS/TEXT/BARCODE/PRINT) pra cada
+  tipo de etiqueta, 50×30mm/203dpi, Code128. `escapaTspl` troca aspas duplas
+  por simples (aspas quebrariam o delimitador de string do TSPL) e a
+  descrição do produto é truncada em 28 caracteres (não cabe mais que isso
+  numa etiqueta de 50mm com fonte legível). **Coordenadas/tamanhos são um
+  ponto de partida razoável, não testado contra a impressora física** — o
+  sandbox não tem a TE200 real pra confirmar alinhamento fino, só o cliente
+  pode validar isso na 1ª impressão de verdade.
+
+### `EtiquetasPanel` (tela nova, view `etiquetas`)
+
+Mesmo padrão de tela dedicada já usado nesta sessão (busca com debounce de
+350ms, `.list-row`/`.field`/`.empty-state`, sem CSS novo) — abas "Endereço"/
+"Produto" (`aba`, `useState`), campo de busca (chama `searchEnderecosCatalogo`
+ou `searchSupabaseCatalog` conforme a aba), resultado clicável vira um card
+de confirmação com "Imprimir Etiqueta". Cabeçalho fixo com status da
+impressora ("Conectada"/"Não conectada") + botão "Conectar Impressora"/
+"Reconectar", com erro inline se a conexão falhar.
+
+- Wiring (mesmo padrão de extração de tela já usado 5x neste projeto):
+  `ACESSOS_RESTRITOS.etiquetas = ['lider','admin']` (ferramenta
+  administrativa, operador não participa por padrão — admin pode conceder
+  exceção como qualquer outra tela), `TODOS_OS_MENUS`/`VIEW_TITLES`, item na
+  Sidebar dentro do grupo "Cadastros" (ícone novo `printer`, adicionado a
+  `DICON_PATHS` no mesmo estilo Lucide-ish dos outros ~30 ícones), guard de
+  rota em `App()`.
+- **Sem nenhum ponto de entrada dentro dos fluxos de contagem** — pedido
+  explícito do cliente foi uma tela dedicada e avulsa, não amarrada a
+  "Endereços Pendentes"/"Nova Contagem" nem a nenhum outro fluxo existente.
+
+### Verificação
+
+Diferente de features anteriores (Supabase mockável com fidelidade razoável
+via `page.route`), **WebUSB não tem como ser exercitado de verdade no
+sandbox** (não existe impressora física nem porta USB acessível aqui) —
+testado via harness real (jsdom + react-dom/client + `act()`, mesma técnica
+rigorosa de sempre) com um **mock completo de `navigator.usb`**
+(`requestDevice`/`getDevices`/`open`/`selectConfiguration`/`claimInterface`/
+`transferOut`, registrando cada byte "enviado" pra inspecionar depois):
+confirmei que `buildTsplEndereco`/`buildTsplProduto` geram o `SIZE`/
+`BARCODE Code128`/`PRINT` certos, que aspas dentro da descrição são
+escapadas e que descrição longa é truncada; que `EtiquetasPanel` conecta a
+impressora, busca endereço E produto (com o resultado certo por aba),
+seleciona um item, e que clicar "Imprimir Etiqueta" dispara EXATAMENTE 1
+`transferOut` com o TSPL certo (contendo o código do item selecionado),
+mostrando a mensagem de sucesso; e que a Sidebar/`hasAccess` tratam a tela
+nova com o mesmo critério de líder/admin de sempre. 21 asserções, todas
+passando. Transpile Babel do arquivo inteiro e balanceamento de chaves do
+CSS conferidos (638/638, sem mudança — nenhuma classe CSS nova, só JSX/JS,
+mais 1 ícone novo em `DICON_PATHS`). **Nenhuma migração de SQL necessária**
+(a tabela `enderecos` já existe e já tinha leitura pública liberada).
+**A verificação de ponta a ponta com a impressora física fica 100% a cargo
+do cliente** — mais que a limitação de sempre (login/Supabase Auth): aqui
+nem uma simulação de rede ajuda, é hardware de verdade (USB, driver do SO,
+alinhamento físico da etiqueta) que só existe no ambiente real dele.
