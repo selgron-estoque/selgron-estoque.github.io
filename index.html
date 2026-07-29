@@ -12273,20 +12273,35 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
               </div>
               <MonthlyAccuracyBarChart months={monthlyStats} meta={META_ACURACIDADE_SEMANAL} />
             </div>
-            <div className="panel" style={{margin:0}}>
+            {/* .weekly-pair-row estica os dois painéis pra mesma altura
+                (align-items:stretch do grid) — "Acuracidade Mensal" cresce
+                proporcionalmente com a largura da coluna (SVG de aspect
+                ratio fixo), enquanto este painel (7 linhas de barra) tem
+                altura quase fixa. Em telas largas isso sobra um vão vazio
+                grudado embaixo (cliente marcou com print); em telas
+                estreitas o SVG encolhe e o vão muda de tamanho/some — daí
+                "de um jeito numa tela grande, de outro numa tela menor".
+                Em vez de tentar casar a altura dos dois (frágil, muda com
+                a largura real e com quantas famílias existem), o painel
+                virou flex-column com o conteúdo centralizado verticalmente
+                no espaço que sobrar — funciona pra qualquer tamanho de
+                vão, sem ficar "solto" grudado numa borda. */}
+            <div className="panel" style={{margin:0,display:'flex',flexDirection:'column'}}>
               <div style={{fontSize:'var(--text-sm)',fontWeight:700,marginBottom:16}}>Divergência por Família/Grupo (Top 7)</div>
-              {porFamilia.length===0 ? (
-                <div style={{color:'var(--ink-dim)',fontSize:'var(--text-sm)'}}>
-                  Ainda sem dado suficiente pra esse indicador — a família/grupo do produto
-                  só é gravada em contagens feitas a partir de agora, aparece aqui conforme
-                  itens divergentes forem sendo contados.
-                </div>
-              ) : porFamilia.map(([fam,n])=>(
-                <div key={fam} className="bar-row">
-                  <div className="bl" style={{width:160}}>{fam}</div>
-                  <div className="bar-track"><div className="bar-fill" style={{width:(n/maxFamilia*100)+'%', background:'var(--teal)'}}><span style={{color:'#fff'}}>{n}</span></div></div>
-                </div>
-              ))}
+              <div style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'center'}}>
+                {porFamilia.length===0 ? (
+                  <div style={{color:'var(--ink-dim)',fontSize:'var(--text-sm)'}}>
+                    Ainda sem dado suficiente pra esse indicador — a família/grupo do produto
+                    só é gravada em contagens feitas a partir de agora, aparece aqui conforme
+                    itens divergentes forem sendo contados.
+                  </div>
+                ) : porFamilia.map(([fam,n])=>(
+                  <div key={fam} className="bar-row">
+                    <div className="bl" style={{width:160}}>{fam}</div>
+                    <div className="bar-track"><div className="bar-fill" style={{width:(n/maxFamilia*100)+'%', background:'var(--teal)'}}><span style={{color:'#fff'}}>{n}</span></div></div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
