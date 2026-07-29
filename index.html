@@ -381,11 +381,16 @@
      do resto do app (não criei classe nova), mas o tamanho padrão (pensado
      pro card espaçado antigo) fica desproporcional aqui — reduzido só
      neste contexto, sem mudar o botão em nenhum outro lugar. Mesmo valor
-     (padding 8px 14px / text-sm) de `.count-card-actions`/
-     `.count-card-actions-row` logo abaixo — pedido do cliente: padronizar
-     tamanho/formato dos botões entre Recontagens/Itens Divergentes/
-     Aguardando Armazém/Aguardando Aprovação/Contagens Concluídas, todos
-     pequenos, batendo com `.btn-sm` já usado no resto do app. */
+     (padding 8px 14px / text-sm) de `.count-card-actions` logo abaixo —
+     pedido do cliente: padronizar tamanho/formato dos botões entre
+     Recontagens/Itens Divergentes/Aguardando Armazém/Aguardando Aprovação/
+     Contagens Concluídas — todos pequenos (batendo com `.btn-sm` já usado
+     no resto do app) e empilhados à direita do card, nunca em fileira
+     horizontal (`.count-card-actions-row`, que existia só nessas 3 telas,
+     foi removida — as 5 telas agora reaproveitam este único padrão de
+     layout, mesmo se `.count-card-content` ficar vazio ao lado — ver
+     `justifyContent:'flex-end'` inline nos 3 painéis que não tinham
+     conteúdo pra colocar do lado esquerdo). */
   .count-card-actions-col .btn{width:100%;padding:8px 14px;font-size:var(--text-sm);}
   .count-card-extra{border-top:1px solid var(--line);padding-top:8px;font-size:var(--text-sm);color:var(--ink-dim);}
   .count-card-extra strong{color:var(--ink);}
@@ -393,25 +398,13 @@
     .count-card-main{flex-direction:column;}
     .count-card-actions-col{width:100%;flex-direction:row;}
   }
-  /* .count-card-actions — usado pelo estado de "confirmar exclusão"
-     (empilha alerta + botões Cancelar/Confirmar), sempre um wrapper
-     isolado, nunca combinado direto com .btn-row no mesmo elemento (ver
-     .count-card-actions-row abaixo pra esse outro caso). */
+  /* .count-card-actions — usado pelo estado de "confirmar exclusão"/"editar
+     motivo" (empilha alerta + botões Cancelar/Confirmar), sempre um
+     wrapper full-width isolado, diferente de `.count-card-actions-col`
+     (empilhado à direita, largura fixa) — os dois nunca se combinam no
+     mesmo elemento. */
   .count-card-actions{padding:0;display:flex;flex-direction:column;gap:8px;width:100%;}
   .count-card-actions .btn{width:100%;padding:8px 14px;font-size:var(--text-sm);}
-  /* .count-card-actions-row — fileira de botões lado a lado (Itens
-     Divergentes pode ter até 4 ações) — classe SEPARADA de
-     .count-card-actions de propósito, pra não colidir com o
-     flex-direction:column acima quando combinada com .btn-row no mesmo
-     elemento. Mesmo padding/font-size de `.count-card-actions-col .btn`
-     acima (era text-xs aqui, ficava menor que os outros painéis — cliente
-     apontou tamanhos/formatos diferentes entre as 5 telas de contagem).
-     `flex:0 1 auto` (nunca cresce) em vez do `flex:1 1 auto` antigo — com
-     só 2 botões na fileira (Aguardando Aprovação/Aguardando Armazém), o
-     único que não fosse `.btn-danger` esticava sozinho pra ocupar todo o
-     espaço sobrando, ficando gigante — agora nenhum botão cresce além do
-     próprio conteúdo, com 2 ou 4 na fileira. */
-  .count-card-actions-row.btn-row .btn{width:auto;padding:8px 14px;font-size:var(--text-sm);flex:0 1 auto;}
 
   /* Comparativo 1ª/2ª contagem (item que já tem uma rodada anterior, ver
      "anterior" em DivergentItemsPanel) — as duas rodadas empilhadas, cada
@@ -9911,16 +9904,22 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onEnvi
                   </div>
                 </div>
               ) : canApprove ? (
-                <div className="btn-row count-card-actions-row">
-                  <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>handleRequestRecount(c.id)}>{busyId===c.id ? 'Enviando…' : 'Solicitar nova contagem'}</button>
-                  <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>goto('recount', c)}><Ic>🔁</Ic> Recontar</button>
-                  <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>handleApprove(c.id)}>{busyId===c.id ? 'Enviando…' : 'Sem Ajuste Necessário'}</button>
-                  {/* Análise finalizada, mas ainda precisa de SA — a decisão
-                      entre Ajuste/Devolução só acontece depois, junto com o
-                      número da SA, na tela "Aguardando Armazém" (pedido do
-                      cliente: "só quando tiver o número da SA que eu faço a
-                      decisão de ajuste ou devolução"). */}
-                  <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>handleEnviarParaArmazem(c.id)}><Ic>📋</Ic> {busyId===c.id ? 'Enviando…' : 'Enviar para SA'}</button>
+                <div className="count-card-main" style={{justifyContent:'flex-end'}}>
+                  {/* Botões empilhados à direita, mesmo padrão de
+                      RecountsPanel/ConcludedCountsPanel — pedido do cliente:
+                      padronizar o formato entre as 5 telas de contagem
+                      (antes era uma fileira horizontal só aqui). */}
+                  <div className="count-card-actions-col">
+                    <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>handleRequestRecount(c.id)}>{busyId===c.id ? 'Enviando…' : 'Solicitar nova contagem'}</button>
+                    <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>goto('recount', c)}><Ic>🔁</Ic> Recontar</button>
+                    <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>handleApprove(c.id)}>{busyId===c.id ? 'Enviando…' : 'Sem Ajuste Necessário'}</button>
+                    {/* Análise finalizada, mas ainda precisa de SA — a decisão
+                        entre Ajuste/Devolução só acontece depois, junto com o
+                        número da SA, na tela "Aguardando Armazém" (pedido do
+                        cliente: "só quando tiver o número da SA que eu faço a
+                        decisão de ajuste ou devolução"). */}
+                    <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>handleEnviarParaArmazem(c.id)}><Ic>📋</Ic> {busyId===c.id ? 'Enviando…' : 'Enviar para SA'}</button>
+                  </div>
                 </div>
               ) : (
                 <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>Aguardando decisão do líder de estoque.</div>
@@ -10117,9 +10116,11 @@ function SolicitacaoArmazemPanel({counts, inventories, role, onEnviarParaDiretor
                   </div>
                 </div>
               ) : canDecide ? (
-                <div className="btn-row count-card-actions-row">
-                  <button className="btn btn-secondary" disabled={busyId===c.id || !saInputValue(c).trim()} onClick={()=>handleEnviar(c, false)}><Ic>📋</Ic> {busyId===c.id ? 'Enviando…' : 'Registrar como Ajuste'}</button>
-                  <button className="btn btn-primary" disabled={busyId===c.id || !saInputValue(c).trim()} onClick={()=>handleEnviar(c, true)}><Ic>📦</Ic> {busyId===c.id ? 'Enviando…' : 'Registrar como Devolução'}</button>
+                <div className="count-card-main" style={{justifyContent:'flex-end'}}>
+                  <div className="count-card-actions-col">
+                    <button className="btn btn-secondary" disabled={busyId===c.id || !saInputValue(c).trim()} onClick={()=>handleEnviar(c, false)}><Ic>📋</Ic> {busyId===c.id ? 'Enviando…' : 'Registrar como Ajuste'}</button>
+                    <button className="btn btn-primary" disabled={busyId===c.id || !saInputValue(c).trim()} onClick={()=>handleEnviar(c, true)}><Ic>📦</Ic> {busyId===c.id ? 'Enviando…' : 'Registrar como Devolução'}</button>
+                  </div>
                 </div>
               ) : (
                 <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>Aguardando o Armazém devolver o número da SA.</div>
@@ -10317,9 +10318,11 @@ function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejec
                   </div>
                 </div>
               ) : canDecide ? (
-                <div className="btn-row count-card-actions-row">
-                  <button className="btn btn-danger" disabled={busyId===c.id} onClick={()=>{ setConfirmRejectId(c.id); setMotivoRejeicao(''); }}>Reprovar</button>
-                  <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>handleApprove(c)}>{busyId===c.id ? 'Enviando…' : 'Aprovar'}</button>
+                <div className="count-card-main" style={{justifyContent:'flex-end'}}>
+                  <div className="count-card-actions-col">
+                    <button className="btn btn-danger" disabled={busyId===c.id} onClick={()=>{ setConfirmRejectId(c.id); setMotivoRejeicao(''); }}>Reprovar</button>
+                    <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>handleApprove(c)}>{busyId===c.id ? 'Enviando…' : 'Aprovar'}</button>
+                  </div>
                 </div>
               ) : (
                 <div style={{padding:'10px 16px 16px',fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>Aguardando decisão da Diretoria.</div>
