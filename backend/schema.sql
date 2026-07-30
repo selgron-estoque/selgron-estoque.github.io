@@ -1313,3 +1313,35 @@ returns table(
     and (p_almoxarifados is null or es.almoxarifado = any(p_almoxarifados))
   order by e.codigo, p.codigo;
 $$ language sql stable;
+
+-- =============================================================================
+-- "CONFIRMAR" UM ENDEREÇO PROPOSTO PASSA A CORRIGIR O CADASTRO DE VERDADE
+-- =============================================================================
+-- Até aqui, "Confirmar" em "Endereços Pendentes de Cadastro" só marcava a
+-- proposta como resolvida (status='confirmado' em enderecos_propostos) —
+-- nunca escrevia em `enderecos`/`estoque_enderecos`. Resultado: nas PRÓXIMAS
+-- contagens do mesmo item, o app continuava puxando o endereço cadastrado
+-- de sempre (ou "sem endereço cadastrado", se nunca tinha nenhum) — a
+-- correção nunca "pegava" de verdade, cliente perguntou e a resposta era
+-- essa. Pedido do cliente (opção 2 de duas propostas): confirmar passa a
+-- gravar o endereço de verdade no catálogo, valendo já na próxima contagem.
+--
+-- Duas colunas novas em `enderecos_propostos`:
+--   - `almoxarifado` — precisa saber em qual armazém gravar o endereço
+--     (`enderecos.almoxarifado` é NOT NULL); vem de `product.almoxarifado`
+--     no momento em que a proposta é criada (índice/CountStep).
+--   - `endereco_anterior` — só preenchido quando o item JÁ TINHA um
+--     endereço cadastrado (a correção veio de escanear/digitar um endereço
+--     DIFERENTE do cadastro, não de um item sem cadastro nenhum) — deixa a
+--     tela do líder mostrar os dois lados ("cadastrado como X, encontrado em
+--     Y") em vez de só "informado como Y".
+alter table enderecos_propostos add column if not exists almoxarifado text;
+alter table enderecos_propostos add column if not exists endereco_anterior text;
+
+-- Nenhuma policy nova necessária pra gravar em `enderecos`/`estoque_enderecos`
+-- — as duas já têm "escrita autenticada" desde a migração do catálogo (ver
+-- "Catálogo ganha Unidade de Medida e Endereço em massa" acima). A ação em
+-- si continua restrita pela UI (só líder/admin alcançam o botão "Confirmar"
+-- em "Endereços Pendentes de Cadastro"), mesmo critério já usado no resto
+-- do app (RLS permissivo pra `authenticated`, tela que dispara a ação é que
+-- é gated por perfil).

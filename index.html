@@ -2117,6 +2117,10 @@ function enderecoPropostoRowToLocal(row){
     data: row.data,
     status: row.status,
     atualizadoEm: row.atualizado_em,
+    almoxarifado: row.almoxarifado || null,
+    // Só preenchido quando o item JÁ TINHA cadastro (correção de endereço
+    // errado, não item sem cadastro nenhum) — ver aplicarEnderecoConfirmado.
+    enderecoAnterior: row.endereco_anterior || null,
   };
 }
 
@@ -2131,8 +2135,43 @@ async function saveEnderecoPropostoToSupabase(p){
       usuario: p.usuario,
       data: p.data,
       status: p.status || 'pendente',
+      almoxarifado: p.almoxarifado || null,
+      endereco_anterior: p.enderecoAnterior || null,
     });
     if(error) return {ok:false, erro:error.message};
+    return {ok:true};
+  }catch(err){
+    return {ok:false, erro:String(err && err.message || err)};
+  }
+}
+
+// Aplica de verdade a correção de endereço no catálogo (`enderecos`/
+// `estoque_enderecos`) — chamada só quando o líder clica "Confirmar" (ver
+// resolveAddressProposal, App()). Antes disso, "Confirmar" só marcava a
+// proposta como resolvida, sem nunca escrever no catálogo — a próxima
+// contagem do item continuava puxando o endereço antigo (ou nenhum). Upsert
+// em `enderecos` por `codigo` (endereço pode já existir, compartilhado por
+// outro produto na mesma posição — reaproveita a linha em vez de duplicar);
+// depois REMOVE qualquer vínculo anterior desse produto em
+// `estoque_enderecos` antes de inserir o novo — o app sempre lê só o
+// PRIMEIRO endereço vinculado a um produto (ver `searchSupabaseCatalog`/
+// `estoqueRowToProduct`, `row.estoque_enderecos[0]`), então precisa existir
+// no máximo 1 vínculo por produto pra "corrigir" ter efeito de verdade (em
+// vez de competir com o vínculo antigo por qual aparece primeiro).
+async function aplicarEnderecoConfirmado(proposta){
+  if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
+  try{
+    const almoxarifado = proposta.almoxarifado || '1';
+    const { data: enderecoRow, error: errEndereco } = await supabaseClient
+      .from('enderecos')
+      .upsert({codigo: proposta.enderecoInformado, almoxarifado}, {onConflict:'codigo'})
+      .select('id')
+      .single();
+    if(errEndereco || !enderecoRow) return {ok:false, erro: errEndereco ? errEndereco.message : 'Falha ao gravar o endereço no catálogo.'};
+    const { error: errDelete } = await supabaseClient.from('estoque_enderecos').delete().eq('produto_codigo', proposta.productCode);
+    if(errDelete) return {ok:false, erro: errDelete.message};
+    const { error: errLink } = await supabaseClient.from('estoque_enderecos').insert({produto_codigo: proposta.productCode, endereco_id: enderecoRow.id});
+    if(errLink) return {ok:false, erro: errLink.message};
     return {ok:true};
   }catch(err){
     return {ok:false, erro:String(err && err.message || err)};
@@ -4793,6 +4832,17 @@ function App(){
   // antes de mudar a tela, mesmo padrão de approveDivergence: sem isso, um
   // líder decidindo num tablet nunca aparecia nos outros.
   async function resolveAddressProposal(id, status){
+    // "Confirmar" agora GRAVA de verdade no catálogo (enderecos/
+    // estoque_enderecos) antes de marcar a proposta como resolvida — se a
+    // gravação falhar, a proposta continua "pendente" (erro visível pro
+    // líder, nunca finge sucesso). "Rejeitar" nunca toca o catálogo.
+    if(status==='confirmado'){
+      const proposta = enderecosPropostos.find(e=>e.id===id);
+      if(proposta){
+        const resAplicar = await aplicarEnderecoConfirmado(proposta);
+        if(!resAplicar.ok) return resAplicar;
+      }
+    }
     const res = await updateEnderecoPropostoToSupabase(id, status);
     if(res.ok){
       setEnderecosPropostos(prev=>prev.map(e=>e.id===id?{...e, status}:e));
@@ -8070,6 +8120,11 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
     setEnderecoInformado(formatEnderecoInput(text));
   }
 
+  // `almoxarifado` do próprio item, quando conhecido — precisa ir junto na
+  // proposta pra `aplicarEnderecoConfirmado` (App()) saber em qual armazém
+  // gravar o endereço quando o líder confirmar (ver backend/schema.sql).
+  const almoxarifadoProposta = product.almoxarifado && product.almoxarifado!=='—' ? product.almoxarifado : null;
+
   function confirmEnderecoManual(){
     if(onAddressProposed && ENDERECO_REGEX.test(enderecoInformado)){
       onAddressProposed({
@@ -8078,6 +8133,30 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
         enderecoInformado,
         usuario: user.nome,
         data: hojeLocalStr(),
+        almoxarifado: almoxarifadoProposta,
+      });
+    }
+    setStep('count');
+  }
+
+  // "Contar mesmo assim" (item que JÁ TEM cadastro, mas o endereço
+  // escaneado/digitado é diferente) — mesma proposta de correção que
+  // `confirmEnderecoManual` já manda pro líder, só que com `enderecoAnterior`
+  // preenchido (o item tinha cadastro, não é um "sem endereço nenhum"). O
+  // líder vê os dois lados em "Endereços Pendentes de Cadastro" e, ao
+  // confirmar, o cadastro é corrigido de verdade (ver
+  // aplicarEnderecoConfirmado, App()) — as próximas contagens já puxam o
+  // endereço certo.
+  function confirmarContarComEnderecoDivergente(){
+    if(onAddressProposed && scannedCode && ENDERECO_REGEX.test(scannedCode.toUpperCase())){
+      onAddressProposed({
+        productCode: product.codigo,
+        descricao: product.descricao,
+        enderecoInformado: scannedCode.toUpperCase(),
+        usuario: user.nome,
+        data: hojeLocalStr(),
+        almoxarifado: almoxarifadoProposta,
+        enderecoAnterior: product.endereco || null,
       });
     }
     setStep('count');
@@ -8352,9 +8431,12 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
               <div className="rb-title"><Ic>⚠</Ic> Atenção</div>
               <div className="rb-sub">Você está no endereço: <strong>{scannedCode}</strong><br/>O item está cadastrado no: <strong>{product.endereco}</strong></div>
             </div>
+            {onAddressProposed && (
+              <div className="divergence-alert" style={{marginBottom:14}}><Ic>📍</Ic><span>Ao contar mesmo assim, esse endereço é enviado pro líder revisar em "Endereços Pendentes de Cadastro" — se ele confirmar, o cadastro é corrigido pra todo mundo.</span></div>
+            )}
             <div className="btn-row">
               <button className="btn btn-secondary" onClick={()=>setStep('scan')}>Escanear novamente</button>
-              <button className="btn btn-primary" onClick={()=>setStep('count')}>Contar mesmo assim</button>
+              <button className="btn btn-primary" onClick={confirmarContarComEnderecoDivergente}>Contar mesmo assim</button>
             </div>
           </div>
         )
@@ -13168,20 +13250,30 @@ function AddressValidationPanel({enderecosPropostos=[], onResolve}){
       {enderecosPropostos.length===0 ? (
         <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>
           Nenhum endereço informado ainda. Toda vez que um operador contar um item sem endereço
-          cadastrado, ele vai informar onde encontrou — e o endereço aparece aqui para validação.
+          cadastrado — ou encontrar um item num endereço diferente do cadastrado — ele informa
+          onde encontrou, e a proposta aparece aqui para validação. Ao confirmar, o cadastro é
+          corrigido de verdade: a próxima contagem desse item já puxa o endereço certo.
         </div>
       ) : (
         enderecosPropostos.map(e=>(
           <div key={e.id} className="list-row" style={{flexWrap:'wrap'}}>
             <div>
               <div className="lr-title">{e.descricao}</div>
-              <div className="lr-sub">{e.productCode} · informado como <strong style={{color:'var(--ink)'}}>{e.enderecoInformado}</strong> por {e.usuario} em {e.data}</div>
+              {/* `enderecoAnterior` só vem preenchido quando o item JÁ TINHA
+                  cadastro (correção de endereço errado) — sem isso, o item
+                  nunca teve endereço nenhum, mesmo texto de sempre. */}
+              <div className="lr-sub">
+                {e.productCode} · {e.enderecoAnterior
+                  ? <>cadastrado como <strong style={{color:'var(--ink)'}}>{e.enderecoAnterior}</strong>, encontrado em <strong style={{color:'var(--ink)'}}>{e.enderecoInformado}</strong></>
+                  : <>informado como <strong style={{color:'var(--ink)'}}>{e.enderecoInformado}</strong></>
+                } por {e.usuario} em {e.data}
+              </div>
               {erros[e.id] && <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginTop:4}}>{erros[e.id]}</div>}
             </div>
             {e.status==='pendente' ? (
               <div className="btn-row" style={{width:'auto'}}>
                 <button className="btn btn-secondary" style={{padding:'8px 12px',fontSize:'var(--text-xs)'}} disabled={busyId===e.id} onClick={()=>handleResolve(e.id,'rejeitado')}>Rejeitar</button>
-                <button className="btn btn-primary" style={{padding:'8px 12px',fontSize:'var(--text-xs)'}} disabled={busyId===e.id} onClick={()=>handleResolve(e.id,'confirmado')}>{busyId===e.id ? 'Enviando…' : 'Confirmar'}</button>
+                <button className="btn btn-primary" style={{padding:'8px 12px',fontSize:'var(--text-xs)'}} disabled={busyId===e.id} onClick={()=>handleResolve(e.id,'confirmado')}>{busyId===e.id ? 'Gravando…' : 'Confirmar'}</button>
               </div>
             ) : (
               <StatusTag status={e.status==='confirmado'?'ok':'danger'} text={e.status==='confirmado'?'Confirmado':'Rejeitado'} />
