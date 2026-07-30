@@ -2957,7 +2957,10 @@ function buildRecontarSeedsFromHistorico(linhas){
       const percentual = (l.saldo_sistema!=null && l.saldo_sistema!==0 && l.diferenca!=null)
         ? (l.diferenca / l.saldo_sistema) * 100
         : null;
-      const classificacao = l.valor_divergente!=null ? classifyDivergence(Math.abs(l.valor_divergente)).label : 'Divergência (importada do histórico)';
+      // classifyDivergence agora decide por DIFERENÇA DE QUANTIDADE, não
+      // mais por valor em R$ (ver comentário na função) — l.diferenca em
+      // vez de l.valor_divergente, mesmo raciocínio.
+      const classificacao = l.diferenca!=null ? classifyDivergence(l.diferenca).label : 'Divergência (importada do histórico)';
       const idSeguro = 'CNT-HIST-' + String(l.produto_codigo).replace(/[^A-Za-z0-9]/g,'') + '-' + l.data.replace(/-/g,'');
       return {
         id: idSeguro,
@@ -3020,7 +3023,10 @@ function buildAjustarSeedsFromHistorico(linhas){
       const percentual = (l.saldo_sistema!=null && l.saldo_sistema!==0 && l.diferenca!=null)
         ? (l.diferenca / l.saldo_sistema) * 100
         : null;
-      const classificacao = l.valor_divergente!=null ? classifyDivergence(Math.abs(l.valor_divergente)).label : 'Divergência (importada do histórico)';
+      // classifyDivergence agora decide por DIFERENÇA DE QUANTIDADE, não
+      // mais por valor em R$ (ver comentário na função) — l.diferenca em
+      // vez de l.valor_divergente, mesmo raciocínio.
+      const classificacao = l.diferenca!=null ? classifyDivergence(l.diferenca).label : 'Divergência (importada do histórico)';
       const idSeguro = 'CNT-HIST-ADJ-' + String(l.produto_codigo).replace(/[^A-Za-z0-9]/g,'') + '-' + l.data.replace(/-/g,'');
       return {
         id: idSeguro,
@@ -3090,7 +3096,9 @@ async function reprovarAjusteHistoricoNaLinha(rawRow, motivoReprovacao){
     const percentual = (rawRow.saldo_sistema!=null && rawRow.saldo_sistema!==0 && rawRow.diferenca!=null)
       ? (rawRow.diferenca / rawRow.saldo_sistema) * 100
       : null;
-    const classificacao = rawRow.valor_divergente!=null ? classifyDivergence(Math.abs(rawRow.valor_divergente)).label : 'Divergência (importada do histórico)';
+    // classifyDivergence agora decide por DIFERENÇA DE QUANTIDADE, não mais
+    // por valor em R$ (ver comentário na função).
+    const classificacao = rawRow.diferenca!=null ? classifyDivergence(rawRow.diferenca).label : 'Divergência (importada do histórico)';
     const seedRow = {
       id: idSeguro,
       inventario_id: '—',
@@ -3255,8 +3263,9 @@ function estoqueRowToProduct(row){
   // checa `typeof===number`) passa a considerar esses itens normalmente:
   // entram na comparação/classificação de divergência em vez de cair no
   // aviso "sem saldo pra comparar". custoUnit continua 0 nesse caso (não tem
-  // como saber o custo sem saldo real) — classifyDivergenceSemCusto já cobre
-  // esse caso mandando qualquer diferença de quantidade pra análise do líder.
+  // como saber o custo sem saldo real) — não tem mais problema nenhum, já
+  // que `classifyDivergence` nem depende de custo: qualquer diferença de
+  // quantidade já vai pra análise do líder, custo conhecido ou não.
   const temSaldo = row.saldo!=null;
   const saldo = temSaldo ? Number(row.saldo) : 0;
   const valorFinanceiro = Number(row.valor_financeiro||0);
@@ -3781,44 +3790,37 @@ function formatEnderecoInput(value){
   return out;
 }
 
-// MÓDULO 7 — regra de aprovação. Cliente pediu explicitamente pra remover a
-// aprovação automática "por %" (um item caro com pouca % de diferença
-// passava batido sem ninguém ver, um item barato com % alta ia pra fila à
-// toa) e passou a medir pelo VALOR (R$) da diferença, não mais percentual:
-//  R$ 0 (contagem bateu exata) → aprovado automaticamente (única exceção —
-//    não há divergência nenhuma pra alguém analisar)
-//  Até R$ 49,99            → direto pra análise do líder (não compensa o
-//    esforço de recontar fisicamente um valor tão baixo)
-//  A partir de R$ 50        → segunda contagem primeiro (só aqui vale a
-//    pena conferir de novo antes de escalar pro líder)
+// MÓDULO 7 — regra de aprovação. Histórico da regra, mais recente por
+// último:
+// 1) Original: aprovação automática "por %" de diferença.
+// 2) Trocada pra VALOR (R$) da diferença — um item caro com pouca % de
+//    diferença passava batido sem ninguém ver, um item barato com % alta
+//    ia pra fila à toa (R$0=auto, <R$50=líder, >=R$50=segunda contagem).
+// 3) **Regra atual** — pedido explícito do cliente: "nenhuma divergência,
+//    não importa o valor ou porcentagem, pode passar direto — toda e
+//    qualquer divergência eu que decido a destinação". Não existe mais
+//    roteamento automático nenhum por valor/percentual: só "bateu exato"
+//    (aprova sozinho, não há divergência nenhuma pra analisar) ou "qualquer
+//    divergência" (sempre vai pro líder decidir — inclusive o que antes
+//    seria "segunda contagem automática", que deixou de existir; o líder é
+//    quem decide manualmente mandar recontar, via "Solicitar nova
+//    contagem" em Itens Divergentes). Recebe a DIFERENÇA DE QUANTIDADE, não
+//    mais o valor em R$ — a antiga "rede de segurança pra item sem custo
+//    cadastrado" (`classifyDivergenceSemCusto`, que forçava 'danger' quando
+//    o custo desconhecido mascarava o valor em R$ como zero) deixou de ser
+//    necessária: sem eixo de valor nenhum na decisão, não existe mais como
+//    o custo desconhecido enganar a classificação — removida por completo.
 // `computeStatus` (abaixo) não mudou nada — já decidia por `level`
-// ('ok'/'warn'/outro), só o critério que gera esse `level` mudou de % pra
-// R$. Ver também `diferencaConfirmada` em `CountStep`: numa recontagem, se
-// a diferença bater exatamente com a da rodada anterior, isso é sinalizado
-// à parte pro líder ("Diferença confirmada, seguir com ajuste").
-function classifyDivergence(valorDivergente){
-  const v = Math.abs(Number(valorDivergente));
-  if(v === 0) return {level:'ok', label:'Sem divergência', rule:'Aprovado automaticamente'};
-  if(v < 50) return {level:'danger', label:'Diferença abaixo de R$ 50', rule:'Enviado para análise do líder'};
-  return {level:'warn', label:'Diferença de R$ 50 ou mais', rule:'Segunda contagem solicitada'};
-}
-
-// BUG REAL corrigido (visto em produção): `custoUnit` vale `0` tanto quando o
-// produto genuinamente não tem custo quanto quando o custo é DESCONHECIDO
-// (sem valor_financeiro/saldo cadastrado — ver `custoUnit:(temSaldo &&
-// saldo!==0) ? valorFinanceiro/saldo : 0` em `estoqueRowToProduct` e os
-// fallbacks `custoUnit:0` de produtos sintéticos). Isso fazia
-// `diffValor = diferença × custoUnit` sempre dar R$ 0 pra QUALQUER
-// diferença de quantidade nesses itens — e `classifyDivergence(0)` aprova
-// automaticamente, sem ninguém analisar, não importa o tamanho real da
-// diferença (chegou a acontecer com uma diferença de bilhões de unidades
-// marcada como "confere com o sistema"). Esta função é a rede de segurança:
-// sem custo cadastrado pra confirmar que a diferença é pequena em valor,
-// qualquer diferença de quantidade (por menor que seja) vai direto pra
-// análise do líder — pedido explícito do cliente, sem régua de percentual
-// nenhuma aqui (diferente da regra por R$, que tem 2 patamares).
-function classifyDivergenceSemCusto(){
-  return {level:'danger', label:'Diferença sem custo cadastrado', rule:'Enviado para análise do líder (sem custo cadastrado)'};
+// ('ok'/'danger'), o branch de `level==='warn'` ficou sem uso (nenhuma
+// contagem nova cai mais nele, `classifyDivergence` nunca mais devolve
+// 'warn') mas não foi removido, inofensivo. Ver também `diferencaConfirmada`
+// em `CountStep`: numa recontagem, se a diferença bater exatamente com a da
+// rodada anterior, isso é sinalizado à parte pro líder ("Diferença
+// confirmada, seguir com ajuste").
+function classifyDivergence(diferenca){
+  const d = Math.abs(Number(diferenca));
+  if(d === 0) return {level:'ok', label:'Sem divergência', rule:'Aprovado automaticamente'};
+  return {level:'danger', label:'Divergência encontrada', rule:'Enviado para análise do líder'};
 }
 
 // Classificação visual de 4 níveis — usada só nos cards de Recontagens/
@@ -8207,21 +8209,15 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   // zero precisa do valor sentinela 100% (não dá pra calcular um percentual
   // real de "quanto a mais que zero").
   const diffPct = (qty!=='' && hasSaldoLocal) ? (product.saldoSistema===0 ? (diffAbs===0 ? 0 : 100) : (diffAbs/product.saldoSistema)*100) : 0;
-  // `diffValor` (R$) é o que decide a classificação agora, não mais
-  // `diffPct` — ver `classifyDivergence`. `diffPct`/`percentual` continuam
-  // calculados e salvos na contagem (usados em indicadores/tendência
-  // semanal, que não mudaram), só pararam de decidir aprovação.
-  const diffValor = (qty!=='' && hasSaldoLocal) ? Math.abs(diffAbs) * Number(product.custoUnit || 0) : 0;
-  // `custoConhecido`: `custoUnit` vale 0 tanto pra "produto sem custo" quanto
-  // pra "custo desconhecido" (sem valor_financeiro cadastrado) — os dois
-  // casos são indistinguíveis olhando só o número. Sem essa checagem,
-  // qualquer diferença de quantidade num item sem custo cadastrado dava
-  // `diffValor=0` e passava como "sem divergência" (bug real corrigido, ver
-  // `classifyDivergenceSemCusto`) — só entra na exceção de fato quando a
-  // diferença de QUANTIDADE também é zero (contagem bateu exata de verdade).
-  const custoConhecido = Number(product.custoUnit) > 0;
+  // Classificação decide só pela DIFERENÇA DE QUANTIDADE agora — pedido do
+  // cliente ("toda e qualquer divergência, não importa o valor ou
+  // porcentagem, pode passar direto — eu que decido a destinação"), ver
+  // comentário completo em `classifyDivergence`. `diffPct`/`percentual`/
+  // `valorDivergente` (calculado à parte, em `finalize()`) continuam
+  // salvos na contagem — ainda alimentam severidade/indicadores/relatório,
+  // só pararam de decidir a classificação/aprovação em si.
   const classification = hasSaldoLocal
-    ? (diffAbs !== 0 && !custoConhecido ? classifyDivergenceSemCusto() : classifyDivergence(diffValor))
+    ? classifyDivergence(diffAbs)
     : {level:'warn', label:'Sem saldo para comparar', rule:'Nenhum saldo carregado para este código — revisão manual necessária'};
   const statusAprovacao = hasSaldoLocal ? computeStatus(numeroContagem, classification.level) : 'aguardando_analise_lider';
   // Recontagem (numeroContagem>=2) cuja diferença bate EXATAMENTE com a da
@@ -8300,22 +8296,15 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   }
 
   // Mensagem de feedback ao vivo, assim que existe um número digitado —
-  // mesmos 3 níveis de `classifyDivergence`/`classifyDivergenceSemCusto`
-  // (ok/warn/danger), que já é a regra de negócio real (aprovação
-  // automática/segunda contagem/análise do líder) — não uma classificação
-  // nova só de exibição. Usa `classification.rule` direto pros casos
-  // warn/danger (em vez de frase fixa assumindo sempre a regra por R$) —
-  // assim a mensagem fica certa tanto na regra normal quanto na rede de
-  // segurança por percentual (item sem custo cadastrado).
-  // Pedido do cliente: no caso "sem custo cadastrado" especificamente, essa
-  // mensagem some (fica só a cor do card, sem o texto) — o roteamento pra
-  // análise do líder continua acontecendo normalmente por trás
-  // (`classification`/`statusAprovacao` não mudaram), só a frase técnica
-  // deixou de aparecer pro operador durante a contagem.
-  const semCustoCadastrado = hasSaldoLocal && diffAbs!==0 && !custoConhecido;
-  const feedbackTexto = semCustoCadastrado
-    ? null
-    : !hasSaldoLocal
+  // mesmos níveis de `classifyDivergence` (ok/danger, mais o "warn" fixo de
+  // "sem saldo pra comparar"), que já é a regra de negócio real (aprovação
+  // automática/análise do líder) — não uma classificação nova só de
+  // exibição. Usa `classification.rule` direto (em vez de frase fixa) —
+  // desde que a classificação passou a ser só "bateu exato" ou "qualquer
+  // divergência" (sem eixo de valor/custo), não existe mais nenhum caso
+  // especial pra suprimir essa mensagem — ela sempre reflete o que
+  // realmente vai acontecer com a contagem.
+  const feedbackTexto = !hasSaldoLocal
     ? classification.rule
     : classification.level==='ok' ? 'Contagem confere com o sistema.'
     : classification.rule;
@@ -11487,9 +11476,10 @@ function ReportsScreen({counts, historicoTudo=[], inventories, currentUser, send
       <div className="panel">
         <div className="section-title" style={{marginTop:0}}>Regras de Divergência</div>
         <div style={{fontSize:'var(--text-sm)',lineHeight:1.9,color:'var(--ink-dim)'}}>
-          <div>R$ 0 (contagem exata) → <span style={{color:'var(--ok)'}}>Aprovação automática</span></div>
-          <div>Até R$ 49,99 → <span style={{color:'var(--danger)'}}>Análise do líder de estoque</span></div>
-          <div>A partir de R$ 50 → <span style={{color:'var(--warn)'}}>Segunda contagem obrigatória</span></div>
+          <div>Contagem bate exata (diferença 0) → <span style={{color:'var(--ok)'}}>Aprovação automática</span></div>
+          <div>Qualquer divergência, não importa o valor ou porcentagem → <span style={{color:'var(--danger)'}}>Análise do líder de estoque</span></div>
+          <div style={{marginTop:8,fontSize:'var(--text-sm)'}}>Não existe roteamento automático por valor/percentual — o líder decide,
+          caso a caso, se aprova a divergência, solicita recontagem, ou encaminha pra ajuste.</div>
           <div style={{marginTop:8,fontSize:'var(--text-sm)'}}>Na recontagem, se a diferença bater exata com a da 1ª contagem, vai
           direto pro líder com o aviso "Diferença confirmada, seguir com ajuste".</div>
           <div style={{marginTop:8,fontSize:'var(--text-sm)'}}>Se o líder confirmar que HÁ ajuste necessário, ele gera uma SA de

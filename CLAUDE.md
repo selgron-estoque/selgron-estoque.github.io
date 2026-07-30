@@ -12203,3 +12203,92 @@ da SB2, etc.): sem erro nenhum, só um número menor do que deveria.
   mas como os 971 documentos com saldo zero passam a contar (a maioria
   provavelmente batendo 0=0, nota 100%), "Acuracidade Geral" deve SUBIR
   visivelmente em relação aos 87,9% confirmados antes desta correção.
+
+## Aprovação automática/segunda contagem por VALOR (R$) removida — toda divergência vai pro líder
+
+Cliente mandou print do card "Itens Divergentes" (781 documentos/20,0% do
+total, "3912 itens · 3369 códigos · 711 divergentes (cód.)") apontando que a
+conta "não dá 88,7%" — investigando, ficou claro que ele estava tentando
+reconciliar um card BINÁRIO ("quantos itens têm QUALQUER erro") com
+"Acuracidade Geral" (nota parcial) através de uma identidade matemática que
+não existe mais desde a Opção A (`100% - divergência% ≠ acuracidade média`,
+já explicado antes). Ao pedir pra "corrigir" o card, esclareci com duas
+rodadas de `AskUserQuestion` (dado o tamanho do risco) até confirmar o pedido
+de verdade: não é sobre o CARD, é sobre a REGRA DE NEGÓCIO inteira —
+`classifyDivergence`, que decide aprovação automática/segunda contagem/
+análise do líder pra toda contagem do app. Resposta exata do cliente: **"não,
+nenhuma divergência não importa o valor ou porcentagem pode passar direto,
+toda e qualquer divergência eu que decido a destinação"**.
+
+Isso **reverte de vez** a regra por VALOR (R$) implementada numa rodada bem
+anterior (ver "Aprovação automática deixa de ser por %, passa a ser por
+valor (R$) da diferença", mais acima neste histórico) — que tinha, ela
+mesma, revertido uma regra por PERCENTUAL ainda mais antiga. Motivo
+documentado da 2ª pra 3ª versão da regra: **nenhum mais** — o cliente
+decidiu que quer decidir manualmente, sem NENHUM roteamento automático por
+valor/percentual, ponto final. Fui explícito com ele sobre o trade-off antes
+de implementar (o motivo que motivou a versão por R$ — item caro com erro
+pequeno passando batido — volta a ser possível, só que agora por escolha
+deliberada: o líder vê e decide TODA divergência, sem filtro nenhum).
+
+- **`classifyDivergence(diferenca)`** — assinatura mudou de `valorDivergente`
+  (R$) pra `diferenca` (quantidade). Só 2 saídas agora: `diferenca===0` →
+  `{level:'ok', ..., rule:'Aprovado automaticamente'}` (única exceção — não
+  há divergência nenhuma pra analisar); qualquer `diferenca!==0` →
+  `{level:'danger', label:'Divergência encontrada', rule:'Enviado para
+  análise do líder'}`. **Nunca mais retorna `'warn'`** — o antigo patamar
+  "R$50+ → segunda contagem automática" foi removido por completo, sem
+  substituto (não virou outro threshold, simplesmente deixou de existir).
+- **`classifyDivergenceSemCusto` removida por completo** (função + todos os
+  3 call sites que a referenciavam) — ela existia só como "rede de
+  segurança" pra evitar que `diffValor=0` (custo desconhecido mascarando
+  uma diferença de quantidade real) fosse lido como "sem divergência". Como
+  a nova `classifyDivergence` não depende mais de custo/valor nenhum, esse
+  bug estruturalmente não pode mais acontecer — a rede de segurança virou
+  desnecessária, não só redundante.
+- **`CountStep`**: `diffValor`/`custoConhecido` (as duas variáveis que só
+  existiam pra alimentar a decisão de classificação) foram removidas —
+  `classification = hasSaldoLocal ? classifyDivergence(diffAbs) : {...sem
+  saldo...}`, direto pela diferença de quantidade. `semCustoCadastrado` (que
+  suprimia o texto de feedback ao vivo só nesse caso específico) também
+  removida — sem esse caso especial existindo mais, `feedbackTexto` sempre
+  mostra `classification.rule` normalmente, sem exceção.
+- **`diffPct`/`percentual`/`valorDivergente` continuam sendo calculados e
+  salvos na contagem, sem mudança** — não decidem mais a classificação, mas
+  seguem alimentando `classifySeverity4` (severidade visual em Recontagens/
+  Itens Divergentes/Concluídas, por VALOR — decisão separada, não revista
+  aqui), indicadores, e o relatório Excel.
+- **3 pontos de importação do histórico** (`buildRecontarSeedsFromHistorico`,
+  `buildAjustarSeedsFromHistorico`, `reprovarAjusteHistoricoNaLinha`) — só
+  usavam `classifyDivergence(...).label` pra montar um texto de exibição
+  (nunca decidiam status por ela, o status desses seeds já vem hardcoded do
+  Status da planilha) — trocado de `Math.abs(l.valor_divergente)` pra
+  `l.diferenca`/`rawRow.diferenca`, mesmo raciocínio de "usar quantidade, não
+  R$" aplicado também aqui, pra não reabrir o mesmo tipo de falso-zero por
+  custo desconhecido nessas 3 linhas.
+- **`computeStatus` não foi tocado** — o branch `level==='warn'` continua no
+  código, só ficou inalcançável por este caminho (nenhuma chamada de
+  `classifyDivergence` gera 'warn' mais) — inofensivo manter, e
+  `aguardando_segunda` continua existindo no app via outras rotas (líder
+  clicando "Solicitar nova contagem" em Itens Divergentes, ou itens
+  "Recontar" importados da planilha antiga) — só deixou de ser um destino
+  AUTOMÁTICO da classificação.
+- **Painel "Regras de Divergência" (Relatórios)** reescrito pra refletir a
+  regra nova — só 2 linhas agora ("bateu exato" / "qualquer divergência"),
+  sem menção a R$0,01-49,99/R$50+.
+- Testado via harness real (jsdom + react-dom/client + `act()`, mesma
+  técnica rigorosa de sempre): `classifyDivergence` nunca mais retorna
+  'warn', qualquer diferença (0.01 até 500+) vira 'danger' igual;
+  `computeStatus` com os níveis novos continua roteando certo;
+  `classifyDivergenceSemCusto` confirmado removida (`undefined`); `CountStep`
+  de ponta a ponta — item SEM custo cadastrado com diferença pequena vai pro
+  líder pelo caminho NORMAL (sem rede de segurança separada, mesmo destino
+  de sempre) com o label novo "Divergência encontrada"; item COM custo e
+  diferença GRANDE em R$ (que antes iria pra "segunda contagem" automática)
+  agora vai direto pro líder também. Rodei de novo os harnesses das 3
+  rodadas anteriores de acuracidade (nota parcial, Excel, saldo zero) sem
+  quebrar nada. Transpile Babel do arquivo inteiro e balanceamento de chaves
+  do CSS conferidos (638/638, sem mudança — nenhuma classe CSS nova).
+  **Verificação visual/funcional de ponta a ponta fica a cargo do cliente**
+  — mesma limitação de sempre (login exige Supabase Auth real, não
+  simulável no sandbox sem rede).
