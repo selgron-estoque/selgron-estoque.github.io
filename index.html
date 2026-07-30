@@ -9866,7 +9866,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onEnvi
                           <span className="label">{anterior.numeroContagem}ª Contagem</span>
                           <span className="round-who">{anterior.usuario} · {anterior.data} {anterior.hora||''}</span>
                         </div>
-                        <div className="result-grid" style={{marginTop:0,gridTemplateColumns:'repeat(4,1fr)'}}>
+                        <div className="result-grid result-grid-4col" style={{marginTop:0,gridTemplateColumns:'repeat(4,1fr)'}}>
                           <div className="rg"><div className="k">Sistema</div><div className="v">{anterior.saldoSistema==null ? '—' : anterior.saldoSistema}</div></div>
                           <div className="rg"><div className="k">Físico</div><div className="v">{anterior.qtdContada}</div></div>
                           <div className="rg"><div className="k">Diferença</div><div className="v">{anterior.diferenca==null ? '—' : (anterior.diferenca>0?'+':'')+anterior.diferenca}</div></div>
@@ -9878,7 +9878,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onEnvi
                           <span className="label">{c.numeroContagem}ª Contagem</span><span className="badge">Atual</span>
                           <span className="round-who">{c.usuario} · {c.data} {c.hora||''}</span>
                         </div>
-                        <div className="result-grid" style={{marginTop:0,gridTemplateColumns:'repeat(4,1fr)'}}>
+                        <div className="result-grid result-grid-4col" style={{marginTop:0,gridTemplateColumns:'repeat(4,1fr)'}}>
                           <div className="rg"><div className="k">Sistema</div><div className="v">{c.saldoSistema==null ? '—' : c.saldoSistema}</div></div>
                           <div className="rg"><div className="k">Físico</div><div className="v">{c.qtdContada}</div></div>
                           <div className="rg"><div className="k">Diferença</div><div className="v" style={{color:sev.color}}>{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div></div>
@@ -11017,7 +11017,7 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
                           {isUltima && <span className="badge">Final</span>}
                           <span className="round-who">{r.usuario||'—'} · {r.data ? r.data+(r.hora?' '+r.hora:'') : 'sem data registrada'}</span>
                         </div>
-                        <div className="result-grid" style={{marginTop:0,gridTemplateColumns:'repeat(4,1fr)'}}>
+                        <div className="result-grid result-grid-4col" style={{marginTop:0,gridTemplateColumns:'repeat(4,1fr)'}}>
                           <div className="rg"><div className="k">Sistema</div><div className="v">{r.saldoSistema==null ? '—' : r.saldoSistema}</div></div>
                           <div className="rg"><div className="k">Físico</div><div className="v">{r.qtdContada}</div></div>
                           <div className="rg"><div className="k">Diferença</div><div className="v">{r.diferenca==null ? '—' : (r.diferenca>0?'+':'')+r.diferenca}</div></div>
