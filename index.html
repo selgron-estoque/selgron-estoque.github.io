@@ -8049,6 +8049,22 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
     setStep('scanResult');
   }
 
+  // "Digitar outro endereço" — pedido do cliente: item cadastrado num local,
+  // mas fisicamente encontrado em outro (ex: reorganização de prateleira,
+  // sem etiqueta nova ainda) — antes só dava pra registrar isso ESCANEANDO
+  // o QR Code do endereço real, sem opção de digitar quando não tem
+  // câmera/etiqueta legível à mão. Reaproveita `handleAddressScanDetected`
+  // com o texto digitado (não escaneado) — mesma comparação/mesmo resultado
+  // (confirmado/divergente) que a leitura por câmera já produz, sem duplicar
+  // lógica nem criar um caminho novo de "endereço contado".
+  const [digitandoEndereco, setDigitandoEndereco] = useState(false);
+  const [enderecoDigitado, setEnderecoDigitado] = useState('');
+  function confirmarEnderecoDigitado(){
+    handleAddressScanDetected(enderecoDigitado);
+    setDigitandoEndereco(false);
+    setEnderecoDigitado('');
+  }
+
   function handleEnderecoManualScanDetected(text){
     setScanning(false);
     setEnderecoInformado(formatEnderecoInput(text));
@@ -8296,9 +8312,22 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
           <div className="address-chip">{product.endereco}</div>
           {scanning ? (
             <CameraScanner onDetected={handleAddressScanDetected} onCancel={()=>setScanning(false)} />
+          ) : digitandoEndereco ? (
+            <div>
+              <div className="field">
+                <label>Endereço onde o item foi encontrado (formato NNN-L-N)</label>
+                <input type="text" value={enderecoDigitado} onChange={e=>setEnderecoDigitado(formatEnderecoInput(e.target.value))} placeholder="Ex: 035-A-1" maxLength={7} autoFocus />
+              </div>
+              <div className="divergence-alert" style={{marginBottom:14}}><Ic>📍</Ic><span>Use isso quando o item está cadastrado num endereço, mas foi encontrado fisicamente em outro — sem precisar escanear o QR Code de lá.</span></div>
+              <div className="btn-row">
+                <button className="btn btn-secondary" onClick={()=>{setDigitandoEndereco(false); setEnderecoDigitado('');}}>Cancelar</button>
+                <button className="btn btn-primary" disabled={!ENDERECO_REGEX.test(enderecoDigitado)} onClick={confirmarEnderecoDigitado}>Confirmar endereço</button>
+              </div>
+            </div>
           ) : (
             <div>
               <button className="btn btn-primary" style={{marginBottom:10}} onClick={()=>setScanning(true)}><Ic>📷</Ic> Escanear com a câmera</button>
+              <button className="btn btn-outline" style={{marginBottom:10}} onClick={()=>setDigitandoEndereco(true)}><Ic>⌨</Ic> Digitar outro endereço</button>
               <div className="scan-toggle-row">
                 <button className="btn btn-outline" style={{fontSize:'var(--text-xs)'}} onClick={()=>{simulateScan(false); setStep('scanResult');}}>Sem câmera: simular leitura errada</button>
                 <button className="btn btn-outline" style={{fontSize:'var(--text-xs)'}} onClick={()=>{simulateScan(true); setStep('scanResult');}}>Sem câmera: simular leitura certa</button>
