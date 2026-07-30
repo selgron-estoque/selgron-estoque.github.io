@@ -12030,3 +12030,72 @@ arquivo inteiro e balanceamento de chaves do CSS conferidos (638/638, sem
 mudança — nenhuma classe CSS nova, só JS/JSX). **Verificação visual/física
 com a impressora real fica a cargo do cliente** — mesma limitação de sempre,
 sandbox sem hardware.
+
+## "Acuracidade Geral"/"Acuracidade do Estoque" passam a usar nota parcial (não mais binário)
+
+Cliente mandou um print da planilha oficial "Indicador Acuracidade" (Depto
+Logística, Responsável Valmir, meta 95%) que a Selgron já usa fora do app —
+confirmei matematicamente que ela calcula cada mês como `1 - (itens
+divergentes/total analisado)`, ou seja, um critério **binário**: item
+bateu exato ou não bateu, sem meio-termo. Isso explicava por que
+"Acuracidade Geral" (o card grande em Indicadores, calculado do mesmo jeito
+binário) não batia com a média que o cliente tirava olhando o gráfico
+"Acuracidade Mensal" — que usa `itemAcuracidade`, uma **nota parcial**
+contínua por item (ex.: sistema 100/físico 95 = nota 95%, não "errou"
+simplesmente).
+
+Perguntei ao cliente qual das duas fórmulas ele considera correta — resposta:
+nota parcial é a certa, e "esses 80%" (Acuracidade Geral, binário) é que não
+fazia sentido. Como isso cria uma escolha real (a planilha oficial da
+Selgron usa binário — trocar "Acuracidade Geral" pra nota parcial faz ele
+parar de bater com essa planilha), perguntei explicitamente: manter
+"Acuracidade Geral" batendo com a planilha oficial (binário), ou trocar TODO
+indicador de acuracidade do app pra nota parcial, priorizando consistência
+interna em vez de bater com a planilha da Selgron. Cliente escolheu a 2ª
+opção ("Opção A").
+
+- **`Dashboard`, `acuracidade`** ("Acuracidade Geral", Resumo da Operação) —
+  trocou de `(todasParaQualidade.length - divergentes.length) /
+  todasParaQualidade.length` (binário) pra uma média de `itemAcuracidade(c)`
+  sobre `todasParaQualidade` (`itensComAcuracidadeGeral`, filtrando fora
+  `null` — item sem saldo pra comparar não conta nem a favor nem contra,
+  mesmo critério que `computeWeeklyStats`/`computeMonthlyStats` já usavam).
+  `divergentes` (a lista binária) **continua existindo, sem mudança** — ainda
+  alimenta o card vizinho "Itens Divergentes" (quantos itens tiveram
+  QUALQUER divergência, independente do tamanho — uma pergunta diferente de
+  "qual a nota média"), então os dois cards da mesma tela passam a responder
+  perguntas diferentes com critérios diferentes de propósito, um binário e
+  um contínuo — não é inconsistência, é o que cada um sempre quis dizer.
+- **`Home`, `acumuladoAte(dataLimite)`** (card "Acuracidade do Estoque",
+  usado tanto pro valor de hoje quanto pra tendência hoje-vs-ontem em pontos
+  percentuais) — mesma troca, pelo mesmo motivo: sem essa mudança junto, o
+  app reintroduziria exatamente o bug já corrigido antes ("cliente reportou
+  3 cards de acuracidade com valores diferentes") — só que agora por causa
+  da FÓRMULA divergir entre os cards, não do pool de dado. `divergentes`
+  (retornado no objeto de `acumuladoAte`) também não mudou, mesmo raciocínio
+  do card do Dashboard.
+- **Não tocado, de propósito**: `computeWeeklyStats`/`computeMonthlyStats`
+  (já usavam nota parcial, essa é a fórmula que ficou como padrão) e
+  `buildSummaryRows` (aba "Resumo" do relatório Excel exportado) — o
+  relatório Excel nunca entrou na conversa com o cliente, e mexer nele sem
+  pedido arriscaria criar uma discrepância nova entre o que o app mostra em
+  tela e o que ele baixa no Excel; se o cliente notar essa diferença e
+  quiser alinhar também, é um pedido separado.
+- Testado via harness Node (mesma técnica de sempre, sem acesso de rede ao
+  Supabase real): reproduzido o exemplo exato usado pra explicar a diferença
+  pro cliente (item com erro pequeno rende nota 95%, não "50%" como o
+  binário daria pra 1 de 2 itens errado); item sem saldo pra comparar fica
+  fora da média; o dedup por documento (`ultimaContagemPorDocumento`, já
+  existente) continua funcionando igual dentro da nova fórmula — só a rodada
+  final de cada documento conta, dois documentos independentes do mesmo
+  código continuam contando separado. Confirmado por inspeção do código-fonte
+  que a fórmula binária antiga não sobra em nenhum dos dois pontos alterados.
+  Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  conferidos (638/638, sem mudança — só JS, nenhuma classe CSS tocada).
+  **Verificação visual dos números reais em produção fica a cargo do
+  cliente** — mesma limitação de sempre (login exige Supabase Auth real, não
+  simulável no sandbox sem rede) — mas como "Acuracidade Mensal"/"Semanal"
+  não mudaram, o valor de "Acuracidade Geral" deve passar a ficar bem mais
+  próximo do que aparece nesses dois gráficos (mesma fórmula, só o recorte
+  de tempo/pool de dado continua diferente — geral é acumulado desde sempre,
+  os gráficos são por semana/mês).

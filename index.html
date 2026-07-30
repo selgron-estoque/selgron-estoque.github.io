@@ -6442,7 +6442,17 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
     const relevantesBruto = [...counts, ...historicoConcluidas].filter(c=>!c.data || c.data<=dataLimite);
     const relevantes = ultimaContagemPorDocumento(relevantesBruto);
     const divergentes = relevantes.filter(c=>c.diferenca!==0 && c.diferenca!==null);
-    const acuracidade = relevantes.length ? ((relevantes.length-divergentes.length)/relevantes.length*100) : 100;
+    // Acuracidade por NOTA PARCIAL (itemAcuracidade, 0-100% por item — mesma
+    // fórmula já usada nos gráficos "Acuracidade Semanal"/"Mensal"), não mais
+    // binária (bateu/não bateu) — pedido do cliente ("Opção A": todo
+    // indicador de acuracidade do app no mesmo critério), depois de comparar
+    // com a planilha oficial "Indicador Acuracidade" da Selgron (que usa
+    // binário) e decidir que o app deve priorizar consistência interna em
+    // vez de bater com aquela planilha. Item sem saldo pra comparar
+    // (itemAcuracidade retorna null) fica de fora da média, não conta nem a
+    // favor nem contra.
+    const itensComAcuracidade = relevantes.map(itemAcuracidade).filter(a=>a!=null);
+    const acuracidade = itensComAcuracidade.length ? (itensComAcuracidade.reduce((s,a)=>s+a,0)/itensComAcuracidade.length*100) : 100;
     return {total:relevantes.length, divergentes:divergentes.length, acuracidade};
   }
   const hoje = acumuladoAte(hojeStr);
@@ -12190,7 +12200,17 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   // acumuladoAte) — cliente reportou 3 cards de acuracidade com valores
   // diferentes.
   const divergentes = todasParaQualidade.filter(c=>c.diferenca!==0 && c.diferenca!==null);
-  const acuracidade = todasParaQualidade.length>0 ? (((todasParaQualidade.length-divergentes.length)/todasParaQualidade.length)*100).toFixed(1) : '100.0';
+  // Acuracidade Geral por NOTA PARCIAL (itemAcuracidade), não mais binária —
+  // mesma mudança/motivo já documentado em `acumuladoAte` (Home), pra este
+  // card usar o MESMO critério das outras 4 telas de acuracidade do app
+  // (Home, Acuracidade Semanal, Acuracidade Mensal) — "Opção A" escolhida
+  // pelo cliente depois de comparar com a planilha oficial da Selgron
+  // (binária) e preferir consistência interna do app a bater com ela.
+  // `divergentes` continua binário de propósito — ainda alimenta o card
+  // "Itens Divergentes" (ao lado deste), que é uma pergunta diferente
+  // ("quantos itens tiveram QUALQUER divergência", não "qual a nota média").
+  const itensComAcuracidadeGeral = todasParaQualidade.map(itemAcuracidade).filter(a=>a!=null);
+  const acuracidade = itensComAcuracidadeGeral.length>0 ? ((itensComAcuracidadeGeral.reduce((s,a)=>s+a,0)/itensComAcuracidadeGeral.length)*100).toFixed(1) : '100.0';
   const valorDivergente = todasParaQualidade.reduce((s,c)=>s+Number(c.valorDivergente||0),0);
   // Card "Itens Divergentes" (Resumo da Operação) — "itens"/"documentos" e
   // "códigos distintos" voltaram a ser números potencialmente diferentes
