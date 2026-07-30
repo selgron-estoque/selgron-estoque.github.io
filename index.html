@@ -2425,6 +2425,21 @@ function compararPorEndereco(enderecoA, enderecoB){
   return (pa.corredor - pb.corredor) || pa.rua.localeCompare(pb.rua) || (pa.posicao - pb.posicao);
 }
 
+// Reordena uma lista de itens por sequência física de endereço — itens com
+// endereço cadastrado vêm primeiro, ordenados por corredor → rua → posição
+// (`compararPorEndereco`); itens sem endereço cadastrado ficam depois, na
+// ordem que já vieram (não tem endereço pra ordenar por ele). Extraída de
+// `RandomCountFlow` (só usava localmente) pra ser reaproveitada também em
+// `ImportedListCountFlow`/"Itens Específicos" — cliente reportou operador
+// andando pra lá e pra cá contando um inventário desse tipo, porque a lista
+// nunca tinha ordenação nenhuma (só a ordem em que o líder clicou
+// "Adicionar" em cada item buscado).
+function ordenarPorEndereco(lista){
+  const comEndereco = lista.filter(p=>p.enderecoCadastrado).sort((a,b)=>compararPorEndereco(a.endereco, b.endereco));
+  const semEndereco = lista.filter(p=>!p.enderecoCadastrado);
+  return [...comEndereco, ...semEndereco];
+}
+
 // Lê a planilha "Descrição de Produtos" (export SB2 do Protheus com Unidade
 // e Localização acrescentadas — mesmo catálogo de sempre, 85 mil+ códigos) —
 // via matriz crua (`sheet_to_json(sheet,{header:1})`), não por nome de
@@ -8628,18 +8643,13 @@ function RandomCountFlow({inv, user, onRegisterCount, onFinish, onAddressPropose
     const gruposFiltro = (inv && inv.grupo) ? inv.grupo.split(',').filter(Boolean) : undefined;
     fetchContagemItensPrioritarios(Math.max(qtd, 25), gruposFiltro, almoxarifadosFiltro, gruposExcluidos).then(itens=>{
       if(cancelado) return;
-      // Sequência de endereço: itens com endereço cadastrado vêm primeiro,
-      // ordenados por corredor → rua → posição (deslocamento físico menor —
-      // `compararPorEndereco`, ver comentário perto de `parseEnderecoPartes`
-      // pra causa raiz do bug que isso corrige: comparação de string, não
-      // numérica, fazia "005-A-10" vir antes de "005-A-2"); itens sem
-      // endereço cadastrado ainda ficam depois, na ordem por valor (a RPC já
-      // devolve nessa ordem de valor/movimento).
-      function ordenarPorEndereco(lista){
-        const comEndereco = lista.filter(p=>p.enderecoCadastrado).sort((a,b)=>compararPorEndereco(a.endereco, b.endereco));
-        const semEndereco = lista.filter(p=>!p.enderecoCadastrado);
-        return [...comEndereco, ...semEndereco];
-      }
+      // Sequência de endereço: `ordenarPorEndereco` (função global, perto de
+      // `compararPorEndereco`) põe item com endereço cadastrado primeiro,
+      // por corredor → rua → posição (deslocamento físico menor — ver
+      // comentário perto de `parseEnderecoPartes` pra causa raiz do bug que
+      // isso corrige: comparação de string, não numérica, fazia "005-A-10"
+      // vir antes de "005-A-2"); item sem endereço cadastrado fica depois,
+      // na ordem por valor (a RPC já devolve nessa ordem de valor/movimento).
       // Prioriza itens que AINDA NÃO foram contados (pedido do cliente) —
       // um código com qualquer contagem já registrada (qualquer inventário/
       // rodada, qualquer status) só entra na fila se sobrar vaga depois de
@@ -9076,7 +9086,7 @@ function ImportedListCountFlow({inv, user, onRegisterCount, onFinish, onAddressP
     const codigos = lista.map(item=>item.codigo);
     fetchProdutosByCodigos(codigos).then(catalogo=>{
       if(cancelado) return;
-      setAllItems(lista.map(item=>{
+      const montado = lista.map(item=>{
         const doCatalogo = catalogo.get(item.codigo);
         if(doCatalogo){
           return {
@@ -9120,7 +9130,17 @@ function ImportedListCountFlow({inv, user, onRegisterCount, onFinish, onAddressP
           ultimaSaida: null,
           foraDoCacheLocal: true,
         };
-      }));
+      });
+      // "Itens Específicos" não tem ordem própria nenhuma (o líder só clica
+      // "Adicionar" em itens buscados avulsos, um de cada vez, sem sequência
+      // lógica nenhuma) — cliente reportou operador andando pra lá e pra cá
+      // contando esse tipo de inventário. Reordena por endereço físico
+      // (`ordenarPorEndereco`, mesmo critério já usado em Aleatória/Curva
+      // ABC/Grupo). "Lista Importada (Excel)" continua SEM reordenar —
+      // mantém a ordem exata da planilha do cliente, decisão já tomada antes
+      // (a planilha é a sequência que ele já definiu do lado de fora do
+      // app, ver CLAUDE.md).
+      setAllItems(inv.tipo==='Itens Específicos' ? ordenarPorEndereco(montado) : montado);
     });
     return ()=>{ cancelado = true; };
   }, [inv]);

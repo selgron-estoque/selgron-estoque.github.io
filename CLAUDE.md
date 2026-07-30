@@ -12292,3 +12292,44 @@ deliberada: o líder vê e decide TODA divergência, sem filtro nenhum).
   **Verificação visual/funcional de ponta a ponta fica a cargo do cliente**
   — mesma limitação de sempre (login exige Supabase Auth real, não
   simulável no sandbox sem rede).
+
+## "Itens Específicos" também passa a ordenar por endereço físico
+
+Cliente reportou: "o app não está mandando as contagens na sequência de
+endereço, operador está andando um monte para lá e pra cá fazendo
+contagem". Investigado os 4 motores que geram fila de contagem antes de
+mexer em qualquer coisa — 2 já ordenavam por sequência física de endereço
+(`RandomCountFlow`, usado por Aleatória/Curva ABC/Grupo; `RouteCountFlow`,
+Rota de Endereço), e 2 nunca ordenaram (percorrem a lista na ordem exata em
+que os itens entraram): "Lista Importada (Excel)" (proposital, documentado —
+respeita a sequência que o cliente já definiu na própria planilha) e "Itens
+Específicos" (sem justificativa nenhuma — o líder só clica "Adicionar" em
+itens buscados avulsos, um de cada vez, sem nenhuma lógica de sequência).
+Cliente confirmou que o caso reportado era "Itens Específicos".
+
+- **`ordenarPorEndereco(lista)`** — extraída de dentro de `RandomCountFlow`
+  (onde só existia como função local) pra função GLOBAL, perto de
+  `compararPorEndereco`/`parseEnderecoPartes` — agora reaproveitada em 2
+  lugares em vez de existir só num. Mesmo comportamento de sempre: item com
+  endereço cadastrado primeiro (ordenado por corredor→rua→posição), item sem
+  endereço cadastrado depois, na ordem que já veio.
+- **`ImportedListCountFlow`** (motor compartilhado por "Lista Importada
+  (Excel)" e "Itens Específicos"): o array montado a partir de
+  `inv.itensImportados` (`montado`) passa por `ordenarPorEndereco` só quando
+  `inv.tipo==='Itens Específicos'` — `setAllItems(inv.tipo==='Itens
+  Específicos' ? ordenarPorEndereco(montado) : montado)`. "Lista Importada
+  (Excel)" continua exatamente como estava, sem reordenar — decisão já
+  tomada antes (a planilha do cliente já é a sequência que ele definiu do
+  lado de fora do app, mudar isso sem pedido quebraria essa expectativa).
+- Testado via harness Node (mesma técnica de sempre): `ordenarPorEndereco`
+  isolada ordena certo (posição numérica, não string — "005-A-2" antes de
+  "005-A-10"), item sem endereço vai pro fim; confirmado por inspeção do
+  código-fonte que `RandomCountFlow` não tem mais a definição LOCAL
+  duplicada (usa a global) e que `ImportedListCountFlow` aplica a ordenação
+  condicionalmente só pro tipo certo. Rodei de novo o harness de regressão
+  já existente de `RouteCountFlow` (7 asserções) sem quebrar nada. Transpile
+  Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos
+  (638/638, sem mudança — nenhuma classe CSS nova, só JS). **Verificação
+  visual/funcional de ponta a ponta (o operador de fato andando menos) fica
+  a cargo do cliente** — mesma limitação de sempre (login exige Supabase
+  Auth real, não simulável no sandbox sem rede).
