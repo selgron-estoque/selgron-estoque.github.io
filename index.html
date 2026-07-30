@@ -1523,36 +1523,58 @@ function buildTsplProduto(codigo, descricao, quantidade, dataRecebimento){
 // `marcarContagemSincronizada`/fila de retry em App()).
 async function saveContagemToSupabase(count){
   if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
+  const payload = {
+    id: count.id,
+    inventario_id: count.inventario,
+    produto_codigo: count.productCode,
+    descricao: count.descricao,
+    endereco: count.endereco,
+    endereco_contado: count.enderecoContado,
+    endereco_pendente_validacao: count.enderecoPendenteValidacao,
+    usuario: count.usuario,
+    numero_contagem: count.numeroContagem,
+    contagem_anterior_id: count.contagemAnteriorId,
+    qtd_contada: count.qtdContada,
+    saldo_sistema: count.saldoSistema,
+    diferenca: count.diferenca,
+    percentual: count.percentual,
+    valor_divergente: count.valorDivergente,
+    fora_do_cache_local: count.foraDoCacheLocal,
+    classificacao: count.classificacao ? count.classificacao.label : null,
+    status_aprovacao: count.statusAprovacao,
+    motivo: count.motivo,
+    tem_foto: count.foto,
+    observacao: count.observacao,
+    almoxarifado: count.almoxarifado || null,
+    familia: count.familia || null,
+    ultima_saida: count.ultimaSaida || null,
+    data: count.data,
+    hora: count.hora,
+    diferenca_confirmada: !!count.diferencaConfirmada,
+  };
   try{
-    const { error } = await supabaseClient.from('contagens').insert({
-      id: count.id,
-      inventario_id: count.inventario,
-      produto_codigo: count.productCode,
-      descricao: count.descricao,
-      endereco: count.endereco,
-      endereco_contado: count.enderecoContado,
-      endereco_pendente_validacao: count.enderecoPendenteValidacao,
-      usuario: count.usuario,
-      numero_contagem: count.numeroContagem,
-      contagem_anterior_id: count.contagemAnteriorId,
-      qtd_contada: count.qtdContada,
-      saldo_sistema: count.saldoSistema,
-      diferenca: count.diferenca,
-      percentual: count.percentual,
-      valor_divergente: count.valorDivergente,
-      fora_do_cache_local: count.foraDoCacheLocal,
-      classificacao: count.classificacao ? count.classificacao.label : null,
-      status_aprovacao: count.statusAprovacao,
-      motivo: count.motivo,
-      tem_foto: count.foto,
-      observacao: count.observacao,
-      almoxarifado: count.almoxarifado || null,
-      familia: count.familia || null,
-      ultima_saida: count.ultimaSaida || null,
-      data: count.data,
-      hora: count.hora,
-      diferenca_confirmada: !!count.diferencaConfirmada,
-    });
+    let { error } = await supabaseClient.from('contagens').insert(payload);
+    if(error){
+      // Bug real reportado pelo cliente: operador contou em dois dias
+      // seguidos e nenhum registro chegou no Supabase — o tablet fica
+      // parado/em segundo plano entre uma contagem e outra (comum no chão
+      // de fábrica), o token de acesso expira, e o timer de renovação
+      // automática do supabase-js pode ficar pausado nesse meio-tempo
+      // (mesma causa raiz já corrigida em `chamarUsuariosAdmin`, ver
+      // CLAUDE.md "Sessão inválida ou expirada"). Sem essa função nunca
+      // forçar uma renovação, o insert falhava, ficava marcado
+      // `_syncPendente`, e o ciclo de reenvio automático (30s) tentava de
+      // novo com o MESMO token já vencido — falhando pra sempre, em
+      // silêncio (só um console.warn, invisível pro operador), até alguém
+      // fechar e reabrir o app de verdade. Só tenta renovar quando a
+      // 1ª tentativa falha (não em toda contagem) — `saveContagemToSupabase`
+      // já roda em segundo plano (fire-and-forget), então o custo extra de
+      // rede de uma renovação não atrasa o operador, só o reenvio invisível.
+      const { error: refreshErr } = await supabaseClient.auth.refreshSession();
+      if(!refreshErr){
+        ({ error } = await supabaseClient.from('contagens').insert(payload));
+      }
+    }
     if(error){
       console.warn('Falha ao salvar contagem no Supabase (mantida no localStorage):', error.message);
       return {ok:false, erro:error.message};
@@ -3885,6 +3907,36 @@ function getOpenCountForProduct(counts, productCode){
   const hasFollowUp = new Set();
   counts.forEach(c=>{ if(c.contagemAnteriorId) hasFollowUp.add(c.contagemAnteriorId); });
   return counts.find(c=>c.productCode===productCode && !hasFollowUp.has(c.id) && OPEN_STATUSES.includes(c.statusAprovacao)) || null;
+}
+
+// Reduz um pool de contagens (ao vivo + histórico) pra só a ÚLTIMA registrada
+// por CÓDIGO — pedido do cliente: "se o item A tem duas contagens, considerar
+// apenas a última contagem registrada" pros indicadores de acuracidade/
+// divergência (Acuracidade Geral/do Estoque, Valor Divergente, Itens
+// Divergentes, Top Divergentes, Divergência por Família). Sem isso, um item
+// já resolvido numa recontagem (ex.: 1ª contagem divergente, 2ª bateu exato)
+// continuava contando A FAVOR e CONTRA a acuracidade ao mesmo tempo — uma
+// rodada superada nunca representa o estado ATUAL do produto. Diferente de
+// `byOriginal`/`contagemAnteriorId` (usado pra achar a "ponta da corrente" só
+// de recontagens formais dentro do mesmo fluxo), aqui o agrupamento é por
+// CÓDIGO puro — cobre também o caso de um mesmo código ter sido contado em
+// momentos independentes (contagem avulsa + linha do histórico importado,
+// por exemplo), que não têm `contagemAnteriorId` nenhum ligando um ao outro.
+// "Última" = maior (data, hora); string vazia (sem data) sempre perde pra
+// qualquer data real. Usada em Home (`acumuladoAte`) e Dashboard
+// (`todasParaQualidade`) — as duas telas que já tiveram, no passado, o mesmo
+// bug de mostrar números de acuracidade diferentes por calcular de formas
+// levemente diferentes (ver CLAUDE.md); aplicar o mesmo helper nas duas
+// evita reabrir essa inconsistência.
+function ultimaContagemPorCodigo(pool){
+  const porCodigo = {};
+  pool.forEach(c=>{
+    if(!c.productCode) return;
+    const chave = (c.data||'') + 'T' + (c.hora||'00:00');
+    const atual = porCodigo[c.productCode];
+    if(!atual || chave >= atual.chave) porCodigo[c.productCode] = {record:c, chave};
+  });
+  return Object.values(porCodigo).map(x=>x.record);
 }
 
 // Bug real reportado pelo cliente: "Itens Específicos" (e "Lista Importada",
@@ -6337,7 +6389,13 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
   // depois do bug de null-como-divergência já ter sido corrigido. Item sem
   // data conta igual nos dois agora (`!c.data ||` cobre esse caso).
   function acumuladoAte(dataLimite){
-    const relevantes = [...counts, ...historicoConcluidas].filter(c=>!c.data || c.data<=dataLimite);
+    // Dedup por código DEPOIS do corte de data (ver ultimaContagemPorCodigo)
+    // — pra "ontem" e "hoje" continuarem sendo fotografias coerentes: se um
+    // item foi recontado HOJE, a rodada de hoje só passa a valer no cálculo
+    // de "hoje", nunca retroage pro de "ontem" (que já tinha fechado com a
+    // rodada anterior, a única que existia até aquele ponto no tempo).
+    const relevantesBruto = [...counts, ...historicoConcluidas].filter(c=>!c.data || c.data<=dataLimite);
+    const relevantes = ultimaContagemPorCodigo(relevantesBruto);
     const divergentes = relevantes.filter(c=>c.diferenca!==0 && c.diferenca!==null);
     const acuracidade = relevantes.length ? ((relevantes.length-divergentes.length)/relevantes.length*100) : 100;
     return {total:relevantes.length, divergentes:divergentes.length, acuracidade};
@@ -12002,7 +12060,17 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   // histórico também não tem operador real por trás de cada linha (ver
   // `usuario:'Importação Histórica'` em historicoRowToCountLike).
   const historicoComoContagem = historicoConcluidas.map(historicoRowToCountLike).filter(Boolean);
-  const todasParaQualidade = [...counts, ...historicoComoContagem];
+  // Pedido do cliente: "se o item A tem duas contagens, considerar apenas a
+  // última contagem registrada" — sem isso, um item já resolvido numa
+  // recontagem (1ª contagem divergente, 2ª bateu exato) contava A FAVOR e
+  // CONTRA a acuracidade ao mesmo tempo, e sua rodada antiga (já superada)
+  // continuava inflando "Valor Divergente"/"Top Itens com Maior Divergência"
+  // mesmo depois de resolvida. `ultimaContagemPorCodigo` reduz o pool pra 1
+  // registro por código (o mais recente) ANTES de qualquer cálculo — ver
+  // função/comentário completo perto de `getOpenCountForProduct`. Mesmo
+  // helper usado em `acumuladoAte` (Home), pra não reabrir o já corrigido
+  // "cliente reportou 3 cards de acuracidade com valores diferentes".
+  const todasParaQualidade = ultimaContagemPorCodigo([...counts, ...historicoComoContagem]);
   // Bug real corrigido aqui: `diferenca!==0` sozinho conta item SEM saldo
   // pra comparar (diferenca:null, ex.: código fora do catálogo) como
   // divergente — mesma classe de bug já corrigida antes em
@@ -12014,15 +12082,6 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   const divergentes = todasParaQualidade.filter(c=>c.diferenca!==0 && c.diferenca!==null);
   const acuracidade = todasParaQualidade.length>0 ? (((todasParaQualidade.length-divergentes.length)/todasParaQualidade.length)*100).toFixed(1) : '100.0';
   const valorDivergente = todasParaQualidade.reduce((s,c)=>s+Number(c.valorDivergente||0),0);
-  // Card "Itens Divergentes" (Resumo da Operação) — cliente pediu pra
-  // mostrar, dentro do mesmo card, quantos registros de contagem existem no
-  // total e quantos CÓDIGOS distintos isso representa (um mesmo produto pode
-  // ter mais de um registro — 1ª contagem + recontagem, ou contagem ao vivo
-  // + linha do histórico — então "registros" e "códigos únicos" são números
-  // diferentes por natureza). Mesmo raciocínio pro "Divergências": 835
-  // registros divergentes não são necessariamente 835 PRODUTOS diferentes.
-  const codigosDistintosContados = new Set(todasParaQualidade.map(c=>c.productCode)).size;
-  const codigosDistintosDivergentes = new Set(divergentes.map(c=>c.productCode)).size;
 
   // Valor em estoque por armazém — vem do Supabase (estoque_saldo,
   // atualizado via upload manual da planilha SB2 em Configurações, ver
@@ -12188,12 +12247,15 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
           </div>
           <div className="ops-kpi-value">{divergentes.length}</div>
           <div className="ops-kpi-meta">{todasParaQualidade.length>0 ? (divergentes.length/todasParaQualidade.length*100).toFixed(1).replace('.',',') : '0,0'}% do total de itens</div>
+          {/* "itens" e "códigos" eram 2 números diferentes antes (um mesmo
+              código podia ter mais de 1 registro contado). Agora que
+              `todasParaQualidade` já vem deduplicado pra 1 registro por
+              código (ver ultimaContagemPorCodigo — só a última contagem de
+              cada item conta), os dois sempre são iguais por construção —
+              mostrar os dois lado a lado ficaria redundante. Sobra só o
+              total de códigos avaliados, como contexto do denominador. */}
           <div className="ops-kpi-subrow">
-            <span><strong>{todasParaQualidade.length}</strong> itens</span>
-            <span className="sep">·</span>
-            <span><strong>{codigosDistintosContados}</strong> códigos</span>
-            <span className="sep">·</span>
-            <span><strong>{codigosDistintosDivergentes}</strong> divergentes (cód.)</span>
+            <span><strong>{todasParaQualidade.length}</strong> códigos avaliados (última contagem de cada)</span>
           </div>
         </div>
         <div className="ops-kpi-card">
