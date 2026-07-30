@@ -401,7 +401,16 @@
   .count-card-extra strong{color:var(--ink);}
   @media (max-width:640px){
     .count-card-main{flex-direction:column;}
-    .count-card-actions-col{width:100%;flex-direction:row;}
+    /* Bug real: com 3-4 botões (DivergentItemsPanel tem até 4 — "Solicitar
+       nova contagem"/"Recontar"/"Sem Ajuste Necessário"/"Ajustar"), uma
+       fileira horizontal sem quebra de linha nunca cabe na largura de um
+       celular — texto ficava cortado nas duas pontas (print do cliente).
+       `flex-wrap:wrap` + `flex:1 1 45%` no botão resolve pra qualquer
+       quantidade: 1 botão sozinho cresce e ocupa a linha inteira (não tem
+       vizinho disputando espaço), 2 ficam lado a lado, e um 3º/4º quebra
+       pra próxima linha — sem precisar de regra diferente por painel. */
+    .count-card-actions-col{width:100%;flex-direction:row;flex-wrap:wrap;}
+    .count-card-actions-col .btn{flex:1 1 45%;width:auto;}
   }
   /* .count-card-actions — usado pelo estado de "confirmar exclusão"/"editar
      motivo" (empilha alerta + botões Cancelar/Confirmar), sempre um
