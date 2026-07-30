@@ -12099,3 +12099,47 @@ opção ("Opção A").
   próximo do que aparece nesses dois gráficos (mesma fórmula, só o recorte
   de tempo/pool de dado continua diferente — geral é acumulado desde sempre,
   os gráficos são por semana/mês).
+
+## "Acuracidade do estoque" no relatório Excel também vira nota parcial — pedido de padronização total
+
+Cliente rejeitou de vez a ideia de bater com a planilha oficial da Selgron
+("esquece a planilha que eu mandei") e pediu, com um exemplo numérico
+explícito, um **único formato de cálculo** pra qualquer "acuracidade" no
+app: item contado 80 de um sistema de 100 vira nota 80%; item contado 25 de
+um sistema de 50 vira nota 50%; resultado final é a **média simples** dessas
+notas (65% no exemplo dele) — exatamente `itemAcuracidade` + média
+não-ponderada, já usado em Semanal/Mensal e recém-adotado em "Acuracidade
+Geral"/"Acuracidade do Estoque" (ver seção acima).
+
+Sobrava um ponto sem padronizar: **`buildSummaryRows`** (aba "Resumo" do
+relatório Excel baixado, linha "Acuracidade do estoque (%)") — única peça
+que ainda calculava binário (`(contados-divergentes)/contados`), justamente
+porque a rodada anterior tinha deixado ela de fora de propósito (achando que
+mudar o Excel sem pedido seria arriscado). Como o pedido agora é
+explicitamente "um único formato em todo o app", essa exceção deixou de
+fazer sentido.
+
+- **`buildSummaryRows`**: trocado pra `itensComAcuracidade = counts.map
+  (itemAcuracidade).filter(a=>a!=null)`, `acuracidade = média simples desses
+  valores` — mesma fórmula/critério agora usado em TODO indicador de
+  acuracidade do app (Home, Dashboard, gráficos Semanal/Mensal, e agora o
+  Excel). `divergentes` (a lista binária) **continua existindo, sem
+  mudança** — só alimenta a linha "Divergências" do relatório (contagem de
+  itens com QUALQUER erro), que é uma pergunta diferente de "qual a nota
+  média", mesmo raciocínio já aplicado nos outros 2 pontos.
+- **Escopo do POOL de `buildSummaryRows` não mudou** — continua só `counts`
+  (as contagens passadas pra função, já filtradas/combinadas por quem chama
+  em `ReportsScreen`), sem tocar em qual conjunto de itens entra no
+  relatório — só a FÓRMULA de cálculo em cima desse conjunto mudou. Alinhar
+  também o CONJUNTO de itens entre os 4 indicadores do app (histórico
+  concluído vs. incluindo "Pendente"; deduplicado por documento vs. toda
+  rodada; recorte de data) continua uma decisão em aberto, ainda não pedida
+  explicitamente pelo cliente — só a fórmula foi padronizada nesta rodada.
+- Testado via harness Node (mesma técnica de sempre): reproduzido o exemplo
+  EXATO do cliente (item 100/80 → nota 80%, item 50/25 → nota 50%, média
+  65%) direto na saída de `buildSummaryRows`; item sem saldo continua de
+  fora da média; "Divergências" continua binário, sem regressão. Transpile
+  Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos
+  (638/638, sem mudança — só JS). **Verificação do Excel baixado de verdade
+  fica a cargo do cliente** — mesma limitação de sempre (login exige
+  Supabase Auth real, não simulável no sandbox sem rede).

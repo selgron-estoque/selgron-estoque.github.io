@@ -4083,9 +4083,18 @@ function buildSummaryRows(counts, inventories){
   // como divergente — bug real já corrigido em computeWeeklyStats antes,
   // reproduzido aqui também (achado ao investigar 3 cards de acuracidade
   // mostrando números diferentes). null nunca é divergência de verdade, é
-  // ausência de comparação.
+  // ausência de comparação. `divergentes` continua binário de propósito —
+  // só alimenta a linha "Divergências" (contagem de itens com QUALQUER
+  // erro), não mais o cálculo de acuracidade em si (ver abaixo).
   const divergentes = counts.filter(c=>c.diferenca!==0 && c.diferenca!==null);
-  const acuracidade = contados>0 ? (((contados-divergentes.length)/contados)*100).toFixed(1) : '100.0';
+  // Acuracidade por NOTA PARCIAL, único formato padronizado pra "acuracidade"
+  // em todo o app agora: cada item vira uma nota individual — contou 80 de
+  // um sistema de 100 = 80%, contou 25 de um sistema de 50 = 50% — e o
+  // resultado final é a MÉDIA SIMPLES dessas notas (não ponderada por
+  // volume/valor), exatamente como confirmado pelo cliente. Item sem saldo
+  // pra comparar (itemAcuracidade retorna null) fica de fora da média.
+  const itensComAcuracidade = counts.map(itemAcuracidade).filter(a=>a!=null);
+  const acuracidade = itensComAcuracidade.length>0 ? ((itensComAcuracidade.reduce((s,a)=>s+a,0)/itensComAcuracidade.length)*100).toFixed(1) : '100.0';
   const valorDivergente = counts.reduce((s,c)=>s+Number(c.valorDivergente||0),0);
   return [
     {Indicador:'Data do relatório', Valor: new Date().toLocaleString('pt-BR')},
