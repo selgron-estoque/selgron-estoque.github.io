@@ -11551,7 +11551,18 @@ function getWeekInfo(dataStr){
 // não entram como 0% nem como 100%.
 function itemAcuracidade(c){
   if(c.acuracidade!=null) return c.acuracidade;
-  if(c.saldoSistema==null || c.saldoSistema===0 || c.diferenca==null) return null;
+  if(c.saldoSistema==null || c.diferenca==null) return null;
+  // Bug real corrigido aqui: item com saldo do sistema EXATAMENTE 0 (não
+  // `null` — já é tratado como saldo real desde "Item sem saldo passa a ser
+  // tratado como saldo real 0", ver CLAUDE.md) ficava fora da média por
+  // completo, `1 - diferença/0` sendo indefinido — cliente confirmou via
+  // consulta SQL que 971 dos 3912 documentos elegíveis (25%) caíam nesse
+  // caso, sumindo silenciosamente de "Acuracidade Geral"/"Acuracidade do
+  // Estoque" e de todo indicador que usa esta função. Mesma regra simétrica
+  // já usada em `classifyDivergence`/`diffPct` pro mesmo caso (saldoSistema
+  // ===0): contou 0 também (bateu certo) = nota 100%; contou qualquer coisa
+  // diferente de 0 (sistema zerado, mas apareceu físico) = nota 0%.
+  if(c.saldoSistema===0) return c.diferenca===0 ? 1 : 0;
   return Math.max(0, 1 - Math.abs(c.diferenca)/c.saldoSistema);
 }
 

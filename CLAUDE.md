@@ -12143,3 +12143,63 @@ fazer sentido.
   (638/638, sem mudança — só JS). **Verificação do Excel baixado de verdade
   fica a cargo do cliente** — mesma limitação de sempre (login exige
   Supabase Auth real, não simulável no sandbox sem rede).
+
+## Bug real: item com saldo do sistema ZERO sumia de todo indicador de acuracidade
+
+Cliente pediu uma "prova real" da conta de "Acuracidade Geral" — passei uma
+consulta SQL que reproduz exatamente o que `todasParaQualidade` +
+`itemAcuracidade` calculam, ele rodou contra o Supabase real e o resultado
+bateu (87,9%, mesmo número da tela) — confirmando que a implementação
+estava certa. Só que aí ele apontou: "itens_considerados" (2857) era bem
+menor que o total de documentos já contados (3912, confirmado numa 2ª
+consulta de diagnóstico que passei). A causa: **971 dos 3912 documentos
+(25%) tinham `saldo_sistema` exatamente `0`** — não `null` (esses eram só
+84) — e `itemAcuracidade` tratava `saldoSistema===0` do MESMO jeito que
+`saldoSistema===null` (sem dado nenhum pra comparar), pulando o item da
+média por completo, pra evitar dividir por zero na fórmula `1 -
+diferença/sistema`.
+
+Isso contradizia uma decisão já tomada antes neste projeto ("Item sem saldo
+passa a ser tratado como saldo real 0", ver seção acima) — que fez o app
+inteiro passar a tratar "sem saldo carregado" como um saldo real de 0
+unidades, pra o item entrar normalmente no fluxo de contagem/classificação
+de divergência. Só que essa decisão nunca tinha chegado no `itemAcuracidade`
+— um item com saldo genuinamente zero (ex.: sistema diz 0, você contou
+0 — bateu certo) sumia silenciosamente de "Acuracidade Geral"/"Acuracidade
+do Estoque"/"Acuracidade Semanal"/"Acuracidade Mensal"/relatório Excel, os 5
+lugares que usam essa função — mesma categoria de bug silencioso já vista
+várias vezes neste projeto (RLS sem policy, coluna com espaço no cabeçalho
+da SB2, etc.): sem erro nenhum, só um número menor do que deveria.
+
+- **Correção**: `itemAcuracidade` ganhou um caso a mais, ANTES do cálculo
+  geral — `saldoSistema===0` não é mais tratado como "sem dado", vira nota
+  **100%** se a contagem também bateu 0 (sistema e físico concordam: zero
+  unidades) ou **0%** se apareceu qualquer quantidade física onde o sistema
+  dizia zero (erro total, simétrico ao caso oposto). Mesma regra que
+  `classifyDivergence`/`diffPct` já usava pra esse caso exato (`saldoSistema
+  ===0 ? (diffAbs===0 ? 0 : 100) : ...`, na classificação de divergência —
+  só nunca tinha sido replicada aqui), só invertida (aqui 100%=acertou, lá
+  0%=acertou). `saldoSistema===null` (sem dado nenhum de verdade) continua
+  de fora da média, sem mudança — só o caso de saldo genuinamente zero que
+  passou a contar.
+- **Efeito automático nos 5 indicadores**: como `itemAcuracidade` é a ÚNICA
+  função usada por todos eles (Home, Dashboard, Semanal, Mensal, Excel),
+  corrigir aqui uma vez resolve o problema em todo lugar — nenhum dos 5
+  precisou de mudança própria.
+- Testado via harness Node (mesma técnica de sempre): `saldoSistema===0` +
+  `diferenca===0` → nota 1 (100%); `saldoSistema===0` + qualquer diferença
+  (positiva ou negativa) → nota 0 (0%); `saldoSistema===null` continua fora
+  da média, sem regressão; valor precomputado do histórico
+  (`c.acuracidade`) continua tendo prioridade mesmo quando `saldoSistema`
+  é 0 (não reabre o cálculo pra dado que a planilha original já trouxe
+  pronto); reproduzido um pool com os 4 casos reais do diagnóstico do
+  cliente (saldo>0, saldo=0 batendo, saldo=0 divergindo, saldo null) e
+  confirmado que a média muda de verdade, não só que o item "entra". Rodei
+  de novo os harnesses das duas rodadas anteriores de padronização (Geral/
+  Estoque e Excel) sem quebrar nada. Transpile Babel do arquivo inteiro e
+  balanceamento de chaves do CSS conferidos (638/638, sem mudança — só
+  JS). **Verificação do número real em produção fica a cargo do cliente**
+  — mesma limitação de sempre (sandbox sem acesso de rede ao Supabase) —
+  mas como os 971 documentos com saldo zero passam a contar (a maioria
+  provavelmente batendo 0=0, nota 100%), "Acuracidade Geral" deve SUBIR
+  visivelmente em relação aos 87,9% confirmados antes desta correção.
