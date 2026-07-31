@@ -12760,3 +12760,48 @@ A4 normal", como pedido.
   com a impressora física fica a cargo do cliente** — mesma limitação de
   sempre (sandbox sem hardware real), mas agora testável em QUALQUER
   navegador, sem depender de pareamento USB nem do driver do Windows.
+
+## Bug real: etiqueta imprimindo em 6 páginas repetidas (`visibility` vs. `display`)
+
+Assim que o cliente testou a impressão via `window.print()` (rodada anterior)
+mandou um print do diálogo de impressão do navegador mostrando "6 folhas de
+papel", com a MESMA etiqueta ("035-A-2") repetida em pelo menos as 3 primeiras
+páginas visíveis do preview — e pediu, junto, suporte a etiqueta física em
+**duas colunas** (rolo com 2 etiquetas de 50×30mm lado a lado, não só 1).
+
+- **Causa do bug das 6 páginas**: a técnica de isolamento usada pra "imprimir
+  só esta `<div>`" era `body *{visibility:hidden;}` +
+  `#etiqueta-print-area{visibility:visible; position:fixed;}` — mas
+  `visibility:hidden` **não tira o elemento do fluxo da página** (só o deixa
+  invisível, ainda ocupando o espaço que ocuparia normalmente) — diferente de
+  `display:none`, que remove de verdade. Como o app inteiro (`#root`) continua
+  "lá" em altura (só invisível), o navegador calcula a altura do documento
+  impresso como sendo a altura do app inteiro — e ao paginar um documento
+  alto, ele PAGINA de verdade, gerando várias folhas. Como
+  `#etiqueta-print-area` tinha `position:fixed`, ela aparece REPETIDA em cada
+  uma dessas páginas geradas (um elemento fixed "flutua" igual em toda
+  página) — daí as "6 folhas" com a mesma etiqueta repetida, exatamente o
+  sintoma do print do cliente.
+- **Correção**: trocado `visibility:hidden`/`visibility:visible` por
+  `#root{display:none !important;}` durante a impressão — isso sim remove o
+  app do fluxo de layout por completo, zerando a altura do documento (sobra
+  só o conteúdo de `#etiqueta-print-area`, que é bem pequeno — cabe numa
+  página só). Sem altura nenhuma sobrando pra paginar, `position:fixed`
+  também deixou de ser necessário e foi removido junto (sem esse posicionamento
+  especial, o elemento simplesmente aparece no fluxo normal da única página
+  que sobra).
+- **"Duas colunas" — ainda pendente, aguardando dado do cliente antes de
+  implementar**: perguntei as dimensões físicas exatas do rolo de etiqueta
+  dele (largura total cobrindo as duas colunas + o espaço/vão entre as duas
+  etiquetas) antes de mexer em código — implementar isso "no chute" arrisca
+  desperdiçar etiqueta física de verdade no teste do cliente (diferente de
+  qualquer outro ajuste deste projeto, aqui um erro de medida consome
+  material real, não só pixels). Alternativa sugerida a ele: checar "Mais
+  definições" no diálogo de impressão pra ver se o driver da TSC já expõe um
+  papel de tamanho compatível cadastrado (já que essa mesma impressora já
+  imprime normalmente pelo Windows hoje).
+- Testado via transpile Babel do arquivo inteiro e balanceamento de chaves do
+  CSS (657/657, caiu 1 — a troca de 3 regras dentro de `@media print` por 2
+  reduziu uma declaração). **Verificação de ponta a ponta (a folha realmente
+  saindo em 1 página só) fica a cargo do cliente** — mesma limitação de
+  sempre, sandbox sem impressora física.
