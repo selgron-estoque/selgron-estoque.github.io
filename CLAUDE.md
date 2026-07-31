@@ -13155,3 +13155,127 @@ e corrigir o rótulo "Qtd:" pra "QTD:" (maiúsculo).
   física (a margem realmente simétrica, as 10 etiquetas saindo com a
   quantidade certa) fica a cargo do cliente** — mesma limitação de sempre,
   sandbox sem impressora física.
+
+## Etiquetas: fila de impressão desce pra baixo do card + bug real de impressora "pula uma etiqueta a cada duas"
+
+Cliente mandou print da tela "Etiquetas" (aba Produto já selecionada, item
+`000.02533` buscado e confirmado, campos "Quantidade Recebida"/"Data de
+Recebimento"/"Quantidade de Etiquetas" visíveis) e pediu dois ajustes:
+"corrigir para a fila de impressão ficar abaixo deste campo" + "está
+imprimindo uma linha de etiqueta e pulando uma" (na impressora física de
+verdade).
+
+### 1. "Fila de impressão" move pra baixo do card de busca/confirmação
+
+Puramente estrutural: o bloco `{filaPendente.length>0 && (...)}` (título +
+badge + botão "Imprimir Todos" + lista de itens pendentes) sempre
+renderizou logo ACIMA das abas Produto/Endereço — obrigava rolar a tela
+pra passar pela fila antes de chegar na busca, mesmo quando o objetivo era
+só criar uma etiqueta nova. Cortado do topo do componente e reinserido
+logo depois do card `{selecionado && (...)}` (busca → confirmação →
+Voltar/Enviar para Fila/Imprimir Etiqueta), imediatamente antes do
+`</div>` final do componente — fila sempre visível quando existir algo
+pendente, mas só depois do fluxo principal de criar/imprimir uma etiqueta.
+Sem mudança de lógica/estado, só posição no JSX.
+
+### 2. Bug real na impressora física: pula uma etiqueta a cada duas
+
+**Causa (hipótese bem fundamentada, não verificável no sandbox — sem
+impressora física nem forma de simular o sensor de gap de uma térmica no
+preview do navegador)**: `imprimirLoteEtiquetas` (usada por "Imprimir
+Todos" da fila e por "Quantidade de etiquetas" > 1) concatenava TODAS as
+folhas (pares de etiquetas) num ÚNICO `window.print()`, separadas por
+`page-break-after` — técnica padrão pra imprimir várias páginas num job só
+num contexto normal (ex.: A4). Numa impressora térmica de etiqueta com
+sensor de gap (a TSC do cliente, que avança fisicamente uma etiqueta a
+cada acionamento do próprio sensor, independente do que o navegador
+"pensa" que é uma página), essa combinação parece confundir o avanço
+físico do rolo com a quebra de página lógica do navegador — resultado
+visível no chão de fábrica: a impressora avança 2 etiquetas físicas pra
+cada 1 folha lógica impressa, fazendo metade das posições saírem em
+branco/puladas. Mesma categoria de bug já vista neste projeto várias vezes
+(WebUSB "Access denied" por driver já grudado, RLS sem policy, etc.) —
+um comportamento de hardware/driver que só aparece no teste real do
+cliente, nunca reproduzível aqui.
+
+- **Correção**: `imprimirLoteEtiquetas` parou de concatenar — agora chama
+  `window.print()` UMA VEZ POR PAR, em sequência (`pares.forEach(par=>{
+  area.innerHTML=buildEtiquetaPageHtml(par); desenharBarcodesEtiqueta(area,
+  par); window.print(); })`) — cada folha vira um job de impressão
+  TOTALMENTE independente, o mesmo caminho que a impressão avulsa/de 1
+  item da fila (`imprimirEtiquetaViaNavegador`) sempre usou, sem nunca ter
+  esse sintoma relatado. `window.print()` é BLOQUEANTE (só devolve o
+  controle depois que a janela de impressão é fechada no navegador) — o
+  `forEach` já pausa sozinho entre uma folha e a próxima, sem precisar de
+  nenhuma lógica de espera manual.
+- **`buildEtiquetaPageHtml(itens)` perdeu o parâmetro `quebrarDepois`**
+  (existia só pra decidir se aplicava `page-break-after` inline numa folha
+  específica de um lote — mecanismo inteiro removido, não faz mais
+  sentido) — volta a ser uma função pura de "monta 1 folha com 1 ou 2
+  colunas", sem nenhuma noção de posição dentro de um lote maior.
+- **Trade-off aceito e comunicado na própria tela**: como cada folha agora
+  é um job de impressão separado, N pares = N confirmações de impressão
+  do navegador em sequência, em vez de 1 diálogo só pro lote inteiro — pior
+  em cliques, mas necessário pra parar de desperdiçar etiqueta física
+  (mesma prioridade já estabelecida antes nesta feature: "errar aqui
+  gastaria etiqueta de verdade"). Dois avisos na UI deixam isso explícito:
+  o `role-note` da fila (`filaPendente.length>1`) e a prévia de "Quantidade
+  de etiquetas" (`quantidadeEtiquetas>1`) — ambos agora mostram quantas
+  "janelas de impressão seguidas" o usuário deve esperar
+  (`Math.ceil(N/2)`), calculado a partir da contagem real de itens (um
+  placeholder textual "N" solto foi corrigido pra interpolar
+  `{filaPendente.length}` de verdade, achado durante a revisão do diff
+  antes de commitar).
+- **`handleImprimirTodos`** (fila) não precisou de nenhuma mudança de
+  lógica própria — já chamava `imprimirLoteEtiquetas`, que agora
+  internamente faz o loop de `print()` por par; só o comentário foi
+  atualizado.
+
+### Verificação
+
+Reescritos os 3 harnesses que dependiam do mecanismo antigo de
+concatenação (a técnica de inspeção mudou de "ler o DOM final depois de
+`imprimirLoteEtiquetas` retornar" pra "capturar um snapshot do
+`#etiqueta-print-area` no INSTANTE de cada chamada de `window.print()`",
+já que a área agora é sobrescrita entre uma folha e outra):
+- `harness_etiqueta_imprimir_todos.js` — reescrito com o padrão de
+  snapshot (`dom.window.print = () => { printCalls.push(true);
+  snapshots.push(area.innerHTML); }`): 4 itens → `res.folhas===2` E
+  `printCalls.length===2` (não mais 1); cada snapshot parseado num
+  mini-JSDOM próprio confirma 2 `.etq-page-col`/2 SVGs por par, somando 4
+  no total; 3 itens (ímpar) → 2 chamadas de print(), última com 1 coluna
+  só; lista vazia → 0 chamadas; botão "Imprimir Todos" com 3 itens na fila
+  → 2 chamadas, os 3 marcados "impressa"; fila com 1 item só → 1 chamada,
+  1 coluna. 19 asserções, todas passando.
+- `harness_etiqueta_layout_fix.js` — as asserções que checavam
+  `page-break-after` inline (1ª folha quebra, última não) foram
+  substituídas por: 4 itens → 2 chamadas de `window.print()` (jobs
+  independentes), nenhuma delas com QUALQUER `style` de page-break; 5
+  itens → 3 chamadas, última com 1 coluna. A verificação de CSS
+  (`.etq-page` nunca tem `page-break` fixo) continua, só o texto da
+  asserção foi atualizado pra refletir que o mecanismo foi removido por
+  completo, não "virou inline". 19 asserções, todas passando.
+- `harness_etiqueta_qtd_split.js` (`testFluxoCompletoImprimir`) — o teste
+  de ponta a ponta de "10 etiquetas" (500/10) mudou de esperar
+  `printCalls.length===1` (1 job com 5 páginas) pra `printCalls.length===5`
+  (5 chamadas independentes) — cada um dos 5 snapshots parseado
+  separadamente pra confirmar 1 `.etq-page` com 2 colunas, somando 10
+  colunas/10 SVGs/10 blocos "QTD: 50 PC" no total entre os 5. 28
+  asserções, todas passando.
+- Rodei de novo os 6 harnesses de Etiquetas juntos — **129 asserções, 0
+  falhas**, nenhuma regressão nos recursos anteriores (impressão avulsa,
+  fila, duas colunas, layout/margem, divisão de quantidade). Transpile
+  Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos
+  (661/661).
+
+**Verificação de ponta a ponta com a impressora física fica 100% a cargo
+do cliente** — mais que a limitação de sempre desta feature (sandbox sem
+hardware): o diagnóstico do bug em si (conflito page-break-after × sensor
+de gap) é a explicação mais provável dado o sintoma relatado, mas só o
+próximo teste real na TSC confirma se o problema de fato sumiu. Se ainda
+persistir depois desta correção, a causa seria outra (ex.: o próprio
+driver/spooler do Windows reordenando ou intercalando os N jobs de
+impressão de um jeito inesperado) — precisaria de mais um round de
+investigação com o cliente descrevendo o comportamento exato (qual posição
+pula, se o padrão é sempre "par sim, ímpar não" ou aleatório, se acontece
+também com só 1 par/2 etiquetas).

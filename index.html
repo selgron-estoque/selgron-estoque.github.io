@@ -1192,14 +1192,14 @@
      ou 2 `.etq-page-col` lado a lado — só 1 quando é impressão avulsa (fora
      da fila) ou quando só sobra 1 item pendente na fila (nesse caso a
      coluna direita fica em branco, sem alternativa: a folha sempre sai
-     inteira do rolo, não dá pra imprimir "meia folha"). Quebra de página
-     entre folhas de um LOTE (`imprimirLoteEtiquetas`, "Imprimir Todos" da
-     fila) NÃO é mais uma regra CSS fixa em `.etq-page` — virou um
-     `style="page-break-after:always;break-after:page;"` inline, aplicado
-     só nas folhas que TÊM uma próxima (nunca na última) — uma regra CSS
-     fixa e incondicional já tinha causado um bug real (folha em branco
-     sobrando depois de uma impressão de 1 item só, ver comentário de
-     `buildEtiquetaPageHtml` no <script>).
+     inteira do rolo, não dá pra imprimir "meia folha"). Um LOTE de várias
+     folhas (`imprimirLoteEtiquetas`, "Imprimir Todos" da fila/"Quantidade
+     de etiquetas") NÃO concatena mais páginas com `page-break-after` num
+     job de impressão só — cada folha vira o seu PRÓPRIO `window.print()`,
+     completamente independente (ver comentário de `imprimirLoteEtiquetas`
+     no <script> — impressora física com sensor de gap se confundia
+     combinando quebra de página do navegador com o próprio avanço
+     automático de etiqueta, pulando etiqueta física a cada duas).
      Bug real corrigido aqui: a etiqueta de PRODUTO (`.etq-produto`)
      transbordava a altura física de 30mm — descrição/data sobrepondo o
      código de barras, ou parte do conteúdo pulando pra uma 2ª página em
@@ -1581,17 +1581,11 @@ function buildEtiquetaItemHtml({tipo, codigo, descricao, quantidade, dataRecebim
 // Monta o HTML de UMA FOLHA (`.etq-page`) — 1 ou 2 `.etq-page-col` dentro,
 // conforme `itens` tem 1 ou 2 elementos. Extraído pra ser reaproveitado
 // tanto por uma impressão de folha única (`imprimirEtiquetaViaNavegador`)
-// quanto pelo lote inteiro da fila (`imprimirLoteEtiquetas`, várias folhas
-// no mesmo job de impressão). `quebrarDepois` (opcional, default `false`)
-// adiciona `page-break-after:always` só nesta folha — usado só pelo LOTE,
-// só nas folhas que têm uma PRÓXIMA (nunca na última): aplicar isso como
-// regra CSS fixa em `.etq-page` (como era antes) causava uma folha em
-// branco sobrando mesmo numa impressão de 1 item só — o navegador insere a
-// quebra pedida mesmo sem conteúdo depois dela, em vez de simplesmente
-// ignorá-la por "não ter mais nada".
-function buildEtiquetaPageHtml(itens, quebrarDepois){
-  const style = quebrarDepois ? ' style="page-break-after:always;break-after:page;"' : '';
-  return '<div class="etq-page"'+style+'>'
+// quanto por cada folha de um lote (`imprimirLoteEtiquetas`, ver comentário
+// dela — cada folha vira o SEU PRÓPRIO job de impressão agora, não mais
+// várias folhas concatenadas no mesmo job via `page-break-after`).
+function buildEtiquetaPageHtml(itens){
+  return '<div class="etq-page">'
     + itens.map(it=>'<div class="etq-page-col">'+buildEtiquetaItemHtml(it)+'</div>').join('')
     + '</div>';
 }
@@ -1637,7 +1631,7 @@ function imprimirEtiquetaViaNavegador(item1, item2){
   const area = (typeof document!=='undefined') ? document.getElementById('etiqueta-print-area') : null;
   if(!area) return {ok:false, erro:'Área de impressão não encontrada nesta página.'};
   const itens = item2 ? [item1, item2] : [item1];
-  area.innerHTML = buildEtiquetaPageHtml(itens, false);
+  area.innerHTML = buildEtiquetaPageHtml(itens);
   desenharBarcodesEtiqueta(area, itens);
   if(typeof window!=='undefined' && window.print) window.print();
   return {ok:true};
@@ -1651,12 +1645,21 @@ function imprimirEtiquetaViaNavegador(item1, item2){
 // regra de `imprimirEtiquetaViaNavegador`/`handleImprimirFila` — nunca
 // desperdiça a coluna direita quando há outro item esperando); se sobrar 1
 // (quantidade ímpar), a última folha sai com só 1 coluna preenchida.
-// Cada par vira uma FOLHA separada, mas tudo num ÚNICO job de impressão —
-// `page-break-after` (via `buildEtiquetaPageHtml(par, quebrarDepois)`)
-// separa as folhas dentro do mesmo `window.print()`, em vez de abrir um
-// diálogo de impressão por par (o que travaria a experiência com N
-// confirmações seguidas). Só a ÚLTIMA folha não recebe a quebra (nada vem
-// depois dela pra quebrar).
+// Bug real corrigido aqui: a versão anterior concatenava TODAS as folhas
+// num ÚNICO job de impressão, separadas por `page-break-after` — na
+// impressora física (não dá pra reproduzir isso no preview do navegador
+// nem no sandbox), o cliente reportou "imprimindo uma linha de etiqueta e
+// pulando uma": o driver da TSC/o sensor de gap do rolo se confunde
+// combinando a quebra de página do NAVEGADOR com o próprio avanço
+// automático de etiqueta do HARDWARE, dessincronizando e pulando uma
+// etiqueta física a cada duas. Corrigido chamando `window.print()` UMA VEZ
+// POR PAR — cada folha vira um job de impressão TOTALMENTE independente
+// (o MESMO caminho que a impressão avulsa/de 1 item da fila já usa, sem
+// nunca ter tido esse problema). `window.print()` é bloqueante (só
+// devolve o controle depois que a janela de impressão do navegador é
+// fechada), então o `forEach` já pausa sozinho entre uma folha e outra —
+// custo aceito: N pares = N confirmações de impressão seguidas, mas
+// nenhuma etiqueta física desperdiçada.
 function imprimirLoteEtiquetas(itens){
   const area = (typeof document!=='undefined') ? document.getElementById('etiqueta-print-area') : null;
   if(!area) return {ok:false, erro:'Área de impressão não encontrada nesta página.'};
@@ -1665,9 +1668,11 @@ function imprimirLoteEtiquetas(itens){
   for(let i=0;i<itens.length;i+=2){
     pares.push(itens[i+1] ? [itens[i], itens[i+1]] : [itens[i]]);
   }
-  area.innerHTML = pares.map((par, i)=>buildEtiquetaPageHtml(par, i<pares.length-1)).join('');
-  desenharBarcodesEtiqueta(area, itens);
-  if(typeof window!=='undefined' && window.print) window.print();
+  pares.forEach(par=>{
+    area.innerHTML = buildEtiquetaPageHtml(par);
+    desenharBarcodesEtiqueta(area, par);
+    if(typeof window!=='undefined' && window.print) window.print();
+  });
   return {ok:true, folhas: pares.length};
 }
 
@@ -13572,10 +13577,10 @@ function EtiquetasPanel({currentUser}){
 
   // Imprime TODOS os itens pendentes de uma vez — pedido do cliente
   // ("colocar botão imprimir todos... organizar para imprimir sempre uma
-  // ao lado da outra"). Usa `imprimirLoteEtiquetas` (1 job de impressão só,
-  // várias folhas via `page-break-after`) em vez de chamar
-  // `handleImprimirFila` em loop — isso abriria 1 diálogo de impressão POR
-  // PAR, travando a experiência com várias confirmações seguidas.
+  // ao lado da outra"). Usa `imprimirLoteEtiquetas` (pareia 2 a 2, um
+  // `window.print()` POR PAR — ver comentário dela, evita o bug real de
+  // "pula etiqueta física a cada duas" que a versão anterior tinha com
+  // todas as folhas concatenadas num job só).
   async function handleImprimirTodos(){
     if(filaPendente.length===0) return;
     const itens = filaPendente.slice(); // já vem ordenado (mais antigo primeiro)
@@ -13601,42 +13606,6 @@ function EtiquetasPanel({currentUser}){
         Ao clicar em "Imprimir Etiqueta", abre a janela de impressão normal do navegador —
         escolha a impressora TSC e confirme o tamanho da folha (101×31mm) se for pedido.
       </div>
-
-      {filaPendente.length>0 && (
-        <div style={{marginTop:14,marginBottom:14}}>
-          <div className="section-title" style={{marginTop:0}}>
-            Fila de impressão
-            <span className="badge" style={{position:'static',marginLeft:8}}>{filaPendente.length}</span>
-            <button className="btn btn-outline btn-sm" style={{marginLeft:'auto'}} disabled={imprimindoFilaIds.size>0} onClick={handleImprimirTodos}>
-              <DIcon name="printer" size={14}/> {imprimindoFilaIds.size>0 ? 'Imprimindo…' : 'Imprimir Todos'}
-            </button>
-          </div>
-          {filaPendente.length>1 && (
-            <div className="role-note" style={{marginBottom:10}}>
-              O rolo tem 2 colunas — ao imprimir, cada folha sai com este item e o
-              próximo pendente lado a lado, pra não desperdiçar a coluna direita.
-            </div>
-          )}
-          {filaPendente.map(item=>(
-            <div key={item.id} className="list-row" style={{cursor:'default',flexWrap:'wrap'}}>
-              <div>
-                <div className="lr-title">{item.tipo==='endereco' ? item.codigo : (item.descricao || item.codigo)}</div>
-                <div className="lr-sub">
-                  {item.tipo==='produto' && item.codigo!==item.descricao ? item.codigo+' · ' : ''}
-                  {item.criadoPor ? ('enviado por '+item.criadoPor) : 'enviado'}
-                  {item.criadoEm ? (' em '+new Date(item.criadoEm).toLocaleString('pt-BR')) : ''}
-                </div>
-                {errosFila[item.id] && (
-                  <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginTop:4}}>{errosFila[item.id]}</div>
-                )}
-              </div>
-              <button className="btn btn-primary btn-sm" disabled={imprimindoFilaIds.has(item.id)} onClick={()=>handleImprimirFila(item)}>
-                <DIcon name="printer" size={14}/> {imprimindoFilaIds.has(item.id) ? 'Imprimindo…' : 'Imprimir'}
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
 
       <div style={{display:'flex',gap:8,marginBottom:14,marginTop:14}}>
         <button className={'btn '+(aba==='produto'?'btn-primary':'btn-outline')+' btn-sm'} onClick={()=>setAba('produto')}>Produto</button>
@@ -13689,6 +13658,7 @@ function EtiquetasPanel({currentUser}){
                 <div className="lr-sub" style={{marginTop:6}}>
                   {splitQuantidadeEtiquetas(quantidade, quantidadeEtiquetas).length} etiquetas —
                   {' '}{Array.from(new Set(splitQuantidadeEtiquetas(quantidade, quantidadeEtiquetas))).sort((a,b)=>b-a).map((v,i)=>(i?' / ':' ')+'QTD: '+v)}
+                  {' '}— {Math.ceil(Number(quantidadeEtiquetas)/2)} janelas de impressão seguidas (2 etiquetas por folha)
                 </div>
               )}
             </div>
@@ -13710,6 +13680,45 @@ function EtiquetasPanel({currentUser}){
             <button className="btn btn-outline" disabled={enviandoParaFila} onClick={handleEnviarParaFila}><DIcon name="clock" size={16}/> {enviandoParaFila ? 'Enviando…' : 'Enviar para Fila'}</button>
             <button className="btn btn-primary" disabled={imprimindo} onClick={handleImprimir}><DIcon name="printer" size={16}/> {imprimindo ? 'Imprimindo…' : 'Imprimir Etiqueta'}</button>
           </div>
+        </div>
+      )}
+
+      {filaPendente.length>0 && (
+        <div style={{marginTop:14,marginBottom:14}}>
+          <div className="section-title" style={{marginTop:0}}>
+            Fila de impressão
+            <span className="badge" style={{position:'static',marginLeft:8}}>{filaPendente.length}</span>
+            <button className="btn btn-outline btn-sm" style={{marginLeft:'auto'}} disabled={imprimindoFilaIds.size>0} onClick={handleImprimirTodos}>
+              <DIcon name="printer" size={14}/> {imprimindoFilaIds.size>0 ? 'Imprimindo…' : 'Imprimir Todos'}
+            </button>
+          </div>
+          {filaPendente.length>1 && (
+            <div className="role-note" style={{marginBottom:10}}>
+              O rolo tem 2 colunas — ao imprimir, cada folha sai com este item e o
+              próximo pendente lado a lado, pra não desperdiçar a coluna direita.
+              Cada folha abre sua própria confirmação de impressão — com {filaPendente.length}
+              {' '}itens pendentes, espere até {Math.ceil(filaPendente.length/2)} janelas
+              de impressão seguidas.
+            </div>
+          )}
+          {filaPendente.map(item=>(
+            <div key={item.id} className="list-row" style={{cursor:'default',flexWrap:'wrap'}}>
+              <div>
+                <div className="lr-title">{item.tipo==='endereco' ? item.codigo : (item.descricao || item.codigo)}</div>
+                <div className="lr-sub">
+                  {item.tipo==='produto' && item.codigo!==item.descricao ? item.codigo+' · ' : ''}
+                  {item.criadoPor ? ('enviado por '+item.criadoPor) : 'enviado'}
+                  {item.criadoEm ? (' em '+new Date(item.criadoEm).toLocaleString('pt-BR')) : ''}
+                </div>
+                {errosFila[item.id] && (
+                  <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginTop:4}}>{errosFila[item.id]}</div>
+                )}
+              </div>
+              <button className="btn btn-primary btn-sm" disabled={imprimindoFilaIds.has(item.id)} onClick={()=>handleImprimirFila(item)}>
+                <DIcon name="printer" size={14}/> {imprimindoFilaIds.has(item.id) ? 'Imprimindo…' : 'Imprimir'}
+              </button>
+            </div>
+          ))}
         </div>
       )}
     </div>
