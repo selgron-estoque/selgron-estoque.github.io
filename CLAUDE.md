@@ -12933,3 +12933,13 @@ pareamento de 2 colunas do recurso anterior).
   **Verificação de ponta a ponta com a impressora física (o corte real
   entre folhas, a ordem visual das etiquetas saindo do rolo) fica a cargo
   do cliente** — mesma limitação de sempre, sandbox sem impressora física.
+
+**Atualização**: cliente pediu logo em seguida "sempre deixe o botão
+produto pré selecionado" — `aba` (`EtiquetasPanel`) trocou o valor inicial
+de `useState('endereco')` pra `useState('produto')`. A tela sempre abre já
+na busca de produto, sem precisar clicar. `harness_etiqueta_print_
+navegador.js` (que testava a impressão avulsa buscando por endereço, sem
+trocar de aba explicitamente) precisou de um clique a mais no botão
+"Endereço" antes da busca — mudança de comportamento intencional desta
+rodada, não regressão. Rodei de novo os 4 harnesses desta feature (83
+asserções) e o transpile/CSS (658/658) sem quebrar nada.
