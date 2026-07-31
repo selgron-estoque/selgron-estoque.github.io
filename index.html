@@ -1213,7 +1213,17 @@
      `.etq-produto` é a rede de segurança final: se mesmo assim algo não
      couber, o conteúdo é CORTADO (silencioso) em vez de sobrepor outro
      elemento ou vazar pra uma 2ª página — bem menos grave que uma etiqueta
-     ilegível. */
+     ilegível.
+     `.etq-page-col` (novo) — margem de segurança mínima (0.5mm de cada
+     lado) entre a borda física de cada coluna de 50x30mm e o conteúdo
+     visível — pedido do cliente depois de ver a impressão real: se o
+     registro/corte da impressora não for perfeito, a borda preta e o
+     código de barras não ficam colados na quina exata, com risco de sair
+     cortados. `.etq-endereco`/`.etq-produto` passaram a preencher 100% da
+     coluna JÁ com esse respiro (width/height:100%, em vez de 50mm/30mm
+     fixos) — a coluna continua ocupando exatamente 50x30mm de espaço
+     físico (não muda o tamanho que a impressora espera pra cada etiqueta),
+     só o conteúdo visível dentro dela encolheu ~1mm no total por eixo. */
   #etiqueta-print-area{display:none;}
   @media print{
     #root{display:none !important;}
@@ -1221,13 +1231,14 @@
   }
   @page{size:101mm 31mm;margin:0;}
   .etq-page{display:flex;gap:1mm;}
-  .etq-endereco{width:50mm;height:30mm;box-sizing:border-box;padding:2mm;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:Arial,sans-serif;text-align:center;overflow:hidden;}
+  .etq-page-col{width:50mm;height:30mm;box-sizing:border-box;padding:0.5mm;}
+  .etq-endereco{width:100%;height:100%;box-sizing:border-box;padding:2mm;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:Arial,sans-serif;text-align:center;overflow:hidden;}
   .etq-rotulo{font-size:6pt;font-weight:700;letter-spacing:0.5px;}
   .etq-codigo-grande{font-size:16pt;font-weight:700;margin:1mm 0;}
   .etq-barcode{display:block;}
   .etq-endereco .etq-barcode{width:44mm;height:11mm;}
-  .etq-produto{width:50mm;height:30mm;box-sizing:border-box;padding:1mm;border:0.3mm solid #000;display:flex;flex-direction:column;font-family:Arial,sans-serif;overflow:hidden;}
-  .etq-produto .etq-barcode{width:42mm;height:7mm;}
+  .etq-produto{width:100%;height:100%;box-sizing:border-box;padding:1mm;border:0.3mm solid #000;display:flex;flex-direction:column;font-family:Arial,sans-serif;overflow:hidden;}
+  .etq-produto .etq-barcode{width:41mm;height:6mm;}
   .etq-topo{display:flex;justify-content:space-between;align-items:flex-start;}
   .etq-codigo-produto{font-size:11pt;margin:0.3mm 0;}
   .etq-qtd{font-size:7pt;font-weight:700;}
