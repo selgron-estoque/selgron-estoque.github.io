@@ -12372,3 +12372,12 @@ de verdade.
   classe CSS nova). **Verificação visual/funcional de ponta a ponta fica a
   cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth
   real, não simulável no sandbox sem rede).
+
+## Remove o rótulo "Número da SA (assim que o Armazém devolver)"
+
+Cliente pediu pra tirar essa mensagem do campo de SA em "Aguardando
+Armazém" — o `<label>` acima do campo foi removido; o texto explicativo
+("Ex: SA-2026-00123") virou o próprio `placeholder` do campo
+("Número da SA (Ex: SA-2026-00123)"), mantendo contexto suficiente sem
+precisar de um rótulo separado acima. Sem mudança de comportamento —
+`saInputValue`/`handleEnviar`/validação continuam iguais.

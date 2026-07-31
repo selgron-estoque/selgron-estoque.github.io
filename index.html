@@ -10366,8 +10366,7 @@ function SolicitacaoArmazemPanel({counts, inventories, role, onEnviarParaDiretor
                       usado no ternário de baixo. */}
                   {canDecide && confirmDeleteId!==c.id && (
                     <div className="field" style={{padding:'10px 16px 0',marginBottom:0}}>
-                      <label>Número da SA (assim que o Armazém devolver)</label>
-                      <input type="text" value={saInputValue(c)} onChange={e=>setSaInputs(prev=>({...prev, [c.id]: e.target.value}))} placeholder="Ex: SA-2026-00123" disabled={busyId===c.id} />
+                      <input type="text" value={saInputValue(c)} onChange={e=>setSaInputs(prev=>({...prev, [c.id]: e.target.value}))} placeholder="Número da SA (Ex: SA-2026-00123)" disabled={busyId===c.id} />
                     </div>
                   )}
                   {erros[c.id] && (
