@@ -4974,16 +4974,19 @@ function App(){
   // MESMA ação, decide se o caso é Ajuste ou Devolução (`ehDevolucao`) — já
   // encaminha direto pra decisão da Diretoria. É o número que "libera" as
   // duas decisões juntas, exatamente como o cliente descreveu.
+  // Número da SA só é obrigatório pra "Ajuste" (item com falta, que
+  // realmente depende do Armazém devolver o número) — "Devolução" (item com
+  // saldo positivo/sobra) não precisa de SA nenhuma, pedido do cliente.
   async function enviarParaAprovacaoDiretoria(countId, numeroSa, ehDevolucao){
     const numeroSaLimpo = (numeroSa||'').trim();
-    if(!numeroSaLimpo) return {ok:false, erro:'Informe o número da SA.'};
+    if(!ehDevolucao && !numeroSaLimpo) return {ok:false, erro:'Informe o número da SA.'};
     const res = await updateContagemStatusToSupabase(countId, {
       status_aprovacao: 'aguardando_aprovacao_diretoria',
-      numero_sa: numeroSaLimpo,
+      numero_sa: numeroSaLimpo || null,
       eh_devolucao: !!ehDevolucao,
     });
     if(res.ok){
-      setCounts(prev=>prev.map(c=>c.id===countId?{...c, statusAprovacao:'aguardando_aprovacao_diretoria', solicitacaoAjuste: numeroSaLimpo, ehDevolucao: !!ehDevolucao}:c));
+      setCounts(prev=>prev.map(c=>c.id===countId?{...c, statusAprovacao:'aguardando_aprovacao_diretoria', solicitacaoAjuste: numeroSaLimpo || null, ehDevolucao: !!ehDevolucao}:c));
     }
     return res;
   }
@@ -10245,9 +10248,13 @@ function SolicitacaoArmazemPanel({counts, inventories, role, onEnviarParaDiretor
 
   // Decisão de Ajuste ou Devolução acontece AQUI, junto com o número da SA
   // (não mais em "Itens Divergentes") — `ehDevolucao` decide qual das duas.
+  // Pedido do cliente: item com saldo POSITIVO (sobra) não precisa de
+  // número de SA nenhum, só uma devolução — o número só é obrigatório pra
+  // "Registrar como Ajuste" (item com falta, que de fato depende do
+  // Armazém devolver a SA antes de prosseguir).
   async function handleEnviar(c, ehDevolucao){
     const numeroSa = saInputValue(c).trim();
-    if(!numeroSa) return;
+    if(!ehDevolucao && !numeroSa) return;
     setBusyId(c.id);
     setErros(prev=>({...prev, [c.id]: null}));
     const res = await onEnviarParaDiretoria(c.id, numeroSa, ehDevolucao);
@@ -10370,7 +10377,10 @@ function SolicitacaoArmazemPanel({counts, inventories, role, onEnviarParaDiretor
                 {canDecide && confirmDeleteId!==c.id && (
                   <div className="count-card-actions-col">
                     <button className="btn btn-secondary" disabled={busyId===c.id || !saInputValue(c).trim()} onClick={()=>handleEnviar(c, false)}><Ic>📋</Ic> {busyId===c.id ? 'Enviando…' : 'Registrar como Ajuste'}</button>
-                    <button className="btn btn-primary" disabled={busyId===c.id || !saInputValue(c).trim()} onClick={()=>handleEnviar(c, true)}><Ic>📦</Ic> {busyId===c.id ? 'Enviando…' : 'Registrar como Devolução'}</button>
+                    {/* Devolução (item com saldo positivo/sobra) não depende
+                        do número da SA — só "Ajuste" (item com falta)
+                        exige o Armazém ter devolvido o número antes. */}
+                    <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>handleEnviar(c, true)}><Ic>📦</Ic> {busyId===c.id ? 'Enviando…' : 'Registrar como Devolução'}</button>
                   </div>
                 )}
               </div>

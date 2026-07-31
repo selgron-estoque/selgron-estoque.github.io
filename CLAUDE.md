@@ -12333,3 +12333,42 @@ Cliente confirmou que o caso reportado era "Itens Específicos".
   visual/funcional de ponta a ponta (o operador de fato andando menos) fica
   a cargo do cliente** — mesma limitação de sempre (login exige Supabase
   Auth real, não simulável no sandbox sem rede).
+
+## "Aguardando Armazém": Devolução deixa de exigir número de SA
+
+Cliente pediu: "deixar o botão 'Registrar como devolução' habilitado pois
+itens com saldo positivo não precisa de número de SA" — desde a rodada "3ª
+correção do fluxo de SA" (ver acima), os dois botões dessa tela (Ajuste/
+Devolução) exigiam o mesmo campo "Número da SA" preenchido antes de
+habilitar. Isso nunca fazia sentido pra Devolução: item com saldo POSITIVO
+(sobra) é resolvido só devolvendo fisicamente o excesso, sem nenhum
+protocolo/número do Armazém envolvido — só item com FALTA depende de uma SA
+de verdade.
+
+- **`SolicitacaoArmazemPanel.handleEnviar(c, ehDevolucao)`**: a checagem
+  `if(!numeroSa) return` virou `if(!ehDevolucao && !numeroSa) return` — só
+  bloqueia quando é Ajuste. Botão "Registrar como Devolução" perdeu o
+  `disabled={... || !saInputValue(c).trim()}` (ficou só `disabled={busyId
+  ===c.id}`) — habilitado desde o início, sem precisar de nada no campo de
+  SA. "Registrar como Ajuste" não mudou, continua exigindo o número.
+- **`App().enviarParaAprovacaoDiretoria(countId, numeroSa, ehDevolucao)`**:
+  mesma mudança na validação (`if(!ehDevolucao && !numeroSaLimpo) return
+  {ok:false,...}`) — sem isso, o botão habilitado na UI bateria na validação
+  do lado do `App()` e falharia mesmo assim. `numero_sa` grava `null` (não
+  mais string vazia) quando não informado — o campo já era nullable no
+  banco (só usado por Ajuste antes), e os badges de "Devolução" em
+  `DiretoriaApprovalPanel`/`ConcludedCountsPanel` já tratavam
+  `solicitacaoAjuste` ausente com um fallback (`c.ehDevolucao ? 'Devolução'
+  +(c.solicitacaoAjuste ? ' · SA '+c.solicitacaoAjuste : '') : ...`) desde
+  que a devolução com SA opcional foi desenhada — não precisou de nenhuma
+  mudança de exibição.
+- Testado via harness real (jsdom + react-dom/client + `act()`, mesma
+  técnica rigorosa de sempre): sem nada digitado no campo de SA, "Registrar
+  como Ajuste" continua desabilitado e "Registrar como Devolução" já vem
+  habilitado; clicar em "Registrar como Devolução" chama
+  `onEnviarParaDiretoria` com `ehDevolucao:true` e o número vazio, sem
+  travar em validação nenhuma. Transpile Babel do arquivo inteiro e
+  balanceamento de chaves do CSS conferidos (638/638, sem mudança — nenhuma
+  classe CSS nova). **Verificação visual/funcional de ponta a ponta fica a
+  cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth
+  real, não simulável no sandbox sem rede).
