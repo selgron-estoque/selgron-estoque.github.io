@@ -13338,3 +13338,83 @@ Testado via reversão dos 3 harnesses tocados na rodada anterior
 126 asserções no total entre os 6 harnesses de Etiquetas, todas
 passando. Transpile Babel do arquivo inteiro e balanceamento de chaves
 do CSS conferidos (661/661).
+
+## Etiqueta de produto: descrição sempre cabe, "DATA:" mais curto, endereço abaixo de QTD, código de barras centralizado
+
+Cliente pediu 4 ajustes no layout da etiqueta de PRODUTO (`.etq-produto`,
+usada em Recebimento/Etiquetas): "adapte a descrição para sempre caber
+neste quadrado"; "DATA RECEBIMENTO altere para DATA:. pode diminuir esse
+campo e aumentar o Descrição"; "Abaixo de Quantidade inserir o Endereço do
+material. apenas o endereço 000-A-1"; "Código de barra centralizar ao
+código e ao meio de cada etiqueta".
+
+- **Descrição "sempre cabe"**: trocado o corte fixo de 26 caracteres (JS,
+  `desc.slice(0,26)`, calibrado só pra largura antiga e igual entre as 2
+  colunas) por **CSS `-webkit-line-clamp:2`** (`.etq-valor-desc`, novo) —
+  se ajusta à largura REAL da coluna (que agora é MAIOR, ver próximo item)
+  e corta com "…" só quando genuinamente não cabe em 2 linhas, em vez de
+  um número de caracteres fixo que sobra ou estoura dependendo da largura.
+  `buildEtiquetaItemHtml` mantém um teto de segurança de 120 caracteres na
+  string (proteção contra string absurdamente longa entrar no DOM, não é
+  mais o mecanismo de "caber" em si — quem garante isso agora é o CSS).
+- **"DATA RECEBIMENTO" → "DATA:"** — só o texto do rótulo mudou.
+  `.etq-col-desc{flex:1.8}`/`.etq-col-data{flex:1}` (novas, substituindo o
+  `.etq-col{flex:1}` igual pras duas colunas) dão à Descrição quase o
+  dobro do espaço da Data — com a coluna maior E o line-clamp novo, cabe
+  bem mais texto legível que antes (na prática, ~50+ caracteres em 2
+  linhas, contra 26 numa linha só do corte fixo anterior).
+- **Endereço do material abaixo de "QTD:"**: `.etq-qtd-box` (novo, flex
+  column alinhado à direita) agrupa `.etq-qtd` (já existia) +
+  `.etq-endereco-mat` (novo) — só o VALOR do endereço, sem rótulo extra
+  ("apenas o endereço 000-A-1"), igual pedido. Vem do próprio cadastro do
+  produto (`selecionado.endereco`, já resolvido por `searchSupabaseCatalog`
+  — `null` se o produto não tem endereço cadastrado, aí `.etq-endereco-mat`
+  simplesmente não aparece, sem inventar dado). `.etq-qtd-box` inteiro só
+  renderiza quando existe QTD OU endereço — sem os dois, o bloco nem
+  aparece (mesmo critério de sempre já usado só pra QTD antes).
+  - **Threaded pelos DOIS caminhos de impressão** (não só o direto):
+    `montarItensParaImprimir`/`buildEtiquetaItemHtml`/
+    `imprimirEtiquetaViaNavegador` (impressão na hora) E
+    `salvarEtiquetaNaFila`/`etiquetaFilaRowToLocal`/os dois
+    `toItemImpressao` de `handleImprimirFila`/`handleImprimirTodos` (fila)
+    — sem isso, mandar uma etiqueta pra fila perderia o endereço
+    silenciosamente ao imprimir de outro aparelho, inconsistente com
+    quantidade/data, que já passavam pelos dois caminhos.
+  - **`backend/schema.sql`**: `etiquetas_fila` ganhou a coluna
+    `endereco text` (no `create table` + `alter table add column if not
+    exists` de migração pro projeto já aplicado).
+- **Código de barras centralizado**: `.etq-barcode{margin:0 auto;}` (novo
+  — antes só tinha `display:block`, sem margem automática, ficava
+  encostado à esquerda dentro de `.etq-rodape`, que já tinha
+  `text-align:center` mas isso só afeta conteúdo INLINE, não um bloco de
+  largura fixa). Com `margin:0 auto`, tanto o código de barras quanto o
+  código pequeno abaixo dele (`.etq-codigo-pequeno`, texto, já centralizado
+  por `text-align:center`) ficam no mesmo eixo central — centralizados
+  entre si e no meio horizontal da etiqueta.
+- Testado via harness novo (`harness_etiqueta_layout_endereco.js`, jsdom +
+  react-dom/client + `act()`, mesma técnica rigorosa de sempre): rótulo
+  "DATA:" aparece, "DATA RECEBIMENTO" não aparece mais em lugar nenhum;
+  classes `.etq-col-desc`/`.etq-col-data`/`.etq-valor-desc` presentes;
+  `.etq-endereco-mat` mostra só o valor puro do endereço, dentro do mesmo
+  `.etq-qtd-box`; produto sem endereço cadastrado não mostra o bloco;
+  produto sem quantidade nem endereço não mostra `.etq-qtd-box` nenhum;
+  descrição longa (73 caracteres) NÃO é mais cortada em 26 pela função
+  (fica inteira, dentro do limite de 120); CSS confirma `.etq-barcode`
+  com `margin:0 auto` e `.etq-valor-desc` com `-webkit-line-clamp:2`;
+  fluxo completo de impressão direta (buscar produto com endereço no
+  catálogo → selecionar → imprimir) mostra o endereço certo na etiqueta;
+  fluxo de fila (mesmo produto → "Enviar para Fila") grava `endereco` no
+  payload e `etiquetaFilaRowToLocal` mapeia de volta corretamente. 24
+  asserções, todas passando. `harness_etiqueta_layout_fix.js` (rodada
+  anterior) precisou de 1 ajuste — a asserção de "corte em 26 caracteres"
+  virou "teto de segurança em 120" (mudança de comportamento intencional
+  desta rodada, não regressão). Rodei de novo toda a suíte de Etiquetas —
+  **149 asserções, 0 falhas** entre os 7 harnesses. Transpile Babel do
+  arquivo inteiro e balanceamento de chaves do CSS conferidos (670/670).
+  **Falta o cliente rodar o SQL novo** (`alter table etiquetas_fila add
+  column if not exists endereco text;`) no projeto real antes do campo
+  funcionar via fila em produção — a impressão DIRETA já funciona sem
+  depender dessa migração. **Verificação visual de ponta a ponta (a
+  descrição realmente cabendo, o código de barras centralizado na
+  impressora física) fica a cargo do cliente** — mesma limitação de
+  sempre (sandbox sem impressora física).

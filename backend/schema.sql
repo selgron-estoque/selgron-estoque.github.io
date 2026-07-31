@@ -1535,12 +1535,17 @@ create table if not exists etiquetas_fila (
   descricao text,                     -- só 'produto'
   quantidade text,                    -- só 'produto', opcional
   data_recebimento date,              -- só 'produto', opcional
+  endereco text,                      -- só 'produto', opcional — endereço cadastrado do material, mostrado na etiqueta abaixo de QTD
   status text not null default 'pendente',
   criado_por text,
   criado_em timestamptz not null default now(),
   impresso_por text,
   impresso_em timestamptz
 );
+
+-- Migração pro projeto já aplicado (a tabela acima já existia sem essa
+-- coluna) — endereço do material na etiqueta impressa, pedido do cliente.
+alter table etiquetas_fila add column if not exists endereco text;
 
 alter table etiquetas_fila enable row level security;
 drop policy if exists "leitura autenticada" on etiquetas_fila;

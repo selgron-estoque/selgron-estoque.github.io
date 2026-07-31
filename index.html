@@ -1233,7 +1233,22 @@
      margem. Corrigido dando a `.etq-page` o tamanho EXATO do `@page`
      (101×31mm, igual à folha física) + `align-items:center` — agora a
      folga de 1mm de altura é dividida IGUALMENTE entre topo e base
-     (0.5mm cada), em vez de cair inteira embaixo. */
+     (0.5mm cada), em vez de cair inteira embaixo.
+     Ajustes de layout da etiqueta de PRODUTO (pedido do cliente, ver
+     `buildEtiquetaItemHtml` no <script>): (1) a coluna "DESCRICAO" ficou
+     mais larga (`.etq-col-desc{flex:1.8}` contra `.etq-col-data{flex:1}`
+     da coluna "DATA:") e a descrição passou de corte fixo de caracteres
+     pra `-webkit-line-clamp:2` (`.etq-valor-desc`) — se ajusta à largura
+     REAL da coluna (que agora varia) em vez de um número de caracteres
+     calibrado só pra largura antiga, cortando com "…" apenas quando
+     genuinamente não cabe em 2 linhas; (2) rótulo "DATA RECEBIMENTO" virou
+     "DATA:"; (3) o endereço cadastrado do produto (quando existe) aparece
+     abaixo de "QTD:", dentro do mesmo bloco à direita (`.etq-qtd-box`,
+     coluna alinhada à direita) — só o valor puro (ex. "035-A-1"), sem
+     rótulo extra; (4) `.etq-barcode{margin:0 auto}` centraliza o código de
+     barras (e, por `.etq-rodape{text-align:center}`, o código pequeno
+     abaixo dele) no meio horizontal da etiqueta — antes era um bloco de
+     largura fixa sem margem automática, ficando encostado à esquerda. */
   #etiqueta-print-area{display:none;}
   @media print{
     #root{display:none !important;}
@@ -1245,17 +1260,22 @@
   .etq-endereco{width:100%;height:100%;box-sizing:border-box;padding:2mm;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:Arial,sans-serif;text-align:center;overflow:hidden;}
   .etq-rotulo{font-size:6pt;font-weight:700;letter-spacing:0.5px;}
   .etq-codigo-grande{font-size:16pt;font-weight:700;margin:1mm 0;}
-  .etq-barcode{display:block;}
+  .etq-barcode{display:block;margin:0 auto;}
   .etq-endereco .etq-barcode{width:44mm;height:11mm;}
   .etq-produto{width:100%;height:100%;box-sizing:border-box;padding:1mm;border:0.3mm solid #000;display:flex;flex-direction:column;font-family:Arial,sans-serif;overflow:hidden;}
   .etq-produto .etq-barcode{width:40mm;height:5.5mm;}
   .etq-topo{display:flex;justify-content:space-between;align-items:flex-start;}
   .etq-codigo-produto{font-size:11pt;margin:0.3mm 0;}
+  .etq-qtd-box{display:flex;flex-direction:column;align-items:flex-end;}
   .etq-qtd{font-size:7pt;font-weight:700;}
+  .etq-endereco-mat{font-size:6.5pt;font-weight:400;margin-top:0.3mm;}
   .etq-meio{display:flex;gap:2mm;border-top:0.2mm solid #000;margin-top:0.5mm;padding-top:0.5mm;flex:1;min-height:0;overflow:hidden;}
-  .etq-col{flex:1;overflow:hidden;}
+  .etq-col{overflow:hidden;}
+  .etq-col-desc{flex:1.8;}
+  .etq-col-data{flex:1;}
   .etq-col-divisor{border-left:0.2mm solid #000;padding-left:2mm;}
   .etq-valor{font-size:6pt;line-height:1.15;word-break:break-word;}
+  .etq-valor-desc{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
   .etq-rodape{border-top:0.2mm solid #000;margin-top:0.5mm;padding-top:0.5mm;text-align:center;}
   .etq-codigo-pequeno{font-size:5.5pt;margin-top:0.3mm;}
 </style>
@@ -1545,7 +1565,7 @@ function splitQuantidadeEtiquetas(total, n){
 // Monta o HTML de UMA etiqueta (`.etq-endereco`/`.etq-produto`) — extraído
 // de `imprimirEtiquetaViaNavegador` pra poder montar 1 ou 2 colunas na
 // mesma folha (ver comentário dela abaixo, sobre o rolo de 2 colunas).
-function buildEtiquetaItemHtml({tipo, codigo, descricao, quantidade, dataRecebimento}){
+function buildEtiquetaItemHtml({tipo, codigo, descricao, quantidade, dataRecebimento, endereco}){
   const cod = escapeHtmlEtiqueta(codigo);
   if(tipo==='endereco'){
     return '<div class="etq-endereco">'
@@ -1554,22 +1574,33 @@ function buildEtiquetaItemHtml({tipo, codigo, descricao, quantidade, dataRecebim
       + '<svg class="etq-barcode"></svg>'
       + '</div>';
   }
-  // Truncado mais curto que antes (era 40) — a coluna "DESCRICAO" tem só
-  // ~21mm de largura útil a 6pt; um texto mais longo do que isso quebra em
-  // linhas demais e ajuda a estourar a altura de 30mm da etiqueta (ver
-  // comentário no <style>, perto de `.etq-produto`, sobre o bug real de
-  // transbordo corrigido nesta rodada).
-  const desc = escapeHtmlEtiqueta((descricao||'').slice(0, 26));
+  // "Sempre cabe" (pedido do cliente): em vez de um corte fixo de
+  // caracteres (calibrado pra largura antiga, igual entre as 2 colunas),
+  // a descrição agora usa `-webkit-line-clamp:2` (ver `.etq-valor-desc` no
+  // <style>) — se ajusta à largura REAL da coluna (que cresceu, ver
+  // `.etq-col-desc`/`.etq-col-data` abaixo) e corta com "…" só se
+  // realmente não couber em 2 linhas, em vez de um número de caracteres
+  // fixo que sobra/estoura dependendo da largura. `slice(120)` aqui é só
+  // uma proteção contra string absurdamente longa, não é o mecanismo de
+  // ajuste — quem garante caber de verdade é o CSS.
+  const desc = escapeHtmlEtiqueta((descricao||'').slice(0, 120));
   const qtdTexto = quantidade ? ('QTD: '+escapeHtmlEtiqueta(quantidade)+' PC') : '';
   const dataTexto = dataRecebimento ? escapeHtmlEtiqueta(fmtDataBR(dataRecebimento)) : '';
+  const enderecoTexto = endereco ? escapeHtmlEtiqueta(endereco) : '';
+  const qtdBox = (qtdTexto || enderecoTexto) ? (
+    '<div class="etq-qtd-box">'
+    + (qtdTexto ? '<div class="etq-qtd">'+qtdTexto+'</div>' : '')
+    + (enderecoTexto ? '<div class="etq-endereco-mat">'+enderecoTexto+'</div>' : '')
+    + '</div>'
+  ) : '';
   return '<div class="etq-produto">'
     + '<div class="etq-topo">'
     +   '<div><div class="etq-rotulo">CODIGO</div><div class="etq-codigo-grande etq-codigo-produto">'+cod+'</div></div>'
-    +   (qtdTexto ? '<div class="etq-qtd">'+qtdTexto+'</div>' : '')
+    +   qtdBox
     + '</div>'
     + '<div class="etq-meio">'
-    +   '<div class="etq-col"><div class="etq-rotulo">DESCRICAO</div><div class="etq-valor">'+desc+'</div></div>'
-    +   '<div class="etq-col etq-col-divisor"><div class="etq-rotulo">DATA RECEBIMENTO</div><div class="etq-valor">'+dataTexto+'</div></div>'
+    +   '<div class="etq-col etq-col-desc"><div class="etq-rotulo">DESCRICAO</div><div class="etq-valor etq-valor-desc">'+desc+'</div></div>'
+    +   '<div class="etq-col etq-col-data etq-col-divisor"><div class="etq-rotulo">DATA:</div><div class="etq-valor">'+dataTexto+'</div></div>'
     + '</div>'
     + '<div class="etq-rodape">'
     +   '<svg class="etq-barcode"></svg>'
@@ -1622,7 +1653,7 @@ function desenharBarcodesEtiqueta(area, itensFlat){
 // visível durante a impressão, via `@media print` no <style>) e desenha o(s)
 // código(s) de barras via JsBarcode antes de chamar `window.print()`.
 // `item1`/`item2` são objetos `{tipo, codigo, descricao, quantidade,
-// dataRecebimento}` (`tipo` é `'endereco'`/`'produto'`) — `item2` é
+// dataRecebimento, endereco}` (`tipo` é `'endereco'`/`'produto'`) — `item2` é
 // OPCIONAL: o rolo físico da TSC tem 2 colunas de 50mm lado a lado (ver
 // comentário no <style>, perto de `.etq-page`), então imprimir sempre 1
 // etiqueta só de propósito desperdiçaria a coluna direita a cada folha.
@@ -13319,6 +13350,7 @@ function etiquetaFilaRowToLocal(row){
     descricao: row.descricao,
     quantidade: row.quantidade,
     dataRecebimento: row.data_recebimento,
+    endereco: row.endereco,
     status: row.status,
     criadoPor: row.criado_por,
     criadoEm: row.criado_em,
@@ -13336,6 +13368,7 @@ async function salvarEtiquetaNaFila(item){
       descricao: item.descricao || null,
       quantidade: item.quantidade || null,
       data_recebimento: item.dataRecebimento || null,
+      endereco: item.endereco || null,
       status: 'pendente',
       criado_por: item.criadoPor || null,
     });
@@ -13494,6 +13527,10 @@ function EtiquetasPanel({currentUser}){
   // a fatia certa da quantidade recebida (`splitQuantidadeEtiquetas`) — 1
   // etiqueta (padrão) sempre gera `[quantidade]` inteira, mesmo
   // comportamento de sempre. Endereço nunca divide (não tem quantidade).
+  // `endereco` vem do próprio cadastro do produto (`selecionado.endereco`,
+  // já resolvido por `searchSupabaseCatalog` — `null` se o produto não tem
+  // endereço cadastrado ainda) — pedido do cliente: mostrar o endereço do
+  // material abaixo da quantidade na etiqueta.
   function montarItensParaImprimir(){
     if(aba!=='produto'){
       return [{ tipo: aba, codigo: selecionado.codigo, descricao: selecionado.descricao }];
@@ -13505,6 +13542,7 @@ function EtiquetasPanel({currentUser}){
       descricao: selecionado.descricao,
       quantidade: qtd || '',
       dataRecebimento,
+      endereco: selecionado.endereco || null,
     }));
   }
 
@@ -13543,6 +13581,7 @@ function EtiquetasPanel({currentUser}){
         descricao: item.tipo==='produto' ? item.descricao : null,
         quantidade: item.tipo==='produto' ? item.quantidade : null,
         dataRecebimento: item.tipo==='produto' ? item.dataRecebimento : null,
+        endereco: item.tipo==='produto' ? item.endereco : null,
         criadoPor: currentUser ? currentUser.nome : null,
       });
       if(!res.ok){ erro = res.erro; break; }
@@ -13567,7 +13606,7 @@ function EtiquetasPanel({currentUser}){
     const par = filaPendente.find(f=>f.id!==item.id);
     setImprimindoFilaIds(new Set(par ? [item.id, par.id] : [item.id]));
     setErrosFila(prev=>({...prev, [item.id]: null, ...(par ? {[par.id]: null} : {})}));
-    const toItemImpressao = it=>({tipo: it.tipo, codigo: it.codigo, descricao: it.descricao, quantidade: it.quantidade, dataRecebimento: it.dataRecebimento});
+    const toItemImpressao = it=>({tipo: it.tipo, codigo: it.codigo, descricao: it.descricao, quantidade: it.quantidade, dataRecebimento: it.dataRecebimento, endereco: it.endereco});
     const res = imprimirEtiquetaViaNavegador(toItemImpressao(item), par ? toItemImpressao(par) : undefined);
     if(res.ok){
       const marc1 = await marcarEtiquetaImpressa(item.id, currentUser ? currentUser.nome : null);
@@ -13593,7 +13632,7 @@ function EtiquetasPanel({currentUser}){
     const itens = filaPendente.slice(); // já vem ordenado (mais antigo primeiro)
     setImprimindoFilaIds(new Set(itens.map(it=>it.id)));
     setErrosFila({});
-    const toItemImpressao = it=>({tipo: it.tipo, codigo: it.codigo, descricao: it.descricao, quantidade: it.quantidade, dataRecebimento: it.dataRecebimento});
+    const toItemImpressao = it=>({tipo: it.tipo, codigo: it.codigo, descricao: it.descricao, quantidade: it.quantidade, dataRecebimento: it.dataRecebimento, endereco: it.endereco});
     const res = imprimirLoteEtiquetas(itens.map(toItemImpressao));
     if(res.ok){
       for(const item of itens){
