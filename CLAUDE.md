@@ -13062,3 +13062,96 @@ física da etiqueta, arriscando sair cortados).
   balanceamento de chaves do CSS conferidos (661/661). **Verificação de
   ponta a ponta com a impressora física fica a cargo do cliente** — mesma
   limitação de sempre, sandbox sem impressora física.
+
+## Bug real: margem de topo/esquerda "não deu" + campo "Quantidade de etiquetas"
+
+Cliente mandou um novo print (3 etiquetas legíveis, layout correto) mas
+apontou que a margem de segurança da rodada anterior "não deu" nos lados
+esquerdo e de cima — só embaixo/direita apareciam. Na mesma mensagem, mid-
+turn, pediu uma funcionalidade nova: campo de "Quantidade recebida" +
+"quantidade de etiqueta" — recebendo 500 peças e pedindo 10 etiquetas, o
+app deveria mandar 10 etiquetas pra impressora, cada uma com "QTD: 50" —
+e corrigir o rótulo "Qtd:" pra "QTD:" (maiúsculo).
+
+### Bug da margem assimétrica
+
+- **Causa raiz**: `.etq-page` nunca tinha tamanho PRÓPRIO — só herdava o
+  tamanho natural do conteúdo (`.etq-page-col`×1 ou 2 + gap = 101×30mm
+  exatos). Como `@page` é 101×31mm (1mm A MAIS de altura — confirmado
+  antes como o "pitch" físico do rolo, o vão entre uma etiqueta e a
+  próxima, não espaço sobrando pro conteúdo usar), o navegador POSICIONAVA
+  esse bloco de 30mm no TOPO da página de 31mm por padrão (fluxo normal,
+  sem centralização) — a folga de 1mm sobrava inteira EMBAIXO, nunca em
+  cima. Por ser bem maior (1mm) que a margem intencional de 0.5mm, competia
+  visualmente com ela — dava a impressão de "margem só embaixo/direita".
+- **Correção**: `.etq-page` ganhou tamanho EXATO igual ao `@page`
+  (`width:101mm;height:31mm;box-sizing:border-box;`) + `align-items:
+  center` — agora a folga de 1mm de altura é dividida IGUALMENTE entre
+  topo e base (0.5mm cada), em vez de cair inteira embaixo. Como a LARGURA
+  já batia exata (101mm=101mm, sem folga nenhuma pra redistribuir), o eixo
+  horizontal não tinha esse problema — só o vertical precisava da correção.
+- **Margem em si subiu de 0.5mm pra 0.8mm** (`.etq-page-col`) — mais
+  visível/inequívoca, hedge contra a possibilidade de 0.5mm ser
+  simplesmente pequeno demais pra perceber num print de baixa resolução.
+  Orçamento vertical de `.etq-produto` recalculado com a margem maior:
+  interior caiu pra ~25.8mm — barcode do produto ajustado de 41×6mm pra
+  40×5.5mm pra manter uma folga real (~0.3mm) sem reabrir o bug de
+  transbordo corrigido na rodada anterior.
+
+### "Quantidade de etiquetas" — divide a quantidade recebida em N etiquetas
+
+- **`splitQuantidadeEtiquetas(total, n)`** (função pura, perto de
+  `escapeHtmlEtiqueta`) — divide `total` em `n` partes, distribuindo o
+  RESTO (quando a divisão não é exata) nas PRIMEIRAS etiquetas, uma
+  unidade a mais em cada — garante que a SOMA das quantidades impressas
+  bate EXATAMENTE com o total recebido, nunca perde nem inventa peça por
+  arredondamento (ex: 500÷7 → `[72,72,72,71,71,71,71]`, soma 500). `n=1`
+  (padrão, campo nasce assim) devolve `[total]` inteiro — mesmo
+  comportamento de sempre, sem quebrar nada pra quem não mexe no campo
+  novo.
+- **`EtiquetasPanel`**: campo novo "Quantidade de etiquetas" (`useState
+  ('1')`, resetado junto de `quantidade`/`dataRecebimento` nos mesmos 2
+  pontos de sempre — troca de aba e seleção de novo item), só visível pra
+  `aba==='produto'` (mesmo critério dos campos de quantidade/data já
+  existentes — endereço não tem esse conceito). Uma prévia (`role-note`
+  estilo `lr-sub`) mostra "N etiquetas — QTD: X" (ou "QTD: X / QTD: Y"
+  quando o resto gera 2 valores distintos) assim que os dois campos
+  (quantidade recebida + quantidade de etiquetas>1) estão preenchidos.
+- **`montarItensParaImprimir()`** (novo, dentro de `EtiquetasPanel`) —
+  ponto único que monta a lista de itens a partir da seleção atual +
+  `splitQuantidadeEtiquetas` — usado tanto por `handleImprimir` quanto por
+  `handleEnviarParaFila`, evita duplicar a lógica de "gerar N itens com a
+  fatia certa" nos dois lugares.
+- **`handleImprimir`**: com 1 item só, continua no caminho de sempre
+  (`imprimirEtiquetaViaNavegador`, folha única) — com N>1, reaproveita
+  `imprimirLoteEtiquetas` (já existente, criado pro botão "Imprimir
+  Todos" da fila) — pareia 2 por folha, várias páginas no MESMO job de
+  impressão, sem precisar de nenhum código novo de paginação.
+- **`handleEnviarParaFila`**: grava N linhas separadas na fila (uma por
+  etiqueta, sequencial, para no 1º erro — mesmo padrão já usado por
+  `handleImprimirTodos`) em vez de 1 linha só — cada linha da fila
+  continua representando exatamente 1 etiqueta física, sem precisar mudar
+  o modelo de dado da tabela `etiquetas_fila`.
+- **`buildEtiquetaItemHtml`**: `'Qtd: '` → `'QTD: '` (maiúsculo, pedido
+  explícito do cliente) — único lugar que monta esse texto, corrige em
+  todos os caminhos de impressão de uma vez (avulsa, fila, lote).
+- Testado via harness novo (`harness_etiqueta_qtd_split.js`): 
+  `splitQuantidadeEtiquetas` isolada (exemplo exato do cliente 500/10→10×
+  QTD 50; divisão não-exata 500/7 com soma batendo e resto nas primeiras;
+  n=1 devolve o total inteiro; quantidade vazia gera zeros sem quebrar;
+  n=0/vazio nunca gera menos de 1 etiqueta); "QTD:" maiúsculo confirmado na
+  etiqueta impressa, sem sobrar nenhum "Qtd:" minúsculo; fluxo completo de
+  ponta a ponta em `EtiquetasPanel` — buscar produto, selecionar, digitar
+  500/10, prévia mostra "10 etiquetas"/"QTD: 50", clicar "Imprimir
+  Etiqueta" dispara `window.print()` 1 vez só com 5 folhas (10 etiquetas
+  pareadas 2 a 2) e as 10 mostram "QTD: 50 PC" cada; fluxo de fila com
+  30/3 grava exatamente 3 linhas na fila, todas com quantidade 10. 22
+  asserções, todas passando. Rodei de novo os 5 harnesses anteriores de
+  Etiquetas (102 asserções) — só 1 precisou de ajuste (assertion
+  esperando "Qtd:" minúsculo, mudança de comportamento intencional desta
+  rodada, não regressão) — 124 asserções no total entre os 6 harnesses.
+  Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  conferidos (661/661). **Verificação de ponta a ponta com a impressora
+  física (a margem realmente simétrica, as 10 etiquetas saindo com a
+  quantidade certa) fica a cargo do cliente** — mesma limitação de sempre,
+  sandbox sem impressora física.
