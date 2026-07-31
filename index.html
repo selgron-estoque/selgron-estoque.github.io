@@ -1192,33 +1192,51 @@
      ou 2 `.etq-page-col` lado a lado — só 1 quando é impressão avulsa (fora
      da fila) ou quando só sobra 1 item pendente na fila (nesse caso a
      coluna direita fica em branco, sem alternativa: a folha sempre sai
-     inteira do rolo, não dá pra imprimir "meia folha"). `page-break-after`/
-     `break-after` em `.etq-page` (os dois, pra compatibilidade — o 2º é o
-     nome moderno do mesmo conceito) separam FOLHAS dentro de um lote —
-     `imprimirLoteEtiquetas` ("Imprimir Todos" da fila) concatena várias
-     `.etq-page` numa única impressão, e é essa regra que faz cada par virar
-     uma página física separada em vez de tudo espremido numa página só. */
+     inteira do rolo, não dá pra imprimir "meia folha"). Quebra de página
+     entre folhas de um LOTE (`imprimirLoteEtiquetas`, "Imprimir Todos" da
+     fila) NÃO é mais uma regra CSS fixa em `.etq-page` — virou um
+     `style="page-break-after:always;break-after:page;"` inline, aplicado
+     só nas folhas que TÊM uma próxima (nunca na última) — uma regra CSS
+     fixa e incondicional já tinha causado um bug real (folha em branco
+     sobrando depois de uma impressão de 1 item só, ver comentário de
+     `buildEtiquetaPageHtml` no <script>).
+     Bug real corrigido aqui: a etiqueta de PRODUTO (`.etq-produto`)
+     transbordava a altura física de 30mm — descrição/data sobrepondo o
+     código de barras, ou parte do conteúdo pulando pra uma 2ª página em
+     branco — porque o orçamento vertical (fontes/margens/altura do código
+     de barras) nunca tinha sido calculado pra caber de verdade nesse
+     espaço; só apareceu numa impressão real (o sandbox não tem impressora
+     física pra pegar isso antes). Reduzi fontes/margens/padding em cascata
+     e travei a altura do código de barras num valor FIXO (não mais
+     `height:auto`, que dependia do tamanho do código pra decidir a altura
+     sozinho, sem limite) — `overflow:hidden` em `.etq-endereco`/
+     `.etq-produto` é a rede de segurança final: se mesmo assim algo não
+     couber, o conteúdo é CORTADO (silencioso) em vez de sobrepor outro
+     elemento ou vazar pra uma 2ª página — bem menos grave que uma etiqueta
+     ilegível. */
   #etiqueta-print-area{display:none;}
   @media print{
     #root{display:none !important;}
     #etiqueta-print-area{display:block;}
   }
   @page{size:101mm 31mm;margin:0;}
-  .etq-page{display:flex;gap:1mm;page-break-after:always;break-after:page;}
-  .etq-endereco{width:50mm;height:30mm;box-sizing:border-box;padding:2mm;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:Arial,sans-serif;text-align:center;}
-  .etq-rotulo{font-size:7pt;font-weight:700;letter-spacing:1px;}
-  .etq-codigo-grande{font-size:20pt;font-weight:700;margin:1.5mm 0;}
-  .etq-barcode{width:44mm;height:auto;}
-  .etq-produto{width:50mm;height:30mm;box-sizing:border-box;padding:1.5mm;border:0.3mm solid #000;display:flex;flex-direction:column;font-family:Arial,sans-serif;}
+  .etq-page{display:flex;gap:1mm;}
+  .etq-endereco{width:50mm;height:30mm;box-sizing:border-box;padding:2mm;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:Arial,sans-serif;text-align:center;overflow:hidden;}
+  .etq-rotulo{font-size:6pt;font-weight:700;letter-spacing:0.5px;}
+  .etq-codigo-grande{font-size:16pt;font-weight:700;margin:1mm 0;}
+  .etq-barcode{display:block;}
+  .etq-endereco .etq-barcode{width:44mm;height:11mm;}
+  .etq-produto{width:50mm;height:30mm;box-sizing:border-box;padding:1mm;border:0.3mm solid #000;display:flex;flex-direction:column;font-family:Arial,sans-serif;overflow:hidden;}
+  .etq-produto .etq-barcode{width:42mm;height:7mm;}
   .etq-topo{display:flex;justify-content:space-between;align-items:flex-start;}
-  .etq-codigo-produto{font-size:13pt;margin:0.5mm 0;}
-  .etq-qtd{font-size:8pt;font-weight:700;}
-  .etq-meio{display:flex;gap:2mm;border-top:0.2mm solid #000;margin-top:1mm;padding-top:1mm;flex:1;min-height:0;}
+  .etq-codigo-produto{font-size:11pt;margin:0.3mm 0;}
+  .etq-qtd{font-size:7pt;font-weight:700;}
+  .etq-meio{display:flex;gap:2mm;border-top:0.2mm solid #000;margin-top:0.5mm;padding-top:0.5mm;flex:1;min-height:0;overflow:hidden;}
   .etq-col{flex:1;overflow:hidden;}
   .etq-col-divisor{border-left:0.2mm solid #000;padding-left:2mm;}
-  .etq-valor{font-size:7pt;word-break:break-word;}
-  .etq-rodape{border-top:0.2mm solid #000;margin-top:1mm;padding-top:1mm;text-align:center;}
-  .etq-codigo-pequeno{font-size:6pt;margin-top:0.5mm;}
+  .etq-valor{font-size:6pt;line-height:1.15;word-break:break-word;}
+  .etq-rodape{border-top:0.2mm solid #000;margin-top:0.5mm;padding-top:0.5mm;text-align:center;}
+  .etq-codigo-pequeno{font-size:5.5pt;margin-top:0.3mm;}
 </style>
 </head>
 <body>
@@ -1494,7 +1512,12 @@ function buildEtiquetaItemHtml({tipo, codigo, descricao, quantidade, dataRecebim
       + '<svg class="etq-barcode"></svg>'
       + '</div>';
   }
-  const desc = escapeHtmlEtiqueta((descricao||'').slice(0, 40));
+  // Truncado mais curto que antes (era 40) — a coluna "DESCRICAO" tem só
+  // ~21mm de largura útil a 6pt; um texto mais longo do que isso quebra em
+  // linhas demais e ajuda a estourar a altura de 30mm da etiqueta (ver
+  // comentário no <style>, perto de `.etq-produto`, sobre o bug real de
+  // transbordo corrigido nesta rodada).
+  const desc = escapeHtmlEtiqueta((descricao||'').slice(0, 26));
   const qtdTexto = quantidade ? ('Qtd: '+escapeHtmlEtiqueta(quantidade)+' PC') : '';
   const dataTexto = dataRecebimento ? escapeHtmlEtiqueta(fmtDataBR(dataRecebimento)) : '';
   return '<div class="etq-produto">'
@@ -1517,9 +1540,16 @@ function buildEtiquetaItemHtml({tipo, codigo, descricao, quantidade, dataRecebim
 // conforme `itens` tem 1 ou 2 elementos. Extraído pra ser reaproveitado
 // tanto por uma impressão de folha única (`imprimirEtiquetaViaNavegador`)
 // quanto pelo lote inteiro da fila (`imprimirLoteEtiquetas`, várias folhas
-// no mesmo job de impressão).
-function buildEtiquetaPageHtml(itens){
-  return '<div class="etq-page">'
+// no mesmo job de impressão). `quebrarDepois` (opcional, default `false`)
+// adiciona `page-break-after:always` só nesta folha — usado só pelo LOTE,
+// só nas folhas que têm uma PRÓXIMA (nunca na última): aplicar isso como
+// regra CSS fixa em `.etq-page` (como era antes) causava uma folha em
+// branco sobrando mesmo numa impressão de 1 item só — o navegador insere a
+// quebra pedida mesmo sem conteúdo depois dela, em vez de simplesmente
+// ignorá-la por "não ter mais nada".
+function buildEtiquetaPageHtml(itens, quebrarDepois){
+  const style = quebrarDepois ? ' style="page-break-after:always;break-after:page;"' : '';
+  return '<div class="etq-page"'+style+'>'
     + itens.map(it=>'<div class="etq-page-col">'+buildEtiquetaItemHtml(it)+'</div>').join('')
     + '</div>';
 }
@@ -1565,7 +1595,7 @@ function imprimirEtiquetaViaNavegador(item1, item2){
   const area = (typeof document!=='undefined') ? document.getElementById('etiqueta-print-area') : null;
   if(!area) return {ok:false, erro:'Área de impressão não encontrada nesta página.'};
   const itens = item2 ? [item1, item2] : [item1];
-  area.innerHTML = buildEtiquetaPageHtml(itens);
+  area.innerHTML = buildEtiquetaPageHtml(itens, false);
   desenharBarcodesEtiqueta(area, itens);
   if(typeof window!=='undefined' && window.print) window.print();
   return {ok:true};
@@ -1580,9 +1610,11 @@ function imprimirEtiquetaViaNavegador(item1, item2){
 // desperdiça a coluna direita quando há outro item esperando); se sobrar 1
 // (quantidade ímpar), a última folha sai com só 1 coluna preenchida.
 // Cada par vira uma FOLHA separada, mas tudo num ÚNICO job de impressão —
-// `page-break-after` em `.etq-page` (CSS) separa as folhas dentro do mesmo
-// `window.print()`, em vez de abrir um diálogo de impressão por par (o que
-// travaria a experiência com N confirmações seguidas).
+// `page-break-after` (via `buildEtiquetaPageHtml(par, quebrarDepois)`)
+// separa as folhas dentro do mesmo `window.print()`, em vez de abrir um
+// diálogo de impressão por par (o que travaria a experiência com N
+// confirmações seguidas). Só a ÚLTIMA folha não recebe a quebra (nada vem
+// depois dela pra quebrar).
 function imprimirLoteEtiquetas(itens){
   const area = (typeof document!=='undefined') ? document.getElementById('etiqueta-print-area') : null;
   if(!area) return {ok:false, erro:'Área de impressão não encontrada nesta página.'};
@@ -1591,7 +1623,7 @@ function imprimirLoteEtiquetas(itens){
   for(let i=0;i<itens.length;i+=2){
     pares.push(itens[i+1] ? [itens[i], itens[i+1]] : [itens[i]]);
   }
-  area.innerHTML = pares.map(buildEtiquetaPageHtml).join('');
+  area.innerHTML = pares.map((par, i)=>buildEtiquetaPageHtml(par, i<pares.length-1)).join('');
   desenharBarcodesEtiqueta(area, itens);
   if(typeof window!=='undefined' && window.print) window.print();
   return {ok:true, folhas: pares.length};
