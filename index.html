@@ -1214,31 +1214,41 @@
      couber, o conteúdo é CORTADO (silencioso) em vez de sobrepor outro
      elemento ou vazar pra uma 2ª página — bem menos grave que uma etiqueta
      ilegível.
-     `.etq-page-col` (novo) — margem de segurança mínima (0.5mm de cada
-     lado) entre a borda física de cada coluna de 50x30mm e o conteúdo
-     visível — pedido do cliente depois de ver a impressão real: se o
-     registro/corte da impressora não for perfeito, a borda preta e o
-     código de barras não ficam colados na quina exata, com risco de sair
-     cortados. `.etq-endereco`/`.etq-produto` passaram a preencher 100% da
-     coluna JÁ com esse respiro (width/height:100%, em vez de 50mm/30mm
-     fixos) — a coluna continua ocupando exatamente 50x30mm de espaço
-     físico (não muda o tamanho que a impressora espera pra cada etiqueta),
-     só o conteúdo visível dentro dela encolheu ~1mm no total por eixo. */
+     `.etq-page-col` — margem de segurança mínima (0.8mm de cada lado)
+     entre a borda física de cada coluna de 50x30mm e o conteúdo visível —
+     pedido do cliente depois de ver a impressão real: se o registro/corte
+     da impressora não for perfeito, a borda preta e o código de barras não
+     ficam colados na quina exata, com risco de sair cortados.
+     Bug real corrigido aqui: o cliente reportou que a margem de cima e da
+     esquerda "não deu" (só direita/baixo apareciam) — causa: `.etq-page`
+     não tinha tamanho PRÓPRIO, só herdava o tamanho natural do conteúdo
+     (101×30mm, a soma exata das 2 colunas). Como `@page` é 101×31mm (1mm a
+     mais de altura — o "pitch" físico do rolo, folga entre uma etiqueta e
+     a próxima no rolo, não espaço pro conteúdo usar), o navegador
+     posicionava esse bloco de 30mm de altura no TOPO da página de 31mm por
+     padrão (alinhamento de fluxo normal, sem centralização nenhuma) — a
+     folga de 1mm sobrava inteira EMBAIXO, nunca em cima, e por ser bem
+     maior que a margem de 0.5mm que eu tinha colocado, competia
+     visualmente com ela e fazia parecer que só embaixo/direita "tinham"
+     margem. Corrigido dando a `.etq-page` o tamanho EXATO do `@page`
+     (101×31mm, igual à folha física) + `align-items:center` — agora a
+     folga de 1mm de altura é dividida IGUALMENTE entre topo e base
+     (0.5mm cada), em vez de cair inteira embaixo. */
   #etiqueta-print-area{display:none;}
   @media print{
     #root{display:none !important;}
     #etiqueta-print-area{display:block;}
   }
   @page{size:101mm 31mm;margin:0;}
-  .etq-page{display:flex;gap:1mm;}
-  .etq-page-col{width:50mm;height:30mm;box-sizing:border-box;padding:0.5mm;}
+  .etq-page{display:flex;align-items:center;gap:1mm;width:101mm;height:31mm;box-sizing:border-box;}
+  .etq-page-col{width:50mm;height:30mm;box-sizing:border-box;padding:0.8mm;}
   .etq-endereco{width:100%;height:100%;box-sizing:border-box;padding:2mm;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:Arial,sans-serif;text-align:center;overflow:hidden;}
   .etq-rotulo{font-size:6pt;font-weight:700;letter-spacing:0.5px;}
   .etq-codigo-grande{font-size:16pt;font-weight:700;margin:1mm 0;}
   .etq-barcode{display:block;}
   .etq-endereco .etq-barcode{width:44mm;height:11mm;}
   .etq-produto{width:100%;height:100%;box-sizing:border-box;padding:1mm;border:0.3mm solid #000;display:flex;flex-direction:column;font-family:Arial,sans-serif;overflow:hidden;}
-  .etq-produto .etq-barcode{width:41mm;height:6mm;}
+  .etq-produto .etq-barcode{width:40mm;height:5.5mm;}
   .etq-topo{display:flex;justify-content:space-between;align-items:flex-start;}
   .etq-codigo-produto{font-size:11pt;margin:0.3mm 0;}
   .etq-qtd{font-size:7pt;font-weight:700;}
@@ -1511,6 +1521,27 @@ function escapeHtmlEtiqueta(texto){
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+// Divide a quantidade RECEBIDA em N etiquetas — pedido do cliente: "se eu
+// receber 500 peças e quiser 10 etiquetas ele manda para impressora 10
+// etiquetas de QTD: 50". Distribui o RESTO (quando a divisão não é exata)
+// nas primeiras etiquetas, uma unidade a mais em cada — garante que a SOMA
+// das quantidades impressas bate exatamente com o total recebido, nunca
+// perde nem inventa peça por arredondamento (ex: 500÷7 → [72,72,71,71,71,
+// 71,71], soma 500). `total`/`n` podem vir como string (direto do campo de
+// texto) — convertidos aqui. `n` sempre pelo menos 1 (nunca gera 0
+// etiquetas por engano).
+function splitQuantidadeEtiquetas(total, n){
+  const totalNum = Number(total) || 0;
+  const nNum = Math.max(1, Math.floor(Number(n)) || 1);
+  const base = Math.floor(totalNum / nNum);
+  const resto = totalNum - base * nNum;
+  const partes = [];
+  for(let i=0;i<nNum;i++){
+    partes.push(base + (i < resto ? 1 : 0));
+  }
+  return partes;
+}
+
 // Monta o HTML de UMA etiqueta (`.etq-endereco`/`.etq-produto`) — extraído
 // de `imprimirEtiquetaViaNavegador` pra poder montar 1 ou 2 colunas na
 // mesma folha (ver comentário dela abaixo, sobre o rolo de 2 colunas).
@@ -1529,7 +1560,7 @@ function buildEtiquetaItemHtml({tipo, codigo, descricao, quantidade, dataRecebim
   // comentário no <style>, perto de `.etq-produto`, sobre o bug real de
   // transbordo corrigido nesta rodada).
   const desc = escapeHtmlEtiqueta((descricao||'').slice(0, 26));
-  const qtdTexto = quantidade ? ('Qtd: '+escapeHtmlEtiqueta(quantidade)+' PC') : '';
+  const qtdTexto = quantidade ? ('QTD: '+escapeHtmlEtiqueta(quantidade)+' PC') : '';
   const dataTexto = dataRecebimento ? escapeHtmlEtiqueta(fmtDataBR(dataRecebimento)) : '';
   return '<div class="etq-produto">'
     + '<div class="etq-topo">'
@@ -13359,12 +13390,19 @@ function EtiquetasPanel({currentUser}){
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [selecionado, setSelecionado] = useState(null);
-  // Só a etiqueta de PRODUTO tem esses 2 campos (pedido do cliente, layout
-  // de recebimento) — endereço não tem quantidade/data nenhuma pra mostrar.
-  // Os dois são opcionais: `imprimirEtiquetaViaNavegador` já lida com eles
-  // vazios, deixando de fora da etiqueta em vez de imprimir "Qtd: PC" quebrado.
+  // Só a etiqueta de PRODUTO tem esses campos (pedido do cliente, layout
+  // de recebimento) — endereço não tem quantidade/data/nº de etiquetas pra
+  // mostrar. `quantidade`/`dataRecebimento` são opcionais:
+  // `imprimirEtiquetaViaNavegador` já lida com eles vazios, deixando de
+  // fora da etiqueta em vez de imprimir "QTD: PC" quebrado.
   const [quantidade, setQuantidade] = useState('');
   const [dataRecebimento, setDataRecebimento] = useState(()=> new Date().toISOString().slice(0,10));
+  // Quantidade de ETIQUETAS a gerar (nasce '1' — 1 etiqueta com a
+  // quantidade recebida inteira, mesmo comportamento de sempre). Pedido do
+  // cliente: "se eu receber 500 peças e quiser 10 etiquetas ele manda pra
+  // impressora 10 etiquetas de QTD: 50" — `splitQuantidadeEtiquetas`
+  // divide `quantidade` por este valor (ver comentário dela no <script>).
+  const [quantidadeEtiquetas, setQuantidadeEtiquetas] = useState('1');
 
   const [imprimindo, setImprimindo] = useState(false);
   const [erroImpressao, setErroImpressao] = useState(null);
@@ -13424,6 +13462,7 @@ function EtiquetasPanel({currentUser}){
     setSelecionado(null);
     setQuery('');
     setQuantidade('');
+    setQuantidadeEtiquetas('1');
   }, [aba]);
 
   // Debounce de 350ms, mesmo padrão já usado em ManualCountFlow/
@@ -13439,18 +13478,34 @@ function EtiquetasPanel({currentUser}){
     return ()=>{ cancelado = true; clearTimeout(timer); };
   }, [query, aba]);
 
+  // Pra tipo 'produto', gera N itens (N = quantidadeEtiquetas), cada um com
+  // a fatia certa da quantidade recebida (`splitQuantidadeEtiquetas`) — 1
+  // etiqueta (padrão) sempre gera `[quantidade]` inteira, mesmo
+  // comportamento de sempre. Endereço nunca divide (não tem quantidade).
+  function montarItensParaImprimir(){
+    if(aba!=='produto'){
+      return [{ tipo: aba, codigo: selecionado.codigo, descricao: selecionado.descricao }];
+    }
+    const partes = splitQuantidadeEtiquetas(quantidade, quantidadeEtiquetas);
+    return partes.map(qtd=>({
+      tipo: 'produto',
+      codigo: selecionado.codigo,
+      descricao: selecionado.descricao,
+      quantidade: qtd || '',
+      dataRecebimento,
+    }));
+  }
+
   async function handleImprimir(){
     if(!selecionado) return;
     setImprimindo(true);
     setErroImpressao(null);
     setSucessoImpressao(false);
-    const res = imprimirEtiquetaViaNavegador({
-      tipo: aba,
-      codigo: selecionado.codigo,
-      descricao: selecionado.descricao,
-      quantidade,
-      dataRecebimento,
-    });
+    const itens = montarItensParaImprimir();
+    // 1 item só usa o caminho de sempre (folha única, sem pareamento) — N
+    // itens (N etiquetas pedidas) reaproveita o lote (pareia 2 por folha,
+    // várias páginas no mesmo job de impressão — ver imprimirLoteEtiquetas).
+    const res = itens.length>1 ? imprimirLoteEtiquetas(itens) : imprimirEtiquetaViaNavegador(itens[0]);
     setImprimindo(false);
     if(res.ok) setSucessoImpressao(true);
     else setErroImpressao(res.erro);
@@ -13458,23 +13513,31 @@ function EtiquetasPanel({currentUser}){
 
   // Envia pra fila em vez de imprimir na hora — funciona em QUALQUER
   // aparelho/navegador (nem precisa suportar WebUSB), já que não depende da
-  // impressora estar acessível daqui.
+  // impressora estar acessível daqui. Com N etiquetas pedidas, envia N
+  // linhas (uma por etiqueta, cada uma já com a fatia certa da quantidade)
+  // — sequencial, para no 1º erro (mesmo padrão já usado em outros loops
+  // desta tela, ex. `handleImprimirTodos`).
   async function handleEnviarParaFila(){
     if(!selecionado) return;
     setEnviandoParaFila(true);
     setErroFilaEnvio(null);
     setSucessoFilaEnvio(false);
-    const res = await salvarEtiquetaNaFila({
-      tipo: aba,
-      codigo: selecionado.codigo,
-      descricao: aba==='produto' ? selecionado.descricao : null,
-      quantidade: aba==='produto' ? quantidade : null,
-      dataRecebimento: aba==='produto' ? dataRecebimento : null,
-      criadoPor: currentUser ? currentUser.nome : null,
-    });
+    const itens = montarItensParaImprimir();
+    let erro = null;
+    for(const item of itens){
+      const res = await salvarEtiquetaNaFila({
+        tipo: item.tipo,
+        codigo: item.codigo,
+        descricao: item.tipo==='produto' ? item.descricao : null,
+        quantidade: item.tipo==='produto' ? item.quantidade : null,
+        dataRecebimento: item.tipo==='produto' ? item.dataRecebimento : null,
+        criadoPor: currentUser ? currentUser.nome : null,
+      });
+      if(!res.ok){ erro = res.erro; break; }
+    }
     setEnviandoParaFila(false);
-    if(res.ok) setSucessoFilaEnvio(true);
-    else setErroFilaEnvio(res.erro);
+    if(!erro) setSucessoFilaEnvio(true);
+    else setErroFilaEnvio(erro);
   }
 
   // Imprime um pedido já pendente na fila — mesmo caminho de impressão de
@@ -13589,7 +13652,7 @@ function EtiquetasPanel({currentUser}){
       {!loading && query && results.length===0 && <div className="empty-state">Nenhum resultado encontrado.</div>}
 
       {!selecionado && results.map(item=>(
-        <div key={item.codigo || item.id} className="list-row" onClick={()=>{ setSelecionado(item); setSucessoImpressao(false); setErroImpressao(null); setQuantidade(''); }}>
+        <div key={item.codigo || item.id} className="list-row" onClick={()=>{ setSelecionado(item); setSucessoImpressao(false); setErroImpressao(null); setQuantidade(''); setQuantidadeEtiquetas('1'); }}>
           <div>
             <div className="lr-title">{aba==='endereco' ? item.codigo : item.descricao}</div>
             {aba==='produto' && <div className="lr-sub">{item.codigo}</div>}
@@ -13614,6 +13677,20 @@ function EtiquetasPanel({currentUser}){
                 <label>Data de recebimento</label>
                 <input type="date" value={dataRecebimento} onChange={e=>setDataRecebimento(e.target.value)} />
               </div>
+            </div>
+          )}
+          {aba==='produto' && (
+            <div style={{marginTop:10}}>
+              <div className="field" style={{maxWidth:200,marginBottom:0}}>
+                <label>Quantidade de etiquetas</label>
+                <input type="text" inputMode="numeric" value={quantidadeEtiquetas} onChange={e=>setQuantidadeEtiquetas(e.target.value.replace(/[^0-9]/g,''))} placeholder="Ex: 10" />
+              </div>
+              {Number(quantidadeEtiquetas)>1 && quantidade && (
+                <div className="lr-sub" style={{marginTop:6}}>
+                  {splitQuantidadeEtiquetas(quantidade, quantidadeEtiquetas).length} etiquetas —
+                  {' '}{Array.from(new Set(splitQuantidadeEtiquetas(quantidade, quantidadeEtiquetas))).sort((a,b)=>b-a).map((v,i)=>(i?' / ':' ')+'QTD: '+v)}
+                </div>
+              )}
             </div>
           )}
           {erroImpressao && (
