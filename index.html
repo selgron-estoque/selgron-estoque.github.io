@@ -1581,11 +1581,18 @@ function buildEtiquetaItemHtml({tipo, codigo, descricao, quantidade, dataRecebim
 // Monta o HTML de UMA FOLHA (`.etq-page`) — 1 ou 2 `.etq-page-col` dentro,
 // conforme `itens` tem 1 ou 2 elementos. Extraído pra ser reaproveitado
 // tanto por uma impressão de folha única (`imprimirEtiquetaViaNavegador`)
-// quanto por cada folha de um lote (`imprimirLoteEtiquetas`, ver comentário
-// dela — cada folha vira o SEU PRÓPRIO job de impressão agora, não mais
-// várias folhas concatenadas no mesmo job via `page-break-after`).
-function buildEtiquetaPageHtml(itens){
-  return '<div class="etq-page">'
+// quanto pelo lote inteiro da fila (`imprimirLoteEtiquetas`, várias folhas
+// no mesmo job de impressão — ver comentário dela sobre o "N janelas de
+// impressão" que foi tentado e REVERTIDO). `quebrarDepois` (opcional,
+// default `false`) adiciona `page-break-after:always` só nesta folha —
+// usado só pelo LOTE, só nas folhas que têm uma PRÓXIMA (nunca na última):
+// aplicar isso como regra CSS fixa em `.etq-page` (em vez de inline,
+// condicional) causava uma folha em branco sobrando mesmo numa impressão
+// de 1 item só — o navegador insere a quebra pedida mesmo sem conteúdo
+// depois dela, em vez de simplesmente ignorá-la por "não ter mais nada".
+function buildEtiquetaPageHtml(itens, quebrarDepois){
+  const style = quebrarDepois ? ' style="page-break-after:always;break-after:page;"' : '';
+  return '<div class="etq-page"'+style+'>'
     + itens.map(it=>'<div class="etq-page-col">'+buildEtiquetaItemHtml(it)+'</div>').join('')
     + '</div>';
 }
@@ -1631,7 +1638,7 @@ function imprimirEtiquetaViaNavegador(item1, item2){
   const area = (typeof document!=='undefined') ? document.getElementById('etiqueta-print-area') : null;
   if(!area) return {ok:false, erro:'Área de impressão não encontrada nesta página.'};
   const itens = item2 ? [item1, item2] : [item1];
-  area.innerHTML = buildEtiquetaPageHtml(itens);
+  area.innerHTML = buildEtiquetaPageHtml(itens, false);
   desenharBarcodesEtiqueta(area, itens);
   if(typeof window!=='undefined' && window.print) window.print();
   return {ok:true};
@@ -1645,21 +1652,23 @@ function imprimirEtiquetaViaNavegador(item1, item2){
 // regra de `imprimirEtiquetaViaNavegador`/`handleImprimirFila` — nunca
 // desperdiça a coluna direita quando há outro item esperando); se sobrar 1
 // (quantidade ímpar), a última folha sai com só 1 coluna preenchida.
-// Bug real corrigido aqui: a versão anterior concatenava TODAS as folhas
-// num ÚNICO job de impressão, separadas por `page-break-after` — na
-// impressora física (não dá pra reproduzir isso no preview do navegador
-// nem no sandbox), o cliente reportou "imprimindo uma linha de etiqueta e
-// pulando uma": o driver da TSC/o sensor de gap do rolo se confunde
-// combinando a quebra de página do NAVEGADOR com o próprio avanço
-// automático de etiqueta do HARDWARE, dessincronizando e pulando uma
-// etiqueta física a cada duas. Corrigido chamando `window.print()` UMA VEZ
-// POR PAR — cada folha vira um job de impressão TOTALMENTE independente
-// (o MESMO caminho que a impressão avulsa/de 1 item da fila já usa, sem
-// nunca ter tido esse problema). `window.print()` é bloqueante (só
-// devolve o controle depois que a janela de impressão do navegador é
-// fechada), então o `forEach` já pausa sozinho entre uma folha e outra —
-// custo aceito: N pares = N confirmações de impressão seguidas, mas
-// nenhuma etiqueta física desperdiçada.
+// Cada par vira uma FOLHA separada, mas tudo num ÚNICO job de impressão —
+// `page-break-after` (via `buildEtiquetaPageHtml(par, quebrarDepois)`)
+// separa as folhas dentro do mesmo `window.print()`. Só a ÚLTIMA folha não
+// recebe a quebra (nada vem depois dela pra quebrar).
+// HISTÓRICO — REVERTIDO: depois do cliente reportar "imprimindo uma linha
+// de etiqueta e pulando uma", uma rodada anterior trocou isso por 1
+// `window.print()` POR PAR (cada folha um job TOTALMENTE independente),
+// na hipótese de que `page-break-after` concatenando várias folhas no
+// mesmo job confundia o sensor de gap da impressora. O cliente testou e
+// confirmou que **o pulo continuou acontecendo mesmo com jobs
+// independentes** — refutando essa hipótese — e que abrir uma janela de
+// confirmação de impressão POR PAR (5 janelas pra 10 etiquetas) é ruim
+// por si só. Revertido pra 1 job só (como estava antes desta sessão),
+// já que a mudança não resolveu o problema real e piorou a experiência.
+// A causa do pulo continua em aberto — próxima hipótese a investigar:
+// calibração física do sensor de gap da impressora pro rolo atual (ver
+// pergunta feita ao cliente), não a arquitetura de impressão em si.
 function imprimirLoteEtiquetas(itens){
   const area = (typeof document!=='undefined') ? document.getElementById('etiqueta-print-area') : null;
   if(!area) return {ok:false, erro:'Área de impressão não encontrada nesta página.'};
@@ -1668,11 +1677,9 @@ function imprimirLoteEtiquetas(itens){
   for(let i=0;i<itens.length;i+=2){
     pares.push(itens[i+1] ? [itens[i], itens[i+1]] : [itens[i]]);
   }
-  pares.forEach(par=>{
-    area.innerHTML = buildEtiquetaPageHtml(par);
-    desenharBarcodesEtiqueta(area, par);
-    if(typeof window!=='undefined' && window.print) window.print();
-  });
+  area.innerHTML = pares.map((par, i)=>buildEtiquetaPageHtml(par, i<pares.length-1)).join('');
+  desenharBarcodesEtiqueta(area, itens);
+  if(typeof window!=='undefined' && window.print) window.print();
   return {ok:true, folhas: pares.length};
 }
 
@@ -13577,10 +13584,10 @@ function EtiquetasPanel({currentUser}){
 
   // Imprime TODOS os itens pendentes de uma vez — pedido do cliente
   // ("colocar botão imprimir todos... organizar para imprimir sempre uma
-  // ao lado da outra"). Usa `imprimirLoteEtiquetas` (pareia 2 a 2, um
-  // `window.print()` POR PAR — ver comentário dela, evita o bug real de
-  // "pula etiqueta física a cada duas" que a versão anterior tinha com
-  // todas as folhas concatenadas num job só).
+  // ao lado da outra"). Usa `imprimirLoteEtiquetas` (1 job de impressão só,
+  // várias folhas via `page-break-after` — ver comentário dela sobre a
+  // tentativa de "1 job por par" que foi revertida por não ter resolvido
+  // o pulo de etiqueta real e ter piorado a experiência com N janelas).
   async function handleImprimirTodos(){
     if(filaPendente.length===0) return;
     const itens = filaPendente.slice(); // já vem ordenado (mais antigo primeiro)
@@ -13658,7 +13665,6 @@ function EtiquetasPanel({currentUser}){
                 <div className="lr-sub" style={{marginTop:6}}>
                   {splitQuantidadeEtiquetas(quantidade, quantidadeEtiquetas).length} etiquetas —
                   {' '}{Array.from(new Set(splitQuantidadeEtiquetas(quantidade, quantidadeEtiquetas))).sort((a,b)=>b-a).map((v,i)=>(i?' / ':' ')+'QTD: '+v)}
-                  {' '}— {Math.ceil(Number(quantidadeEtiquetas)/2)} janelas de impressão seguidas (2 etiquetas por folha)
                 </div>
               )}
             </div>
@@ -13696,9 +13702,6 @@ function EtiquetasPanel({currentUser}){
             <div className="role-note" style={{marginBottom:10}}>
               O rolo tem 2 colunas — ao imprimir, cada folha sai com este item e o
               próximo pendente lado a lado, pra não desperdiçar a coluna direita.
-              Cada folha abre sua própria confirmação de impressão — com {filaPendente.length}
-              {' '}itens pendentes, espere até {Math.ceil(filaPendente.length/2)} janelas
-              de impressão seguidas.
             </div>
           )}
           {filaPendente.map(item=>(

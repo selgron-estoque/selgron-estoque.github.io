@@ -13279,3 +13279,62 @@ impressão de um jeito inesperado) — precisaria de mais um round de
 investigação com o cliente descrevendo o comportamento exato (qual posição
 pula, se o padrão é sempre "par sim, ímpar não" ou aleatório, se acontece
 também com só 1 par/2 etiquetas).
+
+## Revertido: "1 job por par" não resolveu o pulo de etiqueta e piorou a UX
+
+Cliente testou a correção anterior (`imprimirLoteEtiquetas` chamando
+`window.print()` uma vez por par, em vez de concatenar tudo num job só via
+`page-break-after`) usando "Quantidade de etiquetas" com 10 etiquetas —
+resultado: **"continua pulando e agora está abrindo várias telas de
+impressão"**. Duas informações importantes nessa frase:
+
+1. **"continua pulando"** — o pulo de etiqueta física CONTINUOU acontecendo
+   mesmo com cada folha virando um job de impressão totalmente
+   independente. Isso **refuta a hipótese anterior** (que a combinação de
+   `page-break-after` do navegador com o sensor de gap do hardware
+   causasse o pulo) — se fosse isso, jobs independentes (sem
+   `page-break-after` nenhum) deveriam ter resolvido, e não resolveram.
+2. **"abrindo várias telas de impressão"** — o custo que eu já tinha
+   avisado que essa mudança traria (N pares = N confirmações de impressão
+   seguidas) se confirmou incômodo na prática, sem nenhum ganho
+   correspondente.
+
+- **Revertido**: `buildEtiquetaPageHtml`/`imprimirLoteEtiquetas` voltaram
+  exatamente ao formato de antes desta sessão — um ÚNICO
+  `window.print()` para o lote inteiro, com `page-break-after` inline
+  (só nas folhas que têm uma próxima, nunca na última) separando as
+  folhas dentro do mesmo job. A UI voltou a mostrar 1 diálogo de
+  impressão só (removidas as mensagens "N janelas de impressão seguidas"
+  de `EtiquetasPanel` — tanto no aviso da fila quanto na prévia de
+  "Quantidade de etiquetas"). O reordenamento da seção "Fila de impressão"
+  pra baixo do card de busca (pedido do mesmo turno anterior) foi
+  MANTIDO — não tinha relação com o bug de impressão, continua correto.
+- **A causa do pulo continua em aberto** — como DUAS arquiteturas de
+  software diferentes (job único concatenado vs. jobs independentes)
+  exibem o MESMO sintoma, a causa provavelmente não está na forma como o
+  app monta o job de impressão. Perguntei ao cliente (via
+  `AskUserQuestion`, antes desta rodada) se as "Margens" do diálogo de
+  impressão estavam em "Nenhuma" (não "Padrão") e se o "Tamanho do papel"
+  batia com a etiqueta — ainda aguardando essa confirmação específica.
+  Próxima hipótese mais forte, ainda não verificada: **calibração física
+  do sensor de gap da impressora pro rolo atual** — muitos impressoras
+  térmicas com sensor de gap precisam recalibrar sempre que um rolo novo
+  (mesmo de tamanho nominal igual) é carregado; um desalinhamento fixo
+  de calibração causaria exatamente o sintoma relatado (sempre a mesma
+  posição relativa saindo em branco), de forma consistente entre
+  diferentes arquiteturas de software — já que não é um problema de
+  como o HTML/CSS é montado, é sobre onde o SENSOR FÍSICO acha que uma
+  etiqueta começa/termina no rolo real.
+- **Lição registrada aqui**: depois de 2 tentativas de correção via
+  mudança de arquitetura de impressão sem sucesso (e uma delas piorando
+  a UX sem benefício), a hipótese de que o bug está no lado do
+  CÓDIGO/CSS ficou mais fraca — o próximo passo é investigar o lado do
+  HARDWARE/DRIVER (calibração, configuração do diálogo de impressão)
+  antes de tentar mais uma variação de código sem evidência nova.
+
+Testado via reversão dos 3 harnesses tocados na rodada anterior
+(`harness_etiqueta_imprimir_todos.js`/`harness_etiqueta_layout_fix.js`/
+`harness_etiqueta_qtd_split.js`) de volta pras asserções de job único —
+126 asserções no total entre os 6 harnesses de Etiquetas, todas
+passando. Transpile Babel do arquivo inteiro e balanceamento de chaves
+do CSS conferidos (661/661).
