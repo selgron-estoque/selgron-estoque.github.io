@@ -1183,16 +1183,23 @@
      sem altura nenhuma sobrando pra paginar, sobra literalmente só o
      conteúdo de `#etiqueta-print-area`, então nem precisa mais de
      `position:fixed` nela.
-     `@page` pede o tamanho físico da etiqueta (50x30mm) — o driver da
-     impressora já deve ter essa etiqueta cadastrada (é usada pra impressão
-     normal hoje), mas a 1ª impressão pode pedir confirmação desse tamanho
-     na janela do navegador. */
+     `@page` pede o tamanho físico da folha (101x31mm) — o cliente confirmou
+     esses números direto no driver da TSC ("Tamanho da etiqueta: Largura
+     101,0mm / Altura 31,0mm", "Larguras da cartela exposta: 0,0mm/0,0mm") —
+     o rolo físico dele tem DUAS colunas de 50mm lado a lado com ~1mm de vão
+     entre elas (50+1+50=101), não uma etiqueta única de 50mm como a 1ª
+     versão desta feature assumia. `.etq-page` (novo) é o wrapper flex que
+     recebe 1 ou 2 `.etq-page-col` lado a lado — só 1 quando é impressão
+     avulsa (fora da fila) ou quando só sobra 1 item pendente na fila (nesse
+     caso a coluna direita fica em branco, sem alternativa: a folha sempre
+     sai inteira do rolo, não dá pra imprimir "meia folha"). */
   #etiqueta-print-area{display:none;}
   @media print{
     #root{display:none !important;}
     #etiqueta-print-area{display:block;}
   }
-  @page{size:50mm 30mm;margin:0;}
+  @page{size:101mm 31mm;margin:0;}
+  .etq-page{display:flex;gap:1mm;}
   .etq-endereco{width:50mm;height:30mm;box-sizing:border-box;padding:2mm;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:Arial,sans-serif;text-align:center;}
   .etq-rotulo{font-size:7pt;font-weight:700;letter-spacing:1px;}
   .etq-codigo-grande{font-size:20pt;font-weight:700;margin:1.5mm 0;}
@@ -1470,50 +1477,69 @@ function escapeHtmlEtiqueta(texto){
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-// Monta o HTML da etiqueta dentro de `#etiqueta-print-area` (elemento fixo
-// no <body>, fora da árvore do React — ver perto de `<div id="root">` — só
-// fica visível durante a impressão, via `@media print` no <style>) e desenha
-// o código de barras via JsBarcode antes de chamar `window.print()`. `tipo`
-// é `'endereco'`/`'produto'`, mesmo valor que a aba de `EtiquetasPanel` já
-// usa. Coordenadas/tamanhos são um ponto de partida razoável — como o
-// sandbox não tem a impressora física pra testar, pode precisar de ajuste
-// fino depois da 1ª impressão real (mesma ressalva de sempre nesta feature).
-function imprimirEtiquetaViaNavegador({tipo, codigo, descricao, quantidade, dataRecebimento}){
-  const area = (typeof document!=='undefined') ? document.getElementById('etiqueta-print-area') : null;
-  if(!area) return {ok:false, erro:'Área de impressão não encontrada nesta página.'};
+// Monta o HTML de UMA etiqueta (`.etq-endereco`/`.etq-produto`) — extraído
+// de `imprimirEtiquetaViaNavegador` pra poder montar 1 ou 2 colunas na
+// mesma folha (ver comentário dela abaixo, sobre o rolo de 2 colunas).
+function buildEtiquetaItemHtml({tipo, codigo, descricao, quantidade, dataRecebimento}){
   const cod = escapeHtmlEtiqueta(codigo);
   if(tipo==='endereco'){
-    area.innerHTML =
-      '<div class="etq-endereco">'
+    return '<div class="etq-endereco">'
       + '<div class="etq-rotulo">ENDEREÇO</div>'
       + '<div class="etq-codigo-grande">'+cod+'</div>'
       + '<svg class="etq-barcode"></svg>'
       + '</div>';
-  } else {
-    const desc = escapeHtmlEtiqueta((descricao||'').slice(0, 40));
-    const qtdTexto = quantidade ? ('Qtd: '+escapeHtmlEtiqueta(quantidade)+' PC') : '';
-    const dataTexto = dataRecebimento ? escapeHtmlEtiqueta(fmtDataBR(dataRecebimento)) : '';
-    area.innerHTML =
-      '<div class="etq-produto">'
-      + '<div class="etq-topo">'
-      +   '<div><div class="etq-rotulo">CODIGO</div><div class="etq-codigo-grande etq-codigo-produto">'+cod+'</div></div>'
-      +   (qtdTexto ? '<div class="etq-qtd">'+qtdTexto+'</div>' : '')
-      + '</div>'
-      + '<div class="etq-meio">'
-      +   '<div class="etq-col"><div class="etq-rotulo">DESCRICAO</div><div class="etq-valor">'+desc+'</div></div>'
-      +   '<div class="etq-col etq-col-divisor"><div class="etq-rotulo">DATA RECEBIMENTO</div><div class="etq-valor">'+dataTexto+'</div></div>'
-      + '</div>'
-      + '<div class="etq-rodape">'
-      +   '<svg class="etq-barcode"></svg>'
-      +   '<div class="etq-codigo-pequeno">'+cod+'</div>'
-      + '</div>'
-      + '</div>';
   }
+  const desc = escapeHtmlEtiqueta((descricao||'').slice(0, 40));
+  const qtdTexto = quantidade ? ('Qtd: '+escapeHtmlEtiqueta(quantidade)+' PC') : '';
+  const dataTexto = dataRecebimento ? escapeHtmlEtiqueta(fmtDataBR(dataRecebimento)) : '';
+  return '<div class="etq-produto">'
+    + '<div class="etq-topo">'
+    +   '<div><div class="etq-rotulo">CODIGO</div><div class="etq-codigo-grande etq-codigo-produto">'+cod+'</div></div>'
+    +   (qtdTexto ? '<div class="etq-qtd">'+qtdTexto+'</div>' : '')
+    + '</div>'
+    + '<div class="etq-meio">'
+    +   '<div class="etq-col"><div class="etq-rotulo">DESCRICAO</div><div class="etq-valor">'+desc+'</div></div>'
+    +   '<div class="etq-col etq-col-divisor"><div class="etq-rotulo">DATA RECEBIMENTO</div><div class="etq-valor">'+dataTexto+'</div></div>'
+    + '</div>'
+    + '<div class="etq-rodape">'
+    +   '<svg class="etq-barcode"></svg>'
+    +   '<div class="etq-codigo-pequeno">'+cod+'</div>'
+    + '</div>'
+    + '</div>';
+}
+
+// Monta o HTML dentro de `#etiqueta-print-area` (elemento fixo no <body>,
+// fora da árvore do React — ver perto de `<div id="root">` — só fica
+// visível durante a impressão, via `@media print` no <style>) e desenha o(s)
+// código(s) de barras via JsBarcode antes de chamar `window.print()`.
+// `item1`/`item2` são objetos `{tipo, codigo, descricao, quantidade,
+// dataRecebimento}` (`tipo` é `'endereco'`/`'produto'`) — `item2` é
+// OPCIONAL: o rolo físico da TSC tem 2 colunas de 50mm lado a lado (ver
+// comentário no <style>, perto de `.etq-page`), então imprimir sempre 1
+// etiqueta só de propósito desperdiçaria a coluna direita a cada folha.
+// Pedido do cliente: "se tiver mais de uma etiqueta na fila imprimir uma em
+// cada, não desperdiçar etiqueta" — `EtiquetasPanel.handleImprimirFila`
+// pareia com outro item pendente quando existe; a impressão avulsa (fora da
+// fila) sempre chama sem `item2` (só 1 item disponível nesse contexto, não
+// tem com o que parear). Coordenadas/tamanhos são um ponto de partida
+// razoável — como o sandbox não tem a impressora física pra testar, pode
+// precisar de ajuste fino depois da 1ª impressão real (mesma ressalva de
+// sempre nesta feature).
+function imprimirEtiquetaViaNavegador(item1, item2){
+  const area = (typeof document!=='undefined') ? document.getElementById('etiqueta-print-area') : null;
+  if(!area) return {ok:false, erro:'Área de impressão não encontrada nesta página.'};
+  const itens = item2 ? [item1, item2] : [item1];
+  area.innerHTML = '<div class="etq-page">'
+    + itens.map(it=>'<div class="etq-page-col">'+buildEtiquetaItemHtml(it)+'</div>').join('')
+    + '</div>';
   try{
-    const svg = area.querySelector('svg.etq-barcode');
-    if(svg && typeof window!=='undefined' && window.JsBarcode){
-      window.JsBarcode(svg, codigo, {format:'CODE128', displayValue:false, margin:0, height: tipo==='endereco'?90:60, width:1.6});
-    }
+    const svgs = area.querySelectorAll('svg.etq-barcode');
+    svgs.forEach((svg, i)=>{
+      const it = itens[i];
+      if(it && typeof window!=='undefined' && window.JsBarcode){
+        window.JsBarcode(svg, it.codigo, {format:'CODE128', displayValue:false, margin:0, height: it.tipo==='endereco'?90:60, width:1.6});
+      }
+    });
   }catch(err){
     console.warn('Falha ao gerar código de barras:', err);
   }
@@ -13257,7 +13283,11 @@ function EtiquetasPanel({currentUser}){
   const [erroFilaEnvio, setErroFilaEnvio] = useState(null);
   const [sucessoFilaEnvio, setSucessoFilaEnvio] = useState(false);
   const [filaPendente, setFilaPendente] = useState([]);
-  const [imprimindoFilaId, setImprimindoFilaId] = useState(null);
+  // Conjunto de ids "ocupados" agora (não mais um único id) — imprimir um
+  // item da fila pode envolver PAREAR com outro (ver handleImprimirFila),
+  // então os dois ficam desabilitados/"Imprimindo…" ao mesmo tempo, não só
+  // o que foi clicado.
+  const [imprimindoFilaIds, setImprimindoFilaIds] = useState(()=>new Set());
   const [errosFila, setErrosFila] = useState({});
 
   // Fila de impressão em tempo real — escopado a esta tela (não em App()
@@ -13356,27 +13386,32 @@ function EtiquetasPanel({currentUser}){
 
   // Imprime um pedido já pendente na fila — mesmo caminho de impressão de
   // sempre (`imprimirEtiquetaViaNavegador`), só que a partir do dado
-  // gravado no Supabase em vez do que está selecionado na tela agora. Não
-  // precisa remover manualmente da lista local: o UPDATE de status vira um
-  // evento do Realtime que já tira o item de `filaPendente` sozinho (ver o
-  // canal acima).
+  // gravado no Supabase em vez do que está selecionado na tela agora.
+  // Pareia com OUTRO item pendente (o mais antigo, excluindo este) pra
+  // preencher a 2ª coluna da folha, sempre que existir — pedido do cliente
+  // ("se tiver mais de uma etiqueta na fila imprimir uma em cada, não
+  // desperdiçar etiqueta"). Se este for o único pendente, imprime sozinho
+  // (coluna direita em branco, sem alternativa — a folha sai inteira do
+  // rolo de qualquer jeito). Não precisa remover manualmente da lista
+  // local: o UPDATE de status vira um evento do Realtime que já tira o(s)
+  // item(ns) de `filaPendente` sozinho (ver o canal acima).
   async function handleImprimirFila(item){
-    setImprimindoFilaId(item.id);
-    setErrosFila(prev=>({...prev, [item.id]: null}));
-    const res = imprimirEtiquetaViaNavegador({
-      tipo: item.tipo,
-      codigo: item.codigo,
-      descricao: item.descricao,
-      quantidade: item.quantidade,
-      dataRecebimento: item.dataRecebimento,
-    });
+    const par = filaPendente.find(f=>f.id!==item.id);
+    setImprimindoFilaIds(new Set(par ? [item.id, par.id] : [item.id]));
+    setErrosFila(prev=>({...prev, [item.id]: null, ...(par ? {[par.id]: null} : {})}));
+    const toItemImpressao = it=>({tipo: it.tipo, codigo: it.codigo, descricao: it.descricao, quantidade: it.quantidade, dataRecebimento: it.dataRecebimento});
+    const res = imprimirEtiquetaViaNavegador(toItemImpressao(item), par ? toItemImpressao(par) : undefined);
     if(res.ok){
-      const marc = await marcarEtiquetaImpressa(item.id, currentUser ? currentUser.nome : null);
-      if(!marc.ok) setErrosFila(prev=>({...prev, [item.id]: marc.erro}));
+      const marc1 = await marcarEtiquetaImpressa(item.id, currentUser ? currentUser.nome : null);
+      if(!marc1.ok) setErrosFila(prev=>({...prev, [item.id]: marc1.erro}));
+      if(par){
+        const marc2 = await marcarEtiquetaImpressa(par.id, currentUser ? currentUser.nome : null);
+        if(!marc2.ok) setErrosFila(prev=>({...prev, [par.id]: marc2.erro}));
+      }
     } else {
-      setErrosFila(prev=>({...prev, [item.id]: res.erro}));
+      setErrosFila(prev=>({...prev, [item.id]: res.erro, ...(par ? {[par.id]: res.erro} : {})}));
     }
-    setImprimindoFilaId(null);
+    setImprimindoFilaIds(new Set());
   }
 
   return (
@@ -13384,7 +13419,7 @@ function EtiquetasPanel({currentUser}){
       <div className="role-note" style={{marginBottom:14}}>
         <DIcon name="printer" size={16} style={{verticalAlign:-3,marginRight:6}}/>
         Ao clicar em "Imprimir Etiqueta", abre a janela de impressão normal do navegador —
-        escolha a impressora TSC e confirme o tamanho da etiqueta (50×30mm) se for pedido.
+        escolha a impressora TSC e confirme o tamanho da folha (101×31mm) se for pedido.
       </div>
 
       {filaPendente.length>0 && (
@@ -13393,6 +13428,12 @@ function EtiquetasPanel({currentUser}){
             Fila de impressão
             <span className="badge" style={{position:'static',marginLeft:8}}>{filaPendente.length}</span>
           </div>
+          {filaPendente.length>1 && (
+            <div className="role-note" style={{marginBottom:10}}>
+              O rolo tem 2 colunas — ao imprimir, cada folha sai com este item e o
+              próximo pendente lado a lado, pra não desperdiçar a coluna direita.
+            </div>
+          )}
           {filaPendente.map(item=>(
             <div key={item.id} className="list-row" style={{cursor:'default',flexWrap:'wrap'}}>
               <div>
@@ -13406,8 +13447,8 @@ function EtiquetasPanel({currentUser}){
                   <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginTop:4}}>{errosFila[item.id]}</div>
                 )}
               </div>
-              <button className="btn btn-primary btn-sm" disabled={imprimindoFilaId===item.id} onClick={()=>handleImprimirFila(item)}>
-                <DIcon name="printer" size={14}/> {imprimindoFilaId===item.id ? 'Imprimindo…' : 'Imprimir'}
+              <button className="btn btn-primary btn-sm" disabled={imprimindoFilaIds.has(item.id)} onClick={()=>handleImprimirFila(item)}>
+                <DIcon name="printer" size={14}/> {imprimindoFilaIds.has(item.id) ? 'Imprimindo…' : 'Imprimir'}
               </button>
             </div>
           ))}
