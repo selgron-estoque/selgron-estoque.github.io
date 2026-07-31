@@ -1271,28 +1271,66 @@ async function searchSupabaseCatalog(query, almoxarifado){
   const codigos = data.map(row=>row.codigo);
   const saldoPorCodigo = {};
   const ultimaSaidaPorCodigo = {};
+  const custoUnitPorCodigo = {};
+  // Bug real corrigido aqui: esta consulta nunca buscava `valor_financeiro`
+  // (só `saldo`/`almoxarifado`/`data_ultima_saida`) — `custoUnit`/
+  // `valorFinanceiro` do produto retornado eram sempre 0 incondicionalmente,
+  // mesmo quando o item tinha custo real carregado em `estoque_saldo`. Todo
+  // item achado pela "Nova Contagem" avulsa (busca manual — o caminho mais
+  // comum pra contar um item fora de uma lista de inventário estruturada)
+  // sempre mostrava "Valor do ajuste: R$ 0,00" em Contagens Concluídas,
+  // mesmo com uma divergência de quantidade real. `estoqueRowToProduct`/
+  // `fetchContagemItensPrioritarios` (os outros dois caminhos que resolvem
+  // produto a partir do Supabase) já buscavam e calculavam custo
+  // corretamente — só esta função ficou pra trás, mesma classe de bug já
+  // corrigida aqui antes pra `data_ultima_saida`.
+  //
+  // Cliente reportou um item específico com Sistema=0 no armazém contado
+  // mostrando "Valor do ajuste: R$ 0,00" mesmo tendo custo real conhecido
+  // ("esse item tem custo, só precisa multiplicar pela divergência") — a
+  // consulta abaixo passou a buscar TODOS os armazéns do código (não só o
+  // pedido), pra o CUSTO poder cair pra outro armazém quando o armazém
+  // contado está zerado (saldo=0 torna `valor/saldo` indefinido ali, mas o
+  // item físico é o mesmo, com o mesmo custo médio, em outro lugar). O
+  // SALDO exibido/comparado continua só confiando no armazém pedido, sem
+  // mudança nenhuma nessa regra — só o custo passou a ter esse fallback.
   if(codigos.length>0){
-    let saldoQuery = supabaseClient
+    const { data: saldoRows } = await supabaseClient
       .from('estoque_saldo')
-      .select('produto_codigo, saldo, almoxarifado, data_ultima_saida')
+      .select('produto_codigo, saldo, almoxarifado, data_ultima_saida, valor_financeiro')
       .in('produto_codigo', codigos);
-    if(almoxarifado) saldoQuery = saldoQuery.eq('almoxarifado', almoxarifado);
-    const { data: saldoRows } = await saldoQuery;
     const linhasPorCodigo = {};
     (saldoRows||[]).forEach(r=>{
       (linhasPorCodigo[r.produto_codigo] = linhasPorCodigo[r.produto_codigo] || []).push(r);
     });
     Object.keys(linhasPorCodigo).forEach(codigo=>{
       const linhas = linhasPorCodigo[codigo];
-      if(linhas.length===1){
-        saldoPorCodigo[codigo] = Number(linhas[0].saldo||0);
-        ultimaSaidaPorCodigo[codigo] = linhas[0].data_ultima_saida || null;
+      // Saldo: mesmo critério de sempre — só confia quando é inequívoco pro
+      // armazém pedido (ou pro código inteiro, quando nenhum armazém foi
+      // informado, caso de "Itens Específicos").
+      const doArmazem = almoxarifado ? linhas.filter(r=>r.almoxarifado===almoxarifado) : linhas;
+      if(doArmazem.length===1){
+        saldoPorCodigo[codigo] = Number(doArmazem[0].saldo||0);
+        ultimaSaidaPorCodigo[codigo] = doArmazem[0].data_ultima_saida || null;
       }
+      // Custo: primeiro armazém com saldo≠0 e valor financeiro conhecido —
+      // preferindo o armazém pedido quando ele mesmo tiver essa informação,
+      // senão qualquer outro. Não exige inequivocidade (custo médio serve
+      // de aproximação razoável mesmo vindo de outro armazém).
+      const comCusto = linhas.filter(r=>Number(r.saldo||0)!==0 && r.valor_financeiro!=null);
+      const preferido = comCusto.find(r=>r.almoxarifado===almoxarifado) || comCusto[0];
+      if(preferido) custoUnitPorCodigo[codigo] = Number(preferido.valor_financeiro||0) / Number(preferido.saldo||1);
     });
   }
 
   return data.map(row=>{
     const enderecoRow = (row.estoque_enderecos && row.estoque_enderecos[0] && row.estoque_enderecos[0].enderecos) || null;
+    // Sem saldo pra ESTE armazém específico — pedido do cliente pra tratar
+    // como saldo real 0 em vez de "sem comparação" (ver mesma decisão em
+    // estoqueRowToProduct) — não é fingir o saldo de outro armazém, é
+    // assumir 0 quando não há nenhum dado carregado pra este.
+    const saldo = Object.prototype.hasOwnProperty.call(saldoPorCodigo, row.codigo) ? saldoPorCodigo[row.codigo] : 0;
+    const custoUnit = custoUnitPorCodigo[row.codigo] || 0;
     return {
       codigo: row.codigo,
       descricao: row.descricao,
@@ -1303,13 +1341,9 @@ async function searchSupabaseCatalog(query, almoxarifado){
       almoxarifado: almoxarifado || '—',
       corredor: null,
       rua: null,
-      // Sem saldo pra ESTE armazém específico — pedido do cliente pra
-      // tratar como saldo real 0 em vez de "sem comparação" (ver mesma
-      // decisão em estoqueRowToProduct) — não é fingir o saldo de outro
-      // armazém, é assumir 0 quando não há nenhum dado carregado pra este.
-      saldoSistema: Object.prototype.hasOwnProperty.call(saldoPorCodigo, row.codigo) ? saldoPorCodigo[row.codigo] : 0,
-      custoUnit: 0,
-      valorFinanceiro: 0,
+      saldoSistema: saldo,
+      custoUnit,
+      valorFinanceiro: custoUnit * saldo,
       semMovimentoRecente: false,
       ultimaSaida: ultimaSaidaPorCodigo[row.codigo] || null,
       foraDoCacheLocal: true,

@@ -12381,3 +12381,53 @@ Armazém" — o `<label>` acima do campo foi removido; o texto explicativo
 ("Número da SA (Ex: SA-2026-00123)"), mantendo contexto suficiente sem
 precisar de um rótulo separado acima. Sem mudança de comportamento —
 `saInputValue`/`handleEnviar`/validação continuam iguais.
+
+## Bug real: "Valor do ajuste" sempre R$ 0,00 pra item achado via Nova Contagem avulsa
+
+Cliente mandou print de "Contagens Concluídas" (item `000.48741`, Devolução,
+Sistema 0/Físico 2) mostrando "Valor do ajuste: R$ 0,00" e perguntou por
+quê. Investigando, achei DOIS problemas empilhados em `searchSupabaseCatalog`
+(a busca usada por "Nova Contagem" avulsa — Manual, o caminho mais comum
+pra contar um item fora de uma lista de inventário estruturada):
+
+1. **Bug real, incondicional**: a consulta a `estoque_saldo` nunca buscava
+   `valor_financeiro` (só `saldo`/`almoxarifado`/`data_ultima_saida`) —
+   `custoUnit`/`valorFinanceiro` do produto retornado eram sempre `0`
+   incondicionalmente, mesmo quando o item tinha custo real carregado.
+   `estoqueRowToProduct`/`fetchContagemItensPrioritarios` (os outros dois
+   caminhos que resolvem produto a partir do Supabase) já buscavam e
+   calculavam custo corretamente — só esta função tinha ficado pra trás,
+   mesma classe de bug já corrigida aqui antes pra `data_ultima_saida`.
+2. **Limitação estrutural, exposta pelo caso real do cliente**: mesmo
+   corrigido o bug acima, `custoUnit` é sempre `valor_financeiro ÷ saldo` —
+   pra um item com Sistema=0 no armazém contado (comum em "Devolução",
+   que por definição tem saldo baixo/zero no sistema), essa divisão
+   trava em 0 mesmo que o item tenha custo real conhecido em OUTRO
+   armazém. Cliente confirmou: "esse item tem custo, só precisa
+   multiplicar pela divergência".
+
+- **Correção**: a consulta a `estoque_saldo` deixou de filtrar por
+  `almoxarifado` na hora de buscar (busca em TODOS os armazéns do código
+  agora) — o **saldo** exibido/comparado continua só confiando no armazém
+  pedido (mesmo critério de sempre, "não é fingir saldo de outro armazém"),
+  mas o **custo** passou a ter um fallback: primeiro tenta o próprio
+  armazém pedido (se tiver saldo≠0 e valor financeiro conhecido); se não
+  tiver, cai pra QUALQUER outro armazém do mesmo código que tenha — custo
+  médio do item continua uma aproximação razoável mesmo vindo de outro
+  lugar físico. Só quando NENHUM armazém tem saldo/custo pro código é que
+  `custoUnit` continua `0` (limitação honesta, não dá pra inventar).
+- Testado via harness Node (mesma técnica de sempre, Supabase mockado): o
+  cenário EXATO do cliente (armazém pedido com saldo 0/custo 0, outro
+  armazém com saldo 10/valor R$500 → custo R$50/unidade) — confirma que
+  `custoUnit` vem do armazém certo e `saldoSistema` continua sendo o do
+  armazém PEDIDO (0, sem mudança); item com saldo/custo no PRÓPRIO armazém
+  pedido continua usando esse (não cai pro fallback à toa); item sem
+  saldo/custo em nenhum armazém continua `custoUnit:0`, sem quebrar.
+  Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  conferidos (638/638, sem mudança — só JS). **Verificação com o item real
+  do print (000.48741) fica a cargo do cliente** — mesma limitação de
+  sempre (sandbox sem acesso de rede ao Supabase) — mas como a correção é
+  só na LEITURA, não depende de nenhuma migração de SQL: contagens NOVAS já
+  devem sair com o valor do ajuste certo; a contagem já registrada no print
+  não muda retroativamente (o valor já foi calculado e salvo como R$0,00
+  no momento da contagem).
