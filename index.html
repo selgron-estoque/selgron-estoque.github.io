@@ -13311,7 +13311,7 @@ async function marcarEtiquetaImpressa(id, nomeUsuario){
 // impressão de lá. As duas formas (imprimir na hora / enviar pra fila)
 // continuam disponíveis ao mesmo tempo — não é obrigatório passar pela fila.
 function EtiquetasPanel({currentUser}){
-  const [aba, setAba] = useState('endereco'); // 'endereco' | 'produto'
+  const [aba, setAba] = useState('produto'); // 'endereco' | 'produto' — pedido do cliente: "sempre deixe o botão produto pré selecionado"
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
