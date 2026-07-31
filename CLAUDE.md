@@ -12866,3 +12866,70 @@ nada pra parear).
   de ponta a ponta com a impressora física (alinhamento real das 2
   colunas no papel) fica a cargo do cliente** — mesma limitação de sempre,
   sandbox sem impressora física.
+
+## Etiquetas: ordem das abas invertida + botão "Imprimir Todos" na fila
+
+Dois pedidos do cliente na sequência do recurso de duas colunas: (1) trocar
+a ordem das abas de `EtiquetasPanel` — "Produto" à esquerda, "Endereço" à
+direita (era o inverso); (2) um botão pra imprimir TUDO que está pendente
+na fila de uma vez, já organizado "uma ao lado da outra" (aproveitando o
+pareamento de 2 colunas do recurso anterior).
+
+- **Ordem das abas**: só trocou a ordem dos dois `<button>` no JSX — sem
+  mudança no estado padrão (`aba` continua nascendo `'endereco'`, só a
+  posição visual dos botões mudou).
+- **`buildEtiquetaPageHtml(itens)`/`desenharBarcodesEtiqueta(area,
+  itensFlat)`** — extraídos de dentro de `imprimirEtiquetaViaNavegador`
+  (que antes montava a folha e desenhava os códigos de barra direto) pra
+  virarem helpers reutilizáveis — precisos porque agora existem DOIS
+  chamadores (impressão de 1 folha e impressão em lote), sem duplicar a
+  lógica de "monta a folha"/"desenha os SVGs" entre os dois.
+- **`imprimirLoteEtiquetas(itens)`** (nova) — recebe a lista inteira (já
+  vem ordenada por `criado_em` crescente, mesmo critério de sempre da
+  fila), pareia 2 a 2 (mesma regra que `handleImprimirFila` já usava pra 1
+  item por vez: nunca desperdiça a coluna direita quando há outro item
+  esperando; sobra ímpar vira a última folha com 1 coluna só) e concatena
+  TODAS as folhas geradas (`buildEtiquetaPageHtml` por par) num único
+  `innerHTML`, desenhando todos os códigos de barra de uma vez
+  (`desenharBarcodesEtiqueta` opera sobre a área inteira, não sobre 1
+  folha) antes de UM ÚNICO `window.print()`.
+- **`.etq-page` ganhou `page-break-after:always` (+ `break-after:page`,
+  nome moderno da mesma propriedade, pra compatibilidade)** — é isso que
+  faz cada par de itens virar uma PÁGINA FÍSICA separada dentro do MESMO
+  job de impressão, em vez de I) tudo espremido numa única página (o
+  mesmo tipo de bug já corrigido antes, "6 folhas de papel" — só que
+  dessa vez o oposto: content demais numa página só) ou II) abrir N
+  diálogos de impressão em sequência (1 por par), que travaria a
+  experiência do usuário com várias confirmações seguidas — decisão
+  deliberada de NÃO chamar `handleImprimirFila` num loop, mas montar tudo
+  de uma vez e imprimir 1 vez só.
+- **`EtiquetasPanel.handleImprimirTodos()`** — marca TODOS os ids
+  pendentes como "ocupados" (`imprimindoFilaIds`, mesmo `Set` já usado
+  pelo pareamento individual — desabilita tanto o botão "Imprimir Todos"
+  quanto qualquer botão "Imprimir" individual enquanto roda), chama
+  `imprimirLoteEtiquetas`, e — com sucesso — marca cada item impresso em
+  sequência (`marcarEtiquetaImpressa`, um `await` por vez, mesmo padrão de
+  erro-por-item já usado no resto da tela). Botão "Imprimir Todos" mora
+  dentro do `.section-title` "Fila de impressão" (empurrado pra direita
+  via `marginLeft:'auto'`), ao lado do contador — existe sempre que a
+  seção existir (mesmo com só 1 item pendente, onde nesse caso equivale a
+  clicar o "Imprimir" individual daquele item, sem nada pra parear).
+- Testado via harness novo (`harness_etiqueta_imprimir_todos.js`, jsdom +
+  react-dom/client + `act()`, mesma técnica rigorosa de sempre): confirmei
+  que `imprimirLoteEtiquetas` com 4 itens gera 2 `.etq-page` de 2 colunas
+  cada, mantendo a ordem dos códigos nos SVGs, com `window.print()`
+  chamado 1 vez só; com 3 itens (ímpar) gera 2 folhas (2+1, a última com 1
+  coluna); lista vazia retorna erro sem imprimir folha em branco; a ordem
+  visual das abas bate (Produto antes de Endereço); e, de ponta a ponta em
+  `EtiquetasPanel`, clicar "Imprimir Todos" com 3 itens pendentes dispara
+  `window.print()` 1 vez, gera 2 folhas, e marca os 3 como impressos —
+  inclusive com só 1 item pendente (1 folha, 1 coluna, sem quebrar).
+  20 asserções, todas passando — rodei de novo os 3 harnesses anteriores
+  desta feature (65 asserções somadas) sem quebrar nada, já que a
+  refatoração preservou o comportamento externo de
+  `imprimirEtiquetaViaNavegador` inalterado. Transpile Babel do arquivo
+  inteiro e balanceamento de chaves do CSS conferidos (658/658, sem
+  mudança líquida — só ganhou 2 propriedades numa regra já existente).
+  **Verificação de ponta a ponta com a impressora física (o corte real
+  entre folhas, a ordem visual das etiquetas saindo do rolo) fica a cargo
+  do cliente** — mesma limitação de sempre, sandbox sem impressora física.
