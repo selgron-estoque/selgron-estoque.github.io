@@ -1169,17 +1169,28 @@
   /* IMPRESSÃO DE ETIQUETA (EtiquetasPanel) — imprime só #etiqueta-print-area
      via window.print(), passando pelo driver de impressora já instalado no
      Windows (não mais WebUSB — ver comentário de imprimirEtiquetaViaNavegador
-     no <script> pra entender por quê). `visibility:hidden` em vez de
-     `display:none` pra não bagunçar o layout do resto do app durante o
-     cálculo de impressão. `@page` pede o tamanho físico da etiqueta
-     (50x30mm) — o driver da impressora já deve ter essa etiqueta cadastrada
-     (é usada pra impressão normal hoje), mas a 1ª impressão pode pedir
-     confirmação desse tamanho na janela do navegador. */
+     no <script> pra entender por quê).
+     Bug real corrigido aqui: a 1ª versão usava `visibility:hidden` no
+     `body *` + `position:fixed` na área de impressão — `visibility:hidden`
+     NÃO tira o elemento do FLUXO da página (só o deixa invisível, ainda
+     ocupando espaço), então a altura total do documento impresso continuava
+     sendo a altura do app inteiro (invisível, mas ainda "lá") — e um
+     elemento `position:fixed` REPETE em TODAS as páginas que o navegador
+     gera ao paginar uma altura grande, causando o sintoma real reportado
+     pelo cliente: "6 folhas de papel", cada uma com a MESMA etiqueta
+     repetida. Corrigido escondendo o app inteiro com `display:none`
+     (que sim remove do fluxo, zerando a altura) em vez de só `visibility` —
+     sem altura nenhuma sobrando pra paginar, sobra literalmente só o
+     conteúdo de `#etiqueta-print-area`, então nem precisa mais de
+     `position:fixed` nela.
+     `@page` pede o tamanho físico da etiqueta (50x30mm) — o driver da
+     impressora já deve ter essa etiqueta cadastrada (é usada pra impressão
+     normal hoje), mas a 1ª impressão pode pedir confirmação desse tamanho
+     na janela do navegador. */
   #etiqueta-print-area{display:none;}
   @media print{
-    body *{visibility:hidden;}
-    #etiqueta-print-area, #etiqueta-print-area *{visibility:visible;}
-    #etiqueta-print-area{display:block;position:fixed;top:0;left:0;}
+    #root{display:none !important;}
+    #etiqueta-print-area{display:block;}
   }
   @page{size:50mm 30mm;margin:0;}
   .etq-endereco{width:50mm;height:30mm;box-sizing:border-box;padding:2mm;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:Arial,sans-serif;text-align:center;}
