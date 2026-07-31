@@ -12655,3 +12655,108 @@ impressora e starto a impressão"**.
   etiquetas_fila`) no projeto real, e testar em dois aparelhos de verdade
   (criar numa ponta, imprimir na outra) — mesma limitação de sempre
   (sandbox sem acesso de rede ao Supabase real, sem hardware USB).
+
+## Impressão de etiqueta abandona WebUSB de vez — vira impressão normal do navegador
+
+O cliente testou a fila de impressão no PC certo (impressora TSC ligada por
+USB local, confirmado) e bateu num erro real ao clicar "Conectar
+Impressora": **"Failed to execute 'open' on 'USBDevice': Access denied"**.
+Causa confirmada com ele: essa impressora já é uma impressora COMPARTILHADA
+de verdade no Windows ("Impressora TSC Recebimento em SEL091.selgron.com.br",
+mesmo print do início desta história) — ou seja, o Windows já tem um DRIVER
+instalado e "grudado" nessa porta USB assim que ela é ligada, e o WebUSB não
+consegue tomar posse de uma porta que o sistema operacional já reivindicou
+pra um driver (`device.open()` falha exatamente com esse "Access denied").
+O jeito padrão de resolver isso é trocar o driver do dispositivo por um
+genérico via uma ferramenta chamada Zadig — proposto ao cliente, mas ele foi
+direto: **"não vou instalar nada, trabalhe com a impressora que temos, como
+se fosse imprimir uma A4 normal"**.
+
+### Mudança de mecanismo: WebUSB/TSPL → `window.print()`
+
+Isso não era um ajuste pontual — é trocar o CAMINHO inteiro de impressão.
+`imprimirEtiquetaViaNavegador` (index.html, mesmo lugar onde viviam
+`conectarImpressoraTSC`/`buildTsplEndereco`/`buildTsplProduto`, todas
+REMOVIDAS) substitui os comandos TSPL crus enviados via `navigator.usb` por
+HTML/CSS normal impresso via `window.print()` — o MESMO caminho que
+qualquer página usa pra imprimir um documento comum, passando pelo driver
+que o Windows já tem instalado pra essa impressora. Sem "conectar" nada, sem
+pedir permissão especial de dispositivo — literalmente "como imprimir uma
+A4 normal", como pedido.
+
+- **`#etiqueta-print-area`** — `<div>` novo, fixo no `<body>`, FORA da
+  árvore do React (ao lado de `<div id="root">`) — preenchido via
+  `innerHTML` na hora de imprimir (mesma técnica imperativa que
+  `buildTsplEndereco`/`buildTsplProduto` já usavam pra montar string, só que
+  agora é HTML em vez de comandos TSPL). Escondido normalmente
+  (`display:none`), só aparece durante a impressão via `@media print` (ver
+  `<style>`) — técnica clássica de "imprimir só este elemento": `visibility:
+  hidden` em todo `body *`, `visibility:visible` só dentro da área, que vira
+  `position:fixed` pra flutuar por cima do resto (invisível) da página.
+  `@page{size:50mm 30mm;margin:0;}` pede o tamanho físico da etiqueta — o
+  driver da TSC já deve ter essa etiqueta cadastrada (é usada hoje pra
+  impressão normal), mas a 1ª impressão pode pedir confirmação desse
+  tamanho na janela do navegador.
+- **Código de barras (Code128) via JsBarcode** — sem TSPL, a impressora não
+  gera mais o código de barras sozinha a partir de um comando `BARCODE`; o
+  navegador desenha um `<svg>` e a impressora imprime ele como parte da
+  página. Adicionada via CDN (`jsbarcode@3`, jsdelivr, `<head>`) — mesmo
+  padrão de dependência externa sem build step já usado neste projeto pra
+  `html5-qrcode`/`xlsx`. **Decisão consciente de NÃO reimplementar Code128
+  na mão**: diferente de outros casos deste projeto onde um SVG desenhado à
+  mão substituiu uma lib externa (ícones "Lucide-ish"), a codificação
+  Code128 tem uma tabela de padrões de barra bem específica — um erro sutil
+  reconstruindo essa tabela de memória (sem like nenhuma impressora/leitor
+  físico no sandbox pra testar contra hardware real) geraria um código de
+  barras que PARECE certo mas não escaneia — risco pior que adicionar mais
+  uma dependência CDN já madura e testada por milhares de projetos.
+- **`escapeHtmlEtiqueta`** — função nova (escapa `&`/`<`/`>`/`"`), já que
+  agora o conteúdo vira HTML de verdade via `innerHTML` (a versão TSPL só
+  precisava escapar aspas duplas, delimitador de string do TSPL) — protege
+  contra uma descrição de produto com caractere especial quebrando a
+  marcação ou injetando um elemento não-intencional.
+- **`EtiquetasPanel`**: removido por completo o bloco "Conectar Impressora"
+  (status conectado/desconectado, botão, aviso de "não suporta WebUSB") —
+  não existe mais etapa de conexão nenhuma. Virou um `role-note` simples
+  explicando que "Imprimir Etiqueta" abre a janela de impressão normal do
+  navegador. `handleImprimir`/`handleImprimirFila` (tanto o botão principal
+  quanto o de cada item da fila) chamam `imprimirEtiquetaViaNavegador` em
+  vez de montar TSPL + `enviarTsplParaImpressora`.
+- **A fila de impressão (rodada anterior) continua fazendo sentido, sem
+  nenhuma mudança na lógica dela** — a limitação física que a fila resolve
+  não mudou: só quem está no aparelho que TEM essa impressora disponível
+  consegue imprimir de verdade (antes era "só quem pareou via WebUSB",
+  agora é "só quem tem ela configurada no próprio navegador/SO") — o
+  conceito de "criar em qualquer lugar, imprimir de quem está no PC certo"
+  continua exatamente o mesmo, só o mecanismo de impressão em si mudou.
+- **Ganho colateral**: `window.print()` funciona em QUALQUER navegador,
+  Safari/iOS incluso — WebUSB nunca funcionou lá. A tela de Etiquetas deixa
+  de ter essa limitação de navegador.
+- **Trade-off aceito conscientemente**: perde o controle fino de posição/
+  símbolo que os comandos TSPL davam (coordenada exata em dots) — depende
+  do navegador/driver respeitarem `@page`, e o layout das etiquetas (`.etq-
+  endereco`/`.etq-produto`, CSS novo) foi reconstruído em HTML/CSS/mm
+  tentando reproduzir visualmente o mesmo layout que as versões TSPL já
+  tinham (mesma informação, mesma disposição geral) — mas SEM poder testar
+  contra a impressora física no sandbox, então precisão de posição/tamanho
+  é só um ponto de partida, mesma ressalva de sempre nesta feature.
+- Testado via harness real (jsdom + react-dom/client + `act()`, mesma
+  técnica rigorosa de sempre): `imprimirEtiquetaViaNavegador` isolada — as
+  duas etiquetas (endereço/produto) montam o HTML certo, o SVG do código de
+  barras é criado e `JsBarcode` é chamado com o código/formato certos,
+  `window.print()` é chamado; quantidade/data ausentes não aparecem
+  quebradas; uma descrição com `<script>` embutido NUNCA vira um elemento
+  real dentro da área impressa (escapada, não injetada); sem
+  `#etiqueta-print-area` no DOM, retorna erro claro em vez de quebrar.
+  `EtiquetasPanel` de ponta a ponta: nenhum botão "Conectar Impressora"
+  nem texto "WebUSB" sobra na tela; buscar um endereço, selecionar, clicar
+  "Imprimir Etiqueta" chama `window.print()` direto, sem nenhuma etapa de
+  conexão. Rodei de novo toda a suíte de regressão do scratchpad — as
+  únicas 3 falhas encontradas já existiam antes desta mudança (confirmado
+  antes, sem relação com esta feature). Transpile Babel do arquivo inteiro
+  e balanceamento de chaves do CSS conferidos (658/658, subiu de 638 pelas
+  classes `.etq-*`/`@media print`/`@page` novas). **Nenhuma migração de SQL
+  necessária** (não mexe em nenhuma tabela). **Verificação de ponta a ponta
+  com a impressora física fica a cargo do cliente** — mesma limitação de
+  sempre (sandbox sem hardware real), mas agora testável em QUALQUER
+  navegador, sem depender de pareamento USB nem do driver do Windows.

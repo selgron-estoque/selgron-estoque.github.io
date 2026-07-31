@@ -30,6 +30,11 @@
 <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<!-- Gera o código de barras (Code128) da etiqueta impressa via window.print() —
+     ver "IMPRESSÃO DE ETIQUETA" no script principal do app, próximo de
+     EtiquetasPanel. Versão @3 (major) do jsDelivr, mesmo padrão de dependência
+     externa via CDN já usado por html5-qrcode/xlsx neste projeto. -->
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3/dist/JsBarcode.all.min.js"></script>
 <style>
   :root{
     --bg: #EEF0F3;
@@ -1160,10 +1165,46 @@
       .mhm-badge{background:var(--safety);color:var(--safety-ink);font-family:var(--font-mono);font-weight:700;font-size:var(--text-xs);padding:4px 9px;border-radius:20px;flex-shrink:0;}
     }
   }
+
+  /* IMPRESSÃO DE ETIQUETA (EtiquetasPanel) — imprime só #etiqueta-print-area
+     via window.print(), passando pelo driver de impressora já instalado no
+     Windows (não mais WebUSB — ver comentário de imprimirEtiquetaViaNavegador
+     no <script> pra entender por quê). `visibility:hidden` em vez de
+     `display:none` pra não bagunçar o layout do resto do app durante o
+     cálculo de impressão. `@page` pede o tamanho físico da etiqueta
+     (50x30mm) — o driver da impressora já deve ter essa etiqueta cadastrada
+     (é usada pra impressão normal hoje), mas a 1ª impressão pode pedir
+     confirmação desse tamanho na janela do navegador. */
+  #etiqueta-print-area{display:none;}
+  @media print{
+    body *{visibility:hidden;}
+    #etiqueta-print-area, #etiqueta-print-area *{visibility:visible;}
+    #etiqueta-print-area{display:block;position:fixed;top:0;left:0;}
+  }
+  @page{size:50mm 30mm;margin:0;}
+  .etq-endereco{width:50mm;height:30mm;box-sizing:border-box;padding:2mm;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:Arial,sans-serif;text-align:center;}
+  .etq-rotulo{font-size:7pt;font-weight:700;letter-spacing:1px;}
+  .etq-codigo-grande{font-size:20pt;font-weight:700;margin:1.5mm 0;}
+  .etq-barcode{width:44mm;height:auto;}
+  .etq-produto{width:50mm;height:30mm;box-sizing:border-box;padding:1.5mm;border:0.3mm solid #000;display:flex;flex-direction:column;font-family:Arial,sans-serif;}
+  .etq-topo{display:flex;justify-content:space-between;align-items:flex-start;}
+  .etq-codigo-produto{font-size:13pt;margin:0.5mm 0;}
+  .etq-qtd{font-size:8pt;font-weight:700;}
+  .etq-meio{display:flex;gap:2mm;border-top:0.2mm solid #000;margin-top:1mm;padding-top:1mm;flex:1;min-height:0;}
+  .etq-col{flex:1;overflow:hidden;}
+  .etq-col-divisor{border-left:0.2mm solid #000;padding-left:2mm;}
+  .etq-valor{font-size:7pt;word-break:break-word;}
+  .etq-rodape{border-top:0.2mm solid #000;margin-top:1mm;padding-top:1mm;text-align:center;}
+  .etq-codigo-pequeno{font-size:6pt;margin-top:0.5mm;}
 </style>
 </head>
 <body>
 <div id="root"></div>
+<!-- Fora da árvore do React de propósito — só existe pra "IMPRESSÃO DE
+     ETIQUETA" (EtiquetasPanel), preenchida via innerHTML na hora de
+     imprimir e mostrada só durante a impressão (@media print, ver <style>
+     acima) via window.print(). -->
+<div id="etiqueta-print-area"></div>
 <script type="text/babel" data-presets="react">
 
 const {useState, useMemo, useRef, useEffect} = React;
@@ -1376,175 +1417,97 @@ async function searchEnderecosCatalogo(query){
 }
 
 // ---------------------------------------------------------------------------
-// IMPRESSÃO DE ETIQUETA VIA IMPRESSORA TSC (TSPL) — pedido do cliente:
-// "conseguimos criar uma forma de ter um campo novo para impressão de
-// etiqueta? Impressora TSC? Com código de barra e tal?" — testado/confirmado
-// com o modelo real do cliente: TSC TE200 (203dpi, comandos TSPL, mesmo
-// dialeto usado por praticamente toda impressora de etiqueta TSC de mesa).
+// IMPRESSÃO DE ETIQUETA — pedido do cliente: "conseguimos criar uma forma de
+// ter um campo novo para impressão de etiqueta? Impressora TSC? Com código
+// de barra e tal?"
 //
-// Conexão via WebUSB (`navigator.usb`) — só funciona no Chrome/Chromium
-// (Android incluso, é o navegador alvo do app) com a impressora ligada por
-// cabo USB no mesmo aparelho; NÃO funciona no Safari/iOS (WebUSB não é
-// suportado lá), diferente do resto do app (câmera/PWA), que funciona nos
-// dois. Isso é uma limitação da própria API do navegador, não do app.
+// PRIMEIRA VERSÃO usava WebUSB (`navigator.usb`) pra falar direto com a TSC
+// via comandos TSPL crus — testado só em teoria (sandbox sem impressora
+// física), e na hora de usar de verdade o cliente bateu num erro real e
+// comum: "Failed to execute 'open' on 'USBDevice': Access denied". Causa
+// confirmada com ele — a impressora já tem um DRIVER instalado no Windows
+// (é uma impressora compartilhada de verdade, "Impressora TSC Recebimento
+// em SEL091.selgron.com.br"), e o WebUSB não consegue tomar posse de uma
+// porta USB que o Windows já reivindicou pra esse driver. O jeito padrão de
+// resolver isso é trocar o driver do dispositivo por um genérico (ferramenta
+// chamada Zadig) — mas o cliente foi explícito: **"não vou instalar nada,
+// trabalhe com a impressora que temos, como se fosse imprimir uma A4
+// normal"**. Ou seja: virou impressão NORMAL do navegador (`window.print()`),
+// passando pelo driver que o Windows já tem instalado — o MESMO caminho que
+// qualquer página usa pra imprimir um documento comum, sem nenhuma etapa de
+// "conectar" nem instalar nada.
 //
-// `TSC_USB_VENDOR_ID = 0x1203` é o vendor ID USB oficial da TSC Auto ID
-// Technology — mesmo em modelos diferentes (TE200, TTP-244, TX300 etc.),
-// então o filtro de pareamento vale pra qualquer impressora TSC, não só a
-// TE200 usada aqui.
-const TSC_USB_VENDOR_ID = 0x1203;
-let tscUsbDevice = null;
-
-function suportaImpressaoUSB(){
-  return typeof navigator !== 'undefined' && !!navigator.usb;
-}
-
-// Abre o diálogo do navegador pra escolher/parear a impressora (ação
-// explícita do usuário, exigida pela WebUSB por segurança — não dá pra
-// conectar sozinho sem esse gesto). Depois de parear uma vez, o navegador
-// lembra a permissão pra esse mesmo dispositivo+origem, e
-// `reconectarImpressoraTSC` consegue reabrir sem pedir de novo.
-async function conectarImpressoraTSC(){
-  if(!suportaImpressaoUSB()) return {ok:false, erro:'Este navegador não suporta impressão USB (WebUSB). Use o Chrome — não funciona no Safari/iOS.'};
-  try{
-    const device = await navigator.usb.requestDevice({filters:[{vendorId: TSC_USB_VENDOR_ID}]});
-    await device.open();
-    if(device.configuration===null) await device.selectConfiguration(1);
-    await device.claimInterface(0);
-    tscUsbDevice = device;
-    return {ok:true};
-  }catch(err){
-    return {ok:false, erro:(err && err.message) || 'Não foi possível conectar à impressora.'};
-  }
-}
-
-// Tenta reconectar automaticamente num dispositivo já pareado antes (sem
-// abrir o diálogo de novo) — chamado sozinho ao tentar imprimir, se
-// `tscUsbDevice` ainda não estiver setado (ex: depois de recarregar a
-// página, a permissão persiste mas a conexão em si não).
-async function reconectarImpressoraTSC(){
-  if(!suportaImpressaoUSB()) return null;
-  try{
-    const devices = await navigator.usb.getDevices();
-    const device = devices.find(d=>d.vendorId===TSC_USB_VENDOR_ID);
-    if(!device) return null;
-    await device.open();
-    if(device.configuration===null) await device.selectConfiguration(1);
-    await device.claimInterface(0);
-    tscUsbDevice = device;
-    return device;
-  }catch(err){
-    console.warn('Falha ao reconectar impressora TSC:', err);
-    return null;
-  }
-}
-
-// Manda um script TSPL cru (texto) pra impressora já conectada — encontra o
-// endpoint OUT da interface reivindicada (não assume um número fixo, varia
-// por modelo/driver) e transfere os bytes crus via `transferOut`.
-async function enviarTsplParaImpressora(tspl){
-  if(!tscUsbDevice){
-    const reconectado = await reconectarImpressoraTSC();
-    if(!reconectado) return {ok:false, erro:'Impressora não conectada. Clique em "Conectar Impressora" primeiro.'};
-  }
-  try{
-    const iface = tscUsbDevice.configuration.interfaces[0];
-    const outEndpoint = iface.alternate.endpoints.find(e=>e.direction==='out');
-    if(!outEndpoint) return {ok:false, erro:'Não foi possível encontrar a porta de envio da impressora.'};
-    const data = new TextEncoder().encode(tspl);
-    await tscUsbDevice.transferOut(outEndpoint.endpointNumber, data);
-    return {ok:true};
-  }catch(err){
-    return {ok:false, erro:(err && err.message) || 'Falha ao enviar para a impressora.'};
-  }
-}
-
-// Escapa aspas duplas dentro do conteúdo (TSPL usa "..." pra delimitar texto
-// em TEXT/BARCODE — uma aspa dupla sem escapar quebraria o comando).
-function escapaTspl(texto){
-  return String(texto==null ? '' : texto).replace(/"/g, "'");
-}
-
-// Etiqueta de ENDEREÇO — 50mm×30mm, 203dpi (8 dots/mm → 400×240 dots),
-// código de barras Code128 (pedido explícito do cliente, "código de barra"),
-// já compatível com o mesmo formato que `CameraScanner`/`CountStep` leem na
-// etapa de escaneamento de endereço (a lib de leitura já suporta CODE_128,
-// ver formatsToSupport). Coordenadas/tamanhos são um ponto de partida
-// razoável pro layout — como o sandbox não tem a impressora física pra
-// testar (só o cliente tem), pode precisar de ajuste fino de posição depois
-// da 1ª impressão real.
-function buildTsplEndereco(codigo){
-  const cod = escapaTspl(codigo);
-  return [
-    'SIZE 50 mm,30 mm',
-    'GAP 2 mm,0 mm',
-    'DIRECTION 1',
-    'CLS',
-    'TEXT 30,20,"2",0,1,1,"ENDERECO"',
-    'TEXT 30,55,"4",0,1,1,"'+cod+'"',
-    'BARCODE 30,110,"128",70,1,0,2,2,"'+cod+'"',
-    'PRINT 1,1',
-    '',
-  ].join('\r\n');
-}
-
-// Etiqueta de PRODUTO — layout de recebimento pedido pelo cliente (mandou
-// foto de referência): faixa "CODIGO" + código gigante, "Qtd: N PC" no
-// canto, "DESCRICAO"/"DATA RECEBIMENTO" lado a lado, divisórias, código de
-// barras e o código repetido embaixo dele. `quantidade`/`dataRecebimento`
-// (já formatada dd/mm/aaaa, ver `fmtDataBR`) são opcionais — ficam de fora
-// da etiqueta quando não informadas (`EtiquetasPanel` deixa os 2 campos em
-// branco por padrão, só pra "Produto"). 50mm×30mm, 203dpi (8 dots/mm →
-// 400×240 dots).
+// Trade-off aceito conscientemente: `window.print()` não dá o mesmo controle
+// fino de posição/símbolo que os comandos TSPL davam — depende do
+// navegador/driver respeitarem o tamanho de página pedido via `@page` (ver
+// <style>), e a 1ª impressão pode exigir confirmar "50x30mm" na janela de
+// impressão do navegador (o driver da TSC já deve ter essa etiqueta
+// cadastrada, já que é usada hoje pra imprimir do jeito normal). Em troca,
+// funciona em QUALQUER navegador (Safari/iOS incluso — WebUSB nunca
+// funcionou lá) e não depende de nenhuma permissão especial nem do Windows
+// liberar a porta USB.
 //
-// O rótulo de cada campo (CODIGO/DESCRICAO/DATA RECEBIMENTO) era uma faixa
-// preta sólida com texto branco por cima (mesma técnica de `REVERSE` já
-// usada nas etiquetas — ver prévia anterior) — o cliente pediu pra tirar a
-// caixa preta mas manter o rótulo "em destaque". Como a TSPL não tem um
-// flag de negrito de verdade, a solução foi imprimir o mesmo texto 2 vezes
-// com 1 dot de deslocamento em x (técnica clássica de "negrito simulado"
-// em impressora térmica) + um traço fino embaixo (mesmo papel visual de um
-// sublinhado) — ver `rotulo()`. A largura do traço é uma ESTIMATIVA por
-// quantidade de caracteres (fonte "1" ≈ 8 dots/caractere) — como as outras
-// etiquetas, pode precisar de ajuste fino depois da 1ª impressão real.
-function buildTsplProduto(codigo, descricao, quantidade, dataRecebimento){
-  const cod = escapaTspl(codigo);
-  const desc = escapaTspl((descricao||'').slice(0, 28));
-  const qtdTexto = quantidade ? ('Qtd: '+escapaTspl(quantidade)+' PC') : '';
-  const dataTexto = escapaTspl(dataRecebimento || '');
+// Código de barras Code128 renderizado no próprio navegador via JsBarcode
+// (CDN, ver <head> — mesmo padrão de dependência externa já usado por
+// html5-qrcode/xlsx neste projeto) — sem TSPL, a impressora não gera mais o
+// código de barras sozinha a partir de um comando; o navegador desenha o
+// SVG e a impressora imprime ele como parte da página, junto com o resto.
+// ---------------------------------------------------------------------------
 
-  const linhas = [
-    'SIZE 50 mm,30 mm',
-    'GAP 2 mm,0 mm',
-    'DIRECTION 1',
-    'CLS',
-    'BOX 4,4,396,236,10',
-  ];
+function escapeHtmlEtiqueta(texto){
+  return String(texto==null ? '' : texto)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
 
-  function rotulo(x, y, texto){
-    linhas.push('TEXT '+x+','+y+',"1",0,1,1,"'+texto+'"');
-    linhas.push('TEXT '+(x+1)+','+y+',"1",0,1,1,"'+texto+'"');
-    linhas.push('BAR '+x+','+(y+16)+','+(texto.length*8+4)+',2');
+// Monta o HTML da etiqueta dentro de `#etiqueta-print-area` (elemento fixo
+// no <body>, fora da árvore do React — ver perto de `<div id="root">` — só
+// fica visível durante a impressão, via `@media print` no <style>) e desenha
+// o código de barras via JsBarcode antes de chamar `window.print()`. `tipo`
+// é `'endereco'`/`'produto'`, mesmo valor que a aba de `EtiquetasPanel` já
+// usa. Coordenadas/tamanhos são um ponto de partida razoável — como o
+// sandbox não tem a impressora física pra testar, pode precisar de ajuste
+// fino depois da 1ª impressão real (mesma ressalva de sempre nesta feature).
+function imprimirEtiquetaViaNavegador({tipo, codigo, descricao, quantidade, dataRecebimento}){
+  const area = (typeof document!=='undefined') ? document.getElementById('etiqueta-print-area') : null;
+  if(!area) return {ok:false, erro:'Área de impressão não encontrada nesta página.'};
+  const cod = escapeHtmlEtiqueta(codigo);
+  if(tipo==='endereco'){
+    area.innerHTML =
+      '<div class="etq-endereco">'
+      + '<div class="etq-rotulo">ENDEREÇO</div>'
+      + '<div class="etq-codigo-grande">'+cod+'</div>'
+      + '<svg class="etq-barcode"></svg>'
+      + '</div>';
+  } else {
+    const desc = escapeHtmlEtiqueta((descricao||'').slice(0, 40));
+    const qtdTexto = quantidade ? ('Qtd: '+escapeHtmlEtiqueta(quantidade)+' PC') : '';
+    const dataTexto = dataRecebimento ? escapeHtmlEtiqueta(fmtDataBR(dataRecebimento)) : '';
+    area.innerHTML =
+      '<div class="etq-produto">'
+      + '<div class="etq-topo">'
+      +   '<div><div class="etq-rotulo">CODIGO</div><div class="etq-codigo-grande etq-codigo-produto">'+cod+'</div></div>'
+      +   (qtdTexto ? '<div class="etq-qtd">'+qtdTexto+'</div>' : '')
+      + '</div>'
+      + '<div class="etq-meio">'
+      +   '<div class="etq-col"><div class="etq-rotulo">DESCRICAO</div><div class="etq-valor">'+desc+'</div></div>'
+      +   '<div class="etq-col etq-col-divisor"><div class="etq-rotulo">DATA RECEBIMENTO</div><div class="etq-valor">'+dataTexto+'</div></div>'
+      + '</div>'
+      + '<div class="etq-rodape">'
+      +   '<svg class="etq-barcode"></svg>'
+      +   '<div class="etq-codigo-pequeno">'+cod+'</div>'
+      + '</div>'
+      + '</div>';
   }
-
-  rotulo(16, 12, 'CODIGO');
-  if(qtdTexto){
-    const qtdX = Math.max(160, 380 - qtdTexto.length*12);
-    linhas.push('TEXT '+qtdX+',10,"2",0,1,1,"'+qtdTexto+'"');
+  try{
+    const svg = area.querySelector('svg.etq-barcode');
+    if(svg && typeof window!=='undefined' && window.JsBarcode){
+      window.JsBarcode(svg, codigo, {format:'CODE128', displayValue:false, margin:0, height: tipo==='endereco'?90:60, width:1.6});
+    }
+  }catch(err){
+    console.warn('Falha ao gerar código de barras:', err);
   }
-  linhas.push('TEXT 16,44,"3",0,2,1,"'+cod+'"');
-  linhas.push('BAR 16,80,368,2');
-  rotulo(16, 90, 'DESCRICAO');
-  rotulo(224, 90, 'DATA RECEBIMENTO');
-  linhas.push('BAR 216,90,2,44');
-  linhas.push('TEXT 16,122,"2",0,1,1,"'+desc+'"');
-  if(dataTexto) linhas.push('TEXT 224,122,"2",0,1,1,"'+dataTexto+'"');
-  linhas.push('BAR 16,152,368,2');
-  linhas.push('BARCODE 16,160,"128",50,1,0,2,2,"'+cod+'"');
-  linhas.push('TEXT 16,214,"1",0,1,1,"'+cod+'"');
-  linhas.push('PRINT 1,1');
-  linhas.push('');
-  return linhas.join('\r\n');
+  if(typeof window!=='undefined' && window.print) window.print();
+  return {ok:true};
 }
 
 
@@ -13240,24 +13203,26 @@ async function marcarEtiquetaImpressa(id, nomeUsuario){
   }
 }
 
-/* ---------------- ETIQUETAS (impressora TSC via WebUSB) ---------------- */
+/* ---------------- ETIQUETAS (impressão via navegador) ---------------- */
 // Tela nova, pedido do cliente: "conseguimos criar uma forma de ter um campo
 // novo para impressão de etiqueta? Impressora TSC? Com código de barra e
 // tal?" — busca um endereço ou produto já cadastrado e manda a etiqueta pra
-// uma TSC TE200 ligada por USB, via WebUSB (funções `conectarImpressoraTSC`/
-// `enviarTsplParaImpressora`/`buildTsplEndereco`/`buildTsplProduto`, perto de
-// `searchSupabaseCatalog`). Tela dedicada, não amarrada a nenhum fluxo de
-// contagem — o líder/admin busca e imprime quando precisar, avulso. Só
-// líder/admin (ver ACESSOS_RESTRITOS.etiquetas).
+// impressão (`imprimirEtiquetaViaNavegador`, perto de `searchSupabaseCatalog`
+// — ver o comentário ali pra entender por que não é mais WebUSB/TSPL). Tela
+// dedicada, não amarrada a nenhum fluxo de contagem — o líder/admin busca e
+// imprime quando precisar, avulso. Só líder/admin (ver
+// ACESSOS_RESTRITOS.etiquetas).
 //
 // "Fila de Impressão" (ver `etiquetaFilaRowToLocal`/`salvarEtiquetaNaFila`
-// acima): como WebUSB só alcança impressora ligada no MESMO aparelho, quem
-// não está no PC da impressora só pode ENVIAR PRA FILA — quem está no PC
-// certo abre a mesma tela e vê os pedidos pendentes em tempo real (Realtime,
-// mesmo mecanismo já usado em contagens/inventarios/usuarios), clicando
-// "Imprimir" pra disparar o mesmo fluxo WebUSB de sempre. As duas formas
-// (imprimir na hora / enviar pra fila) continuam disponíveis ao mesmo
-// tempo — não é obrigatório passar pela fila.
+// acima): mesma limitação física de sempre — só quem está no aparelho que
+// TEM ESSA IMPRESSORA disponível no próprio navegador consegue imprimir
+// (agora via `window.print()`, mas o alcance continua sendo só o aparelho
+// local, igual já era com WebUSB) — quem está em qualquer outro lugar só
+// pode ENVIAR PRA FILA; quem está no PC certo abre a mesma tela e vê os
+// pedidos pendentes em tempo real (Realtime, mesmo mecanismo já usado em
+// contagens/inventarios/usuarios), clicando "Imprimir" pra disparar a
+// impressão de lá. As duas formas (imprimir na hora / enviar pra fila)
+// continuam disponíveis ao mesmo tempo — não é obrigatório passar pela fila.
 function EtiquetasPanel({currentUser}){
   const [aba, setAba] = useState('endereco'); // 'endereco' | 'produto'
   const [query, setQuery] = useState('');
@@ -13266,38 +13231,23 @@ function EtiquetasPanel({currentUser}){
   const [selecionado, setSelecionado] = useState(null);
   // Só a etiqueta de PRODUTO tem esses 2 campos (pedido do cliente, layout
   // de recebimento) — endereço não tem quantidade/data nenhuma pra mostrar.
-  // Os dois são opcionais: `buildTsplProduto` já lida com eles vazios,
-  // deixando de fora da etiqueta em vez de imprimir "Qtd: PC" quebrado.
+  // Os dois são opcionais: `imprimirEtiquetaViaNavegador` já lida com eles
+  // vazios, deixando de fora da etiqueta em vez de imprimir "Qtd: PC" quebrado.
   const [quantidade, setQuantidade] = useState('');
   const [dataRecebimento, setDataRecebimento] = useState(()=> new Date().toISOString().slice(0,10));
 
-  const [impressoraConectada, setImpressoraConectada] = useState(false);
-  const [conectando, setConectando] = useState(false);
-  const [erroConexao, setErroConexao] = useState(null);
   const [imprimindo, setImprimindo] = useState(false);
   const [erroImpressao, setErroImpressao] = useState(null);
   const [sucessoImpressao, setSucessoImpressao] = useState(false);
 
   // Fila de impressão — enviar (de qualquer aparelho) e imprimir dela (só
-  // no PC que enxerga a impressora via WebUSB).
+  // no PC que tem essa impressora disponível pra imprimir de verdade).
   const [enviandoParaFila, setEnviandoParaFila] = useState(false);
   const [erroFilaEnvio, setErroFilaEnvio] = useState(null);
   const [sucessoFilaEnvio, setSucessoFilaEnvio] = useState(false);
   const [filaPendente, setFilaPendente] = useState([]);
   const [imprimindoFilaId, setImprimindoFilaId] = useState(null);
   const [errosFila, setErrosFila] = useState({});
-
-  // Tenta reconectar sozinho a um dispositivo já pareado antes, assim que a
-  // tela abre — evita o usuário precisar clicar "Conectar" de novo toda vez
-  // que reabre a tela dentro da mesma sessão do navegador (a permissão de
-  // pareamento do WebUSB persiste, só a conexão em si precisa ser reaberta).
-  useEffect(()=>{
-    let cancelado = false;
-    reconectarImpressoraTSC().then(device=>{
-      if(!cancelado && device) setImpressoraConectada(true);
-    });
-    return ()=>{ cancelado = true; };
-  }, []);
 
   // Fila de impressão em tempo real — escopado a esta tela (não em App()
   // como contagens/inventarios/usuarios), já que só ela consome esse dado;
@@ -13355,34 +13305,21 @@ function EtiquetasPanel({currentUser}){
     return ()=>{ cancelado = true; clearTimeout(timer); };
   }, [query, aba]);
 
-  async function handleConectar(){
-    setConectando(true);
-    setErroConexao(null);
-    const res = await conectarImpressoraTSC();
-    setConectando(false);
-    if(res.ok) setImpressoraConectada(true);
-    else setErroConexao(res.erro);
-  }
-
   async function handleImprimir(){
     if(!selecionado) return;
     setImprimindo(true);
     setErroImpressao(null);
     setSucessoImpressao(false);
-    const tspl = aba==='endereco'
-      ? buildTsplEndereco(selecionado.codigo)
-      : buildTsplProduto(selecionado.codigo, selecionado.descricao, quantidade, dataRecebimento ? fmtDataBR(dataRecebimento) : '');
-    const res = await enviarTsplParaImpressora(tspl);
+    const res = imprimirEtiquetaViaNavegador({
+      tipo: aba,
+      codigo: selecionado.codigo,
+      descricao: selecionado.descricao,
+      quantidade,
+      dataRecebimento,
+    });
     setImprimindo(false);
-    if(res.ok){
-      setSucessoImpressao(true);
-      setImpressoraConectada(true);
-    } else {
-      setErroImpressao(res.erro);
-      // Se o erro foi por falta de conexão, atualiza o indicador — sem isso
-      // o usuário via "Conectada" mesmo depois da impressora ter caído.
-      if((res.erro||'').includes('não conectada')) setImpressoraConectada(false);
-    }
+    if(res.ok) setSucessoImpressao(true);
+    else setErroImpressao(res.erro);
   }
 
   // Envia pra fila em vez de imprimir na hora — funciona em QUALQUER
@@ -13406,48 +13343,38 @@ function EtiquetasPanel({currentUser}){
     else setErroFilaEnvio(res.erro);
   }
 
-  // Imprime um pedido já pendente na fila — mesmo fluxo WebUSB de sempre,
-  // só que a partir do dado gravado no Supabase em vez do que está
-  // selecionado na tela agora. Não precisa remover manualmente da lista
-  // local: o UPDATE de status vira um evento do Realtime que já tira o
-  // item de `filaPendente` sozinho (ver o canal acima).
+  // Imprime um pedido já pendente na fila — mesmo caminho de impressão de
+  // sempre (`imprimirEtiquetaViaNavegador`), só que a partir do dado
+  // gravado no Supabase em vez do que está selecionado na tela agora. Não
+  // precisa remover manualmente da lista local: o UPDATE de status vira um
+  // evento do Realtime que já tira o item de `filaPendente` sozinho (ver o
+  // canal acima).
   async function handleImprimirFila(item){
     setImprimindoFilaId(item.id);
     setErrosFila(prev=>({...prev, [item.id]: null}));
-    const tspl = item.tipo==='endereco'
-      ? buildTsplEndereco(item.codigo)
-      : buildTsplProduto(item.codigo, item.descricao, item.quantidade, item.dataRecebimento ? fmtDataBR(item.dataRecebimento) : '');
-    const res = await enviarTsplParaImpressora(tspl);
+    const res = imprimirEtiquetaViaNavegador({
+      tipo: item.tipo,
+      codigo: item.codigo,
+      descricao: item.descricao,
+      quantidade: item.quantidade,
+      dataRecebimento: item.dataRecebimento,
+    });
     if(res.ok){
-      setImpressoraConectada(true);
       const marc = await marcarEtiquetaImpressa(item.id, currentUser ? currentUser.nome : null);
       if(!marc.ok) setErrosFila(prev=>({...prev, [item.id]: marc.erro}));
     } else {
       setErrosFila(prev=>({...prev, [item.id]: res.erro}));
-      if((res.erro||'').includes('não conectada')) setImpressoraConectada(false);
     }
     setImprimindoFilaId(null);
   }
 
   return (
     <div>
-      {!suportaImpressaoUSB() && (
-        <div className="divergence-alert" style={{marginBottom:14}}>
-          <Ic>⚠</Ic><span>Este navegador não suporta impressão USB (WebUSB) — use o Chrome. Não funciona no Safari/iOS.</span>
-        </div>
-      )}
-      <div className="list-row" style={{cursor:'default'}}>
-        <div>
-          <div className="lr-title"><DIcon name="printer" size={18} style={{verticalAlign:-4,marginRight:6}}/> Impressora TSC</div>
-          <div className="lr-sub">{impressoraConectada ? 'Conectada' : 'Não conectada'}</div>
-        </div>
-        <button className="btn btn-outline btn-sm" disabled={conectando || !suportaImpressaoUSB()} onClick={handleConectar}>
-          {conectando ? 'Conectando…' : (impressoraConectada ? 'Reconectar' : 'Conectar Impressora')}
-        </button>
+      <div className="role-note" style={{marginBottom:14}}>
+        <DIcon name="printer" size={16} style={{verticalAlign:-3,marginRight:6}}/>
+        Ao clicar em "Imprimir Etiqueta", abre a janela de impressão normal do navegador —
+        escolha a impressora TSC e confirme o tamanho da etiqueta (50×30mm) se for pedido.
       </div>
-      {erroConexao && (
-        <div className="divergence-alert" style={{marginBottom:14}}><Ic>⚠</Ic><span>{erroConexao}</span></div>
-      )}
 
       {filaPendente.length>0 && (
         <div style={{marginTop:14,marginBottom:14}}>
