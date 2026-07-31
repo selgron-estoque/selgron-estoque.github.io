@@ -3311,13 +3311,25 @@ function estoqueRowToProduct(row){
   // saldo real 0, não ficar "sem comparação" (null) — CountStep (hasSaldoLocal
   // checa `typeof===number`) passa a considerar esses itens normalmente:
   // entram na comparação/classificação de divergência em vez de cair no
-  // aviso "sem saldo pra comparar". custoUnit continua 0 nesse caso (não tem
-  // como saber o custo sem saldo real) — não tem mais problema nenhum, já
-  // que `classifyDivergence` nem depende de custo: qualquer diferença de
-  // quantidade já vai pra análise do líder, custo conhecido ou não.
+  // aviso "sem saldo pra comparar". `classifyDivergence` não depende de
+  // custo pra rotear (qualquer diferença de quantidade já vai pra análise
+  // do líder, custo conhecido ou não) — mas "Valor do ajuste"
+  // (valorDivergente, calculado em CountStep.finalize() a partir de
+  // custoUnit) precisa do valor certo mesmo quando O ARMAZÉM CONTADO tem
+  // saldo 0 (custo não dá pra derivar de uma divisão por zero). Bug real
+  // reportado pelo cliente (item com custo conhecido em OUTRO armazém,
+  // "Valor do ajuste" saindo R$0,00) — corrigido com `custo_unitario_fallback`,
+  // opcional em `row`: quando o cálculo direto (valor_financeiro/saldo desta
+  // MESMA linha) não dá pra fazer, cai pro custo já resolvido por quem
+  // montou `row` (searchSupabaseCatalog calcula isso em JS; as RPCs
+  // `contagem_itens_prioritarios`/`contagem_itens_por_endereco` já trazem
+  // essa coluna pronta via LATERAL join, ver backend/schema.sql).
   const temSaldo = row.saldo!=null;
   const saldo = temSaldo ? Number(row.saldo) : 0;
   const valorFinanceiro = Number(row.valor_financeiro||0);
+  const custoDireto = (temSaldo && saldo!==0) ? valorFinanceiro/saldo : null;
+  const custoUnit = custoDireto!=null ? custoDireto
+    : (row.custo_unitario_fallback!=null ? Number(row.custo_unitario_fallback) : 0);
   return {
     codigo: row.codigo,
     descricao: row.descricao,
@@ -3330,7 +3342,7 @@ function estoqueRowToProduct(row){
     corredor: row.corredor || null,
     rua: row.rua || null,
     saldoSistema: saldo,
-    custoUnit: (temSaldo && saldo!==0) ? valorFinanceiro/saldo : 0,
+    custoUnit,
     valorFinanceiro,
     semMovimentoRecente: !!row.sem_movimento_recente,
     ultimaSaida: row.data_ultima_saida || null,
@@ -3466,30 +3478,44 @@ async function fetchProdutosByCodigos(codigos, almoxarifado){
       .in('codigo', codigos);
     if(!produtosRows || produtosRows.length===0) return mapa;
 
-    let saldoQuery = supabaseClient
+    // Busca TODOS os armazéns (sem filtrar por `almoxarifado` na query) —
+    // precisa ver as outras linhas do mesmo código pra conseguir um custo
+    // unitário de fallback quando o armazém pedido tem saldo 0 (bug real:
+    // "Valor do ajuste" saindo R$0,00 mesmo com custo conhecido em outro
+    // armazém — ver comentário de estoqueRowToProduct). saldoSistema
+    // continua vindo só do armazém pedido (ou inequívoco, se nenhum foi
+    // pedido) — só o CUSTO ganhou essa segunda fonte possível.
+    const { data: saldoRows } = await supabaseClient
       .from('estoque_saldo')
       .select('produto_codigo, almoxarifado, saldo, valor_financeiro, data_ultima_saida')
       .in('produto_codigo', codigos);
-    if(almoxarifado) saldoQuery = saldoQuery.eq('almoxarifado', almoxarifado);
-    const { data: saldoRows } = await saldoQuery;
     const linhasPorCodigo = {};
     (saldoRows||[]).forEach(r=>{
       (linhasPorCodigo[r.produto_codigo] = linhasPorCodigo[r.produto_codigo] || []).push(r);
     });
 
     produtosRows.forEach(p=>{
-      const linhas = linhasPorCodigo[p.codigo] || [];
-      // Com armazém informado, no máximo 1 linha (já filtrado na query).
-      // Sem armazém: só usa o valor se for inequívoco (1 armazém só) —
-      // mais de um vira "sem saldo pra comparar" em vez de somado.
-      const unica = linhas.length===1 ? linhas[0] : null;
+      const todasLinhas = linhasPorCodigo[p.codigo] || [];
+      const linhasDoArmazem = almoxarifado ? todasLinhas.filter(l=>l.almoxarifado===almoxarifado) : todasLinhas;
+      // Com armazém informado, no máximo 1 linha faz sentido (chave única
+      // produto+armazém). Sem armazém: só usa o valor se for inequívoco
+      // (1 armazém só) — mais de um vira "sem saldo pra comparar" em vez
+      // de somado.
+      const unica = linhasDoArmazem.length===1 ? linhasDoArmazem[0] : null;
       const s = unica || {};
+      const comCusto = todasLinhas
+        .filter(l=>Number(l.saldo||0)!==0 && l.valor_financeiro!=null)
+        .sort((a,b)=>Number(b.saldo||0)-Number(a.saldo||0));
+      const custoPreferido = comCusto.find(l=>l.almoxarifado===almoxarifado) || comCusto[0];
+      const custoUnitarioFallback = custoPreferido
+        ? Number(custoPreferido.valor_financeiro||0) / Number(custoPreferido.saldo||1)
+        : null;
       mapa.set(p.codigo, estoqueRowToProduct({
         codigo: p.codigo,
         descricao: p.descricao,
         unidade: p.unidade,
         grupo: p.grupo,
-        almoxarifado: s.almoxarifado || (linhas.length>1 ? linhas.map(l=>l.almoxarifado).join('/') : '—'),
+        almoxarifado: s.almoxarifado || (linhasDoArmazem.length>1 ? linhasDoArmazem.map(l=>l.almoxarifado).join('/') : '—'),
         saldo: unica ? s.saldo : null,
         valor_financeiro: unica ? s.valor_financeiro : 0,
         data_ultima_saida: s.data_ultima_saida || null,
@@ -3497,6 +3523,7 @@ async function fetchProdutosByCodigos(codigos, almoxarifado){
         endereco_codigo: null,
         corredor: null,
         rua: null,
+        custo_unitario_fallback: custoUnitarioFallback,
       }));
     });
   }catch(err){

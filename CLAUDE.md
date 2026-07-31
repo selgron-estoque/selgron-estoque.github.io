@@ -12431,3 +12431,130 @@ pra contar um item fora de uma lista de inventário estruturada):
   devem sair com o valor do ajuste certo; a contagem já registrada no print
   não muda retroativamente (o valor já foi calculado e salvo como R$0,00
   no momento da contagem).
+
+## "Corrigir todas as contagens novas e antigas" — mesmo bug de custo nos outros 2 caminhos + backfill retroativo
+
+A correção anterior (`searchSupabaseCatalog`, "Nova Contagem" avulsa) resolveu
+só UM dos caminhos que resolvem produto+custo a partir do Supabase — o
+cliente pediu explicitamente pra cobrir TODOS: "Corrigir todas as contagens
+novas e antigas". Investigação encontrou a MESMA limitação estrutural
+(`custoUnit = valor_financeiro/saldo` de uma única linha, sem fallback pra
+outro armazém do mesmo código) nos outros 2 caminhos, mais o backlog de
+contagens já salvas com `valor_divergente: 0` por causa desse bug.
+
+### `estoqueRowToProduct` ganha um fallback opcional (`custo_unitario_fallback`)
+
+Ponto central onde TODOS os produtos vindos de `fetchProdutosByCodigos`
+(Lista Importada/Itens Específicos/Recontagem), `fetchContagemItensPrioritarios`
+(Aleatória/Curva ABC/Grupo, via RPC `contagem_itens_prioritarios`) e
+`fetchItensPorEnderecoCompleto` (Rota de Endereço, via RPC
+`contagem_itens_por_endereco`) são montados — `searchSupabaseCatalog` é o
+único que NÃO passa por aqui (monta o produto na mão, já com seu próprio
+fallback calculado em JS desde a correção anterior). Ganhou um campo `row.
+custo_unitario_fallback` opcional: quando o cálculo direto
+(`valor_financeiro/saldo` da PRÓPRIA linha) não dá pra fazer (saldo 0 ou
+ausente), usa esse valor em vez de cair pra 0 incondicionalmente — sem
+mudança nenhuma no caminho normal (saldo>0 na própria linha sempre vence,
+nunca consulta o fallback).
+
+### `fetchProdutosByCodigos` — mesmo padrão de fix de `searchSupabaseCatalog`
+
+A consulta a `estoque_saldo` deixou de filtrar `.eq('almoxarifado',
+almoxarifado)` na query (busca TODOS os armazéns do código agora) — **saldo**
+exibido/comparado continua só confiando no armazém pedido (ou inequívoco, se
+nenhum foi pedido — mesmo critério de sempre), mas **custo** ganhou o mesmo
+fallback: primeiro tenta o próprio armazém pedido, senão cai pra qualquer
+outro armazém do mesmo código com saldo≠0 e valor financeiro conhecido
+(desempate por maior saldo). Passa esse valor já resolvido como
+`custo_unitario_fallback` pro `estoqueRowToProduct`.
+
+### RPCs `contagem_itens_prioritarios`/`contagem_itens_por_endereco` (SQL)
+
+As duas ganharam a MESMA coluna nova no retorno, `custo_unitario_fallback`,
+calculada via `LEFT JOIN LATERAL` em `estoque_saldo` — pega o custo unitário
+(`valor_financeiro/saldo`) de QUALQUER armazém do mesmo `produto_codigo` que
+tenha saldo≠0 e valor_financeiro conhecido, preferindo o PRÓPRIO armazém da
+linha (`order by (es2.almoxarifado = es.almoxarifado) desc, es2.saldo desc`)
+quando ele já serve — só cai pra outro quando o próprio não tem custo
+derivável. `saldo`/`valor_financeiro` da linha principal continuam
+representando só o armazém físico de verdade, sem mudar de significado — só
+o custo unitário ganhou essa segunda fonte possível. Nenhuma mudança de JS
+nesses 2 caminhos além do fix em `estoqueRowToProduct` acima — como
+`fetchContagemItensPrioritarios`/`fetchItensPorEnderecoCompleto` já fazem
+`data.map(estoqueRowToProduct)`, a coluna nova é absorvida automaticamente
+assim que a RPC no Supabase real estiver atualizada. `drop function` +
+`create or replace` nas duas (formato de retorno mudou, Postgres exige).
+
+### Backfill: contagens JÁ SALVAS (a parte "antigas" do pedido)
+
+A correção de código só vale pra contagem NOVA — uma linha já gravada em
+`contagens` com `valor_divergente: 0` (pelo bug, com `diferenca` real
+diferente de 0) fica errada pra sempre até alguém recalcular. Bloco de
+`UPDATE` novo em `backend/schema.sql`, mesma lógica de fallback (LATERAL,
+preferindo o armazém DA PRÓPRIA CONTAGEM — `c.almoxarifado` — e caindo pra
+qualquer outro com saldo≠0/custo conhecido):
+
+```sql
+update contagens c
+set valor_divergente = round(abs(c.diferenca) * custo.valor_unitario, 2)
+from lateral (
+  select es.valor_financeiro / es.saldo as valor_unitario
+  from estoque_saldo es
+  where es.produto_codigo = c.produto_codigo
+    and es.saldo <> 0 and es.valor_financeiro is not null
+  order by (es.almoxarifado = c.almoxarifado) desc, es.saldo desc
+  limit 1
+) custo
+where c.diferenca is not null and c.diferenca <> 0
+  and coalesce(c.valor_divergente, 0) = 0;
+```
+
+- **Escopo deliberado**: só `diferenca is not null and diferenca <> 0`
+  (contagem sem divergência não tem "valor do ajuste" nenhum pra corrigir —
+  já é 0 por definição, não por bug) **e** só
+  `coalesce(valor_divergente,0) = 0` (nunca sobrescreve uma linha que já
+  tinha um valor gravado corretamente — só toca a assinatura exata do bug).
+- **`contagens_historico` NUNCA é tocada por este backfill** — é o espelho
+  da planilha `BD_Contagens` do próprio cliente (a coluna "Custo" de lá veio
+  pronta da planilha, não foi calculada pelo nosso código com esse bug) —
+  um dado de origem diferente e já confiável, mexer ali seria substituir
+  dado real do cliente por um cálculo nosso sem necessidade.
+- **Limitação aceita conscientemente**: se um item TEM custo genuinamente
+  zero no próprio armazém (ex. item promocional/doado) mas outro armazém do
+  mesmo código tem custo diferente (inconsistência rara de dado), o backfill
+  atribuiria esse custo por engano — mesmo trade-off já aceito no fix de
+  código (fallback "qualquer armazém com custo conhecido" é a mesma lógica,
+  só aplicada retroativamente).
+- Rodar no SQL Editor do Supabase, no projeto real, DEPOIS de aplicar as 2
+  RPCs atualizadas (não depende delas tecnicamente, mas documentado junto
+  por ser a mesma correção).
+
+### Verificação
+
+Testado via harness Node (mesma técnica de sempre — Supabase mockado, sem
+rede real): `estoqueRowToProduct` usa o fallback só quando o cálculo direto
+não dá (saldo 0 ou ausente), ignora o fallback quando a própria linha já
+resolve, e continua `custoUnit:0` sem fallback nenhum disponível (4
+cenários). `fetchProdutosByCodigos`: reproduzido o cenário exato do cliente
+(saldo 0 no armazém pedido, custo em outro armazém) confirmando
+`custoUnit` certo e `saldoSistema` continuando o do armazém pedido;
+regressão do caminho normal (saldo>0 no próprio armazém, prefere o próprio);
+sem custo em lugar nenhum continua 0; sem armazém informado com código
+ambíguo entre 2 armazéns — `saldoSistema` continua 0 (ambíguo, regra de
+sempre) mas `custoUnit` ainda resolve via fallback (5 cenários). Rodei de
+novo toda a suíte de regressão disponível no scratchpad — as únicas 3
+falhas encontradas (`harness_actions_beside_content`/
+`harness_dashboard_render_dedup`/`harness_ultima_contagem_por_codigo`) já
+existiam ANTES desta mudança (confirmado rodando os mesmos harnesses contra
+o commit anterior, via `git stash`) — nada relacionado a este trabalho.
+Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+conferidos (638/638, sem mudança — só JS/SQL, nenhuma classe CSS tocada).
+**Falta o cliente rodar o SQL novo** (as 2 RPCs atualizadas + o `UPDATE` de
+backfill) no projeto real — até lá, `fetchContagemItensPrioritarios`/
+`fetchItensPorEnderecoCompleto` continuam funcionando normalmente (a RPC
+antiga, sem a coluna nova, simplesmente não preenche `custo_unitario_fallback`
+— `estoqueRowToProduct` trata isso como `undefined`/ausente, cai no `0` de
+sempre, sem quebrar) — só passam a ter o custo corrigido depois da migração
+rodada. **Verificação de ponta a ponta com o item real do cliente e o
+resultado do backfill fica a cargo dele** — mesma limitação de sempre
+(sandbox sem acesso de rede ao Supabase).

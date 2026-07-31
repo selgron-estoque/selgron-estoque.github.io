@@ -1345,3 +1345,157 @@ alter table enderecos_propostos add column if not exists endereco_anterior text;
 -- em "Endereços Pendentes de Cadastro"), mesmo critério já usado no resto
 -- do app (RLS permissivo pra `authenticated`, tela que dispara a ação é que
 -- é gated por perfil).
+
+-- =============================================================================
+-- "VALOR DO AJUSTE" SEMPRE R$ 0,00 QUANDO O ARMAZÉM CONTADO TINHA SALDO 0
+--
+-- Bug real reportado pelo cliente com um caso concreto (000.48741, contado no
+-- Armazém 01 com saldo 0, físico 2 — "Valor do ajuste" saiu R$ 0,00 mesmo o
+-- item TENDO custo conhecido, só que registrado no saldo de OUTRO armazém).
+-- Causa: toda função que resolve produto+saldo (`estoqueRowToProduct` no
+-- index.html, e as duas RPCs abaixo que a alimentam) sempre calculava
+-- `custoUnit = valor_financeiro/saldo` a partir de UMA ÚNICA linha de
+-- `estoque_saldo` — a do armazém sendo contado. Quando esse armazém
+-- especificamente tem saldo 0 (cenário real: item zerado ali, mas com saldo
+-- em outro armazém), a divisão colapsa pra 0 e nenhum fallback existia —
+-- mesmo o item tendo custo unitário perfeitamente conhecido via outro
+-- armazém. `classifyDivergence` não depende de custo pra rotear (decisão já
+-- tomada antes, "toda divergência vai pro líder"), mas `valorDivergente`
+-- ("Valor do ajuste", mostrado em Contagens Concluídas/Itens Divergentes,
+-- usado pela severidade visual e pelo relatório Excel) precisa do valor
+-- certo — cliente confirmou: "esse item tem custo só precisa multiplicar
+-- pela divergência".
+--
+-- `contagem_itens_prioritarios`/`contagem_itens_por_endereco` ganharam uma
+-- coluna nova, `custo_unitario_fallback` — via LATERAL join em
+-- `estoque_saldo`, pega o custo unitário (valor_financeiro/saldo) de
+-- QUALQUER armazém do mesmo produto que tenha saldo<>0 e valor_financeiro
+-- conhecido, preferindo o PRÓPRIO armazém da linha quando ele já serve
+-- (`order by (es2.almoxarifado = es.almoxarifado) desc`) — só cai pra outro
+-- armazém quando o próprio não tem custo derivável. `saldo`/`valor_financeiro`
+-- da linha principal continuam representando só o armazém físico de
+-- verdade (nunca mudam de significado) — só o custo unitário passou a ter
+-- essa segunda fonte possível. index.html (`estoqueRowToProduct`) usa essa
+-- coluna nova só quando o cálculo direto (valor_financeiro/saldo da própria
+-- linha) dá 0/indisponível — sem mudança nenhuma pro caso comum (armazém
+-- com saldo>0 já resolve sozinho, como sempre).
+--
+-- `searchSupabaseCatalog` (busca manual de item, "Nova Contagem" avulsa) já
+-- tinha sido corrigida direto no index.html numa rodada anterior, com a
+-- mesma lógica de fallback calculada em JS (não passa por RPC nenhuma) — só
+-- as 2 RPCs abaixo (usadas por Aleatória/Curva ABC/Grupo/Rota de Endereço)
+-- e `fetchProdutosByCodigos` (Lista Importada/Itens Específicos/Recontagem,
+-- corrigida em JS no mesmo commit desta migração) precisavam do mesmo
+-- tratamento.
+--
+-- `drop function` necessário nas duas — o formato de RETORNO muda (coluna
+-- nova), e Postgres não deixa `create or replace` trocar isso.
+-- =============================================================================
+drop function if exists contagem_itens_prioritarios(int, text[], text[]);
+create or replace function contagem_itens_prioritarios(p_limit int default 50, p_grupos text[] default null, p_almoxarifados text[] default null)
+returns table(
+  codigo text, descricao text, unidade text, grupo text, almoxarifado text, saldo numeric,
+  valor_financeiro numeric, data_ultima_saida date, sem_movimento_recente boolean,
+  endereco_codigo text, corredor text, rua text, custo_unitario_fallback numeric
+) as $$
+  select
+    p.codigo, p.descricao, p.unidade, p.grupo, es.almoxarifado, es.saldo, es.valor_financeiro,
+    es.data_ultima_saida,
+    (es.data_ultima_saida is null or es.data_ultima_saida < current_date - interval '90 days'),
+    e.codigo, e.corredor, e.rua,
+    custo.valor_unitario
+  from estoque_saldo es
+  join produtos p on p.codigo = es.produto_codigo
+  left join estoque_enderecos ee on ee.produto_codigo = es.produto_codigo
+  left join enderecos e on e.id = ee.endereco_id
+  left join lateral (
+    select es2.valor_financeiro / es2.saldo as valor_unitario
+    from estoque_saldo es2
+    where es2.produto_codigo = es.produto_codigo
+      and es2.saldo <> 0
+      and es2.valor_financeiro is not null
+    order by (es2.almoxarifado = es.almoxarifado) desc, es2.saldo desc
+    limit 1
+  ) custo on true
+  where (p_grupos is null or p.grupo = any(p_grupos))
+    and (p_almoxarifados is null or es.almoxarifado = any(p_almoxarifados))
+  order by
+    (es.data_ultima_saida is null or es.data_ultima_saida < current_date - interval '90 days') desc,
+    es.valor_financeiro desc
+  limit p_limit;
+$$ language sql stable;
+
+drop function if exists contagem_itens_por_endereco(text[], text[]);
+create or replace function contagem_itens_por_endereco(p_grupos text[] default null, p_almoxarifados text[] default null)
+returns table(
+  codigo text, descricao text, unidade text, grupo text, almoxarifado text, saldo numeric,
+  valor_financeiro numeric, data_ultima_saida date, sem_movimento_recente boolean,
+  endereco_codigo text, corredor text, rua text, custo_unitario_fallback numeric
+) as $$
+  select
+    p.codigo, p.descricao, p.unidade, p.grupo, es.almoxarifado, es.saldo, es.valor_financeiro,
+    es.data_ultima_saida,
+    (es.data_ultima_saida is null or es.data_ultima_saida < current_date - interval '90 days'),
+    e.codigo, e.corredor, e.rua,
+    custo.valor_unitario
+  from estoque_saldo es
+  join produtos p on p.codigo = es.produto_codigo
+  join estoque_enderecos ee on ee.produto_codigo = es.produto_codigo
+  join enderecos e on e.id = ee.endereco_id
+  left join lateral (
+    select es2.valor_financeiro / es2.saldo as valor_unitario
+    from estoque_saldo es2
+    where es2.produto_codigo = es.produto_codigo
+      and es2.saldo <> 0
+      and es2.valor_financeiro is not null
+    order by (es2.almoxarifado = es.almoxarifado) desc, es2.saldo desc
+    limit 1
+  ) custo on true
+  where (p_grupos is null or p.grupo = any(p_grupos))
+    and (p_almoxarifados is null or es.almoxarifado = any(p_almoxarifados))
+  order by e.codigo, p.codigo;
+$$ language sql stable;
+
+-- =============================================================================
+-- BACKFILL: "Valor do ajuste" (contagens.valor_divergente) de contagens JÁ
+-- SALVAS antes da correção acima — pedido explícito do cliente ("corrigir
+-- todas as contagens novas e antigas"). Só a correção de código (acima)
+-- vale pra contagem NOVA a partir de agora; contagem já gravada com
+-- valor_divergente=0 (por saldo 0 no armazém contado, custo perdido) precisa
+-- ser recalculada manualmente, uma vez, rodando o bloco abaixo.
+--
+-- MESMA lógica de fallback (armazém da própria contagem primeiro, senão
+-- qualquer outro com saldo<>0 e valor_financeiro conhecido) — só que em cima
+-- da quantidade (`diferenca`) já salva na contagem, não recalculando nada
+-- de saldo/diferença.
+--
+-- Escopo do UPDATE, todo deliberado:
+--   - só `contagens` (a tabela AO VIVO do app) — `contagens_historico` é o
+--     espelho da planilha `BD_Contagens` do próprio cliente, um dado de
+--     origem diferente e já confiável (a coluna "Custo" de lá não foi
+--     calculada pelo nosso código, veio pronta da planilha) — NUNCA tocar.
+--   - só `diferenca is not null and diferenca <> 0` — contagem sem
+--     divergência não tem "valor do ajuste" nenhum pra corrigir (já é 0 por
+--     definição, não por bug).
+--   - só sobrescreve quando o custo encontrado é REALMENTE diferente/maior
+--     que o já salvo (`coalesce(contagens.valor_divergente,0) = 0`) — não
+--     mexe em nenhuma linha que já tinha um valor gravado corretamente.
+--
+-- Rodar no SQL Editor do Supabase, no projeto real, DEPOIS de já ter as
+-- funções acima atualizadas (não depende delas, mas documentado junto por
+-- serem a mesma correção).
+-- =============================================================================
+update contagens c
+set valor_divergente = round(abs(c.diferenca) * custo.valor_unitario, 2)
+from lateral (
+  select es.valor_financeiro / es.saldo as valor_unitario
+  from estoque_saldo es
+  where es.produto_codigo = c.produto_codigo
+    and es.saldo <> 0
+    and es.valor_financeiro is not null
+  order by (es.almoxarifado = c.almoxarifado) desc, es.saldo desc
+  limit 1
+) custo
+where c.diferenca is not null
+  and c.diferenca <> 0
+  and coalesce(c.valor_divergente, 0) = 0;
