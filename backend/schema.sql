@@ -1469,6 +1469,14 @@ $$ language sql stable;
 -- da quantidade (`diferenca`) já salva na contagem, não recalculando nada
 -- de saldo/diferença.
 --
+-- Subquery escalar CORRELACIONADA no próprio SET (não `FROM LATERAL`, que
+-- daria erro 42P10 — Postgres não deixa uma subquery no FROM de um UPDATE
+-- referenciar a tabela ALVO do próprio UPDATE, mesmo com LATERAL; só uma
+-- subquery no SET/WHERE pode). O `exists(...)` no WHERE evita gravar NULL
+-- em `valor_divergente` quando não existe custo derivável em NENHUM
+-- armazém — sem essa guarda, a subquery escalar retornaria NULL e a linha
+-- ficaria pior do que estava (0 vira NULL em vez de continuar 0).
+--
 -- Escopo do UPDATE, todo deliberado:
 --   - só `contagens` (a tabela AO VIVO do app) — `contagens_historico` é o
 --     espelho da planilha `BD_Contagens` do próprio cliente, um dado de
@@ -1486,16 +1494,21 @@ $$ language sql stable;
 -- serem a mesma correção).
 -- =============================================================================
 update contagens c
-set valor_divergente = round(abs(c.diferenca) * custo.valor_unitario, 2)
-from lateral (
-  select es.valor_financeiro / es.saldo as valor_unitario
+set valor_divergente = round(abs(c.diferenca) * (
+  select es.valor_financeiro / es.saldo
   from estoque_saldo es
   where es.produto_codigo = c.produto_codigo
     and es.saldo <> 0
     and es.valor_financeiro is not null
   order by (es.almoxarifado = c.almoxarifado) desc, es.saldo desc
   limit 1
-) custo
+), 2)
 where c.diferenca is not null
   and c.diferenca <> 0
-  and coalesce(c.valor_divergente, 0) = 0;
+  and coalesce(c.valor_divergente, 0) = 0
+  and exists (
+    select 1 from estoque_saldo es
+    where es.produto_codigo = c.produto_codigo
+      and es.saldo <> 0
+      and es.valor_financeiro is not null
+  );
