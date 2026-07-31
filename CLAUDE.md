@@ -13029,3 +13029,36 @@ ao vivo do cliente.
   próprio cliente já forneceu o primeiro feedback real que motivou esta
   correção; pode precisar de mais uma rodada de ajuste fino se ainda
   sobrar algum transbordo.
+
+## Margem de segurança mínima entre a borda da etiqueta e o corte físico
+
+Cliente confirmou o layout novo com um print de duas etiquetas lado a lado
+já legíveis (código, descrição, data e código de barras, tudo dentro do
+espaço, sem sobreposição) — e pediu uma margem mínima em cada canto, como
+proteção contra o corte/registro da impressora não ser perfeitamente
+preciso (a borda preta ou o código de barras ficarem colados bem na quina
+física da etiqueta, arriscando sair cortados).
+
+- **`.etq-page-col`** (novo, o wrapper de cada coluna dentro de `.etq-
+  page`) — `width:50mm;height:30mm;padding:0.5mm`. `.etq-endereco`/
+  `.etq-produto` deixaram de fixar `width:50mm;height:30mm` diretamente e
+  passaram a `width:100%;height:100%` — preenchem o espaço que sobra
+  DENTRO do padding de `.etq-page-col`, não mais o retângulo inteiro. A
+  coluna continua ocupando exatamente 50×30mm físicos (o que a impressora
+  espera pra cada etiqueta não muda) — só o conteúdo visível (borda preta,
+  texto, código de barras) encolheu ~1mm no total por eixo, sobrando 0.5mm
+  de branco antes de cada quina.
+- **Barcode do produto ajustado pra 41×6mm** (era 42×7mm, ver seção
+  anterior) — compensa a perda de ~1mm de altura útil causada pela margem
+  nova, mantendo uma folga real dentro do orçamento vertical já calculado
+  (interior de `.etq-produto` caiu de 27,4mm pra 26,4mm; a soma de
+  topo+meio+rodapé+barcode ficou em ~26mm, sobrando ~0,4mm de folga).
+- Testado via `harness_etiqueta_layout_fix.js` (3 asserções novas):
+  `.etq-page-col` tem o padding de 0,5mm certo; os dois barcodes (endereço/
+  produto) continuam com largura E altura fixas (não regrediu pro
+  `height:auto` de antes). Rodei de novo os 4 harnesses anteriores desta
+  feature (83 asserções) sem quebrar nada — 100 asserções no total entre os
+  5 harnesses de Etiquetas. Transpile Babel do arquivo inteiro e
+  balanceamento de chaves do CSS conferidos (661/661). **Verificação de
+  ponta a ponta com a impressora física fica a cargo do cliente** — mesma
+  limitação de sempre, sandbox sem impressora física.
