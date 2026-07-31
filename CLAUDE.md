@@ -12790,18 +12790,79 @@ páginas visíveis do preview — e pediu, junto, suporte a etiqueta física em
   também deixou de ser necessário e foi removido junto (sem esse posicionamento
   especial, o elemento simplesmente aparece no fluxo normal da única página
   que sobra).
-- **"Duas colunas" — ainda pendente, aguardando dado do cliente antes de
-  implementar**: perguntei as dimensões físicas exatas do rolo de etiqueta
-  dele (largura total cobrindo as duas colunas + o espaço/vão entre as duas
-  etiquetas) antes de mexer em código — implementar isso "no chute" arrisca
-  desperdiçar etiqueta física de verdade no teste do cliente (diferente de
-  qualquer outro ajuste deste projeto, aqui um erro de medida consome
-  material real, não só pixels). Alternativa sugerida a ele: checar "Mais
-  definições" no diálogo de impressão pra ver se o driver da TSC já expõe um
-  papel de tamanho compatível cadastrado (já que essa mesma impressora já
-  imprime normalmente pelo Windows hoje).
+- **"Duas colunas" — resolvido na sequência**, ver seção seguinte.
 - Testado via transpile Babel do arquivo inteiro e balanceamento de chaves do
   CSS (657/657, caiu 1 — a troca de 3 regras dentro de `@media print` por 2
   reduziu uma declaração). **Verificação de ponta a ponta (a folha realmente
   saindo em 1 página só) fica a cargo do cliente** — mesma limitação de
   sempre, sandbox sem impressora física.
+
+## Etiqueta: impressão em duas colunas de verdade (rolo real 101×31mm) + pareamento na fila
+
+Antes de mexer em código, pedi as medidas físicas exatas do rolo — errar
+aqui gastaria etiqueta de verdade no teste do cliente, não só pixels. Ele
+mandou um print do próprio driver da TSC: "Tamanho da etiqueta: Largura
+101,0mm / Altura 31,0mm" e "Larguras da cartela exposta: Esquerda 0,0mm /
+Direita 0,0mm" — confirma matematicamente as 2 colunas de 50mm lado a lado
+com ~1mm de vão entre elas (50+1+50=101), não 1 etiqueta única de 50mm como
+a versão anterior desta feature assumia.
+
+Antes de implementar, ainda faltava decidir o QUE preenche a 2ª coluna
+quando só 1 item está sendo impresso — perguntei via `AskUserQuestion` e o
+cliente respondeu de forma mais precisa que as duas opções que dei:
+**"se tiver mais de uma etiqueta na fila imprimir uma em cada, não
+desperdiçar etiqueta"** — ou seja, o pareamento das 2 colunas só faz sentido
+dentro do fluxo da FILA (que pode ter vários itens pendentes esperando pra
+imprimir), não na impressão avulsa (fora da fila, sempre 1 item só, sem
+nada pra parear).
+
+- **`@page{size:101mm 31mm;margin:0;}`** — trocado do valor de 50×30mm
+  (chute inicial da rodada anterior) pras medidas exatas confirmadas pelo
+  cliente no driver.
+- **`buildEtiquetaItemHtml({tipo,codigo,...})`** — extraída de dentro de
+  `imprimirEtiquetaViaNavegador` (que antes montava o HTML de 1 etiqueta só,
+  direto) pra virar um helper reaproveitável, já que agora pode ser chamado
+  1 ou 2 vezes por impressão.
+- **`imprimirEtiquetaViaNavegador(item1, item2)`** — `item2` é opcional (a
+  coluna direita). Monta `.etq-page` (novo wrapper flex, `gap:1mm`) com 1 ou
+  2 `.etq-page-col` dentro, dependendo se `item2` foi passado. Os códigos de
+  barras são gerados via `querySelectorAll('svg.etq-barcode')` +
+  `.forEach` (antes era `querySelector`, que só pega o 1º elemento — com 2
+  colunas, precisa iterar os 2 SVGs e desenhar o código de barras certo em
+  cada um).
+- **`EtiquetasPanel.handleImprimirFila(item)`**: antes de imprimir, procura
+  `filaPendente.find(f=>f.id!==item.id)` — se achar outro item pendente,
+  chama `imprimirEtiquetaViaNavegador` com os DOIS (o clicado + o pareado) e
+  marca os DOIS como impressos (`marcarEtiquetaImpressa` chamado 2×) — sem
+  precisar de nenhum clique adicional no item pareado, ele só some da fila
+  junto quando o Realtime propaga o UPDATE de status. Se não houver outro
+  pendente, imprime sozinho (coluna direita em branco — inevitável, a folha
+  sempre sai inteira do rolo, não dá pra imprimir "meia folha").
+  `imprimindoFilaId` (um único id) virou **`imprimindoFilaIds`** (`Set`) —
+  os DOIS itens envolvidos no par ficam desabilitados/"Imprimindo…" ao
+  mesmo tempo, evitando um clique duplo no item pareado enquanto a
+  impressão dele já está em andamento por causa do outro.
+- **Aviso novo na tela** ("O rolo tem 2 colunas — ao imprimir, cada folha
+  sai com este item e o próximo pendente lado a lado..."), só quando
+  `filaPendente.length>1` — deixa o comportamento de pareamento visível
+  pra quem está usando a fila, em vez de "mágica" silenciosa.
+- **Impressão avulsa (`handleImprimir`, fora da fila) não muda** — sempre
+  chama `imprimirEtiquetaViaNavegador` com 1 item só, já que nesse contexto
+  não existe "outro item" com que parear.
+- Testado via harness novo (`harness_etiqueta_duas_colunas.js`, jsdom +
+  react-dom/client + `act()`, mesma técnica rigorosa de sempre): confirmei
+  que `imprimirEtiquetaViaNavegador` com 2 itens gera 2 `.etq-page-col` +
+  2 `svg.etq-barcode`, cada um com o código certo desenhado, num único
+  `window.print()`; que com 1 item só gera 1 coluna, sem quebrar; que a
+  fila com 2 itens pendentes mostra o aviso de pareamento, e clicar
+  "Imprimir" no 1º item imprime UMA folha com as 2 colunas preenchidas e
+  marca os DOIS itens (A e B) como impressos, mesmo sem clicar no botão do
+  B; e que com só 1 item pendente não mostra o aviso, imprime sozinho (1
+  coluna) e marca só esse item. 20 asserções, todas passando — rodei de
+  novo os 2 harnesses anteriores desta feature (`harness_etiqueta_print_
+  navegador.js`/`harness_etiquetas_fila.js`, 22+21 asserções) sem quebrar
+  nada. Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  conferidos (658/658, subiu 1 pela regra `.etq-page` nova). **Verificação
+  de ponta a ponta com a impressora física (alinhamento real das 2
+  colunas no papel) fica a cargo do cliente** — mesma limitação de sempre,
+  sandbox sem impressora física.
