@@ -12943,3 +12943,89 @@ trocar de aba explicitamente) precisou de um clique a mais no botão
 "Endereço" antes da busca — mudança de comportamento intencional desta
 rodada, não regressão. Rodei de novo os 4 harnesses desta feature (83
 asserções) e o transpile/CSS (658/658) sem quebrar nada.
+
+## Bug real de layout: etiqueta de produto transbordava os 30mm, descrição sobrepunha o código de barras
+
+Cliente mandou o PRIMEIRO print de uma impressão real (não simulação) —
+mostrando a etiqueta de produto com "DESCRICAO | DATA" ilegível, sobreposto
+por barras do código de barras, e uma 2ª "folha" quase em branco logo
+abaixo com só o código numérico flutuando sozinho. Isso é exatamente o tipo
+de bug que o sandbox nunca teria como pegar (não tem impressora física nem
+motor de paginação de impressão de verdade) — só apareceu no primeiro teste
+ao vivo do cliente.
+
+- **Causa raiz**: o orçamento vertical da etiqueta de produto (`.etq-
+  produto`, 30mm de altura física) nunca tinha sido calculado de verdade —
+  fontes generosas (13pt pro código, 7pt pros rótulos/valores), paddings/
+  margens confortáveis, e principalmente **o código de barras com
+  `height:auto`** (sem limite — a altura renderizada crescia sozinha
+  conforme a proporção intrínseca do SVG gerado pelo JsBarcode, que varia
+  com o tamanho do código) — somados, o conteúdo real facilmente passava
+  de 30mm. Como o layout é flexbox normal (sem `position:absolute`), o
+  transbordo não "desaparece" — o texto/barras que não cabem continuam
+  ocupando espaço visual, empurrando/sobrepondo o que vem depois, e o que
+  ultrapassa a altura física de `@page` (31mm) o navegador empurra pra uma
+  2ª página de verdade — batendo exatamente com os dois sintomas do print
+  (sobreposição + "página 2" com sobra de conteúdo).
+- **Fontes/margens/padding reduzidos em cascata** (topo/meio/rodapé de
+  `.etq-produto`, e por consistência também `.etq-endereco`) — cálculo
+  aproximado do orçamento disponível (30mm menos padding/borda) contra o
+  que cada bloco (rótulo+código, descrição/data, código de barras+código
+  pequeno) realmente ocupa nos tamanhos novos, deixando uma folga real.
+  **Não é uma garantia matemática perfeita** — sem impressora física pra
+  testar, é a melhor estimativa possível; documentado aqui pro cliente
+  saber que pode precisar de mais um ajuste fino depois de ver impresso.
+- **`.etq-barcode` perdeu `height:auto`, virou altura FIXA por contexto**
+  (`.etq-produto .etq-barcode{width:42mm;height:7mm}` / `.etq-endereco
+  .etq-barcode{width:44mm;height:11mm}`) — como o SVG do JsBarcode tem
+  `viewBox` combinado com `preserveAspectRatio` padrão (`xMidYMid meet`),
+  fixar largura E altura no CSS faz o navegador ESCALAR o código de barras
+  pra caber dentro dessa caixa (nunca estourar), com uma pequena margem
+  vazia no eixo que sobrar, em vez de crescer sem limite. **Trade-off
+  físico real, não só de CSS**: pra códigos mais longos, isso pode deixar
+  a barra mais estreita (módulo mais fino) do que o ideal pra leitura por
+  scanner — é um limite genuíno do espaço físico de 30mm de altura + a
+  necessidade de mostrar descrição/data também, não uma escolha arbitrária
+  minha. Se o cliente notar dificuldade real pra escanear um código
+  específico (normalmente os mais longos), vale considerar remover a
+  descrição/data da etiqueta ou usar uma etiqueta física maior.
+- **`overflow:hidden`** em `.etq-endereco`/`.etq-produto` — rede de
+  segurança final: se mesmo com o orçamento recalculado algo ainda não
+  couber (ex: descrição muito longa, código muito comprido), o conteúdo
+  excedente é CORTADO silenciosamente em vez de sobrepor outro elemento ou
+  vazar pra uma 2ª página — bem menos grave (só um corte, ainda legível o
+  que sobra) do que a etiqueta ilegível do print original.
+- **Descrição truncada em 26 caracteres** (era 40) — a coluna "DESCRICAO"
+  tem só ~21mm de largura útil a 6pt; um texto de 40 caracteres quebrava em
+  3 linhas, consumindo altura demais. 26 caracteres cabe em no máximo 2
+  linhas com folga.
+- **`page-break-after` deixou de ser regra CSS fixa em `.etq-page`** —
+  virou um `style="page-break-after:always;break-after:page;"` INLINE,
+  aplicado só pra folhas de um LOTE (`imprimirLoteEtiquetas`) que têm uma
+  PRÓXIMA folha (nunca na última) — `buildEtiquetaPageHtml(itens,
+  quebrarDepois)` ganhou esse 2º parâmetro. Motivo: a regra fixa aplicada
+  em TODA `.etq-page` (mesmo numa impressão de 1 item só,
+  `imprimirEtiquetaViaNavegador`) arriscava o navegador inserir a quebra
+  pedida MESMO sem conteúdo nenhum depois dela — contribuindo pro sintoma
+  da "2ª folha em branco" do print do cliente, somado ao transbordo real de
+  conteúdo. Agora uma impressão de 1 folha (avulsa ou último item de um
+  lote) nunca carrega esse estilo — só quebra quando genuinamente existe
+  uma próxima folha.
+- Testado via harness novo (`harness_etiqueta_layout_fix.js`): confirma que
+  uma impressão de 1 folha (avulsa ou pareada) nunca tem `style` com
+  "page-break"; que um lote de 4 itens (2 folhas) só marca a 1ª com a
+  quebra, nunca a última; que um lote de 5 itens (3 folhas, 2+2+1) marca a
+  1ª e a 2ª, não a 3ª; que a descrição trunca em exatamente 26 caracteres;
+  e que o CSS tem `overflow:hidden`/altura fixa de barcode nos dois tipos
+  de etiqueta. 16 asserções, todas passando. Rodei de novo os 4 harnesses
+  anteriores desta feature (83 asserções) sem quebrar nada — o refactor de
+  `buildEtiquetaPageHtml` preservou o comportamento externo das duas
+  funções que a chamam. Transpile Babel do arquivo inteiro e
+  balanceamento de chaves do CSS conferidos (660/660, +2 pela separação
+  `.etq-endereco .etq-barcode`/`.etq-produto .etq-barcode` em regras
+  próprias). **Verificação de ponta a ponta com a impressora física
+  (o layout realmente cabendo, o código de barras realmente escaneando)
+  fica a cargo do cliente** — mesma limitação de sempre, mas dessa vez o
+  próprio cliente já forneceu o primeiro feedback real que motivou esta
+  correção; pode precisar de mais uma rodada de ajuste fino se ainda
+  sobrar algum transbordo.
