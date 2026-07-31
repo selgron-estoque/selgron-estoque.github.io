@@ -5699,7 +5699,7 @@ function App(){
         {view==='enderecos' && hasAccess(currentUser,'enderecos') && (
           <AddressValidationPanel enderecosPropostos={enderecosPropostos} onResolve={resolveAddressProposal} />
         )}
-        {view==='etiquetas' && hasAccess(currentUser,'etiquetas') && <EtiquetasPanel />}
+        {view==='etiquetas' && hasAccess(currentUser,'etiquetas') && <EtiquetasPanel currentUser={currentUser} />}
         {view==='userForm' && hasAccess(currentUser,'usuarios') && flowState && (
           <UserForm
             mode={flowState.mode}
@@ -13169,6 +13169,77 @@ function PasswordRequestRow({req, onResolve}){
   );
 }
 
+// Fila de impressão — pedido do cliente ("criar a etiqueta de qualquer
+// lugar e ela ficar salva na fila, aí eu logo o site no PC da impressora e
+// starto a impressão"), depois de confirmar que WebUSB não alcança uma
+// impressora ligada em OUTRO PC da rede (compartilhada via Windows) — só
+// enxerga USB ligado no MESMO aparelho. `etiquetaFilaRowToLocal` mapeia
+// snake_case→camelCase, mesmo padrão de sempre.
+function etiquetaFilaRowToLocal(row){
+  return {
+    id: row.id,
+    tipo: row.tipo,
+    codigo: row.codigo,
+    descricao: row.descricao,
+    quantidade: row.quantidade,
+    dataRecebimento: row.data_recebimento,
+    status: row.status,
+    criadoPor: row.criado_por,
+    criadoEm: row.criado_em,
+    impressoPor: row.impresso_por,
+    impressoEm: row.impresso_em,
+  };
+}
+
+async function salvarEtiquetaNaFila(item){
+  if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
+  try{
+    const { error } = await supabaseClient.from('etiquetas_fila').insert({
+      tipo: item.tipo,
+      codigo: item.codigo,
+      descricao: item.descricao || null,
+      quantidade: item.quantidade || null,
+      data_recebimento: item.dataRecebimento || null,
+      status: 'pendente',
+      criado_por: item.criadoPor || null,
+    });
+    if(error) throw error;
+    return {ok:true};
+  }catch(err){
+    return {ok:false, erro:(err && err.message) || 'Não foi possível enviar para a fila.'};
+  }
+}
+
+async function fetchFilaEtiquetasPendentes(){
+  if(!supabaseClient) return [];
+  try{
+    const { data, error } = await supabaseClient
+      .from('etiquetas_fila')
+      .select('*')
+      .eq('status', 'pendente')
+      .order('criado_em', {ascending:true});
+    if(error) throw error;
+    return (data||[]).map(etiquetaFilaRowToLocal);
+  }catch(err){
+    console.warn('Falha ao buscar fila de etiquetas:', err);
+    return [];
+  }
+}
+
+async function marcarEtiquetaImpressa(id, nomeUsuario){
+  if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
+  try{
+    const { error } = await supabaseClient
+      .from('etiquetas_fila')
+      .update({status:'impressa', impresso_por: nomeUsuario || null, impresso_em: new Date().toISOString()})
+      .eq('id', id);
+    if(error) throw error;
+    return {ok:true};
+  }catch(err){
+    return {ok:false, erro:(err && err.message) || 'Não foi possível marcar como impressa.'};
+  }
+}
+
 /* ---------------- ETIQUETAS (impressora TSC via WebUSB) ---------------- */
 // Tela nova, pedido do cliente: "conseguimos criar uma forma de ter um campo
 // novo para impressão de etiqueta? Impressora TSC? Com código de barra e
@@ -13178,7 +13249,16 @@ function PasswordRequestRow({req, onResolve}){
 // `searchSupabaseCatalog`). Tela dedicada, não amarrada a nenhum fluxo de
 // contagem — o líder/admin busca e imprime quando precisar, avulso. Só
 // líder/admin (ver ACESSOS_RESTRITOS.etiquetas).
-function EtiquetasPanel(){
+//
+// "Fila de Impressão" (ver `etiquetaFilaRowToLocal`/`salvarEtiquetaNaFila`
+// acima): como WebUSB só alcança impressora ligada no MESMO aparelho, quem
+// não está no PC da impressora só pode ENVIAR PRA FILA — quem está no PC
+// certo abre a mesma tela e vê os pedidos pendentes em tempo real (Realtime,
+// mesmo mecanismo já usado em contagens/inventarios/usuarios), clicando
+// "Imprimir" pra disparar o mesmo fluxo WebUSB de sempre. As duas formas
+// (imprimir na hora / enviar pra fila) continuam disponíveis ao mesmo
+// tempo — não é obrigatório passar pela fila.
+function EtiquetasPanel({currentUser}){
   const [aba, setAba] = useState('endereco'); // 'endereco' | 'produto'
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
@@ -13198,6 +13278,15 @@ function EtiquetasPanel(){
   const [erroImpressao, setErroImpressao] = useState(null);
   const [sucessoImpressao, setSucessoImpressao] = useState(false);
 
+  // Fila de impressão — enviar (de qualquer aparelho) e imprimir dela (só
+  // no PC que enxerga a impressora via WebUSB).
+  const [enviandoParaFila, setEnviandoParaFila] = useState(false);
+  const [erroFilaEnvio, setErroFilaEnvio] = useState(null);
+  const [sucessoFilaEnvio, setSucessoFilaEnvio] = useState(false);
+  const [filaPendente, setFilaPendente] = useState([]);
+  const [imprimindoFilaId, setImprimindoFilaId] = useState(null);
+  const [errosFila, setErrosFila] = useState({});
+
   // Tenta reconectar sozinho a um dispositivo já pareado antes, assim que a
   // tela abre — evita o usuário precisar clicar "Conectar" de novo toda vez
   // que reabre a tela dentro da mesma sessão do navegador (a permissão de
@@ -13208,6 +13297,39 @@ function EtiquetasPanel(){
       if(!cancelado && device) setImpressoraConectada(true);
     });
     return ()=>{ cancelado = true; };
+  }, []);
+
+  // Fila de impressão em tempo real — escopado a esta tela (não em App()
+  // como contagens/inventarios/usuarios), já que só ela consome esse dado;
+  // manter o canal aberto pro app inteiro seria overhead sem ganho, já que
+  // ninguém mais lê essa fila. Mesmo padrão de fetch-ao-montar +
+  // reconciliação-ao-conectar/reconectar (`status==='SUBSCRIBED'`) já usado
+  // nos canais globais de App().
+  useEffect(()=>{
+    if(!supabaseClient) return;
+    let cancelado = false;
+    fetchFilaEtiquetasPendentes().then(rows=>{ if(!cancelado) setFilaPendente(rows); });
+
+    const canal = supabaseClient
+      .channel('realtime:etiquetas_fila')
+      .on('postgres_changes', {event:'*', schema:'public', table:'etiquetas_fila'}, payload=>{
+        if(payload.eventType==='DELETE'){
+          setFilaPendente(prev=>prev.filter(f=>f.id!==payload.old.id));
+          return;
+        }
+        const row = etiquetaFilaRowToLocal(payload.new);
+        setFilaPendente(prev=>{
+          const semEsse = prev.filter(f=>f.id!==row.id);
+          if(row.status!=='pendente') return semEsse;
+          return [...semEsse, row].sort((a,b)=>String(a.criadoEm||'').localeCompare(String(b.criadoEm||'')));
+        });
+      })
+      .subscribe(status=>{
+        if(status!=='SUBSCRIBED') return;
+        fetchFilaEtiquetasPendentes().then(rows=>{ if(!cancelado) setFilaPendente(rows); });
+      });
+
+    return ()=>{ cancelado = true; supabaseClient.removeChannel(canal); };
   }, []);
 
   // Trocar de aba limpa a busca/seleção — endereço e produto são catálogos
@@ -13263,6 +13385,50 @@ function EtiquetasPanel(){
     }
   }
 
+  // Envia pra fila em vez de imprimir na hora — funciona em QUALQUER
+  // aparelho/navegador (nem precisa suportar WebUSB), já que não depende da
+  // impressora estar acessível daqui.
+  async function handleEnviarParaFila(){
+    if(!selecionado) return;
+    setEnviandoParaFila(true);
+    setErroFilaEnvio(null);
+    setSucessoFilaEnvio(false);
+    const res = await salvarEtiquetaNaFila({
+      tipo: aba,
+      codigo: selecionado.codigo,
+      descricao: aba==='produto' ? selecionado.descricao : null,
+      quantidade: aba==='produto' ? quantidade : null,
+      dataRecebimento: aba==='produto' ? dataRecebimento : null,
+      criadoPor: currentUser ? currentUser.nome : null,
+    });
+    setEnviandoParaFila(false);
+    if(res.ok) setSucessoFilaEnvio(true);
+    else setErroFilaEnvio(res.erro);
+  }
+
+  // Imprime um pedido já pendente na fila — mesmo fluxo WebUSB de sempre,
+  // só que a partir do dado gravado no Supabase em vez do que está
+  // selecionado na tela agora. Não precisa remover manualmente da lista
+  // local: o UPDATE de status vira um evento do Realtime que já tira o
+  // item de `filaPendente` sozinho (ver o canal acima).
+  async function handleImprimirFila(item){
+    setImprimindoFilaId(item.id);
+    setErrosFila(prev=>({...prev, [item.id]: null}));
+    const tspl = item.tipo==='endereco'
+      ? buildTsplEndereco(item.codigo)
+      : buildTsplProduto(item.codigo, item.descricao, item.quantidade, item.dataRecebimento ? fmtDataBR(item.dataRecebimento) : '');
+    const res = await enviarTsplParaImpressora(tspl);
+    if(res.ok){
+      setImpressoraConectada(true);
+      const marc = await marcarEtiquetaImpressa(item.id, currentUser ? currentUser.nome : null);
+      if(!marc.ok) setErrosFila(prev=>({...prev, [item.id]: marc.erro}));
+    } else {
+      setErrosFila(prev=>({...prev, [item.id]: res.erro}));
+      if((res.erro||'').includes('não conectada')) setImpressoraConectada(false);
+    }
+    setImprimindoFilaId(null);
+  }
+
   return (
     <div>
       {!suportaImpressaoUSB() && (
@@ -13281,6 +13447,33 @@ function EtiquetasPanel(){
       </div>
       {erroConexao && (
         <div className="divergence-alert" style={{marginBottom:14}}><Ic>⚠</Ic><span>{erroConexao}</span></div>
+      )}
+
+      {filaPendente.length>0 && (
+        <div style={{marginTop:14,marginBottom:14}}>
+          <div className="section-title" style={{marginTop:0}}>
+            Fila de impressão
+            <span className="badge" style={{position:'static',marginLeft:8}}>{filaPendente.length}</span>
+          </div>
+          {filaPendente.map(item=>(
+            <div key={item.id} className="list-row" style={{cursor:'default',flexWrap:'wrap'}}>
+              <div>
+                <div className="lr-title">{item.tipo==='endereco' ? item.codigo : (item.descricao || item.codigo)}</div>
+                <div className="lr-sub">
+                  {item.tipo==='produto' && item.codigo!==item.descricao ? item.codigo+' · ' : ''}
+                  {item.criadoPor ? ('enviado por '+item.criadoPor) : 'enviado'}
+                  {item.criadoEm ? (' em '+new Date(item.criadoEm).toLocaleString('pt-BR')) : ''}
+                </div>
+                {errosFila[item.id] && (
+                  <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginTop:4}}>{errosFila[item.id]}</div>
+                )}
+              </div>
+              <button className="btn btn-primary btn-sm" disabled={imprimindoFilaId===item.id} onClick={()=>handleImprimirFila(item)}>
+                <DIcon name="printer" size={14}/> {imprimindoFilaId===item.id ? 'Imprimindo…' : 'Imprimir'}
+              </button>
+            </div>
+          ))}
+        </div>
       )}
 
       <div style={{display:'flex',gap:8,marginBottom:14,marginTop:14}}>
@@ -13330,8 +13523,15 @@ function EtiquetasPanel(){
           {sucessoImpressao && (
             <div className="divergence-alert" style={{margin:'10px 0',background:'var(--ok-bg)',borderColor:'var(--ok)',color:'var(--ok)'}}><Ic>✅</Ic><span>Etiqueta enviada pra impressora.</span></div>
           )}
+          {erroFilaEnvio && (
+            <div className="divergence-alert" style={{margin:'10px 0'}}><Ic>⚠</Ic><span>{erroFilaEnvio}</span></div>
+          )}
+          {sucessoFilaEnvio && (
+            <div className="divergence-alert" style={{margin:'10px 0',background:'var(--ok-bg)',borderColor:'var(--ok)',color:'var(--ok)'}}><Ic>✅</Ic><span>Enviada para a fila — imprima do PC ligado na impressora.</span></div>
+          )}
           <div className="btn-row" style={{marginTop:14}}>
-            <button className="btn btn-secondary" onClick={()=>{ setSelecionado(null); setSucessoImpressao(false); }}>Voltar</button>
+            <button className="btn btn-secondary" onClick={()=>{ setSelecionado(null); setSucessoImpressao(false); setSucessoFilaEnvio(false); setErroFilaEnvio(null); }}>Voltar</button>
+            <button className="btn btn-outline" disabled={enviandoParaFila} onClick={handleEnviarParaFila}><DIcon name="clock" size={16}/> {enviandoParaFila ? 'Enviando…' : 'Enviar para Fila'}</button>
             <button className="btn btn-primary" disabled={imprimindo} onClick={handleImprimir}><DIcon name="printer" size={16}/> {imprimindo ? 'Imprimindo…' : 'Imprimir Etiqueta'}</button>
           </div>
         </div>

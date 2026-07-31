@@ -12558,3 +12558,100 @@ sempre, sem quebrar) — só passam a ter o custo corrigido depois da migração
 rodada. **Verificação de ponta a ponta com o item real do cliente e o
 resultado do backfill fica a cargo dele** — mesma limitação de sempre
 (sandbox sem acesso de rede ao Supabase).
+
+**Bug real no backfill, achado pelo cliente ao rodar de verdade**: o
+`UPDATE ... FROM LATERAL (...)` original dava `ERRO 42P10: invalid
+reference to FROM-clause entry for table "c"` — Postgres NÃO deixa uma
+subquery no `FROM` de um `UPDATE`/`DELETE` referenciar a TABELA ALVO do
+próprio comando, mesmo com `LATERAL` (essa liberdade só vale entre
+FROM-items de um `SELECT`, não entre um FROM-item e a tabela sendo
+atualizada). Corrigido trocando por uma subquery escalar CORRELACIONADA
+direto no `SET` (isso sim pode referenciar `c.produto_codigo`/
+`c.almoxarifado` normalmente), com um `exists(...)` a mais no `WHERE` pra
+não gravar `NULL` em `valor_divergente` quando não existe custo derivável
+em nenhum armazém (sem essa guarda, a subquery escalar retornaria `NULL` e
+a linha ficaria pior do que estava — 0 virando `NULL` em vez de continuar
+0). As duas RPCs (`contagem_itens_prioritarios`/`contagem_itens_por_
+endereco`) NÃO tinham esse problema — o `LATERAL` delas correlaciona com
+uma linha do próprio `FROM` da consulta (`estoque_saldo es`), não com a
+tabela alvo de um `UPDATE`, situação completamente diferente e sempre
+válida. **Confirmado rodado com sucesso pelo cliente** depois da correção.
+
+## Fila de impressão de etiquetas — resolve o caso de a TSC estar em outro PC da rede
+
+Depois da tela de Etiquetas (WebUSB, ver seção acima) ir pro ar, o cliente
+mandou um print de notificação do Windows ("Impressora TSC Recebimento em
+SEL091.selgron.com.br") e perguntou se dava pra mandar imprimir direto da
+web mesmo a impressora estando instalada/compartilhada em OUTRO PC da rede,
+não no aparelho que abre o app. Resposta técnica: não — WebUSB só enxerga
+dispositivo USB ligado no MESMO aparelho que roda o navegador, não tem
+nenhuma visão sobre impressora compartilhada pelo SO de outra máquina, por
+mais que estejam na mesma rede. Levantei como alternativa um "programa-ponte"
+rodando no PC da impressora — mas o cliente propôs uma solução mais simples,
+que reaproveita 100% a infraestrutura que o app já tem: **"criar a etiqueta
+de qualquer lugar e ela ficar salva na fila, aí eu logo o site no pc da
+impressora e starto a impressão"**.
+
+- **`etiquetas_fila`** (`backend/schema.sql`) — tabela nova, mesmo padrão
+  denormalizado de sempre (sem FK pra usuarios/produtos, `criado_por`/
+  `impresso_por` em texto puro). `status` só tem 2 valores por enquanto —
+  `'pendente'`/`'impressa'` (sem "cancelar" pedido, não foi pedido). RLS
+  `auth.role()='authenticated'` pra leitura e escrita (mesmo critério já
+  usado em toda tabela nova criada depois da migração pro Supabase Auth,
+  sem o passo intermediário "primeiro permissivo, depois endurece" que as
+  tabelas mais antigas tiveram que passar).
+- **`salvarEtiquetaNaFila`/`fetchFilaEtiquetasPendentes`/
+  `marcarEtiquetaImpressa`/`etiquetaFilaRowToLocal`** (index.html, perto de
+  `EtiquetasPanel`) — mesmo padrão de sempre (await + `{ok,erro}`,
+  mapeamento snake_case↔camelCase).
+- **Realtime escopado À TELA, não em `App()`** — diferente de contagens/
+  inventarios/usuarios/app_config (que vivem como canal global em `App()`,
+  porque VÁRIAS telas leem esses dados), a fila de etiquetas só é consumida
+  por `EtiquetasPanel` — abrir um canal global pra isso manteria uma
+  conexão Realtime ativa pra praticamente todo mundo (só líder/admin usa
+  essa tela) sem nenhum consumidor. O `useEffect` de fetch+subscribe mora
+  dentro do próprio componente, com cleanup (`removeChannel`) no unmount —
+  mesmo mecanismo/formato de payload dos canais globais, só que
+  local. Evento `INSERT`/`UPDATE` com `status!=='pendente'` remove da lista
+  local (a impressão marcou como resolvida em outro aparelho); `DELETE`
+  também remove (não usado hoje, mas cobre o caso por segurança).
+- **As duas formas convivem, nenhuma obriga a outra**: o botão "Imprimir
+  Etiqueta" (WebUSB direto, já existia) continua funcionando pra quem já
+  está no PC certo — "Enviar para Fila" é uma alternativa nova, ao lado
+  dele, no mesmo card de confirmação. Quem está num aparelho sem WebUSB
+  (celular, Safari/iOS) só tem a opção de fila, mas ela nunca fica escondida
+  atrás de nenhuma checagem de suporte a WebUSB — funciona em qualquer
+  navegador, já que só grava uma linha no banco.
+- **Seção "Fila de impressão"** (topo da tela, logo abaixo do status da
+  impressora) só aparece quando há pelo menos 1 item pendente (mesmo
+  critério de "não poluir a tela com estado permanentemente vazio" já usado
+  em outros lugares do app, ex. indicador de "N contagens aguardando
+  conexão" na Sidebar) — cada card mostra o item, quem enviou e quando
+  (`toLocaleString('pt-BR')` no timestamp completo — `fmtDataBR` não serviria
+  aqui, ela só entende `YYYY-MM-DD` puro, não um timestamp com hora), e um
+  botão "Imprimir" que builda o MESMO TSPL de sempre
+  (`buildTsplEndereco`/`buildTsplProduto`) a partir do dado gravado na fila,
+  manda pela mesma `enviarTsplParaImpressora` (WebUSB) já existente, e só
+  marca como impressa se o envio realmente funcionar — erro fica visível
+  por item (`errosFila`), sem marcar como resolvido à toa.
+- Testado via harness real (jsdom + react-dom/client + `act()`, mock de
+  query builder do Supabase com um "banco" em memória — não só registrando
+  chamadas, mas de fato inserindo/lendo/atualizando linhas, pra testar o
+  ciclo completo): `salvarEtiquetaNaFila`/`fetchFilaEtiquetasPendentes`/
+  `marcarEtiquetaImpressa` isoladas (grava, aparece como pendente, marca
+  impressa, some da lista de pendentes); `EtiquetasPanel` de ponta a ponta
+  — sem nada na fila a seção não aparece; buscar um produto, selecionar,
+  clicar "Enviar para Fila" grava a linha certa (tipo/código/criado_por) e
+  mostra a mensagem de sucesso; uma 2ª instância do componente (simulando
+  outro aparelho abrindo a mesma tela) já vê o item na fila; clicar
+  "Imprimir" nele sem impressora conectada (sandbox sem WebUSB de verdade)
+  falha com erro visível e NÃO marca como impressa no banco — protege
+  contra perder o pedido se a impressão de fato falhar. 21 asserções, todas
+  passando. Transpile Babel do arquivo inteiro e balanceamento de chaves do
+  CSS conferidos (638/638, sem mudança — nenhuma classe CSS nova,
+  reaproveita `.section-title`/`.list-row`/`.divergence-alert`/`.badge` já
+  existentes). **Falta o cliente rodar o SQL novo** (tabela `etiquetas_
+  fila` + RLS + `alter publication supabase_realtime add table
+  etiquetas_fila`) no projeto real, e testar em dois aparelhos de verdade
+  (criar numa ponta, imprimir na outra) — mesma limitação de sempre
+  (sandbox sem acesso de rede ao Supabase real, sem hardware USB).

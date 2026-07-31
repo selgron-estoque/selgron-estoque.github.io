@@ -1512,3 +1512,45 @@ where c.diferenca is not null
       and es.saldo <> 0
       and es.valor_financeiro is not null
   );
+
+-- =============================================================================
+-- FILA DE IMPRESSÃO DE ETIQUETAS — cliente perguntou se dava pra imprimir
+-- direto pela web numa TSC ligada em OUTRO PC da rede (compartilhada via
+-- Windows) — resposta é não, WebUSB só enxerga impressora ligada no MESMO
+-- aparelho que roda o navegador, não alcança nada compartilhado por outro PC.
+-- Solução que ele mesmo propôs: montar a etiqueta de qualquer lugar (celular,
+-- outro PC), ela fica pendente numa fila, e quem está no PC que REALMENTE
+-- enxerga a impressora (o do recebimento) abre a mesma tela e dispara a
+-- impressão de lá.
+--
+-- Sem FK pra usuarios/produtos (mesmo padrão denormalizado de sempre nesse
+-- app — `criado_por`/`impresso_por` gravam o NOME em texto puro, não o id).
+-- `status` só tem 2 valores por enquanto: 'pendente'/'impressa' — sem
+-- "cancelar" pedido ainda (não foi pedido).
+-- =============================================================================
+create table if not exists etiquetas_fila (
+  id uuid primary key default gen_random_uuid(),
+  tipo text not null,                 -- 'endereco' | 'produto'
+  codigo text not null,
+  descricao text,                     -- só 'produto'
+  quantidade text,                    -- só 'produto', opcional
+  data_recebimento date,              -- só 'produto', opcional
+  status text not null default 'pendente',
+  criado_por text,
+  criado_em timestamptz not null default now(),
+  impresso_por text,
+  impresso_em timestamptz
+);
+
+alter table etiquetas_fila enable row level security;
+drop policy if exists "leitura autenticada" on etiquetas_fila;
+drop policy if exists "escrita autenticada" on etiquetas_fila;
+create policy "leitura autenticada" on etiquetas_fila for select using (auth.role() = 'authenticated');
+create policy "escrita autenticada" on etiquetas_fila for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+
+-- Realtime — é o que faz o PC da impressora ver um pedido novo na hora, sem
+-- precisar recarregar a tela (mesmo mecanismo já usado em contagens/
+-- inventarios/usuarios/app_config). Introspecção antes, mesmo motivo de
+-- sempre (evita erro de "already member of publication"):
+--   select schemaname, tablename from pg_publication_tables where pubname = 'supabase_realtime';
+alter publication supabase_realtime add table etiquetas_fila;
