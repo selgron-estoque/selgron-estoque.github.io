@@ -13543,3 +13543,20 @@ extra entre elas, visível nas miniaturas do próprio diálogo.
   física: basta abrir a pré-visualização de impressão do mesmo lote de 4
   itens de teste e conferir se o contador do Chrome agora diz "2 folhas de
   papel" (não mais "4") antes de decidir imprimir de verdade.
+
+## Etiqueta de produto perde o contorno preto ao redor
+
+Cliente pediu pra remover o contorno (`border:0.3mm solid #000;`) que
+`.etq-produto` tinha ao redor da etiqueta inteira — removida a propriedade
+por completo (o padding interno de 0.7mm continua, só a linha preta ao
+redor saiu). `.etq-endereco` nunca teve esse contorno (só a etiqueta de
+PRODUTO tinha), então nada mais precisou mudar. As divisórias internas
+(`.etq-meio`/`.etq-rodape`, linha fina acima de cada seção) não são
+"contorno" — continuam como estavam, não fizeram parte deste pedido.
+
+- Testado via transpile Babel do arquivo inteiro e balanceamento de chaves
+  do CSS (673/673, sem mudança — só removeu um valor de uma regra já
+  existente). Rodei de novo toda a suíte de Etiquetas (7 harnesses, 150
+  asserções) — nenhuma delas verifica a presença de borda, passaram sem
+  ajuste. **Verificação visual de ponta a ponta fica a cargo do cliente**
+  — mesma limitação de sempre (sandbox sem impressora/dispositivo físico).
