@@ -5788,7 +5788,7 @@ function App(){
       )}
       {view!=='home' && !COUNT_SCREEN_VIEWS.includes(view) && <SubBar view={view} goto={goto} />}
       <div className="content">
-        {view==='home' && hasAccess(currentUser,'home') && <Home role={role} user={currentUser} inventories={inventories} counts={counts} historicoConcluidas={historicoConcluidas} enderecosPropostos={enderecosPropostos} goto={goto} />}
+        {view==='home' && hasAccess(currentUser,'home') && <Home role={role} user={currentUser} inventories={inventories} counts={counts} historicoConcluidas={historicoConcluidas} historicoParaTendencia={historicoParaTendencia} enderecosPropostos={enderecosPropostos} goto={goto} />}
         {view==='inventories' && hasAccess(currentUser,'inventories') && <InventoryList inventories={inventories} goto={goto} role={role} counts={counts} users={users} currentUser={currentUser} onDelete={deleteInventory} onCancel={cancelInventory} onToggleUrgente={toggleInventarioUrgente} onRemoverItemPendente={role==='admin' ? removerItemPendenteDaLista : undefined} onAtribuir={atribuirInventario} />}
         {view==='pickCountType' && hasAccess(currentUser,'pickCountType') && <PickCountType role={role} goto={goto} inventories={inventories} gruposExcluidos={gruposExcluidos} onCreate={async(inv)=>{
           const res = await saveInventarioToSupabase(inv);
@@ -6582,7 +6582,7 @@ function saudacaoPorHorario(){
   return 'Boa noite';
 }
 
-function Home({role, user, inventories, counts, historicoConcluidas=[], enderecosPropostos=[], goto}){
+function Home({role, user, inventories, counts, historicoConcluidas=[], historicoParaTendencia=[], enderecosPropostos=[], goto}){
   // Bug real corrigido aqui: `i.status` é gravado como 'pendente' na criação
   // do inventário e nunca é atualizado depois — nunca vira 'concluido' de
   // verdade. Deriva de `contados`/`qtdItens` via `inventarioConcluido`
@@ -6683,21 +6683,25 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
     // documento foi recontado HOJE, a rodada de hoje só passa a valer no
     // cálculo de "hoje", nunca retroage pro de "ontem" (que já tinha fechado
     // com a rodada anterior, a única que existia até aquele ponto no tempo).
+    // `total`/`divergentes` continuam vindo deste pool deduplicado/só-
+    // concluído — só alimentam o gate `ontem.total>0` mais abaixo, não
+    // aparecem em tela; `acuracidade` (o número exibido) NÃO vem mais daqui,
+    // ver comentário abaixo.
     const relevantesBruto = [...counts, ...historicoComoContagem].filter(c=>!c.data || c.data<=dataLimite);
     const relevantes = ultimaContagemPorDocumento(relevantesBruto);
     const divergentes = relevantes.filter(c=>c.diferenca!==0 && c.diferenca!==null);
-    // Acuracidade GERAL, mesma fórmula padronizada em TODO o app agora
-    // (Home, Dashboard e o relatório Excel) — média das médias mensais, via
-    // `acuracidadeMediaMensal`: cada mês com dado pesa igual, não importa o
-    // volume de contagens que teve. Pedido do cliente: "tudo tem que ser
-    // padronizado. como vou mostrar alguma coisa que contem dados
-    // diferentes??" — antes esta função usava a média direta por item
-    // (item pesa igual, mês com mais volume dominava o resultado),
-    // enquanto "Acuracidade Geral" do Dashboard já tinha virado média das
-    // médias mensais numa rodada anterior; os dois cards voltavam a
-    // divergir por fórmula, não por bug. Item sem saldo pra comparar
-    // (itemAcuracidade retorna null) continua de fora da média.
-    const acuracidade = acuracidadeMediaMensal(relevantes);
+    // "Acuracidade do Estoque" precisa ser EXATAMENTE a média das barras do
+    // gráfico "Acuracidade Mensal" (Dashboard) — pedido explícito do
+    // cliente depois de reportar que os dois não batiam: "eu quero que a
+    // acuracidade mensal seja referente as contagens e a acuracidade geral
+    // seja referente a média mensal". `acuracidadeGeralAte` usa o mesmo
+    // pool "Tendência" (toda contagem/rodada registrada, incluindo
+    // pendente, sem deduplicar) e o mesmo recorte (ano corrente até
+    // `dataLimite`) que a Dashboard usa pra montar aquele gráfico — troca a
+    // fórmula anterior (`acuracidadeMediaMensal(relevantes)`, sobre o pool
+    // deduplicado/só-concluído acima), que não representava as mesmas
+    // contagens mostradas no gráfico.
+    const acuracidade = acuracidadeGeralAte(counts, historicoParaTendencia, dataLimite);
     return {total:relevantes.length, divergentes:divergentes.length, acuracidade};
   }
   const hoje = acumuladoAte(hojeStr);
@@ -12069,6 +12073,40 @@ function computeMonthlyStats(counts, dataInicioStr, dataFimStr){
   });
 }
 
+// Pool "Tendência" — TODA contagem/rodada registrada (inclui item ainda
+// pendente de decisão, NÃO deduplica por documento — se um item foi
+// recontado, as duas rodadas entram) — o mesmo conjunto que já alimenta
+// "Acuracidade Mensal"/"Contagens na Semana" no Dashboard. Extraído como
+// função compartilhada pra "Acuracidade Geral" (Dashboard) e "Acuracidade
+// do Estoque" (Home) usarem exatamente o MESMO pool, construído do MESMO
+// jeito — nunca duas cópias divergentes dessa lógica.
+function buildPoolTendencia(counts, historicoParaTendencia){
+  const historicoComoContagem = (historicoParaTendencia||[])
+    .filter(h=>h.data)
+    .map(h=>({data:h.data, diferenca:h.diferenca, saldoSistema:h.saldo_sistema, acuracidade:h.acuracidade}));
+  return [...counts, ...historicoComoContagem];
+}
+
+// "Acuracidade Geral" (Dashboard) / "Acuracidade do Estoque" (Home) — pedido
+// explícito do cliente depois de ver os dois números não baterem com a
+// média visível no gráfico "Acuracidade Mensal": "eu quero que a
+// acuracidade mensal seja referente as contagens e a acuracidade geral
+// seja referente a média mensal". Ou seja, este valor precisa ser
+// EXATAMENTE a média das barras que aparecem em "Acuracidade Mensal" — não
+// mais um cálculo independente sobre um pool deduplicado/só-concluído
+// (`acuracidadeMediaMensal`/`todasParaQualidade`, usado numa rodada
+// anterior — essa era a causa real da divergência, não bug de fórmula).
+// Mesmo recorte que o gráfico já usa: ano corrente até `dataLimiteStr`
+// (permite comparar "hoje" vs. "ontem" pro indicador de tendência do card,
+// sem quebrar esse recurso já existente).
+function acuracidadeGeralAte(counts, historicoParaTendencia, dataLimiteStr){
+  const anoStr = String(new Date(dataLimiteStr+'T00:00:00').getFullYear()) + '-01-01';
+  const pool = buildPoolTendencia(counts, historicoParaTendencia);
+  const monthly = computeMonthlyStats(pool, anoStr, dataLimiteStr);
+  const meses = monthly.filter(m=>m.acuracidade!=null);
+  return meses.length>0 ? (meses.reduce((s,m)=>s+m.acuracidade,0)/meses.length) : 100;
+}
+
 // Gera ticks "redondos" (passo de 1/2/5 × potência de 10) pro eixo Y —
 // evita um eixo tipo "0, 13, 25, 38, 50" e mostra "0, 15, 30, 45, 60" (ou
 // similar) em vez disso. O último tick vira o teto do eixo.
@@ -12529,19 +12567,17 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   // pergunta diferente ("quantos itens tiveram QUALQUER divergência", não
   // "qual a nota média").
   //
-  // Acuracidade GERAL, mesma fórmula padronizada em TODO o app agora
-  // (Home, Dashboard e o relatório Excel) — média das médias mensais, via
-  // `acuracidadeMediaMensal`, sobre o MESMO pool de sempre desta seção
-  // (`todasParaQualidade`, deduplicado por documento). Pedido do cliente:
-  // "tudo tem que ser padronizado. como vou mostrar alguma coisa que
-  // contem dados diferentes??" — versão anterior deste card reaproveitava
-  // `monthlyStats` (ano corrente, `poolTendencia` não-deduplicado, o mesmo
-  // pool do gráfico "Acuracidade Mensal") só pra chegar na mesma fórmula
-  // de "média das médias mensais" — agora que a fórmula virou padrão do
-  // app inteiro, cada tela volta a usar o PRÓPRIO pool já estabelecido
-  // (aqui, `todasParaQualidade`), só a forma de tirar a média que é
-  // compartilhada.
-  const acuracidade = acuracidadeMediaMensal(todasParaQualidade).toFixed(1);
+  // "Acuracidade Geral" NÃO é calculada aqui — o cliente esclareceu, depois
+  // de reportar que este card não batia com a média visível no gráfico
+  // "Acuracidade Mensal" (69,1% x médias tipo 91/89/77/87/70%): "eu quero
+  // que a acuracidade mensal seja referente as contagens e a acuracidade
+  // geral seja referente a média mensal" — ou seja, "Acuracidade Geral"
+  // precisa ser a média das barras do próprio gráfico "Acuracidade
+  // Mensal", não um número calculado à parte sobre `todasParaQualidade`
+  // (pool deduplicado/só-concluído, diferente do pool do gráfico). Ver
+  // `const acuracidade = ...` mais abaixo, logo depois de `monthlyStats`
+  // ser calculado — reaproveita literalmente o mesmo array que já
+  // alimenta as barras, garantindo que os dois números batem sempre.
   const valorDivergente = todasParaQualidade.reduce((s,c)=>s+Number(c.valorDivergente||0),0);
   // Card "Itens Divergentes" (Resumo da Operação) — "itens"/"documentos" e
   // "códigos distintos" voltaram a ser números potencialmente diferentes
@@ -12644,10 +12680,10 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   // linha do histórico carrega a DATA REAL em que a contagem aconteceu
   // (fev-jul/2026, não a data de importação), então soma na semana certa
   // igual a qualquer contagem ao vivo — nenhum pico artificial.
-  const historicoTendenciaComoContagem = historicoParaTendencia
-    .filter(h=>h.data)
-    .map(h=>({data:h.data, diferenca:h.diferenca, saldoSistema:h.saldo_sistema, acuracidade:h.acuracidade}));
-  const poolTendencia = [...counts, ...historicoTendenciaComoContagem];
+  // `buildPoolTendencia` (função compartilhada, perto de `computeMonthlyStats`)
+  // — a MESMA construção usada por "Acuracidade do Estoque" (Home), garante
+  // que os dois nunca constroem esse pool de jeitos diferentes.
+  const poolTendencia = buildPoolTendencia(counts, historicoParaTendencia);
   // Janela dos gráficos é escolhível (cliente pediu): fixa em 10/26 semanas,
   // "todo o período" (da contagem mais antiga do pool até hoje) ou um
   // período personalizado (dois campos de data) pra quando o cliente
@@ -12668,6 +12704,17 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   // gráfico sempre mostra o ano corrente inteiro até hoje.
   const anoAtualStr = String(new Date().getFullYear()) + '-01-01';
   const monthlyStats = computeMonthlyStats(poolTendencia, anoAtualStr, hojeStr);
+  // "Acuracidade Geral" (o card, "Resumo da Operação") = média das barras
+  // deste MESMO gráfico — pedido explícito do cliente ("a acuracidade
+  // geral seja referente a média mensal"), depois de reportar que o card
+  // não batia com a média visível aqui. Reaproveita `monthlyStats` direto
+  // (o array que já alimenta as barras), sem recalcular por conta própria
+  // — garante que os dois números são sempre o mesmo, por construção. Mês
+  // sem nenhum item com acuracidade calculável (`acuracidade:null`) fica
+  // de fora da média, mesmo critério de sempre ("sem dado, não conta nem a
+  // favor nem contra").
+  const mesesComAcuracidade = monthlyStats.filter(m=>m.acuracidade!=null);
+  const acuracidade = (mesesComAcuracidade.length>0 ? (mesesComAcuracidade.reduce((s,m)=>s+m.acuracidade,0)/mesesComAcuracidade.length) : 100).toFixed(1);
 
   // "Contados × Divergências" (pizza) — pedido do cliente: "indicador que
   // me mostra quantidade contada X divergências", "gráfico de pizza de

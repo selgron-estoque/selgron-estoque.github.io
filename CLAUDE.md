@@ -14573,3 +14573,93 @@ anterior) — era o CONTEÚDO do pool que cada uma alimentava essa fórmula.
   sandbox sem rede) — mas como a correção é só na LEITURA (não depende de
   nenhuma migração de SQL), os dois cards já devem bater no próximo
   carregamento da página.
+
+## "Acuracidade Geral" vira a média das barras de "Acuracidade Mensal" — 2ª rodada de padronização
+
+Mesmo depois da correção anterior (bug do snake_case no histórico), o
+cliente mandou 2 prints novos — "Acuracidade Geral" (Dashboard) em 69,1% e
+"Acuracidade Mensal" (o gráfico logo abaixo, na mesma tela) mostrando
+91%/89%/77%/87%/70% e 0% em Fev — e apontou: "esse número não bate com as
+médias deste meses". Eu tinha investigado e explicado a causa (as duas
+telas usavam POOLS diferentes: "Acuracidade Geral" só documentos
+concluídos+deduplicados, "Acuracidade Mensal" toda contagem/rodada
+registrada, incluindo pendente) e perguntei via `AskUserQuestion` se
+deveria padronizar os pools também. O cliente respondeu, exasperado, que eu
+não tinha entendido o pedido: **"Mas que Caraio, você não entendeu ainda
+que eu quero que a acuracidade mensal seja referente as contagens e a
+acuracidade geral seja referente a média mensal?????????"** — ou seja:
+"Acuracidade Mensal" (o gráfico) já está certo, continua calculado direto
+das contagens de cada mês; "Acuracidade Geral" (o card) precisa virar a
+MÉDIA DAS BARRAS desse gráfico — não um cálculo independente sobre outro
+pool.
+
+- **`buildPoolTendencia(counts, historicoParaTendencia)`** (função nova,
+  perto de `computeMonthlyStats`) — extrai a construção do pool "Tendência"
+  (toda contagem/rodada registrada, inclui item ainda pendente de decisão,
+  NÃO deduplica por documento) que o Dashboard já montava inline pra
+  "Acuracidade Mensal"/"Contagens na Semana" — agora é uma função
+  compartilhada, usada tanto pelo Dashboard (`poolTendencia = buildPoolTendencia
+  (counts, historicoParaTendencia)`, substituindo a construção inline) quanto
+  pela Home (via a função seguinte) — garante que os dois nunca constroem
+  esse pool de jeitos diferentes.
+- **`acuracidadeGeralAte(counts, historicoParaTendencia, dataLimiteStr)`**
+  (função nova, mesmo lugar) — monta o pool via `buildPoolTendencia`, roda
+  `computeMonthlyStats` no MESMO recorte que o gráfico usa (ano corrente até
+  `dataLimiteStr`) e devolve a média simples dos meses com dado calculável
+  — literalmente "a média das barras visíveis no gráfico".
+- **Dashboard ("Resumo da Operação")**: a antiga `const acuracidade =
+  acuracidadeMediaMensal(todasParaQualidade).toFixed(1)` (calculada logo
+  depois de `todasParaQualidade`/`divergentes`) foi removida — o card volta
+  a ser calculado logo DEPOIS de `monthlyStats` ser montado (mesma posição
+  de uma rodada ainda mais anterior, "Opção 2"), só que agora reaproveitando
+  literalmente o MESMO array `monthlyStats` que já alimenta as barras do
+  gráfico (`mesesComAcuracidade = monthlyStats.filter(m=>m.acuracidade!=null)`,
+  média simples) — não recalcula por conta própria, então os dois números
+  NUNCA podem divergir, por construção.
+- **Home ("Acuracidade do Estoque")**: ganhou a prop nova
+  `historicoParaTendencia` (threaded de `App()`, mesmo state já usado pelo
+  Dashboard) — `acumuladoAte(dataLimite)` trocou `const acuracidade =
+  acuracidadeMediaMensal(relevantes)` (pool deduplicado/só-concluído) por
+  `const acuracidade = acuracidadeGeralAte(counts, historicoParaTendencia,
+  dataLimite)` (pool "Tendência", mesmo que o Dashboard usa). `relevantes`/
+  `divergentes`/`total` (calculados a partir do pool ANTIGO,
+  `historicoComoContagem`) continuam existindo dentro da função — só não
+  alimentam mais o valor exibido, só o gate `ontem.total>0` que decide se
+  mostra tendência "hoje vs. ontem" no card.
+- **Efeito colateral esperado, não um bug**: itens ainda "Pendente" no
+  histórico (que antes só apareciam no gráfico, nunca nos cards) agora
+  passam a contar também em "Acuracidade Geral"/"Acuracidade do Estoque" —
+  é exatamente o comportamento pedido (os cards batem com o gráfico, que
+  sempre incluiu pendente).
+- **Excel (`buildSummaryRows`) NÃO foi tocado nesta rodada** — decisão
+  consciente, o pedido do cliente foi especificamente sobre os dois cards
+  do Dashboard (e, por extensão via a regra já estabelecida "tudo tem que
+  ser padronizado", a Home) — continua usando `acuracidadeMediaMensal`
+  (pool deduplicado/só-concluído). Se o cliente notar essa mesma
+  divergência no relatório baixado, é só avisar.
+- Testado via harness novo (`harness_acuracidade_geral_media_das_barras.js`,
+  jsdom + react-dom/client + `act()`, mesma técnica rigorosa de sempre):
+  reproduz os % EXATOS do print do cliente (Fev 0%, Mar 91%, Abr 89%, Mai
+  77%, Jun 87%, Jul 70%) via um pool sintético e confirma que
+  `acuracidadeGeralAte` bate com a média simples desses 6 números (~69%);
+  confirma que `buildPoolTendencia` inclui item "Pendente" do histórico
+  (diferente do pool antigo, que só pegava concluído) e normaliza
+  `saldo_sistema`→`saldoSistema`; e confirma de ponta a ponta, renderizando
+  Home e Dashboard de verdade com o mesmo histórico sintético (incluindo 1
+  item Pendente), que os dois batem EXATAMENTE. Os 2 harnesses das rodadas
+  anteriores que ficaram desatualizados por causa da mudança de pool
+  (`harness_acuracidade_nota_parcial.js`/
+  `harness_acuracidade_home_historico_snake_case.js`) foram corrigidos —
+  o 2º passou a exercitar o cenário via `historicoParaTendencia` (o pool
+  que agora determina o valor exibido) em vez de `historicoConcluidas`.
+  Rodei de novo toda a suíte de regressão disponível no scratchpad — só as
+  mesmas 3 falhas já confirmadas pré-existentes/sem relação com esta
+  mudança continuam (`harness_actions_beside_content.js`/`harness_
+  dashboard_render_dedup.js`/`harness_ultima_contagem_por_codigo.js`).
+  Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  conferidos (668/668, sem mudança — só JS, nenhuma classe CSS tocada).
+  **Verificação dos números reais em produção fica a cargo do cliente** —
+  mesma limitação de sempre (login exige Supabase Auth real, não simulável
+  no sandbox sem rede) — mas como a correção é só na LEITURA (não depende
+  de nenhuma migração de SQL), os dois cards já devem bater com a média do
+  gráfico "Acuracidade Mensal" no próximo carregamento da página.
