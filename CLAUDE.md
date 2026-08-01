@@ -14211,3 +14211,50 @@ selecionado."**
   **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma
   limitação de sempre (login exige Supabase Auth real, não simulável no
   sandbox sem rede).
+
+## "Valores por Armazém" vai pro final da página + "Produtividade por Operador"/"Principais Causas de Erro" lado a lado
+
+Dois pedidos do cliente na mesma rodada: "Indicador 'Valores por Armazém'
+jogar para o final da pagina" — depois, ainda dentro do mesmo turno (via
+mensagem mid-turn, junto de um print de "Produtividade por Operador"/
+"Principais Causas de Erro" empilhados um embaixo do outro): "Esses dois
+coloque um ao lado do outro."
+
+- **"Valores por Armazém"** era a 1ª fileira da seção "Tendência"
+  (`weekly-solo-row`, logo abaixo do painel "Filtros") — removida de lá e
+  reinserida como o ÚLTIMO bloco da tela, depois de "Top 5 Maiores
+  Divergências" (o fim de verdade do `return` do componente `Dashboard`).
+  Só a POSIÇÃO mudou — o painel em si (título/subtítulo, toggle "Valor
+  (R$)"/"% do Total", a lista de barras por armazém) é exatamente o mesmo
+  código de antes, sem nenhuma mudança de comportamento. As 3 fileiras
+  restantes da seção "Tendência" (Acuracidade Semanal+Contagens na Semana,
+  Acuracidade Mensal+Divergência por Família/Grupo, "Contados ×
+  Divergências") foram renumeradas nos comentários (1/2/3, sem mais
+  "fileira 1" reservada pro armazém).
+- **"Produtividade por Operador"/"Principais Causas de Erro"** — cada uma
+  já tinha seu próprio `section-title`+`panel` (2 blocos empilhados, cada
+  um condicional ao próprio dado — `porOperador`/`porMotivo`) — os dois
+  entraram dentro de um `.weekly-pair-row` compartilhado (mesmo grid de 2
+  colunas ≥900px já usado pelos pares de gráfico da seção Tendência, ex.
+  "Acuracidade Semanal"+"Contagens na Semana") — só a MOLDURA externa virou
+  grid, cada seção manteve seu `section-title`/`panel` interno intacto.
+  Empilham em coluna normalmente abaixo de 900px (mesmo responsivo de
+  sempre). Continuam condicionais de forma independente — um sem dado não
+  impede o outro de aparecer sozinho (só não fica "em par" nesse caso).
+- Testado via harness real (jsdom + react-dom/client + `act()`, mesma
+  técnica rigorosa de sempre — carrega o `index.html` inteiro transpilado
+  numa `vm.Script`): "Valores por Armazém" aparece exatamente 1 vez (não
+  duplicou), sempre depois de "Top 5 Maiores Divergências" no HTML, fora
+  do `weekly-charts-grid`, com o toggle Valor/% continuando funcional na
+  posição nova; "Produtividade por Operador"/"Principais Causas de Erro"
+  ficam dentro do MESMO `.weekly-pair-row` (2 filhos diretos) quando os
+  dois têm dado, e continuam aparecendo/sumindo de forma independente
+  quando só um (ou nenhum) tem dado — sem quebrar em nenhum dos 3
+  cenários. Rodei de novo toda a suíte de regressão disponível no
+  scratchpad (336 asserções, só as mesmas 3 falhas já confirmadas
+  pré-existentes/sem relação com esta mudança). Transpile Babel do
+  arquivo inteiro e balanceamento de chaves do CSS conferidos (668/668,
+  sem mudança — nenhuma classe CSS nova, tudo reaproveitado).
+  **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma
+  limitação de sempre (login exige Supabase Auth real, não simulável no
+  sandbox sem rede).

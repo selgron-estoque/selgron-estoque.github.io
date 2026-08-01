@@ -12688,37 +12688,7 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
           não precisa de guard condicional aqui. */}
       <div>
         <div className="weekly-charts-grid">
-          {/* Fileira 1: "Valores por Armazém" sozinho, largura total. */}
-          <div className="weekly-solo-row">
-            <div className="panel" style={{margin:0}}>
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'wrap',gap:8,marginBottom:16}}>
-                <div>
-                  <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Valores por Armazém</div>
-                  <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:2}}>Distribuição do valor total em estoque por armazém.</div>
-                </div>
-                <div style={{display:'flex',border:'1px solid var(--line)',borderRadius:8,overflow:'hidden',flexShrink:0}}>
-                  <button onClick={()=>setModoValor('valor')} style={{border:'none',padding:'6px 12px',fontSize:'var(--text-xs)',cursor:'pointer',background:modoValor==='valor'?'var(--safety)':'transparent',color:modoValor==='valor'?'var(--safety-ink)':'var(--ink-dim)'}}>Valor (R$)</button>
-                  <button onClick={()=>setModoValor('percentual')} style={{border:'none',padding:'6px 12px',fontSize:'var(--text-xs)',cursor:'pointer',background:modoValor==='percentual'?'var(--safety)':'transparent',color:modoValor==='percentual'?'var(--safety-ink)':'var(--ink-dim)'}}>% do Total</button>
-                </div>
-              </div>
-              {armazensTreemapData.length===0 ? (
-                <div style={{color:'var(--ink-dim)',fontSize:'var(--text-sm)'}}>
-                  Nenhum saldo carregado ainda. Envie a planilha SB2 em Configurações pra ver o valor em estoque por armazém.
-                </div>
-              ) : armazensTreemapData.map(d=>(
-                <div key={d.codigo} className="bar-row">
-                  <div className="bl">{d.nome}</div>
-                  <div className="bar-track">
-                    <div className="bar-fill" style={{width:Math.max(4,(d.valor/maxArmazemValor*100))+'%'}}>
-                      <span>{modoValor==='valor' ? d.valorLabel : d.pctLabel}</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Fileira 2: Acuracidade Semanal (esquerda) + Contagens na Semana (direita). */}
+          {/* Fileira 1: Acuracidade Semanal (esquerda) + Contagens na Semana (direita). */}
           <div className="weekly-pair-row">
             <div className="panel" style={{margin:0}}>
               <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:16}}>
@@ -12736,7 +12706,7 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
             </div>
           </div>
 
-          {/* Fileira 3: Acuracidade Mensal (esquerda) + Divergência por Família/Grupo (direita). */}
+          {/* Fileira 2: Acuracidade Mensal (esquerda) + Divergência por Família/Grupo (direita). */}
           <div className="weekly-pair-row">
             <div className="panel" style={{margin:0}}>
               <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:16}}>
@@ -12780,7 +12750,7 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
             </div>
           </div>
 
-          {/* Fileira 4: "Contados × Divergências" (pizza) — pedido do
+          {/* Fileira 3: "Contados × Divergências" (pizza) — pedido do
               cliente, mesmo filtro de período das demais desta seção. */}
           <div className="weekly-solo-row">
             <div className="panel" style={{margin:0}}>
@@ -12812,31 +12782,43 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
         </div>
       </div>
 
-      {Object.keys(porOperador).length>0 && (
-        <div>
-          <div className="section-title">Produtividade por Operador</div>
-          <div className="panel">
-            {Object.entries(porOperador).map(([nome,n])=>(
-              <div key={nome} className="bar-row">
-                <div className="bl">{nome}</div>
-                <div className="bar-track"><div className="bar-fill" style={{width:(n/maxOp*100)+'%'}}><span>{n}</span></div></div>
+      {/* "Produtividade por Operador"/"Principais Causas de Erro" lado a
+          lado — pedido do cliente. Reaproveita `.weekly-pair-row` (mesmo
+          grid de 2 colunas ≥900px já usado pelos pares de gráfico da seção
+          Tendência) — cada seção mantém seu próprio `section-title`+`panel`
+          intactos, só a MOLDURA externa que virou grid. Empilham em coluna
+          normalmente abaixo de 900px, mesmo comportamento responsivo de
+          sempre. Cada bloco continua condicional ao próprio dado (nenhum
+          dos dois força o outro a aparecer). */}
+      {(Object.keys(porOperador).length>0 || Object.keys(porMotivo).length>0) && (
+        <div className="weekly-pair-row">
+          {Object.keys(porOperador).length>0 && (
+            <div>
+              <div className="section-title">Produtividade por Operador</div>
+              <div className="panel">
+                {Object.entries(porOperador).map(([nome,n])=>(
+                  <div key={nome} className="bar-row">
+                    <div className="bl">{nome}</div>
+                    <div className="bar-track"><div className="bar-fill" style={{width:(n/maxOp*100)+'%'}}><span>{n}</span></div></div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </div>
-      )}
+            </div>
+          )}
 
-      {Object.keys(porMotivo).length>0 && (
-        <div>
-          <div className="section-title">Principais Causas de Erro</div>
-          <div className="panel">
-            {Object.entries(porMotivo).map(([m,n])=>(
-              <div key={m} className="bar-row">
-                <div className="bl" style={{width:160}}>{m}</div>
-                <div className="bar-track"><div className="bar-fill" style={{width:(n/maxMotivo*100)+'%', background:'var(--danger)'}}><span style={{color:'#fff'}}>{n}</span></div></div>
+          {Object.keys(porMotivo).length>0 && (
+            <div>
+              <div className="section-title">Principais Causas de Erro</div>
+              <div className="panel">
+                {Object.entries(porMotivo).map(([m,n])=>(
+                  <div key={m} className="bar-row">
+                    <div className="bl" style={{width:160}}>{m}</div>
+                    <div className="bar-track"><div className="bar-fill" style={{width:(n/maxMotivo*100)+'%', background:'var(--danger)'}}><span style={{color:'#fff'}}>{n}</span></div></div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -12866,6 +12848,40 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
             <button className="pnl-section-link" style={{marginTop:14}} onClick={()=>goto('todasDivergencias')}>Ver todas as divergências <DIcon name="chevronRight" size={13} /></button>
           </>
         )}
+      </div>
+
+      {/* "Valores por Armazém" — pedido do cliente: "jogar pra o final da
+          página" (era a 1ª fileira da seção "Tendência", logo abaixo do
+          painel "Filtros"). Movido pra depois de "Top 5 Maiores
+          Divergências", último bloco da tela — só mudou de POSIÇÃO, o
+          conteúdo/toggle/dado são exatamente os mesmos de antes. */}
+      <div style={{marginTop:24}}>
+        <div className="panel" style={{margin:0}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'wrap',gap:8,marginBottom:16}}>
+            <div>
+              <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Valores por Armazém</div>
+              <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:2}}>Distribuição do valor total em estoque por armazém.</div>
+            </div>
+            <div style={{display:'flex',border:'1px solid var(--line)',borderRadius:8,overflow:'hidden',flexShrink:0}}>
+              <button onClick={()=>setModoValor('valor')} style={{border:'none',padding:'6px 12px',fontSize:'var(--text-xs)',cursor:'pointer',background:modoValor==='valor'?'var(--safety)':'transparent',color:modoValor==='valor'?'var(--safety-ink)':'var(--ink-dim)'}}>Valor (R$)</button>
+              <button onClick={()=>setModoValor('percentual')} style={{border:'none',padding:'6px 12px',fontSize:'var(--text-xs)',cursor:'pointer',background:modoValor==='percentual'?'var(--safety)':'transparent',color:modoValor==='percentual'?'var(--safety-ink)':'var(--ink-dim)'}}>% do Total</button>
+            </div>
+          </div>
+          {armazensTreemapData.length===0 ? (
+            <div style={{color:'var(--ink-dim)',fontSize:'var(--text-sm)'}}>
+              Nenhum saldo carregado ainda. Envie a planilha SB2 em Configurações pra ver o valor em estoque por armazém.
+            </div>
+          ) : armazensTreemapData.map(d=>(
+            <div key={d.codigo} className="bar-row">
+              <div className="bl">{d.nome}</div>
+              <div className="bar-track">
+                <div className="bar-fill" style={{width:Math.max(4,(d.valor/maxArmazemValor*100))+'%'}}>
+                  <span>{modoValor==='valor' ? d.valorLabel : d.pctLabel}</span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
