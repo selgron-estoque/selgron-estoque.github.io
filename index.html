@@ -11822,6 +11822,17 @@ function computeTrendRange(tipo, hojeStr, from, to){
       const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
       return { from: fmt(inicioMes), to: hojeStr };
     }
+    // "Mês passado" — mês civil ANTERIOR ao atual, inteiro (1º ao último dia),
+    // não "últimos 30 dias" (que sempre inclui parte de hoje). `getMonth()-1`
+    // com `Date` do JS já rola pro ano anterior sozinho em janeiro (mês -1 =
+    // dezembro do ano anterior), sem precisar de nenhum tratamento especial de
+    // virada de ano. `new Date(ano, mes, 0)` é o truque padrão pro "dia 0" do
+    // mês seguinte virar o último dia do mês anterior.
+    case 'mesPassado': {
+      const inicioMesPassado = new Date(hoje.getFullYear(), hoje.getMonth()-1, 1);
+      const fimMesPassado = new Date(hoje.getFullYear(), hoje.getMonth(), 0);
+      return { from: fmt(inicioMesPassado), to: fmt(fimMesPassado) };
+    }
     case '60d': {
       const d = new Date(hoje); d.setDate(d.getDate() - 59);
       return { from: fmt(d), to: hojeStr };
@@ -12336,6 +12347,7 @@ function TrendFilterBar({trendFilter, setTrendFilter, dataInicioStr, dataFimStr,
             {v:'hoje', l:'Hoje'},
             {v:'semana', l:'Esta semana'},
             {v:'mes', l:'Este mês'},
+            {v:'mesPassado', l:'Mês passado'},
             {v:'30d', l:'Últimos 30 dias'},
             {v:'60d', l:'Últimos 60 dias'},
             {v:'90d', l:'Últimos 90 dias'},

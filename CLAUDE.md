@@ -14118,3 +14118,45 @@ segunda contagem/análise do líder/Armazém/Diretoria) ela ainda está.
   sem mudança — volta ao valor de antes da rodada revertida). Publicado
   nos dois branches (`claude/ola-4icnez`/`main`) via commit de revert
   próprio, preservando o histórico da tentativa (não reescrito/apagado).
+
+## Painel "Filtros" ganha o preset "Mês passado"
+
+Cliente pediu, mandando print do painel "Filtros": "incluir em todos as
+abas o filtro de 'mês passado'". Como `TrendFilterBar` (o componente do
+painel "Filtros") já é COMPARTILHADO por todas as 6 telas que têm esse
+filtro — Indicadores/Dashboard, Recontagens, Itens Divergentes,
+Aguardando Armazém, Aguardando Aprovação, Contagens Concluídas — bastou
+adicionar o preset uma única vez pro pedido valer em todas de uma vez,
+sem precisar tocar em cada tela separadamente.
+
+- **`computeTrendRange`** ganhou o caso `'mesPassado'` — mês CIVIL
+  anterior ao atual, inteiro (1º ao último dia), diferente de "Últimos 30
+  dias" (que sempre inclui parte de hoje, uma janela móvel, não um mês
+  fechado). `new Date(ano, mes-1, 1)`/`new Date(ano, mes, 0)` (o truque
+  padrão do "dia 0" do mês seguinte virar o último dia do mês anterior)
+  — `getMonth()-1` já rola pro ano anterior sozinho em janeiro (mês -1 =
+  dezembro do ano anterior no `Date` do JS), sem precisar de nenhum
+  tratamento especial de virada de ano.
+- **Pill "Mês passado" adicionado** logo depois de "Este mês" (posição
+  lógica) na lista de opções de `TrendFilterBar` — mesmo padrão de todos
+  os outros presets fixos (`from`/`to` ficam vazios ao clicar, já que o
+  intervalo é sempre recalculado a partir de "hoje" via
+  `computeTrendRange`, nunca guarda data absoluta).
+- Testado via harness Node isolado (mesma técnica de sempre — carrega o
+  `index.html` inteiro transpilado numa `vm.Script`): `computeTrendRange
+  ('mesPassado', ...)` nos casos de virada de mês normal, virada de ANO
+  (janeiro→dezembro do ano anterior), mês de 28 dias (fevereiro não-
+  bissexto) e 29 dias (bissexto) — todos batendo com o intervalo certo;
+  confirmado que o fim do intervalo nunca alcança o dia de hoje (diferença
+  de "Últimos 30 dias"); e, via render de verdade
+  (jsdom+react-dom/client+`act()`) de `TrendFilterBar`, que o pill "Mês
+  passado" aparece na posição certa e que clicar nele chama
+  `setTrendFilter({tipo:'mesPassado', from:'', to:''})`. Rodei de novo
+  toda a suíte de regressão disponível no scratchpad (312 asserções, só
+  as mesmas 3 falhas já confirmadas pré-existentes/sem relação com esta
+  mudança). Transpile Babel do arquivo inteiro e balanceamento de chaves
+  do CSS conferidos (668/668, sem mudança — nenhuma classe CSS nova, só
+  JS/JSX). **Verificação visual de ponta a ponta (o pill aparecendo nas 6
+  telas, os números batendo com o mês fechado) fica a cargo do cliente**
+  — mesma limitação de sempre (login exige Supabase Auth real, não
+  simulável no sandbox sem rede).
