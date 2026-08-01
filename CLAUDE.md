@@ -14086,3 +14086,35 @@ verdade bem na hora que ele mais precisava achar rápido.
   ajuda na prática (abrir o GitHub, buscar, confirmar que cai no lugar
   certo) fica a cargo do cliente** — mesma limitação de sempre, mas
   aqui é só uma prova de UX simples, não algo que precise de hardware.
+
+## "Acuracidade só conta depois de análise concluída" — tentado, revertido no mesmo dia
+
+Cliente tinha pedido explicitamente ("Acuracidade contar apenas depois de
+análise concluída") pra excluir das médias de acuracidade (Home,
+"Acuracidade Geral", "Acuracidade Semanal/Mensal") qualquer contagem ainda
+sem veredito (aguardando recontagem/análise do líder/Armazém/Diretoria) —
+implementado, testado (338 asserções passando) e publicado. No mesmo dia,
+depois de ver o resultado em produção, o cliente voltou: **"não deu certo,
+a acuracidade precisa considerar todos as etapas independente do
+status"** — confirmado via `AskUserQuestion` que era pra reverter por
+completo, não ajustar o escopo: toda contagem volta a contar na média
+assim que é lançada, não importa em que "etapa" do fluxo (aguardando
+segunda contagem/análise do líder/Armazém/Diretoria) ela ainda está.
+
+- **Revertido via `git revert`** (não editado à mão) — desfaz por completo
+  a função `contagemAnaliseConcluida` e os 3 pontos de consumo que a
+  chamavam (`Home.acumuladoAte`, `Dashboard.itensComAcuracidadeGeral`,
+  `computeWeeklyStats`/`computeMonthlyStats`), voltando ao estado exato de
+  antes dessa rodada — mesmo `itemAcuracidade` de sempre, sem filtro de
+  status nenhum na frente dele.
+- **Se o cliente pedir de novo algo parecido no futuro**, vale perguntar
+  com mais precisão o que "etapa" significa pra ele antes de implementar —
+  nesta rodada ficou ambíguo se "etapa" seria rodada de recontagem (1ª
+  contagem vs. 2ª, ver `ultimaContagemPorDocumento`, que só usa a ÚLTIMA
+  rodada de cada documento — isso NÃO foi tocado, nem cogitado no
+  revertido) ou status do workflow (o que de fato era o caso, confirmado
+  via pergunta) — os dois usam o vocabulário "etapa" soltos na conversa.
+- Testado via transpile Babel + balanceamento de chaves do CSS (668/668,
+  sem mudança — volta ao valor de antes da rodada revertida). Publicado
+  nos dois branches (`claude/ola-4icnez`/`main`) via commit de revert
+  próprio, preservando o histórico da tentativa (não reescrito/apagado).
