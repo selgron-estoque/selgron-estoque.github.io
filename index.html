@@ -6638,10 +6638,35 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
   // status já concluídos) além das contagens ao vivo do app — sem isso, a
   // Acuracidade do Estoque ficava artificialmente alta/vazia logo depois de
   // um reset, ignorando os milhares de contagens já resolvidas na planilha
-  // antiga da Selgron. `historicoConcluidas` já tem os campos `data`/
-  // `diferenca` com o mesmo nome/formato usado em `counts`, então dá pra
-  // juntar os dois arrays direto no filtro, sem conversão.
+  // antiga da Selgron.
   //
+  // Bug real corrigido aqui: linha crua de `historicoConcluidas` (`select('*')`
+  // no Supabase) vem com campo SNAKE_CASE `saldo_sistema`, não `saldoSistema`
+  // — misturar essa linha crua direto no pool (como este código fazia antes)
+  // faz `itemAcuracidade` (que só olha `c.saldoSistema`) nunca achar esse
+  // campo em nenhuma linha do histórico. Enquanto a linha já vem com
+  // `.acuracidade` pré-calculado (a planilha do cliente trouxe a coluna
+  // "Acc"), isso passa batido — `itemAcuracidade` usa esse valor direto,
+  // sem nem olhar `saldoSistema`. Mas pra QUALQUER linha sem esse
+  // pré-cálculo (célula "Acc" vazia na planilha original — centenas de
+  // casos reais, ver "Padrão de planilha do cliente" no histórico deste
+  // arquivo), `itemAcuracidade` cai no fallback (`c.saldoSistema==null ||
+  // c.diferenca==null` → `null`) e EXCLUI esse item da média por completo —
+  // silenciosamente, sem erro nenhum. O Dashboard ("Acuracidade Geral")
+  // nunca teve esse problema porque sempre usou `historicoConcluidas.map
+  // (historicoRowToCountLike)` antes de somar ao pool — essa função já
+  // normaliza `saldo_sistema`→`saldoSistema`, então o fallback de
+  // `itemAcuracidade` sempre encontra o campo certo e INCLUI esses itens,
+  // recalculando a nota a partir de diferenca/saldoSistema. Resultado
+  // prático: Home excluía os itens "problemáticos" (sem Acc pré-calculado)
+  // da conta, empurrando a média pra CIMA por omissão; Dashboard os incluía
+  // de verdade — daí o Dashboard sempre aparecer mais baixo que a Home
+  // (cliente reportou 69,1% x 88,8%), mesmo depois da padronização de
+  // fórmula (as duas já usavam `acuracidadeMediaMensal`, o problema nunca
+  // foi a fórmula em si, era o CONTEÚDO do pool de cada tela divergindo).
+  // Corrigido reaproveitando a MESMA conversão que o Dashboard já usa —
+  // `historicoComoContagem` — em vez da linha crua.
+  const historicoComoContagem = historicoConcluidas.map(historicoRowToCountLike).filter(Boolean);
   // Bug real corrigido aqui: `c.data<=dataLimite` sozinho, com `c.data:null`
   // (~460 linhas da planilha antiga sem data, ver CLAUDE.md), avalia
   // `null<=dataLimite` como FALSE (JS converte null pra 0, e 0<=string vira
@@ -6658,7 +6683,7 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
     // documento foi recontado HOJE, a rodada de hoje só passa a valer no
     // cálculo de "hoje", nunca retroage pro de "ontem" (que já tinha fechado
     // com a rodada anterior, a única que existia até aquele ponto no tempo).
-    const relevantesBruto = [...counts, ...historicoConcluidas].filter(c=>!c.data || c.data<=dataLimite);
+    const relevantesBruto = [...counts, ...historicoComoContagem].filter(c=>!c.data || c.data<=dataLimite);
     const relevantes = ultimaContagemPorDocumento(relevantesBruto);
     const divergentes = relevantes.filter(c=>c.diferenca!==0 && c.diferenca!==null);
     // Acuracidade GERAL, mesma fórmula padronizada em TODO o app agora

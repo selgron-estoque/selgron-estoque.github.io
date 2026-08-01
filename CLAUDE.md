@@ -14505,3 +14505,71 @@ que também nunca tinha usado média das médias mensais.
   ex. Home considera contagens até uma data-limite específica, Dashboard
   não tem esse corte — nesse caso a diferença seria por dado real, não por
   fórmula).
+
+## Bug real: Home ("Acuracidade do Estoque") excluía silenciosamente itens do histórico sem `Acc` pré-calculado
+
+Mesmo depois da padronização de fórmula (seção anterior), o cliente mandou
+2 prints novos mostrando os cards ainda divergindo — "Acuracidade Geral"
+(Dashboard) em 69,1%, "Acuracidade do Estoque" (Home) em 88,8% — e apontou:
+"está com valores diferentes e a média ainda não bate". A causa NÃO era a
+fórmula (as duas telas já usavam `acuracidadeMediaMensal` desde a rodada
+anterior) — era o CONTEÚDO do pool que cada uma alimentava essa fórmula.
+
+- **Causa raiz**: `Home.acumuladoAte` sempre misturou a linha CRUA de
+  `historicoConcluidas` (vinda de `select('*')` no Supabase, com o campo
+  `saldo_sistema` em snake_case) direto no pool junto com `counts` — um
+  comentário no próprio código até justificava isso ("`historicoConcluidas`
+  já tem os campos `data`/`diferenca` com o mesmo nome/formato usado em
+  `counts`"), o que é verdade só pra esses dois campos específicos
+  (coincidência de nome), não pra `saldo_sistema`/`saldoSistema`.
+  `itemAcuracidade` só olha `c.saldoSistema` (camelCase) — pra qualquer
+  linha do histórico QUE JÁ TEM `.acuracidade` pré-calculada (a planilha do
+  cliente trouxe a coluna "Acc" preenchida), isso passa batido, porque
+  `itemAcuracidade` usa esse valor direto sem nem chegar a olhar
+  `saldoSistema`. Mas pra qualquer linha SEM esse pré-cálculo (célula "Acc"
+  vazia na planilha original — um caso real e comum, ver "Padrão de
+  planilha do cliente" no histórico deste arquivo), `itemAcuracidade` cai
+  no fallback (`c.saldoSistema==null || c.diferenca==null` → `null`) e
+  **exclui esse item da média por completo, silenciosamente** — mesma
+  categoria de bug silencioso já vista várias vezes neste projeto (RLS sem
+  policy, coluna com espaço no cabeçalho da SB2, etc.).
+- **O Dashboard nunca teve esse problema**: sempre usou
+  `historicoConcluidas.map(historicoRowToCountLike)` (que já normaliza
+  `saldo_sistema`→`saldoSistema`) antes de somar ao pool — então o fallback
+  de `itemAcuracidade` sempre encontra o campo certo pras linhas do
+  Dashboard, e INCLUI de verdade os itens sem "Acc" pré-calculado,
+  recalculando a nota a partir de `diferenca`/`saldoSistema`.
+- **Efeito prático, exatamente o sintoma reportado**: a Home excluía os
+  itens "problemáticos" (sem Acc) da conta — o que empurrava a média pra
+  CIMA por omissão, já que só os itens "limpos" (com Acc já calculada,
+  tipicamente os que bateram exato ou tinham menos problema na hora da
+  planilha original ser preenchida) sobravam na média. O Dashboard incluía
+  esses itens de verdade, arrastando a média pra baixo — daí 88,8% (Home,
+  inflado por omissão) x 69,1% (Dashboard, número real).
+- **Correção**: `Home` passou a computar `historicoComoContagem =
+  historicoConcluidas.map(historicoRowToCountLike).filter(Boolean)` (a
+  MESMA conversão que o Dashboard já usava) e `acumuladoAte` passou a usar
+  esse array convertido em vez da linha crua — mesma técnica, mesmo lugar
+  na função, só a fonte do histórico que mudou. O filtro de data
+  (`!c.data || c.data<=dataLimite`) continua funcionando igual, já que
+  `historicoRowToCountLike` preserva `data: h.data` sem alterar o valor.
+- Testado via harness novo (`harness_acuracidade_home_historico_snake_case.js`,
+  jsdom + react-dom/client + `act()`, mesma técnica rigorosa de sempre):
+  reproduz o bug isolado (linha crua sem Acc pré-calculada → `itemAcuracidade`
+  retorna `null`, exclui; a mesma linha MAPEADA → calcula 0,95 corretamente);
+  reproduz o sintoma em escala (pool com 1 item bom + 3 ruins sem Acc — pool
+  cru dá 100% incluindo só o item bom, pool mapeado dá 25% incluindo os 4
+  itens); e confirma de ponta a ponta, renderizando `Home`/`Dashboard` de
+  verdade com o mesmo histórico sintético, que os dois cards agora mostram
+  EXATAMENTE 25,0% (batendo, e não mais o 100% que o bug produzia). Rodei
+  de novo toda a suíte de regressão disponível no scratchpad — só as mesmas
+  3 falhas já confirmadas pré-existentes/sem relação com esta mudança
+  continuam (`harness_actions_beside_content.js`/`harness_dashboard_
+  render_dedup.js`/`harness_ultima_contagem_por_codigo.js`). Transpile
+  Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos
+  (668/668, sem mudança — só JS, nenhuma classe CSS tocada). **Verificação
+  dos números reais em produção fica a cargo do cliente** — mesma
+  limitação de sempre (login exige Supabase Auth real, não simulável no
+  sandbox sem rede) — mas como a correção é só na LEITURA (não depende de
+  nenhuma migração de SQL), os dois cards já devem bater no próximo
+  carregamento da página.
