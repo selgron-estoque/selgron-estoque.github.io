@@ -1644,8 +1644,16 @@ function buildEtiquetaItemHtml({tipo, codigo, descricao, quantidade, dataRecebim
 // condicional) causava uma folha em branco sobrando mesmo numa impressão
 // de 1 item só — o navegador insere a quebra pedida mesmo sem conteúdo
 // depois dela, em vez de simplesmente ignorá-la por "não ter mais nada".
+// Bug real corrigido depois (cliente confirmou via print do diálogo de
+// impressão do Chrome, "4 folhas de papel" pra um lote de 4 itens que só
+// deveria gerar 2): o style inline chegou a setar DUAS propriedades de
+// quebra de página ao mesmo tempo (`page-break-after:always;break-after:
+// page;`) — supostamente sinônimos pela spec, mas o motor de impressão do
+// Chrome aparentemente não tratava assim, inserindo uma folha em branco
+// extra a cada quebra. Removida a redundante (`break-after:page`), só
+// `page-break-after:always` ficou.
 function buildEtiquetaPageHtml(itens, quebrarDepois){
-  const style = quebrarDepois ? ' style="page-break-after:always;break-after:page;"' : '';
+  const style = quebrarDepois ? ' style="page-break-after:always;"' : '';
   return '<div class="etq-page"'+style+'>'
     + itens.map(it=>'<div class="etq-page-col">'+buildEtiquetaItemHtml(it)+'</div>').join('')
     + '</div>';

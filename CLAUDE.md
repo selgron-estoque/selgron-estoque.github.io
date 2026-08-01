@@ -13479,3 +13479,67 @@ conteúdo abaixo deles.
   dos rótulos, passaram sem ajuste. **Verificação visual de ponta a ponta
   fica a cargo do cliente** — mesma limitação de sempre (sandbox sem
   impressora/dispositivo físico).
+
+## Bug real confirmado: Chrome inseria folha em branco extra — "4 folhas de papel" pra lote de 4 itens
+
+Investigação de várias rodadas sobre o relato recorrente do cliente ("pula
+etiqueta") — desta vez com evidência conclusiva o bastante pra achar (e
+corrigir) a causa raiz de verdade, depois de descartar sistematicamente as
+hipóteses anteriores (margem do diálogo de impressão — cliente já confirmou
+"Nenhuma"; tamanho de papel cadastrado no Windows — cliente já confirmou
+101×31mm certo).
+
+**Dois falsos positivos identificados e descartados no caminho** — os dois
+prints que o cliente mandou reportando "fileira em branco" eram, na
+verdade, teste com **1 item avulso, sem par** — comportamento
+DELIBERADO/documentado desde que o pareamento de 2 colunas foi criado ("se
+este for o único pendente, imprime sozinho... coluna direita em branco,
+sem alternativa") — não é bug, é o esperado quando só existe 1 etiqueta
+pra imprimir num rolo de 2 colunas.
+
+**O bug real, confirmado com um lote de 4 itens (par, sem sobra)**: "Mandei
+4 etiquetas e está imprimindo 2 pulando 2 imprimindo 2 e pulando mais 2" —
+e, crucialmente, o cliente corrigiu minha 1ª hipótese (calibração física do
+sensor de gap da impressora): "Mas no computador já está aparecendo essa
+pulada, não é problema na impressora, pois antes já mostra o problema" —
+apontando que o sintoma já aparecia na PRÉ-VISUALIZAÇÃO de impressão do
+Chrome, antes de qualquer papel físico ser usado. Pedi o print completo do
+diálogo de impressão — veio com o contador do próprio Chrome dizendo **"4
+folhas de papel"** pra um lote que só deveria gerar 2 (2 pares reais: QTD
+8+8 numa folha, QTD 7+7 na outra — a duplicata de quantidade dentro de
+cada par é esperada/correta, vem de `splitQuantidadeEtiquetas` distribuindo
+o resto entre os primeiros itens, não é bug) — com uma folha em branco
+extra entre elas, visível nas miniaturas do próprio diálogo.
+
+- **Causa raiz**: `buildEtiquetaPageHtml` setava DUAS propriedades CSS de
+  quebra de página na mesma folha, ao mesmo tempo — `page-break-after:
+  always;break-after:page;` — escritas juntas como se fossem só um par de
+  nome-antigo/nome-novo da MESMA propriedade (a spec trata assim). O motor
+  de paginação de impressão do Chrome, na prática, não tratou como
+  sinônimos — cada uma das duas parece ter disparado sua própria quebra,
+  inserindo uma folha extra em branco a cada quebra pedida (2 pares reais
+  → 2 quebras pedidas → 2 folhas fantasmas extras → "4 folhas de papel").
+  Confirmado que o HTML gerado pelo próprio app só tinha 2 `.etq-page` de
+  verdade pra 4 itens (já coberto pelos harnesses existentes) — a
+  duplicação acontecia só na hora de RENDERIZAR pra impressão, não na
+  montagem do HTML.
+- **Correção**: removida a propriedade redundante — `buildEtiquetaPageHtml`
+  agora seta só `page-break-after:always;`, sem `break-after:page`.
+- **Histórico de tentativas anteriores que NÃO resolveram, pra não repetir**:
+  uma rodada chegou a trocar pra N `window.print()` independentes (um por
+  par) em vez de 1 job com quebras — o cliente confirmou que o pulo
+  CONTINUOU acontecendo mesmo assim, e que abrir várias janelas de
+  impressão seguidas era ruim por si só — foi revertido de volta pro job
+  único com `page-break-after`, que é a arquitetura em que esta correção
+  foi aplicada.
+- Testado via transpile Babel do arquivo inteiro e balanceamento de chaves
+  do CSS (673/673, sem mudança — só removeu uma propriedade de uma string
+  já existente, nenhuma regra nova). `harness_etiqueta_layout_fix.js`
+  atualizado: a asserção que exigia `break-after:page` presente virou uma
+  que exige EXPLICITAMENTE que ela NÃO esteja mais lá (`page-break-after:
+  always` continua obrigatório). Rodei de novo toda a suíte de Etiquetas —
+  **150 asserções, 0 falhas** entre os 7 harnesses. **Verificação real fica
+  a cargo do cliente** — mas dessa vez pode ser barata/sem gastar etiqueta
+  física: basta abrir a pré-visualização de impressão do mesmo lote de 4
+  itens de teste e conferir se o contador do Chrome agora diz "2 folhas de
+  papel" (não mais "4") antes de decidir imprimir de verdade.
