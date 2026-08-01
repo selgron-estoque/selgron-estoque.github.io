@@ -13938,3 +13938,91 @@ agora").
   ponta a ponta (cor sólida de verdade impressa, leitura do código de
   barras, layout lado a lado no papel real) fica 100% a cargo do
   cliente** — mesma limitação de sempre (sandbox sem impressora física).
+
+## `preview-etiqueta.html` — prévia ao vivo pra o cliente ajustar o CSS da etiqueta sozinho
+
+Depois de várias rodadas seguidas ajustando a etiqueta a partir de fotos de
+teste físico, o cliente perguntou se dava pra ter "autonomia de desenhar/
+ajustar essa etiqueta" sozinho. Perguntei o tamanho da liberdade desejada
+(painel de configuração dentro do app / editor visual completo / editar o
+código direto no GitHub) — escolheu editar o código direto. Na sequência,
+perguntou se não tinha uma prévia enquanto edita — resposta honesta: não,
+o editor do GitHub só mostra texto, não renderiza HTML/CSS, e publicar
+direto no `main` pra "ver como ficou" é arriscado (sem staging). Confirmado
+com o cliente: eu construiria uma página de prévia separada, dentro do
+próprio repositório.
+
+- **Arquivo novo, standalone, fora da árvore do app React**:
+  `preview-etiqueta.html`, na raiz do repo (mesmo nível de `index.html`) —
+  sem Babel, sem build step, sem dependência de Supabase/login. Só
+  precisa do CSS das etiquetas + a biblioteca JsBarcode (mesmo CDN já
+  usado pelo app de verdade,
+  `cdn.jsdelivr.net/npm/jsbarcode@3/dist/JsBarcode.all.min.js`) — reflete
+  fielmente o código de barras real, não um placeholder.
+- **Busca o CSS AO VIVO do repositório** (`fetch` em
+  `raw.githubusercontent.com/.../main/index.html`, com fallback pra
+  `selgron-estoque.github.io/index.html` se a 1ª falhar, e fallback final
+  pra um cache salvo no `localStorage` da última busca bem-sucedida, ou —
+  se nunca tiver funcionado nenhuma vez nesse navegador — uma cópia
+  "baseline" do CSS das etiquetas embutida no próprio arquivo, congelada
+  no momento em que esta página foi criada). Isso é o que faz o fluxo
+  funcionar sem precisar de mim no meio: o cliente edita o CSS no
+  `index.html` pelo GitHub, commita direto no `main`, e clica
+  "Atualizar" nesta página pra ver o resultado — sem esperar o deploy do
+  GitHub Pages terminar (o `raw.githubusercontent.com` atualiza quase na
+  hora, bem mais rápido que o build do Pages).
+- **`buildEtiquetaItemHtml`/`desenharBarcodesEtiqueta` foram REPLICADAS**
+  (não reaproveitadas via import/eval do `index.html` real) como funções
+  JS simples dentro desta página — decisão consciente: extrair e rodar o
+  script React inteiro do app (transpilado, ~800KB) só pra chamar 2
+  funções pequenas seria desproporcional, e essas duas funções não têm
+  nenhuma dependência de React. **Trade-off assumido**: se um dia a
+  ESTRUTURA dessas funções mudar (não só valores de CSS — ex: um campo
+  novo, um rótulo novo), esta página só continua fiel se eu atualizar a
+  cópia junto, na mesma leva de mudança — documentado no comentário do
+  próprio arquivo. Pra ajuste de CSS puro (a esmagadora maioria dos
+  pedidos até aqui — tamanho de fonte, tamanho do código de barras,
+  margem), a página sempre reflete o `index.html` real, sem precisar de
+  mim.
+- **Formulário com dados de teste** (código/descrição/quantidade/data/
+  endereço pra produto; código pra endereço) — qualquer edição atualiza a
+  prévia na hora, sem precisar recarregar. Duas caixas de prévia lado a
+  lado: tamanho físico real (`zoom:3.78`, ~1mm=3.78px a 96dpi — aviso
+  explícito na própria página de que isso assume 96dpi, pode variar por
+  tela de verdade) e uma versão ampliada (`zoom:8`) pra revisar detalhe.
+- **Bug real pego durante o teste, antes de publicar**: a cópia de
+  segurança (baseline) do CSS tinha sido colocada dentro de um
+  `<style id="css-baseline">` de verdade — como ela vem DEPOIS de
+  `<style id="css-do-app">` no HTML, e as duas definem as MESMAS classes
+  com a MESMA especificidade, a baseline sempre GANHAVA da cascata,
+  mesmo quando o fetch ao vivo funcionava e `#css-do-app` já tinha o CSS
+  certo — a prévia ficava presa mostrando sempre a versão antiga,
+  silenciosamente, sem erro nenhum. Só pego medindo o `border-style`
+  computado de verdade via Playwright com um CSS fake interceptado (não
+  visualmente — visualmente as duas versões eram parecidas o bastante
+  pra não notar que a versão antiga ainda estava lá). Corrigido trocando pra
+  `<script type="text/plain" id="css-baseline">` — inerte, o navegador
+  não roda nem aplica isso como CSS de verdade, só serve pra JS ler o
+  texto via `.textContent` quando precisa do fallback.
+- **Link de acesso**: dentro da tela "Etiquetas" do app (`EtiquetasPanel`),
+  um aviso novo (só visível a `perfil==='admin'`) com um link pra
+  `preview-etiqueta.html`, abrindo em nova aba — ícone novo `palette` em
+  `DICON_PATHS` (mesmo estilo Lucide-ish dos outros ~30, desenhado à mão).
+- Testado via harness real (jsdom + react-dom/client + `act()`): o link
+  aparece só pra admin, não aparece pra operador, abre em nova aba
+  (`target="_blank"`). A própria `preview-etiqueta.html` testada via
+  Playwright servindo o arquivo localmente: caminho de SUCESSO (fetch
+  mockado com CSS fake diferente do baseline — confirma que o CSS
+  baixado de verdade é o que renderiza, não o baseline, depois da
+  correção do bug de cascata) e caminho de FALHA (rede bloqueada de
+  verdade no sandbox — confirma o banner de aviso, o fallback pra
+  baseline, e que a etiqueta continua renderizando mesmo sem internet).
+  Troca de aba Produto/Endereço, edição ao vivo dos campos, e a
+  geração do código de barras via JsBarcode mockado (2 passadas, mesma
+  técnica já usada no app real) — todos conferidos. Transpile Babel do
+  `index.html` e balanceamento de chaves do CSS conferidos (675/675, sem
+  mudança — este arquivo novo não mexe no CSS do app, só lê ele).
+  **Verificação com a biblioteca JsBarcode de verdade (não o mock) e com
+  internet de verdade fica a cargo do cliente** — mesma limitação de
+  sempre (proxy do sandbox bloqueia `cdn.jsdelivr.net`/
+  `raw.githubusercontent.com`).

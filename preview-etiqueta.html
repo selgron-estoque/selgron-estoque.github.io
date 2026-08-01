@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prévia de Etiquetas — Gestão de Estoques</title>
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3/dist/JsBarcode.all.min.js"></script>
+<style>
+:root{
+  --panel:#FFFFFF; --line:#D7DBE1; --ink:#1A1C21; --ink-dim:#575756;
+  --safety:#F6A200; --safety-ink:#14161A; --ok:#1E8E4F; --ok-bg:#E3F6EA;
+  --danger:#C4291B; --danger-bg:#FBE6E3; --radius:10px;
+  --font-display:'Oswald',sans-serif; --font-mono:'JetBrains Mono',monospace; --font-corp:'Inter',sans-serif;
+  --navy:#0F172A; --gray-50:#F8FAFC; --gray-100:#F1F5F9; --gray-200:#E2E8F0; --gray-400:#94A3B8; --gray-500:#64748B;
+}
+*{box-sizing:border-box;}
+body{margin:0;background:var(--gray-100);color:var(--ink);font-family:var(--font-corp);}
+.wrap{max-width:1080px;margin:0 auto;padding:28px 20px 64px;}
+header h1{
+  font-family:var(--font-display);font-weight:600;font-size:24px;color:var(--navy);margin:0 0 4px;
+}
+header p{color:var(--gray-500);font-size:14px;margin:0 0 20px;line-height:1.5;}
+.status-bar{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+  padding:12px 16px;margin-bottom:24px;font-size:13.5px;
+}
+.status-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+.status-dot.ok{background:var(--ok);}
+.status-dot.warn{background:var(--danger);}
+.status-dot.loading{background:var(--gray-400);animation:pulse 1.2s infinite;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.35;}}
+.status-text{flex:1;color:var(--ink-dim);}
+.status-text b{color:var(--ink);}
+.btn-refresh{
+  background:var(--navy);color:#fff;border:none;border-radius:8px;padding:8px 14px;
+  font-family:var(--font-corp);font-weight:600;font-size:13px;cursor:pointer;white-space:nowrap;
+}
+.btn-refresh:hover{background:#1E293B;}
+.btn-refresh:disabled{opacity:0.6;cursor:default;}
+.grid{display:grid;grid-template-columns:340px 1fr;gap:24px;align-items:start;}
+@media (max-width:820px){.grid{grid-template-columns:1fr;}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:20px;}
+.card h2{
+  font-family:var(--font-display);font-weight:600;font-size:13px;text-transform:uppercase;
+  letter-spacing:1px;color:var(--gray-500);margin:0 0 16px;
+}
+.tabs{display:flex;gap:6px;margin-bottom:18px;}
+.tab-btn{
+  flex:1;background:var(--gray-100);border:1px solid var(--line);border-radius:8px;
+  padding:9px 10px;font-family:var(--font-corp);font-weight:600;font-size:13px;
+  color:var(--ink-dim);cursor:pointer;
+}
+.tab-btn.active{background:var(--safety);border-color:var(--safety);color:var(--safety-ink);}
+.field{margin-bottom:14px;}
+.field label{
+  display:block;font-size:12px;font-weight:600;color:var(--ink-dim);margin-bottom:5px;
+}
+.field input{
+  width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;
+  font-family:var(--font-corp);font-size:14px;color:var(--ink);
+}
+.field input:focus{outline:2px solid var(--safety);outline-offset:1px;}
+.field-hint{font-size:11.5px;color:var(--gray-500);margin-top:4px;}
+.preview-stack{display:flex;flex-direction:column;gap:20px;}
+.preview-box{
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+  padding:20px;
+}
+.preview-box h3{
+  font-family:var(--font-display);font-weight:600;font-size:12.5px;text-transform:uppercase;
+  letter-spacing:0.8px;color:var(--gray-500);margin:0 0 14px;
+}
+.checker{
+  background:repeating-conic-gradient(#EEF0F3 0% 25%, #F8F9FB 0% 50%) 0 0/14px 14px;
+  border-radius:8px;padding:18px;display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start;
+}
+.checker-item{display:flex;flex-direction:column;gap:8px;}
+.checker-caption{font-size:11.5px;color:var(--gray-500);max-width:200px;}
+.zoom-real{zoom:3.78;}
+.zoom-big{zoom:8;}
+.banner-fallback{
+  background:var(--danger-bg);border:1px solid var(--danger);border-radius:8px;
+  padding:10px 14px;font-size:13px;color:#7A1F13;margin-bottom:16px;display:none;
+}
+.banner-fallback.show{display:block;}
+footer{margin-top:28px;font-size:12.5px;color:var(--gray-500);line-height:1.6;}
+footer a{color:var(--navy);}
+
+/* CSS DAS ETIQUETAS — injetado ao vivo do repositório em #css-do-app assim
+   que o fetch termina. O bloco #css-baseline abaixo é só uma cópia de
+   segurança (congelada no momento em que esta página foi criada), usada
+   SÓ se o fetch falhar (offline, CORS, etc.) — nesse caso a prévia ainda
+   funciona, só que pode não refletir a edição mais recente. */
+</style>
+<style id="css-do-app"></style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Prévia de Etiquetas</h1>
+    <p>Mostra a etiqueta com o CSS que está agora no <code>index.html</code> do repositório — sem precisar imprimir nem publicar nada. Edite um valor lá, commite, e clique em "Atualizar" aqui pra ver o resultado.</p>
+  </header>
+
+  <div class="status-bar">
+    <span class="status-dot loading" id="status-dot"></span>
+    <span class="status-text" id="status-text">Buscando o CSS mais recente do repositório…</span>
+    <button class="btn-refresh" id="btn-refresh">Atualizar</button>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Dados de teste</h2>
+      <div class="tabs">
+        <button class="tab-btn active" id="tab-produto" type="button">Produto</button>
+        <button class="tab-btn" id="tab-endereco" type="button">Endereço</button>
+      </div>
+
+      <div id="campos-produto">
+        <div class="field">
+          <label for="in-codigo">Código</label>
+          <input id="in-codigo" type="text" value="021.030.00023">
+        </div>
+        <div class="field">
+          <label for="in-descricao">Descrição</label>
+          <input id="in-descricao" type="text" value="PF PH C PAN M4X6 BICR BELENUS">
+        </div>
+        <div class="field">
+          <label for="in-quantidade">Quantidade</label>
+          <input id="in-quantidade" type="text" value="500">
+        </div>
+        <div class="field">
+          <label for="in-data">Data de recebimento</label>
+          <input id="in-data" type="date" value="2026-07-24">
+        </div>
+        <div class="field">
+          <label for="in-endereco-mat">Endereço do material (opcional)</label>
+          <input id="in-endereco-mat" type="text" value="035-A-1">
+          <div class="field-hint">Deixe em branco pra testar sem endereço.</div>
+        </div>
+      </div>
+
+      <div id="campos-endereco" style="display:none;">
+        <div class="field">
+          <label for="in-codigo-endereco">Código do endereço</label>
+          <input id="in-codigo-endereco" type="text" value="035-A-1">
+        </div>
+      </div>
+    </div>
+
+    <div class="preview-stack">
+      <div class="banner-fallback" id="banner-fallback">⚠️ Não consegui buscar o CSS mais recente do GitHub agora — mostrando a última versão salva neste navegador (ou uma versão de referência, se for a 1ª vez que você abre esta página). Clique "Atualizar" pra tentar de novo.</div>
+      <div class="preview-box">
+        <h3>Tamanho real (como sai impresso)</h3>
+        <div class="checker">
+          <div class="checker-item">
+            <div class="zoom-real"><div class="etq-page-col" id="alvo-real" style="width:50mm;height:30mm;"></div></div>
+            <div class="checker-caption">Escala 1:1 (assumindo tela a ~96dpi) — dá a real noção de tamanho, mas é pequeno pra ler detalhe.</div>
+          </div>
+        </div>
+      </div>
+      <div class="preview-box">
+        <h3>Ampliada (pra revisar detalhe)</h3>
+        <div class="checker">
+          <div class="checker-item">
+            <div class="zoom-big"><div class="etq-page-col" id="alvo-grande" style="width:50mm;height:30mm;"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    Fonte do CSS: <code>github.com/selgron-estoque/selgron-estoque.github.io</code>, branch <code>main</code>. Código de barras real (Code128) via <a href="https://github.com/lindell/JsBarcode" target="_blank" rel="noopener">JsBarcode</a> — a mesma biblioteca que o app usa de verdade. Esta página não depende do banco de dados nem do resto do app — só do CSS.
+  </footer>
+</div>
+
+<!-- type="text/plain" deixa o bloco INERTE (o navegador não roda nem
+     aplica isso como CSS de verdade, só serve pra JS ler o texto de
+     dentro via .textContent) — um <style id="css-baseline"> aqui
+     competiria na cascata com #css-do-app (mesma especificidade, quem
+     vem DEPOIS no HTML vence) e sobrescreveria silenciosamente o CSS
+     buscado ao vivo, mesmo com o fetch funcionando. Bug real pego no
+     teste antes de publicar: com o fetch simulado com sucesso e um CSS
+     fake diferente do baseline, a etiqueta continuava mostrando o
+     baseline mesmo assim — só descoberto medindo o border-style
+     computado de verdade via Playwright, não só olhando visualmente. -->
+<script type="text/plain" id="css-baseline">@page{size:101mm 31mm;margin:0;}
+  .etq-page{display:flex;align-items:center;gap:1mm;width:101mm;height:30.5mm;box-sizing:border-box;}
+  .etq-page-col{width:50mm;height:30mm;box-sizing:border-box;padding:0.8mm;}
+  .etq-endereco{width:100%;height:100%;box-sizing:border-box;padding:2mm;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:Arial,sans-serif;text-align:center;overflow:hidden;}
+  .etq-rotulo{font-size:6pt;font-weight:700;letter-spacing:0.5px;}
+  .etq-codigo-grande{font-size:16pt;font-weight:700;margin:1mm 0;}
+  .etq-barcode{display:block;margin:0 auto;}
+  .etq-endereco .etq-barcode{width:44mm;height:11mm;}
+  /* Ajustes de round 3, a partir do 2º teste físico real (foto "027-D-4"):
+     (1) "código de barras muito grande, alguns lê outros não" — encolhido
+     de 43x5.5mm pra 38x5mm (produto), devolvendo quiet zone (margem em
+     branco nas pontas, essencial pra leitura confiável) — o código de
+     barras é bem mais estreito que o container (`.etq-rodape`), e como
+     `.etq-barcode{margin:0 auto}` centraliza, a folga sobra igual dos dois
+     lados. `desenharBarcodesEtiqueta` (no <script>) também ganhou
+     `margin:2` no próprio JsBarcode, reservando um pouco de quiet zone
+     JÁ DENTRO do SVG, não só via CSS. (2) "'código'/'QTD'/'Descrição'
+     continuam cinza" — CSS confirmado idêntico nos 3 rótulos
+     (CÓDIGO/DESCRIÇÃO/DATA RECEBIMENTO), então não é bug de cor/peso (já
+     tudo em negrito desde a rodada anterior); hipótese mais provável é
+     que fonte muito pequena (4.5pt) renderiza com antialiasing (bordas
+     acinzentadas) que uma impressora térmica monocromática não reproduz
+     bem — aumentado `.etq-tag` pra 5pt/0.3px (rótulos) e QTD/endereço
+     (abaixo) pra fontes maiores, na esperança de que o traço mais grosso
+     "queime" mais sólido. SEM GARANTIA — pode ser mesmo um ajuste de
+     densidade/qualidade de impressão na própria impressora, fora do
+     alcance do app; avisar o cliente. (3) "Endereço continua descendo o
+     código... bastante espaço na direita" — `.etq-qtd-box` virou
+     `flex-direction:row` (QTD e endereço lado a lado, com um traço
+     divisório fino entre os dois via `:not(:first-child)`) em vez de
+     empilhados verticalmente — como agora é sempre 1 linha só, adicionar o
+     endereço nunca mais aumenta a altura do topo (elimina de vez o
+     `min-height` que existia só pra igualar as duas alturas possíveis).
+     (4) fonte de QTD/endereço aumentada (6.5→8pt / 5.5→7pt), pedido
+     explícito do cliente. */
+  .etq-produto{width:100%;height:100%;box-sizing:border-box;padding:0.6mm;border:0.35mm solid #000;border-radius:1.6mm;display:flex;flex-direction:column;font-family:Arial,sans-serif;overflow:hidden;}
+  .etq-produto .etq-barcode{width:38mm;height:5mm;}
+  .etq-tag{display:inline-block;vertical-align:top;background:#000;color:#fff;font-weight:700;font-size:5pt;letter-spacing:0.3px;line-height:1;padding:0.5mm 1.6mm 0.5mm 1mm;clip-path:polygon(0 0,88% 0,100% 50%,88% 100%,0 100%);white-space:nowrap;}
+  .etq-topo{display:flex;justify-content:space-between;align-items:center;}
+  .etq-codigo-produto{font-size:13pt;font-weight:700;text-align:left;margin:0.2mm 0;}
+  .etq-qtd-box{display:flex;flex-direction:row;align-items:center;gap:1.5mm;}
+  .etq-qtd-box>*:not(:first-child){border-left:0.25mm solid #000;padding-left:1.5mm;}
+  .etq-qtd{font-size:8pt;font-weight:700;white-space:nowrap;}
+  .etq-endereco-mat{font-size:7pt;font-weight:700;white-space:nowrap;}
+  .etq-meio{display:flex;gap:1.5mm;border-top:0.25mm solid #000;margin-top:0.3mm;padding-top:0.3mm;flex:1;min-height:0;overflow:hidden;}
+  .etq-col{display:flex;flex-direction:column;overflow:hidden;}
+  .etq-col-desc{flex:1.1;}
+  .etq-col-data{flex:1;}
+  .etq-col-divisor{border-left:0.25mm solid #000;padding-left:1.5mm;}
+  .etq-valor{font-size:6pt;font-weight:700;line-height:1.1;word-break:break-word;margin-top:0.3mm;}
+  .etq-valor-desc{overflow:hidden;line-height:1.22;max-height:5.2mm;}
+  .etq-valor-data{font-weight:700;font-size:7pt;}
+  .etq-rodape{border-top:0.25mm solid #000;margin-top:0.3mm;padding-top:0.3mm;text-align:center;}</script>
+<script>
+(function(){
+  var CSS_URLS = [
+    'https://raw.githubusercontent.com/selgron-estoque/selgron-estoque.github.io/main/index.html',
+    'https://selgron-estoque.github.io/index.html'
+  ];
+  var LS_KEY = 'preview-etiqueta:css-cache';
+
+  function extrairCss(html){
+    var m = /<style>([\s\S]*?)<\/style>/.exec(html);
+    return m ? m[1] : null;
+  }
+
+  function aplicarCss(css){
+    document.getElementById('css-do-app').textContent = css;
+  }
+
+  function setStatus(estado, texto){
+    var dot = document.getElementById('status-dot');
+    dot.className = 'status-dot ' + estado;
+    document.getElementById('status-text').innerHTML = texto;
+    document.getElementById('banner-fallback').classList.toggle('show', estado === 'warn');
+  }
+
+  function buscarCssAoVivo(){
+    setStatus('loading', 'Buscando o CSS mais recente do repositório…');
+    document.getElementById('btn-refresh').disabled = true;
+
+    function tentar(i){
+      if(i >= CSS_URLS.length){
+        // as duas fontes falharam -> cai pro cache local, senão pra baseline embutida
+        var cache = null;
+        try{ cache = localStorage.getItem(LS_KEY); }catch(e){}
+        var baseline = document.getElementById('css-baseline').textContent;
+        aplicarCss(cache || baseline);
+        setStatus('warn', cache
+          ? 'Sem conexão com o GitHub agora — mostrando a última versão baixada com sucesso neste navegador.'
+          : 'Sem conexão com o GitHub agora — mostrando uma versão de referência (pode não ter as últimas edições).');
+        document.getElementById('btn-refresh').disabled = false;
+        renderAll();
+        return;
+      }
+      fetch(CSS_URLS[i] + '?t=' + Date.now(), {cache:'no-store'})
+        .then(function(r){ if(!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+        .then(function(texto){
+          var css = extrairCss(texto);
+          if(!css) throw new Error('não achei <style> no HTML baixado');
+          aplicarCss(css);
+          try{ localStorage.setItem(LS_KEY, css); }catch(e){}
+          var agora = new Date().toLocaleTimeString('pt-BR');
+          setStatus('ok', 'CSS carregado do GitHub (<b>main</b>) às <b>' + agora + '</b>.');
+          document.getElementById('btn-refresh').disabled = false;
+          renderAll();
+        })
+        .catch(function(){ tentar(i + 1); });
+    }
+    tentar(0);
+  }
+
+  // --- réplica de buildEtiquetaItemHtml/desenharBarcodesEtiqueta do index.html ---
+  function escapeHtmlEtiqueta(texto){
+    return String(texto == null ? '' : texto)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function fmtDataBR(dataStr){
+    if(!dataStr) return '—';
+    var partes = dataStr.split('-');
+    return partes[2] + '/' + partes[1] + '/' + partes[0];
+  }
+  function buildEtiquetaItemHtml(opts){
+    var cod = escapeHtmlEtiqueta(opts.codigo);
+    if(opts.tipo === 'endereco'){
+      return '<div class="etq-endereco">'
+        + '<div class="etq-rotulo">ENDEREÇO</div>'
+        + '<div class="etq-codigo-grande">' + cod + '</div>'
+        + '<svg class="etq-barcode"></svg>'
+        + '</div>';
+    }
+    var desc = escapeHtmlEtiqueta((opts.descricao || '').slice(0, 120));
+    var qtdTexto = opts.quantidade ? ('QTD: ' + escapeHtmlEtiqueta(opts.quantidade) + ' PC') : '';
+    var dataTexto = opts.dataRecebimento ? escapeHtmlEtiqueta(fmtDataBR(opts.dataRecebimento)) : '';
+    var enderecoTexto = opts.endereco ? escapeHtmlEtiqueta(opts.endereco) : '';
+    var qtdBox = (qtdTexto || enderecoTexto) ? (
+      '<div class="etq-qtd-box">'
+      + (qtdTexto ? '<div class="etq-qtd">' + qtdTexto + '</div>' : '')
+      + (enderecoTexto ? '<div class="etq-endereco-mat">' + enderecoTexto + '</div>' : '')
+      + '</div>'
+    ) : '';
+    return '<div class="etq-produto">'
+      + '<div class="etq-topo">'
+      +   '<div class="etq-tag">CÓDIGO</div>'
+      +   qtdBox
+      + '</div>'
+      + '<div class="etq-codigo-produto">' + cod + '</div>'
+      + '<div class="etq-meio">'
+      +   '<div class="etq-col etq-col-desc"><div class="etq-tag">DESCRIÇÃO</div><div class="etq-valor etq-valor-desc">' + desc + '</div></div>'
+      +   '<div class="etq-col etq-col-data etq-col-divisor"><div class="etq-tag">DATA RECEBIMENTO</div><div class="etq-valor etq-valor-data">' + dataTexto + '</div></div>'
+      + '</div>'
+      + '<div class="etq-rodape">'
+      +   '<svg class="etq-barcode"></svg>'
+      + '</div>'
+      + '</div>';
+  }
+  function desenharBarcode(svg, codigo, tipo){
+    if(!codigo || typeof window.JsBarcode !== 'function') return;
+    try{
+      var mmParaPx = function(mm){ return mm * 96 / 25.4; };
+      var alturaAlvoMm = tipo === 'endereco' ? 11 : 5;
+      var larguraAlvoMm = tipo === 'endereco' ? 44 : 38;
+      var alturaPx = mmParaPx(alturaAlvoMm);
+      var larguraAlvoPx = mmParaPx(larguraAlvoMm);
+      window.JsBarcode(svg, codigo, {format:'CODE128', displayValue:false, margin:2, height:alturaPx, width:1});
+      var nativoPx = parseFloat(svg.getAttribute('width')) || 0;
+      var escala = nativoPx > 0 ? (larguraAlvoPx / nativoPx) : 1.6;
+      window.JsBarcode(svg, codigo, {format:'CODE128', displayValue:false, margin:2, height:alturaPx, width:escala});
+    }catch(e){ console.warn('Falha ao gerar código de barras na prévia:', e); }
+  }
+
+  var modo = 'produto';
+
+  function lerFormulario(){
+    if(modo === 'endereco'){
+      return {tipo:'endereco', codigo: document.getElementById('in-codigo-endereco').value};
+    }
+    return {
+      tipo:'produto',
+      codigo: document.getElementById('in-codigo').value,
+      descricao: document.getElementById('in-descricao').value,
+      quantidade: document.getElementById('in-quantidade').value,
+      dataRecebimento: document.getElementById('in-data').value,
+      endereco: document.getElementById('in-endereco-mat').value,
+    };
+  }
+
+  function renderAll(){
+    var dados = lerFormulario();
+    var html = buildEtiquetaItemHtml(dados);
+    ['alvo-real', 'alvo-grande'].forEach(function(id){
+      var alvo = document.getElementById(id);
+      alvo.innerHTML = html;
+      var svg = alvo.querySelector('svg.etq-barcode');
+      if(svg && dados.codigo) desenharBarcode(svg, dados.codigo, dados.tipo);
+    });
+  }
+
+  document.getElementById('tab-produto').addEventListener('click', function(){
+    modo = 'produto';
+    this.classList.add('active');
+    document.getElementById('tab-endereco').classList.remove('active');
+    document.getElementById('campos-produto').style.display = '';
+    document.getElementById('campos-endereco').style.display = 'none';
+    renderAll();
+  });
+  document.getElementById('tab-endereco').addEventListener('click', function(){
+    modo = 'endereco';
+    this.classList.add('active');
+    document.getElementById('tab-produto').classList.remove('active');
+    document.getElementById('campos-produto').style.display = 'none';
+    document.getElementById('campos-endereco').style.display = '';
+    renderAll();
+  });
+  ['in-codigo','in-descricao','in-quantidade','in-data','in-endereco-mat','in-codigo-endereco'].forEach(function(id){
+    document.getElementById(id).addEventListener('input', renderAll);
+  });
+  document.getElementById('btn-refresh').addEventListener('click', buscarCssAoVivo);
+
+  buscarCssAoVivo();
+})();
+</script>
+</body>
+</html>

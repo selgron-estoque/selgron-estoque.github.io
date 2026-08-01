@@ -6107,6 +6107,7 @@ const DICON_PATHS = {
   arrowsUpDown: <><path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/></>,
   target: <><circle cx="12" cy="12" r="9.5"/><circle cx="12" cy="12" r="5.5"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/></>,
   printer: <><path d="M6 9V3h12v6"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="7"/></>,
+  palette: <><path d="M12 3a9 9 0 1 0 9 9c0-1-1-1.5-2-1.5h-2.5a2 2 0 0 1-2-2 2 2 0 0 1 .5-1.3A2 2 0 0 0 14 5.5C14 4 13 3 12 3Z"/><circle cx="7.5" cy="10.5" r="1" fill="currentColor" stroke="none"/><circle cx="8.5" cy="15" r="1" fill="currentColor" stroke="none"/><circle cx="13" cy="17" r="1" fill="currentColor" stroke="none"/></>,
 };
 
 function DIcon({name, size=18, strokeWidth=1.8, style}){
@@ -13745,6 +13746,16 @@ function EtiquetasPanel({currentUser}){
         Ao clicar em "Imprimir Etiqueta", abre a janela de impressão normal do navegador —
         escolha a impressora TSC e confirme o tamanho da folha (101×31mm) se for pedido.
       </div>
+
+      {currentUser.perfil==='admin' && (
+        <div className="role-note" style={{marginBottom:14}}>
+          <DIcon name="palette" size={16} style={{verticalAlign:-3,marginRight:6}}/>
+          Quer ajustar o layout da etiqueta (tamanho de fonte, código de barras, etc.) você
+          mesmo, sem esperar um pedido? Edite o CSS em <code>index.html</code> no GitHub e
+          confira o resultado sem precisar imprimir em{' '}
+          <a href="preview-etiqueta.html" target="_blank" rel="noopener">preview-etiqueta.html</a>.
+        </div>
+      )}
 
       <div style={{display:'flex',gap:8,marginBottom:14,marginTop:14}}>
         <button className={'btn '+(aba==='produto'?'btn-primary':'btn-outline')+' btn-sm'} onClick={()=>setAba('produto')}>Produto</button>
