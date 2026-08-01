@@ -1166,131 +1166,26 @@
     }
   }
 
-  /* IMPRESSÃO DE ETIQUETA (EtiquetasPanel) — imprime só #etiqueta-print-area
-     via window.print(), passando pelo driver de impressora já instalado no
-     Windows (não mais WebUSB — ver comentário de imprimirEtiquetaViaNavegador
-     no <script> pra entender por quê).
-     Bug real corrigido aqui: a 1ª versão usava `visibility:hidden` no
-     `body *` + `position:fixed` na área de impressão — `visibility:hidden`
-     NÃO tira o elemento do FLUXO da página (só o deixa invisível, ainda
-     ocupando espaço), então a altura total do documento impresso continuava
-     sendo a altura do app inteiro (invisível, mas ainda "lá") — e um
-     elemento `position:fixed` REPETE em TODAS as páginas que o navegador
-     gera ao paginar uma altura grande, causando o sintoma real reportado
-     pelo cliente: "6 folhas de papel", cada uma com a MESMA etiqueta
-     repetida. Corrigido escondendo o app inteiro com `display:none`
-     (que sim remove do fluxo, zerando a altura) em vez de só `visibility` —
-     sem altura nenhuma sobrando pra paginar, sobra literalmente só o
-     conteúdo de `#etiqueta-print-area`, então nem precisa mais de
-     `position:fixed` nela.
-     `@page` pede o tamanho físico da folha (101x31mm) — o cliente confirmou
-     esses números direto no driver da TSC ("Tamanho da etiqueta: Largura
-     101,0mm / Altura 31,0mm", "Larguras da cartela exposta: 0,0mm/0,0mm") —
-     o rolo físico dele tem DUAS colunas de 50mm lado a lado com ~1mm de vão
-     entre elas (50+1+50=101), não uma etiqueta única de 50mm como a 1ª
-     versão desta feature assumia. `.etq-page` é o wrapper flex que recebe 1
-     ou 2 `.etq-page-col` lado a lado — só 1 quando é impressão avulsa (fora
-     da fila) ou quando só sobra 1 item pendente na fila (nesse caso a
-     coluna direita fica em branco, sem alternativa: a folha sempre sai
-     inteira do rolo, não dá pra imprimir "meia folha"). Um LOTE de várias
-     folhas (`imprimirLoteEtiquetas`, "Imprimir Todos" da fila/"Quantidade
-     de etiquetas") NÃO concatena mais páginas com `page-break-after` num
-     job de impressão só — cada folha vira o seu PRÓPRIO `window.print()`,
-     completamente independente (ver comentário de `imprimirLoteEtiquetas`
-     no <script> — impressora física com sensor de gap se confundia
-     combinando quebra de página do navegador com o próprio avanço
-     automático de etiqueta, pulando etiqueta física a cada duas).
-     Bug real corrigido aqui: a etiqueta de PRODUTO (`.etq-produto`)
-     transbordava a altura física de 30mm — descrição/data sobrepondo o
-     código de barras, ou parte do conteúdo pulando pra uma 2ª página em
-     branco — porque o orçamento vertical (fontes/margens/altura do código
-     de barras) nunca tinha sido calculado pra caber de verdade nesse
-     espaço; só apareceu numa impressão real (o sandbox não tem impressora
-     física pra pegar isso antes). Reduzi fontes/margens/padding em cascata
-     e travei a altura do código de barras num valor FIXO (não mais
-     `height:auto`, que dependia do tamanho do código pra decidir a altura
-     sozinho, sem limite) — `overflow:hidden` em `.etq-endereco`/
-     `.etq-produto` é a rede de segurança final: se mesmo assim algo não
-     couber, o conteúdo é CORTADO (silencioso) em vez de sobrepor outro
-     elemento ou vazar pra uma 2ª página — bem menos grave que uma etiqueta
-     ilegível.
-     `.etq-page-col` — margem de segurança mínima (0.8mm de cada lado)
-     entre a borda física de cada coluna de 50x30mm e o conteúdo visível —
-     pedido do cliente depois de ver a impressão real: se o registro/corte
-     da impressora não for perfeito, a borda preta e o código de barras não
-     ficam colados na quina exata, com risco de sair cortados.
-     Bug real corrigido aqui: o cliente reportou que a margem de cima e da
-     esquerda "não deu" (só direita/baixo apareciam) — causa: `.etq-page`
-     não tinha tamanho PRÓPRIO, só herdava o tamanho natural do conteúdo
-     (101×30mm, a soma exata das 2 colunas). Como `@page` é 101×31mm (1mm a
-     mais de altura — o "pitch" físico do rolo, folga entre uma etiqueta e
-     a próxima no rolo, não espaço pro conteúdo usar), o navegador
-     posicionava esse bloco de 30mm de altura no TOPO da página de 31mm por
-     padrão (alinhamento de fluxo normal, sem centralização nenhuma) — a
-     folga de 1mm sobrava inteira EMBAIXO, nunca em cima, e por ser bem
-     maior que a margem de 0.5mm que eu tinha colocado, competia
-     visualmente com ela e fazia parecer que só embaixo/direita "tinham"
-     margem. Corrigido dando a `.etq-page` o tamanho EXATO do `@page`
-     (101×31mm, igual à folha física) + `align-items:center` — agora a
-     folga de 1mm de altura é dividida IGUALMENTE entre topo e base
-     (0.5mm cada), em vez de cair inteira embaixo.
-     Ajustes de layout da etiqueta de PRODUTO (pedido do cliente, ver
-     `buildEtiquetaItemHtml` no <script>): (1) a coluna "DESCRICAO" ficou
-     mais larga (`.etq-col-desc{flex:1.8}` contra `.etq-col-data{flex:1}`
-     da coluna "DATA:") e a descrição passou de corte fixo de caracteres
-     pra `-webkit-line-clamp:2` (`.etq-valor-desc`) — se ajusta à largura
-     REAL da coluna (que agora varia) em vez de um número de caracteres
-     calibrado só pra largura antiga, cortando com "…" apenas quando
-     genuinamente não cabe em 2 linhas; (2) rótulo "DATA RECEBIMENTO" virou
-     "DATA:"; (3) o endereço cadastrado do produto (quando existe) aparece
-     abaixo de "QTD:", dentro do mesmo bloco à direita (`.etq-qtd-box`,
-     coluna alinhada à direita) — só o valor puro (ex. "035-A-1"), sem
-     rótulo extra; (4) `.etq-barcode{margin:0 auto}` centraliza o código de
-     barras (e, por `.etq-rodape{text-align:center}`, o código pequeno
-     abaixo dele) no meio horizontal da etiqueta — antes era um bloco de
-     largura fixa sem margem automática, ficando encostado à esquerda.
-     Bug real corrigido aqui, achado num teste real (print via celular): a
-     2ª linha da descrição (agora liberada pelo `line-clamp:2` acima)
-     aparecia CORTADA no meio, tocando a linha divisória de baixo — porque
-     `.etq-meio{flex:1;min-height:0;overflow:hidden;}` só recebe o que
-     SOBRA depois de `.etq-topo`/`.etq-rodape` reivindicarem seu espaço
-     natural; com 2 linhas de descrição, o espaço que sobrava não era mais
-     suficiente, e o `overflow:hidden` cortava a 2ª linha ANTES do
-     line-clamp conseguir mostrá-la inteira. Reduzido margens/padding só
-     dos elementos EXCLUSIVOS da etiqueta de produto (nunca usados por
-     `.etq-endereco`, que não tinha esse problema) — `.etq-produto`
-     (padding), `.etq-codigo-produto` (margem), `.etq-meio`/`.etq-rodape`
-     (margem+padding do topo de cada seção) e `.etq-codigo-pequeno`
-     (margem) — devolvendo o espaço liberado pra `.etq-meio` mostrar as 2
-     linhas completas.
-     Pedido do cliente ("Código, data e descrição... tem muito destaque"):
-     `.etq-produto .etq-rotulo{font-size:4.5pt;letter-spacing:0.3px}`
-     (era 6pt/0.5px, herdado do `.etq-rotulo` base) — os 3 rótulos
-     ("CODIGO"/"DESCRICAO"/"DATA:") ficaram menores e menos espaçados,
-     menos concorrendo visualmente com o conteúdo abaixo deles. Escopado
-     só à etiqueta de PRODUTO (seletor descendente, não mexe na regra
-     base) — o rótulo "ENDEREÇO" da etiqueta de endereço não foi tocado,
-     já que o cliente não reportou nenhum problema ali. */
+  /* ═══════════════════════════════════════════════════════════════
+     ETIQUETA DE IMPRESSÃO — bloco próprio, vai até "FIM DO CSS DA
+     ETIQUETA" mais abaixo. Ctrl+F "ETIQUETA DE IMPRESSÃO" pra achar
+     rápido da próxima vez que precisar mexer aqui.
+     Depois de editar e commitar, confira o resultado sem precisar
+     imprimir nem publicar de novo em preview-etiqueta.html (link
+     também disponível na tela "Etiquetas" dentro do app, pro admin).
+     Histórico completo de cada ajuste (o "porquê" de cada valor,
+     fotos de teste real, bugs já corrigidos e como foram resolvidos):
+     ver CLAUDE.md, a partir da seção "Etiqueta de produto redesenhada".
+     ═══════════════════════════════════════════════════════════════ */
   #etiqueta-print-area{display:none;}
   @media print{
     #root{display:none !important;}
     #etiqueta-print-area{display:block;}
   }
-  /* .etq-page fica 0.5mm mais baixa que o @page (30.5mm em vez de 31mm) de
-     propósito — tentativa de corrigir um bug real reportado num Chrome bem
-     antigo (109, a última versão que roda em Windows 7, travada desde
-     2023): mesmo com o site já corrigido (sem propriedade de quebra de
-     página redundante), esse navegador específico continuava inserindo
-     uma página em branco a cada 2 folhas reais impressas — padrão clássico
-     de um motor de impressão que arredonda a altura do conteúdo pra cima
-     do limite exato da página (31mm cravado, sem nenhuma folga), disparando
-     uma página de "continuação" desnecessária. Essa margem de segurança
-     não afeta a impressão física de verdade (o tamanho real gravado no
-     driver da impressora continua 101x31mm, só sobra um pouco de espaço em
-     branco na base de cada etiqueta) — é só uma tentativa de dar folga
-     pro possível erro de arredondamento não estourar o limite da página.
-     Sem garantia — motor de impressão de navegador tão antigo não dá pra
-     depurar de fora, só testar. */
+  /* .etq-page fica 0.5mm mais baixa que o @page — folga contra um bug já
+     visto num Chrome bem antigo (109/Windows 7) que inseria página em
+     branco extra. Não afeta o tamanho físico real impresso (@page continua
+     101x31mm, o que o driver da impressora espera). */
   @page{size:101mm 31mm;margin:0;}
   .etq-page{display:flex;align-items:center;gap:1mm;width:101mm;height:30.5mm;box-sizing:border-box;}
   .etq-page-col{width:50mm;height:30mm;box-sizing:border-box;padding:0.8mm;}
@@ -1299,33 +1194,6 @@
   .etq-codigo-grande{font-size:16pt;font-weight:700;margin:1mm 0;}
   .etq-barcode{display:block;margin:0 auto;}
   .etq-endereco .etq-barcode{width:44mm;height:11mm;}
-  /* Ajustes de round 3, a partir do 2º teste físico real (foto "027-D-4"):
-     (1) "código de barras muito grande, alguns lê outros não" — encolhido
-     de 43x5.5mm pra 38x5mm (produto), devolvendo quiet zone (margem em
-     branco nas pontas, essencial pra leitura confiável) — o código de
-     barras é bem mais estreito que o container (`.etq-rodape`), e como
-     `.etq-barcode{margin:0 auto}` centraliza, a folga sobra igual dos dois
-     lados. `desenharBarcodesEtiqueta` (no <script>) também ganhou
-     `margin:2` no próprio JsBarcode, reservando um pouco de quiet zone
-     JÁ DENTRO do SVG, não só via CSS. (2) "'código'/'QTD'/'Descrição'
-     continuam cinza" — CSS confirmado idêntico nos 3 rótulos
-     (CÓDIGO/DESCRIÇÃO/DATA RECEBIMENTO), então não é bug de cor/peso (já
-     tudo em negrito desde a rodada anterior); hipótese mais provável é
-     que fonte muito pequena (4.5pt) renderiza com antialiasing (bordas
-     acinzentadas) que uma impressora térmica monocromática não reproduz
-     bem — aumentado `.etq-tag` pra 5pt/0.3px (rótulos) e QTD/endereço
-     (abaixo) pra fontes maiores, na esperança de que o traço mais grosso
-     "queime" mais sólido. SEM GARANTIA — pode ser mesmo um ajuste de
-     densidade/qualidade de impressão na própria impressora, fora do
-     alcance do app; avisar o cliente. (3) "Endereço continua descendo o
-     código... bastante espaço na direita" — `.etq-qtd-box` virou
-     `flex-direction:row` (QTD e endereço lado a lado, com um traço
-     divisório fino entre os dois via `:not(:first-child)`) em vez de
-     empilhados verticalmente — como agora é sempre 1 linha só, adicionar o
-     endereço nunca mais aumenta a altura do topo (elimina de vez o
-     `min-height` que existia só pra igualar as duas alturas possíveis).
-     (4) fonte de QTD/endereço aumentada (6.5→8pt / 5.5→7pt), pedido
-     explícito do cliente. */
   .etq-produto{width:100%;height:100%;box-sizing:border-box;padding:0.6mm;border:0.35mm solid #000;border-radius:1.6mm;display:flex;flex-direction:column;font-family:Arial,sans-serif;overflow:hidden;}
   .etq-produto .etq-barcode{width:38mm;height:5mm;}
   .etq-tag{display:inline-block;vertical-align:top;background:#000;color:#fff;font-weight:700;font-size:5pt;letter-spacing:0.3px;line-height:1;padding:0.5mm 1.6mm 0.5mm 1mm;clip-path:polygon(0 0,88% 0,100% 50%,88% 100%,0 100%);white-space:nowrap;}
@@ -1344,6 +1212,7 @@
   .etq-valor-desc{overflow:hidden;line-height:1.22;max-height:5.2mm;}
   .etq-valor-data{font-weight:700;font-size:7pt;}
   .etq-rodape{border-top:0.25mm solid #000;margin-top:0.3mm;padding-top:0.3mm;text-align:center;}
+  /* FIM DO CSS DA ETIQUETA */
 </style>
 </head>
 <body>

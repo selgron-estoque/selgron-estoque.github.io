@@ -14026,3 +14026,63 @@ próprio repositório.
   internet de verdade fica a cargo do cliente** — mesma limitação de
   sempre (proxy do sandbox bloqueia `cdn.jsdelivr.net`/
   `raw.githubusercontent.com`).
+
+## CSS da etiqueta ganha marcador de busca + narrativa histórica removida do arquivo
+
+Cliente, logo depois de ganhar autonomia pra editar o CSS direto no
+GitHub (e já ter testado com sucesso — ver seção anterior), perguntou:
+"eu não consigo manter este CSS separado, tipo quando eu quiser mexer na
+etiqueta eu acho ele muito rapidamente??" — o bloco de CSS da etiqueta
+sempre esteve no MEIO de um `<style>` gigante (milhares de linhas), e
+pior: bem em cima dele tinha um comentário só de HISTÓRICO (não
+instrução) de **105 linhas** (`/* IMPRESSÃO DE ETIQUETA... */`, cada bug
+já corrigido nesta feature narrado em detalhe — "6 folhas de papel",
+margem que "não deu", etc.) mais outro bloco de **37 linhas** logo depois
+("Ajustes de round 3...") — tudo isso competindo visualmente com o CSS de
+verdade bem na hora que ele mais precisava achar rápido.
+
+- **Banner de busca**: um comentário curto e visualmente destacado
+  (`═══...═══`) logo antes de `#etiqueta-print-area{display:none;}`,
+  dizendo explicitamente "Ctrl+F 'ETIQUETA DE IMPRESSÃO' pra achar
+  rápido" — e um marcador `/* FIM DO CSS DA ETIQUETA */` no final, depois
+  de `.etq-rodape{...}`, deixando claro onde o bloco termina.
+- **Os 2 blocos de narrativa histórica (105 + 37 linhas) foram REMOVIDOS
+  do `index.html`, não só resumidos** — nada foi perdido de verdade: todo
+  esse histórico (o "porquê" de cada bug, cada valor, cada foto de teste)
+  já está integralmente documentado no CLAUDE.md, este arquivo, que é a
+  fonte de verdade pra história do projeto — o comentário no `index.html`
+  virou só um ponteiro ("ver CLAUDE.md") em vez de duplicar o conteúdo.
+  Ficou só 1 comentário curto (3 linhas) explicando a folga de
+  `.etq-page` contra o bug do Chrome 109/Windows 7 — esse é o único caso
+  onde vale manter uma explicação inline, porque é uma linha de CSS
+  (`height:30.5mm` em vez do `31mm` "óbvio") que pareceria um erro de
+  digitação sem o contexto, e um cliente editando esse valor sem saber do
+  bug do Chrome antigo poderia "corrigir" de volta pra 31mm sem querer.
+- **Nenhuma REGRA de CSS foi tocada nesta rodada** — só comentários
+  (prosa) saíram/entraram; todos os valores (`width`, `font-size`, etc.)
+  continuam exatamente os mesmos de antes. Confirmado rodando a suíte
+  inteira de Etiquetas de novo (158 asserções, 0 falhas) sem precisar
+  atualizar nenhuma — se algum valor tivesse mudado sem querer no meio da
+  edição de comentário, algum harness teria pego.
+- **`preview-etiqueta.html` regenerado** — o script que extrai a "cópia
+  de segurança" (baseline) do CSS das etiquetas pra essa página
+  (`@page{size:101mm` até `.etq-rodape{...}`) capturava os comentários
+  de dentro desse intervalo junto (o "round 3", removido nesta rodada) —
+  regenerado só pra manter essa cópia embutida em sincronia, mesmo sendo
+  inofensivo mantê-la desatualizada (comentário CSS não afeta
+  renderização nenhuma, só é lido como texto puro).
+- O balanceamento de chaves do CSS mudou de 675/675 pra **668/668** —
+  queda explicada inteiramente pelos comentários removidos que
+  mencionavam nomes de classe com chaves dentro da prosa (ex.
+  "`.etq-valor{overflow:...}`" citado como exemplo dentro do texto) —
+  contados pelo script de verificação (que conta QUALQUER `{`/`}` no
+  bloco `<style>`, não só os de regra de verdade), não uma mudança
+  estrutural real.
+- Testado via a suíte completa de Etiquetas (8 harnesses, 158
+  asserções) e os 2 testes Playwright de `preview-etiqueta.html`
+  (caminho de sucesso com CSS mockado + caminho de falha/fallback) — os
+  dois continuam passando depois da regeneração. Transpile Babel do
+  arquivo inteiro conferido. **Verificação de que o Ctrl+F realmente
+  ajuda na prática (abrir o GitHub, buscar, confirmar que cai no lugar
+  certo) fica a cargo do cliente** — mesma limitação de sempre, mas
+  aqui é só uma prova de UX simples, não algo que precise de hardware.
