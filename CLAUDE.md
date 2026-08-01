@@ -13622,3 +13622,129 @@ real, página 2 em branco, página 3 real, página 4 em branco).
   simulação de motor de impressão de Chrome antigo é possível de reproduzir
   no sandbox. Pedir pra conferir a pré-visualização (Ctrl+P, sem precisar
   gastar etiqueta física) do mesmo lote de 4 itens de teste primeiro.
+
+## Etiqueta de produto redesenhada — modelo com "bandeirinha" preta (por imagem de referência)
+
+Cliente mandou um print de referência (fundo branco, contorno arredondado,
+rótulos "CÓDIGO"/"DESCRIÇÃO"/"DATA RECEBIMENTO" em bandeirinha preta com
+ponta, código gigante) e pediu redesenho — com uma condição explícita:
+**"não publique, vamos trabalhar ela antes de subir"**. Só depois de 2
+rodadas de ajuste com prévia visual (via `Artifact`, não o site publicado)
+é que o cliente confirmou com "publica".
+
+### Fluxo de trabalho novo pra este tipo de pedido: prévia fiel via Artifact + Playwright, iterar antes de commitar
+
+Diferente do padrão de sempre (editar `index.html`, testar, commitar,
+publicar), esta foi a primeira vez que o cliente pediu explicitamente pra
+NÃO publicar até revisar — o processo usado:
+
+1. Implementei o redesenho DIRETO no `index.html` local, sem commitar.
+2. Gerei o HTML/CSS REAL que a função `buildEtiquetaItemHtml` produz
+   (mesma técnica dos harnesses — extrai o script, transpila, roda numa
+   `vm.Script`) e montei uma página de prévia com esse HTML/CSS real
+   (não um desenho à parte) em escala ampliada (`zoom:7`) — publicada
+   via `Artifact` (privado, não é o site em produção).
+3. **Usei o Playwright** (disponível no sandbox, `/tmp/node_modules/
+   playwright` + `/opt/pw-browsers/chromium`) pela primeira vez nesta
+   feature de etiquetas pra MEDIR de verdade (`getBoundingClientRect()`)
+   em vez de só julgar visualmente — importante porque o bug real desta
+   rodada (ver abaixo) só foi encontrado comparando números exatos, não
+   só olhando screenshot.
+4. Só depois do cliente confirmar via "publica" que rodei a suíte de
+   harnesses completa, atualizei as 3 asserções que ficaram desatualizadas
+   de propósito (mudança intencional, não regressão) e commitei/publiquei.
+
+### Mudanças de layout
+
+- **Contorno arredondado voltou** (`.etq-produto{border:0.35mm solid #000;
+  border-radius:1.6mm;}`) — tinha sido removido num pedido anterior
+  ("retire esse contorno da etiqueta"), mas a imagem de referência mostra
+  contorno — decisão do cliente prevalece sobre o pedido anterior.
+- **Rótulos viraram "bandeirinha"**: `.etq-tag` (substitui `.etq-rotulo`
+  só na etiqueta de PRODUTO — `.etq-endereco` continua usando `.etq-rotulo`
+  normal, sem bandeirinha, não fazia parte do pedido) — fundo preto, texto
+  branco negrito, ponta à direita via `clip-path:polygon(...)` (technique
+  já usada antes neste projeto pra formas que não são retângulo simples,
+  ex. a ilustração da tela de login).
+- **Código do produto**: maior (11pt→13pt) e alinhado à ESQUERDA (era
+  centralizado) — pedido explícito do cliente numa rodada de ajuste
+  ("O código pode centralizar a esquerda").
+- **"DATA:" voltou a ser "DATA RECEBIMENTO" por extenso** — revertendo
+  uma abreviação de uma rodada bem anterior — o rótulo agora é uma
+  bandeirinha com mais espaço, não precisa mais abreviar.
+- **Texto "CÓDIGO"/"DESCRIÇÃO" ganharam acento** (eram "CODIGO"/
+  "DESCRICAO" sem acento, provavelmente por descuido de quando foram
+  escritos) — bate com "ENDEREÇO" (já acentuado) e com a imagem de
+  referência.
+
+### Bug real corrigido nesta rodada: "DATA RECEBIMENTO" cortado — causa era um quirk de `inline-block`, não falta de espaço
+
+Cliente reportou (com print) "DATA RECEBIME[NTO]" cortado no meio, e
+"verifique se está lendo o código de barra". Investigação:
+
+- **1ª hipótese, correta mas incompleta**: rebalanceei `.etq-col-desc`
+  (flex 1.6→1.1) pra dar mais espaço à coluna de DATA (o rótulo
+  "DATA RECEBIMENTO", 17 caracteres, precisa de mais largura absoluta que
+  "DESCRIÇÃO", 9 caracteres — o oposto do que o antigo flex:1.6 pra desc
+  dava). Isso resolveu o corte HORIZONTAL — confirmado por medição real
+  via Playwright (`getBoundingClientRect`), não só visual.
+- **Bug novo exposto ao corrigir o primeiro**: com mais espaço horizontal
+  liberado, apareceu um problema VERTICAL — a 2ª linha da descrição
+  ("BICR BELENUS") passou a aparecer cortada pela metade (só a parte de
+  cima dos caracteres). **Causa raiz real, achada só depois de instrumentar
+  medições precisas** (não só olhar screenshot): `.etq-col` era um
+  `display:block` comum — a bandeirinha (`.etq-tag`, `display:inline-block`)
+  dentro dele sofria o quirk clássico de CSS onde um elemento inline-block
+  ganha um "strut" (linha invisível) que usa o `font-size`/`line-height`
+  HERDADO DO CONTAINER PAI (nesse caso, o padrão do navegador, 16px/normal
+  — já que `.etq-col` nunca define `font-size` próprio), não o do próprio
+  elemento (4.5pt) — isso empurrava a bandeirinha (e tudo depois dela) uns
+  1,9mm pra baixo, o suficiente pra description vazar no rodapé.
+  **`vertical-align:top` no `.etq-tag` NÃO resolveu** (testado, zero
+  efeito) — porque o problema é o TAMANHO da linha invisível, não o
+  alinhamento do conteúdo dentro dela. **Correção real**: `.etq-col`
+  virou `display:flex;flex-direction:column` — como flex items não usam
+  o mecanismo de "strut" de formatação inline, o quirk desaparece por
+  completo, sem precisar calcular/compensar o tamanho manualmente.
+- **Armadilha no próprio processo de depuração, documentada aqui pra não
+  repetir**: gastei várias rodadas de medição achando que uma correção não
+  tinha funcionado (números idênticos antes/depois de cada tentativa) —
+  a causa real era que o script de teste (`medir_bordas.js`) só LIA um
+  arquivo `medir.html` que tinha sido gerado UMA VEZ no início e nunca
+  mais regenerado a cada nova tentativa — eu estava remedindo sempre o
+  mesmo HTML desatualizado. **Lição**: ao criar um script de medição que
+  lê um arquivo intermediário gerado por outro script, sempre regenerar
+  esse arquivo intermediário a cada iteração antes de medir de novo, ou
+  unificar os dois passos num script só.
+- **Código de barras**: não corrigido por falta de bug — investigado e
+  confirmado matematicamente que é um limite físico, não um erro. Largura
+  aumentada de 38mm (regressão não percebida de uma rodada anterior) pra
+  43mm (o máximo que cabe com folga, calculado a partir do espaço interno
+  disponível de `.etq-produto`, ~46,5mm) — "021.030.00023" (13 caracteres)
+  precisa de ~178 módulos no Code128, então mesmo com 43mm cada módulo
+  fica em ~0,236mm (~1,9 pontos numa impressora térmica de 203dpi) —
+  apertado, mas fisicamente é o máximo que cabe numa etiqueta de 50mm com
+  esse tamanho de código. Documentado explicitamente pro cliente que só
+  teste físico confirma leitura — não dá pra "verificar" isso de verdade
+  sem hardware.
+- **Achado adicional, sinalizado ao cliente mas não "corrigido" (ele não
+  pediu)**: quando quantidade E endereço aparecem juntos (ambos no
+  `.etq-qtd-box`), o topo fica mais alto e sobra menos altura pra `.etq-
+  meio` (competem pelo mesmo orçamento vertical total, já que `.etq-
+  produto` é `flex-direction:column`) — a descrição pode cair pra 1 linha
+  só nesse caso específico. Não é bug (nada estoura/corta), é a etiqueta
+  se ajustando ao espaço disponível — ficou documentado na prévia
+  mostrada ao cliente, sem mudança de código.
+- Testado via harness real (jsdom + react-dom/client + `act()`, mesma
+  técnica de sempre) — 3 asserções de `harness_etiqueta_layout_endereco.js`
+  precisaram de atualização, refletindo mudanças de comportamento
+  INTENCIONAIS desta rodada (não regressão): texto "DATA:" → "DATA
+  RECEBIMENTO"; `-webkit-line-clamp:2` → `overflow:hidden;max-height`
+  (mecanismo trocado por causa do bug acima); `flex:1.8` → `flex:1.1` em
+  `.etq-col-desc` (rebalanceamento). Rodei de novo toda a suíte de
+  Etiquetas — **153 asserções, 0 falhas** entre os 7 harnesses. Transpile
+  Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos
+  (674/674). **Verificação visual de ponta a ponta (a prévia foi conferida
+  pelo cliente antes de publicar, mas o resultado impresso de verdade —
+  cores, contraste do preto, leitura do código de barras — fica a cargo
+  dele)** — mesma limitação de sempre (sandbox sem impressora física).
