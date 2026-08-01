@@ -4294,14 +4294,13 @@ function buildSummaryRows(counts, inventories){
   // só alimenta a linha "Divergências" (contagem de itens com QUALQUER
   // erro), não mais o cálculo de acuracidade em si (ver abaixo).
   const divergentes = counts.filter(c=>c.diferenca!==0 && c.diferenca!==null);
-  // Acuracidade por NOTA PARCIAL, único formato padronizado pra "acuracidade"
-  // em todo o app agora: cada item vira uma nota individual — contou 80 de
-  // um sistema de 100 = 80%, contou 25 de um sistema de 50 = 50% — e o
-  // resultado final é a MÉDIA SIMPLES dessas notas (não ponderada por
-  // volume/valor), exatamente como confirmado pelo cliente. Item sem saldo
-  // pra comparar (itemAcuracidade retorna null) fica de fora da média.
-  const itensComAcuracidade = counts.map(itemAcuracidade).filter(a=>a!=null);
-  const acuracidade = itensComAcuracidade.length>0 ? ((itensComAcuracidade.reduce((s,a)=>s+a,0)/itensComAcuracidade.length)*100).toFixed(1) : '100.0';
+  // Acuracidade GERAL, mesma fórmula padronizada em TODO o app agora
+  // (Home, Dashboard e aqui): média das médias mensais, via
+  // `acuracidadeMediaMensal` — cada mês com dado pesa igual, não importa o
+  // volume de contagens que teve. Pedido do cliente: "tudo tem que ser
+  // padronizado". Item sem saldo pra comparar (itemAcuracidade retorna
+  // null) continua de fora da média.
+  const acuracidade = acuracidadeMediaMensal(counts).toFixed(1);
   const valorDivergente = counts.reduce((s,c)=>s+Number(c.valorDivergente||0),0);
   return [
     {Indicador:'Data do relatório', Valor: new Date().toLocaleString('pt-BR')},
@@ -6662,17 +6661,18 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
     const relevantesBruto = [...counts, ...historicoConcluidas].filter(c=>!c.data || c.data<=dataLimite);
     const relevantes = ultimaContagemPorDocumento(relevantesBruto);
     const divergentes = relevantes.filter(c=>c.diferenca!==0 && c.diferenca!==null);
-    // Acuracidade por NOTA PARCIAL (itemAcuracidade, 0-100% por item — mesma
-    // fórmula já usada nos gráficos "Acuracidade Semanal"/"Mensal"), não mais
-    // binária (bateu/não bateu) — pedido do cliente ("Opção A": todo
-    // indicador de acuracidade do app no mesmo critério), depois de comparar
-    // com a planilha oficial "Indicador Acuracidade" da Selgron (que usa
-    // binário) e decidir que o app deve priorizar consistência interna em
-    // vez de bater com aquela planilha. Item sem saldo pra comparar
-    // (itemAcuracidade retorna null) fica de fora da média, não conta nem a
-    // favor nem contra.
-    const itensComAcuracidade = relevantes.map(itemAcuracidade).filter(a=>a!=null);
-    const acuracidade = itensComAcuracidade.length ? (itensComAcuracidade.reduce((s,a)=>s+a,0)/itensComAcuracidade.length*100) : 100;
+    // Acuracidade GERAL, mesma fórmula padronizada em TODO o app agora
+    // (Home, Dashboard e o relatório Excel) — média das médias mensais, via
+    // `acuracidadeMediaMensal`: cada mês com dado pesa igual, não importa o
+    // volume de contagens que teve. Pedido do cliente: "tudo tem que ser
+    // padronizado. como vou mostrar alguma coisa que contem dados
+    // diferentes??" — antes esta função usava a média direta por item
+    // (item pesa igual, mês com mais volume dominava o resultado),
+    // enquanto "Acuracidade Geral" do Dashboard já tinha virado média das
+    // médias mensais numa rodada anterior; os dois cards voltavam a
+    // divergir por fórmula, não por bug. Item sem saldo pra comparar
+    // (itemAcuracidade retorna null) continua de fora da média.
+    const acuracidade = acuracidadeMediaMensal(relevantes);
     return {total:relevantes.length, divergentes:divergentes.length, acuracidade};
   }
   const hoje = acumuladoAte(hojeStr);
@@ -11805,6 +11805,47 @@ function getMonthInfo(dataStr){
   };
 }
 
+// Acuracidade GERAL, formato único e padronizado — pedido explícito do
+// cliente: "tudo tem que ser padronizado... como vou mostrar alguma coisa
+// que contem dados diferentes??", depois de ver "Acuracidade do Estoque"
+// (Home) e "Acuracidade Geral" (Dashboard) mostrarem números diferentes
+// (o 1º ainda usava média direta por item; o 2º já tinha virado média das
+// médias mensais, "Opção 2" escolhida numa rodada anterior). Esta função é
+// a ÚNICA fonte de verdade agora pra qualquer indicador de "acuracidade
+// geral/do estoque" do app — Home, Dashboard e o relatório Excel passam
+// todos por aqui.
+//
+// Agrupa o pool por mês civil (YYYY-MM, `getMonthInfo`) — só os meses que
+// TÊM pelo menos 1 item com acuracidade calculável (`itemAcuracidade`
+// diferente de null) entram na conta, sem gerar mês vazio artificial (
+// diferente de `computeMonthlyStats`, que zero-preenche meses pra manter
+// o eixo X do gráfico contínuo — aqui não tem eixo nenhum, um mês sem
+// dado simplesmente não existe pra este cálculo). Cada mês presente pesa
+// IGUAL na média final, não importa quantos itens ele teve — é essa a
+// definição que o cliente confirmou ("Opção 2").
+//
+// Deliberadamente SEM recorte de ano/período — "geral"/"do estoque" nesta
+// app sempre foram indicadores CUMULATIVOS desde o início dos dados (Home
+// nunca teve corte de ano), diferente do gráfico "Acuracidade Mensal"
+// (que É escopado a "ano corrente", de propósito, só pra não sobrecarregar
+// o eixo X de um gráfico visual) — replicar esse mesmo corte aqui
+// esconderia dado real de anos anteriores só pra "bater" com o gráfico,
+// o que não foi pedido.
+function acuracidadeMediaMensal(pool){
+  const porMes = {};
+  pool.forEach(c=>{
+    if(!c.data) return;
+    const acc = itemAcuracidade(c);
+    if(acc==null) return;
+    const {key} = getMonthInfo(c.data);
+    if(!porMes[key]) porMes[key] = {soma:0, n:0};
+    porMes[key].soma += acc;
+    porMes[key].n += 1;
+  });
+  const mediasMensais = Object.values(porMes).map(m=>m.soma/m.n);
+  return mediasMensais.length>0 ? (mediasMensais.reduce((s,m)=>s+m,0)/mediasMensais.length*100) : 100;
+}
+
 // Traduz o filtro de período do painel "Filtros" (Dashboard/Indicadores) num
 // par de datas concreto. Pedido do cliente: abandonar o conceito de "10/26
 // semanas" (pouco intuitivo, amarrado à granularidade do gráfico) por
@@ -12461,10 +12502,21 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   // `divergentes` continua binário de propósito — ainda alimenta o card
   // "Itens Divergentes" (ao lado de "Acuracidade Geral"), que é uma
   // pergunta diferente ("quantos itens tiveram QUALQUER divergência", não
-  // "qual a nota média"). O cálculo de `acuracidade` em si (usado pelo
-  // card "Acuracidade Geral") foi movido pra mais abaixo nesta função,
-  // depois de `monthlyStats` ficar disponível — ver comentário lá
-  // ("Acuracidade Geral vira a média das médias mensais").
+  // "qual a nota média").
+  //
+  // Acuracidade GERAL, mesma fórmula padronizada em TODO o app agora
+  // (Home, Dashboard e o relatório Excel) — média das médias mensais, via
+  // `acuracidadeMediaMensal`, sobre o MESMO pool de sempre desta seção
+  // (`todasParaQualidade`, deduplicado por documento). Pedido do cliente:
+  // "tudo tem que ser padronizado. como vou mostrar alguma coisa que
+  // contem dados diferentes??" — versão anterior deste card reaproveitava
+  // `monthlyStats` (ano corrente, `poolTendencia` não-deduplicado, o mesmo
+  // pool do gráfico "Acuracidade Mensal") só pra chegar na mesma fórmula
+  // de "média das médias mensais" — agora que a fórmula virou padrão do
+  // app inteiro, cada tela volta a usar o PRÓPRIO pool já estabelecido
+  // (aqui, `todasParaQualidade`), só a forma de tirar a média que é
+  // compartilhada.
+  const acuracidade = acuracidadeMediaMensal(todasParaQualidade).toFixed(1);
   const valorDivergente = todasParaQualidade.reduce((s,c)=>s+Number(c.valorDivergente||0),0);
   // Card "Itens Divergentes" (Resumo da Operação) — "itens"/"documentos" e
   // "códigos distintos" voltaram a ser números potencialmente diferentes
@@ -12591,27 +12643,6 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   // gráfico sempre mostra o ano corrente inteiro até hoje.
   const anoAtualStr = String(new Date().getFullYear()) + '-01-01';
   const monthlyStats = computeMonthlyStats(poolTendencia, anoAtualStr, hojeStr);
-
-  // Acuracidade Geral vira a média das médias mensais — cliente comparou
-  // este card com "Acuracidade do Estoque" (Home), viu números diferentes
-  // ("porque não entendi esse calculo") e, depois de corrigido o bug de
-  // divergência entre os dois (ver CLAUDE.md), pediu uma mudança de
-  // definição de verdade: "Ainda precisamos revisar a acuracidade geral,
-  // que seria a média de todos os meses do ano". Perguntado entre as duas
-  // fórmulas possíveis (média direta por item, onde mês com mais volume
-  // pesa mais — o que já era feito até aqui; ou média das médias mensais,
-  // cada mês pesando igual) — cliente escolheu explicitamente "Opção 2".
-  //
-  // Reaproveita `monthlyStats` (o MESMO array que já alimenta o gráfico
-  // "Acuracidade Mensal" — ano corrente até hoje, independente do filtro
-  // de período do painel "Filtros", mesma decisão de sempre) — o card
-  // "Acuracidade Geral" passa a ser matematicamente igual à média das
-  // barras desse gráfico, sem duplicar nenhuma lógica de cálculo. Mês sem
-  // nenhum item com acuracidade calculável (`acuracidade:null`, ver
-  // computeMonthlyStats) fica de fora da média — mesmo critério de "sem
-  // dado, não conta nem a favor nem contra" já usado no resto do app.
-  const mesesComAcuracidade = monthlyStats.filter(m=>m.acuracidade!=null);
-  const acuracidade = mesesComAcuracidade.length>0 ? (mesesComAcuracidade.reduce((s,m)=>s+m.acuracidade,0)/mesesComAcuracidade.length).toFixed(1) : '100.0';
 
   // "Contados × Divergências" (pizza) — pedido do cliente: "indicador que
   // me mostra quantidade contada X divergências", "gráfico de pizza de

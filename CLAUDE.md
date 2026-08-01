@@ -14383,6 +14383,10 @@ escolheu explicitamente **"Opção 2"**.
   que mudou por cima dela). Perguntei ao cliente se quer a Home também
   trocada pra bater de novo com o Dashboard, ainda sem resposta no momento
   desta rodada.
+  **Atualização — SUPERADA logo em seguida**: o cliente respondeu que
+  quer tudo padronizado (ver seção "Acuracidade padronizada em todo o
+  app..." logo abaixo) — não usar este parágrafo como referência do
+  estado atual, a Home também passou a usar a mesma fórmula.
 - Testado via harness real (jsdom + react-dom/client + `act()`, mesma
   técnica rigorosa de sempre): cenário desenhado pra distinguir as duas
   fórmulas com clareza (mês A com 1 item batendo 100%, mês B com 9 itens
@@ -14401,3 +14405,103 @@ escolheu explicitamente **"Opção 2"**.
   tocada). **Verificação do número real em produção fica a cargo do
   cliente** — mesma limitação de sempre (login exige Supabase Auth real,
   não simulável no sandbox sem rede).
+
+## Acuracidade padronizada em todo o app — mesma fórmula na Home, no Dashboard e no Excel
+
+Continuação direta da rodada anterior — depois de eu avisar que "Acuracidade
+Geral" (Dashboard, agora média das médias mensais) tinha voltado a divergir
+de "Acuracidade do Estoque" (Home, ainda média direta por item) e perguntar
+se a Home também devia trocar, o cliente respondeu sem deixar dúvida: **"claro,
+tudo tem que ser padronizado. como vou mostrar aguma coisa que contem dados
+diferentes??"** — ou seja, não é só Home+Dashboard: qualquer lugar do app que
+mostre "acuracidade geral/do estoque" precisa usar a MESMA fórmula, incluindo
+o relatório Excel (`buildSummaryRows`, linha "Acuracidade do estoque (%)"),
+que também nunca tinha usado média das médias mensais.
+
+- **`acuracidadeMediaMensal(pool)`** (função nova, perto de `getMonthInfo`)
+  — vira a ÚNICA fonte de verdade pra esse cálculo em todo o app. Agrupa o
+  pool por mês (`getMonthInfo(c.data).key`), tira a média de `itemAcuracidade`
+  dentro de cada mês, e devolve a média SIMPLES dessas médias mensais (0-100,
+  não 0-1) — mesma "Opção 2" já confirmada pelo cliente na rodada anterior,
+  só que agora extraída como função compartilhada em vez de reimplementada
+  local em cada tela.
+  - **Só entram meses que TÊM pelo menos 1 item com acuracidade
+    calculável** — sem zero-preenchimento de mês vazio (diferente de
+    `computeMonthlyStats`, que zero-preenche baldes de mês pra manter o
+    eixo X de um GRÁFICO contínuo — uma função de resumo/scalar não tem
+    esse motivo pra existir).
+  - **Item sem `data`** fica de fora (não dá pra agrupar por mês sem
+    saber o mês) — item sem saldo pra comparar (`itemAcuracidade` retorna
+    `null`) também fica de fora, mesmo critério "sem dado, não conta nem
+    a favor nem contra" já usado em todo o resto do app.
+  - **Deliberadamente NÃO escopada por ano/período** (decisão minha,
+    arquitetural, não perguntada explicitamente ao cliente) — diferente
+    da "Acuracidade Mensal" (gráfico, que sempre foi ano corrente até
+    hoje, por razão de eixo de gráfico), "Acuracidade Geral"/"Acuracidade
+    do Estoque" sempre foram indicadores CUMULATIVOS desde o início do
+    histórico deste app (ver "KPIs — só dado real, nada fabricado" bem
+    acima) — manter esse escopo (todo o histórico, sem corte de ano/mês)
+    foi a leitura mais fiel ao que esses dois cards sempre quiseram dizer.
+  - **Pool de entrada de cada tela CONTINUA o mesmo de sempre** — só a
+    fórmula que tira a média é compartilhada, não o conjunto de itens: Home
+    continua passando `relevantes` (`[...counts, ...historicoConcluidas]`
+    filtrado por data-limite + `ultimaContagemPorDocumento`), Dashboard
+    continua passando `todasParaQualidade` (o mesmo pool deduplicado de
+    "Resumo da Operação", sem filtro de período do painel "Filtros"), e o
+    Excel continua passando `counts` (o array recebido pela função, já
+    filtrado/combinado por quem chama `ReportsScreen`) — nenhum dos 3
+    escopos de POOL foi alterado, só a fórmula por cima deles.
+- **3 pontos de consumo atualizados**:
+  - `Home.acumuladoAte`: `const acuracidade = acuracidadeMediaMensal(relevantes);`
+    (era a média direta por item, `itensComAcuracidade`).
+  - `Dashboard` ("Resumo da Operação"): `const acuracidade =
+    acuracidadeMediaMensal(todasParaQualidade).toFixed(1);` — voltou a usar
+    o pool próprio da seção (`todasParaQualidade`), não mais `monthlyStats`/
+    `poolTendencia` (que era só um jeito de chegar na mesma fórmula
+    reaproveitando o array do gráfico "Acuracidade Mensal", numa decisão de
+    escopo que fazia sentido quando só o Dashboard usava essa fórmula —
+    agora que a fórmula em si é compartilhada via função, cada tela volta a
+    usar o pool que sempre foi seu, sem depender do pool de OUTRA seção). O
+    bloco `mesesComAcuracidade`/`monthlyStats`-based que ficava mais abaixo
+    na função (logo depois do cálculo de `monthlyStats` pro gráfico) foi
+    removido por completo — sem essa remoção, sobrava uma 2ª declaração
+    `const acuracidade` na mesma função, JavaScript inválido (nunca chegou
+    a ser publicado assim, pego antes do transpile).
+  - `buildSummaryRows` (Excel, "Resumo"): `const acuracidade =
+    acuracidadeMediaMensal(counts).toFixed(1);` (era a média direta por
+    item, `itensComAcuracidade`) — a linha "Divergências" do relatório
+    continua binária, sem mudança (pergunta diferente, "quantos itens
+    tiveram QUALQUER divergência", não "qual a nota média").
+- Testado via harness real (jsdom + react-dom/client + `act()`, mesma
+  técnica rigorosa de sempre) — `acuracidadeMediaMensal` isolada (cenário
+  mês-A-vs-mês-B já usado antes, item sem saldo fora da média, item sem
+  data fora da média, pool vazio retorna 100 sem quebrar); `buildSummaryRows`
+  usando a mesma função (exemplo exato do cliente, 80%+50% no mesmo mês =
+  65%); e — a prova de ponta a ponta do pedido em si — Home e Dashboard
+  renderizados com o MESMO conjunto de contagens mostram **exatamente o
+  mesmo número** (75.0% nos dois, no teste), confirmando a padronização de
+  verdade, não só a fórmula isolada. Os 2 harnesses das rodadas anteriores
+  que tinham ficado desatualizados por causa desta mudança foram corrigidos:
+  `harness_acuracidade_nota_parcial.js` (checava `itensComAcuracidade`/
+  `mesesComAcuracidade` por tela — passou a checar `acuracidadeMediaMensal`
+  nos 3 pontos de consumo) e `harness_acuracidade_home_dashboard_bate.js`
+  (que tinha sido reescrito na rodada anterior pra esperar Home E Dashboard
+  DIFERENTES por design — voltou a esperar IGUALDADE, agora por construção).
+  `harness_build_summary_rows_nota_parcial.js` também precisou de ajuste —
+  a fórmula nova exige `c.data` (agrupa por mês), os counts sintéticos do
+  teste ganharam uma data (mesmo mês, então o resultado esperado do exemplo
+  do cliente, 65%, continuou batendo). Rodei de novo toda a suíte de
+  regressão disponível no scratchpad (~380 asserções somadas, só as mesmas
+  3 falhas já confirmadas pré-existentes/sem relação com esta mudança:
+  `harness_actions_beside_content.js`/`harness_dashboard_render_dedup.js`/
+  `harness_ultima_contagem_por_codigo.js`). Transpile Babel do arquivo
+  inteiro e balanceamento de chaves do CSS conferidos (668/668, sem
+  mudança — só JS, nenhuma classe CSS tocada). **Verificação dos números
+  reais em produção fica a cargo do cliente** — mesma limitação de sempre
+  (login exige Supabase Auth real, não simulável no sandbox sem rede) —
+  mas como a Home e o Dashboard agora compartilham a mesma função, os dois
+  cards devem voltar a bater exatamente no próximo carregamento da página
+  (a menos que os pools de dado que alimentam cada um de fato divirjam —
+  ex. Home considera contagens até uma data-limite específica, Dashboard
+  não tem esse corte — nesse caso a diferença seria por dado real, não por
+  fórmula).
