@@ -6671,9 +6671,18 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
     // vez de bater com aquela planilha. Item sem saldo pra comparar
     // (itemAcuracidade retorna null) fica de fora da média, não conta nem a
     // favor nem contra.
-    const itensComAcuracidade = relevantes.map(itemAcuracidade).filter(a=>a!=null);
+    //
+    // "Acuracidade contar apenas depois de análise concluída" — item ainda
+    // aguardando recontagem/análise do líder/Armazém/Diretoria não entra na
+    // média (nem a favor nem contra) até ter veredito, mesmo já tendo sido
+    // contado dentro da data limite (ver contagemAnaliseConcluida). Como
+    // `data` nunca muda depois de gravada, o item volta a contar sozinho, na
+    // hora que conclui, no dia em que foi de fato contado — nunca "pula" pro
+    // mês da decisão.
+    const relevantesConcluidas = relevantes.filter(contagemAnaliseConcluida);
+    const itensComAcuracidade = relevantesConcluidas.map(itemAcuracidade).filter(a=>a!=null);
     const acuracidade = itensComAcuracidade.length ? (itensComAcuracidade.reduce((s,a)=>s+a,0)/itensComAcuracidade.length*100) : 100;
-    return {total:relevantes.length, divergentes:divergentes.length, acuracidade};
+    return {total:relevantesConcluidas.length, divergentes:divergentes.length, acuracidade};
   }
   const hoje = acumuladoAte(hojeStr);
   const ontem = acumuladoAte(ontemStr);
@@ -11776,6 +11785,44 @@ function itemAcuracidade(c){
   return Math.max(0, 1 - Math.abs(c.diferenca)/c.saldoSistema);
 }
 
+// Pedido explícito do cliente: "Acuracidade contar apenas depois de análise
+// concluída." — item contado no fim de um mês mas ainda aguardando
+// recontagem/análise do líder/Armazém/Diretoria não deve entrar em NENHUMA
+// média de acuracidade (Home, "Acuracidade Geral", "Acuracidade Semanal/
+// Mensal") até o veredito sair — nem como acerto, nem como erro. `data` do
+// registro nunca muda (é fixada uma vez em `CountStep.finalize`), então
+// assim que a análise conclui, o item passa a contar automaticamente pra
+// trás, no MÊS/SEMANA em que foi de fato contado (não no mês em que a
+// decisão saiu) — resolve a dúvida do cliente sobre "fica em julho ou vira
+// agosto": sempre fica na data original, só a CONTAGEM na média que é
+// adiada até concluir.
+//
+// Escopo deliberadamente restrito a MÉDIAS DE ACURACIDADE — não afeta
+// contagem de VOLUME ("Contagens na Semana", "Contagens Concluídas Hoje")
+// nem os painéis de divergência (Itens Divergentes, Valor Divergente,
+// Divergência por Família/Grupo, Principais Causas de Erro, Top
+// Divergências), que continuam mostrando pendência em aberto — é
+// literalmente o propósito dessas telas (ver DivergentItemsPanel/
+// SolicitacaoArmazemPanel/DiretoriaApprovalPanel), esconder um item ainda
+// não decidido delas seria birdear a existência da própria fila.
+function contagemAnaliseConcluida(c){
+  // Linha do histórico (contagens_historico) — usa o Status ORIGINAL da
+  // planilha. `historicoRowToCountLike` (historicoConcluidas) já vem
+  // pré-filtrada só pros 3 status concluídos, então sempre bate `true` aqui
+  // — a checagem serve mesmo pro pool de "Tendência"
+  // (historicoParaTendencia/poolTendencia), que inclui "Pendente"/etc. de
+  // propósito só pra fins de VOLUME (ver fetchContagensHistoricoParaTendencia).
+  if(c._fromHistorico || c._fromHistoricoTendencia){
+    return HISTORICO_STATUS_CONCLUIDOS.includes(c._statusOriginal);
+  }
+  // Contagem ao vivo (`contagens`) — concluída quando NÃO está em nenhum dos
+  // status "em aberto" (aguardando segunda contagem/análise do líder/
+  // Armazém/aprovação da Diretoria). `aprovado_auto`/`aprovado_segunda`/
+  // `aprovado_lider`/`ajuste_aprovado_diretoria` (e qualquer status futuro
+  // fora dessa lista) contam como concluídos.
+  return !OPEN_STATUSES.includes(c.statusAprovacao);
+}
+
 // Agrupa por MÊS civil (YYYY-MM) — mesma ideia de `getWeekInfo`, granularidade
 // maior. Usado pelo gráfico "Acuracidade Mensal".
 const NOMES_MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
@@ -11922,6 +11969,10 @@ function computeWeeklyStats(counts, dataInicioStr, dataFimStr){
     const {key} = getWeekInfo(c.data);
     if(!buckets[key]) return; // fora do intervalo escolhido
     buckets[key].total += 1;
+    // "Contar apenas depois de análise concluída" — item ainda pendente
+    // conta pro VOLUME da semana (total, acima), mas não entra na média de
+    // acuracidade até ter veredito (ver contagemAnaliseConcluida).
+    if(!contagemAnaliseConcluida(c)) return;
     const acc = itemAcuracidade(c);
     if(acc!=null){
       buckets[key].somaAcuracidade += acc;
@@ -11961,6 +12012,9 @@ function computeMonthlyStats(counts, dataInicioStr, dataFimStr){
     const {key} = getMonthInfo(c.data);
     if(!buckets[key]) return;
     buckets[key].total += 1;
+    // Mesmo critério de computeWeeklyStats: volume conta sempre, acuracidade
+    // só depois de concluído.
+    if(!contagemAnaliseConcluida(c)) return;
     const acc = itemAcuracidade(c);
     if(acc!=null){
       buckets[key].somaAcuracidade += acc;
@@ -12439,7 +12493,17 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   // `divergentes` continua binário de propósito — ainda alimenta o card
   // "Itens Divergentes" (ao lado deste), que é uma pergunta diferente
   // ("quantos itens tiveram QUALQUER divergência", não "qual a nota média").
-  const itensComAcuracidadeGeral = todasParaQualidade.map(itemAcuracidade).filter(a=>a!=null);
+  // E continua incluindo item ainda pendente, de propósito — é a fila que
+  // ainda precisa de decisão, esconder isso dali seria mentir sobre o
+  // tamanho do backlog.
+  //
+  // "Acuracidade Geral" (este card), diferente de "Itens Divergentes", só
+  // conta item já CONCLUÍDO (statusAprovacao fora de OPEN_STATUSES, ou
+  // status já resolvido no histórico) — pedido explícito do cliente
+  // ("Acuracidade contar apenas depois de análise concluída"), pra um item
+  // ainda em recontagem/análise/Armazém/Diretoria não distorcer a nota antes
+  // de ter veredito. Ver contagemAnaliseConcluida.
+  const itensComAcuracidadeGeral = todasParaQualidade.filter(contagemAnaliseConcluida).map(itemAcuracidade).filter(a=>a!=null);
   const acuracidade = itensComAcuracidadeGeral.length>0 ? ((itensComAcuracidadeGeral.reduce((s,a)=>s+a,0)/itensComAcuracidadeGeral.length)*100).toFixed(1) : '100.0';
   const valorDivergente = todasParaQualidade.reduce((s,c)=>s+Number(c.valorDivergente||0),0);
   // Card "Itens Divergentes" (Resumo da Operação) — "itens"/"documentos" e
@@ -12544,9 +12608,14 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   // linha do histórico carrega a DATA REAL em que a contagem aconteceu
   // (fev-jul/2026, não a data de importação), então soma na semana certa
   // igual a qualquer contagem ao vivo — nenhum pico artificial.
+  // `_fromHistoricoTendencia`/`_statusOriginal` carregam o Status CRU da
+  // planilha (pode ser "Pendente" — esse pool inclui de propósito, ver
+  // fetchContagensHistoricoParaTendencia) — é o que permite
+  // `contagemAnaliseConcluida` diferenciar "já concluído" de "ainda em
+  // aberto" nesses itens, sem precisar de mais nenhum campo.
   const historicoTendenciaComoContagem = historicoParaTendencia
     .filter(h=>h.data)
-    .map(h=>({data:h.data, diferenca:h.diferenca, saldoSistema:h.saldo_sistema, acuracidade:h.acuracidade}));
+    .map(h=>({data:h.data, diferenca:h.diferenca, saldoSistema:h.saldo_sistema, acuracidade:h.acuracidade, _fromHistoricoTendencia:true, _statusOriginal:String(h.status||'').trim()}));
   const poolTendencia = [...counts, ...historicoTendenciaComoContagem];
   // Janela dos gráficos é escolhível (cliente pediu): fixa em 10/26 semanas,
   // "todo o período" (da contagem mais antiga do pool até hoje) ou um
