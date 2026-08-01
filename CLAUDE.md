@@ -14288,3 +14288,53 @@ selecionado no painel "Filtros" logo acima.
   tocada). **Verificação visual de ponta a ponta fica a cargo do
   cliente** — mesma limitação de sempre (login exige Supabase Auth real,
   não simulável no sandbox sem rede).
+
+## Bug real: "Acuracidade do Estoque" (Home) e "Acuracidade Geral" (Dashboard) mostravam números diferentes
+
+Cliente mandou print dos dois cards (88.8% na Home, 88.7% no Dashboard) e
+perguntou "porque não entendi esse calculo e porque está diferente nos
+cards". Investigando, achei uma causa real: `historicoRowToCountLike`
+(usada pra converter uma linha de `contagens_historico` no formato de
+"contagem" que o app já sabe ler) **nunca copiava o campo `acuracidade`**
+(o valor já pré-calculado, importado direto da planilha original do
+cliente).
+
+- `Home.acumuladoAte` usa a linha CRUA de `historicoConcluidas` direto
+  (nunca passa por `historicoRowToCountLike`) — `itemAcuracidade` lê
+  `c.acuracidade` (o valor pré-calculado da planilha) direto.
+- `Dashboard` (card "Acuracidade Geral") usa `historicoComoContagem =
+  historicoConcluidas.map(historicoRowToCountLike)` — como esse campo
+  nunca era copiado, `itemAcuracidade` sempre caía no fallback (recalcular
+  a partir de `diferenca`/`saldoSistema`) pra QUALQUER linha do histórico
+  passando por esse caminho.
+- **As duas fórmulas batem exatamente pra `saldo_sistema≠0`** (mesma
+  conta: `max(0, 1-|diferença|/sistema)`) — mas **divergem no caso
+  `saldo_sistema=0`**: a planilha original pode ter guardado um valor
+  diferente do que a regra do app produz pra esse caso
+  (`diferenca===0?1:0`, ver "Bug crítico real: item com saldo do sistema
+  ZERO..." no histórico). Com milhares de linhas de histórico, essa
+  pequena divergência em cada linha de saldo zero somava o suficiente pra
+  os dois cards mostrarem 88.8% x 88.7% em vez do mesmo número.
+- **Corrigido**: `historicoRowToCountLike` agora copia `acuracidade:
+  h.acuracidade` no objeto retornado — os dois caminhos (linha crua na
+  Home, linha convertida no Dashboard) passam a usar a MESMA fonte de
+  verdade sempre que a planilha já trouxe o valor pré-calculado. Item sem
+  `acuracidade` pré-calculada continua caindo no cálculo normal a partir
+  de `diferenca`/`saldoSistema`, sem regressão.
+- Testado via harness Node isolado (mesma técnica de sempre): reproduzido
+  o cenário exato (mesma linha crua, com `saldo_sistema=0` e um
+  `acuracidade` pré-calculado deliberadamente diferente da regra do app) —
+  antes do fix, `itemAcuracidade` na linha CRUA e na linha CONVERTIDA
+  davam valores diferentes; depois, batem exatamente. Confirmado também
+  via render de verdade (jsdom+react-dom/client+`act()`) de `Home`/
+  `Dashboard` com o mesmo conjunto de dados (contagem ao vivo + 2 linhas de
+  histórico, uma com saldo zero) — os dois cards mostram **exatamente o
+  mesmo percentual** (79.3% nos dois, no teste). Rodei de novo toda a
+  suíte de regressão disponível no scratchpad (351 asserções, só as mesmas
+  3 falhas já confirmadas pré-existentes/sem relação com esta mudança).
+  Transpile Babel do arquivo inteiro conferido (só JS, nenhuma classe CSS
+  tocada). **Verificação do número real em produção fica a cargo do
+  cliente** — mesma limitação de sempre (login exige Supabase Auth real,
+  não simulável no sandbox sem rede) — mas como a correção é só na
+  LEITURA (não depende de nenhuma migração de SQL), os dois cards já devem
+  bater exatamente no próximo carregamento da página.

@@ -10987,6 +10987,22 @@ function historicoRowToCountLike(h){
     saldoSistema: h.saldo_sistema,
     diferenca: h.diferenca,
     percentual,
+    // Bug real corrigido aqui: esse campo NUNCA era copiado — `itemAcuracidade`
+    // então caía sempre no fallback (recalcular a partir de diferenca/
+    // saldoSistema) pra QUALQUER consumidor que passasse pela conversão
+    // (Dashboard, "Acuracidade Geral"), enquanto `Home.acumuladoAte` usa a
+    // linha CRUA de `historicoConcluidas` direto (sem passar por esta função),
+    // que já tem `.acuracidade` intacto — lia o valor PRÉ-CALCULADO da
+    // planilha original, não o recalculado. As duas fórmulas batem exatamente
+    // pra saldo_sistema≠0 (mesma conta: max(0,1-|diferença|/sistema)), mas
+    // divergem no caso saldo_sistema=0 (a planilha pode ter guardado um valor
+    // diferente do que a regra `diferenca===0?1:0` do app produziria) — com
+    // milhares de linhas de histórico, isso bastava pra os dois cards
+    // ("Acuracidade do Estoque" na Home x "Acuracidade Geral" no Dashboard)
+    // mostrarem números levemente diferentes (88.8% x 88.7%, reportado pelo
+    // cliente). Copiar o valor aqui faz os dois usarem a MESMA fonte de
+    // verdade, sempre.
+    acuracidade: h.acuracidade,
     valorDivergente: h.valor_divergente!=null ? Math.abs(h.valor_divergente) : 0,
     classificacao: {label: display.text, level: display.level, rule: ''},
     statusAprovacao: null, // sem equivalente 1:1 no vocabulário do app — usa _statusDisplay
