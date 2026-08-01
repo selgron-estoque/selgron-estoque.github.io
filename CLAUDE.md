@@ -14258,3 +14258,33 @@ coloque um ao lado do outro."
   **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma
   limitação de sempre (login exige Supabase Auth real, não simulável no
   sandbox sem rede).
+
+## "Top 5 Maiores Divergências" passa a respeitar o filtro de período
+
+Cliente pediu: "Top 5 Maiores Divergências, mostrar de acordo com o filtro
+selecionado" — o painel sempre usou `todasParaQualidade` (pool
+deduplicado por documento de "Resumo da Operação") sem NENHUM corte de
+data, ordenado por |diferença| — um item de anos atrás com diferença
+grande continuava aparecendo no topo mesmo com "Últimos 30 dias"
+selecionado no painel "Filtros" logo acima.
+
+- `topDivergentes` movido pra depois de `dataInicioStr`/`dataFimStr`
+  serem calculados (antes vinha ANTES, sem acesso a essas variáveis) —
+  `todasParaQualidadeNoPeriodo = todasParaQualidade.filter(c=>c.data &&
+  c.data>=dataInicioStr && c.data<=dataFimStr)` alimenta o sort agora, em
+  vez de `todasParaQualidade` cru. Mesma base deduplicada por documento
+  de sempre (nunca mostra a mesma cadeia de recontagem duas vezes) — só
+  ganhou o corte de data por cima, mesmo padrão já usado em
+  `divergentesNoPeriodo` ("Divergência por Família/Grupo").
+- Testado via harness real (jsdom + react-dom/client + `act()`, mesma
+  técnica rigorosa de sempre): item de 2019 com a MAIOR diferença (500)
+  fica de fora da tabela com o filtro padrão ("Últimos 30 dias"), mesmo
+  itens bem menores dentro do período aparecendo normalmente; trocar pro
+  pill "Todos os períodos" traz o item de 2019 de volta. Rodei de novo
+  toda a suíte de regressão disponível no scratchpad (341 asserções, só
+  as mesmas 3 falhas já confirmadas pré-existentes/sem relação com esta
+  mudança). Transpile Babel do arquivo inteiro e balanceamento de chaves
+  do CSS conferidos (668/668, sem mudança — só JS, nenhuma classe CSS
+  tocada). **Verificação visual de ponta a ponta fica a cargo do
+  cliente** — mesma limitação de sempre (login exige Supabase Auth real,
+  não simulável no sandbox sem rede).
