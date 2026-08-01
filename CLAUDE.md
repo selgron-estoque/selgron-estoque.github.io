@@ -13748,3 +13748,112 @@ Cliente reportou (com print) "DATA RECEBIME[NTO]" cortado no meio, e
   pelo cliente antes de publicar, mas o resultado impresso de verdade —
   cores, contraste do preto, leitura do código de barras — fica a cargo
   dele)** — mesma limitação de sempre (sandbox sem impressora física).
+
+## Primeiro teste físico real da etiqueta redesenhada — 3 problemas reais corrigidos
+
+Cliente mandou a PRIMEIRA foto de uma impressão de verdade (não simulação)
+da etiqueta redesenhada — 2 etiquetas lado a lado, saldo "QTD: 1 PC",
+"000.47035", "CHAPA MENOR", "075-B-1" — e reportou 3 problemas concretos:
+"as cores tem que ser só preto ou branco, as descrições estão em cinza e
+impressora não imprime"; "código de barra não está lendo... remova o
+código de baixo... imprima o código de barras normalmente sem ser em
+negrito"; "Em baixo de QTD tem espaço para o endereço, não justifica esse
+espaçamento que aumenta quando imprime com endereço" (referindo-se ao
+trade-off que eu mesmo já tinha sinalizado numa rodada anterior). Mesmo
+fluxo de sempre pra este tipo de pedido: implementei sem commitar, verifiquei
+com Playwright, mostrei prévia atualizada, só publiquei depois do cliente
+confirmar com "publica".
+
+### 1. Texto "em cinza" — não era cor, era peso de fonte fino demais pra impressora térmica
+
+Conferido que nenhuma classe `.etq-*` tinha `color` nenhum setado (sempre
+herdava preto puro do navegador) — não era bug de cor CSS. A causa real:
+`.etq-valor` (usado pela descrição) e `.etq-qtd`/`.etq-endereco-mat` tinham
+`font-weight:400` (traço fino) — numa impressora térmica, traço fino
+imprime de forma incompleta/desbotada (dot-dropout), o que fotografado
+parece "cinza" mesmo sendo puro preto no arquivo. `.etq-valor-data` (a data)
+já era `font-weight:700` e por isso saiu sólida na mesma foto — confirma o
+diagnóstico. Corrigido: `.etq-valor`/`.etq-qtd`/`.etq-endereco-mat` viraram
+`font-weight:700`.
+
+### 2. Código de barras "não lê" — 2 correções + limite físico honesto
+
+- **Texto pequeno com o código embaixo do código de barras removido**
+  (`.etq-codigo-pequeno` — só existia na etiqueta de PRODUTO, `.etq-
+  endereco` nunca teve isso, não foi tocada) — libera espaço vertical no
+  `.etq-rodape`, usado pra deixar o código de barras um pouco mais alto
+  (5mm→5,5mm de altura-alvo).
+- **`desenharBarcodesEtiqueta` reescrita pra gerar em 2 passadas** — antes,
+  o código de barras nascia num tamanho arbitrário (JsBarcode com
+  `width:1.6` fixo) e o CSS (`width:43mm` no `<svg>`) forçava um
+  reescalonamento depois — isso pode borrar/juntar barras finas na hora de
+  imprimir (a mesma categoria de artefato que o cliente descreveu como
+  "em negrito"). Agora: 1ª passada gera com `width:1` só pra MEDIR quantos
+  "px" nativos o código ocupa nesse tamanho; calcula um fator de escala
+  pra bater exatamente com o alvo físico (43mm produto / 44mm endereço,
+  convertido pra px via `mm*96/25.4`); 2ª passada regenera já com o módulo
+  certo, nascendo no tamanho físico exato — sem precisar de nenhum
+  reescalonamento posterior pelo CSS. Funciona pra qualquer tamanho de
+  código (não depende de calcular manualmente quantos módulos o Code128
+  usa pra cada código, como uma tentativa anterior já tinha feito à mão).
+- **Limite físico, não corrigido porque não é bug**: "021.030.00023" (13
+  caracteres) precisa de ~178 módulos no Code128 — mesmo com os 43mm
+  disponíveis, cada módulo fica em ~0,236mm (~1,9 pontos numa impressora
+  térmica de 203dpi), abaixo do ideal (2-3+ pontos) pra leitura confortável
+  — é o máximo que cabe fisicamente numa etiqueta de 50mm com esse tamanho
+  de código, documentado honestamente pro cliente (as duas correções acima
+  devem ajudar reduzindo blur/aumentando altura, mas não eliminam esse
+  limite físico).
+
+### 3. Espaço reservado pra QTD/endereço vira ALTURA FIXA (não mais crescendo com o endereço)
+
+Bug/trade-off já sinalizado numa rodada anterior (documentado como "achado,
+mas não corrigido, cliente não tinha pedido ainda") — desta vez o cliente
+pediu explicitamente pra corrigir. `.etq-qtd-box` ganhou `min-height:5.3mm;
+justify-content:center` — reserva sempre espaço pra 2 linhas (QTD + endereço),
+mesmo quando só QTD está presente (nesse caso a linha única fica centralizada
+verticalmente dentro do espaço reservado). Isso faz `.etq-topo` ter altura
+CONSTANTE nos dois cenários, então `.etq-meio` (onde fica a descrição) sempre
+recebe a mesma fatia do orçamento vertical total — sem mais o efeito de "a
+descrição perde uma linha quando o endereço aparece".
+
+- **Efeito colateral que precisou de mais 2 ajustes pra caber**: reservar
+  5,3mm sempre (em vez de ~2,65mm no caso comum sem endereço) tirou espaço
+  de `.etq-meio` — reabriu, por um instante, o MESMO tipo de corte na 2ª
+  linha da descrição já corrigido antes nesta sessão. Recuperado o espaço
+  de duas fontes: (a) altura do código de barras reduzida de volta pra
+  5,5mm (não os 7mm que eu tinha posto ao remover o código pequeno — dar
+  tudo pro código de barras não deixava espaço suficiente pra descrição);
+  (b) margem do código grande (`.etq-codigo-produto`) reduzida de 0,4mm
+  pra 0,2mm. Conferido com Playwright que os dois cenários (com/sem
+  endereço) têm EXATAMENTE 5,3mm de altura no topo, e que a descrição
+  cabe em 2 linhas completas nos dois, sem transbordar.
+
+### Testes
+
+Os 6 harnesses de mock de `JsBarcode` (fixo em `data-encoded`, sem simular
+tamanho nenhum) tiveram que ganhar uma simulação mais realista — calculam
+`width` do SVG a partir do texto/parâmetro `width` recebido (`11 + texto.
+length*11 + 11 + 13` módulos × largura do módulo), pra genuinamente
+exercitar a lógica de 2 passadas (sem isso, `nativoPx` sempre voltava 0 e
+o código caía sempre no fallback, nunca testando o caminho principal).
+`harness_etiqueta_print_navegador.js` (o único que contava chamadas de
+`JsBarcode`) teve a asserção de "chamado 1 vez" atualizada pra "chamado 2
+vezes" (2 passadas), com uma asserção nova conferindo que a 1ª passada usa
+`width:1` e a 2ª usa o módulo recalculado. Não consegui testar contra a
+biblioteca JsBarcode REAL (tentei baixar via CDN pro sandbox, bloqueado
+pelo proxy de rede, `403`) — a suposição de que o parâmetro `width` do
+JsBarcode escala linearmente com a largura final renderizada é uma
+suposição razoável (comportamento padrão de qualquer biblioteca de código
+de barras, já que é literalmente um multiplicador aplicado a cada
+barra/espaço), mas não foi confirmada contra a lib de verdade — só contra
+o mock. Rodei de novo toda a suíte de Etiquetas — **155 asserções, 0
+falhas** entre os 7 harnesses. Transpile Babel do arquivo inteiro e
+balanceamento de chaves do CSS conferidos (673/673 — caiu 1 pela remoção
+da regra órfã `.etq-codigo-pequeno`). **Verificação física de ponta a
+ponta (cor sólida preta de verdade impressa, leitura do código de barras)
+fica 100% a cargo do cliente** — mesma limitação de sempre, mas essa é a
+primeira vez nesta feature que o feedback veio de uma impressão física
+real (não só simulação/preview), o que deu pistas concretas (a foto
+mostrando a data em negrito saindo sólida vs. a descrição fina saindo
+cinza) que não davam pra descobrir só no sandbox.

@@ -1300,23 +1300,22 @@
   .etq-barcode{display:block;margin:0 auto;}
   .etq-endereco .etq-barcode{width:44mm;height:11mm;}
   .etq-produto{width:100%;height:100%;box-sizing:border-box;padding:0.6mm;border:0.35mm solid #000;border-radius:1.6mm;display:flex;flex-direction:column;font-family:Arial,sans-serif;overflow:hidden;}
-  .etq-produto .etq-barcode{width:43mm;height:5mm;}
+  .etq-produto .etq-barcode{width:43mm;height:5.5mm;}
   .etq-tag{display:inline-block;vertical-align:top;background:#000;color:#fff;font-weight:700;font-size:4.5pt;letter-spacing:0.2px;line-height:1;padding:0.5mm 1.6mm 0.5mm 1mm;clip-path:polygon(0 0,88% 0,100% 50%,88% 100%,0 100%);white-space:nowrap;}
   .etq-topo{display:flex;justify-content:space-between;align-items:center;}
-  .etq-codigo-produto{font-size:13pt;font-weight:700;text-align:left;margin:0.4mm 0;}
-  .etq-qtd-box{display:flex;flex-direction:column;align-items:flex-end;}
-  .etq-qtd{font-size:6.5pt;font-weight:400;}
-  .etq-endereco-mat{font-size:5.5pt;font-weight:400;margin-top:0.2mm;}
+  .etq-codigo-produto{font-size:13pt;font-weight:700;text-align:left;margin:0.2mm 0;}
+  .etq-qtd-box{display:flex;flex-direction:column;align-items:flex-end;min-height:5.3mm;justify-content:center;}
+  .etq-qtd{font-size:6.5pt;font-weight:700;}
+  .etq-endereco-mat{font-size:5.5pt;font-weight:700;margin-top:0.2mm;}
   .etq-meio{display:flex;gap:1.5mm;border-top:0.25mm solid #000;margin-top:0.3mm;padding-top:0.3mm;flex:1;min-height:0;overflow:hidden;}
   .etq-col{display:flex;flex-direction:column;overflow:hidden;}
   .etq-col-desc{flex:1.1;}
   .etq-col-data{flex:1;}
   .etq-col-divisor{border-left:0.25mm solid #000;padding-left:1.5mm;}
-  .etq-valor{font-size:6pt;line-height:1.1;word-break:break-word;margin-top:0.3mm;}
+  .etq-valor{font-size:6pt;font-weight:700;line-height:1.1;word-break:break-word;margin-top:0.3mm;}
   .etq-valor-desc{overflow:hidden;line-height:1.22;max-height:5.2mm;}
   .etq-valor-data{font-weight:700;font-size:7pt;}
   .etq-rodape{border-top:0.25mm solid #000;margin-top:0.3mm;padding-top:0.3mm;text-align:center;}
-  .etq-codigo-pequeno{font-size:5.5pt;margin-top:0.15mm;letter-spacing:0.4px;}
 </style>
 </head>
 <body>
@@ -1644,7 +1643,6 @@ function buildEtiquetaItemHtml({tipo, codigo, descricao, quantidade, dataRecebim
     + '</div>'
     + '<div class="etq-rodape">'
     +   '<svg class="etq-barcode"></svg>'
-    +   '<div class="etq-codigo-pequeno">'+cod+'</div>'
     + '</div>'
     + '</div>';
 }
@@ -1682,13 +1680,32 @@ function buildEtiquetaPageHtml(itens, quebrarDepois){
 // foram concatenados (`buildEtiquetaPageHtml` preserva a ordem de `itens`
 // item a item, então o índice do `querySelectorAll` sempre bate com o
 // índice de `itensFlat`).
+// Gera o código de barras já no TAMANHO FÍSICO EXATO da etiqueta, em 2
+// passadas — em vez de gerar num tamanho arbitrário e deixar o CSS
+// (width/height em mm no <svg>) reescalar depois, o que pode borrar/juntar
+// barras finas na hora da impressão (cliente reportou o código de barras
+// "em negrito"/ilegível — reescala forçada via CSS é uma causa provável).
+// 1ª passada: gera com width:1 (módulo mínimo) só pra medir quantos "px"
+// nativos o código ocupa nesse tamanho. 2ª passada: recalcula o parâmetro
+// `width` (largura do módulo) pra que o SVG NASÇA já com a largura-alvo,
+// sem precisar de nenhum reescalonamento posterior. Funciona pra qualquer
+// tamanho de código (não depende de calcular manualmente quantos módulos
+// o Code128 usa pra cada código).
 function desenharBarcodesEtiqueta(area, itensFlat){
   try{
     const svgs = area.querySelectorAll('svg.etq-barcode');
+    const mmParaPx = mm => mm * 96 / 25.4;
     svgs.forEach((svg, i)=>{
       const it = itensFlat[i];
       if(it && typeof window!=='undefined' && window.JsBarcode){
-        window.JsBarcode(svg, it.codigo, {format:'CODE128', displayValue:false, margin:0, height: it.tipo==='endereco'?90:60, width:1.6});
+        const alturaAlvoMm = it.tipo==='endereco' ? 11 : 5.5;
+        const larguraAlvoMm = it.tipo==='endereco' ? 44 : 43;
+        const alturaPx = mmParaPx(alturaAlvoMm);
+        const larguraAlvoPx = mmParaPx(larguraAlvoMm);
+        window.JsBarcode(svg, it.codigo, {format:'CODE128', displayValue:false, margin:0, height: alturaPx, width:1});
+        const nativoPx = parseFloat(svg.getAttribute('width')) || 0;
+        const escala = nativoPx > 0 ? (larguraAlvoPx / nativoPx) : 1.6;
+        window.JsBarcode(svg, it.codigo, {format:'CODE128', displayValue:false, margin:0, height: alturaPx, width: escala});
       }
     });
   }catch(err){
