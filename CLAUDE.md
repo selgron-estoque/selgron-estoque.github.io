@@ -14338,3 +14338,66 @@ cliente).
   não simulável no sandbox sem rede) — mas como a correção é só na
   LEITURA (não depende de nenhuma migração de SQL), os dois cards já devem
   bater exatamente no próximo carregamento da página.
+
+## "Acuracidade Geral" (Dashboard) vira média das médias mensais
+
+Continuação direta da rodada anterior (bug de divergência entre "Acuracidade
+do Estoque"/Home e "Acuracidade Geral"/Dashboard, já corrigido) — depois de
+ver os dois cards batendo, o cliente pediu uma mudança de DEFINIÇÃO de
+verdade: "Ainda precisamos revisar a acuracidade geral, que seria a média de
+todos os meses do ano". Perguntado via `AskUserQuestion` (a interativa não
+foi respondida a tempo, reapresentei as 2 opções em texto simples) entre
+manter a média direta por item (atual, mês com mais volume pesa mais) ou
+trocar pra média das médias mensais (cada mês pesa igual) — cliente
+escolheu explicitamente **"Opção 2"**.
+
+- **`itensComAcuracidadeGeral`/`const acuracidade` (a média direta por
+  item) removidos do "Resumo da Operação"** — o card "Acuracidade Geral"
+  passou a reaproveitar `monthlyStats` (o MESMO array já usado pelo
+  gráfico "Acuracidade Mensal", ano corrente até hoje, independente do
+  filtro de período do painel "Filtros" — mesma decisão de sempre desse
+  gráfico) — `mesesComAcuracidade = monthlyStats.filter(m=>m.acuracidade
+  !=null)`, e a média final é a média simples desses valores mensais.
+  Matematicamente, "Acuracidade Geral" agora é EXATAMENTE a média das
+  barras que já aparecem no gráfico "Acuracidade Mensal", sem duplicar
+  nenhuma lógica de cálculo nova. Mês sem nenhum item com acuracidade
+  calculável (`acuracidade:null`) fica de fora da média — mesmo critério
+  de "sem dado, não conta nem a favor nem contra" já usado no resto do
+  app.
+- **`itemAcuracidade` continua existindo e sendo usado normalmente** — só
+  não é mais chamado DIRETO no corpo de `Dashboard` pra este card
+  específico; `computeMonthlyStats`/`computeWeeklyStats` (que já o usavam
+  internamente) continuam responsáveis por isso.
+- **`divergentes`/`valorDivergente`/"Itens Divergentes" NÃO mudaram** —
+  continuam usando `todasParaQualidade` (deduplicado por documento, sem
+  filtro de período), respondendo a uma pergunta diferente ("quantos itens
+  têm QUALQUER divergência", não "qual a nota média").
+- **Consequência deliberadamente NÃO revertida, sinalizada ao cliente**:
+  "Acuracidade do Estoque" (Home, `acumuladoAte`) **não foi tocada** —
+  continua com a média direta por item, já que o pedido do cliente citou
+  especificamente "Acuracidade Geral" (Dashboard). Isso significa que os
+  dois cards voltam a mostrar números DIFERENTES — só que agora por
+  FÓRMULA (decisão explícita do cliente), não por bug (a correção da
+  rodada anterior, sobre `historicoRowToCountLike` não copiar `acuracidade`,
+  continua de pé e validada — só a definição de "Acuracidade Geral" em si
+  que mudou por cima dela). Perguntei ao cliente se quer a Home também
+  trocada pra bater de novo com o Dashboard, ainda sem resposta no momento
+  desta rodada.
+- Testado via harness real (jsdom + react-dom/client + `act()`, mesma
+  técnica rigorosa de sempre): cenário desenhado pra distinguir as duas
+  fórmulas com clareza (mês A com 1 item batendo 100%, mês B com 9 itens
+  errando 0%) — confirma que "Acuracidade Geral" mostra 50.0% (média das
+  médias mensais, (100+0)/2) e NÃO 10.0% (que seria a média direta por
+  item, (1×100+9×0)/10). Atualizado o harness anterior
+  (`harness_acuracidade_nota_parcial.js`, da rodada "Opção A") que checava
+  a variável `itensComAcuracidadeGeral` no código-fonte — variável não
+  existe mais, substituída pela checagem de `mesesComAcuracidade`/
+  `monthlyStats`, preservando o objetivo original do teste (garantir que a
+  fórmula BINÁRIA antiga não voltou disfarçada). Rodei de novo toda a
+  suíte de regressão disponível no scratchpad (355 asserções, só as
+  mesmas 3 falhas já confirmadas pré-existentes/sem relação com esta
+  mudança). Transpile Babel do arquivo inteiro e balanceamento de chaves
+  do CSS conferidos (668/668, sem mudança — só JS, nenhuma classe CSS
+  tocada). **Verificação do número real em produção fica a cargo do
+  cliente** — mesma limitação de sempre (login exige Supabase Auth real,
+  não simulável no sandbox sem rede).
