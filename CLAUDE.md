@@ -14160,3 +14160,54 @@ sem precisar tocar em cada tela separadamente.
   telas, os números batendo com o mês fechado) fica a cargo do cliente**
   — mesma limitação de sempre (login exige Supabase Auth real, não
   simulável no sandbox sem rede).
+
+## "Contados × Divergências" — novo indicador em pizza (Indicadores)
+
+Cliente pediu: "Incluir um indicador que me mostra quantidade contada X
+divergências." Perguntei o formato via `AskUserQuestion` (gráfico de
+barras semanal / card com 2 números / tabela) — cliente escolheu "Outra
+coisa": **"Poderia ser um gráfico de pizza de acordo com o período
+selecionado."**
+
+- **Painel novo, 4ª fileira da seção "Tendência"** (Dashboard/Indicadores),
+  logo abaixo de "Acuracidade Mensal"/"Divergência por Família/Grupo" —
+  mesmo `weekly-solo-row` (largura total) já usado por "Valores por
+  Armazém", sem mexer nas 3 fileiras já existentes (composição fixa pedida
+  numa rodada anterior, "Ordem de 'Tendência' trocada de novo").
+- **Mesmo pool/filtro dos outros gráficos dessa seção**: `poolTendencia`
+  (contagens ao vivo + histórico "para tendência", não deduplicado por
+  documento — mesma fonte de "Contagens na Semana"/"Acuracidade Semanal")
+  filtrado por `dataInicioStr`/`dataFimStr` (o mesmo painel "Filtros"
+  compartilhado) — "de acordo com o período selecionado" como pedido.
+  Deliberadamente NÃO usa `todasParaQualidade` (o pool de "Resumo da
+  Operação", deduplicado, sem filtro de período).
+- **2 fatias**: "Sem divergência" (verde) e "Divergentes" (vermelho) —
+  item sem saldo pra comparar (`diferenca===null`) entra em "Sem
+  divergência", mesmo critério já usado em `divergentes` no resto do app
+  (`c.diferenca!==0 && c.diferenca!==null`) — nunca tratado como
+  divergente em lugar nenhum.
+- Reaproveita `PnlDonut` (já existia, usado em "Situação Geral dos
+  Inventários" na Home) + as classes `.pnl-donut-wrap`/`.pnl-donut-legend`/
+  `.pnl-legend-row`/`.pnl-legend-dot` — genéricas, sem nenhuma semântica de
+  "inventário" no CSS, seguras de reusar aqui sem criar classe nova.
+  Badge no cabeçalho do painel ("N% divergente"), mesmo padrão visual do
+  `chart-meta-badge` de "Meta: X%" dos outros 3 gráficos da seção.
+- Empty-state ("Nenhuma contagem no período selecionado.") quando o
+  período filtrado não tem nenhuma contagem — mesmo critério de sempre,
+  nunca mostra um donut vazio/quebrado.
+- Testado via harness real (jsdom + react-dom/client + `act()`, mesma
+  técnica rigorosa de sempre — carrega o `index.html` inteiro transpilado
+  numa `vm.Script`): 5 itens sintéticos (3 sem divergência, 1 divergente,
+  1 sem saldo — todos no período corrente — mais 1 de 2019, fora do
+  filtro padrão "Últimos 30 dias") — confirma que o painel aparece, o
+  item de 2019 fica de fora (badge mostra 25% divergente = 1 de 4, não
+  1 de 5), o item sem saldo conta como "Sem divergência" (3 · 75%), o
+  centro do donut mostra o total certo (4), e o rótulo do centro é
+  "contados". Rodei de novo toda a suíte de regressão disponível no
+  scratchpad (320 asserções, só as mesmas 3 falhas já confirmadas
+  pré-existentes/sem relação com esta mudança). Transpile Babel do
+  arquivo inteiro e balanceamento de chaves do CSS conferidos (668/668,
+  sem mudança — nenhuma classe CSS nova, tudo reaproveitado).
+  **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma
+  limitação de sempre (login exige Supabase Auth real, não simulável no
+  sandbox sem rede).

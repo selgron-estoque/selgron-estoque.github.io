@@ -12581,6 +12581,26 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   const anoAtualStr = String(new Date().getFullYear()) + '-01-01';
   const monthlyStats = computeMonthlyStats(poolTendencia, anoAtualStr, hojeStr);
 
+  // "Contados × Divergências" (pizza) — pedido do cliente: "indicador que
+  // me mostra quantidade contada X divergências", "gráfico de pizza de
+  // acordo com o período selecionado". Mesmo pool/filtro dos outros
+  // gráficos desta seção (`poolTendencia`, `dataInicioStr`/`dataFimStr` já
+  // calculados acima) — os números batem com "Contagens na Semana"/
+  // "Acuracidade Semanal" pro mesmo período, em vez de usar
+  // `todasParaQualidade` (deduplicado por documento, usado só em "Resumo
+  // da Operação", que não segue o filtro de período). Item sem saldo pra
+  // comparar (`diferenca===null`) entra em "Sem divergência" — mesmo
+  // critério já usado em `divergentes` (`c.diferenca!==0 && c.diferenca
+  // !==null`) em todo o resto do app: nunca é tratado como divergente.
+  const poolTendenciaNoPeriodo = poolTendencia.filter(c=>c.data && c.data>=dataInicioStr && c.data<=dataFimStr);
+  const pizzaTotalContado = poolTendenciaNoPeriodo.length;
+  const pizzaDivergentes = poolTendenciaNoPeriodo.filter(c=>c.diferenca!==0 && c.diferenca!==null).length;
+  const pizzaSemDivergencia = pizzaTotalContado - pizzaDivergentes;
+  const pizzaSegments = [
+    {label:'Sem divergência', value:pizzaSemDivergencia, color:'var(--ok)'},
+    {label:'Divergentes', value:pizzaDivergentes, color:'var(--danger)'},
+  ];
+
   // Divergência por Família/Grupo (Resumo da Operação) — `familia` só existe
   // em contagens registradas a partir do redesenho "coletor industrial" (ver
   // CLAUDE.md, `CountStep.finalize`), que passou a gravar o campo junto da
@@ -12757,6 +12777,36 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
                   </div>
                 ))}
               </div>
+            </div>
+          </div>
+
+          {/* Fileira 4: "Contados × Divergências" (pizza) — pedido do
+              cliente, mesmo filtro de período das demais desta seção. */}
+          <div className="weekly-solo-row">
+            <div className="panel" style={{margin:0}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:16}}>
+                <div>
+                  <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Contados × Divergências</div>
+                  <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:2}}>Quantidade total contada no período selecionado, separada por divergência.</div>
+                </div>
+                <span className="chart-meta-badge">{pizzaTotalContado>0 ? Math.round(pizzaDivergentes/pizzaTotalContado*100) : 0}% divergente</span>
+              </div>
+              {pizzaTotalContado===0 ? (
+                <div style={{color:'var(--ink-dim)',fontSize:'var(--text-sm)'}}>Nenhuma contagem no período selecionado.</div>
+              ) : (
+                <div className="pnl-donut-wrap">
+                  <PnlDonut segments={pizzaSegments} centerLabel="contados" />
+                  <div className="pnl-donut-legend">
+                    {pizzaSegments.map(s=>(
+                      <div key={s.label} className="pnl-legend-row">
+                        <span className="pnl-legend-dot" style={{background:s.color}}></span>
+                        {s.label}
+                        <span className="n">{s.value} · {pizzaTotalContado>0 ? Math.round(s.value/pizzaTotalContado*100) : 0}%</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
