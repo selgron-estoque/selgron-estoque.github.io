@@ -13458,3 +13458,24 @@ coisa do espaçamento do código, dar uma melhor distribuída".
   ponta a ponta (a 2ª linha realmente aparecendo inteira, sem cortar) fica
   a cargo do cliente** — mesma limitação de sempre (sandbox sem
   impressora/dispositivo físico pra testar o print de verdade).
+
+## Rótulos "CODIGO"/"DESCRICAO"/"DATA:" menores na etiqueta de produto
+
+Cliente achou os rótulos com "muito destaque" — mesmo tamanho (6pt) e
+letter-spacing (0.5px) do `.etq-rotulo` base competindo visualmente com o
+conteúdo abaixo deles.
+
+- `.etq-produto .etq-rotulo{font-size:4.5pt;letter-spacing:0.3px;}` —
+  seletor descendente, sobrescreve só dentro da etiqueta de PRODUTO, sem
+  tocar a regra base `.etq-rotulo` (que o rótulo "ENDEREÇO" da etiqueta de
+  endereço também usa, e não foi reportado com problema — mesmo critério
+  de escopo já usado na correção de espaçamento da rodada anterior).
+  Efeito colateral bom: rótulo menor também libera um pouco mais de altura
+  pra `.etq-meio` (a mesma seção que estava disputando espaço com a 2ª
+  linha da descrição na correção anterior).
+- Testado via transpile Babel do arquivo inteiro e balanceamento de chaves
+  do CSS (673/673, +2 pela regra nova). Rodei de novo toda a suíte de
+  Etiquetas (7 harnesses, 149 asserções) — nenhuma fixa o tamanho exato
+  dos rótulos, passaram sem ajuste. **Verificação visual de ponta a ponta
+  fica a cargo do cliente** — mesma limitação de sempre (sandbox sem
+  impressora/dispositivo físico).

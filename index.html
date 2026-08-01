@@ -1262,7 +1262,15 @@
      (padding), `.etq-codigo-produto` (margem), `.etq-meio`/`.etq-rodape`
      (margem+padding do topo de cada seção) e `.etq-codigo-pequeno`
      (margem) — devolvendo o espaço liberado pra `.etq-meio` mostrar as 2
-     linhas completas. */
+     linhas completas.
+     Pedido do cliente ("Código, data e descrição... tem muito destaque"):
+     `.etq-produto .etq-rotulo{font-size:4.5pt;letter-spacing:0.3px}`
+     (era 6pt/0.5px, herdado do `.etq-rotulo` base) — os 3 rótulos
+     ("CODIGO"/"DESCRICAO"/"DATA:") ficaram menores e menos espaçados,
+     menos concorrendo visualmente com o conteúdo abaixo deles. Escopado
+     só à etiqueta de PRODUTO (seletor descendente, não mexe na regra
+     base) — o rótulo "ENDEREÇO" da etiqueta de endereço não foi tocado,
+     já que o cliente não reportou nenhum problema ali. */
   #etiqueta-print-area{display:none;}
   @media print{
     #root{display:none !important;}
@@ -1278,6 +1286,7 @@
   .etq-endereco .etq-barcode{width:44mm;height:11mm;}
   .etq-produto{width:100%;height:100%;box-sizing:border-box;padding:0.7mm;border:0.3mm solid #000;display:flex;flex-direction:column;font-family:Arial,sans-serif;overflow:hidden;}
   .etq-produto .etq-barcode{width:40mm;height:5.5mm;}
+  .etq-produto .etq-rotulo{font-size:4.5pt;letter-spacing:0.3px;}
   .etq-topo{display:flex;justify-content:space-between;align-items:flex-start;}
   .etq-codigo-produto{font-size:11pt;margin:0.15mm 0;}
   .etq-qtd-box{display:flex;flex-direction:column;align-items:flex-end;}
