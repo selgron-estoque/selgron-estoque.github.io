@@ -1276,8 +1276,23 @@
     #root{display:none !important;}
     #etiqueta-print-area{display:block;}
   }
+  /* .etq-page fica 0.5mm mais baixa que o @page (30.5mm em vez de 31mm) de
+     propósito — tentativa de corrigir um bug real reportado num Chrome bem
+     antigo (109, a última versão que roda em Windows 7, travada desde
+     2023): mesmo com o site já corrigido (sem propriedade de quebra de
+     página redundante), esse navegador específico continuava inserindo
+     uma página em branco a cada 2 folhas reais impressas — padrão clássico
+     de um motor de impressão que arredonda a altura do conteúdo pra cima
+     do limite exato da página (31mm cravado, sem nenhuma folga), disparando
+     uma página de "continuação" desnecessária. Essa margem de segurança
+     não afeta a impressão física de verdade (o tamanho real gravado no
+     driver da impressora continua 101x31mm, só sobra um pouco de espaço em
+     branco na base de cada etiqueta) — é só uma tentativa de dar folga
+     pro possível erro de arredondamento não estourar o limite da página.
+     Sem garantia — motor de impressão de navegador tão antigo não dá pra
+     depurar de fora, só testar. */
   @page{size:101mm 31mm;margin:0;}
-  .etq-page{display:flex;align-items:center;gap:1mm;width:101mm;height:31mm;box-sizing:border-box;}
+  .etq-page{display:flex;align-items:center;gap:1mm;width:101mm;height:30.5mm;box-sizing:border-box;}
   .etq-page-col{width:50mm;height:30mm;box-sizing:border-box;padding:0.8mm;}
   .etq-endereco{width:100%;height:100%;box-sizing:border-box;padding:2mm;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:Arial,sans-serif;text-align:center;overflow:hidden;}
   .etq-rotulo{font-size:6pt;font-weight:700;letter-spacing:0.5px;}

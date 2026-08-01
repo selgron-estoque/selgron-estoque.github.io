@@ -13560,3 +13560,65 @@ PRODUTO tinha), então nada mais precisou mudar. As divisórias internas
   asserções) — nenhuma delas verifica a presença de borda, passaram sem
   ajuste. **Verificação visual de ponta a ponta fica a cargo do cliente**
   — mesma limitação de sempre (sandbox sem impressora/dispositivo físico).
+
+## Causa raiz real do "pula etiqueta": Chrome 109 travado num Windows 7 sem atualização
+
+Continuação da investigação anterior — mesmo depois da correção da rodada
+passada (removida a propriedade CSS redundante `break-after:page`), o
+cliente reportou que o pulo de etiqueta CONTINUAVA no computador da
+impressora, mesmo já tendo recarregado a página com Ctrl+Shift+R (mesma
+técnica que já tinha resolvido esse tipo de sintoma outras vezes neste
+projeto). Ele também descobriu, por conta própria, que selecionar só as
+páginas ÍMPARES no campo "Páginas" do diálogo de impressão evitava as
+páginas em branco — confirmando o padrão exato já suspeitado (página 1
+real, página 2 em branco, página 3 real, página 4 em branco).
+
+- **Causa raiz encontrada**: pedido `chrome://version` no computador da
+  impressora — resultado `109.0.5414.120 (cohort: Windows 7)`. **Chrome
+  109 (janeiro de 2023) foi a ÚLTIMA versão que o Google lançou pra
+  Windows 7** — esse navegador nunca mais vai atualizar sozinho nessa
+  máquina, porque o próprio Windows dela já não é mais suportado por
+  nenhum navegador atualizado (Firefox também parou de dar suporte a
+  Windows 7 depois do ESR 115, por volta de setembro/2024). As duas
+  arquiteturas de impressão já tentadas nas rodadas anteriores (1 job
+  concatenado com `page-break-after`, e depois N jobs `window.print()`
+  independentes) falharam da MESMA forma nesse Chrome específico — sinal
+  forte de um bug real no motor de paginação de impressão dessa versão
+  antiga (já corrigido em versões mais novas do Chrome, testadas com
+  sucesso pelo próprio cliente em outro computador), não algo que o app
+  consiga contornar mudando só a ARQUITETURA do job de impressão.
+- **Cliente confirmou que trocar de computador não é viável agora**, e
+  pediu explicitamente uma solução só em código — sem instalar navegador
+  novo (Firefox ESR foi oferecido e recusado) nem trocar a máquina.
+- **Tentativa nova, especulativa por natureza** (não dá pra depurar de
+  fora o motor de impressão de um Chrome de 2023 — só testar): hipótese de
+  que o bug seja causado por arredondamento de ponto flutuante empurrando
+  a altura renderizada de `.etq-page` (101×31mm, exatamente igual ao
+  `@page`, sem NENHUMA folga) um pouquinho além do limite físico da
+  página — o suficiente pra esse motor antigo achar que "sobrou conteúdo"
+  e inserir uma página de continuação (que sai em branco, já que na
+  verdade não sobrou nada de verdade). `.etq-page` perdeu 0.5mm de altura
+  (31mm→30.5mm), abrindo uma folga de segurança — `@page{size:101mm
+  31mm}` **não mudou** (continua batendo com o que o driver da impressora
+  espera) — só a caixa de CONTEÚDO ficou um pouco menor, sobrando um
+  pouco de espaço em branco no rodapé físico de cada etiqueta (imperceptível,
+  a etiqueta já tinha folga própria de segurança de 0.8mm de padding em
+  `.etq-page-col`).
+- **Sem garantia nenhuma de que resolve** — é a melhor hipótese disponível
+  sem acesso a esse Chrome/computador de verdade, não uma correção
+  confirmada como as outras deste projeto costumam ser. Se não resolver, o
+  próximo passo seria aumentar ainda mais a folga (ex: 30mm) ou investigar
+  se o próprio `page-break-after` em si é o gatilho nessa versão (testando
+  a variação inversa: usar só `break-after:page` sem `page-break-after`).
+- Testado via transpile Babel do arquivo inteiro e balanceamento de chaves
+  do CSS (673/673, sem mudança — só um valor numérico numa regra já
+  existente). `harness_etiqueta_layout_fix.js` atualizado — a asserção que
+  exigia `height:31mm` exato em `.etq-page` virou uma que aceita qualquer
+  altura numérica (a folga é intencional agora), mais uma nova conferindo
+  que `@page` continua exatamente 101×31mm. Rodei de novo toda a suíte de
+  Etiquetas — **151 asserções, 0 falhas** entre os 7 harnesses.
+  **Verificação real fica 100% a cargo do cliente** — mais que a
+  limitação de sempre (sandbox sem impressora física): aqui nem uma
+  simulação de motor de impressão de Chrome antigo é possível de reproduzir
+  no sandbox. Pedir pra conferir a pré-visualização (Ctrl+P, sem precisar
+  gastar etiqueta física) do mesmo lote de 4 itens de teste primeiro.
