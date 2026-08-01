@@ -13857,3 +13857,84 @@ primeira vez nesta feature que o feedback veio de uma impressão física
 real (não só simulação/preview), o que deu pistas concretas (a foto
 mostrando a data em negrito saindo sólida vs. a descrição fina saindo
 cinza) que não davam pra descobrir só no sandbox.
+
+## 2º teste físico real da etiqueta de produto — QTD/endereço lado a lado, fontes maiores, código de barras menor
+
+Cliente mandou uma NOVA foto impressa (1 etiqueta física, não simulação —
+"027-D-4" no canto superior direito, "000.35310", "MOD SMART CCD 4K / V100
+V100 V4.0.4", "01/08/2026", código de barras bem largo) e reportou 4 coisas
+na mesma mensagem, todas em cima do redesenho "bandeirinha" da rodada
+anterior: "continua cinza 'código', 'QTD' e 'Descrição'; Endereço continua
+descendo o código sendo que tem bastante espaço na direta, aumentar a
+fonte de quantidade e endereço. Código de barra ficou muito grande, alguns
+lê outros não." Mesmo fluxo de sempre pra este tipo de pedido (implementar
+sem commitar, verificar com Playwright, mostrar prévia atualizada, só
+publicar depois de confirmação explícita — desta vez "pode publicar direto
+agora").
+
+- **1 — QTD e endereço viraram lado a lado, não mais empilhados**:
+  `.etq-qtd-box{flex-direction:column}` → `flex-direction:row` (com
+  `.etq-qtd-box>*:not(:first-child){border-left:...}` desenhando um traço
+  fino divisório SÓ quando os dois estão presentes — CSS puro, sem
+  precisar de classe condicional no JS). Usa o espaço vazio à direita que o
+  cliente apontou no print. **Efeito estrutural, não só cosmético**: como
+  agora é sempre 1 linha só, adicionar o endereço nunca mais aumenta a
+  altura do topo — o `min-height:5.3mm`/`justify-content:center` que
+  existia SÓ pra igualar as duas alturas possíveis (com/sem endereço,
+  rodada anterior) deixou de ser necessário e foi removido — a correção
+  antiga virou desnecessária por construção, não só coincidentemente
+  redundante.
+- **2 — fonte de QTD/endereço aumentada**: `.etq-qtd` 6,5pt→8pt,
+  `.etq-endereco-mat` 5,5pt→7pt (`margin-top` que existia só pro
+  empilhamento vertical antigo também saiu, sem uso no layout em linha).
+  Pedido explícito do cliente.
+- **3 — "'código'/'QTD'/'Descrição' continuam cinza"**: conferido que os 3
+  rótulos (`.etq-tag`, CÓDIGO/DESCRIÇÃO/DATA RECEBIMENTO) usam a MESMA
+  regra CSS — descarta bug de "esqueci de deixar um em negrito" (todos já
+  eram negrito desde a rodada anterior). Hipótese mais provável, sem como
+  confirmar no sandbox: fonte pequena (4,5pt) pode renderizar com
+  antialiasing (bordas levemente acinzentadas, imperceptível na tela mas
+  possivelmente mais visível numa impressora térmica monocromática, sem
+  meio-tom de verdade). `.etq-tag` subiu pra 5pt/0.3px de letter-spacing —
+  ajuste pequeno e sem garantia, comunicado honestamente ao cliente junto
+  com a prévia: se continuar cinza depois disso, o próximo suspeito deixa
+  de ser o código e passa a ser a configuração de densidade/escurecimento
+  do driver da impressora TSC, ou o cabeçote precisando de limpeza — os
+  dois fora do alcance do app.
+- **4 — código de barras encolhido, mais quiet zone**: alvo de largura
+  (produto) caiu de 43mm pra 38mm (altura 5,5→5mm), tanto no CSS
+  (`.etq-produto .etq-barcode`) quanto nas constantes `alturaAlvoMm`/
+  `larguraAlvoMm` de `desenharBarcodesEtiqueta` — como o código de barras
+  fica bem mais estreito que o container (`.etq-rodape`, `.etq-barcode
+  {margin:0 auto}` centraliza), sobra mais espaço em branco nas duas
+  pontas — a "quiet zone" que um leitor de código de barras precisa pra
+  reconhecer onde o código começa/termina, essencial pra leitura confiável.
+  As duas chamadas de `JsBarcode` (2ª passada, a que de fato desenha)
+  também ganharam `margin:2` (era `margin:0`) — reserva um pouco de quiet
+  zone já DENTRO do próprio SVG, não só via layout externo. Limite físico
+  documentado honestamente pro cliente: "021.030.00023" (13 caracteres)
+  continua apertado numa etiqueta de 50mm mesmo com a folga nova — só o
+  teste físico confirma se ficou bom o suficiente.
+- **Verificação, mais rigorosa que o padrão de "só harness Node" desta
+  feature**: além dos 7 harnesses de sempre (155 asserções, sem
+  regressão), usei o **Playwright** pela primeira vez nesta feature — script
+  que renderiza o HTML/CSS REAL gerado por `buildEtiquetaItemHtml` (mesma
+  técnica de extrair+transpilar+rodar numa `vm.Script`, depois injetado
+  numa página Chromium de verdade) e mede via `getBoundingClientRect()` os
+  3 cenários possíveis (só QTD, QTD+endereço, e uma réplica EXATA do print
+  do cliente — `000.35310`/"MOD SMART CCD 4K / V100 V100 V4.0.4"/
+  "027-D-4"/"01/08/2026", só endereço sem QTD) — confirmando sem overflow
+  vertical, sem o `.etq-qtd-box` ultrapassar a largura da etiqueta, sem
+  nenhum dos 3 rótulos ultrapassando a borda direita, e sem a descrição
+  sendo cortada (`scrollHeight===clientHeight`) em nenhum dos 3 casos —
+  medição numérica, não só inspeção visual de screenshot.
+- Testado via harness real (jsdom + react-dom/client + `act()`, mesma
+  técnica rigorosa de sempre): confirmado que o `-webkit-line-clamp`/
+  `overflow:hidden` da descrição continua funcionando sem regressão, e que
+  nenhuma das mudanças de tamanho de fonte/layout quebrou os fluxos de
+  impressão avulsa/fila/lote já existentes. Transpile Babel do arquivo
+  inteiro e balanceamento de chaves do CSS conferidos (675/675 — +2 pela
+  regra nova `.etq-qtd-box>*:not(:first-child)`). **Verificação física de
+  ponta a ponta (cor sólida de verdade impressa, leitura do código de
+  barras, layout lado a lado no papel real) fica 100% a cargo do
+  cliente** — mesma limitação de sempre (sandbox sem impressora física).

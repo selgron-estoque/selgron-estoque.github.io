@@ -1299,14 +1299,42 @@
   .etq-codigo-grande{font-size:16pt;font-weight:700;margin:1mm 0;}
   .etq-barcode{display:block;margin:0 auto;}
   .etq-endereco .etq-barcode{width:44mm;height:11mm;}
+  /* Ajustes de round 3, a partir do 2º teste físico real (foto "027-D-4"):
+     (1) "código de barras muito grande, alguns lê outros não" — encolhido
+     de 43x5.5mm pra 38x5mm (produto), devolvendo quiet zone (margem em
+     branco nas pontas, essencial pra leitura confiável) — o código de
+     barras é bem mais estreito que o container (`.etq-rodape`), e como
+     `.etq-barcode{margin:0 auto}` centraliza, a folga sobra igual dos dois
+     lados. `desenharBarcodesEtiqueta` (no <script>) também ganhou
+     `margin:2` no próprio JsBarcode, reservando um pouco de quiet zone
+     JÁ DENTRO do SVG, não só via CSS. (2) "'código'/'QTD'/'Descrição'
+     continuam cinza" — CSS confirmado idêntico nos 3 rótulos
+     (CÓDIGO/DESCRIÇÃO/DATA RECEBIMENTO), então não é bug de cor/peso (já
+     tudo em negrito desde a rodada anterior); hipótese mais provável é
+     que fonte muito pequena (4.5pt) renderiza com antialiasing (bordas
+     acinzentadas) que uma impressora térmica monocromática não reproduz
+     bem — aumentado `.etq-tag` pra 5pt/0.3px (rótulos) e QTD/endereço
+     (abaixo) pra fontes maiores, na esperança de que o traço mais grosso
+     "queime" mais sólido. SEM GARANTIA — pode ser mesmo um ajuste de
+     densidade/qualidade de impressão na própria impressora, fora do
+     alcance do app; avisar o cliente. (3) "Endereço continua descendo o
+     código... bastante espaço na direita" — `.etq-qtd-box` virou
+     `flex-direction:row` (QTD e endereço lado a lado, com um traço
+     divisório fino entre os dois via `:not(:first-child)`) em vez de
+     empilhados verticalmente — como agora é sempre 1 linha só, adicionar o
+     endereço nunca mais aumenta a altura do topo (elimina de vez o
+     `min-height` que existia só pra igualar as duas alturas possíveis).
+     (4) fonte de QTD/endereço aumentada (6.5→8pt / 5.5→7pt), pedido
+     explícito do cliente. */
   .etq-produto{width:100%;height:100%;box-sizing:border-box;padding:0.6mm;border:0.35mm solid #000;border-radius:1.6mm;display:flex;flex-direction:column;font-family:Arial,sans-serif;overflow:hidden;}
-  .etq-produto .etq-barcode{width:43mm;height:5.5mm;}
-  .etq-tag{display:inline-block;vertical-align:top;background:#000;color:#fff;font-weight:700;font-size:4.5pt;letter-spacing:0.2px;line-height:1;padding:0.5mm 1.6mm 0.5mm 1mm;clip-path:polygon(0 0,88% 0,100% 50%,88% 100%,0 100%);white-space:nowrap;}
+  .etq-produto .etq-barcode{width:38mm;height:5mm;}
+  .etq-tag{display:inline-block;vertical-align:top;background:#000;color:#fff;font-weight:700;font-size:5pt;letter-spacing:0.3px;line-height:1;padding:0.5mm 1.6mm 0.5mm 1mm;clip-path:polygon(0 0,88% 0,100% 50%,88% 100%,0 100%);white-space:nowrap;}
   .etq-topo{display:flex;justify-content:space-between;align-items:center;}
   .etq-codigo-produto{font-size:13pt;font-weight:700;text-align:left;margin:0.2mm 0;}
-  .etq-qtd-box{display:flex;flex-direction:column;align-items:flex-end;min-height:5.3mm;justify-content:center;}
-  .etq-qtd{font-size:6.5pt;font-weight:700;}
-  .etq-endereco-mat{font-size:5.5pt;font-weight:700;margin-top:0.2mm;}
+  .etq-qtd-box{display:flex;flex-direction:row;align-items:center;gap:1.5mm;}
+  .etq-qtd-box>*:not(:first-child){border-left:0.25mm solid #000;padding-left:1.5mm;}
+  .etq-qtd{font-size:8pt;font-weight:700;white-space:nowrap;}
+  .etq-endereco-mat{font-size:7pt;font-weight:700;white-space:nowrap;}
   .etq-meio{display:flex;gap:1.5mm;border-top:0.25mm solid #000;margin-top:0.3mm;padding-top:0.3mm;flex:1;min-height:0;overflow:hidden;}
   .etq-col{display:flex;flex-direction:column;overflow:hidden;}
   .etq-col-desc{flex:1.1;}
@@ -1698,14 +1726,14 @@ function desenharBarcodesEtiqueta(area, itensFlat){
     svgs.forEach((svg, i)=>{
       const it = itensFlat[i];
       if(it && typeof window!=='undefined' && window.JsBarcode){
-        const alturaAlvoMm = it.tipo==='endereco' ? 11 : 5.5;
-        const larguraAlvoMm = it.tipo==='endereco' ? 44 : 43;
+        const alturaAlvoMm = it.tipo==='endereco' ? 11 : 5;
+        const larguraAlvoMm = it.tipo==='endereco' ? 44 : 38;
         const alturaPx = mmParaPx(alturaAlvoMm);
         const larguraAlvoPx = mmParaPx(larguraAlvoMm);
-        window.JsBarcode(svg, it.codigo, {format:'CODE128', displayValue:false, margin:0, height: alturaPx, width:1});
+        window.JsBarcode(svg, it.codigo, {format:'CODE128', displayValue:false, margin:2, height: alturaPx, width:1});
         const nativoPx = parseFloat(svg.getAttribute('width')) || 0;
         const escala = nativoPx > 0 ? (larguraAlvoPx / nativoPx) : 1.6;
-        window.JsBarcode(svg, it.codigo, {format:'CODE128', displayValue:false, margin:0, height: alturaPx, width: escala});
+        window.JsBarcode(svg, it.codigo, {format:'CODE128', displayValue:false, margin:2, height: alturaPx, width: escala});
       }
     });
   }catch(err){
