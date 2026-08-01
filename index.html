@@ -1248,7 +1248,21 @@
      rótulo extra; (4) `.etq-barcode{margin:0 auto}` centraliza o código de
      barras (e, por `.etq-rodape{text-align:center}`, o código pequeno
      abaixo dele) no meio horizontal da etiqueta — antes era um bloco de
-     largura fixa sem margem automática, ficando encostado à esquerda. */
+     largura fixa sem margem automática, ficando encostado à esquerda.
+     Bug real corrigido aqui, achado num teste real (print via celular): a
+     2ª linha da descrição (agora liberada pelo `line-clamp:2` acima)
+     aparecia CORTADA no meio, tocando a linha divisória de baixo — porque
+     `.etq-meio{flex:1;min-height:0;overflow:hidden;}` só recebe o que
+     SOBRA depois de `.etq-topo`/`.etq-rodape` reivindicarem seu espaço
+     natural; com 2 linhas de descrição, o espaço que sobrava não era mais
+     suficiente, e o `overflow:hidden` cortava a 2ª linha ANTES do
+     line-clamp conseguir mostrá-la inteira. Reduzido margens/padding só
+     dos elementos EXCLUSIVOS da etiqueta de produto (nunca usados por
+     `.etq-endereco`, que não tinha esse problema) — `.etq-produto`
+     (padding), `.etq-codigo-produto` (margem), `.etq-meio`/`.etq-rodape`
+     (margem+padding do topo de cada seção) e `.etq-codigo-pequeno`
+     (margem) — devolvendo o espaço liberado pra `.etq-meio` mostrar as 2
+     linhas completas. */
   #etiqueta-print-area{display:none;}
   @media print{
     #root{display:none !important;}
@@ -1262,22 +1276,22 @@
   .etq-codigo-grande{font-size:16pt;font-weight:700;margin:1mm 0;}
   .etq-barcode{display:block;margin:0 auto;}
   .etq-endereco .etq-barcode{width:44mm;height:11mm;}
-  .etq-produto{width:100%;height:100%;box-sizing:border-box;padding:1mm;border:0.3mm solid #000;display:flex;flex-direction:column;font-family:Arial,sans-serif;overflow:hidden;}
+  .etq-produto{width:100%;height:100%;box-sizing:border-box;padding:0.7mm;border:0.3mm solid #000;display:flex;flex-direction:column;font-family:Arial,sans-serif;overflow:hidden;}
   .etq-produto .etq-barcode{width:40mm;height:5.5mm;}
   .etq-topo{display:flex;justify-content:space-between;align-items:flex-start;}
-  .etq-codigo-produto{font-size:11pt;margin:0.3mm 0;}
+  .etq-codigo-produto{font-size:11pt;margin:0.15mm 0;}
   .etq-qtd-box{display:flex;flex-direction:column;align-items:flex-end;}
   .etq-qtd{font-size:7pt;font-weight:700;}
   .etq-endereco-mat{font-size:6.5pt;font-weight:400;margin-top:0.3mm;}
-  .etq-meio{display:flex;gap:2mm;border-top:0.2mm solid #000;margin-top:0.5mm;padding-top:0.5mm;flex:1;min-height:0;overflow:hidden;}
+  .etq-meio{display:flex;gap:2mm;border-top:0.2mm solid #000;margin-top:0.3mm;padding-top:0.3mm;flex:1;min-height:0;overflow:hidden;}
   .etq-col{overflow:hidden;}
   .etq-col-desc{flex:1.8;}
   .etq-col-data{flex:1;}
   .etq-col-divisor{border-left:0.2mm solid #000;padding-left:2mm;}
   .etq-valor{font-size:6pt;line-height:1.15;word-break:break-word;}
-  .etq-valor-desc{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
-  .etq-rodape{border-top:0.2mm solid #000;margin-top:0.5mm;padding-top:0.5mm;text-align:center;}
-  .etq-codigo-pequeno{font-size:5.5pt;margin-top:0.3mm;}
+  .etq-valor-desc{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.05;}
+  .etq-rodape{border-top:0.2mm solid #000;margin-top:0.3mm;padding-top:0.3mm;text-align:center;}
+  .etq-codigo-pequeno{font-size:5.5pt;margin-top:0.15mm;}
 </style>
 </head>
 <body>

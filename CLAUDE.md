@@ -13418,3 +13418,43 @@ código e ao meio de cada etiqueta".
   descrição realmente cabendo, o código de barras centralizado na
   impressora física) fica a cargo do cliente** — mesma limitação de
   sempre (sandbox sem impressora física).
+
+## Bug real: 2ª linha da descrição ficava cortada — espaçamento reduzido na etiqueta de produto
+
+Cliente mandou print real (impressão via celular, "Pré-Visualização") mostrando
+a 2ª linha da descrição ("V100 V4.0.4") cortada bem no meio, tocando a linha
+divisória de baixo — mesmo com `-webkit-line-clamp:2` já limitando a
+descrição a 2 linhas (ver seção anterior). Pediu pra ajustar: "pode dar uma
+ajustada para caber em duas linhas, pode subir um pouco, diminuir pouca
+coisa do espaçamento do código, dar uma melhor distribuída".
+
+- **Causa real**: `.etq-meio{flex:1;min-height:0;overflow:hidden;}` só
+  recebe o espaço que SOBRA depois de `.etq-topo` (código grande + QTD/
+  endereço) e `.etq-rodape` (código de barras + código pequeno)
+  reivindicarem seu tamanho natural — `.etq-topo`/`.etq-rodape` não têm
+  `flex-grow`, então `.etq-meio` é sempre o "resto". Enquanto a descrição
+  cabia numa linha só (corte fixo de 26 caracteres, versão anterior), esse
+  resto sempre foi suficiente — com 2 linhas passando a ser possível
+  (`line-clamp:2`), o espaço que sobrava deixou de bastar, e o
+  `overflow:hidden` de `.etq-meio` cortava a 2ª linha ANTES do line-clamp
+  conseguir mostrá-la inteira (o line-clamp limita a QUANTIDADE de linhas,
+  não garante que o CONTAINER tenha altura suficiente pra mostrá-las).
+- **Correção**: reduzidas margens/padding só dos elementos EXCLUSIVOS da
+  etiqueta de produto (nunca usados por `.etq-endereco`, que não tinha
+  esse problema, então intocada de propósito): `.etq-produto{padding:1mm→
+  0.7mm}`, `.etq-codigo-produto{margin:0.3mm→0.15mm}` (o "espaçamento do
+  código" citado pelo cliente), `.etq-meio`/`.etq-rodape{margin-top/
+  padding-top:0.5mm→0.3mm}` (o "subir um pouco" — desloca o início de cada
+  seção pra cima, devolvendo altura pro meio), `.etq-codigo-pequeno{margin-
+  top:0.3mm→0.15mm}`, e `.etq-valor-desc` ganhou `line-height:1.05` (era
+  1.15, herdado de `.etq-valor`) — compacta as 2 linhas da descrição em si
+  um pouco mais, sem tirar legibilidade. Libera ~2,3mm de altura no total,
+  devolvidos pra `.etq-meio` mostrar as 2 linhas completas.
+- Testado via transpile Babel do arquivo inteiro e balanceamento de chaves
+  do CSS (671/671, +1 pela propriedade nova `line-height` em
+  `.etq-valor-desc`). Rodei de novo toda a suíte de Etiquetas (7 harnesses,
+  149 asserções) — nenhuma delas fixa os valores exatos de mm alterados
+  aqui, então passaram sem precisar de ajuste. **Verificação visual de
+  ponta a ponta (a 2ª linha realmente aparecendo inteira, sem cortar) fica
+  a cargo do cliente** — mesma limitação de sempre (sandbox sem
+  impressora/dispositivo físico pra testar o print de verdade).
