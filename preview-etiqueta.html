@@ -197,12 +197,12 @@ footer a{color:var(--navy);}
   .etq-codigo-grande{font-size:16pt;font-weight:700;margin:1mm 0;}
   .etq-barcode{display:block;margin:0 auto;}
   .etq-endereco .etq-barcode{width:44mm;height:11mm;}
-  .etq-produto{width:100%;height:100%;box-sizing:border-box;padding:0.6mm;border:0.35mm solid #000;border-radius:1.6mm;display:flex;flex-direction:column;font-family:Arial,sans-serif;overflow:hidden;}
+  .etq-produto{width:100%;height:100%;box-sizing:border-box;padding:0.6mm;border:0.35mm solid #000;border-radius:1.6mm;display:flex;flex-direction:column;font-family:Arial,sans-serif;overflow:hidden;position:relative;}
   .etq-produto .etq-barcode{width:44mm;height:7mm;}
   .etq-tag{display:inline-block;font-weight:700;font-size:5pt;letter-spacing:0.3px;line-height:1;color:#000;white-space:nowrap;}
-  .etq-topo{display:flex;justify-content:space-between;align-items:flex-start;min-height:6.2mm;}
+  .etq-topo{display:flex;align-items:flex-start;}
   .etq-codigo-produto{font-size:13pt;font-weight:700;text-align:left;margin:0.2mm 0;}
-  .etq-qtd-box{display:flex;flex-direction:column;align-items:flex-end;gap:0.3mm;}
+  .etq-qtd-box{position:absolute;top:0;right:0;display:flex;flex-direction:column;align-items:flex-end;gap:0.3mm;}
   .etq-qtd{font-size:8pt;font-weight:700;white-space:nowrap;}
   .etq-endereco-mat{font-size:7pt;font-weight:700;white-space:nowrap;}
   .etq-meio{display:flex;gap:1.5mm;border-top:0.25mm solid #000;margin-top:0.3mm;padding-top:0.3mm;min-height:0;overflow:hidden;}

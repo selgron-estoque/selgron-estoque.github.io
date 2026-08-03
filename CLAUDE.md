@@ -14867,3 +14867,72 @@ dashboard_render_dedup.js`/`harness_ultima_contagem_por_codigo.js`).
 código na mesma altura, a data legível na coluna mais justa) fica 100% a
 cargo do cliente** — mesma limitação de sempre desta feature (sandbox sem
 impressora física).
+
+## Correção da correção: `min-height` fixo deixava vão em branco enorme — vira `position:absolute`
+
+Cliente reagiu à correção anterior (min-height fixo em `.etq-topo` pra
+travar a posição do código): "Você aumentou o campo de código?? Ele vai
+ter todo aquele espaço em branco??? Não precisa dessa altura toda" —
+corretamente identificando o trade-off: reservar sempre o espaço das 2
+linhas de QTD+Endereço resolvia a posição do código, mas desperdiçava um
+vão em branco enorme (~4,6mm) sempre que QTD/Endereço não estavam
+preenchidos (cenário comum — os dois são opcionais/dependem do cadastro).
+
+- **Trocado min-height por `position:absolute`**: `.etq-produto` ganhou
+  `position:relative` (âncora); `.etq-qtd-box` virou `position:absolute;
+  top:0;right:0` — sai do fluxo normal por completo, flutuando no canto
+  superior direito por cima do que estiver ali, sem contar pra altura de
+  `.etq-topo`. `.etq-topo` voltou a ter só a altura da tag "CÓDIGO"
+  (fixa, ~1,76mm, SEMPRE — não depende mais de QTD/Endereço existirem ou
+  não) — perdeu `justify-content:space-between` (não tem mais 2 filhos no
+  fluxo pra espaçar) e o `min-height:6.2mm` da correção anterior.
+- **Resolve os dois problemas de uma vez**: como `.etq-topo` nunca mais
+  varia de altura, o código do produto sempre começa exatamente na mesma
+  posição (mesmo resultado da correção anterior) — e como nada é
+  reservado no fluxo, não sobra nenhum vão em branco quando QTD/Endereço
+  estão ausentes (o espaço table simplesmente não existe, vai direto pro
+  código de barras via `.etq-rodape{flex:1}`, que cresce ainda mais que
+  antes nesse caso).
+- **Risco novo, verificado e aceito**: com QTD/Endereço flutuando por
+  cima em vez de reservar espaço, existe risco teórico de sobreposição
+  visual com o código do produto se o código for muito comprido. Testado
+  via Playwright, medindo o TEXTO de verdade (`Range.
+  getBoundingClientRect()`, não o `<div>` inteiro — que é block-level e
+  sempre ocupa a largura toda, dando falso positivo de sobreposição) —
+  no pior caso REALISTA (código de 13 caracteres, o máximo possível nos 3
+  formatos válidos da SB2 documentados neste arquivo — "XXX.XXX.XXXXX" —
+  + QTD de 3 dígitos, ex. "999") sobra uma folga de ~4,5px, sem
+  sobreposição. Com QTD de 4 dígitos (ex. "5000", menos comum mas
+  plausível pra recebimento em lote) a folga cai pra ~-1,4px — visualmente
+  imperceptível no screenshot (nenhum toque real entre os glifos), mas
+  tecnicamente já é um overlap de bounding box de texto. Com QTD de 6
+  dígitos (999999, cenário extremo/improvável — "quantidade recebida" de
+  um único item) o texto de QTD estoura a borda direita da etiqueta e é
+  cortado pelo `overflow:hidden` de segurança que `.etq-produto` já tinha
+  — sem quebrar o layout, só corta o excesso.
+- **Decisão consciente de não travar mais essa margem agora**: dado que
+  código de 13 caracteres + QTD de 4+ dígitos é uma combinação rara (a
+  maioria dos produtos reais tem código mais curto, e "quantidade
+  recebida" normalmente fica na faixa de dezenas/centenas pros exemplos
+  reais já vistos — "QTD: 20 PC", "QTD: 10 PC"), e que o `overflow:hidden`
+  já impede qualquer vazamento visual pra fora da etiqueta física, não
+  apertei mais a fonte/layout preventivamente por um cenário que não foi
+  reportado como problema real. Se o cliente notar sobreposição de
+  verdade num produto/quantidade específicos na impressão física, é o
+  sinal pra revisitar (ex.: reduzir mais a fonte de `.etq-qtd`/
+  `.etq-endereco-mat`, ou limitar a largura do código quando muito longo).
+- `preview-etiqueta.html` atualizado em sincronia (mesmo `position:
+  relative`/`position:absolute`). Harness atualizado (`harness_etiqueta_
+  layout_endereco.js`) — trocadas as asserções de `min-height` por
+  `position:relative`/`position:absolute`, com o histórico da tentativa
+  anterior documentado no comentário — 44/44 passando. Transpile Babel do
+  arquivo inteiro e balanceamento de chaves do CSS conferidos (667/667,
+  sem mudança — só valores dentro de regras já existentes). Rodei de novo
+  toda a suíte de Etiquetas (8 harnesses) e a suíte completa do
+  scratchpad — só as mesmas 3 falhas já confirmadas pré-existentes/sem
+  relação com esta mudança continuam (`harness_actions_beside_content.js`/
+  `harness_dashboard_render_dedup.js`/`harness_ultima_contagem_por_
+  codigo.js`). **Verificação física de ponta a ponta (impressão real
+  confirmando ausência de vão em branco e nenhuma sobreposição visual)
+  fica 100% a cargo do cliente** — mesma limitação de sempre desta
+  feature (sandbox sem impressora física).
