@@ -321,8 +321,8 @@ footer a{color:var(--navy);}
     if(!codigo || typeof window.JsBarcode !== 'function') return;
     try{
       var mmParaPx = function(mm){ return mm * 96 / 25.4; };
-      var alturaAlvoMm = tipo === 'endereco' ? 11 : 5;
-      var larguraAlvoMm = tipo === 'endereco' ? 44 : 38;
+      var alturaAlvoMm = tipo === 'endereco' ? 11 : 7;
+      var larguraAlvoMm = 44;
       var alturaPx = mmParaPx(alturaAlvoMm);
       var larguraAlvoPx = mmParaPx(larguraAlvoMm);
       window.JsBarcode(svg, codigo, {format:'CODE128', displayValue:false, margin:2, height:alturaPx, width:1});

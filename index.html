@@ -1611,8 +1611,8 @@ function desenharBarcodesEtiqueta(area, itensFlat){
     svgs.forEach((svg, i)=>{
       const it = itensFlat[i];
       if(it && typeof window!=='undefined' && window.JsBarcode){
-        const alturaAlvoMm = it.tipo==='endereco' ? 11 : 5;
-        const larguraAlvoMm = it.tipo==='endereco' ? 44 : 38;
+        const alturaAlvoMm = it.tipo==='endereco' ? 11 : 7;
+        const larguraAlvoMm = 44;
         const alturaPx = mmParaPx(alturaAlvoMm);
         const larguraAlvoPx = mmParaPx(larguraAlvoMm);
         window.JsBarcode(svg, it.codigo, {format:'CODE128', displayValue:false, margin:2, height: alturaPx, width:1});

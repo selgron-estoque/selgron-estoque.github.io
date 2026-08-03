@@ -14936,3 +14936,58 @@ preenchidos (cenário comum — os dois são opcionais/dependem do cadastro).
   confirmando ausência de vão em branco e nenhuma sobreposição visual)
   fica 100% a cargo do cliente** — mesma limitação de sempre desta
   feature (sandbox sem impressora física).
+
+## Bug real encontrado ao responder "o código de barras está pronto pra ler?": constante JS dessincronizada da caixa CSS
+
+Cliente perguntou: "Esse código de barra está pronto pra ler no tablete ou
+bipador?" — em vez de responder só de memória, investiguei o código de
+novo e achei uma dessincronia real: `desenharBarcodesEtiqueta` (a função
+que gera o SVG do código de barras via JsBarcode, em 2 passadas, pra
+"nascer" já no tamanho FÍSICO exato — técnica criada numa rodada bem
+anterior justamente pra nunca depender de reescala forçada pelo CSS, que
+pode distorcer/borrar barras finas na impressão térmica) ainda mirava
+`alturaAlvoMm:5`/`larguraAlvoMm:38` pra etiqueta de produto — os valores
+ANTIGOS, de antes da rodada "QTD/Endereço no canto superior direito..."
+ter ampliado a caixa CSS (`.etq-produto .etq-barcode`) pra 44x7mm. Como o
+código nascia em 38x5mm mas a caixa CSS pedia 44x7mm, o navegador
+reescalava o SVG de qualquer jeito (44/38≈1,158x horizontal, 7/5=1,4x
+vertical — reescala NÃO-uniforme entre os dois eixos) — reabrindo
+exatamente o risco que a técnica de "nascer no tamanho certo" existia pra
+evitar. Mesma categoria de bug silencioso já vista várias vezes neste
+projeto: uma CSS mudou numa rodada, uma constante JS irmã que devia
+acompanhar ficou pra trás, sem erro nenhum visível.
+
+- **Corrigido**: `alturaAlvoMm`/`larguraAlvoMm` em `desenharBarcodesEtiqueta`
+  (`index.html`) passaram a `it.tipo==='endereco' ? 11 : 7` / `44` (fixo
+  pros dois tipos agora, já que endereço e produto usam a mesma largura de
+  44mm) — bate exato com a caixa CSS dos dois tipos de etiqueta. Mesmo
+  bug corrigido na cópia local de `desenharBarcode` dentro de
+  `preview-etiqueta.html` (mesmo padrão de sincronia já seguido nas outras
+  rodadas desta feature).
+- **Nova asserção de regressão** (`testBarcodeSizeSincronizado`, em
+  `harness_etiqueta_layout_endereco.js`) — compara a caixa CSS
+  (`.etq-produto .etq-barcode`) contra as constantes JS
+  (`alturaAlvoMm`/`larguraAlvoMm`) e falha se divergirem — travando essa
+  sincronia pra não se perder de novo silenciosamente numa rodada futura
+  que só mexa na CSS. **Verificado que a asserção de fato pega o bug**:
+  revertendo temporariamente os valores JS pros antigos (5/38), o harness
+  falha nos 2 pontos certos; com a correção aplicada, passa 47/47.
+- **Honestidade sobre o que isso resolve e o que não dá pra confirmar
+  aqui**: essa correção elimina uma fonte REAL de degradação (reescala
+  não-uniforme via CSS) que só afetava a etiqueta de PRODUTO (a de
+  endereço nunca teve esse problema — os valores já batiam, 44/11 nos
+  dois lugares). Mas o sandbox continua sem impressora física, sem leitor
+  de código de barras e sem tablet real — não dá pra confirmar de ponta a
+  ponta que o código lê no bipador/câmera do tablet, só que o SVG gerado
+  agora nasce exatamente no tamanho que a etiqueta física pede, sem
+  distorção nenhuma introduzida pelo próprio app. Fatores fora do alcance
+  do código (contraste real de impressão térmica, calibração/densidade da
+  impressora, resolução do leitor) continuam só verificáveis pelo
+  cliente, testando na prática.
+- Testado via transpile Babel do arquivo inteiro (OK) e balanceamento de
+  chaves do CSS (667/667, sem mudança — só valores JS, nenhuma classe CSS
+  tocada). Rodei de novo toda a suíte de Etiquetas (8 harnesses) e a
+  suíte completa do scratchpad — só as mesmas 3 falhas já confirmadas
+  pré-existentes/sem relação com esta mudança continuam
+  (`harness_actions_beside_content.js`/`harness_dashboard_render_dedup.js`/
+  `harness_ultima_contagem_por_codigo.js`).
