@@ -15057,3 +15057,50 @@ nenhum checkbox: TODA sessão sempre morre ao fechar o app/navegador.
   confirmar que pede login de novo) fica a cargo do cliente** — mesma
   limitação de sempre (login exige Supabase Auth real, não simulável no
   sandbox sem rede).
+
+## Bug real: rótulo do 1º ponto de "Acuracidade Semanal" colidia com "100%" do eixo Y
+
+Cliente mandou print de "Acuracidade Semanal (%)" (Indicadores) com um
+retângulo vermelho no canto superior esquerdo, marcando "86%" (rótulo do
+1º ponto, semana 27) praticamente colado em cima de "100%" (rótulo do
+eixo Y) — pediu pra arrumar, "valores muito em cima um do outro".
+
+- **Causa**: `WeeklyLineChart` sempre desenhava o rótulo de cada ponto
+  (`{Math.round(w.acuracidade)}%`) com `textAnchor="middle"` — pra
+  QUALQUER ponto no meio do gráfico isso é o certo (centraliza o texto em
+  cima do ponto), mas o 1º ponto fica exatamente em `x=padL`, o MESMO
+  eixo X onde o rótulo "100%" do eixo Y também mora (em `x=padL-8`,
+  ancorado `"end"`, crescendo pra esquerda). Com `"middle"`, metade do
+  texto "86%" cresce pra ESQUERDA de `padL` — direto em cima do "100%".
+  Só acontece quando o 1º ponto tem valor alto o bastante pra ficar perto
+  do topo do gráfico (por isso não aparecia sempre, só quando a semana
+  mais antiga da janela tinha acuracidade alta).
+- **Mesmo bug/correção já visto antes** neste projeto, em `HealthSparkline`
+  ("Bug real no celular: rótulo de data cortado..." — ver histórico acima):
+  lá o problema era estourar a borda do `viewBox`; aqui é colidir com o
+  rótulo do eixo — mecanismos diferentes, mas a MESMA correção resolve os
+  dois: ancorar o rótulo do 1º ponto em `"start"` (cresce só pra direita)
+  e o do ÚLTIMO em `"end"` (cresce só pra esquerda), mantendo `"middle"`
+  só nos pontos do meio, que não têm esse risco.
+- **`WeeklyCountChart`/`MonthlyAccuracyBarChart` (os gráficos de BARRA da
+  mesma seção) não têm esse risco** — verificado antes de mexer: a 1ª
+  barra desses dois fica centralizada em `padL + slot/2` (não em `padL`
+  puro, como o 1º PONTO de uma linha), já com folga natural da borda —
+  não precisaram de nenhuma mudança.
+- Testado via harness novo (`harness_weekly_line_chart_label_anchor.js`):
+  reproduz os valores EXATOS do print do cliente (86/71/54/66/85%) —
+  confirma que o rótulo do 1º ponto usa `text-anchor="start"`, o do
+  último `"end"`, os do meio continuam `"middle"`; e, via Playwright
+  (medição geométrica de verdade, não só o atributo), que não há mais
+  NENHUMA colisão de bounding box entre "100%" (eixo) e "86%" (1º ponto)
+  — sobra uma folga real de ~7px. Confirmado visualmente por screenshot
+  também. Rodei de novo toda a suíte de regressão disponível no
+  scratchpad (424 passando) — só as mesmas 3 falhas já confirmadas
+  pré-existentes/sem relação com esta mudança continuam
+  (`harness_actions_beside_content.js`/`harness_dashboard_render_dedup.js`/
+  `harness_ultima_contagem_por_codigo.js`). Transpile Babel do arquivo
+  inteiro e balanceamento de chaves do CSS conferidos (667/667, sem
+  mudança — só JS/JSX dentro de `WeeklyLineChart`, nenhuma classe CSS
+  tocada). **Verificação visual de ponta a ponta fica a cargo do
+  cliente** — mesma limitação de sempre (login exige Supabase Auth real,
+  não simulável no sandbox sem rede).

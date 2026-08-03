@@ -12203,14 +12203,27 @@ function WeeklyLineChart({weeks, meta=META_ACURACIDADE_SEMANAL}){
           </g>
         );
       })}
-      {weeks.map((w,i)=>(
+      {weeks.map((w,i)=>{
+        // Rótulo do 1º/último ponto ancorado na PONTA (start/end) em vez de
+        // "middle" — mesmo padrão já usado em HealthSparkline. Aqui o
+        // problema não é a borda do viewBox (o 1º ponto fica em x=padL,
+        // bem dentro dele), é a colisão com o rótulo do eixo Y: com
+        // "middle", metade do texto (ex: "86%") cai à ESQUERDA de x=padL,
+        // exatamente onde o "100%" do eixo já está (x=padL-8, ancorado
+        // "end", também crescendo pra esquerda) — os dois se sobrepõem
+        // sempre que o 1º ponto tem valor alto o bastante pra ficar perto
+        // do topo do gráfico. `WeeklyCountChart`/`MonthlyAccuracyBarChart`
+        // não têm esse risco: são barras, e a 1ª barra fica centralizada
+        // em `padL + slot/2` (não em `padL` puro), já com folga natural.
+        const anchor = i===0 ? 'start' : (i===weeks.length-1 ? 'end' : 'middle');
+        return (
         <g key={w.key}>
           {w.acuracidade!=null ? (
             <>
               <circle cx={x(i)} cy={y(w.acuracidade)} r={4} fill={WEEKLY_CHART_COLOR} stroke="var(--panel)" strokeWidth={2}>
                 <title>{w.label} ({w.sublabel}): {w.acuracidade.toFixed(1)}% · {w.total} contagem(ns)</title>
               </circle>
-              <text x={x(i)} y={y(w.acuracidade)-11} textAnchor="middle" fontSize={11} fontWeight={700} fill="var(--ink)" fontFamily="var(--font-mono)">{Math.round(w.acuracidade)}%</text>
+              <text x={x(i)} y={y(w.acuracidade)-11} textAnchor={anchor} fontSize={11} fontWeight={700} fill="var(--ink)" fontFamily="var(--font-mono)">{Math.round(w.acuracidade)}%</text>
             </>
           ) : (
             <circle cx={x(i)} cy={y(0)} r={2.5} fill="var(--ink-dim)" opacity={0.5}>
@@ -12220,7 +12233,8 @@ function WeeklyLineChart({weeks, meta=META_ACURACIDADE_SEMANAL}){
           <text x={x(i)} y={H-24} textAnchor="middle" fontSize={10} fill="var(--ink-dim)" fontFamily="var(--font-mono)">{w.label}</text>
           <text x={x(i)} y={H-11} textAnchor="middle" fontSize={10} fill="var(--ink-dim)" fontFamily="var(--font-mono)">{w.sublabel}</text>
         </g>
-      ))}
+        );
+      })}
     </svg>
   );
 }
