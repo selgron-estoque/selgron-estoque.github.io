@@ -14663,3 +14663,122 @@ pool.
   no sandbox sem rede) — mas como a correção é só na LEITURA (não depende
   de nenhuma migração de SQL), os dois cards já devem bater com a média do
   gráfico "Acuracidade Mensal" no próximo carregamento da página.
+
+## Etiqueta de produto: QTD/Endereço no canto superior direito, rótulos em texto preto simples, código de barras maior
+
+Cliente mandou print da etiqueta impressa (código 000.35310, "QTD: 10 PC |
+027-D-4", descrição, "DATA RECEBIMENTO 02/08/2026", código de barras) com
+2 marcações vermelhas — uma seta no "027-D-4" e uma caixa em volta de uma
+faixa quase vazia antes do código de barras — e deu 6 instruções numeradas:
+
+1. Posicionar o campo QTD no canto superior direito da etiqueta.
+2. Posicionar o campo Endereço logo abaixo da QTD.
+3. Reduzir o espaçamento entre a Descrição e a Data, para otimizar o
+   espaço da etiqueta.
+4. Alterar o rótulo "DATA RECEBIMENTO" para apenas "DATA".
+5. Alterar a cor dos rótulos para preto.
+6. Aproveitar o espaço ganho com a redução do espaçamento entre a
+   Descrição e a Data para aumentar a largura/altura do código de barras,
+   melhorando sua leitura.
+
+### Interpretação dos itens ambíguos
+
+- **Itens 3+6 juntos**: a imagem de referência mostrava uma faixa
+  horizontal praticamente vazia entre o bloco Descrição/Data e o código de
+  barras — não um espaçamento vertical entre os DOIS TEXTOS em si (que já
+  estava compacto). A causa real: `.etq-meio` (o bloco Descrição/Data) tinha
+  `flex:1`, reivindicando incondicionalmente TODO o espaço vertical
+  sobrando dentro de `.etq-produto`, não importa quão pouco conteúdo
+  precisasse — o "espaço vazio" do print era esse excesso não usado.
+  Corrigido invertendo qual bloco é `flex:1`: `.etq-meio` passou a ocupar
+  só o que o próprio conteúdo pede (sem `flex:1`), e `.etq-rodape` (código
+  de barras) ganhou `flex:1` — o espaço que sobra agora vai pro código de
+  barras, que por sua vez teve o tamanho de destino aumentado de 38×5mm
+  pra **44×7mm** (mesma largura já usada pela etiqueta de endereço, altura
+  40% maior).
+- **Item 5**: `.etq-tag` (rótulo "CÓDIGO"/"DESCRIÇÃO"/"DATA") vinha de uma
+  rodada anterior ("bandeirinha preta") com `background:#000;color:#fff`
+  — uma faixa preta sólida com texto BRANCO. Trocar só a propriedade
+  `color` pra preto deixaria o texto invisível sobre o próprio fundo preto
+  — a única leitura coerente do pedido "cor dos rótulos pra preto" (e que
+  bate com o texto simples, sem caixa, da imagem de referência) era
+  abandonar a bandeirinha preta por completo: `.etq-tag` virou texto preto
+  simples (`color:#000`, sem `background`/`padding`/`clip-path`).
+
+### Mudanças de CSS (`.etq-produto` e afins, dentro de `#etiqueta-print-area`)
+
+- `.etq-produto .etq-barcode`: `width:38mm;height:5mm` → `width:44mm;
+  height:7mm`.
+- `.etq-tag`: perdeu `background:#000`, `color:#fff`, `padding`,
+  `clip-path`, `vertical-align:top` — ganhou `color:#000`.
+- `.etq-topo`: `align-items:center` → `align-items:flex-start` (QTD/
+  endereço empilhados ficam mais altos que o código sozinho, alinhar pelo
+  topo evita um "afundamento" visual estranho).
+- `.etq-qtd-box`: `flex-direction:row;align-items:center;gap:1.5mm` →
+  `flex-direction:column;align-items:flex-end;gap:0.3mm` — QTD em cima,
+  Endereço embaixo, os dois alinhados à direita (canto superior direito).
+  A regra do divisor lateral que existia só pro layout em linha
+  (`.etq-qtd-box>*:not(:first-child){border-left:...}`) foi **removida por
+  completo** — sem sentido num empilhamento vertical.
+- `.etq-meio`: perdeu `flex:1` (agora dimensiona pelo próprio conteúdo).
+- `.etq-rodape`: ganhou `display:flex;flex-direction:column;
+  align-items:center;justify-content:center;flex:1;min-height:0` (e
+  perdeu `text-align:center`, redundante com o `align-items:center` novo)
+  — é o bloco que agora absorve o espaço vertical sobrando, dando lugar
+  ao código de barras maior.
+
+### Mudança de JS (`buildEtiquetaItemHtml`)
+
+- Rótulo do campo de data: `'DATA RECEBIMENTO'` → `'DATA'` — só o texto,
+  a estrutura/classe (`.etq-col etq-col-data etq-col-divisor` +
+  `.etq-tag` + `.etq-valor etq-valor-data`) não mudou. O DOM do
+  `.etq-qtd-box` (`.etq-qtd` seguido de `.etq-endereco-mat`, quando os dois
+  existem) também não mudou — a troca de layout (linha→coluna) veio
+  inteira do CSS, sem precisar reordenar nada no JS.
+
+### `preview-etiqueta.html` mantido em sincronia
+
+Mesmo padrão já estabelecido nas rodadas anteriores desta feature: essa
+página standalone (raiz do repo, sem build step) guarda uma CÓPIA
+independente do CSS-baseline e da função `buildEtiquetaItemHtml` — como
+esta rodada mudou ESTRUTURA (não só valor), as duas cópias foram
+atualizadas junto, no mesmo commit, com exatamente os mesmos valores.
+
+### Verificação
+
+Testado via harness real (`harness_etiqueta_layout_endereco.js`, jsdom +
+react-dom/client + `act()`, mesma técnica rigorosa de sempre): confirmado
+que "DATA RECEBIMENTO" não aparece mais em lugar nenhum e "DATA" aparece
+sozinho; que `.etq-qtd-box` tem exatamente 2 filhos na ordem certa
+(`.etq-qtd` primeiro, `.etq-endereco-mat` depois — DOM que produz QTD em
+cima/Endereço embaixo com `flex-direction:column`); que o CSS não tem mais
+`background:#000`/`color:#fff`/`clip-path` em `.etq-tag` (só `color:#000`);
+que a regra de divisor lateral do `.etq-qtd-box` antigo sumiu por
+completo; que `.etq-produto .etq-barcode{width:44mm;height:7mm;}` bate
+exato; que `.etq-meio` não tem mais `flex:1` e `.etq-rodape` tem.
+Adicionalmente, **verificação visual/geométrica via Playwright**
+(`screenshot_v2.js`, render real do HTML/CSS em escala física real —
+`.wrap{width:50mm;height:30mm}`, `deviceScaleFactor:12`) usando o mesmo
+código/descrição/dados do print do cliente (`000.35310`, "MOD SMART CCD 4K
+V100 V100 V4.0.4", QTD 10, endereço "027-D-4", data 02/08/2026):
+confirmado por medição real (`boundingBox()`) que o container do código de
+barras renderiza em **44,0×7,0mm exatos** (batendo com o CSS pedido) e que
+`.etq-produto` não sofre overflow (`scrollHeight===clientHeight`, "coube
+certinho" — nada cortado pelo `overflow:hidden` de segurança que a
+etiqueta já tinha). Screenshot revisado visualmente — confirma os 6 itens
+pedidos aplicados corretamente (QTD/endereço empilhados no canto superior
+direito, rótulos em texto preto simples sem caixa, "DATA" curto, o bloco
+Descrição/Data compacto e o espaço extra reservado pro código de barras
+maior — o SVG do código de barras em si aparece vazio no teste porque o
+JsBarcode (CDN) não carrega no sandbox sem rede, mesma limitação de
+sempre desta feature). `preview-etiqueta.html` também testado via
+Playwright (`testar_preview_v2.js`): carrega sem erro de JS, sem mostrar
+mais "DATA RECEBIMENTO", cai no fallback local (mesmo com o fetch de rede
+bloqueado no sandbox) já mostrando o layout novo. Transpile Babel do
+arquivo inteiro conferido; balanceamento de chaves do CSS 667/667 (caiu 1
+em relação à rodada anterior — a remoção da regra de divisor lateral do
+`.etq-qtd-box`). Rodei de novo toda a suíte de regressão de Etiquetas —
+sem quebrar nada. **Verificação física de ponta a ponta (contraste real do
+preto impresso, leitura do código de barras maior) fica 100% a cargo do
+cliente** — mesma limitação de sempre desta feature (sandbox sem
+impressora física).

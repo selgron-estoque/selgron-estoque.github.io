@@ -1195,15 +1195,23 @@
   .etq-barcode{display:block;margin:0 auto;}
   .etq-endereco .etq-barcode{width:44mm;height:11mm;}
   .etq-produto{width:100%;height:100%;box-sizing:border-box;padding:0.6mm;border:0.35mm solid #000;border-radius:1.6mm;display:flex;flex-direction:column;font-family:Arial,sans-serif;overflow:hidden;}
-  .etq-produto .etq-barcode{width:38mm;height:5mm;}
-  .etq-tag{display:inline-block;vertical-align:top;background:#000;color:#fff;font-weight:700;font-size:5pt;letter-spacing:0.3px;line-height:1;padding:0.5mm 1.6mm 0.5mm 1mm;clip-path:polygon(0 0,88% 0,100% 50%,88% 100%,0 100%);white-space:nowrap;}
-  .etq-topo{display:flex;justify-content:space-between;align-items:center;}
+  .etq-produto .etq-barcode{width:44mm;height:7mm;}
+  /* Rótulos (CÓDIGO/DESCRIÇÃO/DATA) em texto preto simples — a "bandeirinha
+     preta" (fundo preto + texto branco) de uma rodada anterior deu lugar a
+     este formato mais simples, pedido explícito do cliente. */
+  .etq-tag{display:inline-block;font-weight:700;font-size:5pt;letter-spacing:0.3px;line-height:1;color:#000;white-space:nowrap;}
+  .etq-topo{display:flex;justify-content:space-between;align-items:flex-start;}
   .etq-codigo-produto{font-size:13pt;font-weight:700;text-align:left;margin:0.2mm 0;}
-  .etq-qtd-box{display:flex;flex-direction:row;align-items:center;gap:1.5mm;}
-  .etq-qtd-box>*:not(:first-child){border-left:0.25mm solid #000;padding-left:1.5mm;}
+  /* QTD no canto superior direito, Endereço logo abaixo (empilhados) — era
+     lado a lado com um divisor; virou coluna alinhada à direita. */
+  .etq-qtd-box{display:flex;flex-direction:column;align-items:flex-end;gap:0.3mm;}
   .etq-qtd{font-size:8pt;font-weight:700;white-space:nowrap;}
   .etq-endereco-mat{font-size:7pt;font-weight:700;white-space:nowrap;}
-  .etq-meio{display:flex;gap:1.5mm;border-top:0.25mm solid #000;margin-top:0.3mm;padding-top:0.3mm;flex:1;min-height:0;overflow:hidden;}
+  /* `.etq-meio` deixou de ser flex:1 (que forçava esticar até o fim do
+     espaço vertical disponível, mesmo quando Descrição/Data eram curtas) —
+     agora ocupa só o quanto o conteúdo precisa, e `.etq-rodape` (código de
+     barras) vira flex:1, aproveitando o espaço sobrando pra crescer. */
+  .etq-meio{display:flex;gap:1.5mm;border-top:0.25mm solid #000;margin-top:0.3mm;padding-top:0.3mm;min-height:0;overflow:hidden;}
   .etq-col{display:flex;flex-direction:column;overflow:hidden;}
   .etq-col-desc{flex:1.1;}
   .etq-col-data{flex:1;}
@@ -1211,7 +1219,7 @@
   .etq-valor{font-size:6pt;font-weight:700;line-height:1.1;word-break:break-word;margin-top:0.3mm;}
   .etq-valor-desc{overflow:hidden;line-height:1.22;max-height:5.2mm;}
   .etq-valor-data{font-weight:700;font-size:7pt;}
-  .etq-rodape{border-top:0.25mm solid #000;margin-top:0.3mm;padding-top:0.3mm;text-align:center;}
+  .etq-rodape{border-top:0.25mm solid #000;margin-top:0.3mm;padding-top:0.3mm;display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;min-height:0;}
   /* FIM DO CSS DA ETIQUETA */
 </style>
 </head>
@@ -1536,7 +1544,7 @@ function buildEtiquetaItemHtml({tipo, codigo, descricao, quantidade, dataRecebim
     + '<div class="etq-codigo-produto">'+cod+'</div>'
     + '<div class="etq-meio">'
     +   '<div class="etq-col etq-col-desc"><div class="etq-tag">DESCRIÇÃO</div><div class="etq-valor etq-valor-desc">'+desc+'</div></div>'
-    +   '<div class="etq-col etq-col-data etq-col-divisor"><div class="etq-tag">DATA RECEBIMENTO</div><div class="etq-valor etq-valor-data">'+dataTexto+'</div></div>'
+    +   '<div class="etq-col etq-col-data etq-col-divisor"><div class="etq-tag">DATA</div><div class="etq-valor etq-valor-data">'+dataTexto+'</div></div>'
     + '</div>'
     + '<div class="etq-rodape">'
     +   '<svg class="etq-barcode"></svg>'
