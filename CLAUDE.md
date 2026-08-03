@@ -15151,3 +15151,53 @@ etiqueta — "jogue um pouco para a esquerda tirar de cima da borda".
   existente). **Verificação física de ponta a ponta fica 100% a cargo do
   cliente** — mesma limitação de sempre desta feature (sandbox sem
   impressora física).
+
+## Etiquetas: Enter em "Quantidade recebida" pula pro próximo campo + Data protegida contra alteração acidental
+
+Cliente mandou print do card de confirmação da tela "Etiquetas" (aba
+Produto) e pediu dois ajustes de fluxo: "quando eu digito a quantidade e
+aperto enter mandar para o campo de quantidade [de etiquetas]"; e
+perguntou se travar a Data até um duplo-clique seria o ideal, pra evitar
+alteração acidental — implementado como pedido, já que a pergunta vinha
+junto de uma proposta de solução concreta.
+
+- **Enter em "Quantidade recebida" pula pro campo "Quantidade de
+  etiquetas"** — `onKeyDown` novo nesse input: `key==='Enter'` chama
+  `preventDefault()` (evita qualquer submit implícito) e foca
+  `quantidadeEtiquetasRef.current` (novo `useRef`, atribuído ao input de
+  "Quantidade de etiquetas"). Pula por cima do campo "Data de
+  recebimento" de propósito — esse fica travado por padrão (ver abaixo),
+  então não faz sentido o fluxo de Tab/Enter passar por ele.
+- **Data de recebimento vira readOnly por padrão** (`dataDesbloqueada`,
+  novo `useState(false)`) — `readOnly={!dataDesbloqueada}` no `<input
+  type="date">`, com `onDoubleClick={()=>setDataDesbloqueada(true)}`
+  liberando a edição. O `onChange` também checa `dataDesbloqueada` antes
+  de gravar (redundante com o `readOnly` nativo do navegador — que já
+  bloqueia digitação/spinner — mas garante que mesmo um evento disparado
+  por fora não altera o valor enquanto travado). Enquanto travado: fundo
+  cinza (`var(--gray-100)`), cursor `not-allowed`, texto acinzentado
+  (`var(--ink-dim)`), e uma dica inline no rótulo ("— toque 2x pra
+  alterar") — some assim que destravado. `title` no input reforça a dica
+  via tooltip nativo.
+- **Reseta pra travada a cada novo item selecionado** — `dataDesbloqueada`
+  volta a `false` nos dois pontos que já resetam `quantidade`/
+  `quantidadeEtiquetas` (clique num resultado de busca, e o `useEffect`
+  que limpa a seleção ao trocar de aba) — evita que destravar a data uma
+  vez "vaze" pro próximo item sem querer.
+- Testado via harness novo (`harness_etiqueta_enter_data_travada.js`,
+  jsdom + react-dom/client + `act()`, mesma técnica rigorosa de sempre —
+  carrega o `index.html` inteiro transpilado numa `vm.Script`): confirma
+  que a data nasce `readOnly` com a dica visível; que um `onChange`
+  simulado NÃO muda o valor enquanto travada; que um duplo-clique
+  destrava (`readOnly` some, dica some) e só ENTÃO o `onChange` passa a
+  funcionar; que Enter em "Quantidade recebida" move
+  `document.activeElement` pra "Quantidade de etiquetas"; e que
+  selecionar um 2º item volta a travar a data. Rodei de novo toda a
+  suíte de Etiquetas (9 harnesses, 192 asserções) sem quebrar nada.
+  Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  conferidos (667/667, sem mudança — nenhuma classe CSS nova, só
+  `style` inline reaproveitando tokens já existentes). **Verificação
+  visual/funcional de ponta a ponta (o duplo-clique/Enter funcionando de
+  verdade num navegador/tablet real) fica a cargo do cliente** — mesma
+  limitação de sempre (login exige Supabase Auth real, não simulável no
+  sandbox sem rede).
