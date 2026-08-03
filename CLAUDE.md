@@ -14991,3 +14991,69 @@ acompanhar ficou pra trás, sem erro nenhum visível.
   pré-existentes/sem relação com esta mudança continuam
   (`harness_actions_beside_content.js`/`harness_dashboard_render_dedup.js`/
   `harness_ultima_contagem_por_codigo.js`).
+
+## Sessão de login deixa de sobreviver a fechar o navegador — "como um app de banco"
+
+Cliente pediu: "Corrigir o app para que sempre quando ele for fechado ele
+deslogue o usuário, a ideia seria para não deixar o usuário tanto tempo
+logado se não está usando, forcar a atualização, com o se fosse um app de
+banco sempre que fecha ele derruba o usuário" — reverte, de propósito e
+por pedido explícito e diferente, a decisão tomada na rodada "'Lembrar-me'
+da tela de login vira funcional de verdade" (que tinha REMOVIDO um
+mecanismo assim, `supabaseAuthStorage`, depois do cliente esclarecer que
+"Lembrar-me" era sobre outra coisa — os CAMPOS do formulário, não a
+sessão). Desta vez o pedido é outro, incondicional, sem ligação com
+nenhum checkbox: TODA sessão sempre morre ao fechar o app/navegador.
+
+- **`supabaseClient` (`createClient`) ganhou `{auth:{storage:
+  window.sessionStorage}}`** — antes usava a config padrão do supabase-js,
+  que sempre grava a sessão (JWT/refresh token) no `localStorage`
+  (sobrevive a fechar o navegador indefinidamente). `sessionStorage` tem
+  exatamente a semântica pedida, nativa do navegador, sem precisar de
+  nenhum adapter customizado (diferente da tentativa anterior, que
+  precisava de um objeto próprio pra ALTERNAR entre os dois storages
+  conforme um checkbox — aqui não tem alternância nenhuma, é sempre
+  sessionStorage): recarregar a página (F5) continua mantendo o login
+  (sessionStorage sobrevive a um reload da mesma aba, comportamento já
+  estabelecido antes e que este pedido não pediu pra mudar); fechar a
+  aba/janela de verdade apaga a sessão, forçando login novo na próxima
+  vez — exatamente "como um app de banco".
+- **`TAB_ABERTA_KEY`/`lastActivity`/o timer de inatividade de 15 min
+  (configurável) NÃO foram tocados** — continuam funcionando exatamente
+  como antes, cobrindo um cenário DIFERENTE e ainda válido: o app fica
+  ABERTO (não foi fechado) mas ninguém mexe nele por N minutos (tablet
+  compartilhado esquecido logado no chão de fábrica) — esse timer ainda
+  desloga por inatividade mesmo com o app aberto. Os dois mecanismos são
+  complementares agora: fechar o app → sempre desloga (sessionStorage,
+  novo); deixar aberto e parado → desloga depois de N minutos (timer de
+  inatividade, já existia). Como a maior parte do motivo de
+  `TAB_ABERTA_KEY` existir (dar "prazo cheio" ao reabrir o navegador, pra
+  não punir quem só tinha fechado e reaberto rápido) fica menos relevante
+  agora — reabrir o navegador já não tem sessão nenhuma pra "punir" — mas
+  não atrapalha em nada deixá-lo como está: continua correto pro caso de
+  reabrir a MESMA aba via F5 (não fechar de verdade), que ainda precisa
+  contar o tempo de inatividade real.
+- **Efeito colateral aceito, documentado no próprio comentário do
+  código**: duas abas do navegador abertas ao mesmo tempo deixam de
+  compartilhar a mesma sessão (cada `sessionStorage` é isolado por aba) —
+  trade-off inerente da técnica; não é um cenário relevante pro uso real
+  do app (tablet do chão de fábrica, uma aba só).
+- Testado via harness novo (`harness_sessao_sessionstorage.js`, mesma
+  técnica de sempre — carrega o `index.html` inteiro transpilado numa
+  `vm.Script`, mocka `window.supabase.createClient` pra CAPTURAR os
+  argumentos recebidos): confirma que `createClient` agora recebe um 3º
+  argumento de opções, que `auth.storage` é EXATAMENTE o `sessionStorage`
+  do `window` (não `localStorage`, não um objeto customizado), e um
+  sanity-check da própria premissa (uma "aba nova"/contexto novo nunca
+  enxerga o `sessionStorage` de uma aba anterior — é esse isolamento que
+  garante o logout ao fechar). Transpile Babel do arquivo inteiro e
+  balanceamento de chaves do CSS conferidos (667/667, sem mudança — só
+  JS, nenhuma classe CSS tocada). Rodei de novo toda a suíte de regressão
+  disponível no scratchpad (413 passando) — só as mesmas 3 falhas já
+  confirmadas pré-existentes/sem relação com esta mudança continuam
+  (`harness_actions_beside_content.js`/`harness_dashboard_render_dedup.js`/
+  `harness_ultima_contagem_por_codigo.js`). **Verificação de ponta a
+  ponta contra o Supabase Auth real (fechar o navegador de verdade e
+  confirmar que pede login de novo) fica a cargo do cliente** — mesma
+  limitação de sempre (login exige Supabase Auth real, não simulável no
+  sandbox sem rede).

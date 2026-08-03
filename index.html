@@ -1253,16 +1253,30 @@ const {useState, useMemo, useRef, useEffect} = React;
 const SUPABASE_URL = 'https://geeqfpzamexmeketcecu.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_Wx-oyRE86XWz4bTSPWBe5A_8tXRpHJr';
 
-// Cliente Supabase padrão — sessão sempre persiste no localStorage (default
-// do supabase-js), sobrevive a fechar o navegador. Uma rodada anterior tinha
-// criado um storage adapter próprio pra fazer o checkbox "Lembrar-me"
-// controlar ISSO (persistir ou não a sessão) — o cliente esclareceu depois
-// que não era esse o pedido: "Lembrar-me" precisa só manter os CAMPOS do
-// formulário (usuário/e-mail) preenchidos da próxima vez, não controlar a
-// sessão de login em si (ver `LOGIN_LEMBRADO_KEY` mais abaixo, perto de
-// `LoginScreen`). Revertido pra configuração padrão, mais simples.
+// Sessão de login guardada em `sessionStorage`, não no `localStorage`
+// (default do supabase-js) — pedido explícito do cliente: "sempre quando
+// [o app] for fechado ele deslogue o usuário... como se fosse um app de
+// banco". `sessionStorage` já tem exatamente essa semântica nativa: some
+// sozinho quando a ABA/JANELA fecha de verdade, mas sobrevive a um F5 —
+// então recarregar a página continua mantendo o login (comportamento já
+// estabelecido antes, "sessão sobrevive a recarregar"), só fechar o
+// navegador/aba é que força um login novo. Basta passar `sessionStorage`
+// como `storage` — ele já implementa a mesma interface síncrona
+// (getItem/setItem/removeItem) que o supabase-js espera, sem precisar de
+// nenhum adapter customizado. Uma rodada anterior ("Lembrar-me") tinha
+// criado e depois REVERTIDO um mecanismo assim (`supabaseAuthStorage`),
+// na época achando que era isso que o "Lembrar-me" pedia — não era (o
+// cliente esclareceu que "Lembrar-me" é só sobre os CAMPOS do formulário,
+// ver `LOGIN_LEMBRADO_KEY` mais abaixo). Agora é um pedido DIFERENTE e
+// explícito, sem ligação com o checkbox — vale sempre, incondicional.
+// Efeito colateral aceito: 2 abas do navegador abertas ao mesmo tempo
+// deixam de compartilhar a mesma sessão (cada `sessionStorage` é isolado
+// por aba) — trade-off inerente da técnica, não relevante pro uso real
+// (tablet do chão de fábrica, uma aba só).
 const supabaseClient = window.supabase
-  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY)
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+      auth: { storage: window.sessionStorage }
+    })
   : null;
 
 // Garante que o socket do Realtime carregue o JWT de quem está logado —
