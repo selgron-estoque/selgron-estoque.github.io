@@ -1211,8 +1211,11 @@
      `position:absolute` tira o bloco do fluxo normal (relativo ao
      `.etq-produto`, via `position:relative` acima): flutua por cima do
      canto superior direito sem empurrar `.etq-codigo-produto` pra baixo
-     nem reservar espaço vazio quando QTD/Endereço estão ausentes. */
-  .etq-qtd-box{position:absolute;top:0;right:0;display:flex;flex-direction:column;align-items:flex-end;gap:0.3mm;}
+     nem reservar espaço vazio quando QTD/Endereço estão ausentes.
+     `top`/`right` deixaram de ser 0 — cliente reportou (print) o bloco
+     colado na borda da etiqueta; a folga extra (além do padding de
+     0.6mm que `.etq-produto` já dá) afasta ele um pouco pra dentro. */
+  .etq-qtd-box{position:absolute;top:0.6mm;right:0.6mm;display:flex;flex-direction:column;align-items:flex-end;gap:0.3mm;}
   .etq-qtd{font-size:8pt;font-weight:700;white-space:nowrap;}
   .etq-endereco-mat{font-size:7pt;font-weight:700;white-space:nowrap;}
   /* `.etq-meio` deixou de ser flex:1 (que forçava esticar até o fim do

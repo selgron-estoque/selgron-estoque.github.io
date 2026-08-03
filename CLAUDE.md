@@ -15104,3 +15104,50 @@ eixo Y) — pediu pra arrumar, "valores muito em cima um do outro".
   tocada). **Verificação visual de ponta a ponta fica a cargo do
   cliente** — mesma limitação de sempre (login exige Supabase Auth real,
   não simulável no sandbox sem rede).
+
+## Bloco QTD/Endereço afastado da borda da etiqueta de produto
+
+Cliente mandou print marcando (retângulo vermelho) o bloco QTD/Endereço
+(canto superior direito da etiqueta de produto) colado bem na quina da
+etiqueta — "jogue um pouco para a esquerda tirar de cima da borda".
+
+- **Causa**: `.etq-qtd-box` (`position:absolute;top:0;right:0`, ver seção
+  "Correção da correção: min-height fixo deixava vão em branco enorme —
+  vira position:absolute" acima) estava ancorado exatamente na borda
+  interna de `.etq-produto` (sem nenhuma folga além do `padding:0.6mm`
+  que a própria etiqueta já tem) — visualmente ficava colado na quina.
+- **Correção**: `top:0.6mm;right:0.6mm` (era `0;0`) — afasta o bloco pra
+  dentro nos dois eixos.
+- **1ª tentativa (0.8mm/1.5mm) foi maior e REVERTIDA**: dava mais respiro
+  visual, mas ao medir via Playwright o pior caso realista (código de
+  produto de 13 caracteres — o máximo possível nos formatos válidos da
+  SB2 — junto com uma quantidade de 3 dígitos, plausível pra peças
+  pequenas vendidas a granel, o tipo de item que a Selgron vende) passou
+  a colidir de verdade com o texto do código (medido via `Range.
+  getBoundingClientRect()`, não bounding box do `<div>`). Reduzido pra
+  0.6mm — nesse valor o mesmo cenário de teste mantém uma folga real de
+  ~2,25px, sem sobreposição, ainda dando um respiro visível da borda no
+  caso comum (quantidades de 2 dígitos, como em todos os prints reais já
+  mandados pelo cliente até aqui).
+- **Trade-off residual, já aceito antes e não piorado por esta mudança**:
+  código de 13 caracteres + quantidade de 4+ dígitos continua sendo um
+  caso raro sem folga garantida (mesma limitação já documentada quando o
+  `position:absolute` foi introduzido) — só um pouco mais apertado que
+  antes (era ~-1,4px de sobreposição nesse caso extremo, agora ~-3,7px) —
+  não é uma regressão de um cenário que já estava seguro, só um caso já
+  conhecido como frágil ficando marginalmente mais frágil. Se aparecer de
+  verdade numa etiqueta impressa, o próximo ajuste seria reduzir mais a
+  fonte de `.etq-qtd`/`.etq-endereco-mat` só nesse cenário, não mexer de
+  novo no offset.
+- `preview-etiqueta.html` atualizado em sincronia. Testado via
+  `harness_etiqueta_layout_endereco.js` (asserção atualizada — confirma
+  `top:0.6mm;right:0.6mm`, não mais `0;0`) — 48/48 passando. Rodei de novo
+  toda a suíte de Etiquetas (8 harnesses) e a suíte completa do scratchpad
+  — só as mesmas 3 falhas já confirmadas pré-existentes/sem relação com
+  esta mudança continuam (`harness_actions_beside_content.js`/`harness_
+  dashboard_render_dedup.js`/`harness_ultima_contagem_por_codigo.js`).
+  Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  conferidos (667/667, sem mudança — só valores dentro de uma regra já
+  existente). **Verificação física de ponta a ponta fica 100% a cargo do
+  cliente** — mesma limitação de sempre desta feature (sandbox sem
+  impressora física).
