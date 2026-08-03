@@ -15276,3 +15276,82 @@ iterar antes de publicar, mesmo padrão já usado antes nesta feature
   código de barras na prévia é uma textura ilustrativa (CSP do Artifact
   bloqueia o CDN do JsBarcode), mas o mecanismo real (`desenharBarcodesEtiqueta`)
   não foi tocado, continua o mesmo já testado nas outras 2 etiquetas.
+
+## Prateleira/Caixa ganha ponto de entrada — reaproveita a aba "Produto" (toggle), não uma 3ª aba
+
+Depois da etiqueta "Prateleira/Caixa" existir (função `buildEtiquetaItemHtml`,
+`tipo:'prateleira'`) sem nenhum jeito de gerá-la pelo app, perguntei ao cliente
+se preferia uma 3ª aba nova em `EtiquetasPanel` ou reaproveitar a aba
+"Produto" já existente com um toggle — ele pediu pra eu mostrar como ficaria
+antes de decidir: **"Se reaproveitar, como ficaria?"**.
+
+- **Prévia interativa publicada primeiro, implementação só depois de
+  aprovada** — como visualizar um componente REACT de verdade não é viável
+  neste sandbox (sem rede, sem CDN do React, sem bundler local — confirmado
+  checando `/tmp/node_modules/react*` por builds UMD, nenhum encontrado), a
+  prévia foi montada como HTML/CSS estático usando o CSS REAL extraído do
+  `<style>` de `index.html` (mesma técnica já usada nas prévias de etiqueta),
+  com um toggle em JS puro alternando os dois estados ao vivo. Publicada via
+  Artifact (favicon 🏷️), com um painel extra "O que muda entre os dois
+  modelos" (tabela campo-a-campo) — cliente confirmou com "pode subir" antes
+  de eu tocar em `index.html`.
+- **Decisão de manter só tema claro nesta prévia** (diferente do padrão
+  normal de Artifact, que cobre os dois temas) — como o objetivo é
+  representar fielmente uma tela do app, e o app é **deliberadamente
+  tema-claro-só** (decisão já documentada, "não reverter pra tema escuro"),
+  forçar dark mode na prévia distorceria a comparação — mesmo critério do
+  skill de artifact-design pra "página que comete a um mundo visual só".
+- **Bug de overflow horizontal achado e corrigido durante o teste da
+  prévia** (não existe no app real, só na moldura da própria página de
+  revisão): com a prévia embrulhada em 2 camadas de padding (a do
+  `review-shell` + a do `app-frame`, que juntas somam mais do que a única
+  camada de padding que `.content` tem no app de verdade), a fileira de 3
+  botões (`Voltar`/`Enviar para Fila`/`Imprimir Etiqueta`, `.btn-row .btn
+  {flex:1}`) estourava a largura da tela em 390px — clássico caso de
+  `min-width:auto` de flex item não encolhendo o suficiente. Corrigido com
+  `.btn-row .btn{min-width:0}` (escopado só a esta prévia) + padding menor
+  do `review-shell`/`app-frame` abaixo de 480px. Confirmado via Playwright
+  que `scrollWidth<=clientWidth` nos dois viewports (980px/390px) depois do
+  ajuste.
+- **`EtiquetasPanel`**: implementação exatamente igual à prévia aprovada —
+  `modeloEtiqueta` (`useState('recebimento')`, novo) controla o que aparece
+  DEPOIS de selecionar um item na aba "Produto" (a aba "Endereço" não é
+  afetada, nunca teve esses campos). Dois botões (`.btn-sm`, mesmo padrão de
+  toggle já usado em vários lugares do app) alternam entre "Recebimento"
+  (mostra Quantidade recebida + Data — igual já era) e "Prateleira/Caixa"
+  (esconde os dois, "Quantidade de etiquetas" continua valendo, só que
+  agora como "quantas cópias IDÊNTICAS imprimir" em vez de "em quantas
+  etiquetas dividir a quantidade recebida").
+  - `montarItensParaImprimir()` ganhou um 3º ramo: com `modeloEtiqueta===
+    'prateleira'`, gera um array de N objetos `{tipo:'prateleira', codigo,
+    descricao}` idênticos (`Array.from({length:n}, ()=>({...}))`), sem
+    `quantidade`/`dataRecebimento`/`endereco` — não usa
+    `splitQuantidadeEtiquetas` (que só faz sentido pra dividir uma
+    quantidade recebida, conceito que não existe nesse modelo).
+  - `handleEnviarParaFila`: a condição que decide gravar `descricao` na fila
+    já era `item.tipo!=='endereco'` (não `==='produto'`), então "prateleira"
+    passou a gravar a descrição de graça, sem precisar mudar nada ali —
+    `quantidade`/`dataRecebimento`/`endereco` continuam null pra esse tipo
+    (só as condições `item.tipo==='produto'` já filtravam certo).
+  - `useEffect` de troca de aba e o `onClick` de selecionar um resultado de
+    busca ganharam `setModeloEtiqueta('recebimento')` — reseta pro padrão
+    sempre que o contexto muda (trocar de aba, selecionar outro item), pra
+    nunca "vazar" o modelo Prateleira/Caixa escolhido pro item anterior.
+- **Harness novo** (`harness_etiqueta_modelo_prateleira.js`, 33 asserções):
+  estado padrão é "Recebimento"; alternar o toggle mostra/esconde QTD/Data
+  corretamente (nos dois sentidos); imprimir 3 cópias de prateleira gera 3
+  `.etq-prateleira` idênticas (mesmo código/descrição), pareadas 2 por
+  folha (2 páginas pra 3 itens), sem nenhum `.etq-qtd`; enviar 2 cópias pra
+  fila grava 2 linhas com `tipo:'prateleira'`, descrição preenchida,
+  `quantidade`/`data_recebimento`/`endereco` nulos; a lista da fila mostra
+  código+descrição pra um item de prateleira já pendente (testado via fetch
+  inicial simulado, não via evento Realtime — o mock de canal não dispara
+  `postgres_changes` de verdade, mesma limitação já aceita nos harnesses
+  anteriores desta feature); selecionar um item novo reseta o modelo pra
+  "Recebimento", sem vazar a escolha do item anterior. Rodei de novo toda a
+  suíte de Etiquetas (9 harnesses + este novo, 225 asserções no total) —
+  sem regressão. Transpile Babel do arquivo inteiro e balanceamento de
+  chaves do CSS conferidos (671/671, sem mudança — esta rodada só mexeu em
+  JS/JSX, nenhuma classe CSS nova). **Verificação visual/funcional de ponta
+  a ponta fica a cargo do cliente** — mesma limitação de sempre (login
+  exige Supabase Auth real, não simulável no sandbox sem rede).

@@ -13708,6 +13708,13 @@ function EtiquetasPanel({currentUser}){
   // impressora 10 etiquetas de QTD: 50" — `splitQuantidadeEtiquetas`
   // divide `quantidade` por este valor (ver comentário dela no <script>).
   const [quantidadeEtiquetas, setQuantidadeEtiquetas] = useState('1');
+  // Qual dos dois MODELOS de etiqueta de produto gerar — a mesma aba
+  // "Produto" (busca/seleção) é reaproveitada pros dois, só o que
+  // aparece DEPOIS de selecionar o item muda: 'recebimento' mostra QTD/
+  // Data (etiqueta com dado de lote, já publicada); 'prateleira' esconde
+  // os dois (etiqueta permanente pra colar em caixa/prateleira, código +
+  // descrição só — ver `buildEtiquetaItemHtml`, tipo 'prateleira').
+  const [modeloEtiqueta, setModeloEtiqueta] = useState('recebimento');
   // Data protegida contra alteração acidental (pedido do cliente): fica
   // travada (readOnly) até um duplo-clique liberar — evita mudar sem
   // querer ao digitar/navegar pelos outros campos. Reseta pra travada de
@@ -13778,6 +13785,7 @@ function EtiquetasPanel({currentUser}){
     setQuantidade('');
     setQuantidadeEtiquetas('1');
     setDataDesbloqueada(false);
+    setModeloEtiqueta('recebimento');
   }, [aba]);
 
   // Debounce de 350ms, mesmo padrão já usado em ManualCountFlow/
@@ -13804,6 +13812,17 @@ function EtiquetasPanel({currentUser}){
   function montarItensParaImprimir(){
     if(aba!=='produto'){
       return [{ tipo: aba, codigo: selecionado.codigo, descricao: selecionado.descricao }];
+    }
+    if(modeloEtiqueta==='prateleira'){
+      // Sem quantidade recebida pra dividir (essa etiqueta não tem QTD
+      // nenhuma) — "Quantidade de etiquetas" aqui é só quantas cópias
+      // IDÊNTICAS imprimir (ex: 3 caixas iguais do mesmo item).
+      const n = Math.max(1, parseInt(quantidadeEtiquetas, 10) || 1);
+      return Array.from({length: n}, ()=>({
+        tipo: 'prateleira',
+        codigo: selecionado.codigo,
+        descricao: selecionado.descricao,
+      }));
     }
     const partes = splitQuantidadeEtiquetas(quantidade, quantidadeEtiquetas);
     return partes.map(qtd=>({
@@ -13848,7 +13867,7 @@ function EtiquetasPanel({currentUser}){
       const res = await salvarEtiquetaNaFila({
         tipo: item.tipo,
         codigo: item.codigo,
-        descricao: item.tipo==='produto' ? item.descricao : null,
+        descricao: item.tipo!=='endereco' ? item.descricao : null,
         quantidade: item.tipo==='produto' ? item.quantidade : null,
         dataRecebimento: item.tipo==='produto' ? item.dataRecebimento : null,
         endereco: item.tipo==='produto' ? item.endereco : null,
@@ -13947,7 +13966,7 @@ function EtiquetasPanel({currentUser}){
       {!loading && query && results.length===0 && <div className="empty-state">Nenhum resultado encontrado.</div>}
 
       {!selecionado && results.map(item=>(
-        <div key={item.codigo || item.id} className="list-row" onClick={()=>{ setSelecionado(item); setSucessoImpressao(false); setErroImpressao(null); setQuantidade(''); setQuantidadeEtiquetas('1'); setDataDesbloqueada(false); }}>
+        <div key={item.codigo || item.id} className="list-row" onClick={()=>{ setSelecionado(item); setSucessoImpressao(false); setErroImpressao(null); setQuantidade(''); setQuantidadeEtiquetas('1'); setDataDesbloqueada(false); setModeloEtiqueta('recebimento'); }}>
           <div>
             <div className="lr-title">{aba==='endereco' ? item.codigo : item.descricao}</div>
             {aba==='produto' && <div className="lr-sub">{item.codigo}</div>}
@@ -13963,6 +13982,15 @@ function EtiquetasPanel({currentUser}){
           {aba==='produto' && <div className="item-desc">{selecionado.descricao}</div>}
           {aba==='endereco' && selecionado.almoxarifado && <div className="lr-sub" style={{marginTop:4}}>Armazém {selecionado.almoxarifado}</div>}
           {aba==='produto' && (
+            <div style={{marginTop:12}}>
+              <label>Modelo de etiqueta</label>
+              <div style={{display:'flex',gap:8,marginTop:4}}>
+                <button className={'btn '+(modeloEtiqueta==='recebimento'?'btn-primary':'btn-outline')+' btn-sm'} onClick={()=>setModeloEtiqueta('recebimento')}>Recebimento</button>
+                <button className={'btn '+(modeloEtiqueta==='prateleira'?'btn-primary':'btn-outline')+' btn-sm'} onClick={()=>setModeloEtiqueta('prateleira')}>Prateleira/Caixa</button>
+              </div>
+            </div>
+          )}
+          {aba==='produto' && modeloEtiqueta==='recebimento' && (
             <div style={{display:'flex',gap:10,marginTop:12}}>
               <div className="field" style={{flex:1,marginBottom:0}}>
                 <label>Quantidade recebida</label>
@@ -13988,11 +14016,14 @@ function EtiquetasPanel({currentUser}){
                 <label>Quantidade de etiquetas</label>
                 <input ref={quantidadeEtiquetasRef} type="text" inputMode="numeric" value={quantidadeEtiquetas} onChange={e=>setQuantidadeEtiquetas(e.target.value.replace(/[^0-9]/g,''))} placeholder="Ex: 10" />
               </div>
-              {Number(quantidadeEtiquetas)>1 && quantidade && (
+              {modeloEtiqueta==='recebimento' && Number(quantidadeEtiquetas)>1 && quantidade && (
                 <div className="lr-sub" style={{marginTop:6}}>
                   {splitQuantidadeEtiquetas(quantidade, quantidadeEtiquetas).length} etiquetas —
                   {' '}{Array.from(new Set(splitQuantidadeEtiquetas(quantidade, quantidadeEtiquetas))).sort((a,b)=>b-a).map((v,i)=>(i?' / ':' ')+'QTD: '+v)}
                 </div>
+              )}
+              {modeloEtiqueta==='prateleira' && Number(quantidadeEtiquetas)>1 && (
+                <div className="lr-sub" style={{marginTop:6}}>{Math.max(1,parseInt(quantidadeEtiquetas,10)||1)} etiquetas idênticas (mesmo código/descrição em cada uma)</div>
               )}
             </div>
           )}
@@ -14036,7 +14067,7 @@ function EtiquetasPanel({currentUser}){
               <div>
                 <div className="lr-title">{item.tipo==='endereco' ? item.codigo : (item.descricao || item.codigo)}</div>
                 <div className="lr-sub">
-                  {item.tipo==='produto' && item.codigo!==item.descricao ? item.codigo+' · ' : ''}
+                  {item.tipo!=='endereco' && item.codigo!==item.descricao ? item.codigo+' · ' : ''}
                   {item.criadoPor ? ('enviado por '+item.criadoPor) : 'enviado'}
                   {item.criadoEm ? (' em '+new Date(item.criadoEm).toLocaleString('pt-BR')) : ''}
                 </div>
