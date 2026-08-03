@@ -14782,3 +14782,88 @@ sem quebrar nada. **Verificação física de ponta a ponta (contraste real do
 preto impresso, leitura do código de barras maior) fica 100% a cargo do
 cliente** — mesma limitação de sempre desta feature (sandbox sem
 impressora física).
+
+## Bug real: código do produto "descendo"/"subindo" conforme QTD/Endereço vêm preenchidos + coluna de Data mais justa
+
+Cliente mandou print de outra etiqueta impressa (código 000.41706, "QTD: 20
+PC | 008-B-7") reportando: "Quando adiciona quantidade e endereço o código
+tá descendo arrume para ficar fixo a altura" — e, na sequência, ainda no
+mesmo turno: "O campo de data pode ser mais justo liberando mais espaço
+para a descrição".
+
+### Causa raiz do "código descendo"
+
+`.etq-topo` (a linha com "CÓDIGO" à esquerda e `.etq-qtd-box`
+QTD/Endereço à direita) nunca teve altura fixa — sua altura sempre foi a
+do MAIOR dos dois filhos (`align-items:flex-start`), variando conforme
+`.etq-qtd-box` tinha 0 linhas (nem QTD nem endereço), 1 linha (só QTD) ou
+2 linhas (QTD+endereço). Como `.etq-codigo-produto` (o código grande) vem
+logo abaixo de `.etq-topo` no fluxo da coluna, sua posição vertical se
+deslocava exatamente na mesma proporção — quanto mais campos preenchidos
+no canto superior direito, mais o código (e tudo abaixo dele: descrição,
+data, código de barras) descia. Medido via Playwright antes da correção:
+posição Y do código variava de 10,7px (sem QTD/endereço) até 27,1px (com
+os dois) — mais de 16px de diferença numa etiqueta de ~113px de altura
+total.
+
+- **Correção**: `.etq-topo{min-height:6.2mm}` — reserva sempre o espaço
+  das 2 linhas possíveis do `.etq-qtd-box` (QTD 8pt + gap 0,3mm + Endereço
+  7pt), independente de quantos campos vêm preenchidos. Valor calculado
+  medindo via Playwright a altura natural de `.etq-topo` no cenário COM
+  os dois campos (a linha de base que precisa ser sempre reservada), não
+  chutado.
+- **Mesmo mecanismo já usado uma vez antes** (`.etq-qtd-box{min-height:
+  5.3mm}`, na rodada "2º teste físico real da etiqueta de produto") — que
+  tinha sido removido numa rodada seguinte quando QTD/Endereço passaram a
+  ficar lado a lado (sempre 1 linha só, min-height virou desnecessário
+  "por construção"). Uma rodada AINDA mais recente ("QTD/Endereço no canto
+  superior direito...") voltou a empilhar os dois em coluna — reabrindo
+  exatamente o mesmo problema, só que desta vez em `.etq-topo` (que
+  envolve TANTO "CÓDIGO" quanto `.etq-qtd-box`), não mais em
+  `.etq-qtd-box` sozinho.
+
+### Coluna de Data mais justa, Descrição mais larga
+
+`.etq-col-desc{flex:1.1}`/`.etq-col-data{flex:1}` (quase iguais) vinham
+de uma rodada anterior em que o rótulo era "DATA RECEBIMENTO" (17
+caracteres, precisava de mais largura). Como esse rótulo já tinha sido
+encurtado pra só "DATA" (4 caracteres) numa rodada seguinte, a
+justificativa pro flex quase-igual não existia mais — só o VALOR da data
+("03/08/2026", 10 caracteres a 7pt) precisa de espaço agora, bem menos
+que a descrição.
+
+- `.etq-col-desc{flex:1.1→1.7}` / `.etq-col-data{flex:1→0.75}`.
+- Verificado via Playwright, no cenário mais apertado (descrição longa de
+  2 linhas + QTD+endereço preenchidos, mesmo texto "MOD SMART CCD 4K V100
+  V100 V4.0.4" já usado em testes anteriores): a coluna de Descrição
+  ganhou ~118px contra ~59px da coluna de Data (era quase 50/50 antes);
+  "03/08/2026" continua cabendo numa linha só, sem cortar nem quebrar
+  (`valorDataOverflowsCol:false`); a descrição continua em 2 linhas
+  completas, sem cortar (`valorDescClipped:false`); sem overflow em
+  `.etq-produto` (`scrollHeight===clientHeight`).
+
+### Verificação
+
+Testado via Playwright (não só o harness Node de sempre, que não calcula
+layout real): renderizado o HTML/CSS REAL do app (mesma técnica de
+extrair+transpilar+rodar) em 3 cenários (sem QTD/endereço, só QTD,
+QTD+endereço) — confirmado por medição (`getBoundingClientRect`) que a
+posição Y do código do produto ficou **EXATAMENTE IDÊNTICA nos 3
+cenários** depois da correção (antes variava >16px) — e por screenshot,
+visualmente, que o código/descrição/data ficam na mesma linha em todos os
+casos, só o canto superior direito muda (com ou sem QTD/endereço
+visíveis). Testado também o cenário mais apertado (descrição de 2 linhas
++ QTD+endereço) sem nenhum overflow. `preview-etiqueta.html` atualizado
+em sincronia (mesmos valores de CSS). `harness_etiqueta_layout_endereco.js`
+atualizado com as novas asserções (min-height 6.2mm, flex 1.7/0.75) —
+41/41 passando. Transpile Babel do arquivo inteiro e balanceamento de
+chaves do CSS conferidos (667/667, sem mudança — só valores dentro de
+regras já existentes, nenhuma classe nova). Rodei de novo toda a suíte de
+regressão de Etiquetas (8 harnesses) e a suíte completa do scratchpad —
+só as mesmas 3 falhas já confirmadas pré-existentes/sem relação com esta
+mudança continuam (`harness_actions_beside_content.js`/`harness_
+dashboard_render_dedup.js`/`harness_ultima_contagem_por_codigo.js`).
+**Verificação física de ponta a ponta (impressão real confirmando o
+código na mesma altura, a data legível na coluna mais justa) fica 100% a
+cargo do cliente** — mesma limitação de sempre desta feature (sandbox sem
+impressora física).

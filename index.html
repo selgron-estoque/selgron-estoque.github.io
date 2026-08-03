@@ -1200,7 +1200,12 @@
      preta" (fundo preto + texto branco) de uma rodada anterior deu lugar a
      este formato mais simples, pedido explícito do cliente. */
   .etq-tag{display:inline-block;font-weight:700;font-size:5pt;letter-spacing:0.3px;line-height:1;color:#000;white-space:nowrap;}
-  .etq-topo{display:flex;justify-content:space-between;align-items:flex-start;}
+  /* min-height reserva sempre o espaço das 2 linhas possíveis do
+     `.etq-qtd-box` (QTD+Endereço) — sem isso, o código do produto (e tudo
+     abaixo dele) descia/subia dependendo de quantos campos (0/1/2) vinham
+     preenchidos, porque `.etq-topo` só tinha a altura que o conteúdo do
+     momento pedia. */
+  .etq-topo{display:flex;justify-content:space-between;align-items:flex-start;min-height:6.2mm;}
   .etq-codigo-produto{font-size:13pt;font-weight:700;text-align:left;margin:0.2mm 0;}
   /* QTD no canto superior direito, Endereço logo abaixo (empilhados) — era
      lado a lado com um divisor; virou coluna alinhada à direita. */
@@ -1213,8 +1218,8 @@
      barras) vira flex:1, aproveitando o espaço sobrando pra crescer. */
   .etq-meio{display:flex;gap:1.5mm;border-top:0.25mm solid #000;margin-top:0.3mm;padding-top:0.3mm;min-height:0;overflow:hidden;}
   .etq-col{display:flex;flex-direction:column;overflow:hidden;}
-  .etq-col-desc{flex:1.1;}
-  .etq-col-data{flex:1;}
+  .etq-col-desc{flex:1.7;}
+  .etq-col-data{flex:0.75;}
   .etq-col-divisor{border-left:0.25mm solid #000;padding-left:1.5mm;}
   .etq-valor{font-size:6pt;font-weight:700;line-height:1.1;word-break:break-word;margin-top:0.3mm;}
   .etq-valor-desc{overflow:hidden;line-height:1.22;max-height:5.2mm;}
