@@ -15201,3 +15201,78 @@ junto de uma proposta de solução concreta.
   verdade num navegador/tablet real) fica a cargo do cliente** — mesma
   limitação de sempre (login exige Supabase Auth real, não simulável no
   sandbox sem rede).
+
+## Nova etiqueta: "Prateleira/Caixa" — modelo pra colar em caixas/prateleiras
+
+Cliente esclareceu que a etiqueta de produto (recebimento, com QTD/Data)
+é só uma das duas necessidades: "essa etiqueta será para o recebimento,
+preciso criar um modelo para colar nas caixas/prateleiras. Crie mas não
+suba, vamos trabalhar nela antes" — pedido explícito de rascunhar e
+iterar antes de publicar, mesmo padrão já usado antes nesta feature
+("bandeirinha preta", "layout de recebimento").
+
+- **Novo tipo `'prateleira'`** em `buildEtiquetaItemHtml`/CSS
+  (`.etq-prateleira`/`.etq-prat-codigo`/`.etq-prat-desc`) — diferente da
+  etiqueta de PRODUTO (recebimento): **sem QTD, sem Data e sem
+  Endereço** (removido numa 2ª rodada, pedido do cliente — "pode ser sem
+  o endereço para essa etiqueta") — só **código** (sempre o elemento de
+  destaque, 17pt) e **descrição** (menor, 7pt, sempre numa única linha —
+  `white-space:nowrap;overflow:hidden;text-overflow:ellipsis`, corta com
+  "…" se não couber). Sem QTD/Data/Endereço porque são específicos de um
+  lote recebido ou de uma posição pontual — não fazem sentido numa
+  etiqueta permanente colada numa caixa/prateleira.
+  - **1ª versão da descrição usava `-webkit-line-clamp:2`** (2 linhas,
+    mesma técnica já usada na etiqueta de produto) — revertida depois do
+    cliente esclarecer que o código deve ser SEMPRE o destaque e a
+    descrição, menor, deve tentar ficar numa linha só ("O destaque é
+    sempre o código a descrição menor mas tentar manter sempre em uma
+    única linha") — trocado pra truncamento de 1 linha só.
+  - Mesma técnica de código de barras "nasce no tamanho físico exato"
+    (2 passadas via JsBarcode) já usada nas outras 2 etiquetas — sem
+    mudança nenhuma nessa parte, só reaproveitada.
+- **Ainda NÃO wireada em nenhuma UI** (`EtiquetasPanel` continua só com
+  as abas "Produto"/"Endereço" de sempre) — por enquanto só a função de
+  montagem de HTML/CSS existe no `index.html`, sem nenhum ponto de
+  entrada pro usuário gerar essa etiqueta pelo app ainda. Isso é
+  proposital: o cliente pediu pra trabalhar no DESENHO da etiqueta
+  primeiro; a UI (aba nova, ou reaproveitar a de Produto sem os campos
+  de QTD/Data) é um passo separado, ainda não abordado.
+- **Prévia interativa via Artifact** (não publicado nem no
+  `preview-etiqueta.html`, que é a ferramenta de autonomia do cliente já
+  publicada — essa nova etiqueta ainda não faz parte dela) — usa o MESMO
+  HTML/CSS real que `buildEtiquetaItemHtml`/o bloco `<style>` do
+  `index.html` produzem (extraído via transpile+`vm.Script`, mesma
+  técnica de sempre), com campos editáveis (Código/Descrição) + 3
+  atalhos (descrição curta/média/longa) + comparação lado a lado com a
+  etiqueta de Recebimento já publicada.
+  - **Bug de layout real, achado e corrigido durante a montagem da
+    prévia** (não é bug do app, só da página de prévia em si): a 1ª
+    tentativa de "ampliar a etiqueta pra ficar legível numa tela"
+    (`transform:scale` com 2 níveis de zoom fixos em px, 4x/7x) causava
+    ou (a) o card inteiro crescendo além da largura da página — CSS
+    Flexbox E CSS Grid (`1fr`) têm o MESMO comportamento por padrão:
+    `min-width:auto` não deixa um item encolher abaixo do min-content
+    dos filhos, mesmo com `overflow-x:auto` no elemento errado — ou (b),
+    depois de corrigir isso com `min-width:0`, o zoom de 7x ficava maior
+    que o card disponível e cortava a etiqueta pela metade (a
+    `overflow-x:auto` "resolve" tecnicamente virando scroll, mas esconde
+    metade do conteúdo, ruim pra revisão visual). **Solução final**: em
+    vez de 2 zooms fixos chutados, a prévia mede 50mm em px de verdade
+    na hora (elemento de referência oculto, `#mm-ref`) e calcula
+    `escala = larguraDisponível / 50mm` via JS (`ResizeObserver`-like,
+    recalculado em `resize`) — a etiqueta SEMPRE preenche exatamente o
+    espaço disponível, sem nunca cortar nem sobrar vazio, em qualquer
+    tamanho de tela. Verificado via Playwright nos dois viewports
+    (1400px e 390px) que `document.documentElement.scrollWidth` nunca
+    excede `clientWidth` — a página nunca rola de lado.
+- Testado via harness Node isolado (mesma técnica de sempre — Babel
+  transpila o `<script type="text/babel">`, roda numa `vm.Script`):
+  transpile OK, CSS balanceado (671/671). Rodei de novo toda a suíte de
+  Etiquetas (9 harnesses, 192 asserções) — nenhuma regressão, já que o
+  tipo `'prateleira'` é aditivo, não toca nos tipos `'produto'`/
+  `'endereco'` já publicados. **Verificação física de ponta a ponta (a
+  etiqueta impressa de verdade) fica a cargo do cliente** — mesma
+  limitação de sempre desta feature (sandbox sem impressora física); o
+  código de barras na prévia é uma textura ilustrativa (CSP do Artifact
+  bloqueia o CDN do JsBarcode), mas o mecanismo real (`desenharBarcodesEtiqueta`)
+  não foi tocado, continua o mesmo já testado nas outras 2 etiquetas.

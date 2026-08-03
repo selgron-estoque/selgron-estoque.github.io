@@ -1231,6 +1231,17 @@
   .etq-valor-desc{overflow:hidden;line-height:1.22;max-height:5.2mm;}
   .etq-valor-data{font-weight:700;font-size:7pt;}
   .etq-rodape{border-top:0.25mm solid #000;margin-top:0.3mm;padding-top:0.3mm;display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;min-height:0;}
+  /* Etiqueta de PRATELEIRA/CAIXA (tipo 'prateleira') — ver EM
+     TRABALHO/AJUSTE, ainda não publicada. Diferente da de PRODUTO
+     (recebimento): sem QTD/Data (batch-específico) e sem endereço
+     (pedido do cliente) — só código (sempre o elemento de destaque,
+     maior) + descrição (menor, sempre numa linha só — `white-space:
+     nowrap` + `text-overflow:ellipsis`, corta com "…" se não couber, em
+     vez do `-webkit-line-clamp:2` de uma versão anterior). */
+  .etq-prateleira{width:100%;height:100%;box-sizing:border-box;padding:0.8mm;border:0.35mm solid #000;border-radius:1.6mm;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:Arial,sans-serif;text-align:center;overflow:hidden;gap:0.4mm;}
+  .etq-prat-codigo{font-size:17pt;font-weight:700;line-height:1;margin:0.2mm 0;}
+  .etq-prat-desc{font-size:7pt;font-weight:700;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46mm;}
+  .etq-prateleira .etq-barcode{width:44mm;height:7mm;margin-top:0.2mm;}
   /* FIM DO CSS DA ETIQUETA */
 </style>
 </head>
@@ -1539,6 +1550,21 @@ function buildEtiquetaItemHtml({tipo, codigo, descricao, quantidade, dataRecebim
     return '<div class="etq-endereco">'
       + '<div class="etq-rotulo">ENDEREÇO</div>'
       + '<div class="etq-codigo-grande">'+cod+'</div>'
+      + '<svg class="etq-barcode"></svg>'
+      + '</div>';
+  }
+  // Etiqueta de PRATELEIRA/CAIXA — em trabalho, ainda não publicada (ver
+  // comentário no <style>, perto de `.etq-prateleira`). Sem QTD/Data de
+  // propósito: é pra colar de forma PERMANENTE numa caixa/prateleira, não
+  // amarrada a um recebimento específico. Sem endereço também (pedido do
+  // cliente) — só código (sempre o elemento de destaque) + descrição
+  // (menor, sempre numa linha só, corta com "…" se não couber).
+  if(tipo==='prateleira'){
+    const descPrat = escapeHtmlEtiqueta((descricao||'').slice(0, 120));
+    return '<div class="etq-prateleira">'
+      + '<div class="etq-tag">CÓDIGO</div>'
+      + '<div class="etq-prat-codigo">'+cod+'</div>'
+      + '<div class="etq-prat-desc">'+descPrat+'</div>'
       + '<svg class="etq-barcode"></svg>'
       + '</div>';
   }
