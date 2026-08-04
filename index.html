@@ -1409,11 +1409,17 @@ async function searchSupabaseCatalog(query, almoxarifado){
       const linhas = linhasPorCodigo[codigo];
       // Saldo: mesmo critério de sempre — só confia quando é inequívoco pro
       // armazém pedido (ou pro código inteiro, quando nenhum armazém foi
-      // informado, caso de "Itens Específicos").
+      // informado, caso de "Itens Específicos"). Mesma correção de
+      // `fetchProdutosByCodigos` (ver comentário lá, mesmo bug real): mais
+      // de 1 linha não é ambiguidade de verdade se só UMA delas tem
+      // saldo≠0 — as outras são ruído de linha zerada.
       const doArmazem = almoxarifado ? linhas.filter(r=>r.almoxarifado===almoxarifado) : linhas;
-      if(doArmazem.length===1){
-        saldoPorCodigo[codigo] = Number(doArmazem[0].saldo||0);
-        ultimaSaidaPorCodigo[codigo] = doArmazem[0].data_ultima_saida || null;
+      const naoZeroArmazem = doArmazem.filter(r=>Number(r.saldo||0)!==0);
+      const linhaResolvida = doArmazem.length===1 ? doArmazem[0]
+        : (naoZeroArmazem.length===1 ? naoZeroArmazem[0] : null);
+      if(linhaResolvida){
+        saldoPorCodigo[codigo] = Number(linhaResolvida.saldo||0);
+        ultimaSaidaPorCodigo[codigo] = linhaResolvida.data_ultima_saida || null;
       }
       // Custo: primeiro armazém com saldo≠0 e valor financeiro conhecido —
       // preferindo o armazém pedido quando ele mesmo tiver essa informação,
@@ -3686,10 +3692,21 @@ async function fetchProdutosByCodigos(codigos, almoxarifado){
       const todasLinhas = linhasPorCodigo[p.codigo] || [];
       const linhasDoArmazem = almoxarifado ? todasLinhas.filter(l=>l.almoxarifado===almoxarifado) : todasLinhas;
       // Com armazém informado, no máximo 1 linha faz sentido (chave única
-      // produto+armazém). Sem armazém: só usa o valor se for inequívoco
-      // (1 armazém só) — mais de um vira "sem saldo pra comparar" em vez
-      // de somado.
-      const unica = linhasDoArmazem.length===1 ? linhasDoArmazem[0] : null;
+      // produto+armazém). Sem armazém: só usa o valor se for inequívoco —
+      // 1 armazém só, OU mais de um mas com saldo≠0 em SÓ UM deles (os
+      // outros são ruído de linha zerada, não ambiguidade de verdade —
+      // bug real reportado pelo cliente: "o item está puxando como
+      // zerado, porém na planilha que subi SB2 este item tem saldo" —
+      // recontagem de item importado do histórico, sem armazém conhecido
+      // da 1ª contagem; o código existia em 2 armazéns, um com o saldo
+      // real e outro com saldo 0, e o item inteiro caía pra "sem saldo pra
+      // comparar" (tratado como 0) só por existir em mais de uma linha).
+      // Mais de um armazém com saldo≠0 continua ambíguo de verdade — não
+      // dá pra saber qual dos dois é o certo, então continua sem
+      // comparação automática.
+      const naoZero = linhasDoArmazem.filter(l=>Number(l.saldo||0)!==0);
+      const unica = linhasDoArmazem.length===1 ? linhasDoArmazem[0]
+        : (naoZero.length===1 ? naoZero[0] : null);
       const s = unica || {};
       const comCusto = todasLinhas
         .filter(l=>Number(l.saldo||0)!==0 && l.valor_financeiro!=null)

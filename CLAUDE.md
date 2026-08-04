@@ -15432,3 +15432,73 @@ seção" — mostrava 1789 "contados" pro MESMO período selecionado.
   só na LEITURA (não depende de nenhuma migração de SQL), os dois
   indicadores já devem bater exatamente no próximo carregamento da
   página, pra qualquer período escolhido no painel "Filtros".
+
+## Bug real: item com saldo real em 1 armazém aparecia zerado na recontagem — ambiguidade por "ruído" de linha zerada
+
+Cliente mandou print da recontagem do código `210.011.00006` mostrando
+"Sistema: 0 un.", junto de um recorte da própria planilha SB2 que ele
+subiu, mostrando saldo real (82,9099) pra esse mesmo código — "erro
+gravíssimo aqui, o item está puxando como zerado, porém na planilha que
+subi SB2 este item tem saldo".
+
+- **Causa raiz**: o código existe em **2 armazéns** em `estoque_saldo` —
+  "1" (saldo real, 82,9099) e "99" (saldo 0, uma linha residual/zerada).
+  A 1ª contagem desse item veio de "Importação Histórica" (a planilha
+  `BD_Contagens` antiga nunca teve coluna de armazém — ver "Padrão de
+  planilha do cliente" no histórico deste arquivo), então
+  `original.almoxarifado` fica vazio, e `RecountFlow` chama
+  `fetchProdutosByCodigos([...], undefined)` sem nenhum armazém pra
+  restringir a busca. Sem armazém informado, a função só confia no saldo
+  quando o código existe em **exatamente 1** linha de `estoque_saldo` —
+  encontrando 2 linhas (1 e 99), tratava como "ambíguo entre armazéns" e
+  caía na regra já existente "sem saldo confiável = saldo real 0" (ver
+  seção "Item sem saldo passa a ser tratado como saldo real 0", mais
+  acima) — só que essa ambiguidade não era real: uma das 2 linhas era só
+  ruído (saldo 0), a outra tinha o saldo genuíno. O campo "Almox" da tela
+  já denunciava isso, mostrando literalmente "1/99" (as 2 linhas
+  concatenadas pro debug visual) em vez de um único armazém.
+- **Correção, nos 2 lugares com esse mesmo padrão** (`fetchProdutosByCodigos`,
+  usada por `RecountFlow`/Lista Importada/Itens Específicos; e
+  `searchSupabaseCatalog`, usada por "Nova Contagem" avulsa/manual — os
+  dois únicos caminhos que resolvem saldo sem armazém obrigatório): antes
+  de decidir "ambíguo", filtra fora as linhas com saldo exatamente 0 —
+  se sobrar **exatamente 1** linha com saldo real, usa ela sem hesitar
+  (não é ambiguidade de verdade, é só um armazém sem esse item mesmo).
+  Só continua "sem saldo pra comparar" (0) quando sobram **2 ou mais**
+  linhas com saldo REAL diferentes — aí sim é ambiguidade genuína, sem
+  como saber qual armazém é o certo pra comparar contra a contagem física.
+  Efeito colateral bom, sem precisar de mudança extra: como `s.almoxarifado`
+  passa a vir da linha resolvida, o campo "Almox" da tela também para de
+  mostrar "1/99" nesse caso, mostrando só "1".
+- **Escopo consciente, não mexido**: `fetchContagemItensPrioritarios`/
+  `fetchItensPorEnderecoCompleto` (as 2 RPCs usadas por Aleatória/Curva
+  ABC/Grupo/Rota) não têm esse padrão de ambiguidade — cada linha que a
+  RPC devolve já é uma combinação produto+armazém resolvida do lado do
+  SQL (LATERAL join), não precisando de nenhuma etapa de desambiguação em
+  JS — não fazia sentido tocar nelas.
+- Testado via harness Node isolado (mesma técnica de sempre — Supabase
+  mockado, sem rede real): reproduzido o cenário EXATO do print do
+  cliente (código com saldo real num armazém e saldo 0 noutro, sem
+  armazém informado) — confirma que `saldoSistema` passa a ser 82,9099 (não
+  mais 0) e que "Almox" mostra "1" (não mais "1/99"), nos dois caminhos
+  (`fetchProdutosByCodigos`/`searchSupabaseCatalog`); regressão confirmada
+  em 3 cenários — 2 armazéns com saldo REAL nos dois continua ambíguo → 0,
+  sem regressão (não passou a "adivinhar" nada); item zerado em TODOS os
+  armazéns continua 0 sem quebrar; armazém explicitamente informado
+  continua olhando só a linha exata dele, sem mudança nenhuma. **Confirmei
+  que o harness pega o bug de verdade**: rodei ele contra o código ANTES
+  da correção (`git stash`) e as 3 asserções do cenário real falharam
+  exatamente como o print do cliente mostrava (saldo 0, Almox "1/99") — só
+  depois da correção aplicada é que passam. Rodei de novo toda a suíte de
+  regressão disponível no scratchpad (42 harnesses, 477+ asserções) — as
+  únicas falhas continuam sendo as mesmas 3 já confirmadas pré-existentes/
+  sem relação com esta mudança (`harness_actions_beside_content.js`/
+  `harness_dashboard_render_dedup.js`/`harness_ultima_contagem_por_
+  codigo.js`). Transpile Babel do arquivo inteiro e balanceamento de
+  chaves do CSS conferidos (671/671, sem mudança — só JS, nenhuma classe
+  CSS tocada). **Verificação do número real em produção fica a cargo do
+  cliente** — mesma limitação de sempre (login exige Supabase Auth real,
+  não simulável no sandbox sem rede) — mas como a correção é só na
+  LEITURA (não depende de nenhuma migração de SQL), o item `210.011.00006`
+  (e qualquer outro no mesmo padrão) já deve mostrar o saldo real no
+  próximo carregamento da tela de recontagem.
