@@ -1552,6 +1552,32 @@ function splitQuantidadeEtiquetas(total, n){
   return partes;
 }
 
+// Calibração de impressão da etiqueta — pedido do cliente: "tem casos que
+// a bobina vem torta", precisando ajustar manualmente a posição da coluna
+// DA DIREITA em relação à da esquerda (o rolo físico de 2 colunas pode não
+// vir perfeitamente alinhado de fábrica, ou desalinhar aos poucos conforme
+// o rolo é usado). Guardado no `localStorage`, POR APARELHO — de propósito,
+// é uma calibração da impressora física conectada a ESTE computador (e do
+// rolo carregado nela agora), não uma regra de negócio pra propagar aos
+// outros aparelhos (diferente da regra geral de "configuração vale em
+// todos os aparelhos", que é pra decisão do admin sobre OUTROS usuários —
+// ver CLAUDE.md "Convenções de design"; aqui não tem sentido nenhum, o
+// ajuste certo pra ESTA impressora provavelmente está errado pra outra).
+const ETIQUETA_AJUSTE_MARGEM_KEY = 'stock360:v1:etiquetaAjusteMargemDireita';
+function salvarAjusteMargemEtiquetaDireita(ajuste){
+  try{ localStorage.setItem(ETIQUETA_AJUSTE_MARGEM_KEY, JSON.stringify(ajuste)); }catch(err){}
+}
+function carregarAjusteMargemEtiquetaDireita(){
+  try{
+    const raw = localStorage.getItem(ETIQUETA_AJUSTE_MARGEM_KEY);
+    if(!raw) return {x:0, y:0};
+    const parsed = JSON.parse(raw);
+    const x = Number(parsed && parsed.x);
+    const y = Number(parsed && parsed.y);
+    return {x: Number.isFinite(x) ? x : 0, y: Number.isFinite(y) ? y : 0};
+  }catch(err){ return {x:0, y:0}; }
+}
+
 // Monta o HTML de UMA etiqueta (`.etq-endereco`/`.etq-produto`) — extraído
 // de `imprimirEtiquetaViaNavegador` pra poder montar 1 ou 2 colunas na
 // mesma folha (ver comentário dela abaixo, sobre o rolo de 2 colunas).
@@ -1634,10 +1660,24 @@ function buildEtiquetaItemHtml({tipo, codigo, descricao, quantidade, dataRecebim
 // Chrome aparentemente não tratava assim, inserindo uma folha em branco
 // extra a cada quebra. Removida a redundante (`break-after:page`), só
 // `page-break-after:always` ficou.
-function buildEtiquetaPageHtml(itens, quebrarDepois){
+//
+// `ajusteDireita` ({x, y} em mm, opcional) — calibração manual da coluna
+// DA DIREITA (ver `carregarAjusteMargemEtiquetaDireita`), aplicada via
+// `transform:translate(...)` (não `margin`) de propósito: transform desloca
+// só a aparência visual, sem empurrar layout/box (a folha continua exatos
+// 101x30.5mm físicos, o que o driver da impressora espera) — `x`
+// positivo desloca pra DIREITA, negativo pra ESQUERDA; `y` positivo desloca
+// pra BAIXO, negativo pra CIMA. Só a coluna de índice 1 (a 2ª, direita)
+// recebe o ajuste — a esquerda nunca muda.
+function buildEtiquetaPageHtml(itens, quebrarDepois, ajusteDireita){
   const style = quebrarDepois ? ' style="page-break-after:always;"' : '';
+  const ajuste = ajusteDireita || {x:0, y:0};
+  const temAjuste = ajuste.x || ajuste.y;
   return '<div class="etq-page"'+style+'>'
-    + itens.map(it=>'<div class="etq-page-col'+(it.tipo==='prateleira' ? ' etq-page-col--prateleira' : '')+'">'+buildEtiquetaItemHtml(it)+'</div>').join('')
+    + itens.map((it, i)=>{
+        const colStyle = (i===1 && temAjuste) ? ' style="transform:translate('+ajuste.x+'mm,'+ajuste.y+'mm);"' : '';
+        return '<div class="etq-page-col'+(it.tipo==='prateleira' ? ' etq-page-col--prateleira' : '')+'"'+colStyle+'>'+buildEtiquetaItemHtml(it)+'</div>';
+      }).join('')
     + '</div>';
 }
 
@@ -1701,7 +1741,7 @@ function imprimirEtiquetaViaNavegador(item1, item2){
   const area = (typeof document!=='undefined') ? document.getElementById('etiqueta-print-area') : null;
   if(!area) return {ok:false, erro:'Área de impressão não encontrada nesta página.'};
   const itens = item2 ? [item1, item2] : [item1];
-  area.innerHTML = buildEtiquetaPageHtml(itens, false);
+  area.innerHTML = buildEtiquetaPageHtml(itens, false, carregarAjusteMargemEtiquetaDireita());
   desenharBarcodesEtiqueta(area, itens);
   if(typeof window!=='undefined' && window.print) window.print();
   return {ok:true};
@@ -1740,7 +1780,8 @@ function imprimirLoteEtiquetas(itens){
   for(let i=0;i<itens.length;i+=2){
     pares.push(itens[i+1] ? [itens[i], itens[i+1]] : [itens[i]]);
   }
-  area.innerHTML = pares.map((par, i)=>buildEtiquetaPageHtml(par, i<pares.length-1)).join('');
+  const ajuste = carregarAjusteMargemEtiquetaDireita();
+  area.innerHTML = pares.map((par, i)=>buildEtiquetaPageHtml(par, i<pares.length-1, ajuste)).join('');
   desenharBarcodesEtiqueta(area, itens);
   if(typeof window!=='undefined' && window.print) window.print();
   return {ok:true, folhas: pares.length};
@@ -13803,6 +13844,39 @@ function EtiquetasPanel({currentUser}){
   const [erroImpressao, setErroImpressao] = useState(null);
   const [sucessoImpressao, setSucessoImpressao] = useState(false);
 
+  // Calibração manual da coluna da direita (pedido do cliente, "tem casos
+  // que a bobina vem torta") — lê/grava direto no `localStorage` (ver
+  // `carregarAjusteMargemEtiquetaDireita`, POR APARELHO de propósito), sem
+  // precisar de nenhum estado global em App(). Os campos ficam como TEXTO
+  // (não number) pra aceitar "-"/"." no meio da digitação sem travar —
+  // `handleAjusteChange` filtra caractere inválido e só grava quando o
+  // texto já é um número válido.
+  const [mostrarCalibracao, setMostrarCalibracao] = useState(false);
+  const [ajusteXTexto, setAjusteXTexto] = useState(()=>String(carregarAjusteMargemEtiquetaDireita().x));
+  const [ajusteYTexto, setAjusteYTexto] = useState(()=>String(carregarAjusteMargemEtiquetaDireita().y));
+  function sanitizeAjusteMmTexto(raw){
+    let v = raw.replace(/[^0-9.\-]/g,''); // só dígito, ponto e menos
+    const negativo = v.charAt(0)==='-';
+    v = v.replace(/-/g,'');
+    if(negativo) v = '-'+v;
+    const partes = v.split('.');
+    if(partes.length>2) v = partes[0]+'.'+partes.slice(1).join('');
+    return v;
+  }
+  function handleAjusteChange(eixo, valorTexto, setTexto){
+    const limpo = sanitizeAjusteMmTexto(valorTexto);
+    setTexto(limpo);
+    const num = Number(limpo);
+    if(limpo!=='' && limpo!=='-' && Number.isFinite(num)){
+      salvarAjusteMargemEtiquetaDireita({...carregarAjusteMargemEtiquetaDireita(), [eixo]: num});
+    }
+  }
+  function handleRestaurarAjuste(){
+    salvarAjusteMargemEtiquetaDireita({x:0, y:0});
+    setAjusteXTexto('0');
+    setAjusteYTexto('0');
+  }
+
   // Fila de impressão — enviar (de qualquer aparelho) e imprimir dela (só
   // no PC que tem essa impressora disponível pra imprimir de verdade).
   const [enviandoParaFila, setEnviandoParaFila] = useState(false);
@@ -14011,9 +14085,37 @@ function EtiquetasPanel({currentUser}){
   return (
     <div>
       <div className="role-note" style={{marginBottom:14}}>
-        <DIcon name="printer" size={16} style={{verticalAlign:-3,marginRight:6}}/>
-        Ao clicar em "Imprimir Etiqueta", abre a janela de impressão normal do navegador —
-        escolha a impressora TSC e confirme o tamanho da folha (101×31mm) se for pedido.
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,flexWrap:'wrap'}}>
+          <span>
+            <DIcon name="printer" size={16} style={{verticalAlign:-3,marginRight:6}}/>
+            Ao clicar em "Imprimir Etiqueta", abre a janela de impressão normal do navegador —
+            escolha a impressora TSC e confirme o tamanho da folha (101×31mm) se for pedido.
+          </span>
+          <button type="button" className="btn btn-outline btn-xs" onClick={()=>setMostrarCalibracao(v=>!v)}>
+            {mostrarCalibracao ? 'Ocultar calibração' : 'Calibrar etiqueta da direita'}
+          </button>
+        </div>
+        {mostrarCalibracao && (
+          <div style={{marginTop:12,paddingTop:12,borderTop:'1px solid var(--line)'}}>
+            <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginBottom:8}}>
+              Tem casos em que a bobina vem torta e a etiqueta da DIREITA sai deslocada em
+              relação à da esquerda — ajuste em milímetros pra compensar. Horizontal positivo
+              desloca pra direita, negativo pra esquerda; vertical positivo desloca pra baixo,
+              negativo pra cima. Vale só nesta impressora/aparelho — não muda em nenhum outro.
+            </div>
+            <div style={{display:'flex',gap:10,alignItems:'flex-end',flexWrap:'wrap'}}>
+              <div className="field" style={{marginBottom:0,width:120}}>
+                <label>Horizontal (mm)</label>
+                <input type="text" inputMode="decimal" value={ajusteXTexto} onChange={e=>handleAjusteChange('x', e.target.value, setAjusteXTexto)} placeholder="0" />
+              </div>
+              <div className="field" style={{marginBottom:0,width:120}}>
+                <label>Vertical (mm)</label>
+                <input type="text" inputMode="decimal" value={ajusteYTexto} onChange={e=>handleAjusteChange('y', e.target.value, setAjusteYTexto)} placeholder="0" />
+              </div>
+              <button type="button" className="btn btn-outline btn-xs" onClick={handleRestaurarAjuste}>Restaurar (0,0)</button>
+            </div>
+          </div>
+        )}
       </div>
 
       {currentUser.perfil==='admin' && (

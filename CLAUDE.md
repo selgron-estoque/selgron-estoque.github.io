@@ -15572,3 +15572,87 @@ redor do contorno preto, antes de chegar na borda física do rótulo).
   Caixa" (só Produto/Endereço), então não há nada pra sincronizar aqui.
   **Verificação física de ponta a ponta fica 100% a cargo do cliente** —
   mesma limitação de sempre desta feature (sandbox sem impressora física).
+
+## Calibração manual da margem da etiqueta da direita (rolo pode vir torto)
+
+Cliente mandou foto de 2 etiquetas de Recebimento impressas lado a lado
+(mesmo código, arrancadas do rolo) e pediu: "Etiqueta da direita precisa
+ajustar a margem, arrumar uma forma de como eu posso ajustar isso
+manualmente, tem casos que a bobina vem torta" — não um ajuste pontual de
+CSS (o rolo físico pode vir desalinhado de fábrica, ou desalinhar aos
+poucos com o uso — um valor fixo no código nunca vai servir pra todo
+rolo), e sim uma ferramenta de calibração que o próprio cliente controla.
+
+- **`ETIQUETA_AJUSTE_MARGEM_KEY = 'stock360:v1:etiquetaAjusteMargemDireita'`**
+  (perto de `buildEtiquetaItemHtml`) — `carregarAjusteMargemEtiquetaDireita()`/
+  `salvarAjusteMargemEtiquetaDireita(ajuste)`, mesmo padrão simples
+  `localStorage.getItem/setItem` já usado em `LOGIN_LEMBRADO_KEY` (não a
+  `usePersistedState`/Supabase, que syncam entre aparelhos). **Decisão
+  deliberada de ficar POR APARELHO**: isso é calibração física da
+  impressora+rolo conectados a ESTE computador — diferente da regra geral
+  do projeto ("qualquer configuração administrável precisa valer em todos
+  os aparelhos", ver "Convenções de design") — aqui o valor certo pra ESTA
+  impressora provavelmente está ERRADO pra outra, sincronizar entre
+  aparelhos quebraria a calibração de quem já estava certo.
+- **`buildEtiquetaPageHtml(itens, quebrarDepois, ajusteDireita)`** ganhou
+  o 3º parâmetro (opcional, `{x:0,y:0}` por padrão) — aplica
+  `transform:translate(Xmm,Ymm)` só na coluna de ÍNDICE 1 (a da direita),
+  nunca na esquerda, e nunca quando a folha só tem 1 item (não existe
+  "direita" nesse caso). `transform` em vez de `margin` de propósito: só
+  desloca a APARÊNCIA visual, sem empurrar layout — a folha continua com
+  exatos 101×30,5mm físicos, o que o driver da impressora espera.
+- **`imprimirEtiquetaViaNavegador`/`imprimirLoteEtiquetas`** passaram a
+  chamar `carregarAjusteMargemEtiquetaDireita()` na hora de montar a
+  folha — a calibração salva vale pra TODOS os caminhos de impressão
+  (avulsa, fila individual, "Imprimir Todos"), automaticamente, sem
+  precisar tocar em cada um separadamente (os dois já centralizavam a
+  montagem de HTML em `buildEtiquetaPageHtml`).
+- **UI em `EtiquetasPanel`**: botão "Calibrar etiqueta da direita" (dentro
+  do mesmo `role-note` que já explicava como imprimir) revela 2 campos —
+  "Horizontal (mm)"/"Vertical (mm)", com aviso explicando o sentido
+  (positivo desloca direita/baixo, negativo esquerda/cima) e que "vale só
+  nesta impressora/aparelho". Campos são TEXTO (não `type="number"`,
+  mesma lição já aprendida antes neste projeto — ver seção "Bug real:
+  quantidade fracionária... teclado com vírgula" — `type="number"` tem
+  comportamento inconsistente com sinal negativo/decimal em alguns
+  navegadores/teclados), com `sanitizeAjusteMmTexto` filtrando pra só
+  dígito/ponto/menos e no máximo 1 de cada, sem travar no meio da digitação
+  (ex: digitar só "-" fica visível no campo, mas só GRAVA no localStorage
+  quando já é um número válido). Salva a cada tecla (sem botão "Salvar"
+  separado — é um ajuste rápido de bancada, feito olhando o resultado
+  impresso na hora). Botão "Restaurar (0,0)" zera os dois eixos de uma vez.
+  Campos já abrem preenchidos com o valor salvo antes (não força
+  redigitar a cada vez que a tela é reaberta).
+- Testado via harness novo (`harness_etiqueta_calibracao_margem.js`, jsdom
+  + react-dom/client + `act()`, com um `localStorage` REAL — em memória,
+  não o stub que sempre retorna `null` usado nos outros harnesses desta
+  feature, já que aqui a persistência é o que está sendo testado): confirmei
+  que `buildEtiquetaPageHtml` aplica o `transform` só na coluna da direita
+  (nunca na esquerda, nunca com 1 item só, nunca quando o ajuste é
+  {x:0,y:0}); `carregarAjusteMargemEtiquetaDireita`/`salvarAjusteMargemEtiquetaDireita`
+  isoladas (sem nada salvo → {0,0}; salva e recupera de volta; JSON
+  corrompido cai pro padrão sem lançar erro; eixo com valor não-numérico
+  cai pra 0 sem descartar o outro eixo válido); `imprimirEtiquetaViaNavegador`/
+  `imprimirLoteEtiquetas` (esta com 4 itens, 2 folhas) aplicando a MESMA
+  calibração salva em toda folha gerada; e a UI de ponta a ponta — toggle
+  esconde/mostra os 2 campos, digitar grava no localStorage na hora, "-"
+  sozinho não grava (número inválido ainda), completar o número grava
+  certo sem perder o outro eixo já salvo, "Restaurar (0,0)" zera os dois
+  (localStorage E o texto na tela), e reabrir a tela com um valor JÁ salvo
+  antes preenche os campos sozinho. 31 asserções, todas passando. Rodei de
+  novo toda a suíte de Etiquetas (10 harnesses, 259 asserções) e a suíte
+  completa do scratchpad — só as mesmas 3 falhas já confirmadas
+  pré-existentes/sem relação com esta mudança continuam
+  (`harness_actions_beside_content.js`/`harness_dashboard_render_dedup.js`/
+  `harness_ultima_contagem_por_codigo.js`). Transpile Babel do arquivo
+  inteiro e balanceamento de chaves do CSS conferidos (672/672, sem
+  mudança — nenhuma classe CSS nova, o ajuste é `style` inline em tempo de
+  impressão, não uma regra CSS). **`preview-etiqueta.html` não precisou de
+  sincronia** — a mudança não toca em nenhuma regra CSS existente (só
+  adiciona `style` inline na hora de montar o HTML de impressão), então o
+  CSS baseline copiado lá continua fiel. **Verificação física de ponta a
+  ponta (achar o valor certo pra compensar a bobina torta de verdade) fica
+  100% a cargo do cliente** — mesma limitação de sempre nesta feature
+  (sandbox sem impressora física) — a orientação prática é: imprimir um par
+  de teste, medir/observar o desalinhamento, ajustar o campo Horizontal e/
+  ou Vertical no sentido indicado no aviso da tela, e repetir até bater.
