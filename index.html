@@ -10767,6 +10767,7 @@ function SolicitacaoArmazemPanel({counts, inventories, role, onEnviarParaDiretor
                   </div>
                   <div style={{padding:'10px 16px 0',fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>Enviado ao Armazém por {c.saGeradaPor||'—'} em {c.saGeradaEm||'—'}</div>
                   {c.motivo && <div style={{padding:'6px 16px 0',fontSize:'var(--text-sm)'}}>Motivo: <strong>{c.motivo}</strong></div>}
+                  {c.valorDivergente!=null && Number(c.valorDivergente)!==0 && <div style={{padding:'6px 16px 0',fontSize:'var(--text-sm)'}}>Valor divergente: <strong>R$ {Number(c.valorDivergente).toFixed(2)}</strong></div>}
                   {/* `confirmDeleteId!==c.id` (era `!confirmDeleteId`) — bug
                       real corrigido no caminho: `confirmDeleteId` guarda o id
                       de UM card por vez, então `!confirmDeleteId` escondia o

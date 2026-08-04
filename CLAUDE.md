@@ -15858,3 +15858,52 @@ CONTORNO (`border`+`border-radius`, a linha preta arredondada ao redor de
   inteiro e balanceamento de chaves do CSS conferidos (672/672).
   **Verificação física de ponta a ponta fica a cargo do cliente** — mesma
   limitação de sempre (sandbox sem impressora física).
+
+## "Valor divergente" em todas as abas de análise de "Gestão de Inventário"
+
+Cliente pediu: "Incluir valor da divergência em todos as abas de analise
+gestão de inventário" — pedido sem relação com a feature de Etiquetas das
+rodadas anteriores, sobre as 5 telas de revisão de divergência dentro do
+grupo **"Gestão de Inventário"** da Sidebar (não confundir com o grupo
+separado "Análise", que só tem Indicadores/Relatórios — o cliente disse
+"gestão de inventário" especificamente).
+
+- **Investigação**: `grep` por "Valor divergente"/"valorDivergente" nas 5
+  telas (`RecountsPanel`/"Recontagens", `DivergentItemsPanel`/"Itens
+  Divergentes", `SolicitacaoArmazemPanel`/"Aguardando Armazém",
+  `DiretoriaApprovalPanel`/"Aguardando Aprovação",
+  `ConcludedCountsPanel`/"Contagens Concluídas") — 4 das 5 já mostravam o
+  valor: `RecountsPanel` (dentro do bloco "Detalhes", já gated pelo toggle
+  admin `operadorVeValoresRecontagem` — não mexido, é regra de negócio já
+  existente), `DivergentItemsPanel` (sempre visível), `DiretoriaApprovalPanel`
+  (sempre visível), e `ConcludedCountsPanel` (dentro de "Detalhes" — que
+  nessa tela específica começa FECHADO por padrão, decisão antiga já
+  documentada: "uma cadeia concluída pode ter várias rodadas, abrir todas
+  de cara deixaria a lista mais longa que o necessário" — não mexida).
+  **Gap real, único**: `SolicitacaoArmazemPanel` ("Aguardando Armazém")
+  nunca mostrava esse valor em lugar nenhum — só "Motivo" e os metadados de
+  quem enviou ao Armazém.
+- **Correção**: uma linha JSX nova, logo depois de "Motivo" em
+  `SolicitacaoArmazemPanel`, replicando EXATAMENTE o mesmo padrão/estilo já
+  usado em `DivergentItemsPanel`/`DiretoriaApprovalPanel`:
+  `{c.valorDivergente!=null && Number(c.valorDivergente)!==0 && <div
+  style={{padding:'6px 16px 0',fontSize:'var(--text-sm)'}}>Valor
+  divergente: <strong>R$ {Number(c.valorDivergente).toFixed(2)}</strong>
+  </div>}` — sem gate de perfil (essa tela nunca teve esse tipo de
+  restrição, diferente de `RecountsPanel`).
+- Testado via harness novo (`harness_valor_divergente_todas_abas.js`,
+  `react-dom/server`+`renderToStaticMarkup` contra o `index.html` inteiro
+  transpilado numa `vm.Script`, mesma técnica de sempre): confirma que os
+  5 painéis renderizam com "Valor divergente" (ou, no caso de
+  `ConcludedCountsPanel`, que o item aparece normalmente na lista — o
+  texto em si só aparece depois de clicar "Detalhes", não simulável via
+  SSR) pra uma contagem com `valorDivergente:'150.75'` — 7/7 asserções
+  passando. Rodei de novo toda a suíte completa do scratchpad (44
+  harnesses, 543 passando) — só as mesmas 3 falhas pré-existentes de
+  sempre (`harness_actions_beside_content.js`/`harness_dashboard_render_
+  dedup.js`/`harness_ultima_contagem_por_codigo.js`), confirmadas via
+  `git stash` que já falham igual sem esta mudança. Transpile Babel do
+  arquivo inteiro e balanceamento de chaves do CSS conferidos (672/672,
+  sem mudança — só JSX, nenhuma classe CSS tocada). **Verificação visual
+  de ponta a ponta fica a cargo do cliente** — mesma limitação de sempre
+  (login exige Supabase Auth real, não simulável no sandbox sem rede).
