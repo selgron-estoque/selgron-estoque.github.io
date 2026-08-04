@@ -15656,3 +15656,154 @@ rolo), e sim uma ferramenta de calibração que o próprio cliente controla.
   (sandbox sem impressora física) — a orientação prática é: imprimir um par
   de teste, medir/observar o desalinhamento, ajustar o campo Horizontal e/
   ou Vertical no sentido indicado no aviso da tela, e repetir até bater.
+
+## Código de barras ganha texto descritivo + margem removida de TODAS as etiquetas
+
+Cliente, direto: "código de barras precisa ser melhorado, estamos com
+dificuldade para ler, pode incluir o código descritivo em baixo do código de
+barra e tirar a margem de todas as etiquetas, aquele desenho quadrado". Três
+pedidos numa mensagem só:
+
+1. **Legibilidade do código de barras** — relato de dificuldade real de
+   leitura (a mesma limitação física já documentada antes: código de 13
+   caracteres numa etiqueta de 50mm força módulo de barra bem fino).
+2. **Código descritivo (HRI — "human readable interpretation") embaixo das
+   barras** — nunca existiu, o código de barras sempre foi só as barras
+   (`displayValue:false` desde que essa feature foi criada).
+3. **"Tirar a margem de todas as etiquetas, aquele desenho quadrado"** —
+   interpretado como: estender o tratamento que já existia só pra
+   "Prateleira/Caixa" (`.etq-page-col--prateleira{padding:0;}`, ver seção
+   "Etiqueta 'Prateleira/Caixa' ganha ponto de entrada"/"Tirar margem da
+   Etiqueta Prateleira/caixa" mais acima) pras OUTRAS 2 etiquetas
+   (Endereço/Recebimento) também — "aquele desenho quadrado" bate com o
+   contorno preto que Recebimento/Prateleira já têm (`border`), e a
+   margem de 0.8mm que sobrava ao redor dele nas duas é exatamente o que
+   ainda restava a remover pra "todas".
+
+### Margem universal
+
+`.etq-page-col{padding:0.8mm}` → `padding:0` — direto na classe BASE
+(compartilhada pelos 3 tipos), não mais uma exceção via classe modificadora.
+A classe `.etq-page-col--prateleira` (CSS) e a lógica em
+`buildEtiquetaPageHtml` que só a aplicava pro tipo `'prateleira'` foram
+**removidas por completo** (virou desnecessária — a base já zera o padding
+sozinha, pra qualquer tipo).
+
+### Código de barras: `displayValue:true` + técnica de 2 passadas estendida pra altura
+
+A técnica "nasce no tamanho FÍSICO exato, sem depender de reescala forçada
+via CSS" (criada numa rodada bem anterior — ver "Bug real: código do produto
+sem formatação..."/"...está pronto pra ler no tablet ou bipador?") sempre
+resolveu só a LARGURA (1ª passada mede o módulo nativo, 2ª passada já nasce
+com a largura certa). Ligar `displayValue:true` introduz uma dimensão nova
+que a técnica de então não cobria: o texto do código abaixo das barras (mais
+as margens do JsBarcode ao redor dele) soma uma altura extra — "overhead" —
+que precisa ser DESCONTADA da altura de barras pedida, senão a altura TOTAL
+do SVG ultrapassa a caixa CSS alvo (reabrindo o mesmo risco de reescala
+forçada/distorção que a técnica sempre existiu pra evitar, só que agora no
+eixo vertical).
+
+- **`ETIQUETA_BARCODE_CONFIG`** (objeto novo, substitui os 2 pares soltos
+  `alturaAlvoMm`/`larguraAlvoMm` de antes) — uma entrada por tipo
+  (endereco/produto/prateleira), cada uma com `alturaTotalMm`/`larguraMm`/
+  `fontSize` — bate exatamente com `.etq-endereco .etq-barcode`/
+  `.etq-produto .etq-barcode`/`.etq-prateleira .etq-barcode` no CSS.
+- **`desenharBarcodesEtiqueta` reescrita**: 1ª passada chuta uma altura de
+  BARRAS (65% do alvo total) só pra MEDIR — de uma vez só — a largura
+  nativa (pra escalar a largura, técnica de sempre) E o overhead vertical
+  real (`h1 - alturaBarrasChute`). **Confirmado, testando contra o
+  JsBarcode de verdade** (não só teoria): esse overhead é praticamente
+  CONSTANTE pro mesmo `fontSize`/`textMargin`, independente do código e da
+  altura de barras escolhida — por isso medir uma vez já basta, sem
+  precisar de mais passadas. 2ª passada: já nasce no tamanho FÍSICO exato
+  nos DOIS eixos — largura pelo módulo recalculado (de sempre), altura de
+  barras = `alturaTotalAlvoPx - overheadMedido` (nova).
+- **Tamanhos-alvo cresceram** (usando o espaço livrado pela margem
+  removida acima, pra caber o texto sem apertar o que já existia):
+  endereço `44×11mm→45×14mm`, produto `44×7mm→46×9.3mm`, prateleira
+  `44×7mm→46×12mm` (prateleira ganha mais altura que produto porque sobra
+  bem mais espaço vertical livre nela — sem QTD/Data/Endereço disputando
+  o mesmo orçamento).
+- **`fontSize`**: 11 (endereço), 9 (produto), 10 (prateleira) — `textMargin:
+  1` nos 3 (padrão do JsBarcode é 2; reduzido pra sobrar mais altura pras
+  barras em si).
+
+### Verificação — Playwright com o JsBarcode REAL (não mockado), medindo geometria física
+
+Diferente da maioria das rodadas desta feature (sempre limitadas a
+transpile+harness Node, já que o CDN do JsBarcode é bloqueado no sandbox),
+desta vez consegui testar contra a biblioteca de verdade: o pacote npm
+`jsbarcode` já estava instalado localmente (`/tmp/node_modules/jsbarcode`,
+mesma versão `3.x` do CDN usado em produção) — extraí o `dist/JsBarcode.
+all.min.js` de dentro dele e servi via `file://` numa página de teste, ao
+lado do CSS e das funções (`buildEtiquetaItemHtml`/`buildEtiquetaPageHtml`/
+`desenharBarcodesEtiqueta`/`ETIQUETA_BARCODE_CONFIG`) extraídas por TEXTO
+direto do `index.html` real (sem passar por Babel — essas funções não usam
+JSX, só concatenam string).
+
+- **Medido via `boundingBox()`/`getComputedStyle` num Chromium real**, não
+  só lido do atributo do SVG: os 3 tipos batem EXATAMENTE com o alvo físico
+  em mm (endereço 45.00×14.00mm, produto 46.00×9.30mm, prateleira
+  46.00×12.00mm) — confirma que a técnica de 2 passadas (agora também no
+  eixo vertical) funciona contra o JsBarcode de verdade, não só na teoria.
+- **Pior caso testado de propósito** (mesmo critério de robustez já usado
+  nesta feature antes): código de 13 caracteres (o máximo possível nos
+  formatos válidos da SB2) + QTD de 4 dígitos + endereço + descrição de 2
+  linhas, tudo junto — sem NENHUM overflow (`scrollHeight===clientHeight`),
+  a altura do código de barras continua batendo 9.30mm exatos mesmo com o
+  canto superior direito (QTD/Endereço) ocupado. Screenshot conferido
+  visualmente — o texto "210.011.00006" aparece legível abaixo das barras,
+  sem cortar nem sobrepor nada.
+- **`<text>` confirmado presente em todo `svg.etq-barcode`** (prova de que
+  `displayValue:true` está de fato gerando o código descritivo, não só
+  configurado sem efeito).
+- **Folha de 2 colunas** (endereço + produto juntos, mesmo mecanismo de
+  pareamento de sempre) testada — os 2 códigos de barra nascem certos e
+  na ordem certa, cada um com o texto do PRÓPRIO item (não trocado/
+  duplicado entre colunas).
+- Bug de extração pego e corrigido no processo (só afetava o script de
+  teste, não o `index.html`): a 1ª tentativa de extrair `buildEtiquetaItemHtml`
+  por texto cortava a função pela METADE — o parâmetro é um destructuring
+  (`{tipo, codigo, ...}`), cujo `{` de abertura o script confundia com o
+  `{` do CORPO da função, balanceando chaves a partir do lugar errado.
+  Corrigido pulando a lista de parênteses da assinatura inteira (balanceando
+  `(`/`)`, não só procurando o próximo `)`) antes de procurar o `{` do
+  corpo.
+- **Rodada da suíte de regressão inteira do scratchpad** (44 harnesses,
+  536 asserções no total) — só as mesmas 3 falhas pré-existentes de sempre
+  (`harness_actions_beside_content.js`/`harness_dashboard_render_dedup.js`/
+  `harness_ultima_contagem_por_codigo.js`, confirmadas sem relação com esta
+  mudança em rodadas anteriores) continuam falhando; **7 asserções em 3
+  harnesses de Etiquetas ficaram desatualizadas por causa desta mudança
+  intencional** (checavam os tamanhos antigos 44×7mm/38mm, a existência da
+  classe modificadora `--prateleira`, e o padding de 0.8mm que acabou de
+  ser removido) — atualizadas pra refletir o novo comportamento, mesmo
+  critério de sempre (mudança de comportamento intencional, não regressão).
+- **`preview-etiqueta.html` sincronizado** (mesmo padrão de sempre): a cópia
+  embutida do CSS-baseline (`.etq-page-col` padding, tamanhos dos 2 tipos
+  suportados) e a réplica local de `desenharBarcode` (mesma técnica de 2
+  passadas + `displayValue:true`, com um `ETIQUETA_BARCODE_CONFIG` local
+  espelhando o do app real) foram atualizadas juntas. Confirmado via
+  Playwright que a ferramenta continua funcionando sem erro de JS — o fetch
+  ao vivo (bloqueado no sandbox) demora bem mais que o esperado pra
+  rejeitar através do proxy (~10-15s, não os poucos segundos assumidos nas
+  primeiras tentativas de teste — achado no processo, não um bug, só a
+  latência real do proxy neste sandbox) antes de cair no fallback pra
+  baseline — confirmado que cai corretamente no fim, e que o CSS aplicado
+  bate com os valores novos (`.etq-produto .etq-barcode` computado em
+  173.86×35.15px = 46.03×9.31mm, batendo com o alvo). **Continua sem
+  suporte ao tipo 'prateleira'** — gap já documentado/aceito desde que essa
+  ferramenta foi criada, não preenchido nesta rodada (fora do que foi
+  pedido).
+- Transpile Babel do `index.html` inteiro e balanceamento de chaves do CSS
+  conferidos (671/671, sem mudança líquida — a remoção da classe
+  `--prateleira` e a adição de `ETIQUETA_BARCODE_CONFIG` se cancelaram).
+- **Verificação física de ponta a ponta com a impressora real (contraste
+  do texto impresso, se o texto abaixo das barras realmente ajuda um
+  scanner/bipador físico a ler, o resultado visual da margem removida no
+  papel de verdade) fica 100% a cargo do cliente** — mesma limitação de
+  sempre nesta feature (sandbox sem impressora física) — mas, diferente
+  de rodadas anteriores, desta vez o próprio código de barras foi testado
+  contra a biblioteca JsBarcode REAL (não mockada), só faltando o passo
+  final (papel físico, scanner físico) que só existe no ambiente do
+  cliente.

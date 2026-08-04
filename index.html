@@ -1188,20 +1188,22 @@
      101x31mm, o que o driver da impressora espera). */
   @page{size:101mm 31mm;margin:0;}
   .etq-page{display:flex;align-items:center;gap:1mm;width:101mm;height:30.5mm;box-sizing:border-box;}
-  .etq-page-col{width:50mm;height:30mm;box-sizing:border-box;padding:0.8mm;}
-  /* "Prateleira/Caixa" pediu pra tirar a margem (pedido do cliente) — sem
-     esse 0.8mm de respiro, o contorno da etiqueta encosta na borda física
-     do rótulo de 50x30mm, usando o espaço todo. Escopado só a este tipo
-     (via classe modificadora aplicada em `buildEtiquetaPageHtml`) — as
-     etiquetas de Recebimento/Endereço continuam com a margem de sempre. */
-  .etq-page-col--prateleira{padding:0;}
+  /* Pedido do cliente: "tirar a margem de todas as etiquetas" — o 0.8mm de
+     respiro entre a borda física do rótulo de 50x30mm e o contorno/conteúdo
+     saiu pra TODOS os tipos (antes só "Prateleira/Caixa" tinha isso, via
+     classe modificadora — removida, virou desnecessária por a base já
+     zerar o padding). Cada tipo usa o espaço todo até a borda física. */
+  .etq-page-col{width:50mm;height:30mm;box-sizing:border-box;padding:0;}
   .etq-endereco{width:100%;height:100%;box-sizing:border-box;padding:2mm;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:Arial,sans-serif;text-align:center;overflow:hidden;}
   .etq-rotulo{font-size:6pt;font-weight:700;letter-spacing:0.5px;}
   .etq-codigo-grande{font-size:16pt;font-weight:700;margin:1mm 0;}
   .etq-barcode{display:block;margin:0 auto;}
-  .etq-endereco .etq-barcode{width:44mm;height:11mm;}
+  /* Tamanho do BLOCO INTEIRO (barras + código descritivo abaixo, ver
+     `desenharBarcodesEtiqueta`) — cresceu em largura E altura em relação a
+     antes, usando o espaço que sobrou da margem removida acima. */
+  .etq-endereco .etq-barcode{width:45mm;height:14mm;}
   .etq-produto{width:100%;height:100%;box-sizing:border-box;padding:0.6mm;border:0.35mm solid #000;border-radius:1.6mm;display:flex;flex-direction:column;font-family:Arial,sans-serif;overflow:hidden;position:relative;}
-  .etq-produto .etq-barcode{width:44mm;height:7mm;}
+  .etq-produto .etq-barcode{width:46mm;height:9.3mm;}
   /* Rótulos (CÓDIGO/DESCRIÇÃO/DATA) em texto preto simples — a "bandeirinha
      preta" (fundo preto + texto branco) de uma rodada anterior deu lugar a
      este formato mais simples, pedido explícito do cliente. */
@@ -1247,7 +1249,9 @@
   .etq-prateleira{width:100%;height:100%;box-sizing:border-box;padding:0.8mm;border:0.35mm solid #000;border-radius:1.6mm;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:Arial,sans-serif;text-align:center;overflow:hidden;gap:0.4mm;}
   .etq-prat-codigo{font-size:17pt;font-weight:700;line-height:1;margin:0.2mm 0;}
   .etq-prat-desc{font-size:7pt;font-weight:700;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46mm;}
-  .etq-prateleira .etq-barcode{width:44mm;height:7mm;margin-top:0.2mm;}
+  /* Sobra bem mais altura livre aqui do que nas outras 2 etiquetas (não tem
+     QTD/Data/Endereço disputando espaço) — cresce mais que produto. */
+  .etq-prateleira .etq-barcode{width:46mm;height:12mm;margin-top:0.2mm;}
   /* FIM DO CSS DA ETIQUETA */
 </style>
 </head>
@@ -1676,10 +1680,20 @@ function buildEtiquetaPageHtml(itens, quebrarDepois, ajusteDireita){
   return '<div class="etq-page"'+style+'>'
     + itens.map((it, i)=>{
         const colStyle = (i===1 && temAjuste) ? ' style="transform:translate('+ajuste.x+'mm,'+ajuste.y+'mm);"' : '';
-        return '<div class="etq-page-col'+(it.tipo==='prateleira' ? ' etq-page-col--prateleira' : '')+'"'+colStyle+'>'+buildEtiquetaItemHtml(it)+'</div>';
+        return '<div class="etq-page-col"'+colStyle+'>'+buildEtiquetaItemHtml(it)+'</div>';
       }).join('')
     + '</div>';
 }
+
+// Config por tipo de etiqueta pro código de barras — alvo FÍSICO (bate com
+// `.etq-endereco .etq-barcode`/`.etq-produto .etq-barcode`/
+// `.etq-prateleira .etq-barcode` no CSS) e o fontSize do código descritivo
+// (HRI, "human readable interpretation") mostrado abaixo das barras.
+const ETIQUETA_BARCODE_CONFIG = {
+  endereco:   {alturaTotalMm: 14,  larguraMm: 45, fontSize: 11},
+  produto:    {alturaTotalMm: 9.3, larguraMm: 46, fontSize: 9},
+  prateleira: {alturaTotalMm: 12,  larguraMm: 46, fontSize: 10},
+};
 
 // Desenha o código de barras de CADA `svg.etq-barcode` já presente em
 // `area` (pode ser 1 por folha única ou várias, uma por item, num lote de
@@ -1690,14 +1704,19 @@ function buildEtiquetaPageHtml(itens, quebrarDepois, ajusteDireita){
 // Gera o código de barras já no TAMANHO FÍSICO EXATO da etiqueta, em 2
 // passadas — em vez de gerar num tamanho arbitrário e deixar o CSS
 // (width/height em mm no <svg>) reescalar depois, o que pode borrar/juntar
-// barras finas na hora da impressão (cliente reportou o código de barras
-// "em negrito"/ilegível — reescala forçada via CSS é uma causa provável).
-// 1ª passada: gera com width:1 (módulo mínimo) só pra medir quantos "px"
-// nativos o código ocupa nesse tamanho. 2ª passada: recalcula o parâmetro
-// `width` (largura do módulo) pra que o SVG NASÇA já com a largura-alvo,
-// sem precisar de nenhum reescalonamento posterior. Funciona pra qualquer
-// tamanho de código (não depende de calcular manualmente quantos módulos
-// o Code128 usa pra cada código).
+// barras finas na hora da impressão (mesma causa já investigada antes:
+// reescala forçada via CSS pode distorcer as barras de forma não-uniforme).
+// 1ª passada: chuta uma altura de BARRAS (65% do alvo total) só pra MEDIR
+// duas coisas de uma vez — a largura nativa (pra escalar a largura, técnica
+// de sempre) e o "overhead" vertical que o texto do código descritivo +
+// margens ocupa abaixo das barras (praticamente constante pro mesmo
+// fontSize, não depende do código nem da altura de barras escolhida —
+// confirmado testando contra o JsBarcode real). 2ª passada: já nasce no
+// tamanho FÍSICO exato nos dois eixos — largura pelo módulo recalculado, e
+// altura de barras descontando o overhead medido, pra a altura TOTAL do
+// SVG (barras + texto) bater exatamente com o alvo físico da etiqueta.
+// Pedido do cliente ("incluir o código descritivo em baixo do código de
+// barra"): `displayValue:true` — antes o código só tinha as barras.
 function desenharBarcodesEtiqueta(area, itensFlat){
   try{
     const svgs = area.querySelectorAll('svg.etq-barcode');
@@ -1705,14 +1724,18 @@ function desenharBarcodesEtiqueta(area, itensFlat){
     svgs.forEach((svg, i)=>{
       const it = itensFlat[i];
       if(it && typeof window!=='undefined' && window.JsBarcode){
-        const alturaAlvoMm = it.tipo==='endereco' ? 11 : 7;
-        const larguraAlvoMm = 44;
-        const alturaPx = mmParaPx(alturaAlvoMm);
-        const larguraAlvoPx = mmParaPx(larguraAlvoMm);
-        window.JsBarcode(svg, it.codigo, {format:'CODE128', displayValue:false, margin:2, height: alturaPx, width:1});
-        const nativoPx = parseFloat(svg.getAttribute('width')) || 0;
-        const escala = nativoPx > 0 ? (larguraAlvoPx / nativoPx) : 1.6;
-        window.JsBarcode(svg, it.codigo, {format:'CODE128', displayValue:false, margin:2, height: alturaPx, width: escala});
+        const cfg = ETIQUETA_BARCODE_CONFIG[it.tipo] || ETIQUETA_BARCODE_CONFIG.produto;
+        const alturaTotalAlvoPx = mmParaPx(cfg.alturaTotalMm);
+        const larguraAlvoPx = mmParaPx(cfg.larguraMm);
+        const opcoesBase = {format:'CODE128', displayValue:true, fontSize:cfg.fontSize, textMargin:1, margin:2};
+        const alturaBarrasChute = alturaTotalAlvoPx * 0.65;
+        window.JsBarcode(svg, it.codigo, Object.assign({}, opcoesBase, {height: alturaBarrasChute, width: 1}));
+        const nativoLarguraPx = parseFloat(svg.getAttribute('width')) || 0;
+        const nativoAlturaPx = parseFloat(svg.getAttribute('height')) || alturaTotalAlvoPx;
+        const overheadAlturaPx = Math.max(0, nativoAlturaPx - alturaBarrasChute);
+        const escalaLargura = nativoLarguraPx > 0 ? (larguraAlvoPx / nativoLarguraPx) : 1.6;
+        const alturaBarrasFinal = Math.max(1, alturaTotalAlvoPx - overheadAlturaPx);
+        window.JsBarcode(svg, it.codigo, Object.assign({}, opcoesBase, {height: alturaBarrasFinal, width: escalaLargura}));
       }
     });
   }catch(err){
