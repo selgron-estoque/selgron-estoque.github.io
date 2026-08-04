@@ -1409,17 +1409,16 @@ async function searchSupabaseCatalog(query, almoxarifado){
       const linhas = linhasPorCodigo[codigo];
       // Saldo: mesmo critério de sempre — só confia quando é inequívoco pro
       // armazém pedido (ou pro código inteiro, quando nenhum armazém foi
-      // informado, caso de "Itens Específicos"). Mesma correção de
-      // `fetchProdutosByCodigos` (ver comentário lá, mesmo bug real): mais
-      // de 1 linha não é ambiguidade de verdade se só UMA delas tem
-      // saldo≠0 — as outras são ruído de linha zerada.
+      // informado, caso de "Itens Específicos"). Uma correção anterior
+      // tentava "desambiguar" ignorando linhas com saldo 0 — REVERTIDA
+      // (ver comentário em `fetchProdutosByCodigos`, mesmo raciocínio:
+      // advinhar o armazém pelo saldo pode comparar contra o armazém
+      // ERRADO se o operador estiver contando de fato onde o sistema
+      // mostra 0).
       const doArmazem = almoxarifado ? linhas.filter(r=>r.almoxarifado===almoxarifado) : linhas;
-      const naoZeroArmazem = doArmazem.filter(r=>Number(r.saldo||0)!==0);
-      const linhaResolvida = doArmazem.length===1 ? doArmazem[0]
-        : (naoZeroArmazem.length===1 ? naoZeroArmazem[0] : null);
-      if(linhaResolvida){
-        saldoPorCodigo[codigo] = Number(linhaResolvida.saldo||0);
-        ultimaSaidaPorCodigo[codigo] = linhaResolvida.data_ultima_saida || null;
+      if(doArmazem.length===1){
+        saldoPorCodigo[codigo] = Number(doArmazem[0].saldo||0);
+        ultimaSaidaPorCodigo[codigo] = doArmazem[0].data_ultima_saida || null;
       }
       // Custo: primeiro armazém com saldo≠0 e valor financeiro conhecido —
       // preferindo o armazém pedido quando ele mesmo tiver essa informação,
@@ -3692,21 +3691,24 @@ async function fetchProdutosByCodigos(codigos, almoxarifado){
       const todasLinhas = linhasPorCodigo[p.codigo] || [];
       const linhasDoArmazem = almoxarifado ? todasLinhas.filter(l=>l.almoxarifado===almoxarifado) : todasLinhas;
       // Com armazém informado, no máximo 1 linha faz sentido (chave única
-      // produto+armazém). Sem armazém: só usa o valor se for inequívoco —
-      // 1 armazém só, OU mais de um mas com saldo≠0 em SÓ UM deles (os
-      // outros são ruído de linha zerada, não ambiguidade de verdade —
-      // bug real reportado pelo cliente: "o item está puxando como
-      // zerado, porém na planilha que subi SB2 este item tem saldo" —
-      // recontagem de item importado do histórico, sem armazém conhecido
-      // da 1ª contagem; o código existia em 2 armazéns, um com o saldo
-      // real e outro com saldo 0, e o item inteiro caía pra "sem saldo pra
-      // comparar" (tratado como 0) só por existir em mais de uma linha).
-      // Mais de um armazém com saldo≠0 continua ambíguo de verdade — não
-      // dá pra saber qual dos dois é o certo, então continua sem
-      // comparação automática.
-      const naoZero = linhasDoArmazem.filter(l=>Number(l.saldo||0)!==0);
-      const unica = linhasDoArmazem.length===1 ? linhasDoArmazem[0]
-        : (naoZero.length===1 ? naoZero[0] : null);
+      // produto+armazém). SEM armazém informado: só usa o valor se for
+      // inequívoco (1 armazém só) — mais de um vira "sem saldo pra
+      // comparar" em vez de tentar adivinhar qual é o certo.
+      //
+      // Uma correção anterior aqui tentava "desambiguar" ignorando linhas
+      // com saldo 0 (assumindo que a única com saldo≠0 era "a certa") —
+      // REVERTIDA: o cliente apontou o erro de raciocínio de forma direta
+      // ("SE EU ESTOU CONTANDO O ARMAZÉM 01, O SALDO QUE TEM QUE MOSTRA É
+      // O DO ARMAZEM 01"). Advinhar o armazém pelo saldo é errado mesmo
+      // quando "parece" razoável — se o operador está de fato contando o
+      // armazém que tem saldo 0 no sistema (não o outro, que tem saldo
+      // real), mostrar o saldo do armazém errado gera uma comparação
+      // falsa. A causa raiz de verdade (recontagem de item importado do
+      // histórico, sem nenhum armazém conhecido da 1ª contagem) foi
+      // corrigida NA ORIGEM — `RecountFlow` agora pede o armazém
+      // explicitamente ao operador quando não tem como saber (ver
+      // comentário lá) — em vez de o código aqui tentar adivinhar.
+      const unica = linhasDoArmazem.length===1 ? linhasDoArmazem[0] : null;
       const s = unica || {};
       const comCusto = todasLinhas
         .filter(l=>Number(l.saldo||0)!==0 && l.valor_financeiro!=null)
@@ -9511,17 +9513,39 @@ function RecountFlow({original, user, onFinish, onAddressProposed, operadorVeSal
   // própria contagem anterior (`original`) já registrou — sem isso a
   // recontagem quebrava com "item não encontrado" pra qualquer contagem
   // originada fora do catálogo.
+  //
+  // Armazém: recontagem repete a comparação no MESMO armazém da contagem
+  // original (`original.almoxarifado`, gravado desde CountStep.finalize)
+  // quando esse dado existe. Mas item vindo da importação do histórico
+  // (planilha BD_Contagens, que nunca teve coluna de armazém) chega aqui
+  // SEM esse dado — nesse caso o app genuinamente não sabe qual armazém
+  // está sendo recontado, e ADIVINHAR (ex.: "o armazém que tem saldo real")
+  // pode comparar contra o armazém ERRADO se o operador estiver de fato
+  // contando outro lugar (bug real reportado pelo cliente com print, e a
+  // correção por "adivinhação" foi revertida depois dele apontar o erro —
+  // ver CLAUDE.md). Em vez de adivinhar, pergunta explicitamente ao
+  // operador — mesmo padrão inline já usado em "Nova Contagem Manual"
+  // (sempre visível, editável sem sair da tela, nunca bloqueia o fluxo).
+  const precisaEscolherArmazem = !original.almoxarifado;
+  const [armazemEscolhido, setArmazemEscolhido] = useState('1');
+  const [armazensDisponiveis, setArmazensDisponiveis] = useState(null);
+  useEffect(()=>{
+    if(!precisaEscolherArmazem) return;
+    let cancelado = false;
+    fetchEstoqueValorPorAlmoxarifado().then(rows=>{
+      if(cancelado) return;
+      const codigos = (rows||[]).map(r=>String(r.almoxarifado));
+      setArmazensDisponiveis(Array.from(new Set(['1', ...codigos])).sort());
+    });
+    return ()=>{ cancelado = true; };
+  }, [precisaEscolherArmazem]);
+  const armazemParaBusca = precisaEscolherArmazem ? armazemEscolhido : original.almoxarifado;
+
   const [produtoBase, setProdutoBase] = useState(null); // null = carregando
   useEffect(()=>{
     let cancelado = false;
-    // Recontagem repete a comparação no MESMO armazém da contagem original
-    // (`original.almoxarifado`, gravado desde CountStep.finalize) — sem
-    // isso, um item com saldo em mais de um armazém corria o risco de a
-    // recontagem comparar contra um armazém errado. Contagens antigas (de
-    // antes dessa coluna existir) não têm esse dado — `fetchProdutosByCodigos`
-    // já sabe se virar sozinho nesse caso (usa o saldo se o código só
-    // existir num armazém, senão marca como sem comparação automática).
-    fetchProdutosByCodigos([original.productCode], original.almoxarifado).then(catalogo=>{
+    setProdutoBase(null);
+    fetchProdutosByCodigos([original.productCode], armazemParaBusca).then(catalogo=>{
       if(cancelado) return;
       setProdutoBase(catalogo.get(original.productCode) || {
         codigo: original.productCode,
@@ -9530,7 +9554,7 @@ function RecountFlow({original, user, onFinish, onAddressProposed, operadorVeSal
         familia: '—',
         endereco: null,
         enderecoCadastrado: false,
-        almoxarifado: original.almoxarifado || '—',
+        almoxarifado: armazemParaBusca || '—',
         corredor: null,
         rua: null,
         // Saldo real 0 quando a contagem original também não tinha (pedido
@@ -9545,11 +9569,7 @@ function RecountFlow({original, user, onFinish, onAddressProposed, operadorVeSal
       });
     });
     return ()=>{ cancelado = true; };
-  }, [original.productCode, original.almoxarifado]);
-
-  if(produtoBase===null){
-    return <div className="empty-state">Carregando item…</div>;
-  }
+  }, [original.productCode, armazemParaBusca]);
 
   // Item sem cadastro de endereço (comum — o Protheus ainda não tem esse
   // dado) — na recontagem, reaproveita o endereço que o operador da 1ª
@@ -9562,32 +9582,50 @@ function RecountFlow({original, user, onFinish, onAddressProposed, operadorVeSal
     (original.enderecoContado && original.enderecoContado!=='—' && original.enderecoContado) ||
     (original.endereco && original.endereco!=='—' && original.endereco) ||
     null;
-  const product = (!produtoBase.enderecoCadastrado && !produtoBase.endereco && enderecoContagemAnterior)
+  const product = produtoBase && (!produtoBase.enderecoCadastrado && !produtoBase.endereco && enderecoContagemAnterior)
     ? {...produtoBase, endereco: enderecoContagemAnterior}
     : produtoBase;
 
   const sameUser = user.nome === original.usuario;
   return (
     <div>
-      {sameUser && (
-        <div className="divergence-alert">
-          <Ic>⚠</Ic>
-          <span>Pelo Módulo 7 do processo, a segunda contagem deve ser feita por outro operador — você está logado como {user.nome}, o mesmo da contagem anterior. Pode continuar, mas o ideal é pedir para outro operador recontar.</span>
+      {precisaEscolherArmazem && (
+        <div className="role-note" style={{marginBottom:14,display:'flex',justifyContent:'space-between',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+          <span>Recontando no <strong>Armazém {armazemEscolhido.padStart(2,'0')}</strong> — este item veio do histórico importado, sem armazém conhecido. Confira/troque se necessário.</span>
+          <select
+            value={armazemEscolhido}
+            onChange={e=>setArmazemEscolhido(e.target.value)}
+            style={{background:'var(--panel-raised)', border:'1px solid var(--line)', color:'var(--ink)', borderRadius:8, padding:'6px 10px', fontSize:'var(--text-xs)', fontFamily:'var(--font-mono)'}}
+          >
+            {(armazensDisponiveis || ['1']).map(a=>(<option key={a} value={a}>Armazém {a.padStart(2,'0')}</option>))}
+          </select>
         </div>
       )}
-      <CountStep
-        product={product}
-        user={user}
-        onAddressProposed={onAddressProposed}
-        onComplete={onFinish}
-        numeroContagem={original.numeroContagem+1}
-        contagemAnteriorId={original.id}
-        previousCount={original}
-        expectAddressCheck={!!product.enderecoCadastrado}
-        operadorVeSaldo={operadorVeSaldo}
-        onReservarItem={onReservarItem}
-        onLiberarItemReserva={onLiberarItemReserva}
-      />
+      {produtoBase===null ? (
+        <div className="empty-state">Carregando item…</div>
+      ) : (
+        <React.Fragment>
+          {sameUser && (
+            <div className="divergence-alert">
+              <Ic>⚠</Ic>
+              <span>Pelo Módulo 7 do processo, a segunda contagem deve ser feita por outro operador — você está logado como {user.nome}, o mesmo da contagem anterior. Pode continuar, mas o ideal é pedir para outro operador recontar.</span>
+            </div>
+          )}
+          <CountStep
+            product={product}
+            user={user}
+            onAddressProposed={onAddressProposed}
+            onComplete={onFinish}
+            numeroContagem={original.numeroContagem+1}
+            contagemAnteriorId={original.id}
+            previousCount={original}
+            expectAddressCheck={!!product.enderecoCadastrado}
+            operadorVeSaldo={operadorVeSaldo}
+            onReservarItem={onReservarItem}
+            onLiberarItemReserva={onLiberarItemReserva}
+          />
+        </React.Fragment>
+      )}
     </div>
   );
 }
