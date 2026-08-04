@@ -191,14 +191,15 @@ footer a{color:var(--navy);}
      computado de verdade via Playwright, não só olhando visualmente. -->
 <script type="text/plain" id="css-baseline">@page{size:101mm 31mm;margin:0;}
   .etq-page{display:flex;align-items:center;gap:1mm;width:101mm;height:30.5mm;box-sizing:border-box;}
-  .etq-page-col{width:50mm;height:30mm;box-sizing:border-box;padding:0;}
+  .etq-page-col{width:50mm;height:30mm;box-sizing:border-box;padding:0.8mm;}
+  .etq-page-col--prateleira{padding:0;}
   .etq-endereco{width:100%;height:100%;box-sizing:border-box;padding:2mm;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:Arial,sans-serif;text-align:center;overflow:hidden;}
   .etq-rotulo{font-size:6pt;font-weight:700;letter-spacing:0.5px;}
   .etq-codigo-grande{font-size:16pt;font-weight:700;margin:1mm 0;}
   .etq-barcode{display:block;margin:0 auto;}
-  .etq-endereco .etq-barcode{width:45mm;height:14mm;}
-  .etq-produto{width:100%;height:100%;box-sizing:border-box;padding:0.6mm;border:0.35mm solid #000;border-radius:1.6mm;display:flex;flex-direction:column;font-family:Arial,sans-serif;overflow:hidden;position:relative;}
-  .etq-produto .etq-barcode{width:46mm;height:9.3mm;}
+  .etq-endereco .etq-barcode{width:44mm;height:12mm;}
+  .etq-produto{width:100%;height:100%;box-sizing:border-box;padding:0.6mm;display:flex;flex-direction:column;font-family:Arial,sans-serif;overflow:hidden;position:relative;}
+  .etq-produto .etq-barcode{width:46mm;height:8.5mm;}
   .etq-tag{display:inline-block;font-weight:700;font-size:5pt;letter-spacing:0.3px;line-height:1;color:#000;white-space:nowrap;}
   .etq-topo{display:flex;align-items:flex-start;}
   .etq-codigo-produto{font-size:13pt;font-weight:700;text-align:left;margin:0.2mm 0;}
@@ -322,8 +323,8 @@ footer a{color:var(--navy);}
   // 'prateleira' — essa prévia ainda não suporta esse tipo, gap já
   // documentado/aceito desde que foi criado.
   var ETIQUETA_BARCODE_CONFIG = {
-    endereco: {alturaTotalMm: 14, larguraMm: 45, fontSize: 11},
-    produto:  {alturaTotalMm: 9.3, larguraMm: 46, fontSize: 9},
+    endereco: {alturaTotalMm: 12, larguraMm: 44, fontSize: 10},
+    produto:  {alturaTotalMm: 8.5, larguraMm: 46, fontSize: 9},
   };
   function desenharBarcode(svg, codigo, tipo){
     if(!codigo || typeof window.JsBarcode !== 'function') return;

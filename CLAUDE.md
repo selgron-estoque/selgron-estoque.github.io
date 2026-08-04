@@ -15807,3 +15807,54 @@ JSX, só concatenam string).
   contra a biblioteca JsBarcode REAL (não mockada), só faltando o passo
   final (papel físico, scanner físico) que só existe no ambiente do
   cliente.
+
+## Correção da rodada anterior: era o CONTORNO que devia sumir, não a margem
+
+Cliente, direto: "Desculpe, não era a margem que precisava removar, era o
+contorno, a margem pode voltar" — a rodada anterior interpretou "tirar a
+margem de todas as etiquetas, aquele desenho quadrado" como remover o
+padding de `.etq-page-col` (o respiro entre a borda física do rótulo e o
+conteúdo) pras 3 etiquetas — errado. "Aquele desenho quadrado" era o
+CONTORNO (`border`+`border-radius`, a linha preta arredondada ao redor de
+`.etq-produto`/`.etq-prateleira`) — a margem nunca devia ter saído.
+
+- **`.etq-page-col{padding:0.8mm}` restaurado** (era `padding:0` universal
+  na rodada anterior) — de volta a ser a regra BASE. `.etq-page-col--
+  prateleira{padding:0;}` voltou também, com o MESMO escopo original (só
+  "Prateleira/Caixa") — essa remoção de margem específica é um pedido
+  genuinamente à parte, de uma rodada bem mais antiga ("Tirar margem da
+  Etiqueta Prateleira/caixa"), nunca fez parte deste engano e não devia
+  ser desfeita. `buildEtiquetaPageHtml` voltou a aplicar a classe
+  modificadora condicionalmente (`it.tipo==='prateleira'`).
+- **`border`/`border-radius` removidos de `.etq-produto` e `.etq-prateleira`**
+  — o "desenho quadrado" de verdade. Mesmo par de propriedades que já tinha
+  sido removido uma vez antes ("Etiqueta de produto perde o contorno preto
+  ao redor") e depois voltado numa rodada de redesign ("Contorno arredondado
+  voltou") — desta vez sai de novo, dos dois tipos que tinham (endereço
+  nunca teve contorno, nada mudou lá). `overflow:hidden` continua nos dois
+  (proteção contra transbordo, sem relação com o contorno em si).
+- **Tamanhos-alvo do código de barras encolheram de novo**, já que a
+  margem restaurada reduz o espaço disponível (a remoção do contorno
+  libera um pouco, mas não o bastante pra compensar): endereço
+  `45×14mm→44×12mm` (fontSize 11→10), produto `46×9.3mm→46×8.5mm`
+  (largura não mudou). Prateleira ficou EXATAMENTE igual (46×12mm) — nunca
+  teve o padding de `.etq-page-col` restaurado, então o espaço disponível
+  pra ela não mudou nesta correção.
+- Testado de novo via Playwright contra o JsBarcode real (mesma técnica da
+  rodada anterior, script/página de verificação regenerados com os novos
+  alvos): os 3 tipos batem exatamente com o tamanho-alvo, incluindo o
+  pior caso (código 13 chars + QTD 4 dígitos + endereço + descrição 2
+  linhas) sem overflow. Conferido visualmente por screenshot que o
+  contorno preto sumiu de produto/prateleira e que a margem (respiro até a
+  borda física) está de volta nas 3.
+- `preview-etiqueta.html` sincronizado de novo (CSS baseline + `ETIQUETA_
+  BARCODE_CONFIG` local). 3 harnesses de Etiquetas que tinham sido
+  atualizados pra refletir o engano da rodada anterior foram revertidos de
+  volta às asserções corretas (checam a classe modificadora `--prateleira`
+  existindo de novo, o padding `0.8mm` restaurado, os tamanhos novos de
+  código de barras). Suíte inteira do scratchpad rodada de novo (44
+  harnesses, 536 asserções) — só as mesmas 3 falhas pré-existentes de
+  sempre, sem relação com esta mudança. Transpile Babel do `index.html`
+  inteiro e balanceamento de chaves do CSS conferidos (672/672).
+  **Verificação física de ponta a ponta fica a cargo do cliente** — mesma
+  limitação de sempre (sandbox sem impressora física).
