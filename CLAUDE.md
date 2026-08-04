@@ -15531,3 +15531,44 @@ subi SB2 este item tem saldo".
   rede) — mas como a correção é só na LEITURA (não depende de nenhuma
   migração de SQL), o próximo carregamento da tela de recontagem já deve
   refletir o comportamento novo.
+
+## Etiqueta "Prateleira/Caixa" sem margem
+
+Cliente pediu: "Tirar margem da Etiqueta Prateleira/caixa" — a etiqueta
+tem 2 camadas de espaçamento: `.etq-page-col` (0,8mm, compartilhada pelos
+3 tipos — Recebimento/Endereço/Prateleira, é o espaço entre a borda física
+do rótulo de 50×30mm e onde o conteúdo da etiqueta começa) e o padding
+interno de cada tipo (espaço entre o contorno preto e o texto). O pedido
+foi interpretado como a margem EXTERNA (o espaço em branco visível ao
+redor do contorno preto, antes de chegar na borda física do rótulo).
+
+- **`.etq-page-col--prateleira{padding:0;}`** (CSS novo, logo depois de
+  `.etq-page-col`) — classe modificadora, não uma mudança na regra
+  compartilhada — as etiquetas de Recebimento/Endereço continuam com os
+  0,8mm de sempre, só "Prateleira/Caixa" perde essa margem, deixando o
+  contorno preto encostar na borda física do rótulo.
+- **`buildEtiquetaPageHtml`**: o `.etq-page-col` de cada item ganha a
+  classe `etq-page-col--prateleira` quando `it.tipo==='prateleira'` —
+  como essa função é o ÚNICO lugar que monta o wrapper `.etq-page-col`
+  (usada tanto por impressão avulsa quanto pela fila/lote, ver
+  `imprimirEtiquetaViaNavegador`/`imprimirLoteEtiquetas`), um edit só já
+  cobre os 3 caminhos de impressão sem precisar duplicar a lógica.
+- O padding INTERNO de `.etq-prateleira` (0,8mm, entre o contorno e o
+  texto código/descrição) não foi tocado — só a margem externa saiu.
+- Testado via harness real (jsdom + react-dom/client + `act()`, mesma
+  técnica rigorosa de sempre): confirmado que os 3 `.etq-page-col` de um
+  lote de etiquetas "Prateleira/Caixa" ganham a classe `--prateleira`;
+  que um item "Recebimento" (tipo produto) impresso no MESMO fluxo NÃO
+  ganha essa classe (a margem dele continua igual, escopo correto); e que
+  a regra CSS `.etq-page-col--prateleira{padding:0;}` existe de verdade
+  no `<style>` do app. Rodei de novo toda a suíte de Etiquetas (9
+  harnesses, 228 asserções) e a suíte completa do scratchpad — só as
+  mesmas 3 falhas já confirmadas pré-existentes/sem relação com esta
+  mudança continuam (`harness_actions_beside_content.js`/`harness_
+  dashboard_render_dedup.js`/`harness_ultima_contagem_por_codigo.js`).
+  Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  conferidos (672/672 — 1 regra nova). **`preview-etiqueta.html` não foi
+  tocado** — essa ferramenta ainda não tem suporte ao tipo "Prateleira/
+  Caixa" (só Produto/Endereço), então não há nada pra sincronizar aqui.
+  **Verificação física de ponta a ponta fica 100% a cargo do cliente** —
+  mesma limitação de sempre desta feature (sandbox sem impressora física).

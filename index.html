@@ -1189,6 +1189,12 @@
   @page{size:101mm 31mm;margin:0;}
   .etq-page{display:flex;align-items:center;gap:1mm;width:101mm;height:30.5mm;box-sizing:border-box;}
   .etq-page-col{width:50mm;height:30mm;box-sizing:border-box;padding:0.8mm;}
+  /* "Prateleira/Caixa" pediu pra tirar a margem (pedido do cliente) — sem
+     esse 0.8mm de respiro, o contorno da etiqueta encosta na borda física
+     do rótulo de 50x30mm, usando o espaço todo. Escopado só a este tipo
+     (via classe modificadora aplicada em `buildEtiquetaPageHtml`) — as
+     etiquetas de Recebimento/Endereço continuam com a margem de sempre. */
+  .etq-page-col--prateleira{padding:0;}
   .etq-endereco{width:100%;height:100%;box-sizing:border-box;padding:2mm;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:Arial,sans-serif;text-align:center;overflow:hidden;}
   .etq-rotulo{font-size:6pt;font-weight:700;letter-spacing:0.5px;}
   .etq-codigo-grande{font-size:16pt;font-weight:700;margin:1mm 0;}
@@ -1631,7 +1637,7 @@ function buildEtiquetaItemHtml({tipo, codigo, descricao, quantidade, dataRecebim
 function buildEtiquetaPageHtml(itens, quebrarDepois){
   const style = quebrarDepois ? ' style="page-break-after:always;"' : '';
   return '<div class="etq-page"'+style+'>'
-    + itens.map(it=>'<div class="etq-page-col">'+buildEtiquetaItemHtml(it)+'</div>').join('')
+    + itens.map(it=>'<div class="etq-page-col'+(it.tipo==='prateleira' ? ' etq-page-col--prateleira' : '')+'">'+buildEtiquetaItemHtml(it)+'</div>').join('')
     + '</div>';
 }
 
