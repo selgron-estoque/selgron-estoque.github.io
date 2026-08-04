@@ -15355,3 +15355,80 @@ antes de decidir: **"Se reaproveitar, como ficaria?"**.
   JS/JSX, nenhuma classe CSS nova). **Verificação visual/funcional de ponta
   a ponta fica a cargo do cliente** — mesma limitação de sempre (login
   exige Supabase Auth real, não simulável no sandbox sem rede).
+
+## Bug real: "Contados × Divergências" não batia com "Contagens na Semana" pro mesmo período
+
+Cliente mandou print de "Indicadores" (10 semanas, Sem 23-32, período
+"Últimos 60 dias") apontando: a soma das barras de "Contagens na Semana"
+dava 1801, mas o donut "Contados × Divergências" — que o comentário do
+próprio código já dizia usar "o mesmo pool/filtro dos outros gráficos desta
+seção" — mostrava 1789 "contados" pro MESMO período selecionado.
+"porque esses números não batem? são o mesmo período, 60 dias".
+
+- **Causa raiz**: `computeWeeklyStats(counts, dataInicioStr, dataFimStr)`
+  sempre gera um BUCKET pra semana ISO inteira que contém `dataInicioStr`
+  (via `getWeekInfo`, que arredonda pra a segunda-feira daquela semana) —
+  mas nunca checava se cada item, individualmente, caía DENTRO do intervalo
+  exato pedido, só se a semana dele já tinha um bucket criado
+  (`if(!buckets[key]) return`). Com "Últimos 60 dias" a partir de
+  2026-08-04, `dataInicioStr` cai numa sexta/sábado (06/06) — a semana ISO
+  desse dia começa segunda 01/06, **5 dias antes** do início real da
+  janela. Qualquer contagem feita entre 01/06 e 05/06 (fora dos 60 dias de
+  verdade) ainda entrava no bucket "Sem 23", inflando a soma das barras
+  além do que o filtro deveria mostrar — exatamente o tipo de "sobra numa
+  semana parcial nas pontas" já visto antes neste projeto (mesma categoria
+  de bug silencioso: nenhum erro, só um número maior do que devia). A
+  pizza (`poolTendenciaNoPeriodo = poolTendencia.filter(c=>c.data>=
+  dataInicioStr && c.data<=dataFimStr)`) sempre filtrou pela DATA exata,
+  sem nenhum conceito de semana — por isso ela sempre esteve certa; era o
+  gráfico de barras que vazava.
+- **Correção**: `computeWeeklyStats` ganhou um corte por data exata
+  (`if(c.data<dataInicioStr || c.data>dataFimStr) return;`) ANTES de
+  procurar o bucket da semana — continua gerando buckets de semana INTEIRA
+  pro eixo (isso não muda, ainda mostra "Sem 23" com o rótulo/sublabel de
+  sempre), só que agora uma semana PARCIAL nas pontas conta só os dias que
+  realmente caem dentro do período escolhido, igual a pizza já fazia.
+  Bordas inclusivas dos dois lados (`>=`/`<=`), sem mudança de
+  comportamento pra período já alinhado em segundas-feiras (ex.: "Todo o
+  período", que sempre começa na data do registro mais antigo — nesse caso
+  específico ainda pode haver uma leve folga se o registro mais antigo não
+  cair numa segunda, mas como não existe dado ANTES dele, não há bleed de
+  verdade pra vazar).
+- **`computeMonthlyStats` não precisou do mesmo ajuste** — hoje ela é
+  chamada só com `anoAtualStr` (1º de janeiro, já alinhado ao início do
+  bucket mensal) até `hojeStr` (nunca cria bleed no fim, já que não existe
+  contagem em data futura) — o cenário que causa o bug (início/fim
+  arbitrário caindo no meio de um bucket) não é alcançável hoje por
+  nenhuma chamada real. Documentado aqui pra não esquecer: se algum dia
+  `computeMonthlyStats` passar a receber um intervalo arbitrário (ex.: o
+  painel "Filtros" ganhar suporte a período personalizado pro gráfico
+  mensal também), aplicar o MESMO corte por data exata.
+- Testado via harness Node isolado (mesma técnica de sempre —
+  `computeWeeklyStats` é função pura, testável sem DOM):
+  reproduzido o cenário exato do print do cliente (hoje 2026-08-04,
+  "Últimos 60 dias" → `dataInicioStr` 2026-06-06, sábado) com 3 itens
+  ANTES do início real da janela mas na mesma semana ISO do bucket
+  inicial — confirmado que a soma das barras semanais bate exatamente com
+  o total da pizza pro mesmo pool/período, e que o bucket da semana
+  parcial conta só os itens de verdade dentro da janela (2, não 5).
+  Confirmado também que um item exatamente na borda final (`dataFimStr`)
+  continua contando (borda inclusiva). Regressão: período já alinhado em
+  segundas-feiras nos dois extremos não muda em nada (4/4 itens
+  continuam contando, mesmo eixo de 3 semanas). **Confirmei que o harness
+  de fato pega o bug**: rodei ele contra o código ANTES da correção
+  (`git stash`) e ele falhou exatamente como esperado (semanal=8 vs.
+  pizza=5 no cenário sintético) — só depois da correção aplicada é que
+  passa limpo. Rodei de novo toda a suíte de regressão disponível no
+  scratchpad (41 harnesses, 470+ asserções) — as únicas falhas são as
+  mesmas 3 já confirmadas pré-existentes/sem relação com esta mudança em
+  rodadas anteriores (`harness_actions_beside_content.js`/
+  `harness_dashboard_render_dedup.js`/`harness_ultima_contagem_por_
+  codigo.js`, confirmado de novo via `git stash` que falham igual com e
+  sem esta correção). Transpile Babel do arquivo inteiro e balanceamento
+  de chaves do CSS conferidos (671/671, sem mudança — só JS, nenhuma
+  classe CSS tocada). **Verificação do número real em produção fica a
+  cargo do cliente** — mesma limitação de sempre (login exige Supabase
+  Auth real, não simulável no sandbox sem rede) — mas como a correção é
+  só na LEITURA (não depende de nenhuma migração de SQL), os dois
+  indicadores já devem bater exatamente no próximo carregamento da
+  página, pra qualquer período escolhido no painel "Filtros".

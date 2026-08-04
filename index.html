@@ -12075,6 +12075,19 @@ function computeWeeklyStats(counts, dataInicioStr, dataFimStr){
   }
   counts.forEach(c=>{
     if(!c.data) return;
+    // Bug real corrigido aqui (ver CLAUDE.md, "'Contados × Divergências'
+    // não bate com 'Contagens na Semana'"): o BUCKET da 1ª/última semana
+    // sempre existe (a semana INTEIRA vira um bucket, mesmo que
+    // `dataInicioStr`/`dataFimStr` caiam no MEIO dela, não numa
+    // segunda-feira) — sem este check, um item de um dia ANTES de
+    // `dataInicioStr` (ou depois de `dataFimStr`) mas dentro da mesma
+    // semana ISO entrava do mesmo jeito, inflando o total além do período
+    // realmente selecionado no painel "Filtros". O corte exato por DATA
+    // (não só por semana) é o que faz este gráfico bater com o pool exato
+    // que outros indicadores do mesmo período usam (ex.: "Contados ×
+    // Divergências", que filtra por `c.data>=dataInicioStr &&
+    // c.data<=dataFimStr` direto, sem nenhum bucket).
+    if(c.data<dataInicioStr || c.data>dataFimStr) return;
     const {key} = getWeekInfo(c.data);
     if(!buckets[key]) return; // fora do intervalo escolhido
     buckets[key].total += 1;
