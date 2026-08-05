@@ -1536,6 +1536,7 @@ create table if not exists etiquetas_fila (
   quantidade text,                    -- só 'produto', opcional
   data_recebimento date,              -- só 'produto', opcional
   endereco text,                      -- só 'produto', opcional — endereço cadastrado do material, mostrado na etiqueta abaixo de QTD
+  unidade text,                       -- só 'produto', opcional — unidade de medida do cadastro (PC/KG/M/L/etc.), mostrada em "QTD: {quantidade} {unidade}"
   status text not null default 'pendente',
   criado_por text,
   criado_em timestamptz not null default now(),
@@ -1546,6 +1547,11 @@ create table if not exists etiquetas_fila (
 -- Migração pro projeto já aplicado (a tabela acima já existia sem essa
 -- coluna) — endereço do material na etiqueta impressa, pedido do cliente.
 alter table etiquetas_fila add column if not exists endereco text;
+
+-- Migração pro projeto já aplicado — unidade de medida do cadastro em vez de
+-- "PC" fixo na etiqueta (ver comentário em `buildEtiquetaItemHtml` no
+-- index.html).
+alter table etiquetas_fila add column if not exists unidade text;
 
 alter table etiquetas_fila enable row level security;
 drop policy if exists "leitura autenticada" on etiquetas_fila;

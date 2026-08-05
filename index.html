@@ -1591,7 +1591,7 @@ function carregarAjusteMargemEtiquetaDireita(){
 // Monta o HTML de UMA etiqueta (`.etq-endereco`/`.etq-produto`) — extraído
 // de `imprimirEtiquetaViaNavegador` pra poder montar 1 ou 2 colunas na
 // mesma folha (ver comentário dela abaixo, sobre o rolo de 2 colunas).
-function buildEtiquetaItemHtml({tipo, codigo, descricao, quantidade, dataRecebimento, endereco}){
+function buildEtiquetaItemHtml({tipo, codigo, descricao, quantidade, dataRecebimento, endereco, unidade}){
   const cod = escapeHtmlEtiqueta(codigo);
   if(tipo==='endereco'){
     return '<div class="etq-endereco">'
@@ -1625,7 +1625,14 @@ function buildEtiquetaItemHtml({tipo, codigo, descricao, quantidade, dataRecebim
   // uma proteção contra string absurdamente longa, não é o mecanismo de
   // ajuste — quem garante caber de verdade é o CSS.
   const desc = escapeHtmlEtiqueta((descricao||'').slice(0, 120));
-  const qtdTexto = quantidade ? ('QTD: '+escapeHtmlEtiqueta(quantidade)+' PC') : '';
+  // Unidade de medida vem do cadastro do produto (`unidade`, já resolvida
+  // pelo catálogo — ver `searchSupabaseCatalog`/`fetchProdutosByCodigos`) —
+  // antes era sempre "PC" fixo, errado pra qualquer item vendido em
+  // KG/M/L/CX etc. Fallback "UN" (genérico, não "PC") só pros ~85% do
+  // catálogo que ainda não teve a unidade cadastrada em massa (ver
+  // "Catálogo ganha Unidade de Medida..." no CLAUDE.md) — nunca inventa
+  // uma unidade específica que possa estar errada.
+  const qtdTexto = quantidade ? ('QTD: '+escapeHtmlEtiqueta(quantidade)+' '+escapeHtmlEtiqueta(unidade||'UN')) : '';
   const dataTexto = dataRecebimento ? escapeHtmlEtiqueta(fmtDataBR(dataRecebimento)) : '';
   const enderecoTexto = endereco ? escapeHtmlEtiqueta(endereco) : '';
   const qtdBox = (qtdTexto || enderecoTexto) ? (
@@ -13756,6 +13763,7 @@ function etiquetaFilaRowToLocal(row){
     quantidade: row.quantidade,
     dataRecebimento: row.data_recebimento,
     endereco: row.endereco,
+    unidade: row.unidade,
     status: row.status,
     criadoPor: row.criado_por,
     criadoEm: row.criado_em,
@@ -13774,6 +13782,7 @@ async function salvarEtiquetaNaFila(item){
       quantidade: item.quantidade || null,
       data_recebimento: item.dataRecebimento || null,
       endereco: item.endereco || null,
+      unidade: item.unidade || null,
       status: 'pendente',
       criado_por: item.criadoPor || null,
     });
@@ -14010,6 +14019,7 @@ function EtiquetasPanel({currentUser}){
       quantidade: qtd || '',
       dataRecebimento,
       endereco: selecionado.endereco || null,
+      unidade: selecionado.unidade || null,
     }));
   }
 
@@ -14049,6 +14059,7 @@ function EtiquetasPanel({currentUser}){
         quantidade: item.tipo==='produto' ? item.quantidade : null,
         dataRecebimento: item.tipo==='produto' ? item.dataRecebimento : null,
         endereco: item.tipo==='produto' ? item.endereco : null,
+        unidade: item.tipo==='produto' ? item.unidade : null,
         criadoPor: currentUser ? currentUser.nome : null,
       });
       if(!res.ok){ erro = res.erro; break; }
@@ -14073,7 +14084,7 @@ function EtiquetasPanel({currentUser}){
     const par = filaPendente.find(f=>f.id!==item.id);
     setImprimindoFilaIds(new Set(par ? [item.id, par.id] : [item.id]));
     setErrosFila(prev=>({...prev, [item.id]: null, ...(par ? {[par.id]: null} : {})}));
-    const toItemImpressao = it=>({tipo: it.tipo, codigo: it.codigo, descricao: it.descricao, quantidade: it.quantidade, dataRecebimento: it.dataRecebimento, endereco: it.endereco});
+    const toItemImpressao = it=>({tipo: it.tipo, codigo: it.codigo, descricao: it.descricao, quantidade: it.quantidade, dataRecebimento: it.dataRecebimento, endereco: it.endereco, unidade: it.unidade});
     const res = imprimirEtiquetaViaNavegador(toItemImpressao(item), par ? toItemImpressao(par) : undefined);
     if(res.ok){
       const marc1 = await marcarEtiquetaImpressa(item.id, currentUser ? currentUser.nome : null);
@@ -14099,7 +14110,7 @@ function EtiquetasPanel({currentUser}){
     const itens = filaPendente.slice(); // já vem ordenado (mais antigo primeiro)
     setImprimindoFilaIds(new Set(itens.map(it=>it.id)));
     setErrosFila({});
-    const toItemImpressao = it=>({tipo: it.tipo, codigo: it.codigo, descricao: it.descricao, quantidade: it.quantidade, dataRecebimento: it.dataRecebimento, endereco: it.endereco});
+    const toItemImpressao = it=>({tipo: it.tipo, codigo: it.codigo, descricao: it.descricao, quantidade: it.quantidade, dataRecebimento: it.dataRecebimento, endereco: it.endereco, unidade: it.unidade});
     const res = imprimirLoteEtiquetas(itens.map(toItemImpressao));
     if(res.ok){
       for(const item of itens){

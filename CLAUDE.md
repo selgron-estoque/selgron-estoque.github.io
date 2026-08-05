@@ -15907,3 +15907,74 @@ separado "Análise", que só tem Indicadores/Relatórios — o cliente disse
   sem mudança — só JSX, nenhuma classe CSS tocada). **Verificação visual
   de ponta a ponta fica a cargo do cliente** — mesma limitação de sempre
   (login exige Supabase Auth real, não simulável no sandbox sem rede).
+
+## Etiqueta de produto: "PC" fixo vira a unidade de medida do cadastro
+
+Cliente pediu: "Em etiqueta o campo de 'PC', alterar para puxar a unidade de
+medida de acordo com o cadastro do item" — `buildEtiquetaItemHtml` sempre
+montou o texto "QTD: {quantidade} PC" com "PC" (peça) fixo, mesmo pra itens
+vendidos em KG/M/L/CX/etc. — errado pra qualquer item que não seja "peça".
+
+- **`buildEtiquetaItemHtml` ganhou o parâmetro `unidade`** — `qtdTexto` virou
+  `'QTD: '+quantidade+' '+(unidade||'UN')` — usa a unidade real quando
+  informada, cai no fallback genérico **"UN"** (não mais "PC") quando o
+  produto ainda não tem unidade cadastrada — mesmo critério já usado no
+  resto do app pra esse caso (`product.unidade || 'un.'`, só em maiúsculo
+  pra bater com o estilo todo-maiúsculo da etiqueta). `unidade` já existe
+  no objeto produto desde a rodada "Catálogo ganha Unidade de Medida e
+  Endereço em massa" (`searchSupabaseCatalog`/`fetchProdutosByCodigos`/
+  `estoqueRowToProduct` já resolvem `product.unidade` a partir da coluna
+  `produtos.unidade`) — só nunca tinha chegado até a etiqueta.
+- **Threaded pelos DOIS caminhos de impressão** (mesmo padrão já usado pro
+  campo `endereco` numa rodada anterior — "não pode perder o dado
+  silenciosamente indo pela fila"): `montarItensParaImprimir`
+  (`EtiquetasPanel`) passa `unidade: selecionado.unidade || null`;
+  `salvarEtiquetaNaFila`/`etiquetaFilaRowToLocal` gravam e leem de volta a
+  coluna nova; `handleEnviarParaFila` inclui `unidade` no payload salvo; os
+  2 pontos que reconstroem o item pra imprimir a partir da fila
+  (`handleImprimirFila`/`handleImprimirTodos`, via `toItemImpressao`) agora
+  também repassam `unidade`.
+- **`backend/schema.sql`**: `etiquetas_fila` ganhou a coluna `unidade text`
+  (no `create table` + `alter table add column if not exists` de migração
+  pro projeto já aplicado, mesmo padrão exato já usado pra `endereco`).
+- **Escopo consciente**: só a etiqueta de PRODUTO (tipo "Recebimento") tem
+  QTD — a de "Prateleira/Caixa" nunca mostrou quantidade (nem antes, nem
+  agora) e a de "Endereço" nunca teve esse campo — nenhuma das duas
+  precisou de mudança.
+- **`preview-etiqueta.html`**: réplica local de `buildEtiquetaItemHtml`
+  sincronizada com a mesma mudança, mais um campo novo no formulário
+  ("Unidade de medida (do cadastro)", valor padrão "PC", com dica "deixe em
+  branco pra testar item sem unidade cadastrada") — pro cliente conseguir
+  testar visualmente os dois casos (com e sem unidade) sem precisar
+  imprimir de verdade.
+- Testado via harness novo (`harness_etiqueta_unidade_cadastro.js`, mesma
+  técnica rigorosa de sempre — carrega o `index.html` inteiro transpilado
+  numa `vm.Script`, Supabase mockado registrando os inserts): confirma que
+  a etiqueta usa a unidade informada ("KG", "L", "CX" testados); que sem
+  unidade cadastrada cai em "UN" (não mais "PC"); que não sobra nenhum
+  `' PC'` fixo no código-fonte; que o payload gravado na fila inclui
+  `unidade`; que `etiquetaFilaRowToLocal` mapeia de volta corretamente
+  (snake_case→camelCase); e que um item impresso A PARTIR DA FILA (não da
+  seleção direta) usa a unidade que foi gravada, provando que o dado
+  sobrevive o ciclo completo (seleção→fila→impressão em outro aparelho).
+  2 harnesses de regressão já existentes (`harness_etiqueta_print_
+  navegador.js`/`harness_etiqueta_qtd_split.js`) tinham asserções fixando
+  o texto antigo "QTD: 500 PC"/"QTD: 50 PC" pra um item sem unidade
+  informada no teste — atualizadas pra esperar "UN" (mudança de
+  comportamento intencional desta rodada, não regressão). Rodei de novo
+  toda a suíte completa do scratchpad (552 passando) — só as mesmas 3
+  falhas pré-existentes de sempre, sem relação com esta mudança. Verificado
+  também via Playwright que `preview-etiqueta.html` carrega sem erro de
+  JS e que o campo de unidade novo funciona (padrão "PC", troca pra "KG"
+  reflete no preview, campo vazio cai em "UN"). Transpile Babel do arquivo
+  inteiro e balanceamento de chaves do CSS conferidos (672/672, sem
+  mudança — nenhuma classe CSS nova, só JS/JSX). **Falta o cliente rodar o
+  SQL novo** (`alter table etiquetas_fila add column if not exists
+  unidade text;`) no projeto real — até lá, enviar uma etiqueta de produto
+  pra fila continua funcionando normalmente, só sem a unidade chegando
+  junto (a coluna simplesmente não existe ainda no banco; ao imprimir
+  DIRETO, sem passar pela fila, a unidade já funciona desde já, já que não
+  depende de nenhuma coluna nova). **Verificação física de ponta a ponta
+  (a etiqueta impressa mostrando a unidade certa) fica a cargo do
+  cliente** — mesma limitação de sempre nesta feature (sandbox sem
+  impressora física).

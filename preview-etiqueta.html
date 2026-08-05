@@ -134,6 +134,11 @@ footer a{color:var(--navy);}
           <input id="in-quantidade" type="text" value="500">
         </div>
         <div class="field">
+          <label for="in-unidade">Unidade de medida (do cadastro)</label>
+          <input id="in-unidade" type="text" value="PC">
+          <div class="field-hint">Deixe em branco pra testar item sem unidade cadastrada (cai em "UN").</div>
+        </div>
+        <div class="field">
           <label for="in-data">Data de recebimento</label>
           <input id="in-data" type="date" value="2026-07-24">
         </div>
@@ -294,7 +299,7 @@ footer a{color:var(--navy);}
         + '</div>';
     }
     var desc = escapeHtmlEtiqueta((opts.descricao || '').slice(0, 120));
-    var qtdTexto = opts.quantidade ? ('QTD: ' + escapeHtmlEtiqueta(opts.quantidade) + ' PC') : '';
+    var qtdTexto = opts.quantidade ? ('QTD: ' + escapeHtmlEtiqueta(opts.quantidade) + ' ' + escapeHtmlEtiqueta(opts.unidade || 'UN')) : '';
     var dataTexto = opts.dataRecebimento ? escapeHtmlEtiqueta(fmtDataBR(opts.dataRecebimento)) : '';
     var enderecoTexto = opts.endereco ? escapeHtmlEtiqueta(opts.endereco) : '';
     var qtdBox = (qtdTexto || enderecoTexto) ? (
@@ -360,6 +365,7 @@ footer a{color:var(--navy);}
       codigo: document.getElementById('in-codigo').value,
       descricao: document.getElementById('in-descricao').value,
       quantidade: document.getElementById('in-quantidade').value,
+      unidade: document.getElementById('in-unidade').value,
       dataRecebimento: document.getElementById('in-data').value,
       endereco: document.getElementById('in-endereco-mat').value,
     };
@@ -392,7 +398,7 @@ footer a{color:var(--navy);}
     document.getElementById('campos-endereco').style.display = '';
     renderAll();
   });
-  ['in-codigo','in-descricao','in-quantidade','in-data','in-endereco-mat','in-codigo-endereco'].forEach(function(id){
+  ['in-codigo','in-descricao','in-quantidade','in-unidade','in-data','in-endereco-mat','in-codigo-endereco'].forEach(function(id){
     document.getElementById(id).addEventListener('input', renderAll);
   });
   document.getElementById('btn-refresh').addEventListener('click', buscarCssAoVivo);
