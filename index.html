@@ -1324,6 +1324,28 @@ function sincronizarAuthRealtime(session){
   }
 }
 
+// Cliente reportou (print da tela de contagem) a coluna "Unidade" mostrando
+// algo tipo "084-A-1" — um valor no FORMATO DE ENDEREÇO, não uma unidade de
+// medida de verdade (PC/KG/UN/etc.). Nenhuma unidade real tem esse formato
+// (3 dígitos-traço-letra-traço-1 dígito, o mesmo de ENDERECO_REGEX mais
+// abaixo — regex reescrita aqui, não referenciada, porque esta função roda
+// bem antes da declaração de ENDERECO_REGEX no arquivo), então tratar como
+// inválido aqui é seguro — nunca corta uma unidade legítima por engano.
+// Causa raiz provável: a importação em massa de "Unidade de Medida e
+// Endereço" (`parseDescricaoProdutosRows`, ver CLAUDE.md) lê `unidade`/
+// `endereco` por POSIÇÃO fixa de coluna (índice 3/4) — se a planilha de
+// origem já tinha esse deslocamento pra alguma linha específica (célula
+// mesclada, coluna faltando), o parser herda o erro sem ter como perceber.
+// Isso é uma proteção na LEITURA (esconde o valor ruim da tela), não uma
+// correção do dado em si — quem já gravou errado no Supabase continua
+// errado até reimportar a planilha corrigida.
+function unidadeCadastroValida(bruto){
+  const v = String(bruto||'').trim();
+  if(!v) return null;
+  if(/^\d{3}-[A-Z]-\d$/i.test(v)) return null;
+  return v;
+}
+
 // Busca no catálogo real (85 mil+ produtos) por código ou descrição — única
 // fonte de busca do app (o cache local de 300 SKUs foi removido, ver
 // CLAUDE.md "Remoção do cache local de 300 SKUs"). Enriquece com saldo
@@ -1457,7 +1479,7 @@ async function searchSupabaseCatalog(query, almoxarifado){
     return {
       codigo: row.codigo,
       descricao: row.descricao,
-      unidade: row.unidade || null,
+      unidade: unidadeCadastroValida(row.unidade),
       familia: describeGrupo(row.grupo),
       endereco: enderecoRow ? enderecoRow.codigo : null,
       enderecoCadastrado: !!enderecoRow,
@@ -3642,7 +3664,7 @@ function estoqueRowToProduct(row){
   return {
     codigo: row.codigo,
     descricao: row.descricao,
-    unidade: row.unidade || null,
+    unidade: unidadeCadastroValida(row.unidade),
     familia: describeGrupo(row.grupo),
     grupo: row.grupo,
     endereco: row.endereco_codigo || null,

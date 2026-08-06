@@ -16263,3 +16263,67 @@ endereço ao vivo também alimentar o campo oficial — cliente escolheu a
   rede ao domínio interno da Selgron) — mas como não depende de nenhuma
   migração de SQL nem de novo deploy da Edge Function (só o `index.html`
   mudou), já deve funcionar assim que o GitHub Pages publicar.
+
+## Bug real: "Unidade" mostrando valor no formato de endereço ("084-A-1")
+
+Cliente mandou print do card "Sistema (ao vivo)" mostrando "0,19 084-A-1"
+— o saldo (0,19) seguido do que deveria ser a unidade de medida, só que em
+vez de "PC"/"KG"/"UN" aparecia um valor no FORMATO DE ENDEREÇO. Investigado:
+`{fmtQtyBR(saldoSistemaEfetivo)} {product.unidade || 'un.'}` (linha da
+"Sistema (ao vivo)") renderiza exatamente isso quando `product.unidade`
+genuinamente contém essa string — confirmado que não é bug do saldo ao vivo
+(`liveConsulta.unidade` nunca é usado em lugar nenhum do app, só
+`liveConsulta.saldo`/`liveConsulta.endereco`) — é o valor de
+`produtos.unidade` (o catálogo real, gravado pela importação em massa
+"Catálogo ganha Unidade de Medida e Endereço", ver seção acima) mesmo.
+
+- **Causa raiz provável, não confirmável no sandbox**: `parseDescricaoProdutosRows`
+  lê `unidade`/`endereco` por POSIÇÃO fixa de coluna na planilha (índice 3 e
+  4, "Produto/Descrição/Grupo/Unidade/Localizacao" nessa ordem) — sem
+  nenhum deslocamento no código em si (conferido linha por linha). Se a
+  planilha de ORIGEM já tinha uma célula mesclada/coluna faltando pra
+  alguma linha específica, o parser herdaria esse deslocamento sem ter como
+  perceber — mas isso é uma suposição, não uma causa confirmada (sandbox
+  sem acesso à planilha/banco reais).
+- **`unidadeCadastroValida(bruto)`** (função nova, perto de
+  `searchSupabaseCatalog`) — proteção na LEITURA, não uma correção do dado
+  em si: nenhuma unidade de medida real tem o formato `\d{3}-[A-Z]-\d`
+  (exatamente `ENDERECO_REGEX`, reescrito aqui em vez de referenciado
+  porque esta função roda antes da declaração dele no arquivo) — um valor
+  nesse formato é tratado como inválido e vira `null` (cai no fallback
+  "un." já existente em toda tela que mostra unidade), nunca corta uma
+  unidade legítima por engano (testado com PC/KG/UN, todas passam intactas).
+- **Aplicada nos 2 únicos pontos que leem `produtos.unidade` CRU do
+  Supabase**: `searchSupabaseCatalog` (Nova Contagem Manual — a tela do
+  print do cliente) e `estoqueRowToProduct` (função compartilhada por
+  `fetchContagemItensPrioritarios`/`fetchItensPorEnderecoCompleto`/
+  `fetchProdutosByCodigos` — cobre Aleatória/Curva ABC/Grupo/Rota/Lista
+  Importada/Itens Específicos/Recontagem de uma vez só). Os demais pontos
+  que citam `unidade` no arquivo só repassam um `product.unidade` já
+  resolvido (não fazem leitura crua nova), não precisaram de mudança.
+- **Quem já gravou errado no Supabase continua com o dado errado até
+  reimportar a planilha corrigida** — esta correção só evita que o valor
+  ruim apareça na TELA, não corrige a linha em `produtos` — se o cliente
+  quiser corrigir o dado na origem, o caminho é reimportar a planilha
+  "Descrição de Produtos" já corrigida em Configurações (mesmo painel de
+  sempre, upsert por código já sobrescreve o valor antigo).
+- Testado via harness novo (`harness_unidade_endereco_shape.js`, sandbox
+  Node puro sem jsdom — as funções tocadas não usam DOM/hooks, só `window.
+  supabase`/`document.getElementById`/`ReactDOM` stubados o mínimo pro
+  script carregar): `unidadeCadastroValida` isolada (formato de endereço
+  vira `null`, incluindo o exemplo exato do print do cliente; unidade real
+  PC/KG/UN passa intacta; vazio/null/undefined vira `null`; espaços cortados;
+  texto parecido mas fora do formato exato não é cortado à toa);
+  `searchSupabaseCatalog` com o cenário EXATO do print (código 000.24727,
+  `produtos.unidade` mockado como "084-A-1", saldo mockado 0.19) confirma
+  que `unidade` sai `null` e `saldoSistema` continua `0.19` (só a unidade
+  foi filtrada, saldo intocado); `estoqueRowToProduct` isolada confirma a
+  mesma proteção e que unidade real (KG) não é afetada. Rodei de novo toda
+  a suíte de regressão do scratchpad (49 harnesses) — só as mesmas 3 falhas
+  pré-existentes já documentadas, sem relação com esta mudança. Transpile
+  Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos
+  (672/672, sem mudança — só JS, nenhuma classe CSS tocada). **Verificação
+  visual em produção fica a cargo do cliente** — mesma limitação de sempre
+  (login exige Supabase Auth real, não simulável no sandbox sem rede) — mas
+  como a correção é só na LEITURA, deve funcionar assim que a página
+  recarregar, sem precisar de nenhuma migração de SQL.
