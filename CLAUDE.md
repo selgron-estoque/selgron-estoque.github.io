@@ -17014,6 +17014,30 @@ o commit já correto e já publicado nos dois branches (`main`/`claude/ola-4icne
   (mesmo que só documentação) já resolve na prática, sem precisar esperar o GitHub do
   outro lado destravar sozinho.
 
+**Atualização — o padrão se repetiu mais 5 vezes ao longo do mesmo dia** (commits
+`0cb2f2a`, `01367f0`, e depois — já numa sessão seguinte — `15520b1`/`e73b390`, este
+último ~21 min preso antes de cancelar sozinho, `job.conclusion:'cancelled'` sem nenhum
+step chegando a rodar, não mais `'failure'` com log de "Timeout reached" — mesma causa
+de fundo, só a forma como a action reporta o cancelamento mudou entre versões/tentativas)
+— total de **7 falhas seguidas** desse mesmo padrão num único dia, intercaladas com
+deploys que funcionaram normalmente antes e depois (`24f0d3c`, `c656290`). Isso é
+instabilidade demais pra ser só "flakiness aleatória" — vale o cliente checar, pelo
+painel web do GitHub (não acessível por API através do proxy deste sandbox — tentativa
+de checar `GET /repos/.../environments` retornou "Access to this GitHub API path is not
+permitted through this proxy"):
+- **Settings → Environments → `github-pages`** — se existir um "wait timer" ou
+  "required reviewers" configurado nesse ambiente, isso bloquearia o deployment
+  exatamente do jeito visto aqui (fica "queued" um tempo fixo, depois a action desiste e
+  cancela) — combina bem com o timing observado (~10-21 min sempre antes de cancelar).
+- **Settings → Pages** — confirmar que a fonte continua "GitHub Actions" (não
+  "Deploy from a branch", que usaria um mecanismo totalmente diferente) e que não há
+  nenhum aviso/erro listado ali sobre o domínio custom ou certificado.
+- Se nenhum dos dois explicar, é mesmo uma instabilidade do backend de Pages do lado do
+  GitHub — nesse caso abrir um ticket de suporte com o link de uma das runs travadas
+  (ex.: `https://github.com/selgron-estoque/selgron-estoque.github.io/actions/runs/31122801737`)
+  é o próximo passo, já que reruns/commits novos claramente não estão resolvendo sozinhos
+  depois da 7ª repetição.
+
 ## Segundo reset de "Endereços Pendentes" — chave `_v3`, cliente vai começar a usar de verdade agora
 
 Cliente pediu: "Limpar fila de Endereços pendentes, vou começar a trabalhar com ela a
