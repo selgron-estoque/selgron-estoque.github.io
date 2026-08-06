@@ -16418,3 +16418,84 @@ descrição do catálogo local normalmente, sem quebrar. **Verificação de
 ponta a ponta com o site real da Selgron fica a cargo do cliente** — mesma
 limitação de sempre (sandbox sem acesso de rede ao domínio interno da
 Selgron).
+
+## Elimina a tela que puxa o endereço da planilha — duas telas de endereço viram uma só
+
+Depois de ver as duas telas de captura de endereço lado a lado (uma que exige escanear o
+QR Code do endereço já CADASTRADO, vindo da planilha importada, pra confirmar que o
+operador está no lugar certo; outra, só pra item sem cadastro nenhum, que pede pra
+informar onde encontrou), o cliente perguntou: "tenho duas telas com a mesma finalidade,
+daria para eliminar uma??" — expliquei a diferença funcional real entre as duas
+(verificação de local físico contra um cadastro conhecido vs. 1ª captura sem nada pra
+comparar) e perguntei via `AskUserQuestion` qual direção ele queria. Resposta exata:
+**"Elimina a tela que puxa o endereço da planilha"** — ou seja, eliminar a tela de QR
+Code (cuja referência vem do cadastro importado da planilha), unificando TODO item
+(com ou sem cadastro) na mesma tela de campo único que já existia pra item sem cadastro.
+
+- **`hasAddress`/`step==='scan'`/`step==='scanResult'` removidos por completo** — junto
+  de `scannedCode`/`addressOk` (estado), `handleAddressScanDetected`/`simulateScan`
+  (comparação por QR Code), `digitandoEndereco`/`enderecoDigitado`/
+  `confirmarEnderecoDigitado` ("Digitar outro endereço", um sub-fluxo que só existia
+  dentro da tela de QR Code) e `confirmarContarComEnderecoDivergente` ("Contar mesmo
+  assim", a saída pra quando o QR Code lido não batia com o cadastro).
+- **`step` agora só tem 2 valores possíveis**: `'enderecoManual'` (sempre que
+  `expectAddressCheck` é true, pra QUALQUER item) ou `'count'` — a condição de
+  inicialização deixou de depender de `product.enderecoCadastrado`.
+- **`enderecoInformado` (o campo único) passou a nascer PRÉ-PREENCHIDO com o cadastro,
+  quando existe** (`useState(() => (expectAddressCheck && product.enderecoCadastrado &&
+  product.endereco) ? product.endereco : '')`) — poupa o operador de redigitar/reescanear
+  um local que o app já conhece; item sem cadastro continua nascendo vazio, exatamente
+  como já era. A consulta ao vivo da Selgron (`liveConsulta`, ver seção anterior)
+  continua só preenchendo quando o campo está VAZIO (`prev===''`) — pra item com
+  cadastro, isso na prática nunca sobrescreve (o campo já nasce com o valor do cadastro),
+  então a prioridade fica: cadastro > consulta ao vivo > vazio.
+- **`confirmEnderecoManual` (função única agora) decide sozinha quando propor pro
+  líder**: sempre que `needsAddressInput` é true (item nunca teve cadastro — 1ª captura,
+  igual sempre foi) OU quando o valor confirmado DIVERGE do que já estava cadastrado
+  (`divergeDoCadastro`, comparação com `product.endereco`) — é a MESMA revisão que
+  "Contar mesmo assim" já disparava antes, só que agora dentro da mesma tela, sem etapa
+  própria. Confirmar sem editar nada (cadastro já bate) não gera proposta nenhuma — evita
+  repropor o mesmo endereço a cada contagem do mesmo item. `enderecoAnterior` continua
+  preenchido com o valor antigo do cadastro quando existe divergência, pro líder comparar
+  os dois lados em "Endereços Pendentes de Cadastro" — nenhuma mudança na tela de
+  aprovação em si (`AddressValidationPanel`/`aplicarEnderecoConfirmado`).
+- **`finalize()`**: `enderecoContado` deixou de depender de `scannedCode` (removido) —
+  vira só `enderecoInformado.toUpperCase()` (o mesmo campo único, sempre).
+- **CSS órfão removido**: `.address-chip` (chip de endereço grande, exibido no topo da
+  tela de QR Code), `.scan-toggle-row` (fileira dos 2 botões de debug "Sem câmera:
+  simular leitura..."), `.result-banner.warn`/`.result-banner.danger`/`.rb-title`/
+  `.rb-sub` (usados só pelas mensagens "Endereço confirmado"/"Atenção" da tela removida
+  — `.result-banner`/`.result-banner.ok`, em uso em outro lugar do app, ficaram intactos).
+- **Escopo consciente, não tocado**: a verificação opcional do ITEM por câmera dentro da
+  etapa de contagem (`scanningItem`/`handleItemVerifyScan`, o botão 📷 ao lado do código
+  na etapa `count`) é uma feature DIFERENTE (confere se o código escaneado bate com o
+  item já carregado na tela, não tem nada a ver com endereço) — continua exatamente como
+  estava.
+- Testado via harness novo (`harness_elimina_tela_qrcode_endereco.js`, jsdom +
+  react-dom/client + `act()`, mesma técnica rigorosa de sempre — carrega o `index.html`
+  inteiro transpilado numa `vm.Script`): confirma que nenhum vestígio da tela antiga
+  sobra pra item com cadastro (sem "Escanear com a câmera"/"Digitar outro endereço"/
+  "Sem câmera: simular leitura.../Contar mesmo assim"/"Endereço confirmado"); que o
+  campo único existe e já vem preenchido com o cadastro; que item sem cadastro continua
+  nascendo vazio e obrigando preencher antes de habilitar "Confirmar e continuar"; que
+  confirmar sem cadastro sempre propõe (1ª captura, `enderecoAnterior:null`); e que
+  `enderecoContado` grava certo sem depender de `scannedCode`. Reescritos 3 harnesses que
+  testavam diretamente a tela removida: `harness_classify_divergence_binario.js` (só
+  precisou trocar "Sem câmera: simular leitura certa"+"Continuar" por "Confirmar e
+  continuar" pra chegar na etapa de quantidade, sem mudança de asserção sobre
+  classificação); `harness_countstep_proposta_divergente.js` (Cenário 1 reescrito pra
+  editar o campo único em vez de "Digitar outro endereço"/"Contar mesmo assim",
+  Cenário 2 corrigido pra esperar `enderecoAnterior:null` em vez de `undefined`, já que
+  o código agora sempre grava esse campo explicitamente). **`harness_digitar_endereco_
+  scan.js` foi removido do scratchpad** (não atualizado) — testava exclusivamente o
+  sub-fluxo "Digitar outro endereço", que deixou de existir como elemento discreto (virou
+  só "editar o campo", já coberto pelos harnesses acima); mantê-lo reescrito seria
+  puro duplicado sem cobertura nova. Rodei de novo toda a suíte de regressão do
+  scratchpad (52 arquivos) — só as mesmas 3 falhas já confirmadas pré-existentes/sem
+  relação com esta mudança continuam (`harness_actions_beside_content.js`/
+  `harness_dashboard_render_dedup.js`/`harness_ultima_contagem_por_codigo.js`,
+  reconfirmado via `git stash` que já falham identicamente sem esta mudança). Transpile
+  Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos (666/666, caiu de
+  672 — as 6 regras CSS órfãs removidas). **Verificação visual/funcional de ponta a ponta
+  fica a cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth real,
+  não simulável no sandbox sem rede).
