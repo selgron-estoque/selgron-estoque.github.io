@@ -4936,13 +4936,18 @@ function App(){
   const [inventories, setInventories] = usePersistedState('inventories_v2', []);
 
   const [counts, setCounts] = usePersistedState('counts_v2', []); // finalized counts
-  // Chave 'enderecosPropostos_v2' (era 'enderecosPropostos') — mesmo reset
-  // pedido pelo cliente já aplicado antes a inventários/contagens: esse
-  // aparelho ainda tinha propostas de endereço de teste (item tipo "TRAVA
-  // ROLO PRESS") sobrando do período de demonstração. Bump de chave zera
-  // sozinho em qualquer aparelho que abrir depois deste deploy, sem precisar
-  // de comando manual em cada um.
-  const [enderecosPropostos, setEnderecosPropostos] = usePersistedState('enderecosPropostos_v2', []); // endereços informados por operadores, aguardando validação do líder
+  // Chave 'enderecosPropostos_v3' (era 'enderecosPropostos_v2', antes disso
+  // 'enderecosPropostos') — 2º reset pedido pelo cliente: "vou começar a
+  // trabalhar com ela a partir de agora", limpando de vez as propostas de
+  // teste acumuladas antes do uso real. Mesmo mecanismo dos resets
+  // anteriores — bump de chave zera sozinho em qualquer aparelho que abrir
+  // depois deste deploy, sem precisar de comando manual em cada um. Como o
+  // merge do canal Realtime desta tabela é aditivo/nunca remove localmente
+  // (`mergeByIdComTimestamp` sem `removeMissing`, ver `enderecos_propostos`
+  // no useEffect de sync — proposta nunca é deletada pelo app), só bumpar a
+  // chave NÃO bastaria sozinho: sem apagar a tabela no Supabase também, o
+  // próximo sync traria as mesmas propostas de volta pro cache local zerado.
+  const [enderecosPropostos, setEnderecosPropostos] = usePersistedState('enderecosPropostos_v3', []); // endereços informados por operadores, aguardando validação do líder
   const [passwordRequests, setPasswordRequests] = usePersistedState('passwordRequests', []); // solicitações de "esqueci minha senha"
   const [passwordHistory, setPasswordHistory] = usePersistedState('passwordHistory', []); // histórico de alterações de senha
   const [reportSendHistory, setReportSendHistory] = usePersistedState('reportSendHistory', []); // histórico de envios de relatório por e-mail

@@ -17013,3 +17013,40 @@ o commit já correto e já publicado nos dois branches (`main`/`claude/ola-4icne
   `method:'rerun_workflow_run'`, mas se travar de novo no mesmo SHA, um commit novo
   (mesmo que só documentação) já resolve na prática, sem precisar esperar o GitHub do
   outro lado destravar sozinho.
+
+## Segundo reset de "Endereços Pendentes" — chave `_v3`, cliente vai começar a usar de verdade agora
+
+Cliente pediu: "Limpar fila de Endereços pendentes, vou começar a trabalhar com ela a
+partir de agora" — mesmo padrão de reset já aplicado antes a `inventories`/`counts`
+("Reset geral de contagens/inventários...") e à própria fila de endereços uma vez
+("Quarto pedaço do backend real..." — na época, item de teste tipo "TRAVA ROLO PRESS").
+
+- **Bump de chave**: `enderecosPropostos_v2` → `enderecosPropostos_v3` — mesmo
+  mecanismo de sempre, zera o cache local de qualquer aparelho que abrir depois deste
+  deploy, sem comando manual em cada um.
+- **Diferente do reset anterior desta mesma fila**: hoje `enderecos_propostos` já
+  sincroniza via Realtime (não sincronizava na época do reset `_v2`) — e o merge dessa
+  tabela é **aditivo, nunca remove localmente**
+  (`mergeByIdComTimestamp(prev, remote, {timestampField:'atualizadoEm'})`, SEM
+  `removeMissing:true` — decisão de propósito, documentada no próprio `useEffect`:
+  "proposta nunca é deletada no app"). Isso significa que só bumpar a chave NÃO seria
+  suficiente desta vez: sem apagar a tabela no Supabase também, o próximo `sync()`
+  (conexão do canal Realtime) traria de volta as MESMAS propostas antigas pro cache
+  local recém-zerado, entre elas "confirmado"/"rejeitado" também (a tela
+  `AddressValidationPanel` mostra a lista inteira, não só `status==='pendente'` — os já
+  resolvidos aparecem com a tag "Confirmado"/"Rejeitado" na mesma lista, sem seção
+  separada).
+- **Precisa do cliente rodar no Supabase** (SQL Editor do projeto real, sandbox sem
+  acesso de rede pra fazer isso à distância, mesma limitação de sempre):
+  ```sql
+  delete from enderecos_propostos;
+  ```
+  Sem `cascade`/dependência de FK — a tabela nunca teve nenhuma outra apontando pra ela
+  (sempre foi desenhada denormalizada, sem FK pra `usuarios`/`produtos`, mesma razão já
+  documentada quando foi criada).
+- Testado via transpile Babel do arquivo inteiro (OK) e balanceamento de chaves do CSS
+  (666/666, sem mudança — só um literal de string trocado, nenhuma classe CSS tocada).
+  Rodei de novo toda a suíte de regressão do scratchpad (56 harnesses, 737 asserções) —
+  0 falhas. **Falta o cliente rodar o `delete` acima no Supabase real** — só depois
+  disso a fila fica genuinamente vazia em todos os aparelhos (o bump de chave sozinho já
+  publicado não é suficiente sem esse passo, pelo motivo explicado acima).
