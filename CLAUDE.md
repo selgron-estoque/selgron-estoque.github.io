@@ -16827,3 +16827,108 @@ tolera aspas simples/duplas e filtra valores fora da faixa de data plausível, m
 página real usar uma estrutura bem diferente pro atributo em algum caso, o campo
 simplesmente sai `null` (nunca quebra a consulta, só fica sem essa informação) — mesmo
 padrão de degradação segura já usado no resto desta Edge Function.
+
+## "Valor Unitário" também vem do Kardex ao vivo — fecha o 2º motivo que ainda prendia o cliente à SB2
+
+Na sequência direta da seção anterior, o cliente pediu mais um campo: "além da data
+puxar também 'Valor Unitário', isso também eu usava da SB2" — o custo unitário do item
+(`custoUnit`, usado pra calcular `valorDivergente`/"Valor do ajuste" em toda contagem)
+sempre veio só de `estoque_saldo.valor_financeiro/saldo` (`estoqueRowToProduct`/
+`fetchProdutosByCodigos`), ou seja, do último upload manual da SB2 — o mesmo motivo que
+já tinha sido resolvido pra "última movimentação" na seção anterior, agora repetido pro
+custo.
+
+Investigando o mesmo HTML do Kardex que o cliente já tinha mandado (`View Source`,
+produto `030.090.00019`), a coluna "Valor Unitário" já estava lá, na tabela principal
+(não no resumo) — confirmado o cabeçalho completo (19 colunas: Tipo/Produto/Descrição/
+Tipo/Armazém/Quantidade/**Valor Unitário**/ICMS/IPI/TM-TES/Operação/Documento/Serie/
+Centro Custo/OP/SA/Observação/Fornecedor-Cliente/Dt. Emissão) e o valor real de uma linha
+(`10.0` de Quantidade, `14.113` de Valor Unitário, formato com PONTO decimal — diferente
+da vírgula BR usada em "Quantidade em estoque" da consulta de produto).
+
+**Decisão de qual linha usar** (não perguntada explicitamente ao cliente, mas
+justificada por analogia direta ao que a SB2 já fazia): o Kardex não tem nenhum campo de
+"custo médio corrente" separado, só o Valor Unitário de CADA movimentação individual —
+a melhor aproximação disponível pro custo "atual" é o Valor Unitário da MESMA linha já
+usada pra `ultimaMovimentacao` (a movimentação mais recente), exatamente o mesmo
+espírito do que `valor_financeiro/saldo` da SB2 já entregava (um retrato do custo no
+momento do upload, não uma média calculada à parte).
+
+### `consultar-produto-selgron/index.ts` — `extrairUltimaMovimentacao` vira `extrairDadosKardex`
+
+- **Refatorado pra uma função só**, em vez de duas (evita escanear o mesmo HTML duas
+  vezes e duplicar a lógica de achar a linha vencedora): `extrairDadosKardex(html)`
+  devolve `{ultimaMovimentacao, custoUnitario}` — acha a linha com o MAIOR `data-sort`
+  (mesmo critério de sempre) e, na hora, já extrai o "Valor Unitário" DESSA MESMA linha.
+- **`celulasDaLinha(linhaHtml)`** (função nova) — extrai o texto de cada célula `<td>`
+  de uma linha `<tr>`, na ordem em que aparecem. Diferente de `extrairCampo` (a consulta
+  de produto, que é "Rótulo: valor" por linha de texto), o Kardex é uma TABELA sem
+  rótulo por célula — só dá pra ler por POSIÇÃO de coluna, mesmo critério já usado em
+  outros parsers de planilha/tabela deste app quando não há como resolver por nome de
+  coluna de forma confiável.
+- **`KARDEX_COL_VALOR_UNITARIO = 6`** (constante, 0-based) — índice da coluna dentro da
+  linha, documentado com a lista completa das 19 colunas confirmadas no HTML real.
+  Conversão de vírgula pra ponto (`.replace(",", ".")`) aplicada por segurança, mesma
+  tolerância já usada no saldo — mesmo a página real usando ponto hoje, protege contra
+  uma mudança futura pro formato BR sem quebrar o parser.
+- **Célula vazia/ausente na linha vencedora vira `null`** (não inventa `0`) — mesmo
+  critério de honestidade de sempre neste projeto.
+- Resposta final ganhou o campo `custoUnitario` (número ou `null`), ao lado de
+  `ultimaMovimentacao`.
+
+### `index.html` — `custoUnitEfetivo`, mesmo padrão "ao vivo vence, cadastro é fallback"
+
+- **`CountStep` ganhou `custoUnitEfetivo`** — `(liveConsulta && typeof liveConsulta.
+  custoUnitario==='number' && liveConsulta.custoUnitario>0) ? liveConsulta.custoUnitario
+  : product.custoUnit` — mesmo critério de `saldoSistemaEfetivo`/`descricaoEfetiva`/
+  `unidadeEfetiva`/`ultimaSaidaEfetiva`. O guard `>0` evita usar um custo zero/negativo
+  vindo de um parse estranho (célula vazia já vira `null` do lado da Edge Function, mas
+  esse guard é uma 2ª camada de defesa aqui também).
+- **`CountStep.finalize()`**: `valorDivergente: hasSaldoLocal ? (Math.abs(diffAbs) *
+  Number(product.custoUnit)).toFixed(2) : '0.00'` virou `Number(custoUnitEfetivo)` no
+  lugar de `Number(product.custoUnit)` — o "Valor do ajuste"/"Valor divergente" gravado
+  em CADA contagem passa a refletir o custo mais atual, não o congelado na última
+  planilha SB2.
+- **Mini-card novo** "Valor Unitário (Selgron)" no `.cs-mini-grid`, mesmo padrão visual/
+  condicional dos outros mini-cards de referência — formatado como `R$ {v.toFixed(2)}`
+  (mesmo padrão já usado em "Valor divergente" no resto do app, ponto decimal, não
+  vírgula). Confirma na hora, pro operador/líder, que o valor calculado já usa o custo
+  ao vivo.
+- **Nenhuma outra tela precisou de mudança** — `classifySeverity4` (severidade visual em
+  Recontagens/Itens Divergentes/Concluídas, por faixa de R$), o painel "Aguardando
+  Aprovação"/geração de SA, tudo isso já lê `valorDivergente` da contagem SALVA — como a
+  correção é na ORIGEM (o momento em que a contagem é gravada), tudo que consome esse
+  campo depois passa a receber o valor certo automaticamente.
+
+### Verificação
+
+Reaproveitado o mesmo par de harnesses da seção anterior, estendidos:
+- **`harness_kardex_ultima_movimentacao.js`** (25/25, era 13) — `extrairDadosKardex`
+  isolada: confirma que a função antiga (`extrairUltimaMovimentacao`, só data) não
+  existe mais; que o Valor Unitário extraído bate com a linha VENCEDORA (não com a 1ª
+  nem com outra linha qualquer, testado com valores propositalmente diferentes entre as
+  linhas do cenário sintético); vírgula decimal também funciona; célula vazia vira
+  `null` sem inventar `0`; e, contra o HTML COMPLETO real do cliente (141 linhas),
+  confirma `custoUnitario === 14.113` pra mesma linha que já dá `ultimaMovimentacao ===
+  "2026-08-03"`.
+- **`harness_consulta_selgron_ultima_movimentacao.js`** (16/16, era 9) — `CountStep` de
+  ponta a ponta: com saldo ao vivo=12/informado=10 (diferença de 2) e custo ao vivo=
+  14.113, o `valorDivergente` GRAVADO sai `"28.23"` (2×14.113), não `"2.00"` (o que
+  daria com o custo antigo da SB2, `product.custoUnit=1`) — prova de que o custo ao vivo
+  está sendo usado de verdade no cálculo, não só exibido; os 2 cenários de fallback
+  (Kardex sem custo, consulta falhando por completo) confirmam `valorDivergente` caindo
+  pro custo da SB2 (`"2.00"`) e nenhum dos dois mini-cards novos aparecendo.
+
+Rodei de novo toda a suíte de regressão do scratchpad (55 arquivos, os 2 atualizados
+inclusos) — 0 falhas. Type-check da Edge Function via `tsc` sem erro. Transpile Babel do
+arquivo inteiro e balanceamento de chaves do CSS conferidos (666/666, sem mudança —
+nenhuma classe CSS nova, só JS/JSX/TS).
+
+**Falta o cliente**: rodar `npx supabase functions deploy consultar-produto-selgron` de
+novo (o mesmo deploy pendente da seção anterior já cobre esta mudança também — é o
+mesmo arquivo, não precisa de dois deploys separados) e testar ao vivo — mesma
+limitação de sempre (sandbox sem acesso de rede ao domínio interno da Selgron). Vale
+conferir, no primeiro teste real, se o "Valor Unitário" de outros produtos (não só o de
+teste) sempre usa ponto decimal como neste exemplo, ou se varia — o parser já tolera os
+dois formatos, mas é bom confirmar visualmente que o número que aparece no mini-card
+bate com o que a página do Kardex mostra de verdade.

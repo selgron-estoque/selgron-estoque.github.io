@@ -98,32 +98,68 @@ function extrairCampo(texto: string, rotulos: string[]): string | null {
   return null;
 }
 
-// Acha a data MAIS RECENTE de movimentação dentro do HTML do Kardex —
-// varre TODO `data-sort='<unix>'` da página (a coluna "Dt. Emissão" da
-// tabela DataTables carrega o timestamp Unix pronto ali, mais confiável e
-// simples que parsear o texto "DD/MM/AAAA" exibido) e devolve o maior
-// valor encontrado, já convertido pra "YYYY-MM-DD" (mesmo formato que
-// `diasParado()`/o resto do app já espera). `null` se a página não tiver
+// Extrai o texto de cada célula <td> de UMA linha <tr>...</tr> do Kardex,
+// na ordem em que aparecem — usado só pra pegar o "Valor Unitário" da linha
+// vencedora (ver `extrairDadosKardex` abaixo), já que essa tabela não tem
+// rótulo por célula (é posicional, ao contrário do "Rótulo: valor" da
+// consulta de produto) — mesmo padrão "ler por posição de coluna" já usado
+// em outros parsers de planilha/tabela deste app quando não há como
+// resolver por nome de coluna de forma confiável.
+function celulasDaLinha(linhaHtml: string): string[] {
+  const matches = [...linhaHtml.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)];
+  return matches.map((m) => m[1].replace(/<[^>]+>/g, " ").replace(/&nbsp;/gi, " ").trim());
+}
+
+// Índice da coluna "Valor Unitário" dentro da linha (0-based, contando as
+// células <td> visíveis) — confirmado no HTML real que o cliente mandou
+// (View Source, produto 030.090.00019): Tipo(0) / Produto(1) /
+// Descrição(2) / Tipo(3) / Armazém(4) / Quantidade(5) / Valor Unitário(6) /
+// ICMS(7) / IPI(8) / TM-TES(9) / Operação(10) / Documento(11) / Serie(12) /
+// Centro Custo(13) / OP(14) / SA(15) / Observação(16) / Fornecedor-
+// Cliente(17) / Dt. Emissão(18, com data-sort).
+const KARDEX_COL_VALOR_UNITARIO = 6;
+
+// Acha a movimentação MAIS RECENTE dentro do HTML do Kardex — varre TODO
+// `data-sort='<unix>'` da página (a coluna "Dt. Emissão" da tabela
+// DataTables carrega o timestamp Unix pronto ali, mais confiável e simples
+// que parsear o texto "DD/MM/AAAA" exibido) e usa a linha com o MAIOR
+// valor, já que as linhas vêm agrupadas por tipo de movimento, não
+// ordenadas globalmente por data (nunca dá pra confiar na 1ª/última linha
+// do documento). Devolve a data dessa linha (formato "YYYY-MM-DD", mesmo
+// que `diasParado()`/o resto do app já espera) e o "Valor Unitário" da
+// MESMA linha — a movimentação mais recente é a melhor aproximação
+// disponível pro custo unitário "atual" do item, já que o Kardex não tem
+// nenhum campo de custo médio corrente à parte (mesmo espírito do que a
+// planilha SB2 já entregava: valor_financeiro/saldo era só um retrato do
+// custo no momento do upload, não um "custo médio" calculado à parte).
+// `{ultimaMovimentacao:null, custoUnitario:null}` se a página não tiver
 // nenhuma linha reconhecível (item sem nenhuma movimentação, ou o formato
 // da página mudou do lado de lá).
-function extrairUltimaMovimentacao(html: string): string | null {
-  const regex = /data-sort=['"](\d+)['"]/gi;
+function extrairDadosKardex(html: string): { ultimaMovimentacao: string | null; custoUnitario: number | null } {
+  const linhas = html.match(/<tr[^>]*>[\s\S]*?<\/tr>/gi) || [];
   let maiorUnix = 0;
-  let m: RegExpExecArray | null;
-  while ((m = regex.exec(html)) !== null) {
-    const v = Number(m[1]);
+  let custoUnitario: number | null = null;
+  for (const linha of linhas) {
+    const mSort = /data-sort=['"](\d+)['"]/i.exec(linha);
+    if (!mSort) continue;
+    const v = Number(mSort[1]);
     // Filtro de sanidade: um timestamp em segundos plausível pra "alguma
     // data real do calendário" fica entre ~2000-01-01 (946684800) e
     // ~2100-01-01 (4102444800) — protege contra `data-sort` de OUTRA
     // coluna da mesma tabela (ex: um valor monetário/quantidade) que por
     // acaso também usa esse atributo pro DataTables ordenar numericamente,
     // sem ser uma data de verdade.
-    if (Number.isFinite(v) && v > 946684800 && v < 4102444800 && v > maiorUnix) {
+    if (!Number.isFinite(v) || v <= 946684800 || v >= 4102444800) continue;
+    if (v > maiorUnix) {
       maiorUnix = v;
+      const celulas = celulasDaLinha(linha);
+      const bruto = celulas[KARDEX_COL_VALOR_UNITARIO];
+      const num = bruto != null && bruto !== "" ? Number(String(bruto).replace(",", ".")) : NaN;
+      custoUnitario = Number.isFinite(num) ? num : null;
     }
   }
-  if (maiorUnix === 0) return null;
-  return new Date(maiorUnix * 1000).toISOString().slice(0, 10);
+  const ultimaMovimentacao = maiorUnix === 0 ? null : new Date(maiorUnix * 1000).toISOString().slice(0, 10);
+  return { ultimaMovimentacao, custoUnitario };
 }
 
 Deno.serve(async (req: Request) => {
@@ -218,14 +254,18 @@ Deno.serve(async (req: Request) => {
     // erro pra fora daqui, sempre cai em `null` silenciosamente no que
     // falhar (rede, timeout, resposta não-2xx, formato inesperado).
     let ultimaMovimentacao: string | null = null;
+    let custoUnitario: number | null = null;
     try {
       const respKardex = await kardexPromise;
       if (respKardex && respKardex.ok) {
         const htmlKardex = await respKardex.text();
-        ultimaMovimentacao = extrairUltimaMovimentacao(htmlKardex);
+        const dadosKardex = extrairDadosKardex(htmlKardex);
+        ultimaMovimentacao = dadosKardex.ultimaMovimentacao;
+        custoUnitario = dadosKardex.custoUnitario;
       }
     } catch {
       ultimaMovimentacao = null;
+      custoUnitario = null;
     }
 
     return resposta(200, {
@@ -237,6 +277,7 @@ Deno.serve(async (req: Request) => {
       armazem: armazem || null,
       unidade: unidade || null,
       ultimaMovimentacao,
+      custoUnitario,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

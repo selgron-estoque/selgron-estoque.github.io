@@ -8659,6 +8659,18 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   const unidadeLiveValida = liveConsulta ? unidadeCadastroValida(liveConsulta.unidade) : null;
   const unidadeEfetiva = unidadeLiveValida || product.unidade;
   const descricaoEfetiva = (liveConsulta && liveConsulta.descricao) ? liveConsulta.descricao : product.descricao;
+  // Custo unitário — mesmo critério de sempre: "Valor Unitário" da consulta
+  // ao vivo (extraído do Kardex, da mesma linha usada pra `ultimaMovimentacao`
+  // — a movimentação mais recente é a melhor aproximação disponível pro
+  // custo "atual" do item, já que o Kardex não tem um campo de custo médio
+  // corrente à parte) sobrescreve `product.custoUnit` (que hoje só vem de
+  // `estoque_saldo.valor_financeiro/saldo`, populado pela planilha SB2).
+  // Pedido do cliente: "além da data puxar também 'Valor Unitário', isso
+  // também eu usava da SB2". Cai pro valor do catálogo quando a consulta
+  // ainda não respondeu, não achou custo, ou o número veio inválido.
+  const custoUnitEfetivo = (liveConsulta && typeof liveConsulta.custoUnitario==='number' && liveConsulta.custoUnitario>0)
+    ? liveConsulta.custoUnitario
+    : product.custoUnit;
   // Última movimentação (pra "dias parado" em Itens Divergentes) — mesmo
   // critério exato do saldo/descrição/unidade: consulta ao vivo (via o
   // Kardex, extraído do lado da Edge Function) vence quando presente, cai
@@ -8795,7 +8807,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
       saldoSistema: hasSaldoLocal ? saldoSistemaEfetivo : null,
       diferenca: hasSaldoLocal ? diffAbs : null,
       percentual: hasSaldoLocal ? diffPct : null,
-      valorDivergente: hasSaldoLocal ? (Math.abs(diffAbs) * Number(product.custoUnit)).toFixed(2) : '0.00',
+      valorDivergente: hasSaldoLocal ? (Math.abs(diffAbs) * Number(custoUnitEfetivo)).toFixed(2) : '0.00',
       foraDoCacheLocal: !!product.foraDoCacheLocal,
       classificacao: classification,
       statusAprovacao,
@@ -9087,6 +9099,15 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
                 nenhuma movimentação pro código. */}
             {liveConsulta && liveConsulta.ultimaMovimentacao && (
               <div className="cs-mini"><div className="k">Última movimentação (Selgron)</div><div className="v">{fmtDataBR(liveConsulta.ultimaMovimentacao)}</div></div>
+            )}
+            {/* Mesma referência informativa, agora pro Valor Unitário (vem
+                do Kardex, mesma linha usada pra `ultimaMovimentacao` acima —
+                a movimentação mais recente) — confirma que o "Valor do
+                ajuste"/"Valor divergente" calculado a partir daqui já usa o
+                custo mais atual, não o congelado na última planilha SB2.
+                Some sozinho se o Kardex não trouxe um valor válido. */}
+            {liveConsulta && typeof liveConsulta.custoUnitario==='number' && liveConsulta.custoUnitario>0 && (
+              <div className="cs-mini"><div className="k">Valor Unitário (Selgron)</div><div className="v">R$ {liveConsulta.custoUnitario.toFixed(2)}</div></div>
             )}
           </div>
 
