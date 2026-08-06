@@ -30,6 +30,19 @@
 const CONSULTA_SELGRON_USER = Deno.env.get("CONSULTA_SELGRON_USER") ?? "";
 const CONSULTA_SELGRON_PASS = Deno.env.get("CONSULTA_SELGRON_PASS") ?? "";
 const CONSULTA_URL = "https://consulta.selgron.com.br/produto.consulta.php";
+// Kardex — histórico de movimentação do item, usado só pra derivar a data da
+// ÚLTIMA movimentação (pedido do cliente: "não vou mais precisar subir a
+// SB2, mas ainda preciso saber quantos dias o material está parado"). Ver
+// CLAUDE.md, seção "Última movimentação via Kardex ao vivo" pro contexto
+// completo — resumo: cada linha da tabela carrega `data-sort='<unix>'` na
+// coluna "Dt. Emissão", então a data mais recente é só um Math.max() sobre
+// todos os data-sort da página — nunca dá pra confiar na 1ª linha do HTML
+// (as linhas vêm agrupadas por tipo de movimento, não ordenadas globalmente
+// por data) nem no campo "Dados Finais" do resumo (é só o fim da janela de
+// filtro padrão da própria página, coincide com "hoje", não com a última
+// movimentação real — confirmado com o cliente: "Desconsidera isso é outra
+// coisa, o campo de data é DT Emissão").
+const KARDEX_URL = "https://consulta.selgron.com.br/kardex.php";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -85,6 +98,34 @@ function extrairCampo(texto: string, rotulos: string[]): string | null {
   return null;
 }
 
+// Acha a data MAIS RECENTE de movimentação dentro do HTML do Kardex —
+// varre TODO `data-sort='<unix>'` da página (a coluna "Dt. Emissão" da
+// tabela DataTables carrega o timestamp Unix pronto ali, mais confiável e
+// simples que parsear o texto "DD/MM/AAAA" exibido) e devolve o maior
+// valor encontrado, já convertido pra "YYYY-MM-DD" (mesmo formato que
+// `diasParado()`/o resto do app já espera). `null` se a página não tiver
+// nenhuma linha reconhecível (item sem nenhuma movimentação, ou o formato
+// da página mudou do lado de lá).
+function extrairUltimaMovimentacao(html: string): string | null {
+  const regex = /data-sort=['"](\d+)['"]/gi;
+  let maiorUnix = 0;
+  let m: RegExpExecArray | null;
+  while ((m = regex.exec(html)) !== null) {
+    const v = Number(m[1]);
+    // Filtro de sanidade: um timestamp em segundos plausível pra "alguma
+    // data real do calendário" fica entre ~2000-01-01 (946684800) e
+    // ~2100-01-01 (4102444800) — protege contra `data-sort` de OUTRA
+    // coluna da mesma tabela (ex: um valor monetário/quantidade) que por
+    // acaso também usa esse atributo pro DataTables ordenar numericamente,
+    // sem ser uma data de verdade.
+    if (Number.isFinite(v) && v > 946684800 && v < 4102444800 && v > maiorUnix) {
+      maiorUnix = v;
+    }
+  }
+  if (maiorUnix === 0) return null;
+  return new Date(maiorUnix * 1000).toISOString().slice(0, 10);
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS_HEADERS });
 
@@ -107,6 +148,19 @@ Deno.serve(async (req: Request) => {
 
   try {
     const auth = "Basic " + btoa(`${CONSULTA_SELGRON_USER}:${CONSULTA_SELGRON_PASS}`);
+
+    // Kardex é buscado em PARALELO com a consulta de produto (não em
+    // sequência) — reduz a latência total pro operador, já que os dois
+    // fetches independem um do outro. Falha do Kardex NUNCA derruba a
+    // consulta inteira — `.catch(()=>null)` isola essa 2ª requisição: se
+    // ela falhar (timeout, rede, formato mudou), `ultimaMovimentacao`
+    // simplesmente sai `null` na resposta, e o resto dos dados do produto
+    // (saldo/endereço/descrição/unidade) continua respondendo normalmente.
+    const kardexPromise = fetch(
+      KARDEX_URL + "?codprod=" + encodeURIComponent(codigo),
+      { method: "GET", headers: { Authorization: auth }, signal: AbortSignal.timeout(8000) },
+    ).catch(() => null);
+
     const resp = await fetch(CONSULTA_URL, {
       method: "POST",
       headers: {
@@ -160,6 +214,20 @@ Deno.serve(async (req: Request) => {
 
     const saldo = Number(String(saldoTexto).replace(",", "."));
 
+    // Resolve o Kardex (já disparado em paralelo lá em cima) — nunca lança
+    // erro pra fora daqui, sempre cai em `null` silenciosamente no que
+    // falhar (rede, timeout, resposta não-2xx, formato inesperado).
+    let ultimaMovimentacao: string | null = null;
+    try {
+      const respKardex = await kardexPromise;
+      if (respKardex && respKardex.ok) {
+        const htmlKardex = await respKardex.text();
+        ultimaMovimentacao = extrairUltimaMovimentacao(htmlKardex);
+      }
+    } catch {
+      ultimaMovimentacao = null;
+    }
+
     return resposta(200, {
       ok: true,
       codigo: codigoRetornado || codigo,
@@ -168,6 +236,7 @@ Deno.serve(async (req: Request) => {
       endereco: endereco || null,
       armazem: armazem || null,
       unidade: unidade || null,
+      ultimaMovimentacao,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

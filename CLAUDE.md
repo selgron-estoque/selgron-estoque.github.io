@@ -16705,3 +16705,125 @@ idênticos de sempre (`ManualCountFlow` e `NewInventory.addItemEspecifico`).
   chaves do CSS conferidos (666/666, sem mudança — só JSX). **Verificação visual de
   ponta a ponta fica a cargo do cliente** — mesma limitação de sempre (login exige
   Supabase Auth real, não simulável no sandbox sem rede).
+
+## Última movimentação via Kardex ao vivo — fecha o motivo que ainda prendia o cliente à planilha SB2
+
+Depois de ver o saldo/endereço/descrição/unidade já funcionando ao vivo (seção "Saldo
+'ao vivo' direto do Protheus" e as rodadas seguintes, mais acima), o cliente apontou o
+último motivo que ainda o obrigava a subir a planilha SB2 periodicamente: **"Vamos ser
+mais ousado, como não vou mais precisar subir a SB2, eu ainda preciso saber a última
+movimentação para saber quantos dias o material está parado, para isso precisaria abrir
+o Kardex e pegar a última data, é possivel?"** — `estoque_saldo.data_ultima_saida` (o
+campo usado por `diasParado()` em "Itens Divergentes") sempre veio só do upload manual
+da SB2; sem isso, não teria como calcular "dias parado" nem sob a nova rotina 100% ao
+vivo.
+
+Investigado com o cliente via DevTools (Network) e View Source, em vez de eu supor o
+formato — confirmado passo a passo:
+
+- **URL simples, sem encadeamento de sessão**: `GET https://consulta.selgron.com.br/
+  kardex.php?codprod=<código>` — mais simples do que eu temia inicialmente (achei que
+  precisaria abrir a página do produto primeiro pra herdar algum cookie de sessão).
+- **`Dados Finais: 06/08/2026` do resumo da própria página NÃO é a última movimentação
+  real** — é só o fim da janela de filtro padrão (coincide com "hoje", suspeita minha
+  confirmada pelo próprio cliente: **"Desconsidera isso é outra coisa, o campo de data é
+  DT Emissão"**) — precisa vir da coluna "Dt. Emissão" de cada linha da tabela, não de
+  um campo de resumo pronto.
+- **`data-sort='<unix>'`/`data-order='<unix>'` na célula da coluna "Dt. Emissão"** —
+  achado no HTML cru que o cliente mandou (View Source, produto `030.090.00019`, "FITA
+  CREPE MARROM 50MMX50M") — bem mais simples e confiável que parsear o texto
+  "DD/MM/AAAA" exibido: é só comparar inteiros.
+- **As linhas NÃO vêm ordenadas globalmente por data** — confirmado inspecionando o HTML
+  completo (141 linhas de movimentação): agrupadas por tipo (todas as NF-ENTRADA
+  primeiro, ordenadas decrescente só dentro do próprio grupo, depois todas as
+  MOV-SAIDA) — nunca dá pra confiar na 1ª nem na última linha do documento; a única forma
+  correta é varrer TODAS e pegar o `Math.max()`.
+- **DataTables com `paging:false`** — confirma que a tabela inteira já vem no HTML de
+  uma resposta só, sem precisar de nenhuma 2ª requisição AJAX de paginação.
+
+### `consultar-produto-selgron/index.ts` — Kardex buscado em paralelo, nunca derruba a consulta
+
+- **`KARDEX_URL`** — nova constante (`.../kardex.php`).
+- **`extrairUltimaMovimentacao(html)`** (função nova) — varre `data-sort=['"](\d+)['"]`
+  (aceita aspas simples OU duplas, mesma tolerância de robustez já usada nos outros
+  parsers deste app) em TODA a página, com um filtro de sanidade (só aceita valores entre
+  ~2000 e ~2100, protegendo contra um `data-sort` de outra coluna da mesma tabela — ex.
+  um valor monetário — que por acaso também use esse atributo pro DataTables ordenar
+  numericamente, sem ser uma data de verdade) — devolve o MAIOR valor encontrado, já
+  convertido pra `"YYYY-MM-DD"` (mesmo formato que `diasParado()`/o resto do app já
+  espera).
+- **Fetch do Kardex disparado em PARALELO** com a consulta de produto já existente
+  (`kardexPromise`, iniciado antes do `await` do fetch principal) — reduz a latência
+  total pro operador em vez de esperar um terminar pra começar o outro. Usa a MESMA
+  autenticação Basic Auth já usada pra `produto.consulta.php` (não confirmado ainda
+  contra o site real — assunção a testar no 1º deploy).
+- **Isolado com `.catch(()=>null)`** — se o Kardex falhar (timeout, rede, formato mudou),
+  isso NUNCA derruba a consulta inteira: `ultimaMovimentacao` sai `null` na resposta, e
+  o resto dos dados do produto (saldo/endereço/descrição/unidade) continua respondendo
+  normalmente, mesmo tratamento de falha isolada já usado no resto desta Edge Function.
+- Resposta final ganhou o campo `ultimaMovimentacao` (string `"YYYY-MM-DD"` ou `null`).
+
+### `index.html` — `ultimaSaidaEfetiva`, mesmo padrão "ao vivo vence, cadastro é fallback"
+
+- **`CountStep` ganhou `ultimaSaidaEfetiva`** — `(liveConsulta && liveConsulta.
+  ultimaMovimentacao) ? liveConsulta.ultimaMovimentacao : product.ultimaSaida` — idêntico
+  ao critério já usado pra `saldoSistemaEfetivo`/`descricaoEfetiva`/`unidadeEfetiva`: a
+  consulta ao vivo (agora incluindo o Kardex) vence quando presente, cai pro que já veio
+  do catálogo local (`product.ultimaSaida`, hoje só populado pela SB2) quando a consulta
+  ainda não respondeu ou não achou nenhuma movimentação.
+- **`CountStep.finalize()`**: `ultimaSaida: product.ultimaSaida || null` virou
+  `ultimaSaida: ultimaSaidaEfetiva || null` — a contagem GRAVADA passa a refletir o valor
+  ao vivo, não o congelado da SB2.
+- **Mini-card novo** "Última movimentação (Selgron)" dentro do `.cs-mini-grid`, mesmo
+  padrão visual/condicional já usado pro mini-card de "Endereço (consulta Selgron)" —
+  só aparece quando `liveConsulta.ultimaMovimentacao` existe, formatado em pt-BR via
+  `fmtDataBR`. Confirma visualmente, na hora da contagem, que o Kardex respondeu — sem
+  isso o operador só saberia depois, olhando "Itens Divergentes".
+- **`DivergentItemsPanel` não precisou de nenhuma mudança** — já lia `c.ultimaSaida` da
+  contagem salva pra montar "Última movimentação: ... · N dias parado" (ver seção
+  "'Itens Divergentes' ganha 'Última movimentação'..." mais acima) — como a origem do
+  dado mudou só na LEITURA/gravação em `CountStep`, essa tela passa a mostrar o valor ao
+  vivo automaticamente, sem tocar em uma linha de código lá.
+
+### Verificação
+
+Type-check da Edge Function via `tsc` (mesmo shim de sempre pros globais do Deno) sem
+erro. Testado via 2 harnesses novos (mesma técnica rigorosa de sempre — sandbox sem
+acesso de rede real ao domínio da Selgron):
+- **`harness_kardex_ultima_movimentacao.js`** (13/13) — `extrairUltimaMovimentacao`
+  testada contra um TRECHO REAL do HTML mandado pelo cliente (bate exatamente com
+  "2026-08-03", a mesma data que "Dt. Emissão" mostra pra linha mais recente); linhas
+  fora de ordem (a mais recente no MEIO do documento, não na 1ª nem na última linha);
+  tabela vazia (sem nenhum data-sort) → `null`, sem quebrar; aspas duplas também
+  funcionam; filtro de sanidade ignora valores fora da faixa plausível de data; e — o
+  teste mais forte — rodado contra o HTML COMPLETO real (arquivo inteiro que o cliente
+  mandou via View Source, 141 linhas de movimentação), confirmando o mesmo resultado
+  "2026-08-03" batendo com o cálculo feito via Python direto no arquivo, fora do app.
+- **`harness_consulta_selgron_ultima_movimentacao.js`** (9/9, jsdom + react-dom/client +
+  `act()`, mesma técnica rigorosa de sempre — carrega o `index.html` inteiro
+  transpilado numa `vm.Script`) — consulta ao vivo com `ultimaMovimentacao` preenchida
+  SOBRESCREVE `product.ultimaSaida` (SB2 antiga) tanto na exibição (mini-card, data em
+  pt-BR) quanto na contagem GRAVADA (`onComplete`); consulta OK mas sem
+  `ultimaMovimentacao` (Kardex falhou do lado da Edge Function, resto da consulta
+  funcionou) cai pro valor da SB2 sem quebrar; falha total da consulta (exceção de rede)
+  também cai pro valor da SB2, mini-card novo não aparece em nenhum dos dois casos de
+  fallback.
+
+Rodei de novo toda a suíte de regressão do scratchpad (55 arquivos, incluindo os 2
+novos) — 0 falhas. Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+conferidos (666/666, sem mudança — nenhuma classe CSS nova, só JS/JSX).
+
+**Falta o cliente**: rodar `npx supabase functions deploy consultar-produto-selgron`
+(mesmo comando de sempre — Edge Function não é publicada automaticamente pelo GitHub
+Pages, só o `index.html`/CSS vão ao ar sozinhos) e testar ao vivo contra
+`consulta.selgron.com.br/kardex.php` — mesma limitação de sempre (sandbox sem acesso de
+rede ao domínio interno da Selgron). Dois pontos específicos, não confirmáveis daqui,
+que o próprio teste ao vivo do cliente vai validar: (1) se a MESMA credencial HTTP Basic
+Auth já configurada (`CONSULTA_SELGRON_USER`/`CONSULTA_SELGRON_PASS`) também autentica
+contra `kardex.php` (assunção razoável — mesmo domínio/sistema — mas nunca testada
+contra esse endpoint específico); (2) se o formato real de `data-sort` no HTML de
+QUALQUER produto (não só o de teste, `030.090.00019`) segue o mesmo padrão — o parser já
+tolera aspas simples/duplas e filtra valores fora da faixa de data plausível, mas se a
+página real usar uma estrutura bem diferente pro atributo em algum caso, o campo
+simplesmente sai `null` (nunca quebra a consulta, só fica sem essa informação) — mesmo
+padrão de degradação segura já usado no resto desta Edge Function.

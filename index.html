@@ -8659,6 +8659,18 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   const unidadeLiveValida = liveConsulta ? unidadeCadastroValida(liveConsulta.unidade) : null;
   const unidadeEfetiva = unidadeLiveValida || product.unidade;
   const descricaoEfetiva = (liveConsulta && liveConsulta.descricao) ? liveConsulta.descricao : product.descricao;
+  // Última movimentação (pra "dias parado" em Itens Divergentes) — mesmo
+  // critério exato do saldo/descrição/unidade: consulta ao vivo (via o
+  // Kardex, extraído do lado da Edge Function) vence quando presente, cai
+  // pro que já veio do catálogo local (`product.ultimaSaida`, hoje só
+  // populado pela planilha SB2) quando a consulta ainda não respondeu ou
+  // não achou nenhuma movimentação. Pedido do cliente: "como não vou mais
+  // precisar subir a SB2, eu ainda preciso saber a última movimentação
+  // para saber quantos dias o material está parado, para isso precisaria
+  // abrir o Kardex e pegar a última data" — a Edge Function já faz esse
+  // trabalho (busca o Kardex em paralelo com o resto da consulta, varre
+  // TODO `data-sort` da tabela e devolve a data máxima).
+  const ultimaSaidaEfetiva = (liveConsulta && liveConsulta.ultimaMovimentacao) ? liveConsulta.ultimaMovimentacao : product.ultimaSaida;
 
   // Endereço vindo da consulta ao vivo, já validado (formato correto) —
   // usado tanto pra decidir o pré-preenchimento quanto pras dicas visuais
@@ -8812,12 +8824,14 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
       // por Família/Grupo" em Indicadores (Resumo da Operação) sem precisar
       // de uma consulta extra ao catálogo na hora de montar esse indicador.
       familia: product.familia || null,
-      // Data da última saída registrada do item (vem de `estoque_saldo`,
-      // ver `estoqueRowToProduct`) — pedido do cliente: quer ver "última
-      // movimentação" e "quantos dias parado" (`diasParado`, calculado a
-      // partir desta data) direto em "Itens Divergentes", pra ajudar a
-      // decidir a tratativa da divergência.
-      ultimaSaida: product.ultimaSaida || null,
+      // Data da última saída registrada do item — pedido do cliente: quer
+      // ver "última movimentação" e "quantos dias parado" (`diasParado`,
+      // calculado a partir desta data) direto em "Itens Divergentes", pra
+      // ajudar a decidir a tratativa da divergência. `ultimaSaidaEfetiva`
+      // prioriza o Kardex ao vivo (consulta Selgron/Protheus) sobre o que
+      // vem de `estoque_saldo`/planilha SB2 (mesmo critério de sempre —
+      // ver comentário onde essa variável é calculada, acima).
+      ultimaSaida: ultimaSaidaEfetiva || null,
       data: hojeLocalStr(),
       hora: new Date().toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'}),
       inventario: inv ? inv.id : '—',
@@ -9062,6 +9076,17 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
                 falhou (sem endereço nenhum pra mostrar). */}
             {liveConsulta && liveConsulta.endereco && (
               <div className="cs-mini"><div className="k">Endereço (consulta Selgron)</div><div className="v">{liveConsulta.endereco}{liveConsulta.armazem ? ' · Armazém '+liveConsulta.armazem : ''}</div></div>
+            )}
+            {/* Mesma referência informativa, agora pra data de última
+                movimentação (vem do Kardex, buscado pela Edge Function em
+                paralelo com o resto da consulta) — confirma pro
+                operador/líder, na hora, que o "dias parado" que vai
+                aparecer depois em Itens Divergentes está vindo do dado mais
+                atual, não da planilha SB2 (que o cliente pretende parar de
+                subir). Some sozinho se o Kardex não respondeu/não achou
+                nenhuma movimentação pro código. */}
+            {liveConsulta && liveConsulta.ultimaMovimentacao && (
+              <div className="cs-mini"><div className="k">Última movimentação (Selgron)</div><div className="v">{fmtDataBR(liveConsulta.ultimaMovimentacao)}</div></div>
             )}
           </div>
 
