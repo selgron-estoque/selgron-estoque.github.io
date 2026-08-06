@@ -16973,3 +16973,43 @@ responder a uma pergunta de esclarecimento antes de eu implementar.
   limitação de sempre (login exige Supabase Auth real, não simulável no sandbox sem
   rede). Se a intenção era o campo de busca no topo da tela (não o código do item já
   selecionado), é só avisar que ajusto.
+
+## Incidente: deploy do GitHub Pages travou preso em "deployment_queued" (2 tentativas)
+
+O cliente reportou que a mudança acima ("Enviar para Fila" ao lado do código) não
+apareceu no site — mandou print mostrando a fileira antiga de 3 botões ainda intacta, e
+sugeriu um lugar novo (área vazia no topo, perto das abas Produto/Endereço) achando que
+a posição escolhida "não funcionou". **Não era isso** — confirmado via GitHub Actions
+que o deploy desse commit (`76ded2c`) falhou de verdade, duas vezes seguidas, mesmo com
+o commit já correto e já publicado nos dois branches (`main`/`claude/ola-4icnez`).
+
+- **Sintoma no log**: `actions/deploy-pages@v4` cria o deployment normalmente (artefato
+  sobe, `Created deployment for <sha>, ID: <sha>`), mas o status fica preso em
+  `deployment_queued` por 10 minutos seguidos (200+ polls de 5s), até a própria action
+  desistir ("Timeout reached, aborting!") e cancelar o deployment sozinha. Reproduzido
+  DUAS vezes com o `rerun_workflow_run` da mesma run — as duas tentativas usaram o MESMO
+  `pages_build_version`/ID de deployment (a SHA do commit nunca muda entre reruns), e as
+  duas travaram exatamente do mesmo jeito — sugere que o problema pode estar grudado
+  nesse ID de deployment específico (lock/estado preso do lado do backend do GitHub
+  Pages), não só uma instabilidade aleatória de infraestrutura que uma nova tentativa
+  resolveria sozinha.
+- **Não é bug de código nem de configuração do repo** — o `.github/workflows/` não foi
+  tocado, o artefato sobe certo (confirmado pelo `tar`/upload no log, incluindo
+  `index.html` com o conteúdo certo), e commits anteriores (`24f0d3c`, `c656290`, etc.)
+  sempre publicaram normalmente em 1-2 minutos. É uma instabilidade do lado do GitHub
+  (Pages deployment backend), fora do alcance do código deste projeto.
+- **Mitigação aplicada**: em vez de insistir num 3º `rerun_workflow_run` do mesmo commit
+  (mesmo ID de deployment, mesmo risco de travar de novo), esta própria seção do
+  CLAUDE.md virou o commit seguinte — um SHA novo pega um ID de deployment novo,
+  contornando um possível lock preso no ID antigo.
+- **Lição pro futuro, registrada aqui pra não repetir a investigação do zero**: sempre
+  que o cliente disser "não mudou nada" mesmo depois de eu confirmar que o commit certo
+  já está no `main`, o próximo passo (antes de desconfiar de cache do navegador ou da
+  interpretação do pedido) é checar o histórico de runs do "Deploy to GitHub Pages" via
+  GitHub Actions — `mcp__github__actions_list` (`method:'list_workflow_runs'`) mostra se
+  o deploy daquele commit específico teve `conclusion:'failure'`. Se sim, os logs do job
+  (`mcp__github__get_job_logs`) costumam apontar exatamente esse padrão de
+  `deployment_queued` travado — vale rodar `mcp__github__actions_run_trigger` com
+  `method:'rerun_workflow_run'`, mas se travar de novo no mesmo SHA, um commit novo
+  (mesmo que só documentação) já resolve na prática, sem precisar esperar o GitHub do
+  outro lado destravar sozinho.
