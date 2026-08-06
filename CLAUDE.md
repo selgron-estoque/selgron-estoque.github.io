@@ -16932,3 +16932,44 @@ conferir, no primeiro teste real, se o "Valor Unitário" de outros produtos (nã
 teste) sempre usa ponto decimal como neste exemplo, ou se varia — o parser já tolera os
 dois formatos, mas é bom confirmar visualmente que o número que aparece no mini-card
 bate com o que a página do Kardex mostra de verdade.
+
+## Etiquetas: "Enviar para Fila" sobe pro topo do card, ao lado do código
+
+Cliente mandou print de "Etiquetas" (aba Produto, item já selecionado — QTD Recebida/
+Data/Quantidade de Etiquetas visíveis, os 3 botões "Voltar"/"Enviar para Fila"/"Imprimir
+Etiqueta" lá embaixo) e pediu: "o botão de 'Enviar para fila' colocar ao lado do campo
+de código" — sem confirmar exatamente qual "campo de código" (o campo de busca no topo
+da tela, ou o código do item já selecionado dentro do card, `000.35310`), e sem
+responder a uma pergunta de esclarecimento antes de eu implementar.
+
+- **Interpretação escolhida**: ao lado de `.item-code` (o código do item JÁ
+  selecionado, no topo do card de confirmação) — não do campo de busca no topo da tela.
+  Motivo: `handleEnviarParaFila` só funciona depois de um item selecionado
+  (`if(!selecionado) return;`), então colocar o botão junto do campo de busca (antes de
+  qualquer seleção) deixaria ele sem função nesse ponto; junto de `.item-code` também
+  resolve o problema real por trás do pedido — evitar rolar a tela num tablet passando
+  por Quantidade/Data/Quantidade de Etiquetas só pra achar o botão lá embaixo.
+- `.item-code` (só o código, sozinho) virou um `<div style={{display:'flex',
+  justifyContent:'space-between'}}>` com o código à esquerda e "Enviar para Fila" à
+  direita (mesmos `handleEnviarParaFila`/`enviandoParaFila` de sempre, só reposicionado
+  — nenhuma mudança de comportamento na função em si).
+- **Removido da fileira de baixo** (`.btn-row`) — não duplicado, só movido: "Voltar"/
+  "Imprimir Etiqueta" continuam lá, agora só os 2 (a fileira de 2 botões preenche a
+  largura normalmente, `.btn-row .btn{flex:1}` já existia). Mensagens de sucesso/erro do
+  envio pra fila (`sucessoFilaEnvio`/`erroFilaEnvio`) continuam no mesmo lugar de sempre
+  (logo acima da fileira de baixo), sem mudança.
+- Testado via harness novo (`harness_etiqueta_enviar_fila_topo.js`, jsdom +
+  react-dom/client + `act()`, mesma técnica rigorosa de sempre): confirma que "Enviar
+  para Fila" é IRMÃO direto de `.item-code` no mesmo container flex (não só "em algum
+  lugar da tela"); que `.btn-row` passou a ter exatamente 2 botões (Voltar/Imprimir
+  Etiqueta, sem "Enviar para Fila"); que só existe 1 botão "Enviar para Fila" na tela
+  inteira (não duplicado); e que ele continua funcional na posição nova (clicar grava a
+  linha certa no banco, mostra a mensagem de sucesso). Rodei de novo toda a suíte de
+  Etiquetas (11 harnesses) e a suíte completa do scratchpad (56 arquivos) — 0 falhas,
+  nenhum dos harnesses antigos quebrou (todos localizam o botão por TEXTO, não por
+  posição). Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  conferidos (666/666, sem mudança — nenhuma classe CSS nova, só reposicionamento de
+  JSX). **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma
+  limitação de sempre (login exige Supabase Auth real, não simulável no sandbox sem
+  rede). Se a intenção era o campo de busca no topo da tela (não o código do item já
+  selecionado), é só avisar que ajusto.

@@ -14346,7 +14346,16 @@ function EtiquetasPanel({currentUser}){
 
       {selecionado && (
         <div style={{background:'var(--panel)',border:'1px solid var(--line)',borderRadius:'var(--radius)',padding:16,marginTop:4}}>
-          <div className="item-code">{selecionado.codigo}</div>
+          {/* Pedido do cliente: "Enviar para Fila" ao lado do campo de
+              código — em vez de lá embaixo, depois de Quantidade/Data/
+              Quantidade de Etiquetas, fica logo no topo do card, junto do
+              código do item, sem precisar rolar a tela num tablet. */}
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,flexWrap:'wrap'}}>
+            <div className="item-code">{selecionado.codigo}</div>
+            <button className="btn btn-outline btn-sm" style={{width:'auto'}} disabled={enviandoParaFila} onClick={handleEnviarParaFila}>
+              <DIcon name="clock" size={14}/> {enviandoParaFila ? 'Enviando…' : 'Enviar para Fila'}
+            </button>
+          </div>
           {aba==='produto' && <div className="item-desc">{selecionado.descricao}</div>}
           {aba==='endereco' && selecionado.almoxarifado && <div className="lr-sub" style={{marginTop:4}}>Armazém {selecionado.almoxarifado}</div>}
           {aba==='produto' && (
@@ -14409,7 +14418,6 @@ function EtiquetasPanel({currentUser}){
           )}
           <div className="btn-row" style={{marginTop:14}}>
             <button className="btn btn-secondary" onClick={()=>{ setSelecionado(null); setSucessoImpressao(false); setSucessoFilaEnvio(false); setErroFilaEnvio(null); }}>Voltar</button>
-            <button className="btn btn-outline" disabled={enviandoParaFila} onClick={handleEnviarParaFila}><DIcon name="clock" size={16}/> {enviandoParaFila ? 'Enviando…' : 'Enviar para Fila'}</button>
             <button className="btn btn-primary" disabled={imprimindo} onClick={handleImprimir}><DIcon name="printer" size={16}/> {imprimindo ? 'Imprimindo…' : 'Imprimir Etiqueta'}</button>
           </div>
         </div>
