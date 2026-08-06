@@ -16685,3 +16685,23 @@ texto da LISTA DE RESULTADOS DE BUSCA, mostrado antes mesmo de abrir o item.
   mudança — só texto, nenhuma classe CSS nova). **Verificação visual de ponta a ponta
   fica a cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth
   real, não simulável no sandbox sem rede).
+
+## Lista de busca: item sem cadastro deixa de mostrar QUALQUER texto sobre endereço
+
+Cliente testou a correção anterior ("sem cadastro local") e foi direto: **"eu não quero
+nenhum texto ali"**. `ManualCountFlow`/"Itens Específicos" trocaram
+`{p.codigo} · {p.enderecoCadastrado ? p.endereco : 'sem cadastro local'}` por
+`{p.codigo}{p.enderecoCadastrado ? ' · '+p.endereco : ''}` — item sem cadastro mostra
+só o código sozinho (sem separador " · " nem texto nenhum depois); item COM cadastro
+continua mostrando "código · endereço" normalmente, sem mudança. Mesmos 2 pontos
+idênticos de sempre (`ManualCountFlow` e `NewInventory.addItemEspecifico`).
+
+- Harness `harness_busca_sem_cadastro_local.js` atualizado (não recriado) — passou a
+  checar o `.textContent.trim()` exato de cada linha (`.lr-sub`), confirmando "000.00353"
+  sozinho (sem cadastro) e "000.02353 · 039-A-2" (com cadastro), além de confirmar que
+  nem o texto antigo nem o intermediário ("sem endereço cadastrado"/"sem cadastro
+  local") sobram em lugar nenhum. Rodei de novo toda a suíte de regressão do scratchpad
+  (53 arquivos) — 0 falhas. Transpile Babel do arquivo inteiro e balanceamento de
+  chaves do CSS conferidos (666/666, sem mudança — só JSX). **Verificação visual de
+  ponta a ponta fica a cargo do cliente** — mesma limitação de sempre (login exige
+  Supabase Auth real, não simulável no sandbox sem rede).
