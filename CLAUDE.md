@@ -16185,3 +16185,81 @@ então há uma chance real de precisar de um ajuste fino no primeiro teste ao
 vivo — se algum campo não for reconhecido, a orientação já está no
 `backend/README.md` (seção 12.4): mandar o HTML de verdade (Ctrl+U → copiar
 tudo) que o ajuste é rápido.
+
+**Confirmado em produção pelo cliente** (deploy completo, guiado passo a
+passo no terminal — instalar/localizar a pasta clonada, `git clone`, os 2
+`secrets set`, o `functions deploy`) — a função foi publicada com sucesso
+e o app já mostra "(ao vivo)" no campo Sistema. No caminho, o cliente
+digitou a senha em texto puro num print que me mandou — recomendei trocar
+a senha por precaução (boa prática depois de qualquer credencial aparecer
+em texto puro numa conversa registrada, mesmo privada), e ele já tinha o
+comando pra atualizar o secret com a senha nova (`npx supabase secrets set
+CONSULTA_SELGRON_PASS=...` de novo).
+
+## Endereço da consulta ao vivo passa a alimentar o campo oficial (item sem cadastro local)
+
+Depois de ver o saldo/endereço ao vivo funcionando, o cliente notou que o
+endereço aparecia só no card de referência separado (comportamento já
+avisado como escopo desta 1ª versão) e perguntou por que não estava indo
+pro "campo oficial". Perguntei via 2 opções — manter separado, ou fazer o
+endereço ao vivo também alimentar o campo oficial — cliente escolheu a
+2ª: **"Opção 2"**.
+
+- **Escopo, decidido por mim e não uma 3ª pergunta**: só o caminho de item
+  **sem** endereço cadastrado localmente (`needsAddressInput`, etapa
+  `enderecoManual` — onde o operador HOJE digita/escaneia do zero onde
+  encontrou o item) passou a ser pré-preenchido com o endereço vindo da
+  consulta. O fluxo de item que **já tem** cadastro local
+  (`hasAddress`/etapa `scan`, confirmação por QR Code contra o endereço já
+  cadastrado) continua **intocado** — misturar os dois seria uma decisão
+  bem maior (o cadastro local tem todo um processo de proposta/validação
+  do líder já rodando havia tempo), e o pedido do cliente, no contexto da
+  conversa, era claramente sobre o caso "sem endereço ainda", que é onde a
+  tela hoje obriga o operador a digitar do zero um dado que a Selgron já
+  sabe.
+- **Novo `useEffect`** (logo depois do que já busca o saldo/endereço ao
+  vivo, mesmo `liveConsulta`) — quando `needsAddressInput` é `true` e a
+  consulta retornou um endereço válido (`ENDERECO_REGEX` depois de passar
+  por `formatEnderecoInput`, mesma normalização já usada em todo o app),
+  pré-preenche `enderecoInformado` — **só se o campo ainda estiver vazio**
+  (`setEnderecoInformado(prev => prev==='' ? formatado : prev)`) — nunca
+  sobrescreve o que o operador já tiver digitado/escaneado antes da
+  consulta responder (a busca ao vivo é assíncrona, pode demorar mais que
+  o operador levar pra já ter digitado à mão).
+- **Nunca confirma sozinho**: o pré-preenchimento só troca o VALOR inicial
+  do campo — o botão "Confirmar e continuar" continua exigindo um clique
+  do operador, e a proposta segue passando pela MESMA validação do líder
+  de sempre (`addAddressProposal`/`AddressValidationPanel`, sem nenhuma
+  mudança) — só ficou mais rápido de preencher, a decisão/aprovação final
+  continua humana nos dois pontos (operador confirma, líder valida).
+- **Dica visual** ("✓ Preenchido automaticamente com o endereço da consulta
+  Selgron — confira antes de confirmar."), calculada como um valor
+  DERIVADO (`enderecoVeioDaConsulta`, comparando o campo atual contra o
+  valor formatado da consulta) em vez de um estado próprio — some sozinha
+  se o operador editar o campo pra outro valor, sem precisar de nenhuma
+  lógica extra pra "desligar" a dica manualmente.
+- **Endereço inválido/ausente na consulta** (item cancelado, "Sem
+  armazém", etc. — casos reais já vistos nos prints do cliente) não
+  pré-preenche nada — campo continua vazio, operador digita/escaneia
+  normalmente como já fazia antes desta mudança.
+- Testado via harness novo (`harness_consulta_selgron_endereco_prefill.js`,
+  jsdom + react-dom/client + `act()`, mesma técnica rigorosa de sempre): 4
+  cenários — (1) item sem cadastro, consulta retorna endereço válido: campo
+  já nasce preenchido, dica aparece, não confirma sozinho, e confirmar
+  manualmente envia a proposta pro líder com o endereço certo (mesmo
+  formato de sempre); (2) operador digita o PRÓPRIO endereço antes da
+  consulta responder — quando ela resolve (com um valor DIFERENTE), o
+  campo continua com o que o operador digitou, sem dica nenhuma; (3) item
+  COM cadastro local — continua mostrando o endereço CADASTRADO na etapa
+  de QR Code, não o da consulta ao vivo, e nem existe campo de endereço
+  manual nessa etapa (fluxo intocado); (4) consulta sem endereço válido —
+  campo continua vazio, sem lixo. Rodei de novo toda a suíte de regressão
+  do scratchpad (48 harnesses) — só as mesmas 3 falhas pré-existentes já
+  documentadas, sem relação com esta mudança. Transpile Babel do arquivo
+  inteiro e balanceamento de chaves do CSS conferidos (672/672, sem
+  mudança — nenhuma classe CSS nova, só JS/JSX dentro de `CountStep`).
+  **Verificação de ponta a ponta com um item real sem cadastro fica a
+  cargo do cliente** — mesma limitação de sempre (sandbox sem acesso de
+  rede ao domínio interno da Selgron) — mas como não depende de nenhuma
+  migração de SQL nem de novo deploy da Edge Function (só o `index.html`
+  mudou), já deve funcionar assim que o GitHub Pages publicar.

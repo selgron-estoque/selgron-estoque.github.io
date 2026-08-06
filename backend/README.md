@@ -339,15 +339,16 @@ navegador: abra a consulta, faça uma busca, botão direito → "Ver código-
 fonte da página" (ou `Ctrl+U`) → copie o HTML inteiro e me envie — ajusto o
 parser em minutos com o HTML de verdade em mãos, em vez de screenshot.
 
-### Escopo desta 1ª versão — só saldo é sobrescrito, endereço é só referência
+### Escopo — saldo sempre sobrescrito; endereço só quando o item ainda não tem cadastro
 
 O saldo "Sistema" mostrado na tela E gravado na contagem passa a usar o
 valor ao vivo quando a consulta funciona. O **endereço/armazém** vindos da
-consulta aparecem como um card informativo à parte
-("Endereço (consulta Selgron)") — **não substituem nem alimentam** o fluxo
-de confirmação de endereço por QR Code, que continua 100% baseado no
-cadastro local (`estoque_enderecos`/endereços propostos pelo operador e
-validados pelo líder), sem nenhuma mudança. Juntar os dois fluxos de
-endereço é uma decisão maior (o cadastro local tem todo um processo de
-proposta/validação já rodando) — fica como próximo passo, se fizer sentido
-depois de ver como o saldo ao vivo se sai na prática.
+consulta sempre aparecem como um card informativo à parte
+("Endereço (consulta Selgron)"), e **também** pré-preenchem o campo de
+"onde você encontrou o item" — mas só quando o item ainda **não** tem
+endereço cadastrado no sistema (etapa em que o operador hoje precisa
+digitar/escanear do zero). Continua exigindo confirmação humana (o
+operador clica "Confirmar e continuar", nada acontece sozinho) e a mesma
+validação do líder de sempre. Item que **já tem** endereço cadastrado
+continua 100% no fluxo de confirmação por QR Code de sempre, sem nenhuma
+influência da consulta ao vivo — nenhuma mudança nesse caso.

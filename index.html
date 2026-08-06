@@ -8619,16 +8619,20 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   // fetchSaldoConsultaSelgron/CLAUDE.md "Puxar saldo/endereço direto do
   // Protheus") — roda 1x por item, no exato momento em que o operador abre
   // ele pra contar (mesmo `useEffect` keyed em product.codigo já usado pela
-  // reserva de item, acima). SÓ sobrescreve o SALDO usado na comparação/
-  // classificação/gravação — é o pedido central do cliente ("não precisar
-  // ficar atualizando à toa"). Endereço/armazém vindos daqui aparecem só
-  // como referência extra na tela (mini-card mais abaixo), sem mexer no
-  // fluxo de confirmação por QR Code, que continua decidido pelo cadastro
-  // local (`product.enderecoCadastrado`) já no 1º render — mudar ISSO é
-  // decisão maior, à parte, não incluída nesta rodada. Tolerante a falha:
-  // se a consulta não responder/credencial estiver errada/formato mudar,
-  // cai silenciosamente (console.warn) pro saldo já resolvido via Supabase
-  // (`product.saldoSistema`) — nunca trava a contagem esperando.
+  // reserva de item, acima). Sobrescreve o SALDO usado na comparação/
+  // classificação/gravação (pedido central do cliente, "não precisar ficar
+  // atualizando à toa"). Endereço/armazém vindos daqui aparecem como
+  // referência extra na tela (mini-card mais abaixo) E — quando o item
+  // ainda NÃO tem endereço cadastrado localmente — pré-preenchem o campo de
+  // "onde você encontrou o item" (ver efeito logo abaixo), poupando o
+  // operador de digitar/escanear do zero. Deliberadamente NÃO mexe no fluxo
+  // de confirmação por QR Code de item que JÁ TEM cadastro local
+  // (`hasAddress`/`product.enderecoCadastrado`) — esse continua decidido só
+  // pelo cadastro, sem depender da consulta ao vivo; misturar os dois seria
+  // uma mudança maior, não pedida. Tolerante a falha: se a consulta não
+  // responder/credencial estiver errada/formato mudar, cai silenciosamente
+  // (console.warn) pro saldo já resolvido via Supabase (`product.
+  // saldoSistema`) — nunca trava a contagem esperando.
   const [liveConsulta, setLiveConsulta] = useState(null);
   useEffect(()=>{
     let cancelado = false;
@@ -8641,6 +8645,26 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
     return ()=>{ cancelado = true; };
   }, [product.codigo]);
   const saldoSistemaEfetivo = (liveConsulta && liveConsulta.saldo!=null) ? liveConsulta.saldo : product.saldoSistema;
+
+  // Pré-preenche o campo de endereço manual com o valor vindo da consulta
+  // ao vivo, só quando o item não tem cadastro local (`needsAddressInput`) e
+  // o operador ainda não digitou nada (`prev===''` — nunca sobrescreve o
+  // que ele já escreveu/escaneou). O operador continua tendo que CONFIRMAR
+  // (botão "Confirmar e continuar" nunca dispara sozinho) e a proposta
+  // segue passando pela MESMA validação do líder de sempre
+  // (`addAddressProposal`, em `confirmEnderecoManual` abaixo) — só o valor
+  // INICIAL do campo que muda, poupando trabalho de digitar/escanear do
+  // zero um endereço que a Selgron já sabe.
+  useEffect(()=>{
+    if(!needsAddressInput || !liveConsulta || !liveConsulta.endereco) return;
+    const formatado = formatEnderecoInput(liveConsulta.endereco);
+    if(!ENDERECO_REGEX.test(formatado)) return;
+    setEnderecoInformado(prev => prev === '' ? formatado : prev);
+  }, [liveConsulta, needsAddressInput]);
+  // Deriva (não guarda estado à parte) se o valor atual do campo é
+  // literalmente o que veio da consulta — vira a dica visual "✓ preenchido
+  // automaticamente" e some sozinho se o operador editar pra outra coisa.
+  const enderecoVeioDaConsulta = !!(needsAddressInput && liveConsulta && liveConsulta.endereco && enderecoInformado && formatEnderecoInput(liveConsulta.endereco) === enderecoInformado);
 
   const hasSaldoLocal = typeof saldoSistemaEfetivo === 'number';
   // Controla só o que aparece NA TELA (referência antes de digitar, card de
@@ -8843,6 +8867,9 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
             <label>Endereço onde o item foi encontrado (formato NNN-L-N)</label>
             <input type="text" value={enderecoInformado} onChange={e=>setEnderecoInformado(formatEnderecoInput(e.target.value))} placeholder="Ex: 035-A-1" maxLength={7} />
           </div>
+          {enderecoVeioDaConsulta && (
+            <div style={{fontSize:'var(--text-xs)',color:'var(--ok)',marginTop:-10,marginBottom:12}}>✓ Preenchido automaticamente com o endereço da consulta Selgron — confira antes de confirmar.</div>
+          )}
           {scanning ? (
             <CameraScanner onDetected={handleEnderecoManualScanDetected} onCancel={()=>setScanning(false)} />
           ) : (
