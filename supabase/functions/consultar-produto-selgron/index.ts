@@ -142,6 +142,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const codigoRetornado = extrairCampo(texto, ["Código do Produto"]);
+    const descricao = extrairCampo(texto, ["Descrição", "Descricao"]);
     const saldoTexto = extrairCampo(texto, ["Quantidade em estoque"]);
     const endereco = extrairCampo(texto, ["Endereço", "Endereco"]);
     const armazem = extrairCampo(texto, ["Armazem", "Armazém"]);
@@ -162,6 +163,7 @@ Deno.serve(async (req: Request) => {
     return resposta(200, {
       ok: true,
       codigo: codigoRetornado || codigo,
+      descricao: descricao || null,
       saldo: Number.isFinite(saldo) ? saldo : null,
       endereco: endereco || null,
       armazem: armazem || null,

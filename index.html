@@ -8604,7 +8604,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
     if(onAddressProposed && ENDERECO_REGEX.test(enderecoInformado)){
       onAddressProposed({
         productCode: product.codigo,
-        descricao: product.descricao,
+        descricao: descricaoEfetiva,
         enderecoInformado,
         usuario: user.nome,
         data: hojeLocalStr(),
@@ -8626,7 +8626,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
     if(onAddressProposed && scannedCode && ENDERECO_REGEX.test(scannedCode.toUpperCase())){
       onAddressProposed({
         productCode: product.codigo,
-        descricao: product.descricao,
+        descricao: descricaoEfetiva,
         enderecoInformado: scannedCode.toUpperCase(),
         usuario: user.nome,
         data: hojeLocalStr(),
@@ -8667,6 +8667,20 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
     return ()=>{ cancelado = true; };
   }, [product.codigo]);
   const saldoSistemaEfetivo = (liveConsulta && liveConsulta.saldo!=null) ? liveConsulta.saldo : product.saldoSistema;
+  // Mesmo critério do saldo: descrição/unidade vindas da consulta ao vivo
+  // (mais atuais que o catálogo local, que só é atualizado quando alguém
+  // reimporta a planilha "Descrição de Produtos" manualmente) SOBRESCREVEM
+  // o valor do cadastro sempre que a consulta trouxer algo — pedido do
+  // cliente ("todos os locais que pedem unidade de medida e descrição,
+  // alterar da planilha para puxar direto do Consulta"). Cai pro valor do
+  // catálogo (`product.descricao`/`product.unidade`) quando a consulta não
+  // respondeu ainda ou falhou — nunca fica sem nada. `unidadeCadastroValida`
+  // reaplicada aqui de propósito (mesma proteção contra valor no formato de
+  // endereço já usada na leitura do catálogo, ver CLAUDE.md — o parser da
+  // consulta ao vivo pode, em teoria, sofrer o mesmo tipo de erro).
+  const unidadeLiveValida = liveConsulta ? unidadeCadastroValida(liveConsulta.unidade) : null;
+  const unidadeEfetiva = unidadeLiveValida || product.unidade;
+  const descricaoEfetiva = (liveConsulta && liveConsulta.descricao) ? liveConsulta.descricao : product.descricao;
 
   // Pré-preenche o campo de endereço manual com o valor vindo da consulta
   // ao vivo, só quando o item não tem cadastro local (`needsAddressInput`) e
@@ -8687,6 +8701,12 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   // literalmente o que veio da consulta — vira a dica visual "✓ preenchido
   // automaticamente" e some sozinho se o operador editar pra outra coisa.
   const enderecoVeioDaConsulta = !!(needsAddressInput && liveConsulta && liveConsulta.endereco && enderecoInformado && formatEnderecoInput(liveConsulta.endereco) === enderecoInformado);
+  // `liveConsulta` só é setado quando `res.ok===true` (ver useEffect acima)
+  // — nunca em caso de falha/timeout, então esse flag só liga quando a
+  // consulta genuinamente RESPONDEU e não trouxe endereço nenhum pro item
+  // (não quando simplesmente não deu pra checar) — evita dizer "não
+  // encontrado" quando na real só faltou rede/credencial pra saber.
+  const enderecoNaoEncontrado = !!(needsAddressInput && liveConsulta && !liveConsulta.endereco);
 
   const hasSaldoLocal = typeof saldoSistemaEfetivo === 'number';
   // Controla só o que aparece NA TELA (referência antes de digitar, card de
@@ -8737,7 +8757,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
     const count = {
       id: 'CNT-'+Math.random().toString(36).slice(2,8).toUpperCase(),
       productCode: product.codigo,
-      descricao: product.descricao,
+      descricao: descricaoEfetiva,
       endereco: product.endereco || enderecoInformado.toUpperCase() || '—',
       // Endereço onde o item foi FISICAMENTE contado — pode ser diferente do
       // cadastro acima quando o operador escaneia um endereço divergente e
@@ -8877,7 +8897,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
           <div className="item-card-head" style={{borderBottom:'none'}}>
             <div>
               <div className="item-code">{product.codigo}</div>
-              <div className="item-desc">{product.descricao}</div>
+              <div className="item-desc">{descricaoEfetiva}</div>
             </div>
           </div>
         </div>
@@ -8886,19 +8906,24 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
       {needsAddressInput && step==='enderecoManual' && (
         <div>
           <div className="field">
-            <label>Endereço onde o item foi encontrado (formato NNN-L-N)</label>
             <input type="text" value={enderecoInformado} onChange={e=>setEnderecoInformado(formatEnderecoInput(e.target.value))} placeholder="Ex: 035-A-1" maxLength={7} />
           </div>
           {enderecoVeioDaConsulta && (
-            <div style={{fontSize:'var(--text-xs)',color:'var(--ok)',marginTop:-10,marginBottom:12}}>✓ Preenchido automaticamente com o endereço da consulta Selgron — confira antes de confirmar.</div>
+            <div style={{fontSize:'var(--text-xs)',color:'var(--ok)',marginTop:-10,marginBottom:12}}>✓ Endereço encontrado.</div>
+          )}
+          {enderecoNaoEncontrado && (
+            <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginTop:-10,marginBottom:12}}>✗ Endereço não encontrado.</div>
           )}
           {scanning ? (
             <CameraScanner onDetected={handleEnderecoManualScanDetected} onCancel={()=>setScanning(false)} />
           ) : (
-            <button className="btn btn-primary" style={{marginBottom:14}} onClick={()=>setScanning(true)}><Ic>📷</Ic> Escanear código do endereço</button>
+            <div style={{display:'flex',gap:8}}>
+              <button className="btn btn-primary" style={{flex:1}} disabled={!ENDERECO_REGEX.test(enderecoInformado)} onClick={confirmEnderecoManual}>Confirmar e continuar</button>
+              <button type="button" className="btn btn-primary" style={{flex:'0 0 auto',width:56,padding:0}} title="Escanear código do endereço" aria-label="Escanear código do endereço" onClick={()=>setScanning(true)}>
+                <Ic size={20}>📷</Ic>
+              </button>
+            </div>
           )}
-          <div className="divergence-alert" style={{marginBottom:14}}><Ic>📍</Ic><span>Este item ainda não tem endereço cadastrado no sistema. Escaneie a etiqueta da prateleira ou informe onde você encontrou — o endereço é obrigatório para contar, e essa informação será enviada para validação do líder.</span></div>
-          <button className="btn btn-primary" disabled={!ENDERECO_REGEX.test(enderecoInformado)} onClick={confirmEnderecoManual}>Confirmar e continuar</button>
         </div>
       )}
 
@@ -8982,7 +9007,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
           <div className="cs-material">
             <div className="cs-material-info">
               <div className="cs-code">{product.codigo}</div>
-              <div className="cs-desc">{product.descricao}</div>
+              <div className="cs-desc">{descricaoEfetiva}</div>
             </div>
             <button type="button" className="cs-scan-btn" title="Escanear para conferir o item" onClick={()=>{setItemScanFeedback(null); setScanningItem(true);}}>
               <DIcon name="camera" size={24} />
@@ -9000,7 +9025,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
           {mostrarSaldo && (
             <div className="cs-sistema-ref">
               <div className="cs-sistema-k">Sistema{liveConsulta && liveConsulta.saldo!=null ? ' (ao vivo)' : ''}</div>
-              <div className="cs-sistema-v">{fmtQtyBR(saldoSistemaEfetivo)} {product.unidade || 'un.'}</div>
+              <div className="cs-sistema-v">{fmtQtyBR(saldoSistemaEfetivo)} {unidadeEfetiva || 'un.'}</div>
             </div>
           )}
           {mostrarSaldo && <div className="cs-sistema-arrow"><DIcon name="arrowDown" size={18} /></div>}
@@ -9063,7 +9088,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
           )}
 
           <div className="cs-mini-grid">
-            <div className="cs-mini"><div className="k">Unidade</div><div className="v">{product.unidade || '—'}</div></div>
+            <div className="cs-mini"><div className="k">Unidade</div><div className="v">{unidadeEfetiva || '—'}</div></div>
             <div className="cs-mini"><div className="k">Família</div><div className="v">{product.familia || '—'}</div></div>
             <div className="cs-mini"><div className="k">Almox</div><div className="v">{product.almoxarifado || '—'}</div></div>
             <div className="cs-mini"><div className="k">Endereço</div><div className="v">{product.endereco || 'não cadastrado'}</div></div>
@@ -9086,7 +9111,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
               <div className="cs-top-sep"></div>
               <div className="cs-top-block">
                 <div className="cs-top-k">{previousCount.numeroContagem}ª contagem</div>
-                <div className="cs-top-v">{previousCount.qtdContada} {product.unidade || 'un.'}</div>
+                <div className="cs-top-v">{previousCount.qtdContada} {unidadeEfetiva || 'un.'}</div>
               </div>
               <div className="cs-top-block">
                 <div className="cs-top-k">Operador</div>

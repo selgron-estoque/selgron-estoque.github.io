@@ -16327,3 +16327,94 @@ genuinamente contém essa string — confirmado que não é bug do saldo ao vivo
   (login exige Supabase Auth real, não simulável no sandbox sem rede) — mas
   como a correção é só na LEITURA, deve funcionar assim que a página
   recarregar, sem precisar de nenhuma migração de SQL.
+
+## Descrição/unidade também passam a vir da consulta ao vivo + "Endereço não encontrado" em vermelho
+
+Cliente pediu, numa mensagem só, duas coisas em cima do que já tinha sido
+construído: **"Todos os locais que pedem unidade de medida e descrição,
+alterar da planilha para puxar direto do Consulta."** e **"Para os itens
+que não possuem endereço, ou em branco: 'X Endereço não encontrado.' em
+vermelho"**.
+
+### Descrição/unidade sobrescritas pela consulta ao vivo, mesmo padrão do saldo
+
+- **Escopo, decidido por mim**: "todos os locais" foi interpretado como
+  "todos os locais DENTRO da tela de contagem" (`CountStep`, o motor
+  compartilhado pelos 5 fluxos) — que é onde a integração "ao vivo" já
+  vive desde que foi criada, e onde toda a conversa desta feature sempre
+  aconteceu. **Não estendido** a outras telas que também mostram descrição/
+  unidade (ex.: a busca de "Etiquetas", que ainda usa só o catálogo local)
+  — se o cliente quiser lá também, é um pedido separado.
+- **`consultar-produto-selgron`** (Edge Function) ganhou a extração de
+  `"Descrição"`/`"Descricao"` (mesma técnica de sempre,
+  `extrairCampo(texto, [...])`) — o campo já existia na página real
+  (confirmado num dos primeiros prints do cliente, "Descrição: TINTA PU
+  PRETO FOSCO"), só nunca tinha sido lido; `unidade` já era extraída desde
+  o início, só nunca tinha sido *usada* em lugar nenhum do front-end até
+  agora.
+- **`descricaoEfetiva`/`unidadeEfetiva`** (novos, em `CountStep`, ao lado
+  de `saldoSistemaEfetivo`) — mesmo critério exato do saldo: valor da
+  consulta ao vivo (`liveConsulta.descricao`/`liveConsulta.unidade`) vence
+  quando presente, cai pro catálogo local (`product.descricao`/
+  `product.unidade`) quando a consulta não respondeu ainda ou falhou.
+  `unidadeCadastroValida` (a proteção contra valor no formato de endereço,
+  ver seção anterior) é reaplicada também na unidade vinda da consulta ao
+  vivo — mesmo tipo de erro de parser poderia, em teoria, acontecer nos
+  dois lados.
+- **8 pontos de exibição/gravação trocados** de `product.descricao`/
+  `product.unidade` pras variantes "efetivas": os 2 payloads de
+  `addAddressProposal` (`confirmEnderecoManual`/
+  `confirmarContarComEnderecoDivergente` — o líder passa a ver a descrição
+  mais atual ao validar um endereço proposto), o objeto `count` salvo em
+  `finalize()` (a contagem gravada reflete a descrição da consulta ao vivo,
+  não a do catálogo desatualizado), o cabeçalho compacto (`.item-desc`,
+  etapas de endereço), o card principal da etapa de contagem (`.cs-desc`),
+  o sufixo de unidade no card "Sistema (ao vivo)" (`.cs-sistema-v`), o
+  mini-card "Unidade" (`.cs-mini-grid`), e o sufixo de unidade no card da
+  rodada anterior (`.cs-top-v`, usado por `RecountFlow`).
+
+### "✗ Endereço não encontrado." em vermelho
+
+- **`enderecoNaoEncontrado`** (derivado, ao lado de `enderecoVeioDaConsulta`)
+  — `needsAddressInput && liveConsulta && !liveConsulta.endereco`. Como
+  `liveConsulta` só é setado quando a consulta responde com sucesso
+  (`res.ok===true` — nunca em caso de falha/timeout, ver o `useEffect` que
+  a busca), esse flag só liga quando a consulta genuinamente RESPONDEU e
+  não trouxe endereço nenhum pro item — nunca quando só faltou rede/
+  credencial pra checar (nesse caso `liveConsulta` continua `null`, e o
+  app fica em silêncio em vez de afirmar algo que não checou de verdade).
+- Mostrado só na etapa `enderecoManual` (item sem cadastro local), no
+  mesmo lugar onde já aparecia "✓ Endereço encontrado." — os dois nunca
+  aparecem juntos (mutuamente exclusivos por construção: um exige
+  `liveConsulta.endereco` truthy, o outro exige falsy).
+- Item que JÁ tem cadastro local (etapa de QR Code) nunca mostra essa
+  mensagem — esse aviso é só sobre "a consulta não achou o endereço pra
+  cadastrar", não faz sentido pra item que já está cadastrado.
+
+Testado via harness novo (`harness_live_descricao_unidade_endereco_naoencontrado.js`,
+jsdom + react-dom/client + `act()`, mesma técnica rigorosa de sempre —
+carrega o `index.html` inteiro transpilado numa `vm.Script`): (1) consulta
+ao vivo com descrição/unidade diferentes do catálogo — aparecem em TODOS
+os pontos (cabeçalho, card principal, mini-card, sufixo do saldo), e a
+CONTAGEM GRAVADA usa a descrição da consulta, não a do catálogo; (2)
+consulta falha — cai pro catálogo local em tudo, sem quebrar; (3) unidade
+corrompida (formato de endereço) vinda da PRÓPRIA consulta ao vivo também
+é filtrada, cai pro catálogo; (4) consulta responde sem endereço — mostra
+"✗ Endereço não encontrado." em vermelho, sem a dica verde junto; (5)
+consulta falha (não respondeu) — NÃO mostra "não encontrado" (evita
+afirmar sem ter checado); (6) item com cadastro local (etapa de QR Code)
+nunca mostra essa mensagem. 16 asserções, todas passando. Rodei de novo
+toda a suíte de regressão do scratchpad (50 harnesses) — só as mesmas 3
+falhas pré-existentes já documentadas, sem relação com esta mudança.
+Type-check da Edge Function via `tsc` (mesmo shim de sempre) sem erro.
+Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+conferidos (672/672, sem mudança — só JS/JSX, nenhuma classe CSS nova).
+**Falta o cliente rodar o deploy da Edge Function atualizada**
+(`npx supabase functions deploy consultar-produto-selgron`, mesmo comando
+de sempre, sem segredo novo pra configurar) — até lá, a resposta da
+consulta simplesmente não traz `descricao` (campo ausente no JSON, `undefined`
+tratado como falsy pelo front-end), então a tela continua mostrando a
+descrição do catálogo local normalmente, sem quebrar. **Verificação de
+ponta a ponta com o site real da Selgron fica a cargo do cliente** — mesma
+limitação de sempre (sandbox sem acesso de rede ao domínio interno da
+Selgron).
