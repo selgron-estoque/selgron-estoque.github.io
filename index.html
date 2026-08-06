@@ -9671,25 +9671,57 @@ function ImportedListCountFlow({inv, user, onRegisterCount, onFinish, onAddressP
           foraDoCacheLocal: true,
         };
       });
-      // "Itens Específicos" não tem ordem própria nenhuma (o líder só clica
-      // "Adicionar" em itens buscados avulsos, um de cada vez, sem sequência
-      // lógica nenhuma) — cliente reportou operador andando pra lá e pra cá
-      // contando esse tipo de inventário. Reordena por endereço físico
-      // (`ordenarPorEndereco`, mesmo critério já usado em Aleatória/Curva
-      // ABC/Grupo). "Lista Importada (Excel)" continua SEM reordenar —
-      // mantém a ordem exata da planilha do cliente, decisão já tomada antes
-      // (a planilha é a sequência que ele já definiu do lado de fora do
-      // app, ver CLAUDE.md).
-      setAllItems(inv.tipo==='Itens Específicos' ? ordenarPorEndereco(montado) : montado);
+      // "Lista Importada (Excel)" TAMBÉM passa a ordenar por endereço físico
+      // agora — decisão anterior (só "Itens Específicos" reordenava, Lista
+      // Importada respeitava a ordem exata da planilha) foi revertida:
+      // cliente reportou de novo, urgente, "não está seguindo sequência de
+      // endereço" — desta vez especificamente sobre Lista Importada. Mesma
+      // função `ordenarPorEndereco` já usada em Aleatória/Curva ABC/Grupo/
+      // Itens Específicos, aplicada agora aos dois tipos sem distinção.
+      //
+      // Cuidado que não existia antes (Lista Importada nunca precisou disso,
+      // já que sem reordenar a posição no array SEMPRE bateu com a ordem
+      // original da planilha, estável entre remontagens): reordenar por
+      // endereço quebraria a retomada por posição (`jaContados = inv.
+      // contados`, mais abaixo) pra qualquer inventário JÁ parcialmente
+      // contado no momento deste deploy — os primeiros N itens da planilha
+      // (já contados sob a ordem antiga) não são necessariamente os
+      // primeiros N itens da nova ordem por endereço.
+      //
+      // Resolvido separando por quem JÁ TEM contagem registrada NESTE
+      // inventário (dado real, `counts`, não posição no array) antes de
+      // ordenar — mas, AO CONTRÁRIO do padrão de `RandomCountFlow`
+      // (`codigosJaContados`, mais acima neste arquivo, que põe os NÃO
+      // contados primeiro pra priorizá-los dentro de um pool recém-buscado
+      // por RPC), aqui os JÁ CONTADOS precisam vir PRIMEIRO no array: `inv`
+      // (vindo de `flowState`) é um retrato congelado no momento da
+      // navegação — nunca muda de identidade durante a sessão — então
+      // `jaContados = inv.contados` (mais abaixo) fica FIXO por toda a
+      // sessão, e `pendentes = allItems.slice(jaContados)` só continua
+      // batendo exatamente com "os itens ainda não contados" se os
+      // primeiros `jaContados` elementos do array forem justamente os JÁ
+      // contados (removidos do início pelo slice), sobrando só os
+      // pendentes depois. Invertido isso (não contados primeiro), o slice
+      // cortaria itens NUNCA contados do início da fila e devolveria itens
+      // JÁ contados misturados nos pendentes — bug real, pego só ao testar
+      // o cenário de migração (ver harness_lista_importada_ordenar_endereco.js).
+      const codigosJaContadosNesteInv = new Set(
+        (counts||[]).filter(c=>c.inventario===inv.id).map(c=>c.productCode)
+      );
+      const naoContados = montado.filter(p=>!codigosJaContadosNesteInv.has(p.codigo));
+      const jaContadosItens = montado.filter(p=>codigosJaContadosNesteInv.has(p.codigo));
+      setAllItems([...ordenarPorEndereco(jaContadosItens), ...ordenarPorEndereco(naoContados)]);
     });
     return ()=>{ cancelado = true; };
   }, [inv]);
 
-  // A lista é sempre percorrida na ordem original; ao voltar para este
-  // inventário depois de contar alguns itens, retoma exatamente de onde
-  // parou usando "contados" — sem isso, cada vez que a tela remonta a fila
-  // reiniciaria do item 1 (mesmo problema que a Contagem Aleatória já tem,
-  // mas aqui seria pior: o operador nunca chegaria ao 2º item da planilha).
+  // `allItems` já vem ordenado por endereço (ver useEffect acima) — a
+  // ordem em si é estável entre remontagens (sort puro sobre dado que não
+  // muda), então ao voltar para este inventário depois de contar alguns
+  // itens, retoma exatamente de onde parou usando "contados" — sem isso,
+  // cada vez que a tela remonta a fila reiniciaria do item 1 (mesmo
+  // problema que a Contagem Aleatória já tem, mas aqui seria pior: o
+  // operador nunca chegaria ao 2º item da lista).
   const jaContados = inv ? (inv.contados || 0) : 0;
   const pendentes = useMemo(()=> allItems ? allItems.slice(jaContados) : [], [allItems, jaContados]);
   const q = useCountQueue(pendentes);

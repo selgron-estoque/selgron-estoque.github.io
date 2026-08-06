@@ -17050,3 +17050,63 @@ partir de agora" — mesmo padrão de reset já aplicado antes a `inventories`/`
   0 falhas. **Falta o cliente rodar o `delete` acima no Supabase real** — só depois
   disso a fila fica genuinamente vazia em todos os aparelhos (o bump de chave sozinho já
   publicado não é suficiente sem esse passo, pelo motivo explicado acima).
+
+## Bug real (urgente): "Lista Importada (Excel)" não seguia a sequência de endereço
+
+Cliente reportou, marcado urgente: "Lista importada não está seguindo sequencia de
+endereço" — operadores andando de um lado pro outro no armazém contando fora de ordem.
+Investigado: uma decisão anterior deste projeto (ver seção "Novo tipo de inventário:
+'Itens Específicos'" mais acima) tinha adicionado `ordenarPorEndereco` só pro tipo
+"Itens Específicos", deixando "Lista Importada (Excel)" de propósito respeitando a
+ordem exata da planilha (`ImportedListCountFlow`, `setAllItems(inv.tipo==='Itens
+Específicos' ? ordenarPorEndereco(montado) : montado)`). O cliente deixou claro agora
+que isso não é o que ele quer — os dois tipos precisam seguir a sequência física.
+
+- **`ImportedListCountFlow` passou a ordenar por endereço pros DOIS tipos**, sem
+  distinção — mesma função `ordenarPorEndereco` (corredor→rua→posição numérica) já
+  usada em Aleatória/Curva ABC/Grupo/Itens Específicos.
+- **Bug real, achado só ao escrever o teste do cenário de migração (inventário JÁ
+  parcialmente contado sob a ordem antiga da planilha no momento deste deploy)**: a
+  1ª versão da correção separava os itens por "já tem contagem registrada NESTE
+  inventário" (via `counts`, não posição no array — protegendo contra pular/repetir
+  item numa migração) e concatenava `[...ordenarPorEndereco(naoContados),
+  ...ordenarPorEndereco(jaContados)]` — mesmo padrão já usado em `RandomCountFlow`. Só
+  que essa ordem está ERRADA pra `ImportedListCountFlow`: `inv` aqui vem de
+  `flowState` — um retrato CONGELADO no momento da navegação, nunca muda de
+  identidade durante a sessão (diferente do que uma leitura rápida do código sugere) —
+  então `jaContados = inv.contados` fica FIXO a sessão inteira, e `pendentes =
+  allItems.slice(jaContados)` só funciona certo se os primeiros `jaContados`
+  elementos do array forem justamente os JÁ CONTADOS (removidos do início pelo
+  slice), sobrando só os pendentes depois. Com "não contados primeiro" (a ordem
+  copiada de `RandomCountFlow`), o slice cortava itens NUNCA contados do início da
+  fila e devolvia itens JÁ contados misturados nos pendentes — silenciosamente, sem
+  erro nenhum. Corrigido invertendo a ordem: `[...ordenarPorEndereco(jaContados),
+  ...ordenarPorEndereco(naoContados)]` — já-contados primeiro, pendentes depois.
+- **Por que `RandomCountFlow` usa a ordem OPOSTA e está certo assim**: lá, `allItems`
+  não é uma lista fixa pertencente ao inventário — é um pool recém-buscado por RPC
+  (`fetchContagemItensPrioritarios`) a cada mount, e o split por "já contado" ali é
+  só pra PRIORIZAR item nunca contado (em QUALQUER inventário) dentro do corte
+  `.slice(0, qtd)` do pool — um conceito diferente do "resume exato por posição
+  dentro de uma lista fixa" que `ImportedListCountFlow` precisa. Os dois componentes
+  têm razão de ser cada um com sua ordem — não é uma inconsistência a corrigir.
+- Testado via harness dedicado (`harness_lista_importada_ordenar_endereco.js`, extraído
+  do `index.html` real via Babel+`vm.Script`, mesma técnica de sempre): confirma que
+  a linha antiga (ternário por `inv.tipo`) não existe mais; que um inventário NOVO
+  (sem nenhuma contagem ainda) sai com a fila inteira em ordem de endereço, sem perder
+  nenhum item; e — o teste que pegou o bug — que um inventário MIGRADO (2 de 5 itens
+  já contados sob a ordem antiga da planilha, em posições não-contíguas) tem `pendentes
+  = allItems.slice(jaContados)` batendo EXATAMENTE com os itens nunca contados neste
+  inventário, em ordem de endereço, sem repetir nem pular nenhum, e sem confundir uma
+  contagem de OUTRO inventário do mesmo código como se fosse deste (contagem é por
+  documento, não por código global). Harness pré-existente
+  (`harness_itens_especificos_ordenar_endereco.js`) atualizado — a asserção que
+  checava a distinção por tipo virou uma checagem de que ela NÃO existe mais (mudança
+  de comportamento intencional, não regressão). Rodei de novo toda a suíte de
+  regressão do scratchpad (57 harnesses) — 0 falhas. Transpile Babel do arquivo
+  inteiro e balanceamento de chaves do CSS conferidos (666/666, sem mudança — só JS,
+  nenhuma classe CSS tocada). **Verificação visual/funcional de ponta a ponta (o
+  operador andando na sequência certa de verdade) fica a cargo do cliente** — mesma
+  limitação de sempre (login exige Supabase Auth real, não simulável no sandbox sem
+  rede) — mas como a correção é só na LEITURA (não depende de nenhuma migração de
+  SQL), já deve valer pra qualquer inventário "Lista Importada"/"Itens Específicos"
+  assim que o deploy publicar, inclusive os já parcialmente contados.
