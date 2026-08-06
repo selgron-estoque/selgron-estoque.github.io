@@ -8074,7 +8074,7 @@ function NewInventory({onCreate, goto, inventories, gruposExcluidos}){
                 <div key={p.codigo} className="list-row" style={{marginTop:8}}>
                   <div>
                     <div className="lr-title">{p.descricao}</div>
-                    <div className="lr-sub">{p.codigo} · {p.enderecoCadastrado ? p.endereco : 'sem endereço cadastrado'}</div>
+                    <div className="lr-sub">{p.codigo} · {p.enderecoCadastrado ? p.endereco : 'sem cadastro local'}</div>
                   </div>
                   <button type="button" className="btn btn-outline" style={{width:'auto',padding:'10px 16px',fontSize:'var(--text-sm)'}} disabled={jaAdicionado} onClick={()=>addItemEspecifico(p)}>
                     {jaAdicionado ? 'Adicionado' : 'Adicionar'}
@@ -9380,7 +9380,7 @@ function ManualCountFlow({user, onRegisterCount, onAddressProposed, counts, oper
         <div key={p.codigo} className="list-row" onClick={()=>setSelected(p)}>
           <div>
             <div className="lr-title">{p.descricao}</div>
-            <div className="lr-sub">{p.codigo} · {p.enderecoCadastrado ? p.endereco : 'sem endereço cadastrado'}</div>
+            <div className="lr-sub">{p.codigo} · {p.enderecoCadastrado ? p.endereco : 'sem cadastro local'}</div>
           </div>
           <span className="chevron"><Ic>›</Ic></span>
         </div>

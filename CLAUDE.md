@@ -16631,3 +16631,57 @@ Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos (666/666, s
 nenhuma classe CSS nova, só JS/JSX dentro de `CountStep`). **Verificação visual/funcional de
 ponta a ponta fica a cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth
 real, não simulável no sandbox sem rede).
+
+## "Sem endereço cadastrado" na lista de busca vira "sem cadastro local"
+
+Depois da mudança anterior (consulta ao vivo sempre vence sobre o cadastro no campo de
+endereço), o cliente apontou, com print da tela "Nova Contagem" avulsa (busca "353",
+vários resultados mostrando "sem endereço cadastrado" logo abaixo do código):
+**"Sem endereço cadastrado, essa mensagem agora não faz mais sentido"**. Pedi
+confirmação de qual mensagem exatamente (existiam 3 candidatas na tela de contagem em
+si) — o print recebido mostrou que não era nenhuma das 3 dicas de `CountStep`, e sim o
+texto da LISTA DE RESULTADOS DE BUSCA, mostrado antes mesmo de abrir o item.
+
+- **Causa**: `ManualCountFlow` (Nova Contagem avulsa) e o mesmo trecho em "Itens
+  Específicos" (`NewInventory`) sempre mostraram `p.enderecoCadastrado ? p.endereco :
+  'sem endereço cadastrado'` — uma afirmação categórica, calculada só a partir do
+  cadastro LOCAL, antes de o operador sequer abrir o item. Desde que a consulta ao vivo
+  (Selgron/Protheus) passou a rodar dentro de `CountStep` assim que o item é aberto pra
+  contar (e agora sempre VENCE o cadastro local quando encontra algo, ver seção
+  anterior), essa frase ficou desatualizada: um item que mostra "sem endereço
+  cadastrado" na lista pode muito bem ter um endereço real assim que a consulta ao vivo
+  rodar — a frase promete algo que não foi (e propositalmente nunca é, pra não disparar
+  N requisições pra uma ferramenta interna pensada pra 1 consulta de cada vez) checado
+  nesse ponto da tela.
+- **Correção**: texto trocado pra **"sem cadastro local"** — continua descrevendo com
+  precisão o que de fato sabemos (não tem registro no banco local), sem prometer nada
+  sobre o que a consulta ao vivo vai (ou não) encontrar depois. **Deliberadamente NÃO
+  disparei uma consulta ao vivo por item da lista** — a consulta é uma ferramenta
+  interna de 1-produto-por-vez (ver "Saldo 'ao vivo' direto do Protheus" mais acima),
+  bombardeá-la com uma requisição por linha de resultado de busca contrariaria o desenho
+  original dessa integração.
+- **2 pontos idênticos corrigidos**: `ManualCountFlow` (linha do print do cliente) e
+  "Itens Específicos" (`NewInventory.addItemEspecifico`, mesmo trecho JSX, mesma
+  condição) — os dois mostravam a mesma frase categórica, então os dois precisavam da
+  mesma correção.
+- **Não tocado, contextos diferentes**: os 6 outros usos da string "sem endereço
+  cadastrado" no arquivo — 4 são comentários explicando comportamento interno (não
+  texto de UI), e 1 é o resumo pós-importação da planilha "Descrição de Produtos"
+  (`parseResult.resumo.enderecosIgnorados`, "Endereços Pendentes de Cadastro") — essa
+  última é sobre uma linha da planilha que o parser genuinamente não conseguiu
+  interpretar como endereço válido, uma afirmação factual sobre o PARSE, não uma
+  previsão sobre o que a consulta ao vivo acharia depois — contexto diferente, mensagem
+  continua correta como está.
+- Testado via harness novo (`harness_busca_sem_cadastro_local.js`, jsdom +
+  react-dom/client + `act()`, mesma técnica rigorosa de sempre — carrega o `index.html`
+  inteiro transpilado numa `vm.Script`, com `searchSupabaseCatalog` exercitado de
+  verdade via mock do Supabase, `produtos`+`estoque_saldo`): renderizei `ManualCountFlow`
+  de ponta a ponta, digitei "353" no campo de busca, esperei o debounce de 350ms, e
+  confirmei que o texto "sem endereço cadastrado" não aparece mais em lugar nenhum, que
+  "sem cadastro local" aparece pro item sem cadastro, e que um item COM cadastro
+  continua mostrando o endereço real normalmente (039-A-2), sem regressão. Rodei de
+  novo toda a suíte de regressão do scratchpad (53 arquivos) — 0 falhas. Transpile
+  Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos (666/666, sem
+  mudança — só texto, nenhuma classe CSS nova). **Verificação visual de ponta a ponta
+  fica a cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth
+  real, não simulável no sandbox sem rede).
