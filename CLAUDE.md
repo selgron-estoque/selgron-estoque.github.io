@@ -17110,3 +17110,64 @@ que isso não é o que ele quer — os dois tipos precisam seguir a sequência f
   rede) — mas como a correção é só na LEITURA (não depende de nenhuma migração de
   SQL), já deve valer pra qualquer inventário "Lista Importada"/"Itens Específicos"
   assim que o deploy publicar, inclusive os já parcialmente contados.
+
+## "Pular contagem" passa a adiar pro FINAL da fila, dentro da mesma sessão + bug real de item perdido em Rota de Endereço
+
+Cliente pediu: "Colocar opção de próxima para caso eu queira pular contagem, e no
+final eu volto para aquele item". O botão "Pular contagem" já existia (ver seção
+"Botão 'Pular contagem'..." mais acima) — sua confirmação já PROMETIA exatamente isso
+("Ele continua pendente e volta a aparecer na fila mais tarde"), mas a implementação
+de fato (`q.next()`, o mesmo método usado ao FINALIZAR uma contagem de verdade) só
+avançava o cursor pra frente — o item pulado só reaparecia numa sessão FUTURA (saindo
+e reentrando no inventário), nunca "no final" da fila atual, como o cliente queria.
+
+- **`useCountQueue` reescrito**: em vez de um `idx` numérico (posição no array),
+  passou a rastrear progresso por CÓDIGO — `processados` (Set, marcado por `next()`,
+  remove o item da fila de vez) e `adiados` (objeto código→ordem, marcado por
+  `defer()`, só REORDENA o item pro final da fila de pendentes, sem tirá-lo dela).
+  `current` é sempre derivado direto da lista `items` recebida (filtrada por
+  `processados`, ordenada por `adiados`), nunca de uma posição numérica congelada.
+- **Bug real, achado e corrigido no mesmo lugar (não fazia parte do pedido original,
+  mas é o mesmo mecanismo)**: `RouteCountFlow` usa uma fila que ENCOLHE ao vivo
+  (`itensCorredor`, recalculada a cada `counts` novo — o item recém-contado sai do
+  array na mesma leva de atualização que o antigo `idx` incrementava). Confirmado
+  empiricamente (harness dedicado, extraindo o `useCountQueue` REAL do sandbox, não
+  uma reimplementação à mão): completar o 1º de 3 itens de um corredor já pulava
+  direto pro 3º (o 2º nunca aparecia); completar mais um marcava "Corredor concluído"
+  com o 2º item nunca contado — silenciosamente perdido daquela passada pelo corredor
+  (só reapareceria escolhendo o MESMO corredor de novo, na tela de escolha, que
+  recalcula `pendentesCor` do zero). Rastrear por código elimina esse descompasso —
+  `current` nunca mais depende de um índice que pode ficar desalinhado quando o array
+  muda de tamanho entre um render e outro.
+- **`onSkip` nos 3 fluxos com fila** (`RandomCountFlow`/`RouteCountFlow`/
+  `ImportedListCountFlow`) trocou de `()=>q.next()` pra `()=>q.defer()` — pular deixa
+  de "concluir" silenciosamente a posição (o que fazia `q.idx`/`queueAtual` avançar
+  como se o item tivesse sido resolvido) e passa a só reordenar. `ManualCountFlow`
+  (busca avulsa, sem fila) não foi tocado — continua só limpando a busca.
+  `q.idx` agora só avança quando um item é de fato CONCLUÍDO (`next()`) — adiar não
+  mexe no contador "Item N de Total", já que o item continua pendente, só mudou de
+  posição.
+- **Texto do botão/confirmação não mudou** — "Pular este item? Ele continua pendente
+  e volta a aparecer na fila mais tarde — nada é registrado como contado agora." já
+  descrevia com precisão o comportamento pedido; só a implementação por trás precisava
+  entregar de verdade essa promessa, dentro da MESMA sessão de contagem.
+- Testado via harness dedicado (`harness_pular_contagem_defer.js`, `useCountQueue`
+  extraído do `index.html` real via Babel+`vm.Script`+`react-dom/client`+`act()`, mesma
+  técnica de sempre): (1) fila ESTÁVEL (padrão Random/ImportedList) — adiar o 1º item
+  mostra o 2º sem pular pro 3º, o contador de progresso não avança em cima de um
+  defer, e o item adiado reaparece corretamente no final assim que os outros dois são
+  concluídos, sem nunca cair em "fila concluída" enquanto ele ainda está pendente; (2)
+  fila que ENCOLHE ao vivo (padrão Route) — confirma o bug antigo reproduzido e
+  corrigido (completar o 1º item agora mostra o 2º, nunca pula pro 3º; nenhum item se
+  perde ao concluir os 3), e que adiar também funciona corretamente nesse padrão,
+  incluindo o item adiado reaparecendo no final mesmo com o array mudando de tamanho
+  entre um passo e outro; (3) checagem de código-fonte confirmando que os 3 fluxos
+  usam `q.defer()` (nenhum mais usa `q.next()` no `onSkip`) e que `ManualCountFlow`
+  não foi tocado. Rodei de novo toda a suíte de regressão do scratchpad (58
+  harnesses) — 0 falhas. Transpile Babel do arquivo inteiro e balanceamento de chaves
+  do CSS conferidos (666/666, sem mudança — só JS, nenhuma classe CSS tocada).
+  **Verificação visual/funcional de ponta a ponta (pular um item de verdade numa
+  Rota de Endereço/Aleatória/Lista Importada e ver ele reaparecer no fim da fila) fica
+  a cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth real,
+  não simulável no sandbox sem rede) — mas como a correção é só de lógica de front-end
+  (não depende de nenhuma migração de SQL), já deve valer assim que o deploy publicar.

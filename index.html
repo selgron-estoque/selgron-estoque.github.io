@@ -8335,12 +8335,62 @@ function CameraScanner({onDetected, onCancel}){
 }
 
 
+// Fila de contagem — rastreia progresso por CÓDIGO (não por posição
+// numérica no array), pra funcionar certo tanto com uma lista ESTÁVEL
+// entre re-renders (RandomCountFlow/ImportedListCountFlow, onde `inv` vem
+// de `flowState` — congelado a sessão inteira, `items` só muda de verdade
+// entre remontagens) quanto com uma lista que ENCOLHE ao vivo a cada item
+// contado (RouteCountFlow, `itensCorredor` recalculado a cada `counts`
+// novo). Bug real corrigido aqui: a versão anterior guardava só um `idx`
+// numérico — em RouteCountFlow, completar um item faz `items` encolher
+// (o item contado sai do array) e `idx` incrementar ao mesmo tempo, na
+// MESMA leva de atualizações — a combinação sempre pulava o próximo item
+// de verdade (confirmado empiricamente: completar o 1º de 3 itens já
+// mostrava o 3º, nunca o 2º; completar mais um marcava a fila como
+// "concluída" com o 2º item nunca contado, silenciosamente perdido pra
+// aquela passada pelo corredor). Rastrear por código elimina esse
+// descompasso — `current` é sempre derivado direto do `items` atual, nunca
+// de uma posição que pode ter ficado desalinhada.
+//
+// `defer()` — pedido do cliente ("pular contagem... e no final eu volto
+// pra aquele item"): marca o item atual como ADIADO (não como concluído)
+// — ele continua na fila, só passa pro final da ordem de exibição, e volta
+// a aparecer como `current` assim que os demais pendentes se esgotarem,
+// dentro da MESMA sessão de contagem. `next()` (usado ao finalizar uma
+// contagem de verdade) marca como PROCESSADO — sai da fila de vez.
 function useCountQueue(items){
-  const [idx, setIdx] = useState(0);
-  const current = items[idx];
-  const next = ()=> setIdx(i=>Math.min(i+1, items.length));
-  const done = idx >= items.length;
-  return {current, idx, total:items.length, next, done};
+  const [processados, setProcessados] = useState(()=>new Set());
+  const [adiados, setAdiados] = useState({}); // código -> ordem de adiamento (maior = mais recente)
+  const contadorAdiadosRef = useRef(0);
+
+  const pendentes = useMemo(()=>{
+    return items
+      .filter(p=>!processados.has(p.codigo))
+      .slice()
+      .sort((a,b)=>{
+        const da = adiados[a.codigo] || 0;
+        const db = adiados[b.codigo] || 0;
+        return da - db; // nunca adiado (0) sempre antes de quem já foi adiado
+      });
+  }, [items, processados, adiados]);
+
+  const current = pendentes[0];
+  const idx = items.filter(p=>processados.has(p.codigo)).length; // só avança em conclusão de verdade, nunca em defer
+  const total = items.length;
+  const done = pendentes.length===0;
+
+  const next = ()=>{
+    if(current) setProcessados(prev=>{ const s=new Set(prev); s.add(current.codigo); return s; });
+  };
+  const defer = ()=>{
+    if(current){
+      contadorAdiadosRef.current += 1;
+      const ordem = contadorAdiadosRef.current;
+      setAdiados(prev=>({...prev, [current.codigo]: ordem}));
+    }
+  };
+
+  return {current, idx, total, next, defer, done};
 }
 
 function CountStep({product, user, onComplete, onAddressProposed, inv, expectAddressCheck=true, numeroContagem=1, contagemAnteriorId=null, counts=[], previousCount=null, queueAtual=null, queueTotal=null, operadorVeSaldo=false, onSkip=null, conflitoInventario=null, onReservarItem=null, onLiberarItemReserva=null}){
@@ -9257,7 +9307,7 @@ function RandomCountFlow({inv, user, onRegisterCount, onFinish, onAddressPropose
         queueTotal={allItems.length}
         onAddressProposed={onAddressProposed}
         operadorVeSaldo={operadorVeSaldo}
-        onSkip={()=>q.next()}
+        onSkip={()=>q.defer()}
         conflitoInventario={conflitoInventario}
         onReservarItem={onReservarItem}
         onLiberarItemReserva={onLiberarItemReserva}
@@ -9596,7 +9646,7 @@ function RouteCountFlow({inv, user, onRegisterCount, onFinish, onAddressProposed
         queueAtual={q.idx+1}
         queueTotal={q.total}
         onAddressProposed={onAddressProposed}
-        onSkip={()=>q.next()}
+        onSkip={()=>q.defer()}
         conflitoInventario={conflitoInventario}
         operadorVeSaldo={operadorVeSaldo}
         onReservarItem={onReservarItem}
@@ -9760,7 +9810,7 @@ function ImportedListCountFlow({inv, user, onRegisterCount, onFinish, onAddressP
         queueAtual={jaContados+q.idx+1}
         queueTotal={allItems.length}
         onAddressProposed={onAddressProposed}
-        onSkip={()=>q.next()}
+        onSkip={()=>q.defer()}
         conflitoInventario={conflitoInventario}
         operadorVeSaldo={operadorVeSaldo}
         onReservarItem={onReservarItem}
