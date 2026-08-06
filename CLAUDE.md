@@ -17195,3 +17195,78 @@ e reentrando no inventário), nunca "no final" da fila atual, como o cliente que
   a cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth real,
   não simulável no sandbox sem rede) — mas como a correção é só de lógica de front-end
   (não depende de nenhuma migração de SQL), já deve valer assim que o deploy publicar.
+
+## Etiquetas: tamanho sobe pra 100×30mm por coluna + calibração ganha o lado esquerdo
+
+Cliente pediu: "atualizar em todos os locais o tamanho da etiqueta para 100x30" —
+até aqui, cada coluna do rolo TSC era 50×30mm (folha inteira 101×31mm, 2 colunas +
+~1mm de gap). Perguntei via `AskUserQuestion` qual das 3 leituras possíveis era a
+certa (etiqueta única sem pareamento / as 2 colunas viram 100mm cada, mesmo
+pareamento / a folha inteira vira 100×30mm com colunas de ~49,5mm) — sem resposta
+direta a essa pergunta, mas o cliente mandou, em seguida, um esclarecimento que já
+resolve a ambiguidade sozinho: **"na calibragem de etiqueta incluir calibragem para
+a etiqueta da esquerda também"** — só faz sentido pedir calibração pro lado
+ESQUERDO se o pareamento de 2 colunas continua existindo (antes só a direita podia
+ser calibrada, ver seção "Calibração manual da margem da etiqueta da direita" mais
+acima) — confirma que a leitura certa é a 2ª: cada uma das 2 colunas passa a ser
+100×30mm (a folha física inteira vai de 101mm pra 201mm de largura, mesma conta de
+sempre pro vão entre colunas — 2×100+1mm de gap).
+
+- **CSS**: `@page`/`.etq-page` (101mm→201mm de largura), `.etq-page-col` (50mm→
+  100mm) — altura não mudou em nenhum dos dois (continua 30/30,5/31mm, mesmos
+  valores de sempre, inclusive a folga de 0,5mm contra o bug do Chrome 109/Windows 7
+  já documentado antes). Alvo do código de barras (bloco inteiro, barras+texto
+  descritivo) dobrou de largura nos 3 tipos de etiqueta — `.etq-endereco .etq-
+  barcode` 44→88mm, `.etq-produto .etq-barcode` 46→92mm, `.etq-prateleira .etq-
+  barcode` 46→92mm — e `.etq-prat-desc{max-width}` acompanhou (46→92mm). Nenhuma
+  fonte/padding/margem interna mudou — só a largura disponível cresceu, então o
+  espaço extra vira folga, não aperto.
+- **`ETIQUETA_BARCODE_CONFIG.larguraMm`** (JS, alimenta `desenharBarcodesEtiqueta` —
+  a técnica de "nasce no tamanho físico exato via JsBarcode em 2 passadas", pra
+  nunca depender de reescala forçada pelo CSS) atualizado em paralelo, mesmos 3
+  valores (88/92/92) — já era um ponto sensível de dessincronia neste projeto (ver
+  seção "Bug real: constante JS dessincronizada da caixa CSS" mais acima), então
+  os dois lugares foram trocados juntos, no mesmo commit.
+- **Calibração vira POR LADO (esquerda + direita), não só direita**: a chave de
+  `localStorage` mudou de forma (`{x,y}` de 1 lado só → `{esquerda:{x,y},
+  direita:{x,y}}`) — bump de chave (`etiquetaAjusteMargemDireita` →
+  `etiquetaAjusteMargem_v2`, mesmo critério já usado em outras chaves deste app
+  quando o FORMATO muda de jeito incompatível, ex. `inventories_v2`/`counts_v2`) em
+  vez de tentar migrar o dado antigo — é só uma calibração de bancada, sem custo
+  nenhum refazer. `salvarAjusteMargemEtiquetaDireita`/`carregarAjusteMargemEtiquetaDireita`
+  viraram `salvarAjusteMargemEtiqueta`/`carregarAjusteMargemEtiqueta` (sem "Direita"
+  no nome — não faz mais sentido, cobrem os dois lados agora).
+- **`buildEtiquetaPageHtml(itens, quebrarDepois, ajustes)`**: o 3º parâmetro deixou
+  de ser só o ajuste da direita e virou `{esquerda, direita}` — cada COLUNA aplica
+  o ajuste do PRÓPRIO lado (`i===0` usa `ajustes.esquerda`, `i===1` usa
+  `ajustes.direita`), de forma independente uma da outra. Numa folha de 1 item só
+  (impressão avulsa sem par disponível), a única coluna usa o ajuste da esquerda —
+  o da direita fica sem nenhuma coluna pra se aplicar nesse caso, exatamente como
+  antes só a direita tinha efeito numa folha de 2 colunas.
+- **`EtiquetasPanel`**: o painel de calibração (toggle "Calibrar etiquetas", era
+  "Calibrar etiqueta da direita") ganhou uma 2ª seção — "Etiqueta da esquerda" e
+  "Etiqueta da direita", cada uma com os mesmos 2 campos de sempre (Horizontal/
+  Vertical em mm, texto sanitizado, grava a cada tecla sem botão "Salvar" — mesmo
+  padrão já estabelecido). "Restaurar (0,0)" virou "Restaurar as duas (0,0)" — zera
+  os 4 valores de uma vez, não só 2.
+- **`preview-etiqueta.html`** (ferramenta de autonomia do cliente, já publicada)
+  sincronizada com os mesmos valores — os 2 boxes de prévia (`width:50mm`→`100mm`),
+  o `#css-baseline` (cópia estática de fallback do CSS) e o `ETIQUETA_BARCODE_CONFIG`
+  local (mirror em JS, `larguraMm` 44/46→88/92) — mesmo cuidado de sempre nesta
+  ferramenta, já que ela só reflete o CSS ao vivo do `index.html`, mas mantém uma
+  cópia estática de segurança que precisa ser atualizada manualmente. Continua sem
+  suporte ao tipo "Prateleira/Caixa" (gap já aceito desde que essa etiqueta foi
+  criada, não coberto aqui).
+- Testado via harness reescrito por completo (`harness_etiqueta_calibracao_margem.js`,
+  49 asserções — cobre os 2 lados independentes, valor zerado em cada lado sem
+  afetar o outro, folha de 1 item usando só o ajuste da esquerda, chave antiga
+  ignorada sem quebrar, e a UI com os 4 campos/2 seções) e os 3 harnesses que já
+  verificavam tamanho em mm no CSS/`ETIQUETA_BARCODE_CONFIG` atualizados pros
+  valores novos (`harness_etiqueta_layout_endereco.js`/`harness_etiqueta_layout_fix.js`/
+  comentário de `harness_etiqueta_duas_colunas.js`). Rodei de novo a suíte completa
+  do scratchpad (58 harnesses) — 0 falhas. Transpile Babel do arquivo inteiro e
+  balanceamento de chaves do CSS conferidos (666/666, sem mudança líquida — só
+  valores dentro de regras já existentes). **Verificação física de ponta a ponta
+  (o rolo real de 100mm por coluna, os dois lados calibrando corretamente) fica
+  100% a cargo do cliente** — mesma limitação de sempre nesta feature (sandbox sem
+  impressora física).

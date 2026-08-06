@@ -1179,10 +1179,16 @@
   /* .etq-page fica 0.5mm mais baixa que o @page — folga contra um bug já
      visto num Chrome bem antigo (109/Windows 7) que inseria página em
      branco extra. Não afeta o tamanho físico real impresso (@page continua
-     101x31mm, o que o driver da impressora espera). */
-  @page{size:101mm 31mm;margin:0;}
-  .etq-page{display:flex;align-items:center;gap:1mm;width:101mm;height:30.5mm;box-sizing:border-box;}
-  .etq-page-col{width:50mm;height:30mm;box-sizing:border-box;padding:0.8mm;}
+     201x31mm, o que o driver da impressora espera).
+     Tamanho da etiqueta (por coluna) subiu de 50x30mm pra 100x30mm — pedido
+     do cliente ("atualizar em todos os locais o tamanho da etiqueta para
+     100x30"). A folha continua com 2 colunas lado a lado (o rolo físico
+     nunca deixou de ter 2 posições, só cada uma ficou mais larga) — mesma
+     matemática de sempre pro vão entre colunas (2x100mm + 1mm de gap =
+     201mm), só o "100" no lugar do "50" antigo. Altura não mudou (30mm). */
+  @page{size:201mm 31mm;margin:0;}
+  .etq-page{display:flex;align-items:center;gap:1mm;width:201mm;height:30.5mm;box-sizing:border-box;}
+  .etq-page-col{width:100mm;height:30mm;box-sizing:border-box;padding:0.8mm;}
   /* Cliente esclareceu: o pedido de "tirar a margem" (rodada anterior)
      era engano — o que precisava sumir era o CONTORNO (a linha preta ao
      redor de Recebimento/Prateleira, ver `.etq-produto`/`.etq-prateleira`
@@ -1197,13 +1203,16 @@
   .etq-barcode{display:block;margin:0 auto;}
   /* Tamanho do BLOCO INTEIRO (barras + código descritivo abaixo, ver
      `desenharBarcodesEtiqueta`) — cresceu em largura E altura em relação a
-     antes, usando o espaço que sobrou da margem removida acima. */
-  .etq-endereco .etq-barcode{width:44mm;height:12mm;}
+     antes, usando o espaço que sobrou da margem removida acima. Largura
+     dobrou de novo (44→88mm) junto da etiqueta em si (50→100mm) — mesma
+     técnica de "nasce no tamanho físico exato" de sempre, sem depender de
+     reescala forçada pelo CSS (ver ETIQUETA_BARCODE_CONFIG mais abaixo). */
+  .etq-endereco .etq-barcode{width:88mm;height:12mm;}
   /* "aquele desenho quadrado" (contorno preto + cantos arredondados) saiu
      — pedido do cliente. `overflow:hidden` continua (proteção contra
      transbordo, sem relação com o contorno em si). */
   .etq-produto{width:100%;height:100%;box-sizing:border-box;padding:0.6mm;display:flex;flex-direction:column;font-family:Arial,sans-serif;overflow:hidden;position:relative;}
-  .etq-produto .etq-barcode{width:46mm;height:8.5mm;}
+  .etq-produto .etq-barcode{width:92mm;height:8.5mm;}
   /* Rótulos (CÓDIGO/DESCRIÇÃO/DATA) em texto preto simples — a "bandeirinha
      preta" (fundo preto + texto branco) de uma rodada anterior deu lugar a
      este formato mais simples, pedido explícito do cliente. */
@@ -1248,10 +1257,10 @@
      vez do `-webkit-line-clamp:2` de uma versão anterior). */
   .etq-prateleira{width:100%;height:100%;box-sizing:border-box;padding:0.8mm;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:Arial,sans-serif;text-align:center;overflow:hidden;gap:0.4mm;}
   .etq-prat-codigo{font-size:17pt;font-weight:700;line-height:1;margin:0.2mm 0;}
-  .etq-prat-desc{font-size:7pt;font-weight:700;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46mm;}
+  .etq-prat-desc{font-size:7pt;font-weight:700;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:92mm;}
   /* Sobra bem mais altura livre aqui do que nas outras 2 etiquetas (não tem
      QTD/Data/Endereço disputando espaço) — cresce mais que produto. */
-  .etq-prateleira .etq-barcode{width:46mm;height:12mm;margin-top:0.2mm;}
+  .etq-prateleira .etq-barcode{width:92mm;height:12mm;margin-top:0.2mm;}
   /* FIM DO CSS DA ETIQUETA */
 </style>
 </head>
@@ -1589,19 +1598,31 @@ function splitQuantidadeEtiquetas(total, n){
 // todos os aparelhos", que é pra decisão do admin sobre OUTROS usuários —
 // ver CLAUDE.md "Convenções de design"; aqui não tem sentido nenhum, o
 // ajuste certo pra ESTA impressora provavelmente está errado pra outra).
-const ETIQUETA_AJUSTE_MARGEM_KEY = 'stock360:v1:etiquetaAjusteMargemDireita';
-function salvarAjusteMargemEtiquetaDireita(ajuste){
+// Chave nova (_v2) — a forma dos dados mudou (era {x,y} de UM lado só,
+// agora é {esquerda:{x,y}, direita:{x,y}}) — pedido do cliente: "na
+// calibragem de etiqueta incluir calibragem para a etiqueta da esquerda
+// também" (antes só a coluna da direita podia ser calibrada). Bump de
+// chave em vez de tentar migrar o formato antigo — mesmo critério já
+// usado em outras chaves deste app quando o formato muda de jeito
+// incompatível (ver CLAUDE.md, `inventories_v2`/`counts_v2`/etc.); é só
+// uma calibração de bancada, refazer não tem custo nenhum.
+const ETIQUETA_AJUSTE_MARGEM_KEY = 'stock360:v1:etiquetaAjusteMargem_v2';
+function salvarAjusteMargemEtiqueta(ajuste){
   try{ localStorage.setItem(ETIQUETA_AJUSTE_MARGEM_KEY, JSON.stringify(ajuste)); }catch(err){}
 }
-function carregarAjusteMargemEtiquetaDireita(){
+function carregarAjusteMargemEtiqueta(){
+  const padrao = {esquerda:{x:0, y:0}, direita:{x:0, y:0}};
   try{
     const raw = localStorage.getItem(ETIQUETA_AJUSTE_MARGEM_KEY);
-    if(!raw) return {x:0, y:0};
+    if(!raw) return padrao;
     const parsed = JSON.parse(raw);
-    const x = Number(parsed && parsed.x);
-    const y = Number(parsed && parsed.y);
-    return {x: Number.isFinite(x) ? x : 0, y: Number.isFinite(y) ? y : 0};
-  }catch(err){ return {x:0, y:0}; }
+    const lerLado = (lado)=>{
+      const x = Number(parsed && parsed[lado] && parsed[lado].x);
+      const y = Number(parsed && parsed[lado] && parsed[lado].y);
+      return {x: Number.isFinite(x) ? x : 0, y: Number.isFinite(y) ? y : 0};
+    };
+    return {esquerda: lerLado('esquerda'), direita: lerLado('direita')};
+  }catch(err){ return padrao; }
 }
 
 // Monta o HTML de UMA etiqueta (`.etq-endereco`/`.etq-produto`) — extraído
@@ -1694,21 +1715,24 @@ function buildEtiquetaItemHtml({tipo, codigo, descricao, quantidade, dataRecebim
 // extra a cada quebra. Removida a redundante (`break-after:page`), só
 // `page-break-after:always` ficou.
 //
-// `ajusteDireita` ({x, y} em mm, opcional) — calibração manual da coluna
-// DA DIREITA (ver `carregarAjusteMargemEtiquetaDireita`), aplicada via
+// `ajustes` ({esquerda:{x,y}, direita:{x,y}} em mm, opcional) — calibração
+// manual POR COLUNA (ver `carregarAjusteMargemEtiqueta`), aplicada via
 // `transform:translate(...)` (não `margin`) de propósito: transform desloca
 // só a aparência visual, sem empurrar layout/box (a folha continua exatos
-// 101x30.5mm físicos, o que o driver da impressora espera) — `x`
+// 201x30.5mm físicos, o que o driver da impressora espera) — `x`
 // positivo desloca pra DIREITA, negativo pra ESQUERDA; `y` positivo desloca
-// pra BAIXO, negativo pra CIMA. Só a coluna de índice 1 (a 2ª, direita)
-// recebe o ajuste — a esquerda nunca muda.
-function buildEtiquetaPageHtml(itens, quebrarDepois, ajusteDireita){
+// pra BAIXO, negativo pra CIMA. Índice 0 (1ª coluna) usa `ajustes.esquerda`,
+// índice 1 (2ª coluna) usa `ajustes.direita` — cada lado calibra
+// independente (pedido do cliente: "incluir calibragem para a etiqueta da
+// esquerda também", antes só a direita podia ser ajustada).
+function buildEtiquetaPageHtml(itens, quebrarDepois, ajustes){
   const style = quebrarDepois ? ' style="page-break-after:always;"' : '';
-  const ajuste = ajusteDireita || {x:0, y:0};
-  const temAjuste = ajuste.x || ajuste.y;
+  const aj = ajustes || {esquerda:{x:0, y:0}, direita:{x:0, y:0}};
   return '<div class="etq-page"'+style+'>'
     + itens.map((it, i)=>{
-        const colStyle = (i===1 && temAjuste) ? ' style="transform:translate('+ajuste.x+'mm,'+ajuste.y+'mm);"' : '';
+        const ladoAjuste = (i===0 ? aj.esquerda : aj.direita) || {x:0, y:0};
+        const temAjuste = ladoAjuste.x || ladoAjuste.y;
+        const colStyle = temAjuste ? ' style="transform:translate('+ladoAjuste.x+'mm,'+ladoAjuste.y+'mm);"' : '';
         return '<div class="etq-page-col'+(it.tipo==='prateleira' ? ' etq-page-col--prateleira' : '')+'"'+colStyle+'>'+buildEtiquetaItemHtml(it)+'</div>';
       }).join('')
     + '</div>';
@@ -1719,9 +1743,9 @@ function buildEtiquetaPageHtml(itens, quebrarDepois, ajusteDireita){
 // `.etq-prateleira .etq-barcode` no CSS) e o fontSize do código descritivo
 // (HRI, "human readable interpretation") mostrado abaixo das barras.
 const ETIQUETA_BARCODE_CONFIG = {
-  endereco:   {alturaTotalMm: 12,  larguraMm: 44, fontSize: 10},
-  produto:    {alturaTotalMm: 8.5, larguraMm: 46, fontSize: 9},
-  prateleira: {alturaTotalMm: 12,  larguraMm: 46, fontSize: 10},
+  endereco:   {alturaTotalMm: 12,  larguraMm: 88, fontSize: 10},
+  produto:    {alturaTotalMm: 8.5, larguraMm: 92, fontSize: 9},
+  prateleira: {alturaTotalMm: 12,  larguraMm: 92, fontSize: 10},
 };
 
 // Desenha o código de barras de CADA `svg.etq-barcode` já presente em
@@ -1778,7 +1802,7 @@ function desenharBarcodesEtiqueta(area, itensFlat){
 // código(s) de barras via JsBarcode antes de chamar `window.print()`.
 // `item1`/`item2` são objetos `{tipo, codigo, descricao, quantidade,
 // dataRecebimento, endereco}` (`tipo` é `'endereco'`/`'produto'`) — `item2` é
-// OPCIONAL: o rolo físico da TSC tem 2 colunas de 50mm lado a lado (ver
+// OPCIONAL: o rolo físico da TSC tem 2 colunas de 100mm lado a lado (ver
 // comentário no <style>, perto de `.etq-page`), então imprimir sempre 1
 // etiqueta só de propósito desperdiçaria a coluna direita a cada folha.
 // Pedido do cliente: "se tiver mais de uma etiqueta na fila imprimir uma em
@@ -1793,7 +1817,7 @@ function imprimirEtiquetaViaNavegador(item1, item2){
   const area = (typeof document!=='undefined') ? document.getElementById('etiqueta-print-area') : null;
   if(!area) return {ok:false, erro:'Área de impressão não encontrada nesta página.'};
   const itens = item2 ? [item1, item2] : [item1];
-  area.innerHTML = buildEtiquetaPageHtml(itens, false, carregarAjusteMargemEtiquetaDireita());
+  area.innerHTML = buildEtiquetaPageHtml(itens, false, carregarAjusteMargemEtiqueta());
   desenharBarcodesEtiqueta(area, itens);
   if(typeof window!=='undefined' && window.print) window.print();
   return {ok:true};
@@ -1832,7 +1856,7 @@ function imprimirLoteEtiquetas(itens){
   for(let i=0;i<itens.length;i+=2){
     pares.push(itens[i+1] ? [itens[i], itens[i+1]] : [itens[i]]);
   }
-  const ajuste = carregarAjusteMargemEtiquetaDireita();
+  const ajuste = carregarAjusteMargemEtiqueta();
   area.innerHTML = pares.map((par, i)=>buildEtiquetaPageHtml(par, i<pares.length-1, ajuste)).join('');
   desenharBarcodesEtiqueta(area, itens);
   if(typeof window!=='undefined' && window.print) window.print();
@@ -14121,16 +14145,19 @@ function EtiquetasPanel({currentUser}){
   const [erroImpressao, setErroImpressao] = useState(null);
   const [sucessoImpressao, setSucessoImpressao] = useState(false);
 
-  // Calibração manual da coluna da direita (pedido do cliente, "tem casos
-  // que a bobina vem torta") — lê/grava direto no `localStorage` (ver
-  // `carregarAjusteMargemEtiquetaDireita`, POR APARELHO de propósito), sem
-  // precisar de nenhum estado global em App(). Os campos ficam como TEXTO
-  // (não number) pra aceitar "-"/"." no meio da digitação sem travar —
-  // `handleAjusteChange` filtra caractere inválido e só grava quando o
-  // texto já é um número válido.
+  // Calibração manual das DUAS colunas (pedido do cliente, "tem casos que
+  // a bobina vem torta" — depois estendido: "na calibragem de etiqueta
+  // incluir calibragem para a etiqueta da esquerda também") — lê/grava
+  // direto no `localStorage` (ver `carregarAjusteMargemEtiqueta`, POR
+  // APARELHO de propósito), sem precisar de nenhum estado global em App().
+  // Os campos ficam como TEXTO (não number) pra aceitar "-"/"." no meio da
+  // digitação sem travar — `handleAjusteChange` filtra caractere inválido e
+  // só grava quando o texto já é um número válido.
   const [mostrarCalibracao, setMostrarCalibracao] = useState(false);
-  const [ajusteXTexto, setAjusteXTexto] = useState(()=>String(carregarAjusteMargemEtiquetaDireita().x));
-  const [ajusteYTexto, setAjusteYTexto] = useState(()=>String(carregarAjusteMargemEtiquetaDireita().y));
+  const [ajusteEsqXTexto, setAjusteEsqXTexto] = useState(()=>String(carregarAjusteMargemEtiqueta().esquerda.x));
+  const [ajusteEsqYTexto, setAjusteEsqYTexto] = useState(()=>String(carregarAjusteMargemEtiqueta().esquerda.y));
+  const [ajusteDirXTexto, setAjusteDirXTexto] = useState(()=>String(carregarAjusteMargemEtiqueta().direita.x));
+  const [ajusteDirYTexto, setAjusteDirYTexto] = useState(()=>String(carregarAjusteMargemEtiqueta().direita.y));
   function sanitizeAjusteMmTexto(raw){
     let v = raw.replace(/[^0-9.\-]/g,''); // só dígito, ponto e menos
     const negativo = v.charAt(0)==='-';
@@ -14140,18 +14167,21 @@ function EtiquetasPanel({currentUser}){
     if(partes.length>2) v = partes[0]+'.'+partes.slice(1).join('');
     return v;
   }
-  function handleAjusteChange(eixo, valorTexto, setTexto){
+  function handleAjusteChange(lado, eixo, valorTexto, setTexto){
     const limpo = sanitizeAjusteMmTexto(valorTexto);
     setTexto(limpo);
     const num = Number(limpo);
     if(limpo!=='' && limpo!=='-' && Number.isFinite(num)){
-      salvarAjusteMargemEtiquetaDireita({...carregarAjusteMargemEtiquetaDireita(), [eixo]: num});
+      const atual = carregarAjusteMargemEtiqueta();
+      salvarAjusteMargemEtiqueta({...atual, [lado]: {...atual[lado], [eixo]: num}});
     }
   }
   function handleRestaurarAjuste(){
-    salvarAjusteMargemEtiquetaDireita({x:0, y:0});
-    setAjusteXTexto('0');
-    setAjusteYTexto('0');
+    salvarAjusteMargemEtiqueta({esquerda:{x:0, y:0}, direita:{x:0, y:0}});
+    setAjusteEsqXTexto('0');
+    setAjusteEsqYTexto('0');
+    setAjusteDirXTexto('0');
+    setAjusteDirYTexto('0');
   }
 
   // Fila de impressão — enviar (de qualquer aparelho) e imprimir dela (só
@@ -14368,31 +14398,50 @@ function EtiquetasPanel({currentUser}){
           <span>
             <DIcon name="printer" size={16} style={{verticalAlign:-3,marginRight:6}}/>
             Ao clicar em "Imprimir Etiqueta", abre a janela de impressão normal do navegador —
-            escolha a impressora TSC e confirme o tamanho da folha (101×31mm) se for pedido.
+            escolha a impressora TSC e confirme o tamanho da folha (201×31mm) se for pedido.
           </span>
           <button type="button" className="btn btn-outline btn-xs" onClick={()=>setMostrarCalibracao(v=>!v)}>
-            {mostrarCalibracao ? 'Ocultar calibração' : 'Calibrar etiqueta da direita'}
+            {mostrarCalibracao ? 'Ocultar calibração' : 'Calibrar etiquetas'}
           </button>
         </div>
         {mostrarCalibracao && (
           <div style={{marginTop:12,paddingTop:12,borderTop:'1px solid var(--line)'}}>
             <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginBottom:8}}>
-              Tem casos em que a bobina vem torta e a etiqueta da DIREITA sai deslocada em
-              relação à da esquerda — ajuste em milímetros pra compensar. Horizontal positivo
-              desloca pra direita, negativo pra esquerda; vertical positivo desloca pra baixo,
-              negativo pra cima. Vale só nesta impressora/aparelho — não muda em nenhum outro.
+              Tem casos em que a bobina vem torta e uma das duas etiquetas (esquerda ou
+              direita) sai deslocada em relação à outra — ajuste cada lado em milímetros pra
+              compensar. Horizontal positivo desloca pra direita, negativo pra esquerda;
+              vertical positivo desloca pra baixo, negativo pra cima. Vale só nesta
+              impressora/aparelho — não muda em nenhum outro.
             </div>
-            <div style={{display:'flex',gap:10,alignItems:'flex-end',flexWrap:'wrap'}}>
-              <div className="field" style={{marginBottom:0,width:120}}>
-                <label>Horizontal (mm)</label>
-                <input type="text" inputMode="decimal" value={ajusteXTexto} onChange={e=>handleAjusteChange('x', e.target.value, setAjusteXTexto)} placeholder="0" />
+            <div style={{display:'flex',gap:20,flexWrap:'wrap'}}>
+              <div>
+                <div style={{fontSize:'var(--text-xs)',fontWeight:700,color:'var(--ink-dim)',marginBottom:6}}>Etiqueta da esquerda</div>
+                <div style={{display:'flex',gap:10,alignItems:'flex-end',flexWrap:'wrap'}}>
+                  <div className="field" style={{marginBottom:0,width:120}}>
+                    <label>Horizontal (mm)</label>
+                    <input type="text" inputMode="decimal" value={ajusteEsqXTexto} onChange={e=>handleAjusteChange('esquerda', 'x', e.target.value, setAjusteEsqXTexto)} placeholder="0" />
+                  </div>
+                  <div className="field" style={{marginBottom:0,width:120}}>
+                    <label>Vertical (mm)</label>
+                    <input type="text" inputMode="decimal" value={ajusteEsqYTexto} onChange={e=>handleAjusteChange('esquerda', 'y', e.target.value, setAjusteEsqYTexto)} placeholder="0" />
+                  </div>
+                </div>
               </div>
-              <div className="field" style={{marginBottom:0,width:120}}>
-                <label>Vertical (mm)</label>
-                <input type="text" inputMode="decimal" value={ajusteYTexto} onChange={e=>handleAjusteChange('y', e.target.value, setAjusteYTexto)} placeholder="0" />
+              <div>
+                <div style={{fontSize:'var(--text-xs)',fontWeight:700,color:'var(--ink-dim)',marginBottom:6}}>Etiqueta da direita</div>
+                <div style={{display:'flex',gap:10,alignItems:'flex-end',flexWrap:'wrap'}}>
+                  <div className="field" style={{marginBottom:0,width:120}}>
+                    <label>Horizontal (mm)</label>
+                    <input type="text" inputMode="decimal" value={ajusteDirXTexto} onChange={e=>handleAjusteChange('direita', 'x', e.target.value, setAjusteDirXTexto)} placeholder="0" />
+                  </div>
+                  <div className="field" style={{marginBottom:0,width:120}}>
+                    <label>Vertical (mm)</label>
+                    <input type="text" inputMode="decimal" value={ajusteDirYTexto} onChange={e=>handleAjusteChange('direita', 'y', e.target.value, setAjusteDirYTexto)} placeholder="0" />
+                  </div>
+                </div>
               </div>
-              <button type="button" className="btn btn-outline btn-xs" onClick={handleRestaurarAjuste}>Restaurar (0,0)</button>
             </div>
+            <button type="button" className="btn btn-outline btn-xs" style={{marginTop:12}} onClick={handleRestaurarAjuste}>Restaurar as duas (0,0)</button>
           </div>
         )}
       </div>
