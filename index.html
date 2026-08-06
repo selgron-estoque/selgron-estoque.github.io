@@ -8396,20 +8396,29 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   // pra informar onde encontrou. O cliente pediu explicitamente pra
   // eliminar a 1ª ("Elimina a tela que puxa o endereço da planilha", ver
   // CLAUDE.md) — o cadastro local virou só um VALOR INICIAL sugerido no
-  // mesmo campo, não mais uma comparação obrigatória por QR Code antes de
-  // liberar a contagem. `needsAddressInput` continua controlando só se a
-  // PROPOSTA de endereço deve ser enviada pro líder (ver
-  // `confirmEnderecoManual`, abaixo) e as duas dicas da consulta ao vivo
-  // (`enderecoVeioDaConsulta`/`enderecoNaoEncontrado`, mais abaixo) — não
-  // decide mais qual tela aparece.
+  // mesmo campo, sujeito a ser sobrescrito pela consulta ao vivo assim que
+  // ela responder (ver `liveEnderecoValido`/o efeito de pré-preenchimento,
+  // mais abaixo — a consulta sempre vence quando tem algo válido pro
+  // código, não é mais uma comparação obrigatória por QR Code antes de
+  // liberar a contagem). `needsAddressInput` continua controlando só se a
+  // PROPOSTA de endereço deve ser enviada pro líder quando o item nunca
+  // teve cadastro nenhum (ver `confirmEnderecoManual`, abaixo) — não
+  // decide mais qual tela aparece, nem as dicas da consulta ao vivo (essas
+  // agora valem pra qualquer item, com ou sem cadastro).
   const needsAddressInput = expectAddressCheck && !product.enderecoCadastrado;
   const [step, setStep] = useState(expectAddressCheck ? 'enderecoManual' : 'count');
   // Já nasce preenchido com o endereço CADASTRADO, quando existe — poupa o
-  // operador de redigitar/reescanear um local que o app já conhece; ele só
-  // precisa confirmar (ou corrigir, se o item estiver de fato em outro
-  // lugar — nesse caso `confirmEnderecoManual` propõe a correção pro líder,
-  // mesma revisão que "Contar mesmo assim" já fazia antes de ser removido).
+  // operador de redigitar/reescanear um local que o app já conhece, e dá
+  // algo pra mostrar enquanto a consulta ao vivo (assíncrona) ainda não
+  // respondeu. Assim que ela responder, o efeito mais abaixo pode
+  // SOBRESCREVER esse valor inicial com o da consulta — o cadastro é só o
+  // ponto de partida, nunca a palavra final.
   const [enderecoInformado, setEnderecoInformado] = useState(() => (expectAddressCheck && product.enderecoCadastrado && product.endereco) ? product.endereco : '');
+  // Rastreia se o OPERADOR já editou o campo (digitando ou escaneando) —
+  // usado pelo efeito de pré-preenchimento da consulta ao vivo (mais
+  // abaixo) pra nunca sobrescrever um valor que ele já corrigiu/confirmou
+  // manualmente, mesmo que a consulta responda (ou responda de novo) depois.
+  const [enderecoEditadoManualmente, setEnderecoEditadoManualmente] = useState(false);
   const [qty, setQty] = useState('');
 
   // "Pular contagem" — pedido do cliente: item não encontrado fisicamente
@@ -8562,6 +8571,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
 
   function handleEnderecoManualScanDetected(text){
     setScanning(false);
+    setEnderecoEditadoManualmente(true);
     setEnderecoInformado(formatEnderecoInput(text));
   }
 
@@ -8614,6 +8624,15 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   // responder/credencial estiver errada/formato mudar, cai silenciosamente
   // (console.warn) pro saldo já resolvido via Supabase (`product.
   // saldoSistema`) — nunca trava a contagem esperando.
+  //
+  // ATUALIZAÇÃO — endereço da consulta ao vivo SEMPRE tem prioridade sobre
+  // o cadastro local, não só quando o campo está vazio: "Não, o
+  // comportamento correto é puxar de consulta, porque se houve uma
+  // atualização neste meio tempo ele não vai mostrar" (pedido explícito do
+  // cliente, revendo a versão anterior — que só pré-preenchia item SEM
+  // cadastro, deixando item JÁ cadastrado sempre preso ao valor local,
+  // mesmo que a consulta já soubesse de algo mais recente). Ver o efeito
+  // logo abaixo de `descricaoEfetiva`.
   const [liveConsulta, setLiveConsulta] = useState(null);
   useEffect(()=>{
     let cancelado = false;
@@ -8641,31 +8660,66 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   const unidadeEfetiva = unidadeLiveValida || product.unidade;
   const descricaoEfetiva = (liveConsulta && liveConsulta.descricao) ? liveConsulta.descricao : product.descricao;
 
-  // Pré-preenche o campo de endereço manual com o valor vindo da consulta
-  // ao vivo, só quando o item não tem cadastro local (`needsAddressInput`) e
-  // o operador ainda não digitou nada (`prev===''` — nunca sobrescreve o
-  // que ele já escreveu/escaneou). O operador continua tendo que CONFIRMAR
-  // (botão "Confirmar e continuar" nunca dispara sozinho) e a proposta
-  // segue passando pela MESMA validação do líder de sempre
-  // (`addAddressProposal`, em `confirmEnderecoManual` abaixo) — só o valor
-  // INICIAL do campo que muda, poupando trabalho de digitar/escanear do
-  // zero um endereço que a Selgron já sabe.
+  // Endereço vindo da consulta ao vivo, já validado (formato correto) —
+  // usado tanto pra decidir o pré-preenchimento quanto pras dicas visuais
+  // logo abaixo. `null` tanto quando a consulta ainda não respondeu quanto
+  // quando respondeu sem nenhum endereço válido pro código.
+  let liveEnderecoValido = null;
+  if(liveConsulta && liveConsulta.endereco){
+    const formatadoLive = formatEnderecoInput(liveConsulta.endereco);
+    if(ENDERECO_REGEX.test(formatadoLive)) liveEnderecoValido = formatadoLive;
+  }
+  // A consulta ao vivo (Selgron/Protheus) SEMPRE tem prioridade sobre o
+  // cadastro local quando responde com um endereço válido — pedido
+  // explícito do cliente, revendo a versão anterior (que só pré-preenchia
+  // item SEM cadastro, e só quando o campo estava vazio): "o comportamento
+  // correto é puxar de consulta, porque se houve uma atualização neste
+  // meio tempo ele não vai mostrar". Agora QUALQUER item (com ou sem
+  // cadastro) recebe o valor da consulta assim que ela responde — o
+  // cadastro local vira só o FALLBACK enquanto ela ainda não respondeu, ou
+  // quando responde sem nenhum endereço válido pro código. Nunca
+  // sobrescreve o que o operador já editou manualmente
+  // (`enderecoEditadoManualmente`, setado no onChange do campo e no scan
+  // da câmera). O operador continua tendo que CONFIRMAR (botão "Confirmar
+  // e continuar" nunca dispara sozinho) e a proposta segue passando pela
+  // MESMA validação do líder de sempre (`addAddressProposal`, em
+  // `confirmEnderecoManual` acima) — inclusive quando o valor efetivo
+  // (vindo da consulta) diverge do cadastro local: nesse caso
+  // `divergeDoCadastro` já detecta a mudança e propõe a correção pro
+  // líder sozinho, mesmo que o operador só tenha clicado "Confirmar" sem
+  // editar nada — é assim que um cadastro desatualizado se corrige com o
+  // tempo, sem trabalho manual extra.
   useEffect(()=>{
-    if(!needsAddressInput || !liveConsulta || !liveConsulta.endereco) return;
-    const formatado = formatEnderecoInput(liveConsulta.endereco);
-    if(!ENDERECO_REGEX.test(formatado)) return;
-    setEnderecoInformado(prev => prev === '' ? formatado : prev);
-  }, [liveConsulta, needsAddressInput]);
-  // Deriva (não guarda estado à parte) se o valor atual do campo é
-  // literalmente o que veio da consulta — vira a dica visual "✓ preenchido
-  // automaticamente" e some sozinho se o operador editar pra outra coisa.
-  const enderecoVeioDaConsulta = !!(needsAddressInput && liveConsulta && liveConsulta.endereco && enderecoInformado && formatEnderecoInput(liveConsulta.endereco) === enderecoInformado);
+    if(enderecoEditadoManualmente) return;
+    if(!liveConsulta) return; // ainda não respondeu (ou falhou) -> mantém o valor atual
+    if(liveEnderecoValido){
+      setEnderecoInformado(liveEnderecoValido);
+    } else if(product.enderecoCadastrado && product.endereco){
+      setEnderecoInformado(product.endereco);
+    }
+  }, [liveConsulta, enderecoEditadoManualmente]);
+  // Dica verde: o valor no campo é literalmente o que a consulta ao vivo
+  // acabou de confirmar — vale pra QUALQUER item agora (com ou sem
+  // cadastro, diferente de antes), é essa dica que garante ao operador que
+  // o que está na tela é o dado mais atual, não um cadastro potencialmente
+  // desatualizado.
+  const enderecoVeioDaConsulta = !!(liveEnderecoValido && enderecoInformado && liveEnderecoValido === enderecoInformado);
   // `liveConsulta` só é setado quando `res.ok===true` (ver useEffect acima)
-  // — nunca em caso de falha/timeout, então esse flag só liga quando a
-  // consulta genuinamente RESPONDEU e não trouxe endereço nenhum pro item
-  // (não quando simplesmente não deu pra checar) — evita dizer "não
-  // encontrado" quando na real só faltou rede/credencial pra saber.
-  const enderecoNaoEncontrado = !!(needsAddressInput && liveConsulta && !liveConsulta.endereco);
+  // — nunca em caso de falha/timeout — então os dois avisos abaixo só
+  // ligam quando a consulta genuinamente RESPONDEU, nunca quando
+  // simplesmente não deu pra checar (rede/credencial).
+  // Vermelho: consulta respondeu sem endereço válido E o item também não
+  // tem cadastro local pra cair de volta — o campo fica vazio de verdade,
+  // sem nenhum valor pra mostrar.
+  const enderecoNaoEncontrado = !!(liveConsulta && !liveEnderecoValido && !product.enderecoCadastrado);
+  // Neutro: consulta respondeu sem confirmar nada pro código, mas o item
+  // TEM cadastro local — o campo mostra o cadastro como fallback, só que
+  // sem a garantia de que está atualizado. É exatamente o cenário que o
+  // cliente não queria mais deixar escondido: "se houve uma atualização...
+  // ele não vai mostrar" — agora, quando a consulta não confirma nada, o
+  // operador é avisado de que está vendo só o cadastro, não um dado
+  // checado ao vivo.
+  const enderecoSoCadastro = !!(liveConsulta && !liveEnderecoValido && product.enderecoCadastrado);
 
   const hasSaldoLocal = typeof saldoSistemaEfetivo === 'number';
   // Controla só o que aparece NA TELA (referência antes de digitar, card de
@@ -8865,13 +8919,16 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
       {step==='enderecoManual' && (
         <div>
           <div className="field">
-            <input type="text" value={enderecoInformado} onChange={e=>setEnderecoInformado(formatEnderecoInput(e.target.value))} placeholder="Ex: 035-A-1" maxLength={7} />
+            <input type="text" value={enderecoInformado} onChange={e=>{ setEnderecoEditadoManualmente(true); setEnderecoInformado(formatEnderecoInput(e.target.value)); }} placeholder="Ex: 035-A-1" maxLength={7} />
           </div>
           {enderecoVeioDaConsulta && (
-            <div style={{fontSize:'var(--text-xs)',color:'var(--ok)',marginTop:-10,marginBottom:12}}>✓ Endereço encontrado.</div>
+            <div style={{fontSize:'var(--text-xs)',color:'var(--ok)',marginTop:-10,marginBottom:12}}>✓ Endereço confirmado pela consulta ao vivo.</div>
           )}
           {enderecoNaoEncontrado && (
             <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginTop:-10,marginBottom:12}}>✗ Endereço não encontrado.</div>
+          )}
+          {enderecoSoCadastro && (
+            <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:-10,marginBottom:12}}>ℹ Consulta ao vivo não confirmou este endereço — mostrando o cadastro local, que pode estar desatualizado.</div>
           )}
           {scanning ? (
             <CameraScanner onDetected={handleEnderecoManualScanDetected} onCancel={()=>setScanning(false)} />

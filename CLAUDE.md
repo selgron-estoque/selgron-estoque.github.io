@@ -16499,3 +16499,135 @@ Code (cuja referência vem do cadastro importado da planilha), unificando TODO i
   672 — as 6 regras CSS órfãs removidas). **Verificação visual/funcional de ponta a ponta
   fica a cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth real,
   não simulável no sandbox sem rede).
+
+## Falhas dos 3 harnesses "pré-existentes" corrigidas — eram testes desatualizados, não bugs do app
+
+Cliente perguntou "Quais 3 falhas?" (as 3 já reportadas como pré-existentes/sem relação numa
+rodada anterior, junto da eliminação da tela de QR Code) e depois pediu explicitamente "Pode
+corrigir essas falhas?". Investigado cada uma via `git log -S "<texto>" -- index.html` + `git show`
+ANTES de mexer em qualquer teste (mesmo cuidado de sempre — nunca "consertar" um teste sem antes
+confirmar que o app é que está certo, não o teste) — as 3 eram, sem exceção, ASSERÇÕES
+DESATUALIZADAS de rodadas anteriores que já tinham mudado o comportamento do app de propósito,
+nunca um bug real:
+
+- **`harness_actions_beside_content.js`** — o botão "Enviar para SA" (Itens Divergentes) tinha
+  virado "Ajustar" (a SA de Ajuste virou uma etapa própria antes da Diretoria, "Aguardando
+  Armazém", numa rodada anterior — ver histórico deste arquivo); o placeholder do campo de SA
+  mudou (`Ex: SA-2026-00123` continua, mas com texto ao redor diferente); os botões "Reprovar"/
+  "Aprovar" (Aguardando Aprovação) viraram "Reprovado"/"Aprovado" (particípio, pedido do cliente,
+  ver `43a4031`). 3 asserções corrigidas pra bater com o texto atual.
+- **`harness_dashboard_render_dedup.js`** — o card "Itens Divergentes" trocou de rótulo/critério
+  ("N códigos avaliados" → "N itens · N códigos · N divergentes (cód.)", dedup por DOCUMENTO em
+  vez de por código, ver `58078ee` "Corrige critério de acuracidade: dedup por DOCUMENTO, não por
+  código" — dois documentos independentes do mesmo código agora contam separado, por decisão
+  explícita do cliente já registrada em rodada anterior). 2 asserções reescritas com o formato/
+  valores certos.
+- **`harness_ultima_contagem_por_codigo.js`** — testava `ultimaContagemPorCodigo`, função que não
+  existe mais (substituída por `ultimaContagemPorDocumento`, com semântica DIFERENTE, na mesma
+  rodada acima). Como `harness_ultima_contagem_por_documento.js` (pré-existente, nunca tocado) já
+  cobre a função atual por completo, **este arquivo foi removido** — mesmo padrão já usado antes
+  pra `harness_digitar_endereco_scan.js`: reescrever seria puro duplicado sem cobertura nova, só
+  ficaria testando de novo o que outro harness já testa.
+
+Nenhuma mudança em `index.html` — só os 3 arquivos de teste no scratchpad. Suíte completa (52
+arquivos após esta rodada, incluindo o novo desta sessão) confirmada em 0 falhas.
+
+## Endereço da consulta ao vivo passa a ter prioridade sobre o cadastro local — sempre, não só quando o campo está vazio
+
+Depois de ver um print da tela única de endereço com um valor pré-preenchido (`042-E-4`, item já
+cadastrado) e nenhuma dica de confirmação, o cliente perguntou o motivo. Expliquei que o
+comportamento então vigente (herdado da unificação das duas telas, ver seção acima) era: item COM
+cadastro sempre nascia com o valor do CADASTRO, e a consulta ao vivo só entrava pra pré-preencher
+quando o item **não tinha** cadastro nenhum — item cadastrado nunca via a consulta sobrescrever
+nada. O cliente rejeitou essa explicação como o comportamento CORRETO, de forma direta:
+
+> "Não, o comportamento correto é puxar de consulta, porque se houve uma atualização neste meio
+> tempo ele não vai mostrar"
+
+Ou seja: se o endereço no Protheus mudou depois do último sync do cadastro local (`estoque_
+enderecos`, que só é atualizado por reimportação manual da planilha "Descrição de Produtos" ou
+pela aprovação de uma proposta de endereço — nenhum dos dois acontece em tempo real), a versão
+antiga do app nunca revelaria essa mudança pro operador — ele continuaria vendo e confirmando um
+endereço desatualizado, mesmo com a consulta ao vivo já sabendo do valor certo.
+
+### O que mudou
+
+- **A consulta ao vivo (Selgron/Protheus) agora SEMPRE vence sobre o cadastro local quando
+  responde com um endereço válido** — pra QUALQUER item, com ou sem cadastro (antes só valia pra
+  item sem cadastro nenhum). O cadastro local virou só o valor INICIAL/fallback — mostrado
+  enquanto a consulta (assíncrona) ainda não respondeu, ou quando ela responde sem nenhum endereço
+  válido pro código — nunca mais a palavra final.
+- **`enderecoEditadoManualmente`** (`useState(false)`, novo) — a única coisa que ainda pode
+  "vencer" da consulta ao vivo é o próprio operador: setado pra `true` no `onChange` do campo de
+  texto e em `handleEnderecoManualScanDetected` (leitura por câmera) — o efeito de pré-
+  preenchimento (abaixo) checa esse flag primeiro e nunca sobrescreve nada depois que o operador
+  mexeu no campo, mesmo que a consulta responda (ou responda de novo) depois.
+- **`liveEnderecoValido`** (computado a cada render, não é hook) — formata e valida
+  (`formatEnderecoInput`+`ENDERECO_REGEX`) o endereço vindo da consulta, uma vez só, reaproveitado
+  tanto pelo efeito de pré-preenchimento quanto pelas 3 dicas visuais abaixo — evita duplicar a
+  mesma lógica de formatação/validação em 3 lugares diferentes.
+- **O `useEffect` de pré-preenchimento foi reescrito por completo**: antes, só rodava quando
+  `needsAddressInput` (sem cadastro) e só preenchia se `prev===''` (campo vazio). Agora roda pra
+  qualquer item, ignora só quando `enderecoEditadoManualmente` é `true`, e:
+  - Consulta trouxe endereço válido (`liveEnderecoValido`) → **sobrescreve** o campo com ele,
+    incondicionalmente (não checa mais se já tinha algo — é isso que resolve o pedido: um cadastro
+    desatualizado deixa de "esconder" a atualização da consulta).
+  - Consulta respondeu mas sem endereço válido pro código, e o item TEM cadastro → cai pro valor
+    do cadastro (fallback honesto, mesmo raciocínio de sempre).
+  - Consulta ainda não respondeu (ou falhou — `liveConsulta` nunca é setado nesse caso, ver
+    `fetchSaldoConsultaSelgron`) → não faz nada, mantém o valor atual (cadastro inicial ou vazio).
+- **3 dicas visuais, mutuamente exclusivas, todas honestas sobre o que foi (ou não) checado ao
+  vivo**:
+  - 🟢 **"✓ Endereço confirmado pela consulta ao vivo."** — o valor no campo é literalmente o que a
+    consulta acabou de trazer. Vale pra QUALQUER item agora (antes só aparecia pra item sem
+    cadastro) — é essa dica que garante ao operador que o que ele vê é dado atual, não um cadastro
+    potencialmente velho. Texto trocado de "✓ Endereço encontrado." pra deixar explícito que foi a
+    CONSULTA quem confirmou (o texto antigo já não fazia sentido pra um item que sempre teve
+    cadastro — "encontrado" soaria estranho quando na real já existia).
+  - 🔴 **"✗ Endereço não encontrado."** (texto de sempre, sem mudança) — consulta respondeu sem
+    endereço válido E o item também não tem cadastro nenhum pra cair de volta — o campo fica vazio
+    de verdade.
+  - ⚪ **"ℹ Consulta ao vivo não confirmou este endereço — mostrando o cadastro local, que pode
+    estar desatualizado."** (mensagem NOVA) — consulta respondeu sem confirmar nada, mas o item
+    TEM cadastro — o campo mostra o cadastro como fallback, com o aviso explícito de que não foi
+    checado ao vivo. É exatamente o cenário que o cliente não queria mais deixar escondido — antes,
+    esse caso não mostrava dica nenhuma (nem positiva nem negativa), dando a falsa impressão de que
+    o valor exibido era garantidamente atual.
+- **Efeito colateral bom, não pedido explicitamente mas natural da mudança**: `confirmEnderecoManual`
+  já calculava `divergeDoCadastro` comparando o valor CONFIRMADO contra `product.endereco`
+  (cadastro) pra decidir se propõe correção pro líder — como o valor confirmado agora pode vir da
+  consulta ao vivo (não mais preso ao cadastro), um operador que só clica "Confirmar e continuar"
+  SEM editar nada, num item cujo cadastro está desatualizado, já dispara sozinho a proposta de
+  correção pro líder — é assim que o cadastro local se atualiza com o tempo, sem trabalho manual
+  extra além do fluxo normal de contagem. Testado explicitamente (Cenário 5 do harness novo).
+- **`needsAddressInput` não decide mais nenhuma das 3 dicas** — continua existindo só pra decidir
+  se a PROPOSTA de endereço deve ser enviada mesmo sem `divergeDoCadastro` (item que nunca teve
+  cadastro nenhum, onde qualquer confirmação já é a 1ª captura) — comentário no topo do componente
+  atualizado pra refletir isso.
+
+### Verificação
+
+Testado via harness novo (`harness_consulta_selgron_endereco_prioridade.js`, jsdom +
+react-dom/client + `act()`, mesma técnica rigorosa de sempre — carrega o `index.html` inteiro
+transpilado numa `vm.Script`, com `supabaseClient.functions.invoke` mockado por cenário): item
+COM cadastro + consulta responde com endereço DIFERENTE → campo é sobrescrito, mostra a dica
+verde nova (não a neutra nem a vermelha); item COM cadastro + consulta sem endereço nenhum → cai
+pro cadastro, mostra a dica NEUTRA nova (não a verde nem a vermelha); operador edita o campo
+ANTES da consulta responder → quando ela resolve com valor diferente, o campo NÃO é sobrescrito
+(proteção contra perder edição manual); item SEM cadastro + consulta sem endereço → continua
+mostrando "✗ Endereço não encontrado." (comportamento de sempre, não a dica neutra — essa é só
+pra item com cadastro); confirmar sem editar nada, com a consulta tendo trazido um endereço
+diferente do cadastro, já propõe a correção pro líder sozinho (`divergeDoCadastro` calculado em
+cima do valor efetivo). 18 asserções, todas passando.
+
+`harness_consulta_selgron_endereco_prefill.js` (pré-existente) teve o Cenário 3 reescrito — antes
+testava explicitamente que um item com cadastro NÃO era sobrescrito pela consulta (o
+comportamento antigo, agora superado) — reescrito pra confirmar o oposto: o campo É sobrescrito
+com o valor da consulta, e a dica verde aparece. `harness_endereco_manual_redesign.js` (pré-
+existente) teve 1 asserção de texto atualizada (`"✓ Endereço encontrado."` → `"✓ Endereço
+confirmado pela consulta ao vivo."`, mudança de texto intencional desta rodada, não regressão).
+Rodei de novo toda a suíte de regressão do scratchpad (52 arquivos) — **0 falhas**. Transpile
+Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos (666/666, sem mudança —
+nenhuma classe CSS nova, só JS/JSX dentro de `CountStep`). **Verificação visual/funcional de
+ponta a ponta fica a cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth
+real, não simulável no sandbox sem rede).
