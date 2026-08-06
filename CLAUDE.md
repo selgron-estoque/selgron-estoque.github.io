@@ -15978,3 +15978,210 @@ vendidos em KG/M/L/CX/etc. — errado pra qualquer item que não seja "peça".
   (a etiqueta impressa mostrando a unidade certa) fica a cargo do
   cliente** — mesma limitação de sempre nesta feature (sandbox sem
   impressora física).
+
+## Saldo "ao vivo" direto do Protheus, via consulta interna da Selgron
+
+Depois de perguntas exploratórias sobre integração direta com o Protheus
+("Quero puxar a quantidade/saldo direto do protheus pra eu não precisar
+ficar atualizando a todo momento" — respondi com o checklist de API REST/
+OData, SOAP, ou acesso direto ao banco pra levar ao time de TI; depois "E se
+eu não conseguir acesso ao banco de dados, conseguimos outra solução??" —
+propus pasta compartilhada com export agendado, e-mail automático, RPA, ou
+melhorar o processo manual), o cliente compartilhou uma URL real, já em uso
+interno na Selgron: **"Conseguimos puxar o saldo e endereço direto
+daqui??\n\nhttps://consulta.selgron.com.br/produto.consulta.php"**.
+
+### Investigação, com o cliente mandando prints do DevTools
+
+Sem conseguir acessar a página via `WebFetch` (403 Forbidden — a página
+exige autenticação), pedi ao cliente pra abrir o DevTools (aba Network) e
+mandar prints — ele foi enviando progressivamente: (1) a requisição é
+**POST**, `Content-Type: text/html`, status 200; (2) o payload é
+`Form Data: busca=<código>` (form-urlencoded simples, um único campo); (3)
+um resultado real completo pro código `000.24727` ("TINTA PU PRETO FOSCO")
+— **Endereço `006-F-2`** (já bate exatamente com `ENDERECO_REGEX`, o
+formato `NNN-L-N` que o app já usa em todo lugar, sem precisar de nenhuma
+conversão), **Armazem `01`** (mesma convenção de código de armazém já usada
+em `estoque_saldo`/Dashboard), Grupo, Unidade medida, Situação,
+**Quantidade em estoque `3.0`**; (4) um print da própria tela de login —
+que revelou ser o **diálogo nativo de HTTP Basic Auth do navegador**
+("Fazer login", `https://consulta.selgron.com.br`, campo "Nome de usuário"),
+não um formulário HTML customizado — simplifica bastante a integração (não
+precisa de cookie de sessão, CSRF token, nem endpoint de login separado, só
+um header `Authorization: Basic base64(user:pass)` em cada requisição).
+
+**Autorização explícita de usar a senha pessoal**: como não existe conta de
+serviço separada pra essa ferramenta (é uma consulta interna pensada pra 1
+funcionário buscar 1 produto de cada vez), levantei a ressalva de segurança
+de usar credencial PESSOAL — o cliente respondeu **"Pode usar minha senha,
+não vai ter problema."**, autorizando explicitamente. Reforcei o
+compromisso de nunca pedir a senha pelo chat — ela é configurada pelo
+próprio cliente, no terminal dele, via `npx supabase secrets set` (ver
+`backend/README.md`, seção 12), nunca aparece em nenhum código, commit, ou
+mensagem desta conversa.
+
+### Decisão de arquitetura: "ao vivo, sem cache" — não sincronização em lote como a SB2
+
+Antes de implementar, levantei via `AskUserQuestion` três caminhos: (A)
+sob-demanda + cache local (recomendado inicialmente); (B) sincronização em
+lote, como a planilha SB2 de saldo (upload diário/manual); (C) "quero
+entender melhor antes de decidir". Cliente escolheu (C).
+
+Expliquei os dois primeiros caminhos em termos operacionais (recomendando
+A) — e o cliente fez a pergunta que revisou minha própria recomendação:
+**"mas e se teve uma baixa de um item, como vou saber se o saldo vai estar
+atualizado?"** — um cache de algumas horas (a ideia original da opção A)
+tem exatamente o risco de desatualização que ele estava tentando evitar.
+Reconsiderei: como a velocidade de contagem física já é um limitador
+natural de taxa (um operador não consegue abrir centenas de itens por
+segundo), a solução mais honesta é buscar **ao vivo, sem cache nenhum**, no
+exato momento em que o item é aberto pra contar — elimina a desatualização
+quase por completo, sem correr o risco de sobrecarregar uma ferramenta
+interna pensada pra uso manual ocasial (diferente de um sincronismo em
+massa pros 85 mil+ códigos do catálogo, que faria sentido pra planilha SB2
+mas não pra essa consulta de 1-produto-por-vez). Cliente aprovou
+explicitamente: **"Pode seguir"**.
+
+### `supabase/functions/consultar-produto-selgron/index.ts` — proxy autenticado, sem persistência
+
+Edge Function nova, **primeira deste projeto que não grava nada no
+Supabase** (proxy puro — busca fora, devolve pro navegador) — por isso não
+tem `SUPABASE_SERVICE_ROLE_KEY` nem `createClient`, diferente de
+`usuarios-admin`/`sync-saldo-protheus`. Deploy padrão (sem
+`--no-verify-jwt`, mesmo padrão de `usuarios-admin`) — só quem já está
+logado no app consegue chamar.
+
+- **`CONSULTA_SELGRON_USER`/`CONSULTA_SELGRON_PASS`** (secrets, nunca em
+  código) — usados só pra montar o header `Authorization: Basic
+  base64(user:pass)`, mesma técnica HTTP Basic Auth confirmada pelo print
+  do diálogo nativo do navegador.
+- **`htmlParaTexto(html)`/`extrairCampo(texto, rotulos)`** — parser
+  deliberadamente AGNÓSTICO à estrutura exata de tag (`table`/`div`/`br`):
+  trata `<br>`/`</tr>`/`</p>`/`</div>`/`</li>` como quebra de linha, remove
+  o resto das tags, depois procura em cada linha um prefixo `"Rótulo:"` e
+  devolve o que vem depois **na mesma linha**. Escolhido porque só tínhamos
+  SCREENSHOTS renderizados do cliente pra construir o parser, não o HTML
+  cru — mais resistente a pequenas variações de marcação do lado de lá do
+  que depender de uma tag específica. **Limitação conhecida e documentada,
+  não escondida**: se a página real separar rótulo e valor em elementos que
+  fecham independentemente com uma das tags-de-quebra (ex:
+  `<div>Rótulo:</div><div>Valor</div>`), o parser retorna `null` pra esse
+  campo (rótulo e valor caem em linhas diferentes) — testado explicitamente
+  no harness, com o comentário explicando por que não foi "consertado" (
+  juntar rótulo+valor antes de quebrar linha arriscaria misturar o valor de
+  um campo com o rótulo do próximo, sem separador confiável pra saber onde
+  um termina e o outro começa).
+- **Detecção de "não encontrado"**: regex `/retornou\s+0\s+resultado/i`
+  contra o texto já limpo — mesmo padrão de mensagem confirmado num dos
+  prints do cliente ("Sua busca por X retornou 0 resultado(s)").
+- **`AbortSignal.timeout(8000)`** — nunca deixa o operador esperando
+  indefinidamente se a consulta interna ficar lenta/travada; qualquer
+  timeout cai no mesmo tratamento de erro "esperado" (ver abaixo).
+- **Sempre retorna HTTP 200 com `{ok:false, erro:...}` pra qualquer falha
+  ESPERADA** (senha errada, código não encontrado, formato da página
+  mudou) — só usa status != 200 pra erro de configuração/requisição
+  malformada de verdade (secrets não configurados, corpo JSON inválido).
+  Mesma lição já aprendida antes neste projeto (`usuarios-admin`): um
+  status não-2xx faz o `supabase-js` do front-end jogar fora o corpo real
+  da resposta, sobrando só uma mensagem genérica — reservar 200 pros casos
+  "esperados" preserva a mensagem de erro específica até a tela.
+- **Conversão de saldo BR→número**: `Number(String(saldoTexto).replace(',',
+  '.'))` — mesmo padrão decimal-com-vírgula já tratado em outros parsers
+  deste app (ex. a SB2).
+
+### `index.html` — `fetchSaldoConsultaSelgron` + `CountStep` usa o saldo ao vivo quando disponível
+
+- **`fetchSaldoConsultaSelgron(codigo)`** (perto de `chamarUsuariosAdmin`)
+  — chama `supabaseClient.functions.invoke('consultar-produto-selgron',
+  {body:{codigo}})`, lendo `error.context.json()` no caso de falha (mesmo
+  padrão de recuperação de erro real já usado em `chamarUsuariosAdmin`).
+- **`CountStep`** ganhou um `useState`/`useEffect` novo (`liveConsulta`),
+  posicionado logo depois dos hooks de reserva de item (mesmo cuidado de
+  ordem de hooks de sempre — nunca antes de um `return` condicional) —
+  dispara `fetchSaldoConsultaSelgron(product.codigo)` a cada item novo
+  (`key={product.codigo}` na dependência do efeito, mesmo padrão do
+  mecanismo de reserva). Falha silenciosa (`console.warn`), nunca trava a
+  tela nem exige nada do operador — "fire and forget" com fallback,
+  mesmo espírito de `saveContagemToSupabase`.
+- **`saldoSistemaEfetivo`** — `liveConsulta?.saldo ?? product.saldoSistema`
+  — vira a ÚNICA fonte de saldo usada daqui pra frente dentro de
+  `CountStep`: `hasSaldoLocal`, `diffAbs`, `diffPct`, o valor gravado em
+  `finalize()` (`saldoSistema: hasSaldoLocal ? saldoSistemaEfetivo :
+  null`), o texto "Sistema" no card de referência e no card de comparação
+  ao vivo — tudo passa a refletir o valor AO VIVO quando a consulta
+  respondeu com sucesso, caindo pro saldo já resolvido via Supabase
+  (`product.saldoSistema`, o de sempre) quando a consulta falhou ou ainda
+  não respondeu. `classifyDivergence`/`classifyDivergenceSemCusto`/
+  `computeStatus` (a regra de negócio de aprovação/análise do líder) não
+  mudaram nada — continuam recebendo `diffAbs` calculado a partir do valor
+  já resolvido, só a FONTE desse valor que passou a poder ser mais recente.
+- **Rótulo "(ao vivo)"**: `.cs-sistema-k` mostra "Sistema (ao vivo)" em vez
+  de só "Sistema" quando `liveConsulta.saldo!=null` — única pista visual de
+  que o número veio da consulta em tempo real, não do cache.
+- **Mini-card extra "Endereço (consulta Selgron)"**: dentro do
+  `.cs-mini-grid` já existente, mostrado só quando `liveConsulta.endereco`
+  existe — texto puro (endereço + "· Armazém X"), sem nenhuma interação.
+- **Escopo desta 1ª versão, deliberado**: só o SALDO é sobrescrito de
+  verdade. O endereço/armazém vindos da consulta aparecem só como
+  referência informativa — **não tocam** em `product.endereco`/
+  `enderecoCadastrado`, nem no fluxo de confirmação por QR Code
+  (`expectAddressCheck`/`handleAddressScanDetected`), que continua 100%
+  baseado no cadastro local (`estoque_enderecos`, com todo o processo de
+  proposta do operador + validação do líder já em produção). Juntar os
+  dois fluxos de endereço seria uma mudança bem maior — fica como possível
+  próximo passo, não decidido ainda com o cliente.
+
+### Verificação
+
+Testado via 2 scripts Node isolados (mesma técnica de sempre — sandbox sem
+acesso de rede real ao Selgron):
+- **`harness_consulta_selgron_parser.js`** (17/17) — as duas funções de
+  parsing testadas contra HTML SINTÉTICO reproduzindo o padrão visual visto
+  nos prints reais do cliente, em 3 estruturas de marcação plausíveis
+  (`<p>...<br>`, `<table><tr><td>`, e o caso de limitação conhecida com
+  `<div>`s separados) + detecção de "0 resultado(s)" + conversão de saldo
+  BR→número. Também confirma, por checagem direta no código-fonte da Edge
+  Function, que ela genuinamente não grava nada no Supabase (sem
+  `Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")`, sem chamada a
+  `createClient(...)`) e que tem timeout de 8s.
+- **`harness_consulta_selgron_countstep.js`** (13/13, jsdom +
+  react-dom/client + `act()`, mesma técnica rigorosa de sempre — carrega o
+  `index.html` inteiro transpilado numa `vm.Script`, com
+  `supabaseClient.functions.invoke` mockado) — 3 cenários: (1) sucesso —
+  a Edge Function é chamada com o código certo; o rótulo "(ao vivo)"
+  aparece; o mini-card de endereço aparece com o endereço/armazém certos;
+  digitando a quantidade que bate com o saldo AO VIVO (não o valor antigo
+  de `product.saldoSistema`) mostra "Contagem confere"; e confirmando a
+  contagem, o objeto salvo (`onComplete`) grava `saldoSistema` igual ao
+  valor AO VIVO, não o antigo — prova de que a substituição vale até no
+  dado persistido, não só na exibição; (2) falha esperada (`ok:false`,
+  credencial inválida) — sem rótulo "(ao vivo)", sem mini-card extra,
+  continua mostrando o saldo local normalmente, sem quebrar; (3) exceção de
+  verdade (`invoke` rejeitando, simulando timeout de rede) — mesma
+  tolerância, componente não quebra, mostra o saldo local.
+- Rodei de novo toda a suíte de regressão disponível no scratchpad (48
+  harnesses) — só as mesmas 3 falhas já confirmadas pré-existentes em
+  rodadas anteriores, sem relação com esta mudança, continuam
+  (`harness_actions_beside_content.js`/`harness_dashboard_render_dedup.js`/
+  `harness_ultima_contagem_por_codigo.js`) — nenhuma regressão nova
+  introduzida, apesar de `CountStep` ser um dos componentes mais centrais/
+  reutilizados do app (compartilhado pelos 5 fluxos de contagem).
+- Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  conferidos (sem mudança de CSS nesta rodada — só JS/JSX dentro de
+  `CountStep`, nenhuma classe nova). Type-check da Edge Function via `tsc`
+  com um shim mínimo dos globais do Deno (mesma técnica já usada nas outras
+  Edge Functions deste projeto, já que o sandbox não tem Deno instalado) —
+  sem erro.
+
+**Falta o cliente**: rodar os 2 comandos `npx supabase secrets set` (com as
+próprias credenciais, nunca compartilhadas comigo) e
+`npx supabase functions deploy consultar-produto-selgron` — passo a passo
+completo em `backend/README.md`, seção 12. **A verificação contra o site
+real da Selgron fica 100% a cargo do cliente** — mesma limitação de sempre
+(sandbox sem acesso de rede ao domínio interno da Selgron) — mas
+diferente da maioria das features deste projeto, aqui o parser HTML foi
+construído só a partir de screenshots (nunca vi o HTML cru da página real),
+então há uma chance real de precisar de um ajuste fino no primeiro teste ao
+vivo — se algum campo não for reconhecido, a orientação já está no
+`backend/README.md` (seção 12.4): mandar o HTML de verdade (Ctrl+U → copiar
+tudo) que o ajuste é rápido.

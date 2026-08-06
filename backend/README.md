@@ -278,3 +278,76 @@ admin num deles. Mude qualquer uma das 3 configurações e confirme que o
 outro aparelho (mesmo logado como operador) reflete a mudança em poucos
 segundos, sem recarregar a página — é exatamente esse o comportamento que
 motivou a migração.
+
+## 12. Saldo "ao vivo" na contagem (proxy pra consulta.selgron.com.br)
+
+Nova Edge Function, `consultar-produto-selgron` — busca saldo/endereço/
+armazém/unidade **ao vivo**, direto da consulta interna da Selgron
+(`https://consulta.selgron.com.br/produto.consulta.php`, por trás dela está
+o Protheus), no exato momento em que o operador abre um item pra contar
+(`CountStep`). Diferente do saldo cacheado no Supabase (`estoque_saldo`,
+atualizado só quando alguém sobe a planilha SB2 manualmente), esse número
+nunca fica desatualizado por uma baixa/movimentação recente. Se a consulta
+falhar por qualquer motivo (rede, credencial expirada, formato da página
+mudou), a tela cai de volta pro saldo já em cache **sem quebrar nem travar
+a contagem** — é só um reforço opcional, nunca uma dependência obrigatória.
+
+**Diferente de tudo que já existe neste projeto**: essa function não grava
+nada no Supabase (é um proxy puro — busca fora, devolve pro navegador) e
+usa **login/senha reais de um funcionário da Selgron** (não uma conta de
+serviço separada — não havia essa opção disponível no momento), guardados
+só como secret do Supabase, nunca em código nem commitados.
+
+**12.1 — Guardar as credenciais como secret** (terminal, na pasta onde o
+repositório está clonado — mesmo terminal já usado nas seções 9.6/anteriores):
+
+```bash
+npx supabase secrets set CONSULTA_SELGRON_USER=<seu_usuario_de_login>
+npx supabase secrets set CONSULTA_SELGRON_PASS=<sua_senha>
+```
+
+**Rode você mesmo, no seu terminal — nunca me envie a senha pelo chat.**
+São os mesmos usuário/senha que já abrem
+`https://consulta.selgron.com.br/produto.consulta.php` no navegador (aquela
+janela nativa de login do próprio navegador, não um formulário da página).
+
+**12.2 — Deploy da function** (mesmo terminal):
+
+```bash
+npx supabase functions deploy consultar-produto-selgron
+```
+
+Deploy padrão, com verificação de sessão ligada (mesmo padrão de
+`usuarios-admin`) — só quem já está logado no Gestão de Estoques consegue
+chamar essa function.
+
+**12.3 — Testar**: abra qualquer fluxo de contagem (Nova Contagem Manual é
+o mais rápido pra testar), busque um código que você sabe que existe na
+consulta Selgron, e confira que o campo "Sistema" na tela ganha o texto
+"(ao vivo)" ao lado — e que aparece um card extra "Endereço (consulta
+Selgron)" quando esse item tem endereço cadastrado lá. Se a etiqueta "(ao
+vivo)" nunca aparecer (mesmo pra um código que você confirmou existir na
+consulta), veja o **12.4** abaixo.
+
+**12.4 — Se o parser não estiver reconhecendo os campos**: o parser HTML
+desta function (`htmlParaTexto`/`extrairCampo`, dentro de
+`supabase/functions/consultar-produto-selgron/index.ts`) foi construído só
+a partir de **screenshots** da página (não do HTML cru) — é resistente a
+pequenas variações de marcação (não depende de uma tag específica), mas
+pode precisar de um ajuste fino contra a página real. Se acontecer, no
+navegador: abra a consulta, faça uma busca, botão direito → "Ver código-
+fonte da página" (ou `Ctrl+U`) → copie o HTML inteiro e me envie — ajusto o
+parser em minutos com o HTML de verdade em mãos, em vez de screenshot.
+
+### Escopo desta 1ª versão — só saldo é sobrescrito, endereço é só referência
+
+O saldo "Sistema" mostrado na tela E gravado na contagem passa a usar o
+valor ao vivo quando a consulta funciona. O **endereço/armazém** vindos da
+consulta aparecem como um card informativo à parte
+("Endereço (consulta Selgron)") — **não substituem nem alimentam** o fluxo
+de confirmação de endereço por QR Code, que continua 100% baseado no
+cadastro local (`estoque_enderecos`/endereços propostos pelo operador e
+validados pelo líder), sem nenhuma mudança. Juntar os dois fluxos de
+endereço é uma decisão maior (o cadastro local tem todo um processo de
+proposta/validação já rodando) — fica como próximo passo, se fizer sentido
+depois de ver como o saldo ao vivo se sai na prática.

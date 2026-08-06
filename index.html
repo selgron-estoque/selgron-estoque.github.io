@@ -2327,6 +2327,39 @@ async function chamarUsuariosAdmin(acao, payload){
   }
 }
 
+// Consulta "ao vivo" o saldo (e endereço/armazém/unidade, como referência
+// extra) direto da consulta interna da Selgron
+// (consulta.selgron.com.br/produto.consulta.php), via a Edge Function
+// `consultar-produto-selgron` que faz o proxy autenticado (HTTP Basic Auth
+// com credencial guardada só do lado do servidor, nunca aqui). Chamada só
+// no momento em que `CountStep` abre 1 item específico pra contar — nunca
+// em busca/listagem em massa, pra não sobrecarregar uma ferramenta pensada
+// pra 1 consulta manual de cada vez (ver CLAUDE.md). Tolerante a falha:
+// qualquer erro (rede, credencial, formato mudou do lado deles) devolve
+// `ok:false` sem travar a contagem — `CountStep` já sabe cair de volta pro
+// saldo do Supabase (`estoque_saldo`) nesse caso, mesmo padrão de sempre.
+async function fetchSaldoConsultaSelgron(codigo){
+  if(!supabaseClient || !codigo) return {ok:false, erro:'Não configurado.'};
+  try{
+    const { data, error } = await supabaseClient.functions.invoke('consultar-produto-selgron', {
+      body: {codigo},
+    });
+    if(error){
+      let erro = error.message;
+      if(error.context && typeof error.context.json==='function'){
+        try{
+          const corpo = await error.context.json();
+          if(corpo && corpo.erro) erro = corpo.erro;
+        }catch(_e){ /* corpo não era JSON — mantém a mensagem genérica */ }
+      }
+      return {ok:false, erro};
+    }
+    return data;
+  }catch(err){
+    return {ok:false, erro:String(err && err.message || err)};
+  }
+}
+
 // `patch` usa nomes de campo em camelCase (mesmo formato do objeto local) —
 // convertido pra snake_case aqui dentro. Único uso real que sobra hoje:
 // gravar `ultimoAcesso` (ver attemptLogin) — a coluna é a única liberada
@@ -8582,7 +8615,34 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
     setStep('count');
   }
 
-  const hasSaldoLocal = typeof product.saldoSistema === 'number';
+  // Consulta AO VIVO à consulta interna da Selgron (ver
+  // fetchSaldoConsultaSelgron/CLAUDE.md "Puxar saldo/endereço direto do
+  // Protheus") — roda 1x por item, no exato momento em que o operador abre
+  // ele pra contar (mesmo `useEffect` keyed em product.codigo já usado pela
+  // reserva de item, acima). SÓ sobrescreve o SALDO usado na comparação/
+  // classificação/gravação — é o pedido central do cliente ("não precisar
+  // ficar atualizando à toa"). Endereço/armazém vindos daqui aparecem só
+  // como referência extra na tela (mini-card mais abaixo), sem mexer no
+  // fluxo de confirmação por QR Code, que continua decidido pelo cadastro
+  // local (`product.enderecoCadastrado`) já no 1º render — mudar ISSO é
+  // decisão maior, à parte, não incluída nesta rodada. Tolerante a falha:
+  // se a consulta não responder/credencial estiver errada/formato mudar,
+  // cai silenciosamente (console.warn) pro saldo já resolvido via Supabase
+  // (`product.saldoSistema`) — nunca trava a contagem esperando.
+  const [liveConsulta, setLiveConsulta] = useState(null);
+  useEffect(()=>{
+    let cancelado = false;
+    setLiveConsulta(null);
+    fetchSaldoConsultaSelgron(product.codigo).then(res=>{
+      if(cancelado) return;
+      if(res.ok) setLiveConsulta(res);
+      else if(res.erro) console.warn('Consulta ao vivo (Selgron) falhou:', res.erro);
+    });
+    return ()=>{ cancelado = true; };
+  }, [product.codigo]);
+  const saldoSistemaEfetivo = (liveConsulta && liveConsulta.saldo!=null) ? liveConsulta.saldo : product.saldoSistema;
+
+  const hasSaldoLocal = typeof saldoSistemaEfetivo === 'number';
   // Controla só o que aparece NA TELA (referência antes de digitar, card de
   // comparação ao vivo, cor da borda do campo) — a regra de negócio real
   // (classifyDivergence/computeStatus, abaixo) continua sendo calculada do
@@ -8599,7 +8659,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   // não 0.93) que apareceria feio na tela e se propagaria pro valor
   // divergente/relatório. 3 casas cobre qualquer precisão real que a Selgron
   // usa hoje (kg/m/l, no máximo 2-3 casas) sem cortar nada legítimo.
-  const diffAbs = (qty!=='' && hasSaldoLocal) ? Math.round((Number(qty) - product.saldoSistema) * 1000) / 1000 : 0;
+  const diffAbs = (qty!=='' && hasSaldoLocal) ? Math.round((Number(qty) - saldoSistemaEfetivo) * 1000) / 1000 : 0;
   // Sistema=0 e diferença=0 (contagem bateu, 0 físico = 0 sistema) tem que
   // mostrar 0%, não 100% — bug real exposto com mais frequência depois de
   // "item sem saldo passa a ser tratado como saldo real 0" (ver CLAUDE.md),
@@ -8607,7 +8667,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   // há diferença de verdade (diffAbs!==0) com sistema=0 é que a divisão por
   // zero precisa do valor sentinela 100% (não dá pra calcular um percentual
   // real de "quanto a mais que zero").
-  const diffPct = (qty!=='' && hasSaldoLocal) ? (product.saldoSistema===0 ? (diffAbs===0 ? 0 : 100) : (diffAbs/product.saldoSistema)*100) : 0;
+  const diffPct = (qty!=='' && hasSaldoLocal) ? (saldoSistemaEfetivo===0 ? (diffAbs===0 ? 0 : 100) : (diffAbs/saldoSistemaEfetivo)*100) : 0;
   // Classificação decide só pela DIFERENÇA DE QUANTIDADE agora — pedido do
   // cliente ("toda e qualquer divergência, não importa o valor ou
   // porcentagem, pode passar direto — eu que decido a destinação"), ver
@@ -8641,7 +8701,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
       enderecoPendenteValidacao: needsAddressInput,
       usuario: user.nome,
       qtdContada: Number(qty),
-      saldoSistema: hasSaldoLocal ? product.saldoSistema : null,
+      saldoSistema: hasSaldoLocal ? saldoSistemaEfetivo : null,
       diferenca: hasSaldoLocal ? diffAbs : null,
       percentual: hasSaldoLocal ? diffPct : null,
       valorDivergente: hasSaldoLocal ? (Math.abs(diffAbs) * Number(product.custoUnit)).toFixed(2) : '0.00',
@@ -8890,8 +8950,8 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
 
           {mostrarSaldo && (
             <div className="cs-sistema-ref">
-              <div className="cs-sistema-k">Sistema</div>
-              <div className="cs-sistema-v">{fmtQtyBR(product.saldoSistema)} {product.unidade || 'un.'}</div>
+              <div className="cs-sistema-k">Sistema{liveConsulta && liveConsulta.saldo!=null ? ' (ao vivo)' : ''}</div>
+              <div className="cs-sistema-v">{fmtQtyBR(saldoSistemaEfetivo)} {product.unidade || 'un.'}</div>
             </div>
           )}
           {mostrarSaldo && <div className="cs-sistema-arrow"><DIcon name="arrowDown" size={18} /></div>}
@@ -8942,7 +9002,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
           {mostrarSaldo && qty!=='' && (
             <div className={"cs-compare "+classification.level}>
               <div className="cs-compare-grid">
-                <div className="cs-compare-cell"><div className="k">Sistema</div><div className="v">{fmtQtyBR(product.saldoSistema)}</div></div>
+                <div className="cs-compare-cell"><div className="k">Sistema</div><div className="v">{fmtQtyBR(saldoSistemaEfetivo)}</div></div>
                 <div className="cs-compare-cell"><div className="k">Informado</div><div className="v">{fmtQtyBR(qty)}</div></div>
                 <div className="cs-compare-cell"><div className="k">Diferença</div><div className="v">{(diffAbs>0?'+':'')+fmtQtyBR(diffAbs)}</div></div>
               </div>
@@ -8958,6 +9018,17 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
             <div className="cs-mini"><div className="k">Família</div><div className="v">{product.familia || '—'}</div></div>
             <div className="cs-mini"><div className="k">Almox</div><div className="v">{product.almoxarifado || '—'}</div></div>
             <div className="cs-mini"><div className="k">Endereço</div><div className="v">{product.endereco || 'não cadastrado'}</div></div>
+            {/* Referência extra, só informativa — vem da consulta ao vivo da
+                Selgron (ver fetchSaldoConsultaSelgron acima). NÃO substitui
+                nem alimenta o fluxo de confirmação por QR Code (que continua
+                decidido só pelo cadastro local, `product.endereco`/
+                `enderecoCadastrado`) — é só pra o operador/líder ver, lado a
+                lado, se o cadastro local já bate com o que a consulta mostra
+                agora. Some sozinho se a consulta ainda não respondeu ou
+                falhou (sem endereço nenhum pra mostrar). */}
+            {liveConsulta && liveConsulta.endereco && (
+              <div className="cs-mini"><div className="k">Endereço (consulta Selgron)</div><div className="v">{liveConsulta.endereco}{liveConsulta.armazem ? ' · Armazém '+liveConsulta.armazem : ''}</div></div>
+            )}
           </div>
 
           {previousCount && (
