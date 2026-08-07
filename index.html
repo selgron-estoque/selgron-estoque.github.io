@@ -13211,16 +13211,41 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
 
   // "Contados × Divergências" (pizza) — pedido do cliente: "indicador que
   // me mostra quantidade contada X divergências", "gráfico de pizza de
-  // acordo com o período selecionado". Mesmo pool/filtro dos outros
-  // gráficos desta seção (`poolTendencia`, `dataInicioStr`/`dataFimStr` já
-  // calculados acima) — os números batem com "Contagens na Semana"/
-  // "Acuracidade Semanal" pro mesmo período, em vez de usar
-  // `todasParaQualidade` (deduplicado por documento, usado só em "Resumo
-  // da Operação", que não segue o filtro de período). Item sem saldo pra
-  // comparar (`diferenca===null`) entra em "Sem divergência" — mesmo
-  // critério já usado em `divergentes` (`c.diferenca!==0 && c.diferenca
-  // !==null`) em todo o resto do app: nunca é tratado como divergente.
-  const poolTendenciaNoPeriodo = poolTendencia.filter(c=>c.data && c.data>=dataInicioStr && c.data<=dataFimStr);
+  // acordo com o período selecionado". Mesmo pool dos outros gráficos
+  // desta seção (`poolTendencia`) — os números de VOLUME batem com
+  // "Contagens na Semana"/"Acuracidade Semanal" pro mesmo período, em vez
+  // de usar o pool mais estreito de "Resumo da Operação"
+  // (`todasParaQualidade`, que não inclui item "Pendente" do histórico).
+  //
+  // Bug real reportado pelo cliente, com um item concreto pra reproduzir
+  // (000.45570): 1ª contagem 0 (sistema dizia 1, diferença -1, divergente)
+  // → recontagem encontrou o item, contou 1 (diferença 0, sem
+  // divergência) — a pizza mostrava "1 divergência + 1 sem divergência"
+  // pro MESMO documento, quando "o correto seria considerar apenas o
+  // resultado final da recontagem" (palavras do cliente): um erro
+  // corrigido na 1ª contagem não é uma divergência de estoque de verdade,
+  // é só o processo funcionando (por isso existe recontagem). Causa: só a
+  // pizza usava `poolTendencia` CRU (uma linha por RODADA, sem
+  // deduplicar) — o MESMO bug já tinha sido corrigido antes pra
+  // `todasParaQualidade` ("Pedido do cliente: 'se o item A tem duas
+  // contagens, considerar apenas a última contagem registrada'", ver
+  // comentário perto de `ultimaContagemPorDocumento` acima), só nunca
+  // tinha sido replicado aqui — a pizza é um pool DIFERENTE (mais largo,
+  // ver parágrafo acima), então herdou o bug de novo por não passar pelo
+  // mesmo dedup.
+  //
+  // Corrigido com `ultimaContagemPorDocumento(poolTendencia)` ANTES do
+  // filtro de período (não depois) — precisa ser assim pra resolver a
+  // cadeia corretamente mesmo quando a 1ª contagem e a recontagem caem em
+  // datas diferentes fora do período escolhido; linha de histórico
+  // (sem `id`/`contagemAnteriorId`) sempre passa intacta pela função,
+  // então só afeta contagem AO VIVO, onde a cadeia de fato existe. Item
+  // sem saldo pra comparar (`diferenca===null`) continua entrando em "Sem
+  // divergência" — mesmo critério já usado em `divergentes`
+  // (`c.diferenca!==0 && c.diferenca!==null`) em todo o resto do app:
+  // nunca é tratado como divergente.
+  const poolTendenciaDedup = ultimaContagemPorDocumento(poolTendencia);
+  const poolTendenciaNoPeriodo = poolTendenciaDedup.filter(c=>c.data && c.data>=dataInicioStr && c.data<=dataFimStr);
   const pizzaTotalContado = poolTendenciaNoPeriodo.length;
   const pizzaDivergentes = poolTendenciaNoPeriodo.filter(c=>c.diferenca!==0 && c.diferenca!==null).length;
   const pizzaSemDivergencia = pizzaTotalContado - pizzaDivergentes;

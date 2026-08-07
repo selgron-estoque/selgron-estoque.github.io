@@ -17567,3 +17567,73 @@ nenhuma delas mostrava o nome do usuário logado em lugar nenhum.
   tocar em nenhuma tabela). **Verificação visual de ponta a ponta fica a
   cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth
   real, não simulável no sandbox sem rede).
+
+## Bug real: "Contados × Divergências" contava a mesma cadeia de recontagem duas vezes
+
+Cliente mandou print do painel "Contados × Divergências" (Indicadores) e um
+item real pra reproduzir: **000.45570** — 1ª contagem registrou 0 (o sistema
+dizia 1, diferença -1, divergente); na recontagem, o material foi
+encontrado e a contagem corrigida pra 1 (bate com o sistema, diferença 0).
+A pizza mostrava **"1 divergência + 1 sem divergência"** pro MESMO
+documento — nas palavras do cliente: "se esse item vai para recontagem e,
+nessa segunda contagem, o material é encontrado, isso não caracteriza uma
+divergência de estoque, e sim um erro na primeira contagem... O correto
+seria considerar apenas o resultado final da recontagem."
+
+- **Causa raiz**: esse EXATO bug já tinha sido corrigido antes, só que em
+  outro lugar — `todasParaQualidade` (o pool usado por "Resumo da Operação",
+  "Itens Divergentes", "Top 5 Maiores Divergências", "Divergência por
+  Família/Grupo") já passa por `ultimaContagemPorDocumento()` desde uma
+  rodada anterior, motivada por um pedido quase idêntico do cliente ("se o
+  item A tem duas contagens, considerar apenas a última contagem
+  registrada" — ver comentário já existente perto dessa função). A pizza
+  "Contados × Divergências", criada numa rodada posterior, usa um pool
+  DIFERENTE — `poolTendencia` (mais largo, inclui item "Pendente" do
+  histórico, pra bater com "Contagens na Semana"/"Acuracidade Semanal") —
+  e essa construção nunca tinha passado pelo mesmo dedup, herdando o bug
+  de novo por não reaproveitar a correção já existente.
+- **Correção escopada só à pizza**: `poolTendenciaNoPeriodo` agora vem de
+  `ultimaContagemPorDocumento(poolTendencia)` ANTES do filtro de período
+  (não depois — precisa ser assim pra resolver a cadeia corretamente mesmo
+  quando a 1ª contagem e a recontagem caem em datas diferentes, possivelmente
+  fora do período escolhido no painel "Filtros"; o resultado final passa a
+  usar a DATA da recontagem, não a da 1ª contagem, mesmo critério já usado
+  pelos outros indicadores deduplicados). **Deliberadamente NÃO tocado**:
+  `poolTendencia` em si, usado por "Contagens na Semana"/"Acuracidade
+  Semanal"/"Acuracidade Mensal" — esses 3 gráficos respondem uma pergunta
+  DIFERENTE ("quanto TRABALHO de contagem foi feito", onde cada rodada,
+  incluindo recontagem, é um evento real que aconteceu), decisão já
+  confirmada explicitamente pelo cliente numa rodada anterior ("Acuracidade
+  Geral vira a média das barras de Acuracidade Mensal") — só a pizza
+  responde "de tudo que já foi CONTADO, quanto diverge de verdade", que é
+  uma pergunta sobre o RESULTADO FINAL de cada item, não sobre volume de
+  trabalho.
+- Linha de histórico (`historicoParaTendencia`, sem `id`/`contagemAnteriorId`
+  — planilha importada não tem esse conceito de cadeia) nunca é afetada
+  pelo dedup — `ultimaContagemPorDocumento` só filtra registros cujo `id`
+  aparece como `contagemAnteriorId` de outro registro no mesmo pool; linha
+  sem `id` sempre passa intacta.
+- Testado via harness novo (`harness_pizza_dedup_recontagem.js`, jsdom +
+  react-dom/client + `act()`, mesma técnica rigorosa de sempre): cenário
+  EXATO do cliente (000.45570, 1ª contagem -1/divergente → recontagem 0/sem
+  divergência) — antes da correção, o donut mostrava 2 contados/50%
+  divergente; depois, mostra 1 contado/0% divergente (só o resultado final);
+  cenário inverso (1ª contagem bateu, recontagem divergiu) também dedupica
+  corretamente pro resultado final (100% divergente); item sem cadeia de
+  recontagem (a maioria) continua contando normalmente, sem regressão; linha
+  de histórico solta continua entrando sem ser filtrada por engano.
+  **Confirmei que o harness de fato pega o bug**: rodei ele contra o código
+  ANTES da correção (`git stash`) e 5 das 9 asserções falharam exatamente
+  como esperado (mostrando "2" no lugar de "1", "50%" no lugar de "0%") — só
+  depois da correção aplicada é que passa limpo. Rodei de novo toda a suíte
+  de regressão do scratchpad (62 harnesses, incluindo o
+  `harness_pizza_contados_divergencias.js` já existente, que não tinha
+  nenhum cenário de cadeia de recontagem e por isso não pegava esse bug) —
+  0 falhas. Transpile Babel do arquivo inteiro e balanceamento de chaves do
+  CSS conferidos (668/668, sem mudança — só JS, nenhuma classe CSS tocada).
+  **Nenhuma migração de SQL necessária** (correção é só de leitura/
+  agregação em memória). **Verificação visual do número real em produção
+  fica a cargo do cliente** — mesma limitação de sempre (login exige
+  Supabase Auth real, não simulável no sandbox sem rede) — mas como não
+  depende de nenhuma migração, já deve refletir certo no próximo
+  carregamento da página.
