@@ -490,6 +490,18 @@
   .cs-progress-fill{height:100%;background:var(--safety);border-radius:4px;transition:width .2s ease;}
   .cs-progress-meta{display:flex;justify-content:space-between;gap:8px;font-family:var(--font-mono);font-size:var(--text-xs);color:var(--ink-dim);}
 
+  /* Indicador de quem está contando — cliente reportou "em nenhuma das
+     formas de contagem está aparecendo o nome do contador" depois da
+     remoção do cabeçalho documentada acima: sem TopBar/DesktopTopbar nas
+     telas de contagem, o nome do usuário logado sumiu de vez dali, não só
+     "ficou em outro lugar" como a decisão anterior supunha (nenhuma outra
+     parte do CountStep mostrava esse dado). Corrigido com uma linha bem
+     fina (não o cabeçalho de volta) — mesmo espírito de "contexto
+     operacional compacto" já usado no resto desta seção, sem reabrir o
+     problema de espaço vertical que motivou a remoção original. */
+  .cs-operator-badge{display:flex;align-items:center;gap:6px;font-size:var(--text-xs);color:var(--ink-dim);margin-bottom:10px;}
+  .cs-operator-badge strong{color:var(--ink);font-weight:600;}
+
   /* Card "Nª contagem" (dados da rodada anterior) — movido pro final da
      tela, logo acima do rodapé: é informação de apoio/histórico, não o
      que o operador precisa ver primeiro (pedido do cliente). */
@@ -8983,6 +8995,9 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
 
   return (
     <div>
+      <div className="cs-operator-badge">
+        <DIcon name="user" size={13} /> Contando como: <strong>{user.nome}</strong>{ROLE_LABELS[user.perfil] ? ' · '+ROLE_LABELS[user.perfil] : ''}
+      </div>
       {onSkip && !scanning && !scanningItem && (
         skipConfirm ? (
           <div className="divergence-alert" style={{marginBottom:14,flexDirection:'column',alignItems:'stretch',gap:10}}>

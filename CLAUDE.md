@@ -17497,3 +17497,73 @@ contagem já mostrava certa (via consulta ao vivo) saía errada/genérica
   verdade mostrando a unidade certa) fica a cargo do cliente** — mesma
   limitação de sempre (login exige Supabase Auth real, não simulável no
   sandbox sem rede).
+
+## Bug real: nenhuma tela de contagem mostrava o nome de quem está contando
+
+Cliente reportou, direto: "em nenhuma das formas de contagem está aparecendo
+o nome do contador" — nas 5 telas de contagem (Aleatória/Curva ABC/Grupo,
+Manual, Rota de Endereço, Lista Importada/Itens Específicos, Recontagem),
+nenhuma delas mostrava o nome do usuário logado em lugar nenhum.
+
+- **Causa raiz, confirmada lendo o próprio comentário do código**: numa
+  rodada anterior ("Tela de contagem: remove o cabeçalho do app, reordena
+  hierarquia...", ver histórico acima), `TopBar`/`DesktopTopbar` (que
+  sempre mostraram nome/avatar/perfil do usuário logado) passaram a ser
+  ESCONDIDOS especificamente nas 5 telas de contagem (`COUNT_SCREEN_VIEWS`)
+  — pedido explícito do cliente na época, pra liberar espaço vertical numa
+  tela usada o dia inteiro. O comentário que documentava essa decisão já
+  dizia, sem perceber a consequência: "essas informações já existem em
+  outras partes da aplicação... o espaço liberado é usado por este
+  contexto operacional (progresso da fila ou prioridade da recontagem) em
+  vez de nome/avatar/perfil do usuário" — só que NENHUMA outra parte do
+  `CountStep` (o motor compartilhado pelos 5 fluxos) mostrava esse dado —
+  a suposição de que "já existe em outro lugar" não se sustentava dentro da
+  própria tela de contagem em si, só fora dela (Sidebar/DesktopTopbar,
+  ambos escondidos justamente enquanto o operador está contando).
+- **`.cs-operator-badge`** (JSX novo, primeiro elemento dentro do `return`
+  principal de `CountStep`, ANTES até do banner de "Pular contagem" —
+  visível em QUALQUER etapa: `enderecoManual` ou `count`, nas 5 telas, sem
+  depender de `queueAtual`/`previousCount` existirem, diferente do bloco
+  `.cs-context` — que só aparece condicionalmente): uma linha bem fina,
+  "Contando como: **{nome}** · {perfil}" (`DIcon name="user"` + `user.nome`
+  + `ROLE_LABELS[user.perfil]`) — deliberadamente NÃO é o cabeçalho de
+  volta (não reabre o problema de espaço vertical que motivou a remoção
+  original), só o mínimo necessário pra responder "quem está contando
+  agora" de relance, mesmo espírito de "contexto operacional compacto" já
+  estabelecido pro resto dessa seção (barra de progresso/badge de
+  severidade).
+- **Cobre os 5 fluxos de uma vez só**: como `CountStep` é o único
+  componente que renderiza a UI de contagem em si (`RandomCountFlow`/
+  `ManualCountFlow`/`RouteCountFlow`/`ImportedListCountFlow`/`RecountFlow`
+  só montam a fila/contexto e delegam a tela pra ele), um edit só nesse
+  componente resolve o pedido nas 5 telas — confirmado que os 5 pontos de
+  instanciação (`<RandomCountFlow.../>` etc. em `App()`) já passavam
+  `user={currentUser}` corretamente, e que o objeto salvo em
+  `finalize()` (`usuario: user.nome`) já estava certo há tempos — o defeito
+  era 100% de EXIBIÇÃO durante a contagem, nunca de gravação (os painéis de
+  revisão — Recontagens/Itens Divergentes/Analisados/Aguardando Aprovação/
+  Contagens Concluídas — já mostravam "Contado por {c.usuario}" corretamente
+  desde antes, não precisaram de nenhuma mudança).
+- **`RecountFlow` mostra o nome de quem está RECONTANDO, não o da 1ª
+  contagem** — já que `CountStep` recebe `user` (o usuário logado agora),
+  não `original.usuario` (quem contou antes) — testado explicitamente, pra
+  não confundir os dois nomes na mesma tela.
+- **Perfil não reconhecido não quebra nada** — `ROLE_LABELS[user.perfil]`
+  simplesmente não encontra entrada e o "· {perfil}" não aparece, sem
+  lançar erro; o nome continua sendo mostrado normalmente.
+- Testado via harness novo (`harness_cs_operator_badge.js`, jsdom +
+  react-dom/client + `act()`, mesma técnica rigorosa de sempre — carrega o
+  `index.html` inteiro transpilado numa `vm.Script`): confirmei que o badge
+  aparece mesmo SEM fila (cenário da Manual, sem `queueAtual`/`queueTotal`);
+  que aparece também COM fila, sempre ANTES da barra de progresso no DOM;
+  que aparece na etapa `enderecoManual` (item sem cadastro), antes mesmo de
+  chegar na etapa de quantidade; que um perfil desconhecido não quebra o
+  componente; e que `RecountFlow` mostra o nome de quem está recontando
+  agora, não o da 1ª contagem. 14 asserções, todas passando. Rodei de novo
+  toda a suíte completa do scratchpad (61 harnesses) — 0 falhas. Transpile
+  Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos
+  (668/668 — 1 regra CSS nova, `.cs-operator-badge`). **Nenhuma migração de
+  SQL necessária** (é só exibição de um dado que já existia em memória, sem
+  tocar em nenhuma tabela). **Verificação visual de ponta a ponta fica a
+  cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth
+  real, não simulável no sandbox sem rede).
