@@ -1179,16 +1179,10 @@
   /* .etq-page fica 0.5mm mais baixa que o @page — folga contra um bug já
      visto num Chrome bem antigo (109/Windows 7) que inseria página em
      branco extra. Não afeta o tamanho físico real impresso (@page continua
-     201x31mm, o que o driver da impressora espera).
-     Tamanho da etiqueta (por coluna) subiu de 50x30mm pra 100x30mm — pedido
-     do cliente ("atualizar em todos os locais o tamanho da etiqueta para
-     100x30"). A folha continua com 2 colunas lado a lado (o rolo físico
-     nunca deixou de ter 2 posições, só cada uma ficou mais larga) — mesma
-     matemática de sempre pro vão entre colunas (2x100mm + 1mm de gap =
-     201mm), só o "100" no lugar do "50" antigo. Altura não mudou (30mm). */
-  @page{size:201mm 31mm;margin:0;}
-  .etq-page{display:flex;align-items:center;gap:1mm;width:201mm;height:30.5mm;box-sizing:border-box;}
-  .etq-page-col{width:100mm;height:30mm;box-sizing:border-box;padding:0.8mm;}
+     101x31mm, o que o driver da impressora espera). */
+  @page{size:101mm 31mm;margin:0;}
+  .etq-page{display:flex;align-items:center;gap:1mm;width:101mm;height:30.5mm;box-sizing:border-box;}
+  .etq-page-col{width:50mm;height:30mm;box-sizing:border-box;padding:0.8mm;}
   /* Cliente esclareceu: o pedido de "tirar a margem" (rodada anterior)
      era engano — o que precisava sumir era o CONTORNO (a linha preta ao
      redor de Recebimento/Prateleira, ver `.etq-produto`/`.etq-prateleira`
@@ -1203,16 +1197,13 @@
   .etq-barcode{display:block;margin:0 auto;}
   /* Tamanho do BLOCO INTEIRO (barras + código descritivo abaixo, ver
      `desenharBarcodesEtiqueta`) — cresceu em largura E altura em relação a
-     antes, usando o espaço que sobrou da margem removida acima. Largura
-     dobrou de novo (44→88mm) junto da etiqueta em si (50→100mm) — mesma
-     técnica de "nasce no tamanho físico exato" de sempre, sem depender de
-     reescala forçada pelo CSS (ver ETIQUETA_BARCODE_CONFIG mais abaixo). */
-  .etq-endereco .etq-barcode{width:88mm;height:12mm;}
+     antes, usando o espaço que sobrou da margem removida acima. */
+  .etq-endereco .etq-barcode{width:44mm;height:12mm;}
   /* "aquele desenho quadrado" (contorno preto + cantos arredondados) saiu
      — pedido do cliente. `overflow:hidden` continua (proteção contra
      transbordo, sem relação com o contorno em si). */
   .etq-produto{width:100%;height:100%;box-sizing:border-box;padding:0.6mm;display:flex;flex-direction:column;font-family:Arial,sans-serif;overflow:hidden;position:relative;}
-  .etq-produto .etq-barcode{width:92mm;height:8.5mm;}
+  .etq-produto .etq-barcode{width:46mm;height:8.5mm;}
   /* Rótulos (CÓDIGO/DESCRIÇÃO/DATA) em texto preto simples — a "bandeirinha
      preta" (fundo preto + texto branco) de uma rodada anterior deu lugar a
      este formato mais simples, pedido explícito do cliente. */
@@ -1257,10 +1248,10 @@
      vez do `-webkit-line-clamp:2` de uma versão anterior). */
   .etq-prateleira{width:100%;height:100%;box-sizing:border-box;padding:0.8mm;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:Arial,sans-serif;text-align:center;overflow:hidden;gap:0.4mm;}
   .etq-prat-codigo{font-size:17pt;font-weight:700;line-height:1;margin:0.2mm 0;}
-  .etq-prat-desc{font-size:7pt;font-weight:700;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:92mm;}
+  .etq-prat-desc{font-size:7pt;font-weight:700;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46mm;}
   /* Sobra bem mais altura livre aqui do que nas outras 2 etiquetas (não tem
      QTD/Data/Endereço disputando espaço) — cresce mais que produto. */
-  .etq-prateleira .etq-barcode{width:92mm;height:12mm;margin-top:0.2mm;}
+  .etq-prateleira .etq-barcode{width:46mm;height:12mm;margin-top:0.2mm;}
   /* FIM DO CSS DA ETIQUETA */
 </style>
 </head>
@@ -1719,7 +1710,7 @@ function buildEtiquetaItemHtml({tipo, codigo, descricao, quantidade, dataRecebim
 // manual POR COLUNA (ver `carregarAjusteMargemEtiqueta`), aplicada via
 // `transform:translate(...)` (não `margin`) de propósito: transform desloca
 // só a aparência visual, sem empurrar layout/box (a folha continua exatos
-// 201x30.5mm físicos, o que o driver da impressora espera) — `x`
+// 101x30.5mm físicos, o que o driver da impressora espera) — `x`
 // positivo desloca pra DIREITA, negativo pra ESQUERDA; `y` positivo desloca
 // pra BAIXO, negativo pra CIMA. Índice 0 (1ª coluna) usa `ajustes.esquerda`,
 // índice 1 (2ª coluna) usa `ajustes.direita` — cada lado calibra
@@ -1743,9 +1734,9 @@ function buildEtiquetaPageHtml(itens, quebrarDepois, ajustes){
 // `.etq-prateleira .etq-barcode` no CSS) e o fontSize do código descritivo
 // (HRI, "human readable interpretation") mostrado abaixo das barras.
 const ETIQUETA_BARCODE_CONFIG = {
-  endereco:   {alturaTotalMm: 12,  larguraMm: 88, fontSize: 10},
-  produto:    {alturaTotalMm: 8.5, larguraMm: 92, fontSize: 9},
-  prateleira: {alturaTotalMm: 12,  larguraMm: 92, fontSize: 10},
+  endereco:   {alturaTotalMm: 12,  larguraMm: 44, fontSize: 10},
+  produto:    {alturaTotalMm: 8.5, larguraMm: 46, fontSize: 9},
+  prateleira: {alturaTotalMm: 12,  larguraMm: 46, fontSize: 10},
 };
 
 // Desenha o código de barras de CADA `svg.etq-barcode` já presente em
@@ -1802,7 +1793,7 @@ function desenharBarcodesEtiqueta(area, itensFlat){
 // código(s) de barras via JsBarcode antes de chamar `window.print()`.
 // `item1`/`item2` são objetos `{tipo, codigo, descricao, quantidade,
 // dataRecebimento, endereco}` (`tipo` é `'endereco'`/`'produto'`) — `item2` é
-// OPCIONAL: o rolo físico da TSC tem 2 colunas de 100mm lado a lado (ver
+// OPCIONAL: o rolo físico da TSC tem 2 colunas de 50mm lado a lado (ver
 // comentário no <style>, perto de `.etq-page`), então imprimir sempre 1
 // etiqueta só de propósito desperdiçaria a coluna direita a cada folha.
 // Pedido do cliente: "se tiver mais de uma etiqueta na fila imprimir uma em
@@ -14398,7 +14389,7 @@ function EtiquetasPanel({currentUser}){
           <span>
             <DIcon name="printer" size={16} style={{verticalAlign:-3,marginRight:6}}/>
             Ao clicar em "Imprimir Etiqueta", abre a janela de impressão normal do navegador —
-            escolha a impressora TSC e confirme o tamanho da folha (201×31mm) se for pedido.
+            escolha a impressora TSC e confirme o tamanho da folha (101×31mm) se for pedido.
           </span>
           <button type="button" className="btn btn-outline btn-xs" onClick={()=>setMostrarCalibracao(v=>!v)}>
             {mostrarCalibracao ? 'Ocultar calibração' : 'Calibrar etiquetas'}

@@ -17270,3 +17270,43 @@ sempre pro vão entre colunas — 2×100+1mm de gap).
   (o rolo real de 100mm por coluna, os dois lados calibrando corretamente) fica
   100% a cargo do cliente** — mesma limitação de sempre nesta feature (sandbox sem
   impressora física).
+
+## Tamanho da etiqueta revertido de volta a 50×30mm — só a calibração dos 2 lados ficou
+
+Cliente testou a rodada anterior (100×30mm por coluna) e voltou atrás: **"a etiqueta
+não muda o tamanho manter 50x30 incluir apenas a calibragem das duas etiquetas
+esquerda e direita"** — ou seja, das duas mudanças que tinham ido juntas no mesmo
+commit (aumento de tamanho + calibração dos 2 lados), só a 2ª era pra ficar.
+
+- **Revertido cirurgicamente, não com `git revert` do commit inteiro** — as duas
+  mudanças estavam de fato misturadas no mesmo commit (`6ca5ac1`), então um revert
+  puro desfaria a calibração dos 2 lados junto, que o cliente quer manter. Em vez
+  disso, cada valor de tamanho foi devolvido à mão pro que era antes (`@page`/
+  `.etq-page`/`.etq-page-col`: 201mm→101mm de folha, 100mm→50mm por coluna; os 3
+  alvos de código de barras — endereço/produto/prateleira — voltaram de 88/92/92mm
+  pra 44/46/46mm de largura; `ETIQUETA_BARCODE_CONFIG.larguraMm` acompanhou junto,
+  mesmo cuidado de sempre pra não dessincronizar CSS/JS; textos de UI que citavam
+  "201×31mm" voltaram a dizer "101×31mm") — mantendo intocado tudo que é só sobre
+  calibração (`ETIQUETA_AJUSTE_MARGEM_KEY`/`_v2`, `salvarAjusteMargemEtiqueta`/
+  `carregarAjusteMargemEtiqueta`, `buildEtiquetaPageHtml(itens, quebrarDepois,
+  ajustes)` com `{esquerda, direita}`, o painel em `EtiquetasPanel` com as 2 seções
+  de campos "Etiqueta da esquerda"/"Etiqueta da direita"). O tamanho da etiqueta e a
+  calibração por lado sempre foram conceitos independentes — reverter um sem tocar
+  no outro não exigiu nenhum truque, só cuidado pra separar as duas coisas no diff.
+- **`preview-etiqueta.html`** revertido por completo pro estado anterior a esse
+  commit (`git show <commit> -- preview-etiqueta.html | git apply -R`) — esse
+  arquivo não tem nada relacionado a calibração (é só a prévia visual/CSS), então
+  o revert ali é 100% limpo, sem precisar separar nada.
+- Testado via transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  (666/666, batendo com o valor de antes da rodada anterior — o mesmo número de
+  antes de 100×30mm, como esperado de um revert exato). Os 3 harnesses que tinham
+  sido atualizados pra 100×30mm (`harness_etiqueta_layout_endereco.js`/
+  `harness_etiqueta_layout_fix.js`) voltaram a checar 44/46mm e 50mm/101mm — o
+  harness de calibração (`harness_etiqueta_calibracao_margem.js`, que testa a
+  MECÂNICA de calibrar os 2 lados, não valores de mm da etiqueta em si) não
+  precisou de nenhuma mudança, continuou passando as mesmas 49 asserções sem
+  tocar em nada. Rodei de novo toda a suíte completa do scratchpad (58 harnesses,
+  789 asserções) — 0 falhas. **Verificação física de ponta a ponta (calibrar os 2
+  lados de verdade contra o rolo real de 50mm por coluna) fica a cargo do
+  cliente** — mesma limitação de sempre nesta feature (sandbox sem impressora
+  física).
