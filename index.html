@@ -14384,66 +14384,61 @@ function EtiquetasPanel({currentUser}){
 
   return (
     <div>
-      <div className="role-note" style={{marginBottom:14}}>
-        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,flexWrap:'wrap'}}>
-          <span>
-            <DIcon name="printer" size={16} style={{verticalAlign:-3,marginRight:6}}/>
-            Ao clicar em "Imprimir Etiqueta", abre a janela de impressão normal do navegador —
-            escolha a impressora TSC e confirme o tamanho da folha (101×31mm) se for pedido.
-          </span>
-          <button type="button" className="btn btn-outline btn-xs" onClick={()=>setMostrarCalibracao(v=>!v)}>
-            {mostrarCalibracao ? 'Ocultar calibração' : 'Calibrar etiquetas'}
-          </button>
-        </div>
-        {mostrarCalibracao && (
-          <div style={{marginTop:12,paddingTop:12,borderTop:'1px solid var(--line)'}}>
-            <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginBottom:8}}>
-              Tem casos em que a bobina vem torta e uma das duas etiquetas (esquerda ou
-              direita) sai deslocada em relação à outra — ajuste cada lado em milímetros pra
-              compensar. Horizontal positivo desloca pra direita, negativo pra esquerda;
-              vertical positivo desloca pra baixo, negativo pra cima. Vale só nesta
-              impressora/aparelho — não muda em nenhum outro.
-            </div>
-            <div style={{display:'flex',gap:20,flexWrap:'wrap'}}>
-              <div>
-                <div style={{fontSize:'var(--text-xs)',fontWeight:700,color:'var(--ink-dim)',marginBottom:6}}>Etiqueta da esquerda</div>
-                <div style={{display:'flex',gap:10,alignItems:'flex-end',flexWrap:'wrap'}}>
-                  <div className="field" style={{marginBottom:0,width:120}}>
-                    <label>Horizontal (mm)</label>
-                    <input type="text" inputMode="decimal" value={ajusteEsqXTexto} onChange={e=>handleAjusteChange('esquerda', 'x', e.target.value, setAjusteEsqXTexto)} placeholder="0" />
-                  </div>
-                  <div className="field" style={{marginBottom:0,width:120}}>
-                    <label>Vertical (mm)</label>
-                    <input type="text" inputMode="decimal" value={ajusteEsqYTexto} onChange={e=>handleAjusteChange('esquerda', 'y', e.target.value, setAjusteEsqYTexto)} placeholder="0" />
-                  </div>
-                </div>
-              </div>
-              <div>
-                <div style={{fontSize:'var(--text-xs)',fontWeight:700,color:'var(--ink-dim)',marginBottom:6}}>Etiqueta da direita</div>
-                <div style={{display:'flex',gap:10,alignItems:'flex-end',flexWrap:'wrap'}}>
-                  <div className="field" style={{marginBottom:0,width:120}}>
-                    <label>Horizontal (mm)</label>
-                    <input type="text" inputMode="decimal" value={ajusteDirXTexto} onChange={e=>handleAjusteChange('direita', 'x', e.target.value, setAjusteDirXTexto)} placeholder="0" />
-                  </div>
-                  <div className="field" style={{marginBottom:0,width:120}}>
-                    <label>Vertical (mm)</label>
-                    <input type="text" inputMode="decimal" value={ajusteDirYTexto} onChange={e=>handleAjusteChange('direita', 'y', e.target.value, setAjusteDirYTexto)} placeholder="0" />
-                  </div>
-                </div>
-              </div>
-            </div>
-            <button type="button" className="btn btn-outline btn-xs" style={{marginTop:12}} onClick={handleRestaurarAjuste}>Restaurar as duas (0,0)</button>
-          </div>
+      {/* Pedido do cliente: "remover os textos e manter apenas os botões...
+          um lugar que eu possa ler para entender pra que serve cada botão" —
+          os 2 parágrafos explicativos viraram 2 ícones "?"/link discretos,
+          com o texto completo só no `title` (tooltip nativo do navegador,
+          mesmo padrão já usado em Configurações via `.cfg-help-btn`) — só
+          aparece se passar o mouse/tocar, não ocupa espaço permanente. */}
+      <div style={{display:'flex',alignItems:'center',justifyContent:'flex-end',gap:8,marginBottom:14}}>
+        <span className="cfg-help-btn" title='Ao clicar em "Imprimir Etiqueta", abre a janela de impressão normal do navegador — escolha a impressora TSC e confirme o tamanho da folha (101×31mm) se for pedido.'>?</span>
+        {currentUser.perfil==='admin' && (
+          <a href="preview-etiqueta.html" target="_blank" rel="noopener" className="cfg-help-btn" title="Quer ajustar o layout da etiqueta (tamanho de fonte, código de barras, etc.) você mesmo? Edite o CSS em index.html no GitHub e confira o resultado aqui (preview-etiqueta.html), sem precisar imprimir.">
+            <DIcon name="palette" size={13}/>
+          </a>
         )}
+        <button type="button" className="btn btn-outline btn-xs" onClick={()=>setMostrarCalibracao(v=>!v)}>
+          {mostrarCalibracao ? 'Ocultar calibração' : 'Calibrar etiquetas'}
+        </button>
       </div>
-
-      {currentUser.perfil==='admin' && (
+      {mostrarCalibracao && (
         <div className="role-note" style={{marginBottom:14}}>
-          <DIcon name="palette" size={16} style={{verticalAlign:-3,marginRight:6}}/>
-          Quer ajustar o layout da etiqueta (tamanho de fonte, código de barras, etc.) você
-          mesmo, sem esperar um pedido? Edite o CSS em <code>index.html</code> no GitHub e
-          confira o resultado sem precisar imprimir em{' '}
-          <a href="preview-etiqueta.html" target="_blank" rel="noopener">preview-etiqueta.html</a>.
+          <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginBottom:8}}>
+            Tem casos em que a bobina vem torta e uma das duas etiquetas (esquerda ou
+            direita) sai deslocada em relação à outra — ajuste cada lado em milímetros pra
+            compensar. Horizontal positivo desloca pra direita, negativo pra esquerda;
+            vertical positivo desloca pra baixo, negativo pra cima. Vale só nesta
+            impressora/aparelho — não muda em nenhum outro.
+          </div>
+          <div style={{display:'flex',gap:20,flexWrap:'wrap'}}>
+            <div>
+              <div style={{fontSize:'var(--text-xs)',fontWeight:700,color:'var(--ink-dim)',marginBottom:6}}>Etiqueta da esquerda</div>
+              <div style={{display:'flex',gap:10,alignItems:'flex-end',flexWrap:'wrap'}}>
+                <div className="field" style={{marginBottom:0,width:120}}>
+                  <label>Horizontal (mm)</label>
+                  <input type="text" inputMode="decimal" value={ajusteEsqXTexto} onChange={e=>handleAjusteChange('esquerda', 'x', e.target.value, setAjusteEsqXTexto)} placeholder="0" />
+                </div>
+                <div className="field" style={{marginBottom:0,width:120}}>
+                  <label>Vertical (mm)</label>
+                  <input type="text" inputMode="decimal" value={ajusteEsqYTexto} onChange={e=>handleAjusteChange('esquerda', 'y', e.target.value, setAjusteEsqYTexto)} placeholder="0" />
+                </div>
+              </div>
+            </div>
+            <div>
+              <div style={{fontSize:'var(--text-xs)',fontWeight:700,color:'var(--ink-dim)',marginBottom:6}}>Etiqueta da direita</div>
+              <div style={{display:'flex',gap:10,alignItems:'flex-end',flexWrap:'wrap'}}>
+                <div className="field" style={{marginBottom:0,width:120}}>
+                  <label>Horizontal (mm)</label>
+                  <input type="text" inputMode="decimal" value={ajusteDirXTexto} onChange={e=>handleAjusteChange('direita', 'x', e.target.value, setAjusteDirXTexto)} placeholder="0" />
+                </div>
+                <div className="field" style={{marginBottom:0,width:120}}>
+                  <label>Vertical (mm)</label>
+                  <input type="text" inputMode="decimal" value={ajusteDirYTexto} onChange={e=>handleAjusteChange('direita', 'y', e.target.value, setAjusteDirYTexto)} placeholder="0" />
+                </div>
+              </div>
+            </div>
+          </div>
+          <button type="button" className="btn btn-outline btn-xs" style={{marginTop:12}} onClick={handleRestaurarAjuste}>Restaurar as duas (0,0)</button>
         </div>
       )}
 
@@ -14473,16 +14468,13 @@ function EtiquetasPanel({currentUser}){
 
       {selecionado && (
         <div style={{background:'var(--panel)',border:'1px solid var(--line)',borderRadius:'var(--radius)',padding:16,marginTop:4}}>
-          {/* Pedido do cliente: "Enviar para Fila" ao lado do campo de
-              código — em vez de lá embaixo, depois de Quantidade/Data/
-              Quantidade de Etiquetas, fica logo no topo do card, junto do
-              código do item, sem precisar rolar a tela num tablet. */}
-          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,flexWrap:'wrap'}}>
-            <div className="item-code">{selecionado.codigo}</div>
-            <button className="btn btn-outline btn-sm" style={{width:'auto'}} disabled={enviandoParaFila} onClick={handleEnviarParaFila}>
-              <DIcon name="clock" size={14}/> {enviandoParaFila ? 'Enviando…' : 'Enviar para Fila'}
-            </button>
-          </div>
+          {/* Código é o principal meio de identificação — fonte bem maior
+              que o padrão de `.item-code` (pedido do cliente). "Enviar para
+              Fila" voltou pra fileira de baixo, junto de Voltar/Imprimir —
+              com a tela mais baixa agora (textos removidos, campos numa
+              linha só), não precisa mais ficar perto do topo pra evitar
+              rolagem. */}
+          <div className="item-code" style={{fontSize:26,fontWeight:700}}>{selecionado.codigo}</div>
           {aba==='produto' && <div className="item-desc">{selecionado.descricao}</div>}
           {aba==='endereco' && selecionado.almoxarifado && <div className="lr-sub" style={{marginTop:4}}>Armazém {selecionado.almoxarifado}</div>}
           {aba==='produto' && (
@@ -14494,14 +14486,24 @@ function EtiquetasPanel({currentUser}){
               </div>
             </div>
           )}
+          {/* Pedido do cliente: "Quantidade Recebida e de etiqueta pode ser
+              uma ao lado da outra e pode justificar o campo de data" — os 3
+              campos numa linha só (eram 2 linhas: Recebida+Data, depois
+              Etiquetas sozinha) — reduz bastante a altura da tela. Só o
+              modelo "Recebimento" tem esses 3 campos; "Prateleira/Caixa" só
+              tem Quantidade de Etiquetas (bloco próprio logo abaixo). */}
           {aba==='produto' && modeloEtiqueta==='recebimento' && (
-            <div style={{display:'flex',gap:10,marginTop:12}}>
-              <div className="field" style={{flex:1,marginBottom:0}}>
+            <div style={{display:'flex',gap:10,marginTop:12,flexWrap:'wrap'}}>
+              <div className="field" style={{flex:1,minWidth:110,marginBottom:0}}>
                 <label>Quantidade recebida</label>
                 <input type="text" inputMode="numeric" value={quantidade} onChange={e=>setQuantidade(e.target.value.replace(/[^0-9]/g,''))} onKeyDown={e=>{ if(e.key==='Enter'){ e.preventDefault(); quantidadeEtiquetasRef.current && quantidadeEtiquetasRef.current.focus(); } }} placeholder="Ex: 500" />
               </div>
-              <div className="field" style={{flex:1,marginBottom:0}}>
-                <label>Data de recebimento{!dataDesbloqueada && <span style={{fontWeight:400,textTransform:'none',letterSpacing:0}}> — toque 2x pra alterar</span>}</label>
+              <div className="field" style={{flex:1,minWidth:110,marginBottom:0}}>
+                <label>Quantidade de etiquetas</label>
+                <input ref={quantidadeEtiquetasRef} type="text" inputMode="numeric" value={quantidadeEtiquetas} onChange={e=>setQuantidadeEtiquetas(e.target.value.replace(/[^0-9]/g,''))} placeholder="Ex: 10" />
+              </div>
+              <div className="field" style={{flex:1,minWidth:110,marginBottom:0}}>
+                <label>Data de recebimento{!dataDesbloqueada && <span style={{fontWeight:400,textTransform:'none',letterSpacing:0}}> — toque 2x</span>}</label>
                 <input
                   type="date"
                   value={dataRecebimento}
@@ -14514,19 +14516,19 @@ function EtiquetasPanel({currentUser}){
               </div>
             </div>
           )}
-          {aba==='produto' && (
-            <div style={{marginTop:10}}>
+          {aba==='produto' && modeloEtiqueta==='recebimento' && Number(quantidadeEtiquetas)>1 && quantidade && (
+            <div className="lr-sub" style={{marginTop:6}}>
+              {splitQuantidadeEtiquetas(quantidade, quantidadeEtiquetas).length} etiquetas —
+              {' '}{Array.from(new Set(splitQuantidadeEtiquetas(quantidade, quantidadeEtiquetas))).sort((a,b)=>b-a).map((v,i)=>(i?' / ':' ')+'QTD: '+v)}
+            </div>
+          )}
+          {aba==='produto' && modeloEtiqueta==='prateleira' && (
+            <div style={{marginTop:12}}>
               <div className="field" style={{maxWidth:200,marginBottom:0}}>
                 <label>Quantidade de etiquetas</label>
                 <input ref={quantidadeEtiquetasRef} type="text" inputMode="numeric" value={quantidadeEtiquetas} onChange={e=>setQuantidadeEtiquetas(e.target.value.replace(/[^0-9]/g,''))} placeholder="Ex: 10" />
               </div>
-              {modeloEtiqueta==='recebimento' && Number(quantidadeEtiquetas)>1 && quantidade && (
-                <div className="lr-sub" style={{marginTop:6}}>
-                  {splitQuantidadeEtiquetas(quantidade, quantidadeEtiquetas).length} etiquetas —
-                  {' '}{Array.from(new Set(splitQuantidadeEtiquetas(quantidade, quantidadeEtiquetas))).sort((a,b)=>b-a).map((v,i)=>(i?' / ':' ')+'QTD: '+v)}
-                </div>
-              )}
-              {modeloEtiqueta==='prateleira' && Number(quantidadeEtiquetas)>1 && (
+              {Number(quantidadeEtiquetas)>1 && (
                 <div className="lr-sub" style={{marginTop:6}}>{Math.max(1,parseInt(quantidadeEtiquetas,10)||1)} etiquetas idênticas (mesmo código/descrição em cada uma)</div>
               )}
             </div>
@@ -14545,6 +14547,9 @@ function EtiquetasPanel({currentUser}){
           )}
           <div className="btn-row" style={{marginTop:14}}>
             <button className="btn btn-secondary" onClick={()=>{ setSelecionado(null); setSucessoImpressao(false); setSucessoFilaEnvio(false); setErroFilaEnvio(null); }}>Voltar</button>
+            <button className="btn btn-outline" disabled={enviandoParaFila} onClick={handleEnviarParaFila}>
+              <DIcon name="clock" size={16}/> {enviandoParaFila ? 'Enviando…' : 'Enviar para Fila'}
+            </button>
             <button className="btn btn-primary" disabled={imprimindo} onClick={handleImprimir}><DIcon name="printer" size={16}/> {imprimindo ? 'Imprimindo…' : 'Imprimir Etiqueta'}</button>
           </div>
         </div>

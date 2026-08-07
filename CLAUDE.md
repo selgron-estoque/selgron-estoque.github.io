@@ -17332,3 +17332,76 @@ propósito, pra não precisar tocar em `hasAccess`/`goto()`/`ACESSOS_RESTRITOS`/
   completa do scratchpad (58 harnesses, 789 asserções) — 0 falhas. **Verificação
   visual de ponta a ponta fica a cargo do cliente** — mesma limitação de sempre
   (login exige Supabase Auth real, não simulável no sandbox sem rede).
+
+## Tela "Etiquetas" fica mais compacta — 4 ajustes de UX numa mensagem só
+
+Cliente mandou um print da tela "Etiquetas" com 4 pontos marcados: "1 - Remover
+os textos e manter apenas os botões. O texto explicativo botão em um botão de
+sobreposição, sei lá um lugar que eu possa ler para entender para que serve
+cada botão. 2 - Código com a fonte maior, visto que ele é o principal meio de
+identificação. 3 - Quantidade Recebida e de etiqueta pode ser uma ao lado da
+outra e pode justificar o campo de data. 4 - Como vai reduzir bastante a
+altura desta tela pode voltar o botão de fila para ao lado dos demais."
+
+- **1 — Textos explicativos viram ícone "?"/link, sem prosa solta na tela**:
+  os 2 parágrafos longos (instruções de como imprimir; dica sobre o
+  `preview-etiqueta.html`) saíram do fluxo visual — reaproveitado o mesmo
+  padrão `.cfg-help-btn` já estabelecido em Configurações (círculo pequeno com
+  "?", `cursor:help`, texto completo só no `title`, tooltip nativo do
+  navegador, sem popover/JS customizado). O link pro `preview-etiqueta.html`
+  (só admin) virou um ícone clicável (`DIcon name="palette"`) com o mesmo
+  padrão de tooltip, em vez de um parágrafo com link embutido — continua
+  abrindo em nova aba, só ficou compacto. O botão "Calibrar etiquetas" não fez
+  parte dessa limpeza (não é texto explicativo, é uma ação em si) — continua
+  como estava, só reposicionado na mesma fileira compacta.
+- **2 — Código do item em fonte maior**: `.item-code` ganhou `style={{fontSize:
+  26,fontWeight:700}}` inline (a classe base é `var(--text-sm)`, 12.5px) —
+  "principal meio de identificação", pedido explícito do cliente. Mesmo
+  padrão de escopo já usado antes neste projeto pra overrides pontuais de
+  fonte (inline `style` em vez de mexer na regra CSS compartilhada, que é
+  usada por outras telas também).
+- **3 — Quantidade Recebida/Quantidade de Etiquetas/Data numa linha só**: os 3
+  campos (que antes ficavam em 2 blocos — Recebida+Data juntos, Etiquetas
+  sozinha embaixo) viraram 3 filhos diretos do MESMO container flex
+  (`display:flex;gap:10px;flexWrap:'wrap'`), cada um com `flex:1;minWidth:110`
+  — cabe os 3 lado a lado em telas largas, quebra pra 2/1 por linha só se a
+  tela for estreita demais (`flexWrap`). Só vale pro modelo "Recebimento"
+  (`modeloEtiqueta==='recebimento'`) — o modelo "Prateleira/Caixa" nunca teve
+  Quantidade Recebida/Data (não fazem sentido nesse modelo, decisão já
+  documentada antes), continua só com "Quantidade de etiquetas" sozinho, num
+  campo próprio e mais estreito (`maxWidth:200`).
+- **4 — "Enviar para Fila" volta pra fileira de baixo, junto dos outros 2**:
+  reverte uma mudança de uma rodada anterior (que tinha movido esse botão pra
+  cima, ao lado do código, por causa da rolagem que a tela alta exigia) — como
+  os pontos 1-3 já reduzem bastante a altura da tela, o motivo original de
+  mantê-lo perto do topo deixou de existir. `.btn-row` (rodapé do card de
+  confirmação) voltou a ter os 3 botões de sempre — "Voltar"/"Enviar para
+  Fila"/"Imprimir Etiqueta" — e `.item-code` ficou sozinho no topo do card,
+  só com o código em si (fonte maior, ponto 2) mais a descrição logo abaixo.
+- Testado via harness novo (`harness_etiqueta_layout_compacto.js`, jsdom +
+  react-dom/client + `act()`, mesma técnica rigorosa de sempre — carrega o
+  `index.html` inteiro transpilado numa `vm.Script`): confirma que os 2 textos
+  longos não aparecem mais como texto visível na tela; que o ícone "?" existe
+  com o texto completo das instruções de impressão no `title`; que o link pro
+  `preview-etiqueta.html` continua existindo/clicável/com tooltip completo
+  (só pra admin — confirmado que um perfil operador não vê esse link, mas
+  continua vendo o ícone de ajuda geral); que o botão "Calibrar etiquetas"
+  continua existindo; que `.item-code` tem a fonte maior (26px/700) depois de
+  selecionar um item; que os 3 campos (Recebida/Etiquetas/Data) são filhos
+  diretos do MESMO container flex, não mais espalhados em 2 blocos; e que o
+  modelo "Prateleira/Caixa" continua mostrando só "Quantidade de etiquetas",
+  sem Recebida/Data. 2 harnesses pré-existentes precisaram de ajuste — mudança
+  de comportamento intencional desta rodada, não regressão:
+  `harness_etiqueta_enter_data_travada.js` (a dica "toque 2x pra alterar" da
+  Data virou só "toque 2x", mais curta, pra caber no rótulo compacto da linha
+  de 3 campos) e `harness_etiqueta_enviar_fila_topo.js` (reescrito por
+  completo — as asserções que checavam o botão AO LADO do código agora
+  checam o oposto: `.item-code` sem nenhum `<button>` como irmão direto, e
+  `.btn-row` de volta com os 3 botões). Rodei de novo toda a suíte completa
+  do scratchpad (59 harnesses, 1.113 asserções) — 0 falhas. Transpile Babel do
+  arquivo inteiro e balanceamento de chaves do CSS conferidos (666/666, sem
+  mudança — nenhuma classe CSS nova, tudo reaproveitado via `.cfg-help-btn`/
+  `.role-note`/`.field`/`.btn-row` já existentes mais `style` inline).
+  **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma
+  limitação de sempre (login exige Supabase Auth real, não simulável no
+  sandbox sem rede).
