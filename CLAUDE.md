@@ -17310,3 +17310,25 @@ commit (aumento de tamanho + calibração dos 2 lados), só a 2ª era pra ficar.
   lados de verdade contra o rolo real de 50mm por coluna) fica a cargo do
   cliente** — mesma limitação de sempre nesta feature (sandbox sem impressora
   física).
+
+## "Aguardando Armazém" renomeado pra "Analisados"
+
+Cliente pediu: "Aguardando Armazém para Analisados" — mesmo padrão de rename já
+usado antes ("Aprovação de Ajustes" → "Aguardando Aprovação"): só o RÓTULO
+exibido mudou, o id interno da view (`solicitacaoArmazem`) foi mantido de
+propósito, pra não precisar tocar em `hasAccess`/`goto()`/`ACESSOS_RESTRITOS`/
+`SolicitacaoArmazemPanel` nem em nenhuma outra referência interna.
+
+- **4 lugares com texto visível trocados**: `TODOS_OS_MENUS` (rótulo usado no
+  dual-list "Editar Usuário"), `VIEW_TITLES.solicitacaoArmazem` (título do
+  `DesktopTopbar` ao entrar na tela), `buildSidebarGroups` (rótulo do item no
+  menu lateral) e o `label` do KPI correspondente na Home.
+- **12 ocorrências em comentários de código** (`index.html` + 3 harnesses do
+  scratchpad) trocadas via find/replace direto, mesmo critério já usado no
+  rename anterior — sem efeito em runtime, só pra não deixar comentário
+  desatualizado citando o nome antigo.
+- Testado via transpile Babel do arquivo inteiro e balanceamento de chaves do
+  CSS (666/666, sem mudança — troca só de texto). Rodei de novo toda a suíte
+  completa do scratchpad (58 harnesses, 789 asserções) — 0 falhas. **Verificação
+  visual de ponta a ponta fica a cargo do cliente** — mesma limitação de sempre
+  (login exige Supabase Auth real, não simulável no sandbox sem rede).

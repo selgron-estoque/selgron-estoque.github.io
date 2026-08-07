@@ -392,7 +392,7 @@
      neste contexto, sem mudar o botão em nenhum outro lugar. Mesmo valor
      (padding 8px 14px / text-sm) de `.count-card-actions` logo abaixo —
      pedido do cliente: padronizar tamanho/formato dos botões entre
-     Recontagens/Itens Divergentes/Aguardando Armazém/Aguardando Aprovação/
+     Recontagens/Itens Divergentes/Analisados/Aguardando Aprovação/
      Contagens Concluídas — todos pequenos (batendo com `.btn-sm` já usado
      no resto do app) e empilhados à direita do card, nunca em fileira
      horizontal (`.count-card-actions-row`, que existia só nessas 3 telas,
@@ -1024,7 +1024,7 @@
     .pnl-wrap{display:block;font-family:var(--font-corp);color:var(--navy);}
     .mobile-home-menu{display:none;}
     /* auto-fit em vez de um número fixo de colunas — o array `kpis` (Home)
-       varia de 4 (operador) a 6 (líder/admin, com "Aguardando Armazém"/
+       varia de 4 (operador) a 6 (líder/admin, com "Analisados"/
        "Aguardando Aprovação da Diretoria") itens, e um `repeat(5,1fr)` fixo
        deixava o 6º card sobrar sozinho numa 2ª linha (cliente reportou:
        "criar uma regra para que o card não pode passar de 1 linha").
@@ -5352,10 +5352,10 @@ function App(){
   // devolução" — ou seja, a escolha entre "Ajuste" e "Devolução" NÃO é mais
   // decidida pelo sinal da diferença em "Itens Divergentes" (rodada
   // anterior, revertida) — é decidida DEPOIS, junto com o número da SA, na
-  // fila "Aguardando Armazém". Fluxo em 3 etapas, cada uma sua ação/tela:
+  // fila "Analisados". Fluxo em 3 etapas, cada uma sua ação/tela:
   //   1. Líder finaliza a análise, SEM decidir nada ainda (nem número, nem
   //      Ajuste/Devolução) → `enviarParaArmazem` → item sai de "Itens
-  //      Divergentes" e entra em "Aguardando Armazém"
+  //      Divergentes" e entra em "Analisados"
   //      (`aguardando_solicitacao_armazem`).
   //   2. Líder/admin digita o número da SA assim que o Armazém devolver E
   //      decide, na mesma ação, se é Ajuste ou Devolução →
@@ -5369,7 +5369,7 @@ function App(){
   // Etapa 1 — líder finaliza a análise (decide que precisa de SA), sem saber
   // ainda o número nem se vai virar Ajuste ou Devolução — isso só é decidido
   // na etapa 2, junto com o número. Item sai de "Itens Divergentes" e entra
-  // em "Aguardando Armazém".
+  // em "Analisados".
   async function enviarParaArmazem(countId){
     const saGeradaPor = currentUser ? currentUser.nome : '—';
     const saGeradaEm = new Date().toLocaleString('pt-BR');
@@ -6483,7 +6483,7 @@ const TODOS_OS_MENUS = [
   {id:'pickCountType', label:'Nova Contagem'},
   {id:'recounts', label:'Recontagens'},
   {id:'divergentes', label:'Itens Divergentes'},
-  {id:'solicitacaoArmazem', label:'Aguardando Armazém'},
+  {id:'solicitacaoArmazem', label:'Analisados'},
   {id:'aprovacaoDiretoria', label:'Aguardando Aprovação'},
   {id:'concluidas', label:'Contagens Concluídas'},
   {id:'usuarios', label:'Usuários'},
@@ -6558,7 +6558,7 @@ const VIEW_TITLES = {
   importedListCount:'Lista Importada',
   recounts:'Recontagens Pendentes',
   divergentes:'Itens Divergentes',
-  solicitacaoArmazem:'Aguardando Armazém',
+  solicitacaoArmazem:'Analisados',
   aprovacaoDiretoria:'Aguardando Aprovação',
   todasDivergencias:'Todas as Divergências',
   concluidas:'Contagens Concluídas',
@@ -6632,7 +6632,7 @@ function buildSidebarGroups(user){
     ...(podeVer('pickCountType') ? [{id:'pickCountType', ic:'plus', label:'Nova Contagem'}] : []),
     ...(podeVer('recounts') ? [{id:'recounts', ic:'repeat', label:'Recontagens'}] : []),
     ...(podeVer('divergentes') ? [{id:'divergentes', ic:'alertTriangle', label:'Itens Divergentes'}] : []),
-    ...(podeVer('solicitacaoArmazem') ? [{id:'solicitacaoArmazem', ic:'building', label:'Aguardando Armazém'}] : []),
+    ...(podeVer('solicitacaoArmazem') ? [{id:'solicitacaoArmazem', ic:'building', label:'Analisados'}] : []),
     ...(podeVer('aprovacaoDiretoria') ? [{id:'aprovacaoDiretoria', ic:'clipboardList', label:'Aguardando Aprovação'}] : []),
     ...(podeVer('concluidas') ? [{id:'concluidas', ic:'checkCircle', label:'Contagens Concluídas'}] : []),
   ];
@@ -6844,7 +6844,7 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], historic
   // divergência que AINDA não entrou em processo de recontagem. Assim que o
   // item vira aguardando_segunda, some daqui (mesma regra da tela).
   const itensDivergentesPendentes = counts.filter(c=>c.statusAprovacao==='aguardando_analise_lider').length;
-  // "Aguardando Armazém" (KPI + tela própria, ver SolicitacaoArmazemPanel) —
+  // "Analisados" (KPI + tela própria, ver SolicitacaoArmazemPanel) —
   // SA de Ajuste (Solicitação ao Armazém) já gerada pelo líder, aguardando o
   // Armazém processar antes de seguir pra Diretoria. Não interessa ao
   // operador, mesmo critério de ACESSOS_RESTRITOS.solicitacaoArmazem.
@@ -6960,7 +6960,7 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], historic
     },
     ...(role!=='operador' ? [{
       key:'solicitacaoArmazem', icon:'building', bg:'var(--warn-bg)', color:'var(--warn)',
-      label:'Aguardando Armazém', value:aguardandoArmazem,
+      label:'Analisados', value:aguardandoArmazem,
       trend:<span className={"pnl-kpi-trend "+(aguardandoArmazem>0?'bad':'good')}>{aguardandoArmazem>0?'Requer atenção':'Nenhuma pendência'}</span>,
       onClick:()=>goto('solicitacaoArmazem'),
     }] : []),
@@ -10808,7 +10808,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onEnvi
                     <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>handleApprove(c.id)}>{busyId===c.id ? 'Enviando…' : 'Sem Ajuste Necessário'}</button>
                     {/* Análise finalizada, mas ainda precisa de SA — a decisão
                         entre Ajuste/Devolução só acontece depois, junto com o
-                        número da SA, na tela "Aguardando Armazém" (pedido do
+                        número da SA, na tela "Analisados" (pedido do
                         cliente: "só quando tiver o número da SA que eu faço a
                         decisão de ajuste ou devolução"). */}
                     <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>handleEnviarParaArmazem(c.id)}><Ic>📋</Ic> {busyId===c.id ? 'Enviando…' : 'Ajustar'}</button>
@@ -10853,7 +10853,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onEnvi
   );
 }
 
-// "Aguardando Armazém" — 2ª etapa do fluxo real de ajuste da Selgron (SA →
+// "Analisados" — 2ª etapa do fluxo real de ajuste da Selgron (SA →
 // Armazém → Diretoria). O item chega aqui assim que o líder finaliza a
 // análise em "Itens Divergentes" (`App().enviarParaArmazem`) — ainda SEM
 // número de SA nem decisão nenhuma (Ajuste/Devolução), porque quem emite/
