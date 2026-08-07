@@ -14247,6 +14247,36 @@ function EtiquetasPanel({currentUser}){
     return ()=>{ cancelado = true; clearTimeout(timer); };
   }, [query, aba]);
 
+  // Consulta ao vivo (Selgron/Protheus) pro item selecionado — MESMO padrão
+  // já usado em `CountStep` (`liveConsulta`/`unidadeEfetiva`/`descricaoEfetiva`,
+  // ver perto de `fetchSaldoConsultaSelgron`). Cliente reportou (print de uma
+  // etiqueta com "QTD: 10 UN" — o fallback genérico, não a unidade real do
+  // item): "a unidade de medida não está puxando corretamente. Nas
+  // contagens ok, mas na etiqueta não" — causa raiz é essa tela nunca ter
+  // tido essa 2ª fonte: `searchSupabaseCatalog` aqui só lê o catálogo
+  // (`produtos.unidade`) do Supabase, que só é atualizado quando alguém
+  // reimporta a planilha "Descrição de Produtos" manualmente — pode estar
+  // desatualizado/ausente, mesmo pro código que a consulta ao vivo já sabe
+  // certo. Pedido já dado antes, mais amplo ("todos os locais que pedem
+  // unidade de medida e descrição, alterar da planilha para puxar direto do
+  // Consulta") — igual `descricao` também. Só roda pra `aba==='produto'`
+  // (endereço nunca mostra unidade/descrição na etiqueta).
+  const [liveConsultaEtiqueta, setLiveConsultaEtiqueta] = useState(null);
+  useEffect(()=>{
+    if(aba!=='produto' || !selecionado){ setLiveConsultaEtiqueta(null); return; }
+    let cancelado = false;
+    setLiveConsultaEtiqueta(null);
+    fetchSaldoConsultaSelgron(selecionado.codigo).then(res=>{
+      if(cancelado) return;
+      if(res.ok) setLiveConsultaEtiqueta(res);
+      else if(res.erro) console.warn('Consulta ao vivo (Selgron) falhou:', res.erro);
+    });
+    return ()=>{ cancelado = true; };
+  }, [aba, selecionado ? selecionado.codigo : null]);
+  const unidadeLiveValidaEtiqueta = liveConsultaEtiqueta ? unidadeCadastroValida(liveConsultaEtiqueta.unidade) : null;
+  const unidadeEfetivaEtiqueta = selecionado ? (unidadeLiveValidaEtiqueta || selecionado.unidade || null) : null;
+  const descricaoEfetivaEtiqueta = selecionado ? ((liveConsultaEtiqueta && liveConsultaEtiqueta.descricao) ? liveConsultaEtiqueta.descricao : selecionado.descricao) : null;
+
   // Pra tipo 'produto', gera N itens (N = quantidadeEtiquetas), cada um com
   // a fatia certa da quantidade recebida (`splitQuantidadeEtiquetas`) — 1
   // etiqueta (padrão) sempre gera `[quantidade]` inteira, mesmo
@@ -14267,18 +14297,18 @@ function EtiquetasPanel({currentUser}){
       return Array.from({length: n}, ()=>({
         tipo: 'prateleira',
         codigo: selecionado.codigo,
-        descricao: selecionado.descricao,
+        descricao: descricaoEfetivaEtiqueta,
       }));
     }
     const partes = splitQuantidadeEtiquetas(quantidade, quantidadeEtiquetas);
     return partes.map(qtd=>({
       tipo: 'produto',
       codigo: selecionado.codigo,
-      descricao: selecionado.descricao,
+      descricao: descricaoEfetivaEtiqueta,
       quantidade: qtd || '',
       dataRecebimento,
       endereco: selecionado.endereco || null,
-      unidade: selecionado.unidade || null,
+      unidade: unidadeEfetivaEtiqueta,
     }));
   }
 
@@ -14475,7 +14505,16 @@ function EtiquetasPanel({currentUser}){
               linha só), não precisa mais ficar perto do topo pra evitar
               rolagem. */}
           <div className="item-code" style={{fontSize:26,fontWeight:700}}>{selecionado.codigo}</div>
-          {aba==='produto' && <div className="item-desc">{selecionado.descricao}</div>}
+          {aba==='produto' && <div className="item-desc">{descricaoEfetivaEtiqueta}</div>}
+          {/* Mostra a unidade que VAI pra etiqueta antes de imprimir — "(ao
+              vivo)" só quando veio da consulta Selgron de verdade (nunca
+              afirma isso sem ter checado), mesmo critério de `CountStep`. */}
+          {aba==='produto' && modeloEtiqueta==='recebimento' && (
+            <div className="lr-sub" style={{marginTop:4}}>
+              Unidade: <strong>{unidadeEfetivaEtiqueta || 'UN (padrão, sem cadastro)'}</strong>
+              {unidadeLiveValidaEtiqueta && ' (ao vivo)'}
+            </div>
+          )}
           {aba==='endereco' && selecionado.almoxarifado && <div className="lr-sub" style={{marginTop:4}}>Armazém {selecionado.almoxarifado}</div>}
           {aba==='produto' && (
             <div style={{marginTop:12}}>

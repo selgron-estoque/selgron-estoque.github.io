@@ -17405,3 +17405,95 @@ altura desta tela pode voltar o botão de fila para ao lado dos demais."
   **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma
   limitação de sempre (login exige Supabase Auth real, não simulável no
   sandbox sem rede).
+
+## "Pulando uma fileira" na impressão de etiqueta avulsa — não era bug do app
+
+Cliente mandou foto de uma impressão real reclamando: "Quando eu imprimo uma
+etiqueta sozinha ele pula uma fileira de etiqueta. Se imprimir mais ele vai
+normal." Investigado a fundo (recortes da foto em pixel, cruzados com o
+código de `imprimirEtiquetaViaNavegador`/`buildEtiquetaPageHtml`/`.etq-page`)
+antes de responder — nenhum bug encontrado em nenhum caminho de código:
+`.etq-page` é uma única `<div>` de 101×30,5mm por impressão avulsa, sem
+transbordo pra 2ª página; só existe 1 elemento `#etiqueta-print-area` no
+arquivo (sem duplicata escondendo impressão antiga); `#root{display:none
+!important}` esconde o app inteiro durante a impressão; e nenhuma das 3
+funções que imprimem (`handleImprimir`/`handleImprimirFila`/
+`handleImprimirTodos`) chama `window.print()` duas vezes — o botão fica
+`disabled` enquanto imprime, protegido contra duplo-clique. Concluído (e
+comunicado ao cliente): isso é comportamento de **driver da impressora/
+Windows**, não do site — comum em impressoras térmicas de etiqueta avançar
+uma etiqueta extra em branco no FIM de um trabalho de impressão muito curto
+(1 página só), configuração normalmente chamada de "Tear-off"/"Avanço"/
+"Backfeed" nas Preferências de Impressão do driver — some quando o trabalho
+tem várias páginas juntas (o avanço extra só acontece 1 vez, no fim do job
+inteiro, ficando proporcionalmente menos perceptível). Nenhuma mudança de
+código nesta investigação — registrado aqui só pra não repetir a
+investigação do zero se o cliente relatar de novo.
+
+## Bug real: unidade de medida da etiqueta não usava a consulta ao vivo — "Nas contagens ok, mas na etiqueta não"
+
+Cliente mandou print de uma etiqueta mostrando "QTD: 10 UN" e apontou:
+"A unidade de medida não está puxando corretamente. Nas contagens OK, mas na
+etiqueta não." Investigado: `CountStep` (o motor de contagem) já tinha DUAS
+fontes pra unidade/descrição desde a rodada "Última movimentação via Kardex
+ao vivo" (ver seção "Descrição/unidade também passam a vir da consulta ao
+vivo" mais acima) — `unidadeEfetiva`/`descricaoEfetiva`, que priorizam a
+consulta ao vivo (Selgron/Protheus, via `fetchSaldoConsultaSelgron`) sobre o
+cadastro do Supabase (`produtos.unidade`, só atualizado quando alguém
+reimporta a planilha manualmente em Configurações — pode estar desatualizado
+ou simplesmente nunca ter sido preenchido pra aquele código). **A tela
+"Etiquetas" nunca teve essa 2ª fonte** — `EtiquetasPanel` chamava
+`searchSupabaseCatalog` só uma vez, na busca, e usava `selecionado.unidade`/
+`selecionado.descricao` direto pra montar a etiqueta, sem nunca consultar o
+Selgron ao vivo — daí a divergência exata reportada: a MESMA unidade que a
+contagem já mostrava certa (via consulta ao vivo) saía errada/genérica
+("UN", o fallback) na etiqueta (só cadastro, sem consulta).
+
+- **`liveConsultaEtiqueta`** (novo `useState`, `EtiquetasPanel`) — mesmo
+  padrão exato de `CountStep.liveConsulta`: um `useEffect` disparado quando
+  `selecionado.codigo` muda (só pra `aba==='produto'` — a etiqueta de
+  endereço nunca mostra unidade/descrição, não precisa dessa consulta extra)
+  chama `fetchSaldoConsultaSelgron(selecionado.codigo)`.
+- **`unidadeEfetivaEtiqueta`/`descricaoEfetivaEtiqueta`** — mesma fórmula de
+  `CountStep` (`unidadeCadastroValida` reaplicada na unidade vinda da
+  consulta, mesma proteção contra o parser devolver algo no formato de
+  endereço por engano — ver "Bug real: 'Unidade' mostrando valor no formato
+  de endereço" mais acima). Substituem `selecionado.unidade`/
+  `selecionado.descricao` nos 3 pontos que montam a etiqueta
+  (`montarItensParaImprimir`, tanto pro modelo "Recebimento" quanto
+  "Prateleira/Caixa") e no card de confirmação da tela (`.item-desc`).
+- **Nova linha "Unidade: X" no card de confirmação** (só modelo
+  "Recebimento", que é o único que mostra QTD) — deixa visível ANTES de
+  imprimir qual unidade vai sair na etiqueta, com "(ao vivo)" só quando
+  genuinamente veio da consulta (nunca afirma isso sem ter checado, mesmo
+  critério de honestidade de sempre neste projeto) — não existia nenhum jeito
+  de conferir isso antes de imprimir, só depois, olhando a etiqueta física.
+- **Pedido mais amplo já dado antes, reaproveitado aqui**: "todos os locais
+  que pedem unidade de medida e descrição, alterar da planilha para puxar
+  direto do Consulta" — como a tela de Etiquetas mostra os dois, corrigi os
+  dois juntos (não só a unidade reportada), evitando deixar a descrição com
+  o mesmo tipo de defeito só pra aparecer como uma reclamação nova depois.
+- Testado via harness novo (`harness_etiqueta_unidade_consulta_ao_vivo.js`,
+  jsdom + react-dom/client + `act()`, mesma técnica rigorosa de sempre —
+  carrega o `index.html` inteiro transpilado numa `vm.Script`): consulta ao
+  vivo respondendo com unidade/descrição diferentes do cadastro — as duas
+  aparecem no card ANTES de imprimir, e o HTML de fato mandado pra impressora
+  usa "M" (a unidade real), não mais "UN" (o fallback genérico); consulta
+  falhando (rede/credencial) — cai pro cadastro do Supabase normalmente, sem
+  quebrar, sem mostrar "(ao vivo)" (nunca afirma o que não checou); consulta
+  respondendo mas sem unidade nenhuma (célula vazia do Kardex/consulta) —
+  mesmo fallback, sem confundir "respondeu vazio" com "não respondeu"; aba
+  "Endereço" nunca dispara essa consulta extra (não precisa). 17 asserções,
+  todas passando — mais 1 harness pré-existente (`harness_etiqueta_unidade_
+  cadastro.js`) atualizado (checava o padrão antigo por inspeção de
+  código-fonte, `selecionado.unidade` direto — mudança de comportamento
+  intencional desta rodada, não regressão). Rodei de novo toda a suíte
+  completa do scratchpad (60 harnesses) — 0 falhas. Transpile Babel do
+  arquivo inteiro e balanceamento de chaves do CSS conferidos (666/666, sem
+  mudança — nenhuma classe CSS nova, só JS/JSX). **Nenhuma migração de SQL
+  necessária** (a Edge Function `consultar-produto-selgron` já está deployada
+  e já tinha `unidade`/`descricao` no retorno desde as rodadas anteriores).
+  **Verificação visual/física de ponta a ponta (a etiqueta impressa de
+  verdade mostrando a unidade certa) fica a cargo do cliente** — mesma
+  limitação de sempre (login exige Supabase Auth real, não simulável no
+  sandbox sem rede).
