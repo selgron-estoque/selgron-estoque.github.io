@@ -17637,3 +17637,73 @@ seria considerar apenas o resultado final da recontagem."
   Supabase Auth real, não simulável no sandbox sem rede) — mas como não
   depende de nenhuma migração, já deve refletir certo no próximo
   carregamento da página.
+## Novo indicador "Itens Contados na Semana" — mesma formatação de "Contagens na Semana", pool deduplicado
+
+Na sequência direta da correção acima (pizza "Contados × Divergências"), o cliente fez
+duas perguntas de esclarecimento sobre a origem exata dos dados de cada indicador de
+"divergência" no app (respondidas sem nenhuma mudança de código — havia 4 lugares
+diferentes com o rótulo "Itens Divergentes"/conceitos parecidos, cada um com um
+escopo/regra própria: KPI da Home + `DivergentItemsPanel`, sempre a fila viva por
+status; "Resumo da Operação" + a própria pizza, cumulativo e deduplicado por
+documento; `AllDivergencesPanel`, qualquer item com discrepância independente de
+status; e o relatório Excel, mesma regra central mas sem dedup). Depois pediu, de
+forma direta: **"Crie um indicador com a formatação igual de contagens da semana, mas
+que mostre a quantidade de itens contado semanalmente"**.
+
+- **Reaproveita 100% o componente `WeeklyCountChart`** (mesmo gráfico de barras já
+  usado por "Contagens na Semana", mesma constante `META_CONTAGENS_SEMANAL=250` como
+  meta padrão, mesmo `chart-meta-badge` no cabeçalho) — só a fonte de dados muda.
+- **A diferença exata, que é o motivo de existir um indicador novo em vez de só
+  reaproveitar "Contagens na Semana"**: aquele gráfico conta toda RODADA registrada
+  na semana — uma recontagem soma separado da 1ª contagem, porque representa volume
+  de TRABALHO real (cada rodada é um evento que de fato aconteceu). O indicador novo
+  responde uma pergunta diferente — "quantos ITENS, de fato, foram resolvidos" — e
+  usa o MESMO pool já deduplicado que resolveu o bug da pizza
+  (`poolTendenciaDedup = ultimaContagemPorDocumento(poolTendencia)`, ver seção
+  acima): a 1ª contagem de um item que foi recontado não soma mais separada da
+  recontagem que a decidiu — só a rodada FINAL entra, na semana em que ela
+  aconteceu.
+- **`poolTendenciaDedup` subiu de posição** — antes só existia dentro do bloco da
+  pizza (calculado ali por perto de onde era consumido); agora é calculado logo
+  depois de `poolTendencia` (bem mais acima na função), porque alimenta os DOIS
+  indicadores (a pizza e o gráfico novo) — precisa existir antes dos dois consumirem.
+  O bloco da pizza só reaproveita a variável já calculada, sem recalcular.
+- **`weeklyStatsItensUnicos = computeWeeklyStats(poolTendenciaDedup, dataInicioStr,
+  dataFimStr)`** — mesma função, mesmo intervalo de data do painel "Filtros" que já
+  alimenta "Contagens na Semana" ao lado, só trocando o pool de entrada — os dois
+  gráficos ficam comparáveis lado a lado, olhando exatamente a mesma janela de tempo.
+- **Posição na tela**: entrou como par da pizza "Contados × Divergências" na
+  **Fileira 3** da seção "Tendência" (Indicadores) — essa fileira era `weekly-solo-row`
+  (pizza sozinha, largura total) e virou `weekly-pair-row` (mesmo componente de grid
+  de 2 colunas já usado nas outras 2 fileiras dessa seção) — pizza à esquerda, gráfico
+  novo à direita. Faz sentido como par porque os dois respondem a mesma pergunta de
+  fundo ("de tudo que já foi contado, deduplicado por item, quanto isso dá") — só um
+  agregado no período inteiro (pizza) e o outro quebrado por semana (barras), mesmo
+  raciocínio já usado nos outros 2 pares da seção (Acuracidade Semanal+Contagens na
+  Semana; Acuracidade Mensal+Divergência por Família/Grupo).
+- **Título "Itens Contados na Semana"**, subtítulo "Cada item conta uma vez só, mesmo
+  se recontado." — deixa a diferença pro gráfico vizinho ("Contagens na Semana")
+  explícita pra quem está lendo a tela, sem precisar adivinhar.
+- Testado via harness novo (`harness_itens_contados_semana.js`, mesma técnica
+  rigorosa de sempre — jsdom+react-dom/client+`act()`, `index.html` inteiro
+  transpilado numa `vm.Script`): confirma que o título/subtítulo aparecem, que a
+  pizza continua aparecendo ao lado (agora em par, não mais sozinha), e que o badge
+  "Meta: 250" aparece exatamente 2 vezes (1 por painel — checado pela classe
+  `chart-meta-badge` especificamente, não por substring solta, já que o SVG de cada
+  `WeeklyCountChart` também tem um `<title>Meta: X</title>` interno na linha
+  tracejada, que dobra a contagem se checado à toa). **O cenário que prova a
+  diferença de verdade**: uma cadeia de recontagem (1ª contagem -1/divergente →
+  recontagem 0/resolvida) mostra **2** contagens na semana atual em "Contagens na
+  Semana" (cada rodada é trabalho real) e **1** em "Itens Contados na Semana"
+  (deduplicado, só o resultado final) — os dois números diferentes, na MESMA semana,
+  pro MESMO pool de dados, confirmando que o gráfico novo realmente usa a lógica
+  certa e não é só uma cópia visual do outro. Cenário de regressão (3 itens sem
+  nenhuma cadeia de recontagem) confirma que os dois gráficos mostram o MESMO total
+  quando não há nada pra deduplicar — sem cadeia, os dois concordam. Rodei de novo
+  toda a suíte de regressão do scratchpad (63 harnesses) — 0 falhas. Transpile Babel
+  do arquivo inteiro e balanceamento de chaves do CSS conferidos (668/668, sem
+  mudança — nenhuma classe CSS nova, reaproveita `weekly-pair-row`/`panel`/
+  `chart-meta-badge` já existentes). **Nenhuma migração de SQL necessária**
+  (indicador é só leitura/agregação em memória do mesmo dado já carregado).
+  **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma limitação
+  de sempre (login exige Supabase Auth real, não simulável no sandbox sem rede).

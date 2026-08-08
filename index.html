@@ -13177,6 +13177,15 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   // — a MESMA construção usada por "Acuracidade do Estoque" (Home), garante
   // que os dois nunca constroem esse pool de jeitos diferentes.
   const poolTendencia = buildPoolTendencia(counts, historicoParaTendencia);
+  // Versão deduplicada por documento/cadeia de recontagem (`ultimaContagemPorDocumento`)
+  // — só a rodada FINAL de cada item conta, mesma correção já aplicada à
+  // pizza "Contados × Divergências" (ver comentário completo mais abaixo).
+  // Precisa existir AQUI EM CIMA (não só perto da pizza) porque também
+  // alimenta "Itens Contados na Semana" (`weeklyStatsItensUnicos`, logo
+  // abaixo) — as duas coisas respondem "quantos itens, de verdade, foram
+  // resolvidos", só uma agregada no período inteiro e a outra quebrada por
+  // semana.
+  const poolTendenciaDedup = ultimaContagemPorDocumento(poolTendencia);
   // Janela dos gráficos é escolhível (cliente pediu): fixa em 10/26 semanas,
   // "todo o período" (da contagem mais antiga do pool até hoje) ou um
   // período personalizado (dois campos de data) pra quando o cliente
@@ -13189,6 +13198,19 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   let dataInicioStr = trendRange.from, dataFimStr = trendRange.to;
   if(dataInicioStr > dataFimStr) dataInicioStr = dataFimStr; // evita intervalo invertido se o usuário escolher datas fora de ordem
   const weeklyStats = computeWeeklyStats(poolTendencia, dataInicioStr, dataFimStr);
+  // "Itens Contados na Semana" — pedido do cliente: "mesma formatação de
+  // Contagens da Semana, mas que mostre a quantidade de itens contado
+  // semanalmente". Diferença exata pro gráfico acima ("Contagens na
+  // Semana"): esse conta toda RODADA registrada na semana (uma recontagem
+  // soma separado da 1ª contagem, representa volume de TRABALHO); este
+  // aqui conta ITEM, deduplicado por documento/cadeia de recontagem
+  // (`poolTendenciaDedup`, ver comentário completo perto de onde é
+  // declarado) — a 1ª contagem de um item recontado não soma mais
+  // separado da recontagem que a resolveu, só a rodada final entra, na
+  // semana em que ela aconteceu. Mesmo intervalo de data
+  // (`dataInicioStr`/`dataFimStr`) do gráfico ao lado, pra os dois
+  // ficarem comparáveis lado a lado.
+  const weeklyStatsItensUnicos = computeWeeklyStats(poolTendenciaDedup, dataInicioStr, dataFimStr);
   // "Acuracidade Mensal" é INDEPENDENTE do filtro de período acima —
   // deliberado, cliente pediu "mostrar todos os meses com dados do ano".
   // Um mês é um balde grande de mais pro filtro de "10/26 semanas" fazer
@@ -13234,17 +13256,17 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   // ver parágrafo acima), então herdou o bug de novo por não passar pelo
   // mesmo dedup.
   //
-  // Corrigido com `ultimaContagemPorDocumento(poolTendencia)` ANTES do
-  // filtro de período (não depois) — precisa ser assim pra resolver a
-  // cadeia corretamente mesmo quando a 1ª contagem e a recontagem caem em
-  // datas diferentes fora do período escolhido; linha de histórico
-  // (sem `id`/`contagemAnteriorId`) sempre passa intacta pela função,
-  // então só afeta contagem AO VIVO, onde a cadeia de fato existe. Item
-  // sem saldo pra comparar (`diferenca===null`) continua entrando em "Sem
-  // divergência" — mesmo critério já usado em `divergentes`
-  // (`c.diferenca!==0 && c.diferenca!==null`) em todo o resto do app:
-  // nunca é tratado como divergente.
-  const poolTendenciaDedup = ultimaContagemPorDocumento(poolTendencia);
+  // Corrigido com `ultimaContagemPorDocumento(poolTendencia)` (`poolTendenciaDedup`,
+  // já calculado lá em cima — reaproveitado aqui, mesmo pool que alimenta
+  // "Itens Contados na Semana") ANTES do filtro de período (não depois) —
+  // precisa ser assim pra resolver a cadeia corretamente mesmo quando a 1ª
+  // contagem e a recontagem caem em datas diferentes fora do período
+  // escolhido; linha de histórico (sem `id`/`contagemAnteriorId`) sempre
+  // passa intacta pela função, então só afeta contagem AO VIVO, onde a
+  // cadeia de fato existe. Item sem saldo pra comparar (`diferenca===null`)
+  // continua entrando em "Sem divergência" — mesmo critério já usado em
+  // `divergentes` (`c.diferenca!==0 && c.diferenca!==null`) em todo o
+  // resto do app: nunca é tratado como divergente.
   const poolTendenciaNoPeriodo = poolTendenciaDedup.filter(c=>c.data && c.data>=dataInicioStr && c.data<=dataFimStr);
   const pizzaTotalContado = poolTendenciaNoPeriodo.length;
   const pizzaDivergentes = poolTendenciaNoPeriodo.filter(c=>c.diferenca!==0 && c.diferenca!==null).length;
@@ -13414,9 +13436,16 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
             </div>
           </div>
 
-          {/* Fileira 3: "Contados × Divergências" (pizza) — pedido do
-              cliente, mesmo filtro de período das demais desta seção. */}
-          <div className="weekly-solo-row">
+          {/* Fileira 3: "Contados × Divergências" (pizza, esquerda) +
+              "Itens Contados na Semana" (direita, novo) — pedido do
+              cliente: "mesma formatação de Contagens da Semana, mas que
+              mostre a quantidade de itens contado semanalmente". Virou
+              par com a pizza (era solo) porque os dois respondem a MESMA
+              pergunta de fundo ("de tudo que já foi contado, deduplicado
+              por item, quanto isso dá") — só um agregado no período
+              inteiro (pizza) e o outro quebrado por semana (barras),
+              mesmo raciocínio já usado nos outros 2 pares desta seção. */}
+          <div className="weekly-pair-row">
             <div className="panel" style={{margin:0}}>
               <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:16}}>
                 <div>
@@ -13441,6 +13470,16 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
                   </div>
                 </div>
               )}
+            </div>
+            <div className="panel" style={{margin:0}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:16}}>
+                <div>
+                  <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Itens Contados na Semana</div>
+                  <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:2}}>Cada item conta uma vez só, mesmo se recontado.</div>
+                </div>
+                <span className="chart-meta-badge">Meta: {META_CONTAGENS_SEMANAL}</span>
+              </div>
+              <WeeklyCountChart weeks={weeklyStatsItensUnicos} meta={META_CONTAGENS_SEMANAL} />
             </div>
           </div>
         </div>
