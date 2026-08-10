@@ -14355,15 +14355,32 @@ function EtiquetasPanel({currentUser}){
   const unidadeLiveValidaEtiqueta = liveConsultaEtiqueta ? unidadeCadastroValida(liveConsultaEtiqueta.unidade) : null;
   const unidadeEfetivaEtiqueta = selecionado ? (unidadeLiveValidaEtiqueta || selecionado.unidade || null) : null;
   const descricaoEfetivaEtiqueta = selecionado ? ((liveConsultaEtiqueta && liveConsultaEtiqueta.descricao) ? liveConsultaEtiqueta.descricao : selecionado.descricao) : null;
+  // Mesmo bug/correção da unidade, agora pro ENDEREÇO: cliente reportou
+  // ("000.64731 eu alterei o endereço agora, porém ainda não puxa para
+  // imprimir na etiqueta") que uma atualização de endereço não refletia na
+  // etiqueta — porque `montarItensParaImprimir` sempre usava só
+  // `selecionado.endereco` (o cadastro local em `estoque_enderecos`, só
+  // atualizado por reimportação manual da planilha ou por uma proposta já
+  // APROVADA pelo líder) e nunca consultava a fonte ao vivo (Selgron/
+  // Protheus) — mesmo padrão de `liveEnderecoValido` já usado em
+  // `CountStep` (a consulta ao vivo sempre vence quando confirma um
+  // endereço válido pro código; cai pro cadastro local só como fallback).
+  const liveEnderecoValidoEtiqueta = (()=>{
+    if(!liveConsultaEtiqueta || !liveConsultaEtiqueta.endereco) return null;
+    const formatado = formatEnderecoInput(liveConsultaEtiqueta.endereco);
+    return ENDERECO_REGEX.test(formatado) ? formatado : null;
+  })();
+  const enderecoEfetivaEtiqueta = selecionado ? (liveEnderecoValidoEtiqueta || selecionado.endereco || null) : null;
 
   // Pra tipo 'produto', gera N itens (N = quantidadeEtiquetas), cada um com
   // a fatia certa da quantidade recebida (`splitQuantidadeEtiquetas`) — 1
   // etiqueta (padrão) sempre gera `[quantidade]` inteira, mesmo
   // comportamento de sempre. Endereço nunca divide (não tem quantidade).
-  // `endereco` vem do próprio cadastro do produto (`selecionado.endereco`,
-  // já resolvido por `searchSupabaseCatalog` — `null` se o produto não tem
-  // endereço cadastrado ainda) — pedido do cliente: mostrar o endereço do
-  // material abaixo da quantidade na etiqueta.
+  // `endereco` usa `enderecoEfetivaEtiqueta` (consulta ao vivo Selgron/
+  // Protheus vence quando confirma um endereço válido; cai pro cadastro
+  // local — `selecionado.endereco` — só como fallback) — pedido do
+  // cliente: mostrar o endereço do material abaixo da quantidade na
+  // etiqueta, sempre o mais atual disponível.
   function montarItensParaImprimir(){
     if(aba!=='produto'){
       return [{ tipo: aba, codigo: selecionado.codigo, descricao: selecionado.descricao }];
@@ -14386,7 +14403,7 @@ function EtiquetasPanel({currentUser}){
       descricao: descricaoEfetivaEtiqueta,
       quantidade: qtd || '',
       dataRecebimento,
-      endereco: selecionado.endereco || null,
+      endereco: enderecoEfetivaEtiqueta,
       unidade: unidadeEfetivaEtiqueta,
     }));
   }
@@ -14592,6 +14609,17 @@ function EtiquetasPanel({currentUser}){
             <div className="lr-sub" style={{marginTop:4}}>
               Unidade: <strong>{unidadeEfetivaEtiqueta || 'UN (padrão, sem cadastro)'}</strong>
               {unidadeLiveValidaEtiqueta && ' (ao vivo)'}
+            </div>
+          )}
+          {/* Mesmo padrão da Unidade acima — mostra o endereço que VAI pra
+              etiqueta antes de imprimir, com "(ao vivo)" só quando veio da
+              consulta Selgron de verdade. Corrige o caso reportado: alterar
+              o endereço (Selgron/Protheus) e a etiqueta continuar puxando o
+              cadastro local antigo. */}
+          {aba==='produto' && modeloEtiqueta==='recebimento' && (
+            <div className="lr-sub" style={{marginTop:4}}>
+              Endereço: <strong>{enderecoEfetivaEtiqueta || 'sem cadastro'}</strong>
+              {liveEnderecoValidoEtiqueta && ' (ao vivo)'}
             </div>
           )}
           {aba==='endereco' && selecionado.almoxarifado && <div className="lr-sub" style={{marginTop:4}}>Armazém {selecionado.almoxarifado}</div>}

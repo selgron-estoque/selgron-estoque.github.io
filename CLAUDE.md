@@ -17707,3 +17707,51 @@ que mostre a quantidade de itens contado semanalmente"**.
   (indicador é só leitura/agregação em memória do mesmo dado já carregado).
   **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma limitação
   de sempre (login exige Supabase Auth real, não simulável no sandbox sem rede).
+## Bug real: etiqueta de produto não refletia endereço atualizado na Selgron
+
+Cliente reportou: "000.64731 eu alterei o endereço agora, porém ainda não puxa para
+imprimir na etiqueta" — mesma classe de bug já corrigida antes nesta feature (ver
+"Bug real: unidade de medida da etiqueta não usava a consulta ao vivo" mais acima), só
+que dessa vez pro campo Endereço.
+
+- **Causa raiz**: `EtiquetasPanel.montarItensParaImprimir` sempre usava
+  `selecionado.endereco` — o cadastro LOCAL (`produtos` → `estoque_enderecos` →
+  `enderecos`, via `searchSupabaseCatalog`), só atualizado quando alguém reimporta a
+  planilha "Descrição de Produtos" manualmente ou quando uma proposta de endereço já
+  foi aprovada pelo líder. `liveConsultaEtiqueta` (a consulta ao vivo Selgron/Protheus,
+  já usada nesta tela desde a correção de unidade/descrição) até já buscava
+  `endereco` na resposta da Edge Function — só nunca era LIDA em lugar nenhum do
+  componente, muito menos usada na hora de montar o item pra impressão. Se o cliente
+  atualizasse o endereço no Protheus/Selgron (fora do app), a etiqueta continuava
+  imprimindo o valor antigo do cadastro local, indefinidamente.
+- **Correção**: `liveEnderecoValidoEtiqueta`/`enderecoEfetivaEtiqueta` — mesmo padrão
+  exato já usado em `CountStep.liveEnderecoValido` (a consulta ao vivo sempre vence
+  quando confirma um endereço válido pro código, via `formatEnderecoInput`+
+  `ENDERECO_REGEX`; cai pro cadastro local só como fallback quando a consulta não
+  confirma nada). `montarItensParaImprimir` passou a usar `enderecoEfetivaEtiqueta`
+  em vez de `selecionado.endereco` direto — como tanto `handleImprimir` (impressão
+  direta) quanto `handleEnviarParaFila` (fila de impressão) chamam essa MESMA função,
+  a correção cobre os dois caminhos de uma vez, sem precisar duplicar lógica (a coluna
+  `endereco` já existia em `etiquetas_fila` desde uma rodada anterior, então a fila não
+  precisou de nenhuma migração de SQL nova).
+- **Linha "Endereço: X (ao vivo)" nova no card de confirmação**, ao lado da linha
+  "Unidade" já existente — mesmo critério de honestidade de sempre: "(ao vivo)" só
+  aparece quando o valor veio de fato da consulta Selgron confirmada, nunca quando é
+  só o cadastro local usado como fallback. Deixa visível, ANTES de imprimir, qual
+  endereço vai sair na etiqueta — sem isso, o único jeito de descobrir era olhar a
+  etiqueta física já impressa.
+- Testado via harness novo (`harness_etiqueta_endereco_ao_vivo.js`, jsdom +
+  react-dom/client + `act()`, mesma técnica rigorosa de sempre — carrega o
+  `index.html` inteiro transpilado numa `vm.Script`, Supabase mockado com cadastro
+  local "999-A-9" e consulta ao vivo devolvendo "035-A-1", o cenário exato do
+  cliente): consulta confirmando um endereço válido sobrescreve o cadastro local
+  antigo (mostra "035-A-1", não mais "999-A-9", com a dica "(ao vivo)"); consulta
+  falhando cai pro cadastro local (999-A-9) sem quebrar, sem afirmar "(ao vivo)" à
+  toa. 8 asserções, todas passando. Rodei de novo toda a suíte de regressão do
+  scratchpad (64 harnesses) — 0 falhas. Transpile Babel do arquivo inteiro e
+  balanceamento de chaves do CSS conferidos (668/668, sem mudança — nenhuma classe
+  CSS nova, só JS/JSX). **Nenhuma migração de SQL necessária** (correção é só de
+  leitura, reaproveitando dado que a Edge Function já devolvia). **Verificação de
+  ponta a ponta com o item real (000.64731) fica a cargo do cliente** — mesma
+  limitação de sempre (login exige Supabase Auth real, não simulável no sandbox sem
+  rede).
