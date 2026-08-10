@@ -4426,6 +4426,47 @@ function getOpenInventoryItemConflict(inventories, counts, currentInvId, product
   return null;
 }
 
+// Busca por status de um item — pedido do cliente: "incluir na tela inicial
+// um campo de busca, caso eu queira saber o status de algum item." Sem
+// nenhuma consulta nova ao Supabase: filtra em memória sobre o MESMO pool
+// que a Home já tem em mãos pros KPIs (contagem ao vivo + histórico já
+// concluído) — busca por código OU descrição. Só a PONTA de cada documento
+// entra (`ultimaContagemPorDocumento`, mesma lógica de `getOpenCountForProduct`
+// generalizada) — nunca mostra uma rodada já superada por uma recontagem
+// seguinte como se fosse o status atual do item.
+function buscarStatusItens(termo, counts, historicoConcluidas){
+  const q = (termo||'').trim().toLowerCase();
+  if(!q) return [];
+  const pontasAoVivo = ultimaContagemPorDocumento(counts);
+  const historicoComoContagem = (historicoConcluidas||[]).map(historicoRowToCountLike).filter(Boolean);
+  const pool = [...pontasAoVivo, ...historicoComoContagem];
+  return pool
+    .filter(c => (c.productCode||'').toLowerCase().includes(q) || (c.descricao||'').toLowerCase().includes(q))
+    .sort((a,b)=>(b.data||'').localeCompare(a.data||''))
+    .slice(0, 15);
+}
+
+// Rótulo/cor/destino de navegação pro resultado da busca acima — reaproveita
+// STATUS_INFO (contagem ao vivo) ou `_statusDisplay` (histórico importado,
+// ver `historicoRowToCountLike`), mesmo vocabulário/cor já usado no resto do
+// app — não inventa uma classificação nova só pra este painel. `destino`
+// fica `null` pra histórico importado (não tem tela própria de "abrir esse
+// item específico", é só consulta/auditoria antiga).
+function resolverStatusParaBusca(c){
+  if(c._fromHistorico){
+    const disp = c._statusDisplay || {level:'ok', text:c._statusOriginal || 'Histórico importado'};
+    return {level:disp.level, text:disp.text, destino:null};
+  }
+  const info = STATUS_INFO[c.statusAprovacao] || {level:'ok', text:(c.classificacao && c.classificacao.rule) || 'Concluído'};
+  const DESTINOS = {
+    aguardando_segunda:'recounts',
+    aguardando_analise_lider:'divergentes',
+    aguardando_solicitacao_armazem:'solicitacaoArmazem',
+    aguardando_aprovacao_diretoria:'aprovacaoDiretoria',
+  };
+  return {level:info.level, text:info.text, destino: DESTINOS[c.statusAprovacao] || 'concluidas'};
+}
+
 /* ---------------- RELATÓRIO EXCEL (SheetJS) ---------------- */
 
 function statusLabel(c){
@@ -4572,6 +4613,25 @@ function buildCountRows(counts){
     'Endereço Pendente Validação': c.enderecoPendenteValidacao ? 'Sim' : 'Não',
     'Hora': c.hora || '',
   }));
+}
+
+// Botão de download por MÓDULO — pedido do cliente: "quero um botão de
+// download em todos os tipos de contagem, caso eu queira baixar um
+// relatório específico de cada módulo." Reaproveita o MESMO layout de
+// colunas do relatório principal (buildCountRows) — já bate com o que o
+// cliente já sabe ler no Excel, sem inventar um formato novo — só isola
+// numa aba própria, já filtrada pelo que está sendo mostrado NA TELA no
+// momento do clique (busca/severidade/status/período já aplicados pela
+// própria tela, antes de chegar aqui).
+function baixarRelatorioModulo(counts, sheetName, nomeArquivo){
+  if(!window.XLSX) return {ok:false, erro:'A biblioteca de exportação não carregou (verifique a conexão com a internet).'};
+  if(!counts.length) return {ok:false, erro:'Nenhum item para exportar com os filtros atuais.'};
+  const XLSX = window.XLSX;
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(buildCountRows(counts)), sheetName);
+  const filename = `GestaoEstoques_${nomeArquivo}_${hojeLocalStr()}.xlsx`;
+  XLSX.writeFile(wb, filename);
+  return {ok:true, filename};
 }
 
 // Espelha o formato da planilha que o cliente sobe pra gerar a lista de
@@ -6959,6 +7019,51 @@ function MobileHomeMenu({user, goto, badges={}}){
   );
 }
 
+// Painel "Consultar Status de um Item" — pedido do cliente: "incluir na
+// tela inicial um campo de busca, caso eu queira saber o status de algum
+// item." Renderizado FORA de `.pnl-wrap`/`.mobile-home-menu` (os dois blocos
+// que se alternam por tamanho de tela) — mesmo lugar de `.greet`/
+// `.greet-title`, que nunca têm `display:none` em nenhum breakpoint — pra
+// aparecer em QUALQUER tamanho de tela, sem precisar duplicar o componente
+// uma vez pro desktop e outra pro celular.
+function ItemStatusSearchPanel({counts, historicoConcluidas, user, goto}){
+  const [termo, setTermo] = useState('');
+  const termoLimpo = termo.trim();
+  const resultados = buscarStatusItens(termo, counts, historicoConcluidas);
+  return (
+    <div className="panel" style={{marginBottom:20}}>
+      <div className="section-title" style={{marginTop:0}}>Consultar Status de um Item</div>
+      <SearchWithScanner value={termo} onChange={setTermo} placeholder="Código ou descrição do item" />
+      {termoLimpo && (
+        resultados.length===0 ? (
+          <div className="empty-state">Nenhuma contagem encontrada para "{termoLimpo}".</div>
+        ) : (
+          <div style={{display:'flex',flexDirection:'column',gap:8}}>
+            {resultados.map(c=>{
+              const st = resolverStatusParaBusca(c);
+              const podeAbrir = st.destino && hasAccess(user, st.destino);
+              return (
+                <div key={(c.id || '')+'|'+c.productCode+'|'+(c.data||'')} style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,flexWrap:'wrap',padding:'10px 12px',border:'1px solid var(--line)',borderRadius:'var(--radius)'}}>
+                  <div style={{minWidth:0,flex:1}}>
+                    <div style={{fontFamily:'var(--font-mono)',fontWeight:700,fontSize:'var(--text-sm)',color:'var(--ink)'}}>{c.productCode}</div>
+                    <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.descricao || 'Sem descrição'}</div>
+                  </div>
+                  <div style={{display:'flex',alignItems:'center',gap:10,flexShrink:0}}>
+                    <span className={'pnl-status '+st.level}><span className="dot"></span>{st.text}</span>
+                    {podeAbrir && (
+                      <button type="button" className="btn btn-outline btn-sm" onClick={()=>goto(st.destino)}>Abrir</button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )
+      )}
+    </div>
+  );
+}
+
 /* ---------------- HOME ---------------- */
 
 // "Bom dia"/"Boa tarde"/"Boa noite" conforme o horário do aparelho — troca o
@@ -7203,6 +7308,8 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], historic
     <div>
       <div className="greet">{saudacaoPorHorario()}</div>
       <h2 className="greet-title">{user.nome}</h2>
+
+      <ItemStatusSearchPanel counts={counts} historicoConcluidas={historicoConcluidas} user={user} goto={goto} />
 
       {/* Telas largas: Dashboard novo (design corporativo/ERP) — ver CLAUDE.md
           "Dashboard vira a tela inicial". Tablet/celular continua com o grid
@@ -10262,6 +10369,30 @@ function PaginationControls({pagina, setPagina, totalPaginas, tamanhoPagina, set
   );
 }
 
+// Botão de download compacto, reaproveitado nas 5 telas de "tipos de
+// contagem" (Recontagens/Itens Divergentes/Analisados/Aguardando Aprovação/
+// Contagens Concluídas) — pedido do cliente: "quero um botão de download em
+// todos os tipos de contagem, caso eu queira baixar um relatório especifico
+// de cada módulo." Cada tela passa a própria lista JÁ FILTRADA (o que está
+// visível na hora do clique, com busca/severidade/status/período já
+// aplicados) e um nome de aba/arquivo próprio — nunca a lista bruta sem
+// filtro nenhum, pra o Excel bater com o que a pessoa está vendo na tela.
+function ModuloDownloadButton({counts, sheetName, nomeArquivo}){
+  const [msg, setMsg] = useState('');
+  function handleClick(){
+    const res = baixarRelatorioModulo(counts, sheetName, nomeArquivo);
+    setMsg(res.ok ? ('Baixado: '+res.filename) : res.erro);
+  }
+  return (
+    <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:4}}>
+      <button type="button" className="btn btn-outline btn-sm" onClick={handleClick} disabled={!counts.length} title="Baixar um relatório .xlsx só com os itens desta lista, do jeito que estão filtrados agora">
+        <Ic>⬇</Ic> Baixar (.xlsx)
+      </button>
+      {msg && <div style={{fontSize:'var(--text-2xs)',color:'var(--ink-dim)',maxWidth:220,textAlign:'right'}}>{msg}</div>}
+    </div>
+  );
+}
+
 function RecountsPanel({counts, inventories, role, currentUser, users, goto, onDeleteCount, onToggleUrgente, onToggleLiberarOriginal, onEditarMotivoObservacao, onAtribuir, operadorVeValoresRecontagem}){
   const canMark = role==='lider' || role==='admin';
   // Escopo AJUSTADO (cliente pediu pra restringir depois de ver o resultado
@@ -10494,6 +10625,7 @@ function RecountsPanel({counts, inventories, role, currentUser, users, goto, onD
           <strong style={{color:'var(--ink)'}}>{aguardandoSegunda.length}</strong> pendentes
           {aguardandoSegundaNoPeriodo.length!==aguardandoSegunda.length && <> · <strong style={{color:'var(--ink)'}}>{aguardandoSegundaNoPeriodo.length}</strong> no período selecionado</>}
         </span>
+        <ModuloDownloadButton counts={listaFiltrada} sheetName="Recontagens" nomeArquivo="Recontagens" />
       </div>
 
       <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
@@ -10830,6 +10962,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onEnvi
           <strong style={{color:'var(--ink)'}}>{aguardandoAnalise.length}</strong> pendentes
           {aguardandoAnaliseNoPeriodo.length!==aguardandoAnalise.length && <> · <strong style={{color:'var(--ink)'}}>{aguardandoAnaliseNoPeriodo.length}</strong> no período selecionado</>}
         </span>
+        <ModuloDownloadButton counts={listaFiltrada} sheetName="Itens Divergentes" nomeArquivo="ItensDivergentes" />
       </div>
 
       <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
@@ -11131,6 +11264,7 @@ function SolicitacaoArmazemPanel({counts, inventories, role, onEnviarParaDiretor
           <strong style={{color:'var(--ink)'}}>{aguardandoArmazem.length}</strong> pendentes
           {aguardandoArmazemNoPeriodo.length!==aguardandoArmazem.length && <> · <strong style={{color:'var(--ink)'}}>{aguardandoArmazemNoPeriodo.length}</strong> no período selecionado</>}
         </span>
+        <ModuloDownloadButton counts={listaFiltrada} sheetName="Analisados" nomeArquivo="Analisados" />
       </div>
 
       <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
@@ -11352,6 +11486,7 @@ function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejec
           <strong style={{color:'var(--ink)'}}>{aguardandoDiretoria.length}</strong> pendentes
           {aguardandoDiretoriaNoPeriodo.length!==aguardandoDiretoria.length && <> · <strong style={{color:'var(--ink)'}}>{aguardandoDiretoriaNoPeriodo.length}</strong> no período selecionado</>}
         </span>
+        <ModuloDownloadButton counts={listaFiltrada} sheetName="Aguardando Aprovação" nomeArquivo="AguardandoAprovacao" />
       </div>
 
       <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
@@ -11899,9 +12034,12 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
         <StatusConcluidoFilterRow tips={cadeiasPorBusca.map(cd=>cd.tip)} value={statusFiltro} onChange={setStatusFiltro} />
       </div>
 
-      <div className="section-title" style={{marginTop:0}}>
-        Histórico
-        {cadeiasNoPeriodo.length>0 && <span className="badge" style={{position:'static',marginLeft:8}}>{cadeiasNoPeriodo.length}</span>}
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8}}>
+        <div className="section-title" style={{marginTop:0,flex:1,minWidth:180}}>
+          Histórico
+          {cadeiasNoPeriodo.length>0 && <span className="badge" style={{position:'static',marginLeft:8}}>{cadeiasNoPeriodo.length}</span>}
+        </div>
+        <ModuloDownloadButton counts={cadeiasFiltradas.map(cd=>cd.tip)} sheetName="Contagens Concluídas" nomeArquivo="ContagensConcluidas" />
       </div>
       {cadeiasFiltradas.length===0 ? (
         <div className="empty-state">

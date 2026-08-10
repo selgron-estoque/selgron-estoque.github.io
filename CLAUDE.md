@@ -18136,3 +18136,106 @@ andamento).
   **Verificação visual/funcional de ponta a ponta fica a cargo do cliente**
   — mesma limitação de sempre (login exige Supabase Auth real, não
   simulável no sandbox sem rede).
+
+
+## Botão de download por módulo (5 telas de contagem) + busca de status na Home
+
+Cliente mandou print da Sidebar (grupo "Gestão de Inventário": Recontagens/
+Itens Divergentes/Analisados/Aguardando Aprovação/Contagens Concluídas) com
+dois pedidos numa mensagem só: "quero um botão de download em todos os tipos
+de contagem, caso eu queira baixar um relatório especifico de cada módulo. E
+incluir na tela inicial um campo de busca, caso eu queira saber o status de
+algum item."
+
+### 1. Download por módulo
+
+- **`baixarRelatorioModulo(counts, sheetName, nomeArquivo)`** (função nova,
+  logo depois de `buildCountRows`) — reaproveita o MESMO layout de colunas do
+  relatório principal (`buildCountRows`, o que já bate com o vocabulário da
+  planilha `BD_Contagens` do cliente) numa aba só, isolada por módulo — sem
+  inventar um formato novo. Recebe a lista JÁ FILTRADA (o que está visível na
+  tela no momento do clique — busca/severidade/status/período já aplicados
+  pela própria tela), nunca a lista bruta. Nome do arquivo:
+  `GestaoEstoques_{Modulo}_{hojeLocalStr()}.xlsx`.
+- **`ModuloDownloadButton({counts, sheetName, nomeArquivo})`** (componente
+  compartilhado, logo depois de `PaginationControls`, mesma vizinhança dos
+  outros subcomponentes reutilizados por essas telas —
+  `SeverityFilterRow`/`SearchWithScanner`/`StatusConcluidoFilterRow`) — botão
+  compacto (`<Ic>⬇</Ic> Baixar (.xlsx)`), desabilitado sem nenhum item pra
+  exportar, com mensagem de sucesso/erro inline.
+- **Wiring nos 5 painéis**: `RecountsPanel`/`DivergentItemsPanel`/
+  `SolicitacaoArmazemPanel`/`DiretoriaApprovalPanel` já tinham uma fileira de
+  cabeçalho idêntica (`justifyContent:'space-between'`, com o contador "N
+  pendentes" — `ModuloDownloadButton` entrou como irmão desse `<span>`,
+  exportando `listaFiltrada` (o array final, pré-paginação, de cada painel).
+  `ConcludedCountsPanel` não tinha essa fileira (só um `.section-title`
+  "Histórico" solto) — precisou ser envolvido numa `<div>` flex nova pra caber
+  o botão ao lado, exportando `cadeiasFiltradas.map(cd=>cd.tip)` (a RODADA
+  FINAL de cada cadeia, não a cadeia inteira — mesmo dado que a tela já
+  mostra).
+
+### 2. Busca de status na Home
+
+- **`buscarStatusItens(termo, counts, historicoConcluidas)`** (função nova,
+  perto de `getOpenInventoryItemConflict`) — busca por código OU descrição,
+  sem nenhuma consulta nova ao Supabase: filtra em memória sobre o MESMO pool
+  que a Home já usa pros KPIs (contagem ao vivo + histórico já concluído, via
+  `historicoRowToCountLike`). Só a PONTA de cada documento entra
+  (`ultimaContagemPorDocumento`, mesma lógica de `getOpenCountForProduct`
+  generalizada) — nunca mostra uma rodada já superada por uma recontagem
+  seguinte como se fosse o status atual. Ordenado por data mais recente
+  primeiro, cortado em 15 resultados.
+- **`resolverStatusParaBusca(c)`** (mesmo lugar) — reaproveita `STATUS_INFO`
+  (contagem ao vivo) ou `_statusDisplay` (histórico importado) pro
+  rótulo/cor, sem inventar uma classificação nova. Resolve o destino de
+  navegação (`recounts`/`divergentes`/`solicitacaoArmazem`/
+  `aprovacaoDiretoria`/`concluidas`) a partir do `statusAprovacao` — item do
+  histórico importado nunca tem destino (`null`), já que não existe tela
+  própria de "abrir esse item específico" pra ele, é só consulta/auditoria.
+- **`ItemStatusSearchPanel({counts, historicoConcluidas, user, goto})`**
+  (componente novo, logo antes de `/* ---------------- HOME ---------------- */`)
+  — campo de busca (reaproveita `SearchWithScanner`, com botão de câmera) +
+  lista de resultados, cada um com código/descrição/chip de status
+  (`.pnl-status`, mesmo componente visual já usado no resto da Home) e um
+  botão "Abrir" **só quando `hasAccess(user, destino)` é true** — mesmo
+  critério "nunca deixar link morto" já usado nos outros KPIs da tela (ex.:
+  operador vê o status de um item em "Analisados", mas não vê o botão de
+  abrir, já que não tem acesso a essa tela por padrão).
+- **Renderizado FORA de `.pnl-wrap`/`.mobile-home-menu`** (os dois blocos que
+  se alternam por tamanho de tela — Dashboard completo em telas ≥768px,
+  menu simples em celular) — mesmo lugar de `.greet`/`.greet-title`, que
+  nunca têm `display:none` em nenhum breakpoint — pra aparecer em QUALQUER
+  tamanho de tela sem precisar duplicar o componente uma vez pro desktop e
+  outra pro celular.
+- **Bug real pego durante o teste, corrigido antes de rodar qualquer
+  harness**: `baixarRelatorioModulo` usava `XLSX.utils...` sem alias local
+  (`const XLSX = window.XLSX;`) — padrão que TODO outro gerador de workbook
+  do arquivo já segue (`generateReportWorkbook`/`buildInventarioCiclicoWorkbook`/
+  `buildImportTemplateWorkbook`), só esta função nova tinha ficado pra trás.
+  Sem o alias, `XLSX` (sem `window.`) nunca resolve fora de um navegador de
+  verdade — pego na 1ª rodada de teste (harness com mock em `window.XLSX`),
+  corrigido antes de qualquer commit.
+
+Testado via 2 harnesses novos (jsdom + react-dom/client + `act()`, mesma
+técnica rigorosa de sempre — carrega o `index.html` inteiro transpilado numa
+`vm.Script`): `harness_modulo_download_button.js` (35 asserções —
+`baixarRelatorioModulo` isolada incluindo lista vazia/sem XLSX carregado;
+`ModuloDownloadButton` habilitado/desabilitado; os 5 painéis de ponta a
+ponta, cada um clicando o botão e confirmando nome da aba/arquivo certos, e
+`ConcludedCountsPanel` vazio mostrando o botão desabilitado em vez de
+escondido) e `harness_item_status_search.js` (39 asserções —
+`buscarStatusItens` isolada incluindo dedup de cadeia de recontagem, busca
+por descrição parcial, item só do histórico, limite de 15, ordenação por
+data; `resolverStatusParaBusca` nos 7 status possíveis;
+`ItemStatusSearchPanel` de ponta a ponta com os 3 perfis — operador sem
+botão "Abrir", líder com o botão navegando pro destino certo, busca sem
+resultado mostrando o empty-state honesto; e `Home` renderizada de verdade
+confirmando o painel está genuinamente integrado, não só existe isolado).
+Rodei de novo toda a suíte de regressão do scratchpad (67 harnesses ao
+todo) — 0 falhas. Transpile Babel do arquivo inteiro e balanceamento de
+chaves do CSS conferidos (668/668, sem mudança — nenhuma classe CSS nova,
+tudo reaproveitado via `.section-title`/`.panel`/`.empty-state`/
+`.pnl-status`/`.btn-outline`/`.btn-sm` já existentes). **Verificação
+visual/funcional de ponta a ponta fica a cargo do cliente** — mesma
+limitação de sempre (login exige Supabase Auth real, não simulável no
+sandbox sem rede).
