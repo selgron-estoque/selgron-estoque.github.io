@@ -4624,8 +4624,34 @@ function buildAdjustmentRows(counts){
 // recontagem substitui a rodada anterior na lista, nunca soma as duas linhas
 // separadas (bate com o que a Diretoria espera ver — o veredito final de
 // cada item, não cada tentativa).
+//
+// Escopo por STATUS — pedido explícito do cliente: "Nessa planilha quero que
+// puxe apenas itens com contagens concluídas e itens aguardando aprovação."
+// Ou seja, fora as 3 filas ainda em análise (Recontagens Pendentes/Itens
+// Divergentes/Analisados — aguardando_segunda/aguardando_analise_lider/
+// aguardando_solicitacao_armazem) — só entra o que já chegou num veredito
+// final OU já está na fila da Diretoria esperando decisão.
+function inventarioCiclicoStatusIncluido(c){
+  // Linha do histórico importado (planilha antiga) não tem o conceito de
+  // "aguardando aprovação da Diretoria" — essa fila só existe no fluxo AO
+  // VIVO do app (statusAprovacao sempre vem null pra linha do histórico, ver
+  // historicoRowToCountLike) — só entra se o Status original da planilha já
+  // é um dos 3 concluídos.
+  if(c._fromHistorico) return HISTORICO_STATUS_CONCLUIDOS.includes(c._statusOriginal);
+  return c.statusAprovacao==='aguardando_aprovacao_diretoria' || !OPEN_STATUSES.includes(c.statusAprovacao);
+}
+
+// Documentos finais (1 por item, já resolvendo cadeia de recontagem) que de
+// fato entram no relatório — função única reaproveitada por
+// buildInventarioCiclicoRows, computeAcuracidadeSemanal E pelo painel (pro
+// contador "N contagens encontradas" já bater com o que sai no Excel) —
+// evita a definição de "o que conta" divergir entre um lugar e outro.
+function itensIncluidosInventarioCiclico(counts){
+  return ultimaContagemPorDocumento(counts).filter(inventarioCiclicoStatusIncluido);
+}
+
 function buildInventarioCiclicoRows(counts){
-  const finais = ultimaContagemPorDocumento(counts);
+  const finais = itensIncluidosInventarioCiclico(counts);
   const ordenados = [...finais].sort((a,b)=>compararPorEndereco(a.endereco, b.endereco));
   return ordenados.map((c,i)=>{
     // "Custo Unitário"/"Custo Total" (Sistema e Físico) só existem pra
@@ -4662,7 +4688,7 @@ function buildInventarioCiclicoRows(counts){
 // não vira uma 3ª categoria à parte — mantém este relatório consistente com
 // o resto do app, em vez de inventar um critério novo só pra ele.
 function computeAcuracidadeSemanal(counts){
-  const finais = ultimaContagemPorDocumento(counts);
+  const finais = itensIncluidosInventarioCiclico(counts);
   const total = finais.length;
   const divergentes = finais.filter(c=>c.diferenca!==0 && c.diferenca!=null);
   const maior = finais.filter(c=>c.diferenca>0).length;
@@ -12251,6 +12277,12 @@ function InventarioCiclicoPanel({todasContagens, currentUser}){
     if(ate && c.data && c.data>ate) return false;
     return true;
   });
+  // Já deduplicado por documento + filtrado por status (só concluídas +
+  // aguardando aprovação da Diretoria) — mesma função usada por
+  // buildInventarioCiclicoRows/computeAcuracidadeSemanal, pro contador
+  // abaixo já bater exatamente com o que sai no Excel (não o total bruto de
+  // contagens do armazém/período, que pode incluir itens ainda em análise).
+  const itensRelatorio = itensIncluidosInventarioCiclico(contagensFiltradas);
 
   function handleDownload(){
     if(!window.XLSX){
@@ -12276,10 +12308,13 @@ function InventarioCiclicoPanel({todasContagens, currentUser}){
         semanalmente pra Diretoria: caixa de acuracidade, itens ordenados por
         endereço com Sistema × Físico × Diferença, total, e campos pra
         Motivo/Ação e assinatura. Só entram itens de fato contados pelo app no
-        armazém e período escolhidos — não o armazém inteiro, contado ou não.
-        "Custo Unitário"/"Custo Total" só saem preenchidos pra contagens feitas
-        a partir de agora; contagens já registradas antes não têm esse dado
-        guardado, e aparecem em branco nessas colunas.
+        armazém e período escolhidos — não o armazém inteiro, contado ou não
+        — e, dentro desses, só os que já têm contagem CONCLUÍDA ou estão
+        AGUARDANDO APROVAÇÃO da Diretoria (itens ainda em análise do líder,
+        aguardando segunda contagem, ou aguardando o Armazém devolver a SA
+        ficam de fora). "Custo Unitário"/"Custo Total" só saem preenchidos pra
+        contagens feitas a partir de agora; contagens já registradas antes não
+        têm esse dado guardado, e aparecem em branco nessas colunas.
       </div>
       {armazensDisponiveis.length===0 ? (
         <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>
@@ -12306,7 +12341,7 @@ function InventarioCiclicoPanel({todasContagens, currentUser}){
           </div>
           {armazem && (
             <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)',marginBottom:14}}>
-              {contagensFiltradas.length} contagens encontradas em {formatArmazemLabel(armazem)}{(de||ate) ? ' no período escolhido' : ''}.
+              {itensRelatorio.length} contagens encontradas em {formatArmazemLabel(armazem)}{(de||ate) ? ' no período escolhido' : ''} (concluídas ou aguardando aprovação).
             </div>
           )}
           <div className="field">
@@ -12332,12 +12367,12 @@ function InventarioCiclicoPanel({todasContagens, currentUser}){
             </div>
           </div>
           {feedback && <div className="login-success" style={{marginBottom:14}}>{feedback}</div>}
-          <button className="btn btn-primary" onClick={handleDownload} disabled={!armazem || contagensFiltradas.length===0}>
+          <button className="btn btn-primary" onClick={handleDownload} disabled={!armazem || itensRelatorio.length===0}>
             <Ic>⬇</Ic> Baixar Relatório (.xlsx)
           </button>
-          {armazem && contagensFiltradas.length===0 && (
+          {armazem && itensRelatorio.length===0 && (
             <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)',marginTop:8}}>
-              Nenhuma contagem nesse armazém/período.
+              Nenhuma contagem concluída ou aguardando aprovação nesse armazém/período.
             </div>
           )}
         </>

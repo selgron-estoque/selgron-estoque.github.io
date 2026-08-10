@@ -18077,3 +18077,62 @@ documentação** — só a ESTRUTURA (nomes de coluna, seções, formato) foi us
 referência de design. **Verificação visual/funcional de ponta a ponta fica a cargo do
 cliente** — mesma limitação de sempre (login exige Supabase Auth real, não simulável no
 sandbox sem rede).
+
+
+## "Relatório Semanal (Diretoria)" — puxa só itens com contagem concluída ou aguardando aprovação
+
+Cliente, direto: "Nessa planilha quero que puxe apenas itens com contagens
+concluídas e itens aguardando aprovação" — até aqui, `InventarioCiclicoPanel`
+filtrava só por armazém e período, incluindo TODO status: um item ainda em
+"Recontagens Pendentes"/"Itens Divergentes"/"Analisados" (aguardando_segunda/
+aguardando_analise_lider/aguardando_solicitacao_armazem) entrava no relatório
+igual a um item já resolvido — inconsistente com o que a Diretoria espera
+ver num documento formal (o veredito de cada item, não uma contagem ainda em
+andamento).
+
+- **`inventarioCiclicoStatusIncluido(c)`** (função nova, perto de
+  `OPEN_STATUSES`) — decide se um documento entra: pra contagem AO VIVO,
+  inclui se `statusAprovacao==='aguardando_aprovacao_diretoria'` (é
+  literalmente "aguardando aprovação") OU se não está em `OPEN_STATUSES`
+  (ou seja, já chegou a um veredito final — `aprovado_auto`/
+  `aprovado_segunda`/`aprovado_lider`/`ajuste_aprovado_diretoria`); pra linha
+  do HISTÓRICO importado (`_fromHistorico`), só entra se `_statusOriginal`
+  já é um dos 3 concluídos na planilha original
+  (`HISTORICO_STATUS_CONCLUIDOS`, `['OK','Sem Ajuste','Ajustado']`) — o
+  histórico nunca tem o conceito de "aguardando aprovação da Diretoria",
+  essa fila só existe no fluxo AO VIVO do app (`statusAprovacao` sempre vem
+  `null` numa linha convertida via `historicoRowToCountLike`).
+- **`itensIncluidosInventarioCiclico(counts)`** — combina
+  `ultimaContagemPorDocumento` (dedup por documento, já existia) com o
+  filtro de status acima, numa função só, reaproveitada nos 3 lugares que
+  precisam concordar sobre "o que entra": `buildInventarioCiclicoRows`,
+  `computeAcuracidadeSemanal` (a caixa "ACURACIDADE" no cabeçalho do Excel
+  também passou a refletir só o subconjunto incluído, não mais o total bruto
+  do armazém/período) e o próprio painel (`InventarioCiclicoPanel`, pro
+  contador "N contagens encontradas" já bater exatamente com o que sai no
+  Excel, em vez de mostrar um número maior do que o relatório de fato usa).
+  Extrair como função única evita a definição de "o que conta" divergir
+  entre um lugar e outro com o tempo — mesma categoria de cuidado já tomada
+  várias vezes neste projeto (ex.: `ETIQUETA_BARCODE_CONFIG` sincronizado
+  entre CSS/JS).
+- **Textos da tela atualizados**: a descrição do painel e a mensagem de
+  vazio ("Nenhuma contagem concluída ou aguardando aprovação nesse armazém/
+  período.") deixam o critério explícito, em vez de um texto genérico que
+  já não bateria com o comportamento novo.
+- Testado via harness já existente (`harness_inventario_ciclico_relatorio.js`,
+  estendido) — 17 asserções novas: `inventarioCiclicoStatusIncluido` isolada
+  cobrindo os 4 status concluídos ao vivo (incluídos), os 3 status "ainda em
+  análise" (excluídos) e os 3 status do histórico (OK/Sem Ajuste/Ajustado
+  incluídos, Pendente/Ajustar excluídos); `itensIncluidosInventarioCiclico`
+  com um pool de 13 itens misturando os 8 casos, confirmando exatamente os 8
+  certos; `buildInventarioCiclicoRows`/`computeAcuracidadeSemanal` só
+  contando os itens incluídos; e um teste de ponta a ponta pelo componente
+  (`InventarioCiclicoPanel` de verdade, 3 itens no mesmo armazém — 1
+  concluído, 1 aguardando aprovação, 1 ainda em análise — confirma que o
+  contador mostra "2 contagens encontradas", não 3). Rodei de novo toda a
+  suíte de regressão do scratchpad (65 harnesses) — 0 falhas. Transpile
+  Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos
+  (668/668, sem mudança — esta correção não tocou em CSS nenhum, só JS/JSX).
+  **Verificação visual/funcional de ponta a ponta fica a cargo do cliente**
+  — mesma limitação de sempre (login exige Supabase Auth real, não
+  simulável no sandbox sem rede).
