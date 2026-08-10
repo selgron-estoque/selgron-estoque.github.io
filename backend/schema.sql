@@ -364,6 +364,10 @@ create table contagens (
   diferenca numeric(14,3),
   percentual numeric(10,2),
   valor_divergente numeric(14,2),
+  custo_unitario numeric(14,4),            -- custo unitário capturado na hora da contagem (não só o valor do
+                                            -- ajuste, que é 0 quando não há divergência) — usado pelo Relatório
+                                            -- Semanal de Inventário Cíclico (Custo Total Sistema/Físico). Só
+                                            -- contagens feitas a partir desta coluna existir têm esse dado.
   fora_do_cache_local boolean not null default false,
   classificacao text,                      -- label da classificação de divergência (ex: "Dentro da tolerância")
   status_aprovacao text,                   -- aprovado_auto | aguardando_segunda | aguardando_analise_lider | aprovado_lider
@@ -1565,3 +1569,33 @@ create policy "escrita autenticada" on etiquetas_fila for all using (auth.role()
 -- sempre (evita erro de "already member of publication"):
 --   select schemaname, tablename from pg_publication_tables where pubname = 'supabase_realtime';
 alter publication supabase_realtime add table etiquetas_fila;
+
+-- =============================================================================
+-- CUSTO UNITÁRIO CAPTURADO NA CONTAGEM — Relatório Semanal de Inventário
+-- Cíclico (Diretoria)
+--
+-- Cliente mandou como referência o relatório real que já manda toda semana
+-- pra Diretoria (PDF "INVENTÁRIO CÍCLICO - ALMOX 01", cabeçalho SELGRON
+-- INDUSTRIAL LTDA., caixa de Acuracidade, tabela Sistema TOTVS × Físico ×
+-- Diferenças com Custo Unitário/Custo Total dos DOIS lados, ordenada por
+-- endereço, com Motivo/Ação e assinatura de 3 papéis) e pediu algo nesse
+-- estilo. Escopo confirmado via `AskUserQuestion`: Excel (não PDF fiel ao
+-- pixel), só itens de fato contados pelo app (não o armazém inteiro, contado
+-- ou não — o PDF de referência parece vir de um export direto do TOTVS,
+-- listando até item sem nenhum movimento), Motivo/Ação digitados a cada
+-- geração (não texto fixo).
+--
+-- `valor_divergente` (coluna já existente) não serve pra reconstruir "Custo
+-- Unitário"/"Custo Total" — ele já sai 0 quando não há divergência, mesmo
+-- que o item tenha custo unitário real (é |diferença|×custo, não o custo em
+-- si) — a maioria dos itens de um inventário cíclico NÃO diverge (85%+ no
+-- PDF de exemplo do cliente), então sem esta coluna nova a tabela do
+-- relatório sairia praticamente toda em branco nas colunas de custo. Só
+-- contagens gravadas a partir desta migração têm o valor — contagem já
+-- salva antes fica com "Custo Unitário"/"Custo Total" em branco no
+-- relatório (limitação real, documentada na própria tela, não escondida).
+--
+-- Introspecção antes de rodar:
+--   select column_name from information_schema.columns where table_name = 'contagens' and column_name = 'custo_unitario';
+-- =============================================================================
+alter table contagens add column if not exists custo_unitario numeric(14,4);

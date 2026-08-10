@@ -17884,3 +17884,196 @@ Testado via transpile Babel do arquivo inteiro e balanceamento de chaves
 do CSS (668/668, sem mudança — só texto). **Verificação visual fica a
 cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth
 real, não simulável no sandbox sem rede).
+
+
+## "Relatório Semanal (Diretoria)" — Excel no mesmo formato do que já é mandado hoje
+
+Cliente mandou um PDF real (nome do arquivo continha "ESTOQUE_ARMAZEM") com a instrução
+explícita **"NÃO SUBA NADA PARA O SITE!!!"** — não uma proibição de implementar a
+funcionalidade, e sim uma restrição sobre o ARQUIVO em si: é o relatório que ele já manda
+toda semana pra Diretoria, com nome real da empresa, valores financeiros reais e nomes de
+funcionário reais — nunca foi publicado como Artifact nem commitado no repositório, e não
+deve ser. O pedido, junto do arquivo: "Este é o relatório que eu mando semanalmente para
+diretoria, nele consta todos os itens que foram contados na semana ou nas semanas.
+Conseguimos fazer algo neste estilo??"
+
+**Estrutura do PDF de referência** (analisada, nunca reproduzida com dado real em lugar
+nenhum do código/documentação): cabeçalho com nome da empresa + "INVENTÁRIO CÍCLICO -
+ALMOX 01" + "SEMANA: N, N e N"; uma caixa "ACURACIDADE" com 5 métricas (Nº de Itens
+Inventariados, Itens sem Divergência, Itens com Divergência, Itens com divergência a
+maior, Itens com divergência a menor — cada uma com contagem + percentual); uma tabela de
+~460 linhas (ID/Seq./Código/Descrição/Tipo/Endereço, depois 3 grupos de colunas — Sistema
+TOTVS, Físico, Diferenças — cada um com Quant./Custo Unitário/Custo Total quando
+aplicável, mais uma coluna "Ref."); uma linha de Total; blocos de texto livre
+"MOTIVO"/"AÇÃO"; e 3 linhas de assinatura (Analista de Estoque, Coordenador de
+Almoxarifado, Coordenador de Suprimentos) — uma com assinatura manuscrita de verdade, as
+outras duas só nome digitado + linha.
+
+**3 decisões de escopo confirmadas via `AskUserQuestion`** antes de escrever qualquer
+código, porque cada uma muda a modelagem:
+
+1. **Formato do arquivo**: Excel (não tentar replicar o PDF pixel a pixel).
+2. **Quais itens entram na lista**: só o que foi CONTADO PELO APP — não o armazém
+   inteiro. O PDF do cliente parece ser um export direto do TOTVS/Protheus (a contagem de
+   itens bate com "o armazém inteiro", não só com o que o app registrou) — reproduzir
+   isso exigiria ler o armazém inteiro de `estoque_saldo`, misturando item genuinamente
+   contado com item nunca tocado. O app não tem esse dado pronto pra virar relatório sem
+   inventar linha nenhuma — confirmado explicitamente que o escopo é só contagem real.
+3. **Motivo/Ação**: campo pra digitar TODA VEZ que o relatório é gerado (não um texto
+   fixo salvo) — o cliente escolheu essa opção entre as 2 apresentadas.
+
+### Bug de fundo descoberto ANTES de escrever a feature: `count.custoUnit` nunca era salvo
+
+Pra montar "Custo Unitário"/"Custo Total (Sistema/Físico)" por item — colunas centrais do
+PDF de referência —, investigado o objeto `count` salvo por `CountStep.finalize()` e
+achado que **o custo unitário em si nunca tinha sido persistido**, só
+`valorDivergente` (`= |diferença| × custoUnit`, que **é sempre "0.00" quando não há
+divergência** — não dá pra recuperar o custo unitário de volta a partir dele quando a
+contagem bateu exata, que é a maioria dos itens em qualquer inventário saudável).
+
+- **`CountStep.finalize()`** ganhou o campo novo `custoUnit: hasSaldoLocal ?
+  Number(custoUnitEfetivo) : null` (ao lado de `valorDivergente`, mesma condição
+  `hasSaldoLocal`) — `custoUnitEfetivo` já existia (a variável usada pra calcular
+  `valorDivergente`, ela mesma já contempla a prioridade "custo vindo da consulta ao
+  vivo Selgron/Protheus > custo do catálogo Supabase", ver seção "Saldo 'ao vivo' direto
+  do Protheus" mais acima) — não precisou de nenhum cálculo novo, só de PERSISTIR um
+  valor que já existia em memória e sempre foi descartado depois de usado.
+- **`saveContagemToSupabase`/`contagemRowToLocal`** ganharam o mapeamento
+  `custoUnit`↔`custo_unitario` (mesmo padrão de sempre pra campo novo em `contagens`).
+- **`backend/schema.sql`**: `contagens.custo_unitario numeric(14,4)` na definição da
+  tabela + bloco de migração `alter table contagens add column if not exists
+  custo_unitario numeric(14,4);` pro projeto já aplicado.
+- **Limitação honesta, documentada na própria tela do relatório**: só contagens feitas a
+  partir desta rodada têm esse dado — contagens já registradas antes continuam sem
+  `custoUnit` (não dá pra reconstruir retroativamente, mesmo critério de sempre neste
+  projeto de nunca fabricar dado que não existe) — aparecem com "Custo Unitário"/"Custo
+  Total" em branco no relatório, nunca com um valor inventado.
+
+### `buildInventarioCiclicoRows(counts)` — dedup + ordenação física, mesmo padrão já
+### estabelecido em outras telas de auditoria
+
+Reaproveita `ultimaContagemPorDocumento(counts)` (a MESMA função já usada por "Contados ×
+Divergências"/"Itens Contados na Semana"/"Resumo da Operação" — só a rodada FINAL de uma
+cadeia de recontagem entra, nunca a 1ª contagem intermediária já superada) e
+`compararPorEndereco` (mesma ordenação física corredor→rua→posição já usada em toda fila
+de contagem do app) — o relatório mostra os itens na mesma sequência que um operador
+andaria pelo armazém, igual o PDF de referência já faz. IDs sequenciais (1..N) são
+recalculados na ORDEM FINAL da tabela, não herdados do id interno da contagem. Item sem
+`custoUnit` (contagem antiga, ver acima) sai com "Custo Unitário"/"Custo Total" em branco
+(string vazia, não `0`/`null` renderizado feio no Excel).
+
+### `computeAcuracidadeSemanal(counts)` — mesmas 5 métricas da caixa "ACURACIDADE" do PDF
+
+Mesmo critério de "sem saldo pra comparar cai em 'sem divergência', nunca numa 3ª
+categoria" já usado na pizza "Contados × Divergências" (Indicadores) — item com
+`diferenca===null` conta como sem divergência, não fica de fora da conta nem vira uma
+categoria à parte. Mesmo dedup por documento de `buildInventarioCiclicoRows`. Protegido
+contra divisão por zero (pool vazio devolve tudo zerado, sem quebrar).
+
+### `buildInventarioCiclicoWorkbook({counts, armazemLabel, motivo, acao, assinaturas})`
+
+Workbook NOVO, com aba própria "Inventário Cíclico" — **não** uma 5ª aba dentro do
+`generateReportWorkbook` existente (Resumo/Contagens/Contar/Solicitação de Ajuste): é um
+documento com propósito e público diferentes (relatório formal pra Diretoria, download
+avulso sob demanda, não parte do pacote de relatório operacional de sempre) — mesma
+lógica já usada quando "Solicitação de Ajuste" ganhou sua própria aba em vez de reusar
+"Contagens".
+
+- **Montado via `XLSX.utils.aoa_to_sheet`** (array-de-arrays), não `json_to_sheet` — o
+  layout do PDF de referência é um documento de formulário livre (título, caixa de
+  métricas, tabela, total, texto corrido, assinaturas), não uma lista tabular
+  uniforme — AOA dá controle linha a linha que o padrão "1 linha por registro" dos
+  outros relatórios deste app não oferece.
+- **Cabeçalho da tabela em UMA linha só, com nome composto** ("Sistema TOTVS - Quant.",
+  "Sistema TOTVS - Custo Unitário", etc.) em vez de 2 linhas mescladas (Sistema/Físico/
+  Diferenças como super-cabeçalho + Quant./Custo Unitário/Custo Total como sub-cabeçalho,
+  como o PDF de fato mostra) — célula mesclada em Excel via SheetJS puro (sem
+  `xlsx-style`/biblioteca paga) é frágil e nunca foi usado em nenhum outro relatório
+  deste app; nome composto numa linha só é mais simples de gerar e continua
+  perfeitamente legível/filtrável no Excel.
+- **"SEMANA:"** calculado via `getWeekInfo` (já existente) sobre as datas distintas dos
+  itens da lista — "25, 26 e 27" quando são 3 semanas diferentes (vírgula entre as
+  primeiras, "e" antes da última — mesmo padrão de português natural do PDF real).
+- **`fmtPctBR(n)`** — formata como "66,67%" (vírgula decimal, 2 casas), consistente com o
+  resto do app (nunca ponto decimal em texto voltado pro usuário brasileiro).
+- **Total da tabela**: soma de Quant./Custo Total nas colunas Sistema e Físico —
+  calculado a partir das MESMAS linhas já montadas por `buildInventarioCiclicoRows`
+  (nenhuma 2ª passada sobre `counts` cru).
+
+### `InventarioCiclicoPanel` — painel novo dentro de "Relatórios" (`ReportsScreen`)
+
+Inserido entre o painel "Baixar Relatório" (já existente) e "Enviar por E-mail" (já
+existente) — reaproveita `todasContagens` que `ReportsScreen` já monta (`counts` + o
+histórico importado convertido via `historicoRowToCountLike`).
+
+- **Armazém é obrigatório**, escolhido num `<select>` populado com os valores distintos
+  de `almoxarifado` presentes em `todasContagens` (mesmo padrão `formatArmazemLabel` já
+  usado no resto do app — "1" vira "Armazém 01"). Sem nenhuma contagem com armazém
+  informado, o painel mostra um aviso e nem tenta mostrar o select.
+- **Período (De/Até) opcional** — filtra por `c.data`, mesmo critério "vazio = sem
+  filtro" já usado em `filtroData` do painel "Baixar Relatório".
+- **`historicoRowToCountLike` nunca preenche `almoxarifado`** — item do histórico
+  importado (planilha `BD_Contagens` antiga) nunca vai bater com nenhum filtro de
+  armazém deste painel novo (fica de fora, sempre) — limitação real, honesta,
+  documentada aqui: esse relatório é sobre contagem feita DENTRO do app com armazém
+  conhecido, não sobre o histórico pré-existente sem esse dado.
+- **Motivo/Ação NÃO persistem** (`useState` puro, nunca gravado em `localStorage`) —
+  decisão explícita do cliente ("campo pra digitar toda vez"), documentada com comentário
+  no próprio código pra não ser "corrigida" por engano numa rodada futura achando que é
+  um esquecimento.
+- **Assinaturas persistem via `localStorage`** (`INVENTARIO_CICLICO_ASSINATURAS_KEY`,
+  mesmo padrão simples já usado em `LOGIN_LEMBRADO_KEY` — só um texto de conveniência,
+  nunca dado sensível) — tendem a se repetir semana a semana (é sempre o mesmo Analista/
+  Coordenador assinando), diferente do Motivo/Ação, que muda a cada semana. "Analista de
+  Estoque" nasce pré-preenchido com `currentUser.nome` na 1ª vez (quem gera o relatório
+  normalmente é quem está logado), os outros dois nascem vazios e são lembrados depois
+  que alguém digita uma vez.
+- **Botão "Baixar Relatório"** só habilita com armazém escolhido E pelo menos 1 contagem
+  no filtro atual — nome do arquivo:
+  `GestaoEstoques_InventarioCiclico_{armazem}_{hojeLocalStr()}.xlsx` (mesmo prefixo
+  "GestaoEstoques_" já usado nos outros arquivos gerados pelo app, mesmo helper de data
+  local-safe `hojeLocalStr` já usado em outros relatórios).
+
+### Verificação
+
+Testado via harness dedicado (`harness_inventario_ciclico_relatorio.js`, jsdom +
+react-dom/client + `act()`, mesma técnica rigorosa de sempre — carrega o `index.html`
+inteiro transpilado numa `vm.Script`, com um mock de `window.XLSX`, já que o pacote real
+não está instalado no sandbox de teste): (1) `buildInventarioCiclicoRows` — dedup de uma
+cadeia de recontagem (4 registros/1 cadeia de 2 viram 3 linhas), ordenação física
+correta, IDs sequenciais na ordem final, custo em branco pra item sem `custoUnit` vs.
+calculado certo pra item com; (2) `computeAcuracidadeSemanal` — as 5 métricas batendo
+(incluindo item sem saldo contando como "sem divergência", dedup de cadeia, percentual
+certo), pool vazio sem quebrar; (3) `buildInventarioCiclicoWorkbook` — layout completo
+verificado linha a linha (cabeçalho da empresa, título com armazém, "SEMANA: 25, 26 e 27"
+com 3 semanas distintas nos dados de teste, caixa ACURACIDADE com as 5 métricas e o
+percentual em pt-BR, cabeçalho da tabela com as colunas certas, 3 linhas de dado na ordem
+física certa, linha de Total somando certo, blocos MOTIVO/AÇÃO com o texto digitado,
+bloco de assinaturas com os 3 nomes); (4) `custoUnit` capturado de ponta a ponta em
+`CountStep.finalize()` (contando 8 de um sistema de 8, custo 12.5 → grava 12.5, não
+recalculado a partir de `valorDivergente`, que seria 0 sem divergência) e o round-trip
+`saveContagemToSupabase`/`contagemRowToLocal` (payload manda `custo_unitario`, linha sem
+esse campo mapeia pra `null`, não `0`/`undefined` inventado); (5) `InventarioCiclicoPanel`
+de ponta a ponta — estado vazio (sem armazém disponível) sem `<select>`; com 2 armazéns
+distintos, o select mostra os 2 formatados; botão de download desabilitado sem armazém
+escolhido; escolher um armazém filtra certo (3 contagens de 4, já que 1 é de outro
+armazém); filtro de período exclui item fora da janela (2 de 3, o de 2020 fica de fora);
+campo "Analista de Estoque" já nasce com o nome do usuário logado (`input.value`, não
+`textContent` — input controlado não aparece como texto solto no DOM); digitar no campo
+"Coordenador de Almoxarifado" grava no localStorage na hora; digitar em "Motivo" NÃO gera
+nenhuma chave nova no localStorage (confirma que não persiste); clicar "Baixar Relatório"
+chama `window.XLSX.writeFile` com o nome de arquivo certo. 69 asserções, todas passando.
+Rodei de novo toda a suíte de regressão do scratchpad (66 harnesses, incluindo este novo)
+— 0 falhas. Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+conferidos (668/668, sem mudança — esta feature não tocou em CSS nenhum, só JS/JSX).
+**Falta o cliente rodar o SQL novo** (`alter table contagens add column if not exists
+custo_unitario numeric(14,4);`) no projeto real — até lá, `custo_unitario` simplesmente
+não é gravado no Supabase (mesmo tratamento "fire and forget" de sempre, não quebra a
+contagem), mas já aparece corretamente no relatório baixado localmente a partir do
+próximo deploy, já que a captura em `CountStep.finalize()` não depende de nenhuma coluna
+existir no banco. **O PDF de referência enviado pelo cliente nunca foi commitado no
+repositório, publicado como Artifact, nem reproduzido com dado real em nenhum lugar desta
+documentação** — só a ESTRUTURA (nomes de coluna, seções, formato) foi usada como
+referência de design. **Verificação visual/funcional de ponta a ponta fica a cargo do
+cliente** — mesma limitação de sempre (login exige Supabase Auth real, não simulável no
+sandbox sem rede).

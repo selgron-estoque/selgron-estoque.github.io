@@ -1871,6 +1871,7 @@ async function saveContagemToSupabase(count){
     diferenca: count.diferenca,
     percentual: count.percentual,
     valor_divergente: count.valorDivergente,
+    custo_unitario: count.custoUnit!=null ? count.custoUnit : null,
     fora_do_cache_local: count.foraDoCacheLocal,
     classificacao: count.classificacao ? count.classificacao.label : null,
     status_aprovacao: count.statusAprovacao,
@@ -1972,6 +1973,7 @@ function contagemRowToLocal(row){
     diferenca: row.diferenca,
     percentual: row.percentual,
     valorDivergente: row.valor_divergente,
+    custoUnit: row.custo_unitario!=null ? row.custo_unitario : null,
     foraDoCacheLocal: row.fora_do_cache_local,
     classificacao: {label: row.classificacao, level: undefined, rule: ''},
     statusAprovacao: row.status_aprovacao,
@@ -4602,6 +4604,146 @@ function buildAdjustmentRows(counts){
     'Aprovado por': c.aprovadoPor || '',
     'Data Aprovação': c.aprovadoEm || '',
   }));
+}
+
+/* ---------------- RELATÓRIO SEMANAL DE INVENTÁRIO CÍCLICO (Diretoria) ---------------- */
+
+// Pedido do cliente: mesmo layout do documento real que ele já manda toda
+// semana pra Diretoria (PDF de referência "INVENTÁRIO CÍCLICO - ALMOX 01",
+// com caixa de Acuracidade, tabela Sistema TOTVS × Físico × Diferenças
+// ordenada por endereço, linha de total, Motivo/Ação em texto livre e
+// assinatura por papel) — reconstruído como planilha Excel (decisão do
+// cliente: Excel, não PDF fiel ao pixel, reaproveitando a geração que já
+// existe no app). Função separada de `generateReportWorkbook`/
+// `buildAdjustmentRows` de propósito: é um documento formal por ARMAZÉM, com
+// campos que o resto do relatório não tem (motivo/ação/assinaturas), não um
+// dump geral de dado.
+//
+// "Resultado final por documento" — mesma regra já usada em "Contagens
+// Concluídas"/na pizza "Contados × Divergências" do Dashboard: uma
+// recontagem substitui a rodada anterior na lista, nunca soma as duas linhas
+// separadas (bate com o que a Diretoria espera ver — o veredito final de
+// cada item, não cada tentativa).
+function buildInventarioCiclicoRows(counts){
+  const finais = ultimaContagemPorDocumento(counts);
+  const ordenados = [...finais].sort((a,b)=>compararPorEndereco(a.endereco, b.endereco));
+  return ordenados.map((c,i)=>{
+    // "Custo Unitário"/"Custo Total" (Sistema e Físico) só existem pra
+    // contagens que já capturaram `custoUnit` na hora de contar (ver
+    // CountStep.finalize — campo novo, não existia antes desta rodada).
+    // Contagem antiga sem esse campo sai com essas 3 colunas em branco, nunca
+    // um valor inventado — `valorDivergente` (usado no resto do app) não
+    // serve de substituto porque ele já sai "0.00" quando não há
+    // divergência, mesmo que o item tenha custo unitário real.
+    const custoUnit = c.custoUnit!=null ? Number(c.custoUnit) : null;
+    const qtdSistema = c.saldoSistema;
+    const qtdFisico = c.qtdContada;
+    const custoTotalSistema = (custoUnit!=null && qtdSistema!=null) ? Number((qtdSistema*custoUnit).toFixed(2)) : '';
+    const custoTotalFisico = (custoUnit!=null && qtdFisico!=null) ? Number((qtdFisico*custoUnit).toFixed(2)) : '';
+    return {
+      id: i+1,
+      codigo: c.productCode,
+      descricao: c.descricao || '',
+      endereco: c.endereco || '',
+      qtdSistema: qtdSistema==null ? '' : qtdSistema,
+      custoUnitario: custoUnit==null ? '' : custoUnit,
+      custoTotalSistema,
+      qtdFisico: qtdFisico==null ? '' : qtdFisico,
+      custoTotalFisico,
+      diferencaQtd: c.diferenca==null ? '' : c.diferenca,
+      diferencaCusto: Number(valorDivergenteComSinal(c).toFixed(2)),
+    };
+  });
+}
+
+// Caixa "ACURACIDADE" do cabeçalho do documento — mesma regra já usada na
+// pizza "Contados × Divergências" (Indicadores): item sem saldo pra comparar
+// (`diferenca===null`) cai em "sem divergência" junto com o que bateu exato,
+// não vira uma 3ª categoria à parte — mantém este relatório consistente com
+// o resto do app, em vez de inventar um critério novo só pra ele.
+function computeAcuracidadeSemanal(counts){
+  const finais = ultimaContagemPorDocumento(counts);
+  const total = finais.length;
+  const divergentes = finais.filter(c=>c.diferenca!==0 && c.diferenca!=null);
+  const maior = finais.filter(c=>c.diferenca>0).length;
+  const menor = finais.filter(c=>c.diferenca<0).length;
+  const pct = n => total>0 ? (n/total*100) : 0;
+  const comDivergencia = divergentes.length;
+  const semDivergencia = total - comDivergencia;
+  return {
+    total, semDivergencia, comDivergencia, maior, menor,
+    pctSem: pct(semDivergencia), pctCom: pct(comDivergencia),
+    pctMaior: pct(maior), pctMenor: pct(menor),
+  };
+}
+
+function fmtPctBR(n){
+  return n.toFixed(2).replace('.', ',') + '%';
+}
+
+// Monta o workbook inteiro via `aoa_to_sheet` (array de arrays), não
+// `json_to_sheet` — precisa de um layout livre (título, caixa de resumo,
+// tabela, total, texto, assinatura), não uma tabela simples de 1 linha por
+// registro. Cabeçalho da tabela usa rótulo composto numa linha só ("Sistema
+// — Quant.") em vez de 2 linhas mescladas (visual do PDF de referência) —
+// decisão deliberada: célula mesclada em SheetJS via `ws['!merges']`
+// funciona, mas complica testar/verificar a posição de cada coluna sem
+// ganho real de legibilidade numa planilha (que já é editável/filtrável,
+// diferente de um PDF fixo).
+function buildInventarioCiclicoWorkbook({counts, armazemLabel, motivo, acao, assinaturas}){
+  const XLSX = window.XLSX;
+  const linhas = buildInventarioCiclicoRows(counts);
+  const acc = computeAcuracidadeSemanal(counts);
+  // "SEMANA: 25, 26 e 27" — números de semana ISO distintos presentes no
+  // período filtrado (mesma função getWeekInfo já usada no resto do app),
+  // formatados em lista com "e" antes do último — item sem `data` não entra
+  // (não dá pra saber a semana de algo sem data).
+  const semanas = [...new Set(counts.filter(c=>c.data).map(c=>getWeekInfo(c.data).weekNumber))].sort((a,b)=>a-b);
+  const semanasLabel = semanas.length===0 ? '—'
+    : semanas.length===1 ? String(semanas[0])
+    : semanas.slice(0,-1).join(', ') + ' e ' + semanas[semanas.length-1];
+
+  const totalQtdSistema = linhas.reduce((s,r)=>s+(typeof r.qtdSistema==='number'?r.qtdSistema:0),0);
+  const totalCustoSistema = linhas.reduce((s,r)=>s+(typeof r.custoTotalSistema==='number'?r.custoTotalSistema:0),0);
+  const totalQtdFisico = linhas.reduce((s,r)=>s+(typeof r.qtdFisico==='number'?r.qtdFisico:0),0);
+  const totalCustoFisico = linhas.reduce((s,r)=>s+(typeof r.custoTotalFisico==='number'?r.custoTotalFisico:0),0);
+  const totalDiferencaQtd = linhas.reduce((s,r)=>s+(typeof r.diferencaQtd==='number'?r.diferencaQtd:0),0);
+  const totalDiferencaCusto = linhas.reduce((s,r)=>s+(typeof r.diferencaCusto==='number'?r.diferencaCusto:0),0);
+
+  const aoa = [];
+  aoa.push(['SELGRON INDUSTRIAL LTDA.']);
+  aoa.push(['INVENTÁRIO CÍCLICO - ' + armazemLabel]);
+  aoa.push(['SEMANA:', semanasLabel]);
+  aoa.push([]);
+  aoa.push(['ACURACIDADE']);
+  aoa.push(['Nº DE ITENS INVENTARIADOS', acc.total, '100,00%']);
+  aoa.push(['ITENS SEM DIVERGÊNCIA', acc.semDivergencia, fmtPctBR(acc.pctSem)]);
+  aoa.push(['ITENS COM DIVERGÊNCIA', acc.comDivergencia, fmtPctBR(acc.pctCom)]);
+  aoa.push(['Itens com divergência a maior', acc.maior, fmtPctBR(acc.pctMaior)]);
+  aoa.push(['Itens com divergência a menor', acc.menor, fmtPctBR(acc.pctMenor)]);
+  aoa.push([]);
+  aoa.push(['Gerado em', new Date().toLocaleString('pt-BR')]);
+  aoa.push([]);
+  aoa.push(['ID','Código','Descrição','Endereço','Sistema — Quant.','Sistema — Custo Unitário','Sistema — Custo Total','Físico — Quant.','Físico — Custo Total','Diferença — Quant.','Diferença — Custo Total']);
+  linhas.forEach(r=>{
+    aoa.push([r.id, r.codigo, r.descricao, r.endereco, r.qtdSistema, r.custoUnitario, r.custoTotalSistema, r.qtdFisico, r.custoTotalFisico, r.diferencaQtd, r.diferencaCusto]);
+  });
+  aoa.push(['Total', '', '', '', totalQtdSistema, '', Number(totalCustoSistema.toFixed(2)), totalQtdFisico, Number(totalCustoFisico.toFixed(2)), totalDiferencaQtd, Number(totalDiferencaCusto.toFixed(2))]);
+  aoa.push([]);
+  aoa.push(['MOTIVO:']);
+  aoa.push([motivo || '']);
+  aoa.push([]);
+  aoa.push(['AÇÃO:']);
+  aoa.push([acao || '']);
+  aoa.push([]);
+  aoa.push([]);
+  aoa.push([assinaturas.analista||'', '', assinaturas.almoxarifado||'', '', assinaturas.suprimentos||'']);
+  aoa.push(['Analista de Estoque', '', 'Coordenador de Almoxarifado', '', 'Coordenador de Suprimentos']);
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Inventário Cíclico');
+  return wb;
 }
 
 function generateReportWorkbook(counts, inventories){
@@ -8869,6 +9011,13 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
       diferenca: hasSaldoLocal ? diffAbs : null,
       percentual: hasSaldoLocal ? diffPct : null,
       valorDivergente: hasSaldoLocal ? (Math.abs(diffAbs) * Number(custoUnitEfetivo)).toFixed(2) : '0.00',
+      // Custo unitário em si (não só o valor do ajuste, que fica 0 quando não
+      // há divergência) — guardado pro "Relatório Semanal de Inventário
+      // Cíclico" (ver buildInventarioCiclicoRows), que precisa do Custo
+      // Unitário/Custo Total de TODO item, com ou sem diferença. Só a partir
+      // desta rodada: contagens já salvas antes não têm esse campo (nunca foi
+      // capturado até agora, sem como reconstruir retroativamente).
+      custoUnit: hasSaldoLocal ? Number(custoUnitEfetivo) : null,
       foraDoCacheLocal: !!product.foraDoCacheLocal,
       classificacao: classification,
       statusAprovacao,
@@ -12043,6 +12192,160 @@ function TodayCountsPanel({counts, inventories}){
 
 /* ---------------- RELATÓRIOS (Excel + e-mail) ---------------- */
 
+// Nomes lembrados entre gerações do relatório semanal — mesmo padrão já
+// usado em `LOGIN_LEMBRADO_KEY` (só guarda um texto de conveniência, nunca
+// nada sensível). Motivo/Ação NÃO entram aqui de propósito: o cliente
+// escolheu explicitamente "campo pra digitar toda vez" (confirmado via
+// AskUserQuestion) em vez de um texto fixo — persistir isso contradiria essa
+// escolha. Os 3 nomes de assinatura são só uma conveniência à parte (tendem
+// a se repetir semana a semana, diferente do motivo/ação, que muda).
+const INVENTARIO_CICLICO_ASSINATURAS_KEY = 'stock360:v1:inventarioCiclicoAssinaturas';
+function carregarAssinaturasInventarioCiclico(){
+  try{
+    const raw = localStorage.getItem(INVENTARIO_CICLICO_ASSINATURAS_KEY);
+    return raw ? JSON.parse(raw) : {analista:'', almoxarifado:'', suprimentos:''};
+  }catch(err){ return {analista:'', almoxarifado:'', suprimentos:''}; }
+}
+function salvarAssinaturasInventarioCiclico(assinaturas){
+  try{ localStorage.setItem(INVENTARIO_CICLICO_ASSINATURAS_KEY, JSON.stringify(assinaturas)); }catch(err){}
+}
+
+// Painel "Relatório Semanal (Diretoria)" — pedido do cliente, que mandou como
+// referência o PDF real que ele já envia toda semana pra Diretoria (ver
+// CLAUDE.md). Escopo confirmado via `AskUserQuestion`: Excel (não PDF fiel ao
+// pixel), só os itens de fato contados pelo app no armazém/período escolhidos
+// (o PDF de referência lista o armazém INTEIRO, contado ou não — parece vir
+// de um export direto do TOTVS/Protheus, que o app não tem acesso pra
+// reproduzir sem inventar dado), e Motivo/Ação digitados a cada geração.
+function InventarioCiclicoPanel({todasContagens, currentUser}){
+  const armazensDisponiveis = [...new Set(todasContagens.map(c=>c.almoxarifado).filter(Boolean))].sort();
+  const [armazem, setArmazem] = useState('');
+  const [de, setDe] = useState('');
+  const [ate, setAte] = useState('');
+  const [motivo, setMotivo] = useState('');
+  const [acao, setAcao] = useState('');
+  // `currentUser.nome` como valor de partida só do campo "Analista de
+  // Estoque" (quem normalmente gera este relatório) — os outros dois nomes
+  // ficam vazios na 1ª vez, depois lembrados via localStorage.
+  const [assinaturas, setAssinaturas] = useState(() => {
+    const salvas = carregarAssinaturasInventarioCiclico();
+    return {
+      analista: salvas.analista || currentUser.nome || '',
+      almoxarifado: salvas.almoxarifado || '',
+      suprimentos: salvas.suprimentos || '',
+    };
+  });
+  const [feedback, setFeedback] = useState('');
+
+  function atualizarAssinatura(campo, valor){
+    setAssinaturas(prev=>{
+      const novo = {...prev, [campo]: valor};
+      salvarAssinaturasInventarioCiclico(novo);
+      return novo;
+    });
+  }
+
+  const contagensDoArmazem = armazem ? todasContagens.filter(c=>c.almoxarifado===armazem) : [];
+  const contagensFiltradas = contagensDoArmazem.filter(c=>{
+    if(de && c.data && c.data<de) return false;
+    if(ate && c.data && c.data>ate) return false;
+    return true;
+  });
+
+  function handleDownload(){
+    if(!window.XLSX){
+      setFeedback('A biblioteca de exportação não carregou (verifique a conexão com a internet).');
+      return;
+    }
+    if(!armazem){ setFeedback('Escolha um armazém antes de gerar o relatório.'); return; }
+    const wb = buildInventarioCiclicoWorkbook({
+      counts: contagensFiltradas,
+      armazemLabel: formatArmazemLabel(armazem),
+      motivo, acao, assinaturas,
+    });
+    const filename = `GestaoEstoques_InventarioCiclico_${armazem}_${hojeLocalStr()}.xlsx`;
+    window.XLSX.writeFile(wb, filename);
+    setFeedback('Relatório baixado: ' + filename);
+  }
+
+  return (
+    <div className="panel">
+      <div className="section-title" style={{marginTop:0}}>Relatório Semanal (Diretoria)</div>
+      <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)',marginBottom:14,lineHeight:1.6}}>
+        Mesmo formato do relatório de inventário cíclico que já é mandado
+        semanalmente pra Diretoria: caixa de acuracidade, itens ordenados por
+        endereço com Sistema × Físico × Diferença, total, e campos pra
+        Motivo/Ação e assinatura. Só entram itens de fato contados pelo app no
+        armazém e período escolhidos — não o armazém inteiro, contado ou não.
+        "Custo Unitário"/"Custo Total" só saem preenchidos pra contagens feitas
+        a partir de agora; contagens já registradas antes não têm esse dado
+        guardado, e aparecem em branco nessas colunas.
+      </div>
+      {armazensDisponiveis.length===0 ? (
+        <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>
+          Nenhuma contagem registrada com armazém informado ainda.
+        </div>
+      ) : (
+        <>
+          <div className="field" style={{maxWidth:220}}>
+            <label>Armazém</label>
+            <select value={armazem} onChange={e=>setArmazem(e.target.value)}>
+              <option value="">Selecione...</option>
+              {armazensDisponiveis.map(a=><option key={a} value={a}>{formatArmazemLabel(a)}</option>)}
+            </select>
+          </div>
+          <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
+            <div className="field" style={{maxWidth:180}}>
+              <label>De (opcional)</label>
+              <input type="date" value={de} onChange={e=>setDe(e.target.value)} />
+            </div>
+            <div className="field" style={{maxWidth:180}}>
+              <label>Até (opcional)</label>
+              <input type="date" value={ate} onChange={e=>setAte(e.target.value)} />
+            </div>
+          </div>
+          {armazem && (
+            <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)',marginBottom:14}}>
+              {contagensFiltradas.length} contagens encontradas em {formatArmazemLabel(armazem)}{(de||ate) ? ' no período escolhido' : ''}.
+            </div>
+          )}
+          <div className="field">
+            <label>Motivo</label>
+            <textarea value={motivo} onChange={e=>setMotivo(e.target.value)} placeholder="Ex: Durante as contagens de inventário foram identificadas divergências de estoque..." />
+          </div>
+          <div className="field">
+            <label>Ação</label>
+            <textarea value={acao} onChange={e=>setAcao(e.target.value)} placeholder="Ex: Treinamento para a equipe de almoxarifado, reforçando os procedimentos..." />
+          </div>
+          <div style={{display:'flex',gap:12,flexWrap:'wrap',marginBottom:14}}>
+            <div className="field" style={{maxWidth:220}}>
+              <label>Analista de Estoque</label>
+              <input type="text" value={assinaturas.analista} onChange={e=>atualizarAssinatura('analista', e.target.value)} />
+            </div>
+            <div className="field" style={{maxWidth:220}}>
+              <label>Coordenador de Almoxarifado</label>
+              <input type="text" value={assinaturas.almoxarifado} onChange={e=>atualizarAssinatura('almoxarifado', e.target.value)} />
+            </div>
+            <div className="field" style={{maxWidth:220}}>
+              <label>Coordenador de Suprimentos</label>
+              <input type="text" value={assinaturas.suprimentos} onChange={e=>atualizarAssinatura('suprimentos', e.target.value)} />
+            </div>
+          </div>
+          {feedback && <div className="login-success" style={{marginBottom:14}}>{feedback}</div>}
+          <button className="btn btn-primary" onClick={handleDownload} disabled={!armazem || contagensFiltradas.length===0}>
+            <Ic>⬇</Ic> Baixar Relatório (.xlsx)
+          </button>
+          {armazem && contagensFiltradas.length===0 && (
+            <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)',marginTop:8}}>
+              Nenhuma contagem nesse armazém/período.
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 function ReportsScreen({counts, historicoTudo=[], inventories, currentUser, sendHistory, onLogSend, role, onHistoricoImportado}){
   const isAdmin = role==='admin';
   const [email, setEmail] = useState('');
@@ -12137,6 +12440,8 @@ function ReportsScreen({counts, historicoTudo=[], inventories, currentUser, send
           </div>
         )}
       </div>
+
+      <InventarioCiclicoPanel todasContagens={todasContagens} currentUser={currentUser} />
 
       <div className="panel">
         <div className="section-title" style={{marginTop:0}}>Enviar por E-mail</div>
