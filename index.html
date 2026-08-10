@@ -1569,27 +1569,6 @@ function escapeHtmlEtiqueta(texto){
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-// Divide a quantidade RECEBIDA em N etiquetas — pedido do cliente: "se eu
-// receber 500 peças e quiser 10 etiquetas ele manda para impressora 10
-// etiquetas de QTD: 50". Distribui o RESTO (quando a divisão não é exata)
-// nas primeiras etiquetas, uma unidade a mais em cada — garante que a SOMA
-// das quantidades impressas bate exatamente com o total recebido, nunca
-// perde nem inventa peça por arredondamento (ex: 500÷7 → [72,72,71,71,71,
-// 71,71], soma 500). `total`/`n` podem vir como string (direto do campo de
-// texto) — convertidos aqui. `n` sempre pelo menos 1 (nunca gera 0
-// etiquetas por engano).
-function splitQuantidadeEtiquetas(total, n){
-  const totalNum = Number(total) || 0;
-  const nNum = Math.max(1, Math.floor(Number(n)) || 1);
-  const base = Math.floor(totalNum / nNum);
-  const resto = totalNum - base * nNum;
-  const partes = [];
-  for(let i=0;i<nNum;i++){
-    partes.push(base + (i < resto ? 1 : 0));
-  }
-  return partes;
-}
-
 // Calibração de impressão da etiqueta — pedido do cliente: "tem casos que
 // a bobina vem torta", precisando ajustar manualmente a posição da coluna
 // DA DIREITA em relação à da esquerda (o rolo físico de 2 colunas pode não
@@ -14188,11 +14167,12 @@ function EtiquetasPanel({currentUser}){
   // fora da etiqueta em vez de imprimir "QTD: PC" quebrado.
   const [quantidade, setQuantidade] = useState('');
   const [dataRecebimento, setDataRecebimento] = useState(()=> new Date().toISOString().slice(0,10));
-  // Quantidade de ETIQUETAS a gerar (nasce '1' — 1 etiqueta com a
-  // quantidade recebida inteira, mesmo comportamento de sempre). Pedido do
-  // cliente: "se eu receber 500 peças e quiser 10 etiquetas ele manda pra
-  // impressora 10 etiquetas de QTD: 50" — `splitQuantidadeEtiquetas`
-  // divide `quantidade` por este valor (ver comentário dela no <script>).
+  // Quantidade de ETIQUETAS a gerar (nasce '1'). `quantidade` (acima) vai
+  // IGUAL em cada cópia impressa — não divide mais entre as etiquetas
+  // (pedido do cliente: "eu decidir livremente a quantidade de cada
+  // etiqueta e quantas etiquetas eu quero", escolheu "1 campo só, sem
+  // dividir" — antes disso, `splitQuantidadeEtiquetas` rateava o total
+  // recebido entre N etiquetas, ex. 500÷10=50 cada; removida por completo).
   const [quantidadeEtiquetas, setQuantidadeEtiquetas] = useState('1');
   // Qual dos dois MODELOS de etiqueta de produto gerar — a mesma aba
   // "Produto" (busca/seleção) é reaproveitada pros dois, só o que
@@ -14206,7 +14186,7 @@ function EtiquetasPanel({currentUser}){
   // querer ao digitar/navegar pelos outros campos. Reseta pra travada de
   // novo a cada item selecionado (não "vaza" destravada pro próximo).
   const [dataDesbloqueada, setDataDesbloqueada] = useState(false);
-  // Enter em "Quantidade recebida" pula direto pra "Quantidade de
+  // Enter em "Quantidade por etiqueta" pula direto pra "Quantidade de
   // etiquetas" (o próximo campo que o operador normalmente preenche),
   // sem passar pela Data (que fica travada de propósito).
   const quantidadeEtiquetasRef = useRef(null);
@@ -14372,36 +14352,44 @@ function EtiquetasPanel({currentUser}){
   })();
   const enderecoEfetivaEtiqueta = selecionado ? (liveEnderecoValidoEtiqueta || selecionado.endereco || null) : null;
 
-  // Pra tipo 'produto', gera N itens (N = quantidadeEtiquetas), cada um com
-  // a fatia certa da quantidade recebida (`splitQuantidadeEtiquetas`) — 1
-  // etiqueta (padrão) sempre gera `[quantidade]` inteira, mesmo
-  // comportamento de sempre. Endereço nunca divide (não tem quantidade).
-  // `endereco` usa `enderecoEfetivaEtiqueta` (consulta ao vivo Selgron/
-  // Protheus vence quando confirma um endereço válido; cai pro cadastro
-  // local — `selecionado.endereco` — só como fallback) — pedido do
-  // cliente: mostrar o endereço do material abaixo da quantidade na
-  // etiqueta, sempre o mais atual disponível.
+  // Pra tipo 'produto', gera N itens (N = quantidadeEtiquetas). Endereço
+  // nunca divide (não tem quantidade). `endereco` usa
+  // `enderecoEfetivaEtiqueta` (consulta ao vivo Selgron/Protheus vence
+  // quando confirma um endereço válido; cai pro cadastro local —
+  // `selecionado.endereco` — só como fallback) — pedido do cliente: mostrar
+  // o endereço do material abaixo da quantidade na etiqueta, sempre o mais
+  // atual disponível.
+  //
+  // Modelo "Recebimento" NÃO divide mais a quantidade entre as etiquetas —
+  // pedido explícito do cliente ("Este campo alterar deste formato para eu
+  // decidir livremente a quantidade de cada etiqueta e quantas etiquetas eu
+  // quero"), escolhendo a opção "1 campo só, sem dividir" quando perguntado
+  // via AskUserQuestion: "Quantidade por etiqueta" (campo único, digitado
+  // livremente) vai IGUAL em cada cópia impressa — "Quantidade de
+  // etiquetas" só decide QUANTAS cópias idênticas sair, mesmo raciocínio
+  // que "Prateleira/Caixa" já usava. `splitQuantidadeEtiquetas` (a divisão
+  // proporcional com resto distribuído, ex. 500÷10=50 cada) foi REMOVIDA —
+  // não sobrou nenhum consumidor dela no app.
   function montarItensParaImprimir(){
     if(aba!=='produto'){
       return [{ tipo: aba, codigo: selecionado.codigo, descricao: selecionado.descricao }];
     }
+    const n = Math.max(1, parseInt(quantidadeEtiquetas, 10) || 1);
     if(modeloEtiqueta==='prateleira'){
-      // Sem quantidade recebida pra dividir (essa etiqueta não tem QTD
-      // nenhuma) — "Quantidade de etiquetas" aqui é só quantas cópias
-      // IDÊNTICAS imprimir (ex: 3 caixas iguais do mesmo item).
-      const n = Math.max(1, parseInt(quantidadeEtiquetas, 10) || 1);
+      // Sem quantidade nenhuma nesta etiqueta — "Quantidade de etiquetas"
+      // aqui já era só quantas cópias IDÊNTICAS imprimir (ex: 3 caixas
+      // iguais do mesmo item), sem mudança nesta rodada.
       return Array.from({length: n}, ()=>({
         tipo: 'prateleira',
         codigo: selecionado.codigo,
         descricao: descricaoEfetivaEtiqueta,
       }));
     }
-    const partes = splitQuantidadeEtiquetas(quantidade, quantidadeEtiquetas);
-    return partes.map(qtd=>({
+    return Array.from({length: n}, ()=>({
       tipo: 'produto',
       codigo: selecionado.codigo,
       descricao: descricaoEfetivaEtiqueta,
-      quantidade: qtd || '',
+      quantidade: quantidade || '',
       dataRecebimento,
       endereco: enderecoEfetivaEtiqueta,
       unidade: unidadeEfetivaEtiqueta,
@@ -14608,18 +14596,19 @@ function EtiquetasPanel({currentUser}){
           {aba==='produto' && modeloEtiqueta==='recebimento' && (
             <div className="lr-sub" style={{marginTop:4}}>
               Unidade: <strong>{unidadeEfetivaEtiqueta || 'UN (padrão, sem cadastro)'}</strong>
-              {unidadeLiveValidaEtiqueta && ' (ao vivo)'}
             </div>
           )}
           {/* Mesmo padrão da Unidade acima — mostra o endereço que VAI pra
-              etiqueta antes de imprimir, com "(ao vivo)" só quando veio da
-              consulta Selgron de verdade. Corrige o caso reportado: alterar
+              etiqueta antes de imprimir. Corrige o caso reportado: alterar
               o endereço (Selgron/Protheus) e a etiqueta continuar puxando o
-              cadastro local antigo. */}
+              cadastro local antigo. A dica "(ao vivo)" foi removida por
+              pedido do cliente — a PRIORIDADE (consulta ao vivo vence o
+              cadastro local, ver `enderecoEfetivaEtiqueta`/
+              `unidadeEfetivaEtiqueta` mais acima) não mudou, só o texto que
+              anunciava a fonte na tela. */}
           {aba==='produto' && modeloEtiqueta==='recebimento' && (
             <div className="lr-sub" style={{marginTop:4}}>
               Endereço: <strong>{enderecoEfetivaEtiqueta || 'sem cadastro'}</strong>
-              {liveEnderecoValidoEtiqueta && ' (ao vivo)'}
             </div>
           )}
           {aba==='endereco' && selecionado.almoxarifado && <div className="lr-sub" style={{marginTop:4}}>Armazém {selecionado.almoxarifado}</div>}
@@ -14641,8 +14630,8 @@ function EtiquetasPanel({currentUser}){
           {aba==='produto' && modeloEtiqueta==='recebimento' && (
             <div style={{display:'flex',gap:10,marginTop:12,flexWrap:'wrap'}}>
               <div className="field" style={{flex:1,minWidth:110,marginBottom:0}}>
-                <label>Quantidade recebida</label>
-                <input type="text" inputMode="numeric" value={quantidade} onChange={e=>setQuantidade(e.target.value.replace(/[^0-9]/g,''))} onKeyDown={e=>{ if(e.key==='Enter'){ e.preventDefault(); quantidadeEtiquetasRef.current && quantidadeEtiquetasRef.current.focus(); } }} placeholder="Ex: 500" />
+                <label>Quantidade por etiqueta</label>
+                <input type="text" inputMode="numeric" value={quantidade} onChange={e=>setQuantidade(e.target.value.replace(/[^0-9]/g,''))} onKeyDown={e=>{ if(e.key==='Enter'){ e.preventDefault(); quantidadeEtiquetasRef.current && quantidadeEtiquetasRef.current.focus(); } }} placeholder="Ex: 50" />
               </div>
               <div className="field" style={{flex:1,minWidth:110,marginBottom:0}}>
                 <label>Quantidade de etiquetas</label>
@@ -14664,8 +14653,7 @@ function EtiquetasPanel({currentUser}){
           )}
           {aba==='produto' && modeloEtiqueta==='recebimento' && Number(quantidadeEtiquetas)>1 && quantidade && (
             <div className="lr-sub" style={{marginTop:6}}>
-              {splitQuantidadeEtiquetas(quantidade, quantidadeEtiquetas).length} etiquetas —
-              {' '}{Array.from(new Set(splitQuantidadeEtiquetas(quantidade, quantidadeEtiquetas))).sort((a,b)=>b-a).map((v,i)=>(i?' / ':' ')+'QTD: '+v)}
+              {Math.max(1,parseInt(quantidadeEtiquetas,10)||1)} etiquetas idênticas — QTD: {quantidade} em cada
             </div>
           )}
           {aba==='produto' && modeloEtiqueta==='prateleira' && (

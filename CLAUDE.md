@@ -17755,3 +17755,82 @@ que dessa vez pro campo Endereço.
   ponta a ponta com o item real (000.64731) fica a cargo do cliente** — mesma
   limitação de sempre (login exige Supabase Auth real, não simulável no sandbox sem
   rede).
+## Etiquetas: remove a dica "(ao vivo)" do campo Unidade/Endereço
+
+Cliente pediu, direto, em cima do card de confirmação da etiqueta (que já mostrava
+"Unidade: PC (ao vivo)"/"Endereço: 013-F-5 (ao vivo)" desde a correção anterior):
+**"apague a mensagem de AO VIVO"**.
+
+- Removidas as duas expressões `{unidadeLiveValidaEtiqueta && ' (ao vivo)'}`/
+  `{liveEnderecoValidoEtiqueta && ' (ao vivo)'}` do card de confirmação de
+  `EtiquetasPanel` — só o texto/dica visual saiu, a PRIORIDADE em si (a consulta ao
+  vivo Selgron/Protheus continua vencendo o cadastro local quando confirma um valor
+  válido, mesmo padrão de `CountStep`) não mudou nada — `unidadeLiveValidaEtiqueta`/
+  `liveEnderecoValidoEtiqueta` continuam calculadas e usadas normalmente pra decidir
+  `unidadeEfetivaEtiqueta`/`enderecoEfetivaEtiqueta`, só pararam de aparecer na tela.
+- Escopo restrito a `EtiquetasPanel` — o indicador irmão "Sistema (ao vivo)" da tela
+  de contagem (`CountStep`, `.cs-sistema-k`) não fazia parte do print/pedido do
+  cliente e não foi tocado.
+- Testado atualizando o harness já existente (`harness_etiqueta_endereco_ao_vivo.js`,
+  2 assertions trocadas de "aparece (ao vivo)" pra "NÃO aparece (ao vivo) em lugar
+  nenhum") e `harness_etiqueta_unidade_consulta_ao_vivo.js` (1 assertion invertida
+  pelo mesmo motivo) — os dois continuam confirmando que o VALOR certo (consulta ao
+  vivo vencendo o cadastro) ainda aparece, só sem o texto extra. Rodei de novo toda a
+  suíte de regressão do scratchpad (64 harnesses) — 0 falhas. Transpile Babel do
+  arquivo inteiro e balanceamento de chaves do CSS conferidos (668/668, sem mudança
+  — só JSX removido, nenhuma classe CSS tocada). **Verificação visual de ponta a
+  ponta fica a cargo do cliente** — mesma limitação de sempre (login exige Supabase
+  Auth real, não simulável no sandbox sem rede).
+
+## Etiquetas: "Quantidade Recebida" deixa de dividir entre as etiquetas
+
+Cliente mandou print do card de confirmação (campos "Quantidade Recebida"/
+"Quantidade de Etiquetas" marcados) e pediu: **"Este campo alterar deste formato
+para eu decidir livremente a quantidade de cada etiqueta e quantas etiquetas eu
+quero."** Até aqui, `splitQuantidadeEtiquetas(total, n)` DIVIDIA a quantidade
+recebida entre N etiquetas (distribuindo o resto nas primeiras, ex. 500÷10=50 em
+cada) — mecanismo criado numa rodada bem anterior ("se eu receber 500 peças e
+quiser 10 etiquetas ele manda pra impressora 10 etiquetas de QTD: 50").
+
+Perguntado via `AskUserQuestion` entre 2 leituras possíveis do pedido — (A) lista
+com 1 campo de quantidade POR etiqueta, cada uma podendo ter um valor diferente; (B)
+1 campo só, mas sem dividir mais — o mesmo valor digitado sai IGUAL em cada cópia
+impressa, "Quantidade de Etiquetas" vira só "quantas cópias idênticas imprimir" —
+o cliente escolheu **"1 campo só, sem dividir"**.
+
+- **`montarItensParaImprimir`** (`EtiquetasPanel`) parou de chamar
+  `splitQuantidadeEtiquetas` — pro modelo "Recebimento", agora gera N itens
+  (`Array.from({length:n}, ()=>({...}))`) todos com `quantidade: quantidade || ''`
+  (o mesmo valor digitado, sem nenhuma conta) — mesmo padrão que o modelo
+  "Prateleira/Caixa" já usava pra "N cópias idênticas" (não tinha nenhuma noção de
+  quantidade, só código/descrição repetidos).
+- **`splitQuantidadeEtiquetas` removida por completo** do módulo — sem nenhum
+  consumidor sobrando depois da mudança (as 3 chamadas que existiam, todas dentro de
+  `EtiquetasPanel`, foram embora junto).
+- **Campo "Quantidade Recebida" renomeado pra "Quantidade por etiqueta"**
+  (placeholder `Ex: 500`→`Ex: 50`, já que agora o valor digitado É literalmente o que
+  vai aparecer numa etiqueta, não mais um total a ratear) — deixa explícito o novo
+  comportamento só pelo rótulo, sem precisar de texto explicativo extra.
+- **Prévia** ("N etiquetas — QTD: X / QTD: Y", que antes podia mostrar 2 valores
+  diferentes quando a divisão não era exata) virou "N etiquetas idênticas — QTD: X em
+  cada" — sempre um valor só, já que não existe mais divisão nenhuma pra gerar
+  valores diferentes entre etiquetas.
+- Testado via harness reescrito por completo (`harness_etiqueta_qtd_split.js` — a
+  versão antiga testava só a função `splitQuantidadeEtiquetas` em si, que não existe
+  mais): confirma que a função foi removida (`typeof ... === 'undefined'`); que
+  imprimir com "Quantidade por etiqueta"=17 (número ÍMPAR de propósito — se alguma
+  divisão ainda estivesse rodando por engano, 17÷6 geraria valores diferentes tipo
+  [3,3,3,3,3,2]) e "Quantidade de etiquetas"=6 gera 6 etiquetas, TODAS mostrando
+  "QTD: 17 UN" idêntico; que enviar pra fila com 25/4 grava 4 linhas, TODAS com
+  quantidade "25" (não 25÷4=[7,6,6,6], que seria o resultado da divisão antiga).
+  Atualizados também os outros 5 harnesses de Etiquetas que referenciavam o
+  placeholder antigo (`Ex: 500`) ou o rótulo antigo ("Quantidade recebida") —
+  `harness_etiqueta_enter_data_travada.js`/`harness_etiqueta_layout_compacto.js`/
+  `harness_etiqueta_unidade_consulta_ao_vivo.js`/`harness_etiqueta_layout_endereco.js`/
+  `harness_etiqueta_modelo_prateleira.js` — mudança de comportamento intencional
+  desta rodada, não regressão. Rodei de novo toda a suíte de regressão do scratchpad
+  (64 harnesses) — 0 falhas. Transpile Babel do arquivo inteiro e balanceamento de
+  chaves do CSS conferidos (668/668, sem mudança — nenhuma classe CSS nova, só JS/
+  JSX). **Verificação visual/funcional de ponta a ponta fica a cargo do cliente** —
+  mesma limitação de sempre (login exige Supabase Auth real, não simulável no
+  sandbox sem rede).
