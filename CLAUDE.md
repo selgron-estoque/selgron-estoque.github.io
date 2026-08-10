@@ -17834,3 +17834,37 @@ o cliente escolheu **"1 campo só, sem dividir"**.
   JSX). **Verificação visual/funcional de ponta a ponta fica a cargo do cliente** —
   mesma limitação de sempre (login exige Supabase Auth real, não simulável no
   sandbox sem rede).
+## Etiquetas: remove a prévia "N etiquetas idênticas — QTD: X em cada"
+
+Logo depois da rodada anterior ("Quantidade Recebida" deixa de dividir entre
+as etiquetas, virando "Quantidade por etiqueta" repetida em N cópias
+idênticas), o cliente pediu pra tirar a linha de prévia que essa mesma
+rodada tinha introduzido no card de confirmação (modelo "Recebimento"):
+**"Essa informação pode remover: '2 etiquetas idênticas — QTD: 20 em
+cada'"**.
+
+- **Só a linha de PRÉVIA foi removida** — o bloco JSX condicional
+  (`aba==='produto' && modeloEtiqueta==='recebimento' &&
+  Number(quantidadeEtiquetas)>1 && quantidade && (...)`) saiu por completo
+  do `EtiquetasPanel`. **A lógica de repetição por trás (`montarItensParaImprimir`,
+  que gera N cópias idênticas com a mesma quantidade digitada) não mudou em
+  nada** — o cliente pediu pra remover a MENSAGEM na tela, não o
+  comportamento; imprimir/enviar pra fila continua funcionando exatamente
+  como na rodada anterior.
+- **Escopo confirmado, não confundido com a etiqueta "Prateleira/Caixa"**:
+  esse OUTRO modelo tem sua própria linha de prévia, com texto diferente
+  ("N etiquetas idênticas (mesmo código/descrição em cada uma)", sem o
+  trecho "— QTD: X em cada", já que esse modelo nunca teve campo de
+  quantidade) — não fazia parte do pedido do cliente (que citou o texto
+  exato do modelo Recebimento) e **não foi tocada**.
+- Testado via `harness_etiqueta_qtd_split.js` (atualizado — a asserção que
+  checava a prévia "6 etiquetas"/"QTD: 17" virou uma que confirma que o
+  texto "etiquetas idênticas" não aparece mais em lugar nenhum do card,
+  mesmo com `quantidadeEtiquetas>1`) e `harness_etiqueta_modelo_prateleira.js`
+  (conferido que a prévia da OUTRA etiqueta, Prateleira/Caixa, continua
+  intacta, sem regressão). Rodei de novo toda a suíte completa do
+  scratchpad (64 harnesses) — 0 falhas. Transpile Babel do arquivo inteiro
+  e balanceamento de chaves do CSS conferidos (668/668, sem mudança — pura
+  remoção de JSX, sem nenhum CSS envolvido). **Verificação visual de ponta
+  a ponta fica a cargo do cliente** — mesma limitação de sempre (login
+  exige Supabase Auth real, não simulável no sandbox sem rede).

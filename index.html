@@ -14651,11 +14651,6 @@ function EtiquetasPanel({currentUser}){
               </div>
             </div>
           )}
-          {aba==='produto' && modeloEtiqueta==='recebimento' && Number(quantidadeEtiquetas)>1 && quantidade && (
-            <div className="lr-sub" style={{marginTop:6}}>
-              {Math.max(1,parseInt(quantidadeEtiquetas,10)||1)} etiquetas idênticas — QTD: {quantidade} em cada
-            </div>
-          )}
           {aba==='produto' && modeloEtiqueta==='prateleira' && (
             <div style={{marginTop:12}}>
               <div className="field" style={{maxWidth:200,marginBottom:0}}>
