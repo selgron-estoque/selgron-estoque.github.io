@@ -11006,7 +11006,7 @@ function SolicitacaoArmazemPanel({counts, inventories, role, onEnviarParaDiretor
                 </div>
                 <div className="count-card-address-badge"><DIcon name="mapPin" size={16} /> {c.endereco || 'não cadastrado'}</div>
               </div>
-              {/* Conteúdo (quadro + "Enviado ao Armazém por"/Motivo/campo do
+              {/* Conteúdo (quadro + "Liberado para ajuste por"/Motivo/campo do
                   número da SA) ao lado dos botões dentro do MESMO
                   .count-card-main — mesmo padrão das demais 4 telas de
                   contagem (conteúdo mais estreito à esquerda, botões
@@ -11019,7 +11019,7 @@ function SolicitacaoArmazemPanel({counts, inventories, role, onEnviarParaDiretor
                     <div className="rg"><div className="k">Diferença</div><div className="v" style={{color:sev.color}}>{c.diferenca==null ? '—' : (c.diferenca>0?'+':'')+c.diferenca}</div></div>
                     <div className="rg"><div className="k">%</div><div className="v" style={{color:sev.color}}>{fmtAcuraciaItem(c)}</div></div>
                   </div>
-                  <div style={{padding:'10px 16px 0',fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>Enviado ao Armazém por {c.saGeradaPor||'—'} em {c.saGeradaEm||'—'}</div>
+                  <div style={{padding:'10px 16px 0',fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>Liberado para ajuste por {c.saGeradaPor||'—'} em {c.saGeradaEm||'—'}</div>
                   {c.motivo && <div style={{padding:'6px 16px 0',fontSize:'var(--text-sm)'}}>Motivo: <strong>{c.motivo}</strong></div>}
                   {c.valorDivergente!=null && Number(c.valorDivergente)!==0 && <div style={{padding:'6px 16px 0',fontSize:'var(--text-sm)'}}>Valor divergente: <strong>R$ {Number(c.valorDivergente).toFixed(2)}</strong></div>}
                   {/* `confirmDeleteId!==c.id` (era `!confirmDeleteId`) — bug

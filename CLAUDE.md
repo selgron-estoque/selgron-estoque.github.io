@@ -17868,3 +17868,19 @@ cada'"**.
   remoção de JSX, sem nenhum CSS envolvido). **Verificação visual de ponta
   a ponta fica a cargo do cliente** — mesma limitação de sempre (login
   exige Supabase Auth real, não simulável no sandbox sem rede).
+## "Analisados": texto do card muda de "Enviado ao Armazém por" pra "Liberado para ajuste por"
+
+Cliente mandou print do card de um item em "Analisados" (view
+`solicitacaoArmazem`) e pediu pra trocar a frase "Enviado ao Armazém por
+Alisson Silva em..." por **"Liberado para ajuste por..."** — só o texto,
+sem mudança de dado: continua mostrando `c.saGeradaPor`/`c.saGeradaEm`
+(as mesmas colunas gravadas por `enviarParaArmazem`, ver seção "3ª
+correção do fluxo de SA" mais acima) — a frase antiga já não descrevia bem
+o momento (o item nessa tela está aguardando o NÚMERO da SA, não uma ação
+do Armazém em si). Trocado direto em `SolicitacaoArmazemPanel`, único
+lugar que mostra essa frase.
+
+Testado via transpile Babel do arquivo inteiro e balanceamento de chaves
+do CSS (668/668, sem mudança — só texto). **Verificação visual fica a
+cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth
+real, não simulável no sandbox sem rede).
