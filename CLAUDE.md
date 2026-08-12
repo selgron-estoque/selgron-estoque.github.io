@@ -18239,3 +18239,143 @@ tudo reaproveitado via `.section-title`/`.panel`/`.empty-state`/
 visual/funcional de ponta a ponta fica a cargo do cliente** — mesma
 limitação de sempre (login exige Supabase Auth real, não simulável no
 sandbox sem rede).
+
+
+## "Valores por Armazém" eliminado + "Valor em Estoque" vira só Armazém 01, ao vivo
+
+Cliente mandou print de "Indicadores" (mobile) e pediu, direto: "Elimine o
+indicador de valores por armazém e este valor em estoque contemple apenas
+o valor que temos de saldo no armazém 01 saldo x custo unitário, puxando
+do consulta." Duas mudanças na mesma seção "Resumo da Operação"/"Tendência"
+(Dashboard):
+
+1. **Painel "Valores por Armazém" removido por completo** (barras
+   horizontais por armazém, toggle "Valor (R$)"/"% do Total", último bloco
+   da tela) — sem substituto, o cliente só quis eliminar.
+2. **Card "Valor em Estoque" deixou de somar os 8 armazéns** — passou a
+   mostrar só o valor do **Armazém 01**, calculado como **saldo × custo
+   unitário item a item**, e — a parte que mudou a arquitetura da conta —
+   **"puxando do consulta"**: não é mais uma leitura agregada do cache
+   `estoque_saldo` (alimentado pela planilha SB2), é uma soma feita **AO
+   VIVO**, produto a produto, na consulta interna da Selgron
+   (`consultar-produto-selgron`, a mesma Edge Function já usada em
+   `CountStep`/`EtiquetasPanel`).
+
+Confirmado o design em duas rodadas de `AskUserQuestion` antes de
+implementar, dado o tamanho da mudança de arquitetura:
+
+- **1ª pergunta**: de onde viria o dado — cache do Supabase filtrado por
+  Armazém 01 (rápido, já pronto) ou consulta ao vivo item a item (mais
+  fiel, mas a ferramenta da Selgron foi pensada pra 1 lookup manual de
+  cada vez, não bulk). Cliente respondeu **"Ao vivo assim como você
+  calcula os valores de divergências das contagens"** — confirmando que
+  queria o mesmo princípio já usado em `CountStep`
+  (`saldoSistemaEfetivo`/`custoUnitEfetivo`: valor da consulta ao vivo
+  VENCE quando disponível, cache local é só fallback).
+- **2ª pergunta**: como lidar com a escala — um armazém pode ter
+  centenas/milhares de códigos, e cada um exige 1 requisição pra um
+  sistema interno pensado pra uso manual, então isso pode levar minutos.
+  Cliente escolheu **"só busca quando eu clicar em 'Atualizar', com barra
+  de progresso"** — não dispara sozinho ao abrir a tela.
+
+### `fetchValorEstoqueArmazem01AoVivo(onProgress)` (index.html)
+
+Função nova, perto de `fetchEstoqueResumoGeral` (que foi REMOVIDA nesta
+mesma rodada, ver abaixo). Dois passos:
+
+1. **A LISTA de códigos** a percorrer vem do cache local (`estoque_saldo`
+   filtrado por `almoxarifado='1'`, o mesmo dado já carregado via upload
+   manual da planilha SB2 em Configurações) — não tem outro jeito
+   confiável de saber "quais códigos existem no Armazém 01" sem alguma
+   fonte prévia, e essa já existe.
+2. **O VALOR de cada item** (saldo/custo) é resolvido AO VIVO, um por vez,
+   via `fetchSaldoConsultaSelgron(codigo)` — mesma função já usada em
+   `CountStep`/`EtiquetasPanel`. Quando a consulta responde com sucesso,
+   `saldo`/`custoUnitario` dela VENCEM; quando falha (timeout, código não
+   encontrado, etc.), cai pro saldo/custo já calculado a partir da linha
+   local (`valor_financeiro/saldo`) — nunca deixa um item de fora da soma
+   só porque a consulta falhou pra ele especificamente.
+3. `onProgress({feito, total})` chamado a cada item — é o que alimenta a
+   barra de progresso.
+
+### `Dashboard` — botão manual, nunca dispara sozinho
+
+- **`valorArmazem01`/`carregandoArmazem01`/`progressoArmazem01`/
+  `erroArmazem01`** (estado novo) + **`armazem01RunIdRef`** (`useRef`,
+  contador de execução) — protege contra o componente desmontar (usuário
+  navega pra outra tela) NO MEIO de uma consulta que pode levar minutos:
+  cada clique incrementa o `runId`, e qualquer `setState` só é aplicado se
+  o `runId` capturado no início da chamada ainda for o atual — mesmo
+  princípio de guard já usado antes neste projeto pra evitar `setState`
+  em componente desmontado (ver o bug da câmera travando,
+  `CameraScanner`), só que aqui pra um loop assíncrono bem mais longo.
+- **Botão "Consultar ao vivo"/"Atualizar (ao vivo)"** dentro do próprio
+  card "Valor em Estoque — Armazém 01" — desabilitado enquanto roda, com
+  uma barra de progresso fina (`{feito} de {total}`) e o meta-text do
+  card trocando pra "Consultando ao vivo… X de Y" durante a busca. Depois
+  de concluir, mostra "saldo × custo unitário, ao vivo · N itens" e, se
+  algum item falhou na consulta, "· N sem resposta (usou cache)" — nunca
+  finge que 100% veio ao vivo quando parte caiu no fallback.
+- **Nunca dispara no `useEffect` de mount** — diferente de `carregarEstoque`
+  (que já roda sozinho ao abrir a tela, pra popular `estoqueRemoto`/
+  `valorTotalEstoque`, ainda usado pela % do card "Valor Divergente" —
+  ver abaixo), este cálculo só começa com o clique explícito do admin.
+
+### Limpeza — `resumoGeral`/`armazensAtivos`/`fetchEstoqueResumoGeral` viraram código morto
+
+Com o texto "N armazéns ativos" saindo do card (não faz mais sentido pra
+um card escopado a 1 armazém só), `armazensAtivos` (calculado a partir de
+`resumoGeral.armazens_ativos`) ficou sem nenhum consumidor — removidos
+junto: o estado `resumoGeral`/`setResumoGeral`, a variável
+`armazensAtivos`, e a função `fetchEstoqueResumoGeral()` em si (só tinha
+esse único ponto de chamada). `modoValor`/`setModoValor`/
+`armazensPorValor`/`maxArmazemValor`/`armazensTreemapData`/
+`fmtReaisAbrev` também removidos — existiam só pro painel "Valores por
+Armazém", que saiu.
+
+**Mantido de propósito**: `estoqueRemoto`/`carregarEstoque`/`porArmazem`/
+`armazens`/`valorTotalEstoque` — `valorTotalEstoque` (soma de TODOS os
+armazéns) continua alimentando a % do card "Valor Divergente" ("X% do
+valor total em estoque"), que o cliente não pediu pra mudar; e
+`carregarEstoque` continua sendo o que o botão "Atualizar" do painel
+"Filtros" (`TrendFilterBar onRefresh`) já chama. A função RPC
+`estoque_resumo_geral()` continua existindo no `backend/schema.sql` (não
+removida do banco, só parou de ser chamada pelo front-end) — decisão
+consciente de não mexer em infraestrutura de banco que não está causando
+problema nenhum.
+
+**Nenhuma migração de SQL necessária** — `fetchValorEstoqueArmazem01AoVivo`
+só faz uma leitura autenticada comum de `estoque_saldo` (já com RLS
+liberado pra `authenticated` desde o endurecimento pós-migração Supabase
+Auth) e reaproveita a Edge Function `consultar-produto-selgron` já
+publicada e em uso.
+
+Testado via harness dedicado
+(`harness_valor_armazem01_ao_vivo.js`, jsdom + react-dom/client + `act()`,
+mesma técnica rigorosa de sempre — carrega o `index.html` inteiro
+transpilado numa `vm.Script`, Supabase mockado incluindo `estoque_saldo`
+filtrado por armazém E `consultar-produto-selgron` respondendo por
+código): `fetchValorEstoqueArmazem01AoVivo` isolada — 2 itens do Armazém
+01, um respondendo ao vivo com saldo/custo DIFERENTES do cache local
+(prova que o valor ao vivo vence) e outro falhando na consulta (prova que
+cai pro cache local sem derrubar a soma) — total bate exatamente (48 ao
+vivo + 40 fallback = 88), `onProgress` chamado 1x por item, `falhas:1`
+contabilizado certo. `Dashboard` de ponta a ponta: "Valores por Armazém"
+não aparece em lugar nenhum da tela; o card mostra "Valor em Estoque —
+Armazém 01", nasce com "—" e o botão "Consultar ao vivo"; **nenhuma
+requisição dispara sozinha no mount**; clicar no botão dispara exatamente
+2 chamadas (1 por código do Armazém 01), o card atualiza pro valor
+calculado (R$ 88), mostra "2 itens"/"1 sem resposta (usou cache)", e o
+botão vira "Atualizar (ao vivo)". Rodei de novo toda a suíte de regressão
+do scratchpad (67 harnesses, 1.031 asserções) — 0 falhas (removido
+`harness_valores_armazem_final_pagina.js`, que testava exclusivamente o
+painel agora eliminado — mesmo critério já usado antes neste projeto pra
+harness que testa exclusivamente algo que deixou de existir). Transpile
+Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos
+(668/668, sem mudança — só JS/JSX, nenhuma classe CSS tocada nem
+removida). **Verificação visual/funcional de ponta a ponta (o botão de
+verdade contra a consulta real da Selgron, incluindo quanto tempo leva
+pra um armazém com muitos códigos) fica a cargo do cliente** — mesma
+limitação de sempre (login exige Supabase Auth real, não simulável no
+sandbox sem rede, e o sandbox tampouco tem acesso à consulta interna da
+Selgron).

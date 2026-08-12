@@ -2947,19 +2947,57 @@ async function fetchEstoqueValorPorAlmoxarifado(){
   }
 }
 
-// Armazéns ativos, itens distintos e % do catálogo com saldo carregado —
-// pros mini-cards do Dashboard. Retorna null se a RPC falhar/tabela vazia
-// (quem chama cai pro fallback local, mesmo padrão dos outros dados de
-// estoque).
-async function fetchEstoqueResumoGeral(){
-  if(!supabaseClient) return null;
+// "Valor em Estoque" do Armazém 01, AO VIVO — pedido do cliente: "este valor
+// em estoque contemple apenas o valor que temos de saldo no armazém 01
+// saldo x custo unitário, puxando do consulta... ao vivo assim como você
+// calcula os valores de divergências das contagens" — mesmo princípio
+// "ao vivo vence, cache local é só fallback" já usado em CountStep
+// (saldoSistemaEfetivo/custoUnitEfetivo) e EtiquetasPanel, agora aplicado
+// item a item pro armazém inteiro.
+//
+// A LISTA de códigos a percorrer vem do cache local (`estoque_saldo`
+// filtrado por almoxarifado='1', o mesmo dado da planilha SB2) — só o
+// VALOR de cada item (saldo/custo) é resolvido AO VIVO, um por vez, na
+// consulta interna da Selgron, exatamente como já acontece ao abrir 1 item
+// pra contar. NUNCA dispara sozinho — só quando o admin clica em
+// "Consultar ao vivo"/"Atualizar" (ver Dashboard) — confirmado com o
+// cliente via AskUserQuestion: essa ferramenta é pensada pra 1 lookup
+// manual de cada vez, não pra bulk; um armazém inteiro pode ter centenas/
+// milhares de códigos, então isso pode levar minutos — por isso o
+// `onProgress(feito, total)` alimenta uma barra de progresso visível.
+async function fetchValorEstoqueArmazem01AoVivo(onProgress){
+  if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
   try{
-    const { data, error } = await supabaseClient.rpc('estoque_resumo_geral');
-    if(error || !data || data.length===0) return null;
-    return data[0];
+    const { data, error } = await supabaseClient
+      .from('estoque_saldo')
+      .select('produto_codigo, saldo, valor_financeiro')
+      .eq('almoxarifado', '1');
+    if(error) return {ok:false, erro:error.message};
+    const linhas = data || [];
+    let valorTotal = 0;
+    let falhas = 0;
+    for(let i=0; i<linhas.length; i++){
+      const row = linhas[i];
+      const saldoLocal = Number(row.saldo || 0);
+      const custoLocal = saldoLocal>0 ? Number(row.valor_financeiro || 0) / saldoLocal : 0;
+      let saldo = saldoLocal, custo = custoLocal;
+      try{
+        const res = await fetchSaldoConsultaSelgron(row.produto_codigo);
+        if(res && res.ok){
+          if(typeof res.saldo === 'number') saldo = res.saldo;
+          if(typeof res.custoUnitario === 'number' && res.custoUnitario > 0) custo = res.custoUnitario;
+        } else {
+          falhas++;
+        }
+      }catch(_e){
+        falhas++;
+      }
+      valorTotal += saldo * custo;
+      if(onProgress) onProgress({feito: i+1, total: linhas.length});
+    }
+    return {ok:true, valorTotal, itens: linhas.length, falhas};
   }catch(err){
-    console.warn('Falha ao buscar resumo geral do estoque:', err);
-    return null;
+    return {ok:false, erro:String(err && err.message || err)};
   }
 }
 
@@ -13540,32 +13578,22 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   const codigosDistintosContados = new Set(todasParaQualidade.map(c=>c.productCode)).size;
   const codigosDistintosDivergentes = new Set(divergentes.map(c=>c.productCode)).size;
 
-  // Valor em estoque por armazém — vem do Supabase (estoque_saldo,
-  // atualizado via upload manual da planilha SB2 em Configurações, ver
-  // StockSyncPanel). Sem fallback pro cache local (removido, ver CLAUDE.md
-  // "cache local removido") — se a tabela ainda estiver vazia, mostra um
-  // empty-state honesto em vez de calcular a partir de dado estático.
+  // Valor em estoque (TOTAL, todos os armazéns) — vem do Supabase
+  // (estoque_saldo, atualizado via upload manual da planilha SB2 em
+  // Configurações, ver StockSyncPanel). Continua alimentando só a % do
+  // card "Valor Divergente" (que compara contra o estoque TOTAL, não só o
+  // Armazém 01) — o painel "Valores por Armazém" (que mostrava essa soma
+  // detalhada por armazém) foi removido a pedido do cliente ("Elimine o
+  // indicador de valores por armazém"), então `estoqueRemoto`/
+  // `carregarEstoque` sobrevivem só por essa % e pelo botão "Atualizar" do
+  // painel "Filtros" (`TrendFilterBar onRefresh`).
   const [estoqueRemoto, setEstoqueRemoto] = useState(null); // null = ainda carregando/não tentado
-  const [resumoGeral, setResumoGeral] = useState(null);
-  const [modoValor, setModoValor] = useState('valor'); // 'valor' | 'percentual' — toggle do painel "Valor por Armazém"
-  // "Atualizar" do painel de Filtros re-busca o saldo/resumo do Supabase —
-  // ação de verdade (não decorativa): os gráficos de tendência já são
-  // recalculados na hora a partir de `counts`/histórico (em memória, sem
-  // custo de rede), mas o painel "Valor por Armazém" depende de RPCs que só
-  // rodam no mount por padrão — esse botão dá ao usuário um jeito manual de
-  // puxar o saldo mais recente sem precisar recarregar a página inteira
-  // (útil se o líder subiu uma planilha SB2 nova em outro aparelho/aba
-  // enquanto essa tela já estava aberta).
   const [atualizando, setAtualizando] = useState(false);
   const carregarEstoque = async () => {
     setAtualizando(true);
     try {
-      const [rows, resumo] = await Promise.all([
-        fetchEstoqueValorPorAlmoxarifado(),
-        fetchEstoqueResumoGeral(),
-      ]);
+      const rows = await fetchEstoqueValorPorAlmoxarifado();
       setEstoqueRemoto(rows);
-      setResumoGeral(resumo);
     } finally {
       setAtualizando(false);
     }
@@ -13577,43 +13605,33 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   const armazens = Object.keys(porArmazem).sort();
   const valorTotalEstoque = armazens.reduce((s,k)=>s+porArmazem[k],0);
   const fmtReais = v => 'R$ ' + Number(v).toLocaleString('pt-BR',{maximumFractionDigits:0});
-  // Versão abreviada (R$ 13,3 milhões / R$ 362 mil), só pros cards de
-  // "Valores por Armazém" — pedido do cliente com imagem de referência, pra
-  // caber mais cards numa linha só sem número gigante estourando o card.
-  // 1 casa decimal quando o valor em milhões já tem 2 dígitos (ex: 13,3),
-  // 2 casas quando tem só 1 dígito (ex: 1,84) — mantém ~3 dígitos
-  // significativos nos dois casos, mesmo padrão exato da referência.
-  const fmtReaisAbrev = v => {
-    const n = Number(v)||0;
-    const abs = Math.abs(n);
-    if(abs>=1000000){
-      const milhoes = n/1000000;
-      const casas = Math.abs(milhoes)>=10 ? 1 : 2;
-      return 'R$ ' + milhoes.toLocaleString('pt-BR',{minimumFractionDigits:casas,maximumFractionDigits:casas}) + ' milhões';
-    }
-    if(abs>=1000){
-      return 'R$ ' + Math.round(n/1000).toLocaleString('pt-BR') + ' mil';
-    }
-    return 'R$ ' + Math.round(n).toLocaleString('pt-BR');
+
+  // "Valor em Estoque" (card do Resumo da Operação) — pedido do cliente:
+  // "este valor em estoque contemple apenas o valor que temos de saldo no
+  // armazém 01 saldo x custo unitário, puxando do consulta... ao vivo
+  // assim como você calcula os valores de divergências das contagens".
+  // NUNCA busca sozinho (confirmado via AskUserQuestion) — só quando o
+  // admin clica no botão, com barra de progresso, já que percorre a
+  // consulta interna da Selgron item a item (pode levar minutos pra um
+  // armazém com muitos códigos). Ver `fetchValorEstoqueArmazem01AoVivo`.
+  const [valorArmazem01, setValorArmazem01] = useState(null); // {valorTotal, itens, falhas} | null
+  const [carregandoArmazem01, setCarregandoArmazem01] = useState(false);
+  const [progressoArmazem01, setProgressoArmazem01] = useState(null); // {feito, total} | null
+  const [erroArmazem01, setErroArmazem01] = useState('');
+  const armazem01RunIdRef = useRef(0);
+  const atualizarValorArmazem01 = async () => {
+    const runId = ++armazem01RunIdRef.current;
+    setCarregandoArmazem01(true);
+    setErroArmazem01('');
+    setProgressoArmazem01({feito:0, total:0});
+    const res = await fetchValorEstoqueArmazem01AoVivo(p=>{
+      if(armazem01RunIdRef.current===runId) setProgressoArmazem01(p);
+    });
+    if(armazem01RunIdRef.current!==runId) return; // usuário navegou pra outra tela ou clicou de novo
+    setCarregandoArmazem01(false);
+    if(res.ok) setValorArmazem01(res);
+    else setErroArmazem01(res.erro || 'Falha ao buscar valor em estoque.');
   };
-  const armazensAtivos = Number(resumoGeral?.armazens_ativos || armazens.length);
-  // "Valores por Armazém" (armazens ordenados por VALOR decrescente, o
-  // maior primeiro) — `armazens` continua ordenado alfabeticamente (código
-  // cru), usado só pra somatórios. Vira uma lista de barras horizontais
-  // (mesmo componente `.bar-row`/`.bar-track`/`.bar-fill` já usado em
-  // "Divergência por Família/Grupo" logo abaixo — voltou a esse formato
-  // depois de passar por composição em cards e treemap, cliente pediu de
-  // volta o formato de barras) — cada item já leva o rótulo/valor
-  // formatado, pronto pro JSX só percorrer.
-  const armazensPorValor = [...armazens].sort((a,b)=>porArmazem[b]-porArmazem[a]);
-  const maxArmazemValor = Math.max(1, ...armazensPorValor.map(a=>porArmazem[a]));
-  const armazensTreemapData = armazensPorValor.map(a=>({
-    codigo: a,
-    nome: formatArmazemLabel(a),
-    valor: porArmazem[a],
-    valorLabel: fmtReaisAbrev(porArmazem[a]),
-    pctLabel: (valorTotalEstoque>0 ? (porArmazem[a]/valorTotalEstoque*100).toFixed(1) : '0.0')+'%',
-  }));
 
   const porOperador = {};
   counts.forEach(c=>{ porOperador[c.usuario] = (porOperador[c.usuario]||0)+1; });
@@ -13807,11 +13825,33 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
         </div>
         <div className="ops-kpi-card">
           <div className="ops-kpi-head">
-            <span className="ops-kpi-label">Valor em Estoque</span>
+            <span className="ops-kpi-label">Valor em Estoque — Armazém 01</span>
             <span className="ops-kpi-icon" style={{background:'var(--blue-bg)', color:'var(--blue)'}}><DIcon name="box" size={15} /></span>
           </div>
-          <div className="ops-kpi-value">{fmtReais(valorTotalEstoque)}</div>
-          <div className="ops-kpi-meta">{armazensAtivos} armazéns ativos</div>
+          <div className="ops-kpi-value">{valorArmazem01 ? fmtReais(valorArmazem01.valorTotal) : '—'}</div>
+          <div className="ops-kpi-meta">
+            {carregandoArmazem01
+              ? ('Consultando ao vivo… ' + (progressoArmazem01 && progressoArmazem01.total>0 ? (progressoArmazem01.feito+' de '+progressoArmazem01.total) : ''))
+              : valorArmazem01
+                ? ('saldo × custo unitário, ao vivo · '+valorArmazem01.itens+' itens'+(valorArmazem01.falhas>0 ? (' · '+valorArmazem01.falhas+' sem resposta (usou cache)') : ''))
+                : 'Clique em "Consultar ao vivo" pra calcular'}
+          </div>
+          {erroArmazem01 && <div style={{fontSize:'var(--text-2xs)',color:'var(--danger)',marginTop:4}}>{erroArmazem01}</div>}
+          {carregandoArmazem01 && progressoArmazem01 && progressoArmazem01.total>0 && (
+            <div style={{marginTop:8,height:4,background:'var(--line)',borderRadius:2,overflow:'hidden'}}>
+              <div style={{height:'100%',width:(progressoArmazem01.feito/progressoArmazem01.total*100)+'%',background:'var(--blue)',transition:'width .2s'}} />
+            </div>
+          )}
+          <button
+            type="button"
+            className="btn btn-outline btn-sm"
+            style={{marginTop:8,width:'100%'}}
+            onClick={atualizarValorArmazem01}
+            disabled={carregandoArmazem01}
+            title="Percorre a consulta ao vivo da Selgron, item a item, pros códigos com saldo no Armazém 01 — pode levar alguns minutos"
+          >
+            {carregandoArmazem01 ? 'Consultando…' : (valorArmazem01 ? 'Atualizar (ao vivo)' : 'Consultar ao vivo')}
+          </button>
         </div>
       </div>
 
@@ -14010,39 +14050,6 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
         )}
       </div>
 
-      {/* "Valores por Armazém" — pedido do cliente: "jogar pra o final da
-          página" (era a 1ª fileira da seção "Tendência", logo abaixo do
-          painel "Filtros"). Movido pra depois de "Top 5 Maiores
-          Divergências", último bloco da tela — só mudou de POSIÇÃO, o
-          conteúdo/toggle/dado são exatamente os mesmos de antes. */}
-      <div style={{marginTop:24}}>
-        <div className="panel" style={{margin:0}}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'wrap',gap:8,marginBottom:16}}>
-            <div>
-              <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Valores por Armazém</div>
-              <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:2}}>Distribuição do valor total em estoque por armazém.</div>
-            </div>
-            <div style={{display:'flex',border:'1px solid var(--line)',borderRadius:8,overflow:'hidden',flexShrink:0}}>
-              <button onClick={()=>setModoValor('valor')} style={{border:'none',padding:'6px 12px',fontSize:'var(--text-xs)',cursor:'pointer',background:modoValor==='valor'?'var(--safety)':'transparent',color:modoValor==='valor'?'var(--safety-ink)':'var(--ink-dim)'}}>Valor (R$)</button>
-              <button onClick={()=>setModoValor('percentual')} style={{border:'none',padding:'6px 12px',fontSize:'var(--text-xs)',cursor:'pointer',background:modoValor==='percentual'?'var(--safety)':'transparent',color:modoValor==='percentual'?'var(--safety-ink)':'var(--ink-dim)'}}>% do Total</button>
-            </div>
-          </div>
-          {armazensTreemapData.length===0 ? (
-            <div style={{color:'var(--ink-dim)',fontSize:'var(--text-sm)'}}>
-              Nenhum saldo carregado ainda. Envie a planilha SB2 em Configurações pra ver o valor em estoque por armazém.
-            </div>
-          ) : armazensTreemapData.map(d=>(
-            <div key={d.codigo} className="bar-row">
-              <div className="bl">{d.nome}</div>
-              <div className="bar-track">
-                <div className="bar-fill" style={{width:Math.max(4,(d.valor/maxArmazemValor*100))+'%'}}>
-                  <span>{modoValor==='valor' ? d.valorLabel : d.pctLabel}</span>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }
