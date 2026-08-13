@@ -397,6 +397,13 @@ select table_name from information_schema.tables where table_name = 'sa_almoxari
 select schemaname, tablename from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'sa_almoxarifado';
 ```
 
+**Se você já rodou uma versão anterior deste bloco** (chave primária só
+`numero_sa`) — sem problema, o bloco atual já começa com `drop table if
+exists sa_almoxarifado cascade;` antes de recriar a tabela no formato
+certo. É seguro porque essa tabela é só um espelho da consulta (sem FK
+apontando pra ela, sem dado que não seja resincronizado sozinho no próximo
+poll de 30 min ou num "Sincronizar agora" manual) — nada real é perdido.
+
 ### 13.3 — Deploy e teste manual
 
 ```bash
@@ -435,23 +442,48 @@ job foi criado:
 select jobid, jobname, schedule, active from cron.job where jobname = 'sync-sa-almoxarifado-30min';
 ```
 
-### 13.5 — Se o parser não reconhecer nenhuma linha da tabela
+### 13.5 — Parser já calibrado contra o HTML real (achados que mudaram o desenho)
 
 O parser (`extrairSasAbertas`, dentro de
-`supabase/functions/sync-sa-almoxarifado/index.ts`) foi escrito **sem
-nunca ter visto o HTML real** de `sa_aberto.php` — só a partir da descrição
-do que a página mostra. Ele resolve as colunas pelo NOME do cabeçalho (não
-por posição fixa), o que ajuda bastante, mas ainda pode não bater de
-primeira. Se "Sincronizar agora" (13.3) devolver "Nenhuma SA reconhecida no
-HTML", **nenhum dado é apagado/alterado** — a função para sozinha antes de
-mexer em qualquer linha, por segurança (nunca marca tudo como "atendido" só
-porque parou de reconhecer o formato).
+`supabase/functions/sync-sa-almoxarifado/index.ts`) foi escrito
+inicialmente sem nunca ter visto o HTML real — mesma situação inicial que
+`consultar-produto-selgron`/Kardex tiveram. Você mandou o HTML real (via
+"Ver código-fonte da página") e isso revelou dois achados que mudaram o
+desenho, não só ajustaram o parser:
 
-Pra eu ajustar o parser: no navegador, abra `sa_aberto.php` já logado,
-clique com o botão direito → **"Ver código-fonte da página"** (ou
-`Ctrl+U`), copie o HTML inteiro (não um print) e me envie — mesmo processo
-já usado pra `consultar-produto-selgron`/Kardex, ajusto o parser com o HTML
-real em minutos.
+1. **"Numero" (a SA) não é único por linha.** Uma SA pode pedir vários
+   materiais diferentes — cada um numa linha própria, numerada pela coluna
+   "Item" (01, 02, 03... dentro da MESMA SA). A tabela `sa_almoxarifado`
+   passou a ter `chave` (SA+Item) como identidade — ver 13.2. Isso importa
+   na prática: se uma SA pede 3 materiais e só 1 é atendido, só aquele item
+   sai da lista de "aberta" — os outros 2 continuam pendentes normalmente,
+   cada um contando pro tempo em aberto/meta de forma independente.
+2. **A coluna "Emissao" só tem DATA, nunca hora.** "Tempo em aberto"/
+   "dentro da meta" são calculados a partir dela (ver 13.6) — sem hora
+   exata de abertura, pode haver até ~24h de imprecisão nesse cálculo. É
+   uma limitação real da própria página (ela não expõe hora de abertura),
+   não algo que o parser consiga contornar.
+
+O parser resolve colunas pelo NOME do cabeçalho (Numero/Solicitante/
+Emissao/Item/Cod Produto/Descricao/Quant/Almox — os demais campos da
+página, como Saldo SA/Saldo Estoque/Centro de Custo, não são usados de
+propósito, pra não poluir a tela) e reconhece a estrutura real da tabela
+(`id='tbemp'`, gerada por DataTables, com cabeçalho duplicado em `<thead>`
+e `<tfoot>` — só o `<tbody>` conta como dado).
+
+**Se "Sincronizar agora" (13.3) devolver "Nenhuma SA reconhecida no
+HTML"** — pode acontecer se a Selgron mudar o formato da página no futuro
+— **nenhum dado é apagado/alterado**: a função para sozinha antes de mexer
+em qualquer linha, por segurança (nunca marca tudo como "atendido" só
+porque parou de reconhecer o formato). Nesse caso, mande o HTML real de
+novo (mesmo processo de sempre — "Ver código-fonte"/`Ctrl+U`) que eu
+recalibro.
+
+**Uma coisa que ainda não foi confirmada, só pelo teste em produção
+mesmo**: o parser foi calibrado contra o HTML estático que você mandou, mas
+a function em si (`fetch()` autenticado contra `sa_aberto.php` de verdade,
+via Basic Auth) nunca foi testada ao vivo — o primeiro "Sincronizar agora"
+depois do deploy é o teste real disso.
 
 ### 13.6 — O que fica calculado só no front-end (não em coluna nenhuma)
 
@@ -460,3 +492,9 @@ gravadas — são sempre calculados na hora, comparando `aberta_em` contra
 `atendida_em` (SA já atendida) ou contra "agora" (SA ainda aberta) — é
 assim que uma SA aberta há mais de 48h aparece "Fora da meta" na tela
 mesmo sem nenhuma sincronização nova ter rodado nesse meio-tempo.
+
+**`aberta_em` vem da coluna "Emissao", que só tem data (sem hora)** — é
+gravada como meia-noite daquele dia. Consequência honesta: "tempo em
+aberto" pode ter até ~24h de imprecisão em relação ao momento exato em
+que a SA foi de fato aberta no Protheus — não é um bug do parser, é uma
+limitação real da página de origem.

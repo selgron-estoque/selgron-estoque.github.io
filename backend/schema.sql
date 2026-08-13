@@ -1618,24 +1618,55 @@ alter table contagens add column if not exists custo_unitario numeric(14,4);
 -- ausência foi detectada — aproximação inevitável, documentada: o
 -- atendimento real aconteceu em algum ponto entre o poll anterior e este).
 --
--- Uma linha por SA (não uma linha por poll) — o que precisa ser preservado
--- é só a transição aberta→atendida, não um snapshot de cada rodada.
--- `aberta_em` vem da própria consulta (o campo de data/hora de abertura que
--- a página expõe); se a página não expuser isso pra alguma linha, o
--- primeiro poll que viu essa SA grava seu próprio `now()` como aproximação
--- honesta (documentado no parser da Edge Function).
+-- CORRIGIDO depois de ver o HTML real da página (o cliente mandou via "Ver
+-- código-fonte da página") — a 1ª versão deste schema assumia `numero_sa`
+-- como identidade única por linha, mas isso é falso: uma SA pode pedir
+-- VÁRIOS materiais diferentes, cada um numa linha própria da tabela,
+-- distinguida pela coluna "Item" (sequência 01, 02, 03... dentro da MESMA
+-- SA — confirmado com exemplos reais no HTML, ex. a SA "073445" tem 10
+-- linhas, Item 01 a 10, cada uma com código/descrição/quantidade
+-- diferentes). A identidade de verdade é o PAR (numero_sa, item), não
+-- numero_sa sozinho — por isso `chave` (concatenação dos dois,
+-- "numero_sa-item") é a PRIMARY KEY, não `numero_sa`. Sem essa correção, o
+-- item de uma SA multi-material sendo atendido faria TODOS os itens daquela
+-- SA fecharem (ou reabrirem) juntos na reconciliação da Edge Function, mesmo
+-- que só um deles tivesse sido resolvido de fato — bug de correção que só
+-- apareceria em produção, com uma SA real de mais de 1 item.
+--
+-- Uma linha por (SA, Item) — não uma linha por poll. O que precisa ser
+-- preservado é só a transição aberta→atendida de cada item, não um snapshot
+-- de cada rodada.
+--
+-- `aberta_em` vem da coluna "Emissao" da consulta — confirmado no HTML real
+-- que essa coluna só tem DATA (formato "DD/MM/AAAA"), nunca hora — gravada
+-- como meia-noite daquele dia (`parseDataHoraCelula` na Edge Function já
+-- lida com isso sem mudança nenhuma, ela sempre tratou "sem hora" como
+-- "00:00:00"). Consequência honesta, documentada aqui e na tela: "tempo em
+-- aberto"/"dentro da meta" podem ter até ~24h de imprecisão por causa
+-- disso — é uma limitação real da fonte de dado (a página não expõe hora de
+-- abertura), não um bug do parser.
 --
 -- "Tempo em aberto"/"dentro da meta" são SEMPRE calculados no front-end (não
--- colunas persistidas) — pra SA ainda aberta, usa `now()` no lugar de
+-- colunas persistidas) — pra item ainda aberto, usa `now()` no lugar de
 -- `atendida_em`, senão o indicador "SAs vencidas" (aberta há mais de 48h,
 -- ainda sem atendimento) nunca conseguiria crescer sozinho enquanto a tela
 -- fica aberta. Mesmo critério já usado em `diasParado()` no index.html.
-create table if not exists sa_almoxarifado (
-  numero_sa text primary key,
+--
+-- Reaplicando este bloco por cima de uma tabela já criada com o desenho
+-- antigo (PK só `numero_sa`)? `drop table` é seguro aqui — é uma tabela só
+-- de espelho/consulta (sem FK apontando pra ela, sem dado que não possa ser
+-- resincronizado sozinho no próximo poll de 30 min ou num "Sincronizar
+-- agora" manual).
+drop table if exists sa_almoxarifado cascade;
+create table sa_almoxarifado (
+  chave text primary key,        -- numero_sa || '-' || item
+  numero_sa text not null,
+  item text not null,
   solicitante text,
   material_codigo text,
   material_descricao text,
   quantidade text,
+  almoxarifado text,
   aberta_em timestamptz,
   status text not null default 'aberta',      -- 'aberta' | 'atendida'
   atendida_em timestamptz,
@@ -1643,6 +1674,7 @@ create table if not exists sa_almoxarifado (
   criado_em timestamptz not null default now(),
   atualizado_em timestamptz not null default now()
 );
+create index if not exists sa_almoxarifado_numero_sa_idx on sa_almoxarifado(numero_sa);
 
 alter table sa_almoxarifado enable row level security;
 drop policy if exists "leitura autenticada" on sa_almoxarifado;

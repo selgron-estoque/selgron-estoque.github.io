@@ -14644,11 +14644,14 @@ async function marcarEtiquetaImpressa(id, nomeUsuario){
 // cliente, exatamente o cenário que motivou o pedido de automação).
 function saAlmoxarifadoRowToLocal(row){
   return {
+    chave: row.chave,
     numeroSa: row.numero_sa,
+    item: row.item,
     solicitante: row.solicitante,
     materialCodigo: row.material_codigo,
     materialDescricao: row.material_descricao,
     quantidade: row.quantidade,
+    almoxarifado: row.almoxarifado,
     abertaEm: row.aberta_em,
     status: row.status, // 'aberta' | 'atendida'
     atendidaEm: row.atendida_em,
@@ -14660,7 +14663,7 @@ function saAlmoxarifadoRowToLocal(row){
 async function fetchSaAlmoxarifado(){
   if(!supabaseClient) return [];
   try{
-    const rows = await fetchTodasPaginado(()=>supabaseClient.from('sa_almoxarifado').select('*').order('atualizado_em', {ascending:false}).order('numero_sa', {ascending:true}));
+    const rows = await fetchTodasPaginado(()=>supabaseClient.from('sa_almoxarifado').select('*').order('atualizado_em', {ascending:false}).order('chave', {ascending:true}));
     return (rows||[]).map(saAlmoxarifadoRowToLocal);
   }catch(err){
     console.warn('Falha ao buscar SAs do almoxarifado:', err);
@@ -14822,8 +14825,10 @@ function SAsAbertoPanel({currentUser, role}){
   // Realtime escopado a esta tela (mesmo padrão de `EtiquetasPanel` —
   // ninguém mais no app lê `sa_almoxarifado`, manter o canal aberto pro app
   // inteiro seria overhead sem ganho). A Edge Function faz `upsert` por
-  // `numero_sa` — um evento INSERT/UPDATE já traz a linha inteira já
-  // atualizada em `payload.new`, sem precisar de nenhum merge parcial.
+  // `chave` (SA+Item, não mais só `numero_sa` — uma SA pode ter vários
+  // itens/materiais, ver comentário no schema.sql) — um evento INSERT/
+  // UPDATE já traz a linha inteira já atualizada em `payload.new`, sem
+  // precisar de nenhum merge parcial.
   useEffect(()=>{
     if(!supabaseClient) return;
     let cancelado = false;
@@ -14833,12 +14838,12 @@ function SAsAbertoPanel({currentUser, role}){
       .channel('realtime:sa_almoxarifado')
       .on('postgres_changes', {event:'*', schema:'public', table:'sa_almoxarifado'}, payload=>{
         if(payload.eventType==='DELETE'){
-          setSas(prev=>prev.filter(s=>s.numeroSa!==(payload.old && payload.old.numero_sa)));
+          setSas(prev=>prev.filter(s=>s.chave!==(payload.old && payload.old.chave)));
           return;
         }
         const row = saAlmoxarifadoRowToLocal(payload.new);
         setSas(prev=>{
-          const semEssa = prev.filter(s=>s.numeroSa!==row.numeroSa);
+          const semEssa = prev.filter(s=>s.chave!==row.chave);
           return [row, ...semEssa];
         });
       })
@@ -15027,8 +15032,11 @@ function SAsAbertoPanel({currentUser, role}){
                       const ms = saTempoAbertoMs(s, agoraMs);
                       const dentro = saDentroMeta(ms);
                       return (
-                        <tr key={s.numeroSa}>
-                          <td style={{fontFamily:'var(--font-mono)'}}>{s.numeroSa}</td>
+                        <tr key={s.chave}>
+                          <td style={{fontFamily:'var(--font-mono)'}}>
+                            {s.numeroSa}
+                            {s.item && <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',fontFamily:'var(--font-body)'}}>Item {s.item}</div>}
+                          </td>
                           <td>{s.abertaEm ? new Date(s.abertaEm).toLocaleString('pt-BR') : '—'}</td>
                           <td>{s.solicitante || '—'}</td>
                           <td>{[s.materialCodigo, s.materialDescricao].filter(Boolean).join(' · ') || '—'}</td>

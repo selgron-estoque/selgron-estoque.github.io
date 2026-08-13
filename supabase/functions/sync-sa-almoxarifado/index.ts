@@ -12,11 +12,49 @@
 // retrato de AGORA contra o estado já salvo, por isso esta function roda
 // PERIODICAMENTE (a cada 30 min via pg_cron, ver backend/README.md seção
 // 13), não só sob demanda:
-//   1) Toda SA encontrada nesta consulta é upsert'ada com status='aberta'.
-//   2) Toda SA que estava 'aberta' no banco mas NÃO apareceu nesta consulta
-//      vira 'atendida', com atendida_em = agora — a melhor aproximação
-//      possível do momento real de atendimento, que ficou em algum ponto
-//      entre o poll anterior (ainda a viu) e este (não a viu mais).
+//   1) Todo ITEM de SA encontrado nesta consulta é upsert'ado com
+//      status='aberta' (ver "achado real" abaixo — item, não SA, é a
+//      unidade de reconciliação).
+//   2) Todo item que estava 'aberta' no banco mas NÃO apareceu nesta
+//      consulta vira 'atendida', com atendida_em = agora — a melhor
+//      aproximação possível do momento real de atendimento, que ficou em
+//      algum ponto entre o poll anterior (ainda o viu) e este (não viu
+//      mais).
+//
+// PARSER — calibrado contra o HTML REAL da página (o cliente mandou via
+// "Ver código-fonte da página"/Ctrl+U), não mais só uma suposição de
+// formato. Dois achados reais que mudaram o desenho original:
+//
+//   1) "Numero" (a SA) NÃO é identidade única por linha — uma SA pode pedir
+//      VÁRIOS materiais diferentes, cada um numa linha própria da tabela,
+//      distinguida pela coluna "Item" (sequência 01, 02, 03... dentro da
+//      MESMA SA — confirmado com exemplos reais no HTML, ex. a SA "073445"
+//      tem 10 linhas, Item 01 a 10, cada uma com código/descrição/
+//      quantidade diferentes). A identidade de verdade é o PAR
+//      (numero_sa, item) — ver `chave` em backend/schema.sql. Reconciliar
+//      por numero_sa sozinho fecharia (ou reabriria) TODOS os itens de uma
+//      SA multi-material junto, mesmo que só um deles tivesse sido
+//      resolvido de fato — por isso toda a lógica abaixo (upsert,
+//      reconciliação) opera sobre `chave`, nunca sobre `numero_sa` isolado.
+//
+//   2) A coluna "Emissao" só tem DATA (formato "DD/MM/AAAA"), nunca hora —
+//      `parseDataHoraCelula` já lida com isso sem mudança nenhuma (sempre
+//      tratou "sem hora" como "00:00:00"), mas é uma limitação REAL da
+//      fonte: "tempo em aberto"/"dentro da meta" podem ter até ~24h de
+//      imprecisão por causa disso, documentado também na tela e no schema.
+//
+// A tabela real (`id='tbemp'`, gerada via jQuery DataTables) tem uma
+// estrutura <thead>+<tfoot>+<tbody> onde tanto o <thead> quanto o <tfoot>
+// repetem o mesmo cabeçalho como células <th> (o <tfoot> serve pros campos
+// de busca por coluna do DataTables) — só o <tbody> tem células <td> de
+// dado de verdade. `extrairSasAbertas` classifica linha por CONTEÚDO da
+// célula (tem <th> vs. tem <td>), não por qual tag-pai a envolve — mais
+// simples e resistente a variação de marcação do que tentar distinguir
+// <thead>/<tfoot>/<tbody> via regex. DataTables pagina client-side depois
+// que a página carrega (`pageLength:500` no JS dela) — irrelevante aqui,
+// porque o `fetch()` desta function não executa JS nenhum: a resposta HTML
+// já vem do servidor com TODAS as linhas no <tbody>, a paginação só
+// aconteceria depois, no navegador de quem abre a página de verdade.
 //
 // Autenticação com a Selgron: reaproveita os MESMOS secrets já configurados
 // pra consultar-produto-selgron (mesmo domínio consulta.selgron.com.br) —
@@ -27,14 +65,6 @@
 // botão "Sincronizar agora" (JWT do usuário logado) quanto o pg_cron (JWT =
 // a própria SERVICE_ROLE_KEY, passada no header Authorization do
 // net.http_post, ver backend/README.md seção 13.4) autenticam normalmente.
-//
-// PARSER — pendência real, documentada: escrito sem nunca ter visto o HTML
-// de verdade da página (mesma situação inicial de consultar-produto-selgron/
-// kardex.php, que precisaram de 1-2 rodadas de ajuste depois que o cliente
-// mandou o HTML real via "Ver código-fonte"/Ctrl+U). Por isso o parser
-// resolve colunas por NOME de cabeçalho normalizado (não por posição fixa)
-// — mais resistente a variação de marcação, mas ainda é uma 1ª versão a
-// calibrar contra a página real (ver backend/README.md seção 13.5).
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -62,7 +92,7 @@ function resposta(status: number, body: unknown) {
 function normalizarTexto(s: string): string {
   return s
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "") // remove marcas diacríticas combinantes (acentos)
+    .replace(/[\u0300-\u036f]/g, "") // remove marcas diacriticas combinantes (acentos)
     .toLowerCase()
     .replace(/\s+/g, " ")
     .trim();
@@ -80,17 +110,27 @@ function textoDaCelula(html: string): string {
     .trim();
 }
 
-// Palavras-chave que identificam cada coluna, em ordem de prioridade —
-// primeira que bater no cabeçalho normalizado vence. `numero` vem por
-// último de propósito (é o mais genérico — "sa"/"numero" sozinho poderia
-// colidir com outro cabeçalho antes de mais específicos serem checados).
+// Palavras-chave por coluna, uma única e precisa cada uma — confirmadas
+// contra o cabeçalho REAL da página (Numero/Solicitante/Emissao/Item/
+// Cod Produto/Descricao/Quant/Saldo SA/Saldo Estoque/Almox/Obs/OP/
+// Cod. C.Custo/C. Custo — os 6 últimos não são usados, de propósito, pra
+// não poluir a tela com dado que o cliente não pediu). Cada palavra-chave
+// foi conferida uma a uma contra TODOS os outros cabeçalhos reais pra
+// garantir que não colide por substring (`.includes()`) com nenhum deles —
+// ex.: "quant" não aparece em "saldo sa"/"saldo estoque"; "cod produto" não
+// aparece em "cod. c.custo" (textos diferentes, mesmo com o period
+// preservado pela normalização). A versão anterior deste mapa tinha um
+// fallback genérico `"sa"` pra `numero` que teria colidido com "Saldo SA"
+// (que contém a substring "sa") — removido, não existe mais.
 const COLUNA_KEYWORDS: Record<string, string[]> = {
-  numero: ["numero da sa", "numero sa", "nº sa", "num sa", "sa"],
-  abertura: ["data abertura", "dt abertura", "abertura", "data emissao", "dt emissao", "data"],
-  solicitante: ["solicitante", "requisitante"],
-  materialCodigo: ["codigo", "cod produto", "cod. produto", "produto"],
-  materialDescricao: ["descricao", "material", "descricao do material"],
-  quantidade: ["quantidade", "qtd", "qtde"],
+  numero: ["numero"],
+  item: ["item"],
+  abertura: ["emissao"],
+  solicitante: ["solicitante"],
+  materialCodigo: ["cod produto"],
+  materialDescricao: ["descricao"],
+  quantidade: ["quant"],
+  almoxarifado: ["almox"],
 };
 
 function mapearColunas(cabecalhos: string[]): Record<string, number> {
@@ -108,11 +148,13 @@ function mapearColunas(cabecalhos: string[]): Record<string, number> {
   return mapa;
 }
 
-// Aceita "DD/MM/AAAA HH:MM[:SS]" ou só "DD/MM/AAAA" — devolve ISO ou null se
-// não reconhecer. Também tenta um atributo `data-sort='<unix>'`/
+// Aceita "DD/MM/AAAA HH:MM[:SS]" ou só "DD/MM/AAAA" (o formato real da
+// coluna "Emissao", sempre sem hora) — devolve ISO ou null se não
+// reconhecer. Também tenta um atributo `data-sort='<unix>'`/
 // `data-order='<unix>'` na própria célula, se existir (mesmo padrão de
 // DataTables já visto no Kardex de produto.consulta.php) — preferido por
-// ser inequívoco, quando presente.
+// ser inequívoco, quando presente; a página de SA não usa isso na coluna de
+// data (confirmado no HTML real), então na prática sempre cai no 2º regex.
 function parseDataHoraCelula(htmlCelula: string, textoCelula: string): string | null {
   const mSort = /data-(?:sort|order)=['"](\d+)['"]/i.exec(htmlCelula);
   if (mSort) {
@@ -131,60 +173,78 @@ function parseDataHoraCelula(htmlCelula: string, textoCelula: string): string | 
 
 interface SaAberta {
   numeroSa: string;
+  item: string;
   solicitante: string | null;
   materialCodigo: string | null;
   materialDescricao: string | null;
   quantidade: string | null;
+  almoxarifado: string | null;
   abertaEm: string | null;
 }
 
-// Extrai as SAs em aberto do HTML da página — resolve colunas por NOME
-// (não posição fixa), mesmo espírito já usado em parseHistoricoContagensRows
-// (index.html) pra ser robusto a reordenação de coluna numa exportação
-// futura. Só processa a PRIMEIRA `<table>` encontrada com uma linha de
-// cabeçalho reconhecível (com "numero"/"sa" mapeado) — se a página tiver
-// mais de uma tabela (ex: um resumo antes da lista), as demais são
-// ignoradas.
+// Extrai os itens de SA em aberto do HTML da página. Ver o comentário do
+// topo do arquivo pra o raciocínio completo (estrutura thead+tfoot+tbody,
+// classificação de linha por conteúdo de célula, achado do par
+// numero+item como identidade real).
 function extrairSasAbertas(html: string): SaAberta[] {
-  const tabelas = html.match(/<table[\s\S]*?<\/table>/gi) || [];
-  for (const tabela of tabelas) {
-    const linhas = tabela.match(/<tr[^>]*>[\s\S]*?<\/tr>/gi) || [];
-    if (linhas.length < 2) continue;
+  const tabelaPorId = /<table[^>]*id=["']tbemp["'][\s\S]*?<\/table>/i.exec(html);
+  const tabela = tabelaPorId ? tabelaPorId[0] : (html.match(/<table[\s\S]*?<\/table>/i) || [])[0];
+  if (!tabela) return [];
 
-    // Cabeçalho: 1ª linha, células <th> se existirem, senão <td>.
-    const linhaHeader = linhas[0];
-    if (!linhaHeader) continue;
-    const celulasHeaderHtml = linhaHeader.match(/<th[^>]*>[\s\S]*?<\/th>/gi) || linhaHeader.match(/<td[^>]*>[\s\S]*?<\/td>/gi) || [];
-    if (celulasHeaderHtml.length === 0) continue;
-    const cabecalhos = celulasHeaderHtml.map((c) => textoDaCelula(c));
-    const colunas = mapearColunas(cabecalhos);
-    if (colunas.numero === undefined) continue; // não é a tabela certa
+  const linhas = tabela.match(/<tr[^>]*>[\s\S]*?<\/tr>/gi) || [];
 
-    const resultado: SaAberta[] = [];
-    for (let i = 1; i < linhas.length; i++) {
-      const celulasHtml = linhas[i].match(/<td[^>]*>[\s\S]*?<\/td>/gi) || [];
-      if (celulasHtml.length === 0) continue;
-      const celulasTexto = celulasHtml.map((c) => textoDaCelula(c));
-
-      const numeroSa = colunas.numero !== undefined ? celulasTexto[colunas.numero] : "";
-      if (!numeroSa) continue;
-
-      resultado.push({
-        numeroSa: numeroSa.trim(),
-        solicitante: colunas.solicitante !== undefined ? (celulasTexto[colunas.solicitante] || null) : null,
-        materialCodigo: colunas.materialCodigo !== undefined ? (celulasTexto[colunas.materialCodigo] || null) : null,
-        materialDescricao:
-          colunas.materialDescricao !== undefined ? (celulasTexto[colunas.materialDescricao] || null) : null,
-        quantidade: colunas.quantidade !== undefined ? (celulasTexto[colunas.quantidade] || null) : null,
-        abertaEm:
-          colunas.abertura !== undefined
-            ? parseDataHoraCelula(celulasHtml[colunas.abertura], celulasTexto[colunas.abertura])
-            : null,
-      });
+  // Cabeçalho = a PRIMEIRA linha com célula <th> encontrada (é a do
+  // <thead> — vem antes do <tfoot> na ordem do documento, e os dois só têm
+  // <th>, nunca <td>). Linha de dado = QUALQUER linha com célula <td> —
+  // isso exclui tanto <thead> quanto <tfoot> automaticamente, sem precisar
+  // identificar qual tag-pai envolve cada uma.
+  let cabecalhos: string[] | null = null;
+  const linhasDado: string[] = [];
+  for (const linha of linhas) {
+    const celulasTh = linha.match(/<th[^>]*>[\s\S]*?<\/th>/gi);
+    const celulasTd = linha.match(/<td[^>]*>[\s\S]*?<\/td>/gi);
+    if (!cabecalhos && celulasTh && celulasTh.length > 0) {
+      cabecalhos = celulasTh.map((c) => textoDaCelula(c));
+    } else if (celulasTd && celulasTd.length > 0) {
+      linhasDado.push(linha);
     }
-    if (resultado.length > 0) return resultado;
   }
-  return [];
+  if (!cabecalhos) return [];
+
+  const colunas = mapearColunas(cabecalhos);
+  if (colunas.numero === undefined) return [];
+
+  const resultado: SaAberta[] = [];
+  linhasDado.forEach((linha, idx) => {
+    const celulasHtml = linha.match(/<td[^>]*>[\s\S]*?<\/td>/gi) || [];
+    const celulasTexto = celulasHtml.map((c) => textoDaCelula(c));
+
+    const numeroSa = colunas.numero !== undefined ? celulasTexto[colunas.numero] : "";
+    if (!numeroSa) return;
+
+    // Item: usa a coluna real quando disponível; senão cai na posição da
+    // linha dentro da tabela (1-based, zero à esquerda) — garante uma
+    // `chave` única mesmo contra um formato de página degradado/mais
+    // antigo que não exponha essa coluna.
+    const itemColuna = colunas.item !== undefined ? (celulasTexto[colunas.item] || "").trim() : "";
+    const item = itemColuna || String(idx + 1).padStart(2, "0");
+
+    resultado.push({
+      numeroSa: numeroSa.trim(),
+      item,
+      solicitante: colunas.solicitante !== undefined ? (celulasTexto[colunas.solicitante] || null) : null,
+      materialCodigo: colunas.materialCodigo !== undefined ? (celulasTexto[colunas.materialCodigo] || null) : null,
+      materialDescricao:
+        colunas.materialDescricao !== undefined ? (celulasTexto[colunas.materialDescricao] || null) : null,
+      quantidade: colunas.quantidade !== undefined ? (celulasTexto[colunas.quantidade] || null) : null,
+      almoxarifado: colunas.almoxarifado !== undefined ? (celulasTexto[colunas.almoxarifado] || null) : null,
+      abertaEm:
+        colunas.abertura !== undefined
+          ? parseDataHoraCelula(celulasHtml[colunas.abertura], celulasTexto[colunas.abertura])
+          : null,
+    });
+  });
+  return resultado;
 }
 
 Deno.serve(async (req: Request) => {
@@ -248,11 +308,14 @@ Deno.serve(async (req: Request) => {
 
     const agora = new Date().toISOString();
     const upsertRows = sasAbertas.map((sa) => ({
+      chave: `${sa.numeroSa}-${sa.item}`,
       numero_sa: sa.numeroSa,
+      item: sa.item,
       solicitante: sa.solicitante,
       material_codigo: sa.materialCodigo,
       material_descricao: sa.materialDescricao,
       quantidade: sa.quantidade,
+      almoxarifado: sa.almoxarifado,
       aberta_em: sa.abertaEm,
       status: "aberta",
       atendida_em: null,
@@ -266,28 +329,32 @@ Deno.serve(async (req: Request) => {
       const lote = upsertRows.slice(i, i + 500);
       const { error: upsertError } = await supabase
         .from("sa_almoxarifado")
-        .upsert(lote, { onConflict: "numero_sa" });
+        .upsert(lote, { onConflict: "chave" });
       if (upsertError) throw upsertError;
     }
 
-    // Reconciliação — qualquer SA que estava 'aberta' no banco e não veio
-    // nesta lista foi atendida (regra central do cliente).
-    const numerosAbertosAgora = new Set(sasAbertas.map((s) => s.numeroSa));
+    // Reconciliação — qualquer ITEM de SA que estava 'aberta' no banco e não
+    // veio nesta lista foi atendido (regra central do cliente). Reconcilia
+    // por `chave` (SA+Item), NUNCA por `numero_sa` sozinho — uma SA com
+    // vários materiais só pode fechar o item específico que sumiu da
+    // consulta, não a SA inteira (ver o comentário no topo do arquivo e em
+    // backend/schema.sql).
+    const chavesAbertasAgora = new Set(sasAbertas.map((s) => `${s.numeroSa}-${s.item}`));
     const { data: abertasNoBanco, error: selectError } = await supabase
       .from("sa_almoxarifado")
-      .select("numero_sa")
+      .select("chave")
       .eq("status", "aberta");
     if (selectError) throw selectError;
 
-    const numerosParaFechar = (abertasNoBanco || [])
-      .map((r: { numero_sa: string }) => r.numero_sa)
-      .filter((n: string) => !numerosAbertosAgora.has(n));
+    const chavesParaFechar = (abertasNoBanco || [])
+      .map((r: { chave: string }) => r.chave)
+      .filter((c: string) => !chavesAbertasAgora.has(c));
 
-    if (numerosParaFechar.length > 0) {
+    if (chavesParaFechar.length > 0) {
       const { error: closeError } = await supabase
         .from("sa_almoxarifado")
         .update({ status: "atendida", atendida_em: agora, atualizado_em: agora })
-        .in("numero_sa", numerosParaFechar);
+        .in("chave", chavesParaFechar);
       if (closeError) throw closeError;
     }
 
@@ -303,7 +370,7 @@ Deno.serve(async (req: Request) => {
     return resposta(200, {
       ok: true,
       itensProcessados: sasAbertas.length,
-      sasAtendidasNestaRodada: numerosParaFechar.length,
+      sasAtendidasNestaRodada: chavesParaFechar.length,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

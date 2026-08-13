@@ -18563,3 +18563,161 @@ página interna da Selgron. **Verificação visual/funcional de ponta a
 ponta fica a cargo do cliente** — mesma limitação de sempre (login exige
 Supabase Auth real, não simulável no sandbox sem rede, e o sandbox
 tampouco tem acesso à consulta interna da Selgron).
+
+
+## "SAs em Aberto" — calibrado contra o HTML real: SA não é única por linha
+
+O cliente perguntou "Qual sql rodar?" (a SA de Aberto já tinha sido
+implementada numa rodada anterior, mas ele ainda não tinha rodado nenhum
+SQL) — antes de eu responder, ele mandou (sem nenhum texto, só o dado em
+si) o HTML real de `https://consulta.selgron.com.br/sa_aberto.php` via "Ver
+código-fonte da página" — mesmo padrão já estabelecido neste projeto
+("mandar dado real depois de eu avisar que o parser é só uma suposição" já
+aconteceu antes com `consultar-produto-selgron`/Kardex): o dado em si já é
+a instrução, "calibra contra isso".
+
+**Achado que mudou o DESENHO, não só o parser**: "Numero" (a SA) não é
+identidade única por linha — uma SA pode pedir vários materiais diferentes,
+cada um numa linha própria da tabela, numerada pela coluna **"Item"** (01,
+02, 03... dentro da MESMA SA — confirmado com exemplos reais no HTML
+mandado, ex. uma SA com 10 linhas, Item 01 a 10, cada uma com um código/
+descrição/quantidade diferente). O schema original (`sa_almoxarifado`,
+`numero_sa text primary key`) presumia 1 linha = 1 SA = 1 material — errado.
+A identidade de verdade é o PAR `(numero_sa, item)` — corrigido com uma
+coluna nova, `chave` (`numero_sa || '-' || item`), virando a PRIMARY KEY.
+**Por que isso importava de verdade, não só teoricamente**: sem essa
+correção, o item de uma SA multi-material sendo atendido faria a
+reconciliação da Edge Function (que compara "quem sumiu da consulta")
+errar de dois jeitos possíveis dependendo de como fosse implementada — ou
+fechar TODOS os itens da SA junto (se "sumir" fosse checado por numero_sa
+presente/ausente na lista inteira), ou nunca fechar NENHUM item enquanto
+pelo menos 1 dos outros da mesma SA continuasse pendente (o que a versão
+antiga realmente faria, provado no teste: com uma SA de 3 itens, 2 ainda
+abertos, resolver o 3º NUNCA seria detectado, porque "073445" continua
+aparecendo na consulta via os outros 2 itens).
+
+**Estrutura real da tabela** (DataTables, `id='tbemp'`): `<thead>` +
+`<tfoot>` (os dois com o MESMO cabeçalho, repetido como células `<th>` — o
+`<tfoot>` serve pros campos de busca por coluna do próprio DataTables) +
+`<tbody>` (as linhas de dado de verdade, células `<td>`). `extrairSasAbertas`
+foi reescrita pra classificar linha por CONTEÚDO da célula, não por qual
+tag-pai a envolve: a primeira linha com `<th>` encontrada no documento é o
+cabeçalho (é a do `<thead>` — sempre vem antes do `<tfoot>`, e os dois só
+têm `<th>`, nunca `<td>`); qualquer linha com `<td>` é dado — isso exclui
+`<thead>` E `<tfoot>` automaticamente, sem precisar identificar qual deles é
+qual. Achado colateral, também corrigido: `COLUNA_KEYWORDS` tinha um
+fallback genérico `"sa"` pra `numero` (`["numero da sa","numero sa","nº
+sa","num sa","sa"]`) que teria colidido com o cabeçalho real "Saldo SA" (que
+contém a substring "sa") — nunca chegou a causar bug em produção (a function
+nunca tinha sido testada contra HTML real antes), mas foi removido —
+substituído por palavras-chave únicas e precisas (`numero`/`item`/
+`emissao`/`solicitante`/`cod produto`/`descricao`/`quant`/`almox`),
+conferidas uma a uma contra os 14 cabeçalhos reais da página (Numero,
+Solicitante, Emissao, Item, Cod Produto, Descricao, Quant, Saldo SA, Saldo
+Estoque, Almox, Obs, OP, Cod. C.Custo, C. Custo) pra garantir que nenhuma
+colide por substring com outra.
+
+**"Emissao" é data-only, nunca tem hora** — diferente dos dois exemplos
+hipotéticos que o cliente tinha dado no pedido original (que citavam hora
+de abertura, ex. "10/08 08:00") — confirmado no HTML real, a coluna só traz
+"DD/MM/AAAA". `parseDataHoraCelula` já lidava com isso corretamente (sempre
+tratou "sem hora" como "00:00:00", sem precisar de nenhuma mudança de
+código) — só precisou virar uma limitação DOCUMENTADA (schema.sql,
+backend/README.md, e o comentário da própria Edge Function): "tempo em
+aberto"/"dentro da meta" podem ter até ~24h de imprecisão por causa disso —
+real limitação da fonte, não bug do parser.
+
+**Achado à parte, sem efeito em código**: as colunas numéricas (Quant/Saldo
+SA/Saldo Estoque) usam PONTO como separador decimal (ex. "1.761", "4.6307")
+— diferente da convenção brasileira de vírgula que o resto do texto da
+página usa (a própria descrição do item, ex. "30X30X1,2MM", usa vírgula) —
+achado por análise de plausibilidade (um item de tubo de aço com saldo em
+dezenas faz sentido como peso em kg; a mesma leitura tratando o ponto como
+separador de milhar daria valores absurdos, na casa dos milhões). **Não
+afeta nenhum código**: `quantidade` é guardada e exibida como TEXTO puro, a
+função nunca converte pra número em lugar nenhum — registrado aqui só pra
+não se perder, caso um dia o app precise somar/comparar essa coluna
+numericamente.
+
+### O que mudou
+
+- **`backend/schema.sql`**: `sa_almoxarifado` reescrita com `chave text
+  primary key` (era `numero_sa`), mais as colunas novas `numero_sa`/`item`/
+  `almoxarifado` (as duas primeiras agora `not null`, sem ser mais a PK).
+  Bloco começa com `drop table if exists sa_almoxarifado cascade;` — seguro
+  porque é uma tabela só de espelho da consulta (sem FK apontando pra ela,
+  sem dado que não seja resincronizado sozinho no próximo poll/"Sincronizar
+  agora").
+- **`supabase/functions/sync-sa-almoxarifado/index.ts`** reescrita por
+  completo: `SaAberta` ganhou `item`/`almoxarifado`; `COLUNA_KEYWORDS`
+  trocado pelas palavras-chave precisas; `extrairSasAbertas` reescrita com a
+  classificação de linha por conteúdo (`<th>` vs. `<td>`) em vez do "1ª
+  linha da tabela é sempre o cabeçalho" de antes; item sem coluna própria
+  (formato degradado/mais antigo) cai num fallback de posição da linha
+  (1-based, zero à esquerda) — garante `chave` única mesmo sem essa coluna.
+  O `upsert`/reconciliação (a parte crítica) passaram de operar sobre
+  `numero_sa` pra operar sobre `chave` — `onConflict:'chave'`, e o `select`/
+  `filter`/`update` que decide quem fechar também usa `chave`, nunca mais
+  `numero_sa` isolado.
+- **`index.html`**: `saAlmoxarifadoRowToLocal` ganhou os campos novos;
+  `fetchSaAlmoxarifado` trocou o tiebreaker de ordenação de `numero_sa` pra
+  `chave` (não é mais único, não faz sentido como critério de ordenação);
+  o dedup do canal Realtime (INSERT/UPDATE e DELETE) trocou de
+  `s.numeroSa!==...` pra `s.chave!==...` — sem essa troca, duas linhas com o
+  mesmo `numero_sa` (itens diferentes) chegando via Realtime se
+  sobrescreveriam uma à outra no estado local, mesmo sendo dois itens
+  genuinamente diferentes; o `key` do React na tabela também virou
+  `s.chave`. A célula "SA" da tabela ganhou uma 2ª linha pequena ("Item
+  NN") abaixo do número — necessário agora que o mesmo número de SA pode
+  aparecer em mais de uma linha, não é mais opcional/cosmético.
+- **`backend/README.md`** seção 13 atualizada (13.2 menciona o `drop table`
+  seguro; 13.5 reescrita explicando os dois achados que mudaram o desenho,
+  não só "o parser pode precisar de ajuste"; 13.6 ganhou a nota sobre a
+  imprecisão de ~24h por causa do Emissao ser data-only).
+
+### Verificação
+
+Testado via harness reescrito (mesma técnica rigorosa de sempre — jsdom +
+react-dom/client + `act()`, `index.html` inteiro transpilado numa
+`vm.Script`) MAIS uma réplica em JS puro da lógica de parsing da Edge
+Function (copiada linha a linha do `.ts`, só removendo anotação de tipo —
+mesmo padrão já usado antes pra testar Edge Function sem Deno disponível no
+sandbox), rodada contra um HTML **estruturalmente fiel** ao real (mesma
+estrutura `id='tbemp'` + `<thead>`+`<tfoot>` duplicados + `<tbody>`, mesma
+ordem de 14 colunas confirmada) — não é o HTML literal que o cliente mandou
+(não sobreviveu em bytes exatos no contexto desta sessão), mas reproduz
+fielmente tag por tag e coluna por coluna o que foi confirmado nele,
+incluindo uma SA de 3 itens (o cenário central da correção) e uma de item
+único. Confirmado: as 4 linhas de dado são reconhecidas (não 8 — os
+cabeçalhos duplicados do `<thead>`/`<tfoot>` nunca viram "dado"); a SA
+multi-item vira 3 entradas distintas, cada uma com o próprio código/
+descrição/quantidade; `mapearColunas` bate no índice certo pras 8 colunas
+usadas sem colidir com nenhuma das 6 não-usadas (incluindo o caso que já
+foi bug — "Saldo SA" não é mais confundida com "Numero"); Emissao "sem
+hora" vira meia-noite ISO. **A prova mais importante**: simulei a
+reconciliação NOVA (por `chave`) contra a ANTIGA (por `numero_sa`,
+replicada só pra comparação) no mesmo cenário — uma SA de 3 itens onde só o
+item 02 é atendido — confirmando que a reconciliação nova fecha exatamente
+`073445-02` (só esse), enquanto a lógica antiga não fecharia NADA (a SA
+"073445" continua aparecendo na consulta via os itens 01/03, então o item
+02 — genuinamente resolvido — ficaria aberto pra sempre sob o desenho
+anterior). Testado também de ponta a ponta em `SAsAbertoPanel`: 2 linhas
+com o MESMO `numero_sa` (itens diferentes) aparecem como 2 LINHAS
+distintas na tabela (não colapsam numa só), tanto no fetch inicial quanto
+via um evento Realtime de INSERT simulado — o cerne visual da correção.
+88 asserções, todas passando. Rodei de novo toda a suíte de regressão do
+scratchpad (68 harnesses) — 0 falhas. Transpile Babel do arquivo inteiro e
+balanceamento de chaves do CSS conferidos (668/668, sem mudança — nenhuma
+classe CSS nova/tocada, só JS/JSX/SQL/TS). Type-check da Edge Function via
+`tsc` (mesmo shim de sempre pros globais do Deno) sem erro.
+
+**Falta o cliente**: rodar o SQL corrigido (o bloco `sa_almoxarifado`
+inteiro de `backend/schema.sql`, com `drop table cascade` — seguro mesmo
+que ele já tenha rodado a versão anterior, nada de real é perdido),
+`npx supabase functions deploy sync-sa-almoxarifado` de novo (o código
+mudou bastante), e então testar "Sincronizar agora" — essa é a PRIMEIRA
+vez que a function de fato faz um `fetch()` autenticado contra
+`sa_aberto.php` real (o HTML mandado antes foi só analisado estaticamente,
+nunca passou pela function rodando de verdade) — se algo não bater
+(formato mudou de novo, autenticação diferente da de produto/Kardex),
+mandar o HTML real de novo resolve rápido, mesmo processo já estabelecido.
