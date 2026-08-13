@@ -6296,6 +6296,7 @@ function App(){
         {view==='recount' && flowState && <RecountFlow original={flowState} user={currentUser} onAddressProposed={addAddressProposal} onFinish={(c)=>{registerFinishedCount(c); goto('recounts');}} operadorVeSaldo={operadorVeSaldo} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
         {view==='dashboard' && hasAccess(currentUser,'dashboard') && <Dashboard counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} historicoParaTendencia={historicoParaTendencia} goto={goto} />}
         {view==='relatorios' && hasAccess(currentUser,'relatorios') && <ReportsScreen counts={counts} historicoTudo={historicoTudo} inventories={inventories} currentUser={currentUser} sendHistory={reportSendHistory} onLogSend={logReportSend} role={role} onHistoricoImportado={refreshHistoricoConcluidas} />}
+        {view==='sasAberto' && hasAccess(currentUser,'sasAberto') && <SAsAbertoPanel currentUser={currentUser} role={role} />}
         {view==='settings' && hasAccess(currentUser,'settings') && <Settings role={role} currentUser={currentUser} operadorVeSaldo={operadorVeSaldo} onSetOperadorVeSaldo={updateOperadorVeSaldo} operadorVeValoresRecontagem={operadorVeValoresRecontagem} onSetOperadorVeValoresRecontagem={updateOperadorVeValoresRecontagem} gruposExcluidos={gruposExcluidos} onSetGruposExcluidos={updateGruposExcluidos} sessionTimeoutMin={sessionTimeoutMin} onSetSessionTimeoutMin={updateSessionTimeoutMin} />}
         {view==='usuarios' && hasAccess(currentUser,'usuarios') && (
           <UsuariosScreen
@@ -6722,6 +6723,10 @@ const ACESSOS_RESTRITOS = {
   // Impressão de etiqueta não interessa ao operador por padrão (ferramenta
   // administrativa de cadastro/organização física do almoxarifado).
   etiquetas: ['lider','admin'],
+  // "SAs em Aberto" — acompanhamento de desempenho do almoxarifado, mesmo
+  // grupo de "Indicadores"/"Relatórios" (análise gerencial, não operação
+  // do operador por padrão).
+  sasAberto: ['lider','admin'],
 };
 
 // TODAS as telas do menu principal que podem ser ligadas/desligadas por
@@ -6748,6 +6753,7 @@ const TODOS_OS_MENUS = [
   {id:'etiquetas', label:'Etiquetas'},
   {id:'dashboard', label:'Indicadores'},
   {id:'relatorios', label:'Relatórios'},
+  {id:'sasAberto', label:'SAs em Aberto'},
   {id:'settings', label:'Configurações'},
 ];
 
@@ -6826,6 +6832,7 @@ const VIEW_TITLES = {
   recount:'Recontar Item',
   dashboard:'Indicadores',
   relatorios:'Relatórios',
+  sasAberto:'SAs em Aberto',
   settings:'Configurações',
   userForm:'Cadastro de Usuário',
 };
@@ -6835,6 +6842,7 @@ const VIEW_TITLES = {
 const VIEW_SUBTITLES = {
   home: 'Resumo operacional do inventário',
   usuarios: 'Gerencie os usuários do sistema, permissões e redefinições de senha.',
+  sasAberto: 'Desempenho do almoxarifado no atendimento de Solicitações (SA)',
 };
 
 // Telas que renderizam o motor de contagem (CountStep) direto na tela —
@@ -6901,6 +6909,7 @@ function buildSidebarGroups(user){
   const analiseItems = [
     ...(podeVer('dashboard') ? [{id:'dashboard', ic:'barChart', label:'Indicadores'}] : []),
     ...(podeVer('relatorios') ? [{id:'relatorios', ic:'fileText', label:'Relatórios'}] : []),
+    ...(podeVer('sasAberto') ? [{id:'sasAberto', ic:'clock', label:'SAs em Aberto'}] : []),
   ];
   const sistemaItems = [
     ...(podeVer('settings') ? [{id:'settings', ic:'settings', label:'Configurações'}] : []),
@@ -14617,6 +14626,474 @@ async function marcarEtiquetaImpressa(id, nomeUsuario){
   }catch(err){
     return {ok:false, erro:(err && err.message) || 'Não foi possível marcar como impressa.'};
   }
+}
+
+/* ---------------- SAs EM ABERTO (desempenho do almoxarifado) ---------------- */
+// Pedido do cliente: acompanhar automaticamente quanto tempo o almoxarifado
+// leva pra atender uma "Solicitação ao Almoxarifado" (SA) — hoje ele visita
+// https://consulta.selgron.com.br/sa_aberto.php todo dia e filtra a tabela na
+// mão. Meta confirmada: menos de 2 dias (48h corridas).
+//
+// Regra central, explícita no pedido: essa página só mostra SA AINDA
+// pendente — quando uma SA some da lista, ela foi atendida. Quem detecta essa
+// transição de verdade é a Edge Function `sync-sa-almoxarifado` (rodando
+// sozinha a cada 30 min via pg_cron, ver backend/README.md seção 13) — o
+// front-end só LÊ o retrato já persistido em `sa_almoxarifado`, nunca tenta
+// inferir "sumiu" comparando dois fetches feitos aqui no navegador (isso
+// perderia qualquer SA que abrisse E fechasse entre duas sessões do
+// cliente, exatamente o cenário que motivou o pedido de automação).
+function saAlmoxarifadoRowToLocal(row){
+  return {
+    numeroSa: row.numero_sa,
+    solicitante: row.solicitante,
+    materialCodigo: row.material_codigo,
+    materialDescricao: row.material_descricao,
+    quantidade: row.quantidade,
+    abertaEm: row.aberta_em,
+    status: row.status, // 'aberta' | 'atendida'
+    atendidaEm: row.atendida_em,
+    ultimaVistaEm: row.ultima_vista_em,
+    atualizadoEm: row.atualizado_em,
+  };
+}
+
+async function fetchSaAlmoxarifado(){
+  if(!supabaseClient) return [];
+  try{
+    const rows = await fetchTodasPaginado(()=>supabaseClient.from('sa_almoxarifado').select('*').order('atualizado_em', {ascending:false}).order('numero_sa', {ascending:true}));
+    return (rows||[]).map(saAlmoxarifadoRowToLocal);
+  }catch(err){
+    console.warn('Falha ao buscar SAs do almoxarifado:', err);
+    return [];
+  }
+}
+
+// Botão "Sincronizar agora" — não espera o cron de 30 min, útil pro 1º teste
+// real e pra forçar atualização pontual quando o cliente quer conferir algo
+// na hora. Mesmo padrão de `functions.invoke` + leitura do erro real via
+// `error.context.json()` já usado em `chamarUsuariosAdmin`.
+async function sincronizarSaAlmoxarifadoAgora(){
+  if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
+  try{
+    const { data, error } = await supabaseClient.functions.invoke('sync-sa-almoxarifado');
+    if(error){
+      let msg = error.message || 'Falha ao sincronizar.';
+      try{ const body = await error.context.json(); if(body && body.erro) msg = body.erro; }catch(_e){}
+      return {ok:false, erro:msg};
+    }
+    if(data && data.ok===false) return {ok:false, erro:data.erro || 'Falha ao sincronizar.'};
+    return {ok:true, ...data};
+  }catch(err){
+    return {ok:false, erro:(err && err.message) || 'Falha ao sincronizar.'};
+  }
+}
+
+// Meta confirmada pelo cliente: SA precisa ser atendida em MENOS de 2 dias
+// (48h corridas) — mesmo raciocínio de `SESSION_TIMEOUT_MS`/outras constantes
+// de negócio deste app, um único ponto de verdade pro limiar.
+const SA_META_HORAS = 48;
+
+// Tempo em aberto de uma SA, em ms — usa `atendidaEm` quando já foi atendida
+// (documento fechado, tempo congelado), senão `agoraMs` (segue crescendo
+// sozinho enquanto ela continuar pendente) — mesmo critério já usado em
+// `diasParado`/`saTempoAbertoMs` calculando sempre em cima do momento atual,
+// nunca congelado num valor antigo.
+function saTempoAbertoMs(sa, agoraMs){
+  if(!sa.abertaEm) return null;
+  const fim = (sa.status==='atendida' && sa.atendidaEm) ? new Date(sa.atendidaEm).getTime() : agoraMs;
+  const inicio = new Date(sa.abertaEm).getTime();
+  if(isNaN(fim) || isNaN(inicio)) return null;
+  return Math.max(0, fim - inicio);
+}
+
+// Formata "01 dia e 05 horas" / "02 dias e 03 horas" — exemplo exato dado
+// pelo cliente no pedido original.
+function saTempoAbertoTexto(ms){
+  if(ms==null) return '—';
+  const totalHoras = Math.floor(ms/3600000);
+  const dias = Math.floor(totalHoras/24);
+  const horas = totalHoras%24;
+  const diaLabel = String(dias).padStart(2,'0')+(dias===1?' dia':' dias');
+  const horaLabel = String(horas).padStart(2,'0')+(horas===1?' hora':' horas');
+  return diaLabel+' e '+horaLabel;
+}
+
+// `null` quando não dá pra calcular (sem data de abertura) — nunca vira
+// `true`/`false` sem base, mesmo critério de honestidade já usado no resto
+// do app (nunca afirma o que não foi checado).
+function saDentroMeta(ms){
+  if(ms==null) return null;
+  return ms < SA_META_HORAS*3600000;
+}
+
+// KPIs do topo — "SAs em Aberto"/"SAs Vencidas" são estado ATUAL, sem
+// filtro de período (mesmo critério já usado em filas de pendência —
+// Recontagens/Itens Divergentes — pendência não some por causa de um filtro
+// de data). "SAs Atendidas"/%/tempo médio são escopadas ao período do
+// painel "Filtros" (`dataInicioStr`/`dataFimStr`), pela data de ATENDIMENTO.
+function computeSaKpis(sas, dataInicioStr, dataFimStr, agoraMs){
+  const abertas = sas.filter(s=>s.status==='aberta');
+  const vencidas = abertas.filter(s=>{
+    const ms = saTempoAbertoMs(s, agoraMs);
+    return ms!=null && ms>=SA_META_HORAS*3600000;
+  });
+  const atendidasNoPeriodo = sas.filter(s=>{
+    if(s.status!=='atendida' || !s.atendidaEm) return false;
+    const dia = s.atendidaEm.slice(0,10);
+    return dia>=dataInicioStr && dia<=dataFimStr;
+  });
+  const tempos = atendidasNoPeriodo.map(s=>saTempoAbertoMs(s, agoraMs)).filter(ms=>ms!=null);
+  const dentroMeta = tempos.filter(ms=>ms<SA_META_HORAS*3600000).length;
+  const foraMeta = tempos.length - dentroMeta;
+  return {
+    emAberto: abertas.length,
+    atendidas: atendidasNoPeriodo.length,
+    pctDentroMeta: tempos.length>0 ? (dentroMeta/tempos.length*100) : null,
+    pctForaMeta: tempos.length>0 ? (foraMeta/tempos.length*100) : null,
+    tempoMedioMs: tempos.length>0 ? (tempos.reduce((s,m)=>s+m,0)/tempos.length) : null,
+    vencidas: vencidas.length,
+  };
+}
+
+// "Histórico de desempenho" — 1 linha por DIA em que pelo menos 1 SA foi
+// atendida (mesmo critério de "só entra o que tem dado real" já usado em
+// `acuracidadeMediaMensal` — sem zero-preencher dia sem nenhum atendimento).
+function computeSaHistoricoPorDia(sas, dataInicioStr, dataFimStr, agoraMs){
+  const porDia = {};
+  sas.forEach(s=>{
+    if(s.status!=='atendida' || !s.atendidaEm) return;
+    const dia = s.atendidaEm.slice(0,10);
+    if(dia<dataInicioStr || dia>dataFimStr) return;
+    const ms = saTempoAbertoMs(s, agoraMs);
+    if(ms==null) return;
+    if(!porDia[dia]) porDia[dia] = {dia, atendidas:0, dentroMeta:0, foraMeta:0, somaMs:0};
+    porDia[dia].atendidas += 1;
+    porDia[dia].somaMs += ms;
+    if(ms<SA_META_HORAS*3600000) porDia[dia].dentroMeta += 1; else porDia[dia].foraMeta += 1;
+  });
+  return Object.values(porDia)
+    .map(d=>({...d, pctDentroMeta: (d.dentroMeta/d.atendidas*100), tempoMedioMs: d.somaMs/d.atendidas}))
+    .sort((a,b)=>b.dia.localeCompare(a.dia));
+}
+
+// Evolução ao longo das semanas — mesmo formato {key,label,sublabel,total,
+// acuracidade} que `WeeklyLineChart` já espera (reaproveitado tal como está)
+// e o mesmo algoritmo de "pré-preenche todos os baldes de semana entre
+// início/fim ANTES de contar dado real" já usado em `computeWeeklyStats`
+// (evita o mesmo bug de "semana parcial nas pontas" já corrigido lá). Aqui
+// `acuracidade` carrega o % DENTRO DA META por semana, não acuracidade de
+// contagem — o componente não sabe (nem precisa saber) a diferença.
+function computeSaWeeklyStats(sas, dataInicioStr, dataFimStr, agoraMs){
+  const buckets = {};
+  const ordem = [];
+  let cursor = new Date(getWeekInfo(dataInicioStr).key + 'T00:00:00');
+  const fimMonday = new Date(getWeekInfo(dataFimStr).key + 'T00:00:00');
+  let guard = 0;
+  while(cursor<=fimMonday && guard<300){
+    const info = getWeekInfo(cursor.toISOString().slice(0,10));
+    if(!buckets[info.key]){
+      buckets[info.key] = {key:info.key, label:info.label, sublabel:info.sublabel, total:0, dentroMeta:0};
+      ordem.push(info.key);
+    }
+    cursor.setDate(cursor.getDate()+7);
+    guard++;
+  }
+  sas.forEach(s=>{
+    if(s.status!=='atendida' || !s.atendidaEm) return;
+    const dia = s.atendidaEm.slice(0,10);
+    if(dia<dataInicioStr || dia>dataFimStr) return;
+    const {key} = getWeekInfo(dia);
+    if(!buckets[key]) return;
+    const ms = saTempoAbertoMs(s, agoraMs);
+    if(ms==null) return;
+    buckets[key].total += 1;
+    if(ms<SA_META_HORAS*3600000) buckets[key].dentroMeta += 1;
+  });
+  return ordem.map(key=>{
+    const b = buckets[key];
+    return {key:b.key, label:b.label, sublabel:b.sublabel, total:b.total, acuracidade: b.total>0 ? (b.dentroMeta/b.total*100) : null};
+  });
+}
+
+function SAsAbertoPanel({currentUser, role}){
+  const [sas, setSas] = useState([]);
+  const [carregado, setCarregado] = useState(false);
+
+  // Realtime escopado a esta tela (mesmo padrão de `EtiquetasPanel` —
+  // ninguém mais no app lê `sa_almoxarifado`, manter o canal aberto pro app
+  // inteiro seria overhead sem ganho). A Edge Function faz `upsert` por
+  // `numero_sa` — um evento INSERT/UPDATE já traz a linha inteira já
+  // atualizada em `payload.new`, sem precisar de nenhum merge parcial.
+  useEffect(()=>{
+    if(!supabaseClient) return;
+    let cancelado = false;
+    fetchSaAlmoxarifado().then(rows=>{ if(!cancelado){ setSas(rows); setCarregado(true); } });
+
+    const canal = supabaseClient
+      .channel('realtime:sa_almoxarifado')
+      .on('postgres_changes', {event:'*', schema:'public', table:'sa_almoxarifado'}, payload=>{
+        if(payload.eventType==='DELETE'){
+          setSas(prev=>prev.filter(s=>s.numeroSa!==(payload.old && payload.old.numero_sa)));
+          return;
+        }
+        const row = saAlmoxarifadoRowToLocal(payload.new);
+        setSas(prev=>{
+          const semEssa = prev.filter(s=>s.numeroSa!==row.numeroSa);
+          return [row, ...semEssa];
+        });
+      })
+      .subscribe(status=>{
+        if(status!=='SUBSCRIBED') return;
+        fetchSaAlmoxarifado().then(rows=>{ if(!cancelado){ setSas(rows); setCarregado(true); } });
+      });
+
+    return ()=>{ cancelado = true; supabaseClient.removeChannel(canal); };
+  }, []);
+
+  const [sincronizando, setSincronizando] = useState(false);
+  const [msgSync, setMsgSync] = useState(null);
+  async function handleSincronizarAgora(){
+    setSincronizando(true);
+    setMsgSync(null);
+    const res = await sincronizarSaAlmoxarifadoAgora();
+    setSincronizando(false);
+    setMsgSync(res.ok
+      ? {tipo:'ok', texto:'Sincronizado agora — '+(res.itensProcessados!=null ? (res.itensProcessados+' SA(s) na consulta.') : 'consulta atualizada.')}
+      : {tipo:'erro', texto:res.erro});
+  }
+
+  const agoraMs = Date.now();
+  const hojeStr = hojeLocalStr();
+
+  // Filtro de período ("Filtros") — só afeta "SAs Atendidas"/%/tempo médio
+  // (KPIs) e "Histórico de desempenho"; a tabela de acompanhamento abaixo
+  // nunca é escondida por data (mesmo critério de sempre pra fila viva).
+  const [trendFilter, setTrendFilter] = useState({tipo:'30d', from:'', to:''});
+  const { from: dataInicioStr, to: dataFimStr } = computeTrendRange(trendFilter.tipo, hojeStr, trendFilter.from, trendFilter.to);
+
+  const kpis = computeSaKpis(sas, dataInicioStr, dataFimStr, agoraMs);
+  const historicoPorDia = computeSaHistoricoPorDia(sas, dataInicioStr, dataFimStr, agoraMs);
+  const weeklyStats = computeSaWeeklyStats(sas, dataInicioStr, dataFimStr, agoraMs);
+
+  // Filtros da tabela de acompanhamento — busca (SA/material/solicitante),
+  // status (Aberta/Atendida/Todos), situação da meta (Dentro/Fora/Todos) e
+  // solicitante (dropdown com os nomes distintos já carregados). Por padrão
+  // mostra só "Aberta" — bate com o nome da própria tela ("SAs em Aberto"),
+  // mas o líder/admin pode trocar pra auditar as já atendidas também.
+  const [busca, setBusca] = useState('');
+  const [statusFiltro, setStatusFiltro] = useState('aberta');
+  const [metaFiltro, setMetaFiltro] = useState('todos');
+  const [solicitanteFiltro, setSolicitanteFiltro] = useState('');
+
+  const solicitantesDistintos = Array.from(new Set(sas.map(s=>s.solicitante).filter(Boolean))).sort((a,b)=>a.localeCompare(b));
+
+  const buscaNorm = busca.trim().toLowerCase();
+  const listaFiltrada = sas
+    .filter(s=>statusFiltro==='todos' || s.status===statusFiltro)
+    .filter(s=>!solicitanteFiltro || s.solicitante===solicitanteFiltro)
+    .filter(s=>{
+      if(metaFiltro==='todos') return true;
+      const ms = saTempoAbertoMs(s, agoraMs);
+      const dentro = saDentroMeta(ms);
+      if(dentro==null) return false;
+      return metaFiltro==='dentro' ? dentro : !dentro;
+    })
+    .filter(s=>!buscaNorm || (s.numeroSa||'').toLowerCase().includes(buscaNorm) || (s.materialDescricao||'').toLowerCase().includes(buscaNorm) || (s.solicitante||'').toLowerCase().includes(buscaNorm))
+    .sort((a,b)=>{
+      // Mais tempo em aberto primeiro — é o que coloca a meta em risco.
+      const msA = saTempoAbertoMs(a, agoraMs) || 0;
+      const msB = saTempoAbertoMs(b, agoraMs) || 0;
+      return msB - msA;
+    });
+
+  const {pagina, setPagina, tamanhoPagina, setTamanhoPagina, listaPaginada, totalPaginas} = usePaginacaoLista(listaFiltrada, 50);
+
+  return (
+    <div>
+      <div className="role-note" style={{marginBottom:16}}>
+        Sincroniza sozinho a cada 30 min (consulta interna da Selgron, ver
+        backend/README.md seção 13) — uma SA que some da consulta é
+        considerada atendida na hora em que o sync percebe isso.
+      </div>
+
+      {role==='admin' && (
+        <div style={{marginBottom:16}}>
+          <button type="button" className="btn btn-outline btn-sm" onClick={handleSincronizarAgora} disabled={sincronizando}>
+            <DIcon name="repeat" size={14} /> {sincronizando ? 'Sincronizando…' : 'Sincronizar agora'}
+          </button>
+          {msgSync && (
+            <div style={{marginTop:8}}>
+              {msgSync.tipo==='ok'
+                ? <div className="role-note" style={{marginBottom:0}}>{msgSync.texto}</div>
+                : <div className="login-error2">{msgSync.texto}</div>}
+            </div>
+          )}
+        </div>
+      )}
+
+      {!carregado ? (
+        <div className="empty-state">Carregando SAs…</div>
+      ) : sas.length===0 ? (
+        <div className="empty-state">
+          Nenhuma SA sincronizada ainda. {role==='admin' ? 'Clique em "Sincronizar agora" pra buscar a consulta pela primeira vez.' : 'Peça a um admin pra sincronizar.'}
+        </div>
+      ) : (
+        <>
+          <div className="ops-kpi-row">
+            <div className="ops-kpi-card">
+              <div className="ops-kpi-head">
+                <span className="ops-kpi-label">SAs em Aberto</span>
+                <span className="ops-kpi-icon" style={{background:'var(--warn-bg)', color:'var(--warn)'}}><DIcon name="clock" size={15} /></span>
+              </div>
+              <div className="ops-kpi-value">{kpis.emAberto}</div>
+              <div className="ops-kpi-meta">agora mesmo</div>
+            </div>
+            <div className="ops-kpi-card">
+              <div className="ops-kpi-head">
+                <span className="ops-kpi-label">SAs Atendidas</span>
+                <span className="ops-kpi-icon" style={{background:'var(--ok-bg)', color:'var(--ok)'}}><DIcon name="checkCircle" size={15} /></span>
+              </div>
+              <div className="ops-kpi-value">{kpis.atendidas}</div>
+              <div className="ops-kpi-meta">no período selecionado</div>
+            </div>
+            <div className="ops-kpi-card">
+              <div className="ops-kpi-head">
+                <span className="ops-kpi-label">% Dentro da Meta</span>
+                <span className="ops-kpi-icon" style={{background:'var(--ok-bg)', color:'var(--ok)'}}><DIcon name="percent" size={15} /></span>
+              </div>
+              <div className="ops-kpi-value">{kpis.pctDentroMeta==null ? '—' : kpis.pctDentroMeta.toFixed(1).replace('.',',')+'%'}</div>
+              <div className="ops-kpi-meta">meta: menos de {SA_META_HORAS}h</div>
+            </div>
+            <div className="ops-kpi-card">
+              <div className="ops-kpi-head">
+                <span className="ops-kpi-label">% Fora da Meta</span>
+                <span className="ops-kpi-icon" style={{background:'var(--danger-bg)', color:'var(--danger)'}}><DIcon name="alertTriangle" size={15} /></span>
+              </div>
+              <div className="ops-kpi-value">{kpis.pctForaMeta==null ? '—' : kpis.pctForaMeta.toFixed(1).replace('.',',')+'%'}</div>
+              <div className="ops-kpi-meta">acima de {SA_META_HORAS}h</div>
+            </div>
+            <div className="ops-kpi-card">
+              <div className="ops-kpi-head">
+                <span className="ops-kpi-label">Tempo Médio</span>
+                <span className="ops-kpi-icon" style={{background:'var(--blue-bg)', color:'var(--blue)'}}><DIcon name="activity" size={15} /></span>
+              </div>
+              <div className="ops-kpi-value" style={{fontSize:16}}>{kpis.tempoMedioMs==null ? '—' : saTempoAbertoTexto(kpis.tempoMedioMs)}</div>
+              <div className="ops-kpi-meta">de atendimento, no período</div>
+            </div>
+            <div className="ops-kpi-card">
+              <div className="ops-kpi-head">
+                <span className="ops-kpi-label">SAs Vencidas</span>
+                <span className="ops-kpi-icon" style={{background:'var(--danger-bg)', color:'var(--danger)'}}><DIcon name="alertTriangle" size={15} /></span>
+              </div>
+              <div className="ops-kpi-value">{kpis.vencidas}</div>
+              <div className="ops-kpi-meta">abertas há {SA_META_HORAS}h+, sem atendimento</div>
+            </div>
+          </div>
+
+          <div className="section-title">Acompanhamento das SAs</div>
+          <div className="panel">
+            <SearchWithScanner value={busca} onChange={setBusca} placeholder="Número da SA, material ou solicitante" />
+            <div style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:14}}>
+              {[{v:'aberta',l:'Aberta'},{v:'atendida',l:'Atendida'},{v:'todos',l:'Todos'}].map(opt=>(
+                <button key={opt.v} type="button" className={'btn '+(statusFiltro===opt.v?'btn-primary':'btn-outline')+' btn-sm'} onClick={()=>setStatusFiltro(opt.v)}>{opt.l}</button>
+              ))}
+              <span style={{width:1,background:'var(--line)',margin:'2px 4px'}}></span>
+              {[{v:'todos',l:'Qualquer meta'},{v:'dentro',l:'Dentro da meta'},{v:'fora',l:'Fora da meta'}].map(opt=>(
+                <button key={opt.v} type="button" className={'btn '+(metaFiltro===opt.v?'btn-primary':'btn-outline')+' btn-sm'} onClick={()=>setMetaFiltro(opt.v)}>{opt.l}</button>
+              ))}
+            </div>
+            {solicitantesDistintos.length>0 && (
+              <div className="field" style={{maxWidth:280}}>
+                <label>Solicitante</label>
+                <select value={solicitanteFiltro} onChange={e=>setSolicitanteFiltro(e.target.value)}>
+                  <option value="">Todos</option>
+                  {solicitantesDistintos.map(s=><option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+            )}
+
+            {listaFiltrada.length===0 ? (
+              <div className="empty-state">Nenhuma SA encontrada com esses filtros.</div>
+            ) : (
+              <div style={{overflowX:'auto'}}>
+                <table className="rank-table">
+                  <thead>
+                    <tr>
+                      <th>SA</th><th>Abertura</th><th>Solicitante</th><th>Material</th><th className="num">Qtd.</th><th>Tempo em aberto</th><th>Status</th><th>Situação da meta</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {listaPaginada.map(s=>{
+                      const ms = saTempoAbertoMs(s, agoraMs);
+                      const dentro = saDentroMeta(ms);
+                      return (
+                        <tr key={s.numeroSa}>
+                          <td style={{fontFamily:'var(--font-mono)'}}>{s.numeroSa}</td>
+                          <td>{s.abertaEm ? new Date(s.abertaEm).toLocaleString('pt-BR') : '—'}</td>
+                          <td>{s.solicitante || '—'}</td>
+                          <td>{[s.materialCodigo, s.materialDescricao].filter(Boolean).join(' · ') || '—'}</td>
+                          <td className="num">{s.quantidade || '—'}</td>
+                          <td>{saTempoAbertoTexto(ms)}</td>
+                          <td><StatusTag status={s.status==='atendida'?'ok':'warn'} text={s.status==='atendida'?'Atendida':'Aberta'} /></td>
+                          <td>{dentro==null ? '—' : <StatusTag status={dentro?'ok':'danger'} text={dentro?'Dentro da meta':'Fora da meta'} />}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <PaginationControls pagina={pagina} setPagina={setPagina} totalPaginas={totalPaginas} tamanhoPagina={tamanhoPagina} setTamanhoPagina={setTamanhoPagina} totalItens={listaFiltrada.length} itemLabel="SAs" />
+          </div>
+
+          <div className="section-title">Histórico de desempenho</div>
+          <TrendFilterBar
+            trendFilter={trendFilter}
+            setTrendFilter={setTrendFilter}
+            dataInicioStr={dataInicioStr}
+            dataFimStr={dataFimStr}
+            hojeStr={hojeStr}
+            subtitle="Afeta os KPIs de atendimento e o histórico abaixo — a tabela de acompanhamento acima nunca é filtrada por data"
+          />
+          <div className="weekly-solo-row">
+            <div className="panel" style={{margin:0}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:16}}>
+                <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Evolução — % de SAs dentro da meta por semana</div>
+                <span className="chart-meta-badge">Meta: 100%</span>
+              </div>
+              <WeeklyLineChart weeks={weeklyStats} meta={100} />
+            </div>
+          </div>
+
+          <div className="panel" style={{marginTop:14}}>
+            {historicoPorDia.length===0 ? (
+              <div className="empty-state">Nenhuma SA atendida no período selecionado.</div>
+            ) : (
+              <div style={{overflowX:'auto'}}>
+                <table className="rank-table">
+                  <thead>
+                    <tr><th>Dia</th><th className="num">Atendidas</th><th className="num">Dentro da meta</th><th className="num">Fora da meta</th><th className="num">% dentro da meta</th><th className="num">Tempo médio</th></tr>
+                  </thead>
+                  <tbody>
+                    {historicoPorDia.map(d=>(
+                      <tr key={d.dia}>
+                        <td>{fmtDataBR(d.dia)}</td>
+                        <td className="num">{d.atendidas}</td>
+                        <td className="num" style={{color:'var(--ok)'}}>{d.dentroMeta}</td>
+                        <td className="num" style={{color:d.foraMeta>0?'var(--danger)':'inherit'}}>{d.foraMeta}</td>
+                        <td className="num">{d.pctDentroMeta.toFixed(1).replace('.',',')}%</td>
+                        <td className="num">{saTempoAbertoTexto(d.tempoMedioMs)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
 
 /* ---------------- ETIQUETAS (impressão via navegador) ---------------- */

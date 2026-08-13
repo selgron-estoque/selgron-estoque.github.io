@@ -1599,3 +1599,63 @@ alter publication supabase_realtime add table etiquetas_fila;
 --   select column_name from information_schema.columns where table_name = 'contagens' and column_name = 'custo_unitario';
 -- =============================================================================
 alter table contagens add column if not exists custo_unitario numeric(14,4);
+
+-- =============================================================================
+-- "SAs EM ABERTO" — desempenho do almoxarifado atendendo Solicitações ao
+-- Almoxarifado (SA). Pedido do cliente: hoje ele visita manualmente
+-- https://consulta.selgron.com.br/sa_aberto.php todo dia pra saber quais SAs
+-- ainda estão pendentes e conferir se o time está cumprindo a meta de
+-- atender em menos de 2 dias (48h corridas, confirmado via AskUserQuestion).
+--
+-- Regra central (do próprio cliente): enquanto a SA aparece na consulta, ela
+-- está pendente; quando ela SOME da consulta, foi atendida. Isso só é
+-- detectável comparando o retrato de agora contra o retrato anterior — por
+-- isso existe uma Edge Function agendada (sync-sa-almoxarifado, a cada 30
+-- min via pg_cron, ver backend/README.md seção 13) que consulta a página e
+-- reconcilia contra esta tabela: SA que aparece de novo continua 'aberta'
+-- (ultima_vista_em avança); SA que estava 'aberta' e não apareceu nesta
+-- rodada vira 'atendida', com atendida_em = agora (o momento em que a
+-- ausência foi detectada — aproximação inevitável, documentada: o
+-- atendimento real aconteceu em algum ponto entre o poll anterior e este).
+--
+-- Uma linha por SA (não uma linha por poll) — o que precisa ser preservado
+-- é só a transição aberta→atendida, não um snapshot de cada rodada.
+-- `aberta_em` vem da própria consulta (o campo de data/hora de abertura que
+-- a página expõe); se a página não expuser isso pra alguma linha, o
+-- primeiro poll que viu essa SA grava seu próprio `now()` como aproximação
+-- honesta (documentado no parser da Edge Function).
+--
+-- "Tempo em aberto"/"dentro da meta" são SEMPRE calculados no front-end (não
+-- colunas persistidas) — pra SA ainda aberta, usa `now()` no lugar de
+-- `atendida_em`, senão o indicador "SAs vencidas" (aberta há mais de 48h,
+-- ainda sem atendimento) nunca conseguiria crescer sozinho enquanto a tela
+-- fica aberta. Mesmo critério já usado em `diasParado()` no index.html.
+create table if not exists sa_almoxarifado (
+  numero_sa text primary key,
+  solicitante text,
+  material_codigo text,
+  material_descricao text,
+  quantidade text,
+  aberta_em timestamptz,
+  status text not null default 'aberta',      -- 'aberta' | 'atendida'
+  atendida_em timestamptz,
+  ultima_vista_em timestamptz not null default now(),
+  criado_em timestamptz not null default now(),
+  atualizado_em timestamptz not null default now()
+);
+
+alter table sa_almoxarifado enable row level security;
+drop policy if exists "leitura autenticada" on sa_almoxarifado;
+create policy "leitura autenticada" on sa_almoxarifado for select using (auth.role() = 'authenticated');
+-- Sem policy de insert/update/delete pra `authenticated` — só a Edge
+-- Function (service role, ignora RLS) grava aqui, mesmo padrão de
+-- sync-saldo-protheus/usuarios-admin. O app nunca escreve nesta tabela
+-- direto, só lê e (via botão "Sincronizar agora", admin) invoca a function.
+
+-- Realtime — pra quem já está com a tela "SAs em Aberto" aberta ver uma SA
+-- nova/atendida sem precisar recarregar, assim que o próximo poll (ou um
+-- "Sincronizar agora" manual) gravar. Mesmo mecanismo já usado em
+-- contagens/inventarios/usuarios/app_config/etiquetas_fila. Introspecção
+-- antes de rodar, mesmo motivo de sempre (evita erro de "already member"):
+--   select schemaname, tablename from pg_publication_tables where pubname = 'supabase_realtime';
+alter publication supabase_realtime add table sa_almoxarifado;

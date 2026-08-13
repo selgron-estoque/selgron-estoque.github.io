@@ -352,3 +352,111 @@ operador clica "Confirmar e continuar", nada acontece sozinho) e a mesma
 validação do líder de sempre. Item que **já tem** endereço cadastrado
 continua 100% no fluxo de confirmação por QR Code de sempre, sem nenhuma
 influência da consulta ao vivo — nenhuma mudança nesse caso.
+
+## 13. "SAs em Aberto" — desempenho do almoxarifado (consulta de sa_aberto.php)
+
+Página nova (Análise → "SAs em Aberto") que acompanha o tempo que o
+almoxarifado leva pra atender cada Solicitação ao Almoxarifado (SA), contra
+uma meta de menos de 2 dias (48h corridas). Substitui a rotina manual de
+visitar `https://consulta.selgron.com.br/sa_aberto.php` todo dia.
+
+**Como funciona**: uma Edge Function nova, `sync-sa-almoxarifado`, consulta
+essa página periodicamente (a cada 30 min, via `pg_cron` — item 13.4 abaixo)
+e reconcilia contra a tabela `sa_almoxarifado`: toda SA encontrada na
+consulta fica/continua `'aberta'`; toda SA que estava `'aberta'` no banco e
+**não apareceu** nesta rodada vira `'atendida'`, com a hora deste poll como
+o momento em que o atendimento foi detectado (é a única forma de saber
+quando uma SA "sumiu" — a página só mostra o que ainda está pendente, nunca
+um histórico). O app nunca lê a página da Selgron direto — só lê a tabela
+`sa_almoxarifado`, que essa função mantém em dia.
+
+### 13.1 — Reaproveita as credenciais já configuradas (seção 12)
+
+`sync-sa-almoxarifado` usa os MESMOS secrets já configurados pra
+`consultar-produto-selgron` (`CONSULTA_SELGRON_USER`/`CONSULTA_SELGRON_PASS`)
+— é o mesmo domínio `consulta.selgron.com.br`. **Se ao testar (13.3) a
+página de SA pedir login diferente do de produto/kardex**, configure
+secrets próprios só pra essa função:
+
+```bash
+npx supabase secrets set SA_ALMOXARIFADO_USER=<usuario>
+npx supabase secrets set SA_ALMOXARIFADO_PASS=<senha>
+```
+
+— e me avise, que eu troco a function pra ler esses dois nomes em vez dos
+de produto/kardex.
+
+### 13.2 — Rodar o SQL
+
+No SQL Editor do projeto, cole o bloco `sa_almoxarifado` (final de
+`backend/schema.sql`, seção "'SAs EM ABERTO'"). Introspecção recomendada
+antes, mesmo cuidado de sempre:
+
+```sql
+select table_name from information_schema.tables where table_name = 'sa_almoxarifado';
+select schemaname, tablename from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'sa_almoxarifado';
+```
+
+### 13.3 — Deploy e teste manual
+
+```bash
+npx supabase functions deploy sync-sa-almoxarifado
+```
+
+Deploy padrão (com verificação de JWT, mesmo padrão das outras). Depois do
+deploy, teste SEM esperar o cron: abra a tela "SAs em Aberto" no app
+(perfil líder/admin) e clique **"Sincronizar agora"** — ela chama a
+function na hora e mostra quantas SAs foram encontradas/atendidas nesta
+rodada. Se der erro, o texto aparece direto na tela (mesma mensagem que a
+function devolveu).
+
+### 13.4 — Agendar a sincronização automática (a cada 30 min)
+
+Mesma técnica já documentada na seção 5 (`pg_cron`+`pg_net`), SQL Editor:
+
+```sql
+select cron.schedule(
+  'sync-sa-almoxarifado-30min',
+  '*/30 * * * *',
+  $$ select net.http_post(
+       url:='https://<seu-project-ref>.supabase.co/functions/v1/sync-sa-almoxarifado',
+       headers:='{"Authorization": "Bearer <SERVICE_ROLE_KEY>"}'::jsonb
+     ) $$
+);
+```
+
+Troque `<seu-project-ref>` pelo ref do projeto (o mesmo já usado nas outras
+seções) e `<SERVICE_ROLE_KEY>` pela chave de serviço (Project Settings →
+API → `service_role` — **nunca** a `anon`/publishable key aqui, essa
+chamada precisa de privilégio de escrita). Depois de rodar, confirme que o
+job foi criado:
+
+```sql
+select jobid, jobname, schedule, active from cron.job where jobname = 'sync-sa-almoxarifado-30min';
+```
+
+### 13.5 — Se o parser não reconhecer nenhuma linha da tabela
+
+O parser (`extrairSasAbertas`, dentro de
+`supabase/functions/sync-sa-almoxarifado/index.ts`) foi escrito **sem
+nunca ter visto o HTML real** de `sa_aberto.php` — só a partir da descrição
+do que a página mostra. Ele resolve as colunas pelo NOME do cabeçalho (não
+por posição fixa), o que ajuda bastante, mas ainda pode não bater de
+primeira. Se "Sincronizar agora" (13.3) devolver "Nenhuma SA reconhecida no
+HTML", **nenhum dado é apagado/alterado** — a função para sozinha antes de
+mexer em qualquer linha, por segurança (nunca marca tudo como "atendido" só
+porque parou de reconhecer o formato).
+
+Pra eu ajustar o parser: no navegador, abra `sa_aberto.php` já logado,
+clique com o botão direito → **"Ver código-fonte da página"** (ou
+`Ctrl+U`), copie o HTML inteiro (não um print) e me envie — mesmo processo
+já usado pra `consultar-produto-selgron`/Kardex, ajusto o parser com o HTML
+real em minutos.
+
+### 13.6 — O que fica calculado só no front-end (não em coluna nenhuma)
+
+"Tempo em aberto", "Dentro/Fora da meta" e "SAs vencidas" nunca são colunas
+gravadas — são sempre calculados na hora, comparando `aberta_em` contra
+`atendida_em` (SA já atendida) ou contra "agora" (SA ainda aberta) — é
+assim que uma SA aberta há mais de 48h aparece "Fora da meta" na tela
+mesmo sem nenhuma sincronização nova ter rodado nesse meio-tempo.

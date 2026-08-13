@@ -18379,3 +18379,187 @@ pra um armazém com muitos códigos) fica a cargo do cliente** — mesma
 limitação de sempre (login exige Supabase Auth real, não simulável no
 sandbox sem rede, e o sandbox tampouco tem acesso à consulta interna da
 Selgron).
+
+
+## "SAs em Aberto" — desempenho do almoxarifado atendendo Solicitações (SA)
+
+Cliente pediu uma página nova (grupo "Análise" da Sidebar) pra acompanhar
+automaticamente quanto tempo o almoxarifado leva pra atender uma
+"Solicitação ao Almoxarifado" (SA) — hoje ele visita
+`https://consulta.selgron.com.br/sa_aberto.php` manualmente todo dia e
+filtra a tabela de SAs em aberto na mão. Meta confirmada: **menos de 2 dias
+(48h corridas)**. Pedido completo, com exemplos exatos de formatação
+("01 dia e 05 horas → Dentro da meta" / "02 dias e 03 horas → Fora da
+meta") e dois casos reais de transição aberta→atendida — SA 12345
+(abertura 10/08 08:00, sumiu da consulta 11/08 14:00 → 1 dia e 6 horas →
+dentro da meta) e SA 12346 (abertura 10/08 08:00, sumiu 12/08 10:00 → 2
+dias e 2 horas → fora da meta) — e uma restrição explícita: **"não quero
+simplesmente criar uma tela com dados fictícios ou mockados"**, a página
+precisa estar estruturada pros dados reais desde o início.
+
+**Regra central, explícita no pedido**: `sa_aberto.php` só mostra SA AINDA
+pendente — quando uma SA some da lista, ela foi atendida. Isso só dá pra
+capturar rodando periodicamente e comparando o retrato de agora contra o
+retrato anterior — sem isso, uma SA que abre E fecha entre duas visitas
+manuais do cliente nunca teria o tempo de atendimento registrado.
+Confirmado com o cliente (`AskUserQuestion`, 2 perguntas): o nome da tela
+("SAs em Aberto", não "Desempenho do Time" — a outra opção do pedido
+original) e a sincronização automática via `pg_cron` a cada **30 minutos**
+— mesmo mecanismo de scheduling já documentado (nunca aplicado antes) em
+`backend/README.md` seção 5, e o mesmo tipo de scraping autenticado de
+página interna da Selgron que já está em produção
+(`consultar-produto-selgron`, usado por `CountStep`/`EtiquetasPanel`).
+
+### `backend/schema.sql` — tabela nova, `sa_almoxarifado`
+
+Uma linha por SA (estado atual + histórico da transição), não uma tabela de
+snapshot por poll (que cresceria sem necessidade — o que importa preservar
+é só "quando abriu"/"quando foi atendida", não cada rodada intermediária em
+que ela ainda aparecia pendente): `numero_sa` (chave primária), `solicitante`,
+`material_codigo`/`material_descricao`, `quantidade`, `aberta_em`, `status`
+(`'aberta'`/`'atendida'`), `atendida_em`, `ultima_vista_em`. RLS: só leitura
+pra `authenticated` (mesmo padrão já usado em `item_reservas`/
+`etiquetas_fila` — nenhuma policy de insert/update/delete pra
+`authenticated`, só a Edge Function, rodando com service role, grava aqui).
+Realtime habilitado (`alter publication supabase_realtime add table
+sa_almoxarifado`) — o app inteiro reage sozinho quando o cron atualiza uma
+linha, sem precisar recarregar a página.
+
+**Tempo de atendimento e "dentro/fora da meta" são calculados no
+FRONT-END, não colunas persistidas** — mesmo critério já usado em
+`diasParado()` (sempre em cima de "agora", nunca congelado): pra SA ainda
+aberta, o tempo decorrido usa o momento atual como fim, então cresce
+sozinho enquanto ela continuar pendente; pra SA já atendida, usa
+`atendida_em` fixo.
+
+### Edge Function nova: `supabase/functions/sync-sa-almoxarifado/index.ts`
+
+Segue o arcabouço de duas Edge Functions já existentes: HTTP Basic Auth +
+parser tolerante de `consultar-produto-selgron` (mesmos secrets
+`CONSULTA_SELGRON_USER`/`CONSULTA_SELGRON_PASS`, reaproveitados — é o mesmo
+domínio `consulta.selgron.com.br`), e o padrão service-role + log de
+execução em `sync_log` de `sync-saldo-protheus` (`origem=
+'sa_almoxarifado'`). `extrairSasAbertas(html)` resolve as colunas da tabela
+pelo NOME do cabeçalho (não posição fixa) — mesmo espírito já usado em
+`parseHistoricoContagensRows` ("robusto a reordenação"). Pra cada SA
+encontrada na consulta: upsert com `status='aberta'`, `ultima_vista_em=
+now()` (e `aberta_em` só na 1ª vez que aparece). Pra qualquer SA que
+estava `'aberta'` no banco mas NÃO apareceu nesta rodada: vira
+`'atendida'`, com `atendida_em=now()` — a hora deste poll é a melhor
+aproximação possível do momento real de atendimento (ficou em algum ponto
+entre o poll anterior, que ainda a viu, e este, que não viu mais).
+**Proteção deliberada**: se o parser não reconhecer NENHUMA linha na
+resposta (formato da página mudou, sessão expirou, etc.), a função para
+sozinha ANTES de reconciliar — nunca marca todo mundo como "atendido" só
+porque parou de reconhecer o HTML, mesma categoria de proteção já usada
+em `salvarInventarioToSupabase`/outras rotinas que nunca assumem sucesso
+silencioso. Sempre HTTP 200 com `{ok:false,erro}` pra falha esperada
+(mesma lição já registrada neste projeto — status não-2xx faz o
+`supabase-js` descartar o corpo real do erro).
+
+### `index.html` — tela nova, `SAsAbertoPanel`
+
+Wiring de registro de página (mesmo padrão usado 6× neste projeto):
+`ACESSOS_RESTRITOS.sasAberto=['lider','admin']` (mesmo grupo de
+"Indicadores"/"Relatórios" — análise gerencial, operador não participa por
+padrão, mas o admin pode conceder a exceção como qualquer outra tela via
+`acessosExtras`), `TODOS_OS_MENUS`, `VIEW_TITLES`, `VIEW_SUBTITLES`,
+`buildSidebarGroups` (grupo "Análise", ícone `clock`), guard de rota em
+`App()`.
+
+- **`saAlmoxarifadoRowToLocal`/`fetchSaAlmoxarifado`** (via
+  `fetchTodasPaginado`, mesmo helper de sempre pra nunca depender do teto
+  implícito de linhas do Supabase) — leitura simples, snake_case→camelCase.
+- **`sincronizarSaAlmoxarifadoAgora()`** — botão "Sincronizar agora" (só
+  líder/admin), chama `supabaseClient.functions.invoke('sync-sa-
+  almoxarifado')` direto, sem esperar o cron — útil pro 1º teste real e pra
+  forçar atualização pontual. Lê o erro de verdade via `error.context.
+  json()` (mesma técnica já usada em `chamarUsuariosAdmin`), não a mensagem
+  genérica do supabase-js.
+- **`SA_META_HORAS=48`**, **`saTempoAbertoMs`**, **`saTempoAbertoTexto`**
+  (formata "01 dia e 06 horas"/"02 dias e 02 horas" — exemplos exatos do
+  cliente, conferidos byte a byte no teste), **`saDentroMeta`** (`ms<48h`;
+  exatamente 48h já é FORA da meta — a regra é "menos de 2 dias", não "até
+  2 dias").
+- **`computeSaKpis`** — os 6 KPIs pedidos: SAs em Aberto/SAs Vencidas são
+  estado ATUAL (sem filtro de período, mesmo critério já usado em filas de
+  pendência — Recontagens/Itens Divergentes, pendência não some por causa
+  de filtro de data); SAs Atendidas/%/tempo médio são escopadas ao período
+  do painel "Filtros", pela DATA DE ATENDIMENTO.
+- **`computeSaHistoricoPorDia`**/**`computeSaWeeklyStats`** — "Histórico de
+  desempenho" (tabela por dia, sem zero-preencher dia sem atendimento
+  nenhum, mesmo critério de `acuracidadeMediaMensal`) e o gráfico de
+  evolução (reaproveita `WeeklyLineChart` tal como já existe — mesmo
+  formato `{key,label,sublabel,total,acuracidade}`, aqui `acuracidade`
+  carrega o **% dentro da meta por semana**, não acuracidade de contagem;
+  meta da linha de referência é 100%, direto da própria definição da regra
+  — não um número novo inventado). Mesmo cuidado de "pré-preenche os
+  baldes de semana ANTES de contar dado real" já usado em
+  `computeWeeklyStats`, protegendo contra o mesmo bug de "semana parcial
+  nas pontas" já corrigido lá antes.
+- **Tabela "Acompanhamento das SAs"** (`.rank-table`, mesmo componente já
+  usado em `AllDivergencesPanel`) — SEM filtro de período (fila viva),
+  ordenada por tempo em aberto decrescente (o que coloca a meta em risco
+  primeiro). Colunas: SA/Abertura/Solicitante/Material/Qtd./Tempo em
+  aberto/Status/Situação da meta — as duas últimas via `StatusTag`
+  (verde/âmbar/vermelho, mesmo componente de sempre). Filtros: busca (SA/
+  material/solicitante, reaproveita `SearchWithScanner`), chips de Status
+  (Aberta/Atendida/Todos — padrão "Aberta", bate com o nome da própria
+  tela) e Situação da meta (Dentro/Fora/Todos), `<select>` de Solicitante
+  (distinct dos dados carregados). `usePaginacaoLista`/`PaginationControls`
+  (mesmo padrão já usado em Recontagens/Itens Divergentes).
+
+### Pendência real, não resolvível no sandbox
+
+O parser (`extrairSasAbertas`) foi escrito só a partir da DESCRIÇÃO do
+cliente — nunca viu o HTML real de `sa_aberto.php`, mesma situação que
+`consultar-produto-selgron`/Kardex tiveram no início e precisaram de 1-2
+rodadas de ajuste depois que o cliente mandou o HTML de verdade
+(`Ctrl+U`). Documentado em `backend/README.md` seção 13.5: se "Sincronizar
+agora" não reconhecer nenhuma linha, nada é apagado/alterado (proteção já
+descrita acima) — só falta o cliente mandar o HTML real pra eu calibrar o
+parser em minutos, mesmo processo já estabelecido neste projeto.
+
+### Verificação
+
+Testado via harness dedicado (`harness_sa_almoxarifado.js`, jsdom +
+react-dom/client + `act()`, mesma técnica rigorosa de sempre — carrega o
+`index.html` inteiro transpilado numa `vm.Script`, Supabase mockado com um
+"banco" em memória pra `sa_almoxarifado` + canal Realtime simulável):
+`saAlmoxarifadoRowToLocal`/`fetchSaAlmoxarifado` isoladas; `saTempoAbertoMs`/
+`saTempoAbertoTexto`/`saDentroMeta` contra os DOIS exemplos exatos do
+cliente (SA 12345→"01 dia e 06 horas"/dentro, SA 12346→"02 dias e 02
+horas"/fora, incluindo a borda exata de 48h caindo pra fora da meta);
+`computeSaKpis` com um cenário misto (abertas dentro do prazo, 1 vencida,
+atendidas dentro/fora do período de filtro, uma fora do período pra
+confirmar que não conta) — incluindo o caso "sem nenhuma SA atendida no
+período" devolvendo `null` (não 0% inventado); `computeSaHistoricoPorDia`
+(sem zero-fill, ordenado do dia mais recente); `computeSaWeeklyStats`
+reproduzindo o MESMO tipo de bug de "semana parcial na ponta" já corrigido
+em `computeWeeklyStats` (item na mesma semana ISO mas antes da data exata
+do filtro não pode contar) — confirmado excluído corretamente; e
+`SAsAbertoPanel` de ponta a ponta — KPIs renderizando, tabela mostrando só
+"Aberta" por padrão (some quando filtra "Atendida" fica visível), busca por
+número de SA filtrando certo, "Sincronizar agora" funcionando nos 3
+cenários (sucesso, erro real da Edge Function via `error.context.json()`,
+e ausente pro perfil operador), evento Realtime (INSERT) atualizando a
+tabela sem reload, e o estado vazio honesto ("Nenhuma SA sincronizada
+ainda") quando o banco não tem nenhuma linha. 57 asserções, todas
+passando. Rodei de novo toda a suíte de regressão do scratchpad (68
+harnesses) — 0 falhas. Transpile Babel do arquivo inteiro e balanceamento
+de chaves do CSS conferidos (668/668, sem mudança — nenhuma classe CSS
+nova, reaproveita `.rank-table`/`.ops-kpi-row`/`.panel`/`.role-note`/
+`.login-error2`/`.chart-meta-badge`/`.weekly-solo-row` já existentes).
+Type-check da Edge Function via `tsc` (mesmo shim de sempre pros globais
+do Deno) sem erro.
+
+**Falta o cliente**: (1) rodar o SQL novo (`backend/schema.sql`, bloco
+`sa_almoxarifado`) no projeto Supabase real; (2) `npx supabase functions
+deploy sync-sa-almoxarifado`; (3) o `pg_cron.schedule(...)` de 30 em 30 min
+(seção 13.4 do README); (4) testar "Sincronizar agora" na tela e, se o
+parser não reconhecer nenhuma SA, mandar o HTML real de `sa_aberto.php`
+(`Ctrl+U`) pra eu calibrar — mesmo handoff de sempre pra integração com
+página interna da Selgron. **Verificação visual/funcional de ponta a
+ponta fica a cargo do cliente** — mesma limitação de sempre (login exige
+Supabase Auth real, não simulável no sandbox sem rede, e o sandbox
+tampouco tem acesso à consulta interna da Selgron).
