@@ -1186,14 +1186,26 @@
   #etiqueta-print-area{display:none;}
   @media print{
     #root{display:none !important;}
-    #etiqueta-print-area{display:block;}
+    #etiqueta-print-area{display:block;overflow:hidden;}
   }
   /* .etq-page fica 0.5mm mais baixa que o @page — folga contra um bug já
      visto num Chrome bem antigo (109/Windows 7) que inseria página em
      branco extra. Não afeta o tamanho físico real impresso (@page continua
-     101x31mm, o que o driver da impressora espera). */
+     101x31mm, o que o driver da impressora espera).
+     `overflow:hidden` aqui e em `#etiqueta-print-area` acima são reforço
+     defensivo (cliente relatou, com o mesmo Chrome antigo, o diálogo de
+     impressão do PRÓPRIO Chrome já mostrando "2 folhas" pra uma impressão
+     de 1 item só — sem NENHUM page-break-after no HTML nesse caso, o que
+     descarta de vez a hipótese antiga de "propriedade de quebra
+     duplicada"). Como isso é o Chrome contando 2 páginas de CSS antes de
+     qualquer driver de impressora entrar em jogo, o suspeito mais provável
+     agora é a config "Margens"/"Escala"/"Tamanho do papel" em "Mais
+     definições" do próprio diálogo de impressão daquele Chrome (um valor
+     diferente de "Nenhuma"/"100%"/o tamanho customizado empurra o
+     conteúdo pra além da página) — ver CLAUDE.md pra esse diagnóstico
+     completo antes de mexer nos valores de mm abaixo de novo. */
   @page{size:101mm 31mm;margin:0;}
-  .etq-page{display:flex;align-items:center;gap:1mm;width:101mm;height:30.5mm;box-sizing:border-box;}
+  .etq-page{display:flex;align-items:center;gap:1mm;width:101mm;height:30.5mm;box-sizing:border-box;overflow:hidden;}
   .etq-page-col{width:50mm;height:30mm;box-sizing:border-box;padding:0.8mm;}
   /* Cliente esclareceu: o pedido de "tirar a margem" (rodada anterior)
      era engano — o que precisava sumir era o CONTORNO (a linha preta ao

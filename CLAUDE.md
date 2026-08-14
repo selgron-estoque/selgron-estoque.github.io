@@ -18788,3 +18788,76 @@ mas "11/08/2026, 21:00:00" na tela "SAs em Aberto" do app.
   o próximo poll de 30 min — ou um "Sincronizar agora" manual — já
   regrava `aberta_em` de qualquer item ainda `'aberta'` com o valor
   certo, corrigindo sozinho com o tempo, sem precisar de SQL manual).
+
+
+## "2 folhas" no diálogo do Chrome pra impressão de 1 item só — não é mais o bug de page-break-after
+
+Cliente mandou foto de uma impressão real (item `000.33818`, "Impressora TSC
+Recebimento", a mesma máquina Chrome 109/Windows 7 já documentada antes)
+mostrando o diálogo de impressão do próprio Chrome com **"2 folhas"** pra uma
+etiqueta AVULSA — 1 item só, `imprimirEtiquetaViaNavegador(item1)` sem
+`item2`, ou seja **sem nenhum `page-break-after` no HTML** (esse estilo só é
+aplicado condicionalmente por `buildEtiquetaPageHtml`, e só quando existe uma
+PRÓXIMA folha no mesmo job — nunca no caso de 1 item avulso). Isso descarta
+de vez a causa já corrigida antes ("duas propriedades de quebra de página ao
+mesmo tempo", `page-break-after`+`break-after` juntos) — aqui não existe
+NENHUMA quebra de página no DOM, e o Chrome ainda assim conta 2 páginas.
+
+- **Ponto importante pra não confundir com investigações anteriores**: "2
+  folhas" aparece no PRÓPRIO diálogo do Chrome, calculado a partir do HTML/
+  CSS, ANTES de qualquer driver de impressora entrar em jogo — diferente do
+  caso já investigado e resolvido antes ("'pulando uma fileira' na impressão
+  avulsa — não era bug do app", concluído como comportamento de driver/Tear-
+  off do Windows) — aquele sintoma só aparecia DEPOIS de enviar pro
+  spooler/impressora, nunca na contagem de páginas do Chrome em si. Este
+  aqui é genuinamente o Chrome achando que existem 2 páginas de CSS, então
+  volta a ser um problema potencialmente influenciável por CSS/config do
+  navegador, não um comportamento inevitável da impressora física.
+- **Conferido o modelo de caixa antes de mexer em qualquer valor**:
+  `.etq-page-col{height:30mm}` (fixo) dentro de `.etq-page{height:30.5mm}`
+  (fixo, `align-items:center`) — com `.etq-produto`/`.etq-endereco`/
+  `.etq-prateleira` preenchendo `100%` do `.etq-page-col` e já com
+  `overflow:hidden` própria — não existe, pelo modelo de caixa CSS puro,
+  nenhum jeito do conteúdo interno crescer além dos 30.5mm da folha. Também
+  conferido que `<body>` só tem 2 filhos (`#root`, escondido via `display:
+  none !important` durante impressão, e `#etiqueta-print-area`) — nenhum
+  elemento solto extra que pudesse ficar visível sem querer.
+- **Reforço defensivo aplicado** (baixo risco, não muda o tamanho físico real
+  — `@page` continua `101mm 31mm`, o que o driver da impressora espera):
+  `overflow:hidden` em `#etiqueta-print-area` (dentro do `@media print`) e em
+  `.etq-page` — nenhum dos dois tinha essa proteção antes, mesmo o conteúdo
+  já devendo caber pelo box model. Não resolve sozinho se a causa for a que
+  parece mais provável agora (ver abaixo), mas fecha de vez qualquer
+  transbordo latente que o box model não devesse permitir mas que esse
+  Chrome específico possa calcular diferente.
+- **Suspeito principal, ainda não confirmado (precisa do cliente checar na
+  hora)**: como é o PRÓPRIO Chrome contando "2 folhas" antes do driver, o
+  candidato mais forte agora é a configuração "Mais definições" do diálogo
+  de impressão daquele Chrome especificamente — "Margens" (precisa ser
+  "Nenhuma", não "Padrão" — um valor "Padrão" adiciona uma margem física por
+  cima do `@page{margin:0}` do CSS, que sozinha já pode ultrapassar os
+  30,5mm/31mm da etiqueta e empurrar o resto pra uma 2ª folha), "Escala"
+  (precisa ser 100%, não "Ajustar à página" — isso re-calcula o layout de
+  um jeito que pode gerar página extra num navegador antigo) e "Tamanho do
+  papel" (precisa bater com a etiqueta customizada, não cair pra A4/Carta
+  por engano). Essas 3 configurações já tinham sido perguntadas numa
+  investigação anterior (o cliente confirmou "Margens: Nenhuma" na época),
+  mas Chrome não garante lembrar essa escolha entre sessões/reinícios do
+  navegador — vale confirmar de novo nesta máquina especificamente, já que
+  ela é a única com esse Chrome 109 tão desatualizado.
+- **Se as 3 configurações já estiverem certas e o problema persistir**: aí
+  sim a causa é mesmo um bug de paginação desse Chrome antigo com `@page`
+  de tamanho customizado tão pequeno (101x31mm) — nesse caso o próximo passo
+  seria reduzir ainda mais a altura de `.etq-page` (hoje 30,5mm, 0,5mm de
+  folga) pra dar mais margem de segurança, mas evitar repetir esse palpite
+  sem antes confirmar as 3 configurações acima — a mesma categoria de ajuste
+  especulativo já tentada uma vez (31mm→30,5mm) sem confirmação de que
+  resolveu de verdade.
+- Testado via transpile Babel do arquivo inteiro e balanceamento de chaves
+  do CSS (668/668, sem mudança — só propriedades novas dentro de 2 regras
+  já existentes, nenhuma regra nova). Rodei de novo toda a suíte de
+  Etiquetas (15 harnesses) e a suíte completa do scratchpad (68 harnesses)
+  — 0 falhas. **Verificação física de ponta a ponta (se o reforço defensivo
+  + a checagem de "Mais definições" resolvem de verdade nessa máquina) fica
+  100% a cargo do cliente** — mesma limitação de sempre nesta feature
+  (sandbox sem impressora física, e login exige Supabase Auth real).
