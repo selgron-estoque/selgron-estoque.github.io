@@ -14915,22 +14915,14 @@ function SAsAbertoPanel({currentUser, role}){
 
   return (
     <div>
-      <div className="role-note" style={{marginBottom:16}}>
-        Sincroniza sozinho a cada 30 min (consulta interna da Selgron, ver
-        backend/README.md seção 13) — uma SA que some da consulta é
-        considerada atendida na hora em que o sync percebe isso.
-      </div>
-
       {role==='admin' && (
         <div style={{marginBottom:16}}>
           <button type="button" className="btn btn-outline btn-sm" onClick={handleSincronizarAgora} disabled={sincronizando}>
             <DIcon name="repeat" size={14} /> {sincronizando ? 'Sincronizando…' : 'Sincronizar agora'}
           </button>
-          {msgSync && (
+          {msgSync && msgSync.tipo==='erro' && (
             <div style={{marginTop:8}}>
-              {msgSync.tipo==='ok'
-                ? <div className="role-note" style={{marginBottom:0}}>{msgSync.texto}</div>
-                : <div className="login-error2">{msgSync.texto}</div>}
+              <div className="login-error2">{msgSync.texto}</div>
             </div>
           )}
         </div>
