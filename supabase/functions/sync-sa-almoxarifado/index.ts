@@ -38,10 +38,26 @@
 //      reconciliação) opera sobre `chave`, nunca sobre `numero_sa` isolado.
 //
 //   2) A coluna "Emissao" só tem DATA (formato "DD/MM/AAAA"), nunca hora —
-//      `parseDataHoraCelula` já lida com isso sem mudança nenhuma (sempre
-//      tratou "sem hora" como "00:00:00"), mas é uma limitação REAL da
-//      fonte: "tempo em aberto"/"dentro da meta" podem ter até ~24h de
-//      imprecisão por causa disso, documentado também na tela e no schema.
+//      tratado como meia-noite daquele dia. Limitação REAL da fonte, ainda
+//      de pé: "tempo em aberto"/"dentro da meta" podem ter até ~24h de
+//      imprecisão por causa disso (a página não expõe hora de abertura).
+//
+//   3) BUG real encontrado depois do 1º sync ao vivo (cliente reportou:
+//      "Emissao: 12/08/2026" na página real, mas o app mostrava
+//      "11/08/2026, 21:00:00") — a versão anterior de `parseDataHoraCelula`
+//      montava o ISO com sufixo "Z" (UTC), tratando "meia-noite daquele
+//      dia" como meia-noite EM UTC. Como a página é um sistema interno
+//      brasileiro, a data exibida ("12/08/2026") é sempre horário de
+//      Brasília, não UTC — meia-noite em Brasília (UTC-3) é 03:00 UTC, não
+//      00:00 UTC. Gravar como 00:00 UTC e depois exibir convertido pra
+//      Brasília (`toLocaleString('pt-BR')`, index.html) empurrava a data
+//      de volta pro dia ANTERIOR às 21h — o sintoma exato reportado.
+//      Corrigido usando o offset fixo "-03:00" (Brasil não tem mais
+//      horário de verão desde 2019, não precisa de lógica de DST) em vez
+//      de "Z" — vale tanto pra "Emissao" (sem hora, cai em "00:00:00")
+//      quanto pro caso hipotético de uma coluna de data trazer hora no
+//      futuro (mesma premissa: qualquer hora nesta página é horário local
+//      de Brasília, nunca UTC).
 //
 // A tabela real (`id='tbemp'`, gerada via jQuery DataTables) tem uma
 // estrutura <thead>+<tfoot>+<tbody> onde tanto o <thead> quanto o <tfoot>
@@ -166,7 +182,11 @@ function parseDataHoraCelula(htmlCelula: string, textoCelula: string): string | 
   const m = /(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2})(?::(\d{2}))?)?/.exec(textoCelula);
   if (!m) return null;
   const [, dia, mes, ano, hh = "00", mm = "00", ss = "00"] = m;
-  const iso = `${ano}-${mes}-${dia}T${hh}:${mm}:${ss}Z`;
+  // "-03:00", não "Z" — a página é um sistema interno brasileiro, então a
+  // data/hora exibida já é horário de Brasília (fuso fixo, sem DST desde
+  // 2019), nunca UTC. Ver "achado 3" no comentário do topo do arquivo —
+  // usar "Z" aqui fazia a data exibida no app "voltar" pro dia anterior.
+  const iso = `${ano}-${mes}-${dia}T${hh}:${mm}:${ss}-03:00`;
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }

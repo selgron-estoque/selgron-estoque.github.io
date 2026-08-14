@@ -18752,3 +18752,39 @@ CSS (668/668, sem mudança — só JSX removido, nenhuma classe CSS tocada).
 **Ainda falta**: agendar o `pg_cron` de 30 em 30 min (seção 13.4 do
 `backend/README.md`) — até lá, a tela só atualiza via clique manual em
 "Sincronizar agora".
+
+
+## Bug real: data de abertura da SA aparecia 1 dia "voltada" — fuso horário
+
+Cliente comparou a tabela do app com a página real (`sa_aberto.php`) e
+apontou: a mesma SA (073491) mostrava "Emissao: 12/08/2026" na página real,
+mas "11/08/2026, 21:00:00" na tela "SAs em Aberto" do app.
+
+- **Causa**: `parseDataHoraCelula` (Edge Function `sync-sa-almoxarifado`)
+  montava o ISO da data com sufixo `"Z"` (UTC) — "Emissao: 12/08/2026" (sem
+  hora, tratado como meia-noite) virava `2026-08-12T00:00:00Z`. Só que a
+  página é um sistema interno brasileiro — a data exibida ali já é horário
+  de Brasília, não UTC. Gravar como meia-noite EM UTC e depois exibir
+  convertido de volta pra Brasília (`new Date(...).toLocaleString('pt-BR')`,
+  index.html) empurrava a data pro dia ANTERIOR às 21h (meia-noite UTC =
+  21h do dia anterior em UTC-3) — o sintoma exato reportado. Diferente da
+  limitação já documentada ("Emissao não tem hora, só até ~24h de
+  imprecisão") — isso aqui trocava o DIA inteiro, não só a hora.
+- **Corrigido**: o sufixo virou `"-03:00"` (Brasília, fuso fixo — Brasil
+  não tem mais horário de verão desde 2019, não precisa de lógica de DST)
+  em vez de `"Z"` — meia-noite em Brasília agora é gravada como 03:00 UTC,
+  e ao converter de volta pra exibição em Brasília mostra meia-noite do dia
+  CERTO.
+- Testado via o mesmo harness já existente
+  (`harness_sa_almoxarifado.js`, réplica JS da lógica de parsing) — a
+  asserção que checava o ISO gerado foi atualizada pro valor certo
+  (`2026-08-11T03:00:00.000Z` em vez de `...T00:00:00.000Z`, pro mesmo
+  exemplo "Emissao: 11/08/2026"). `tsc --noEmit --strict` sem erro. Suíte
+  completa do scratchpad (68 harnesses) sem regressão.
+- **Falta o cliente redeployar** — `npx supabase functions deploy
+  sync-sa-almoxarifado` de novo (mesmo comando de sempre) — até lá, as SAs
+  JÁ sincronizadas no banco continuam com a data errada (a correção só vale
+  pra próximas sincronizações; não fiz nenhum `update` retroativo, já que
+  o próximo poll de 30 min — ou um "Sincronizar agora" manual — já
+  regrava `aberta_em` de qualquer item ainda `'aberta'` com o valor
+  certo, corrigindo sozinho com o tempo, sem precisar de SQL manual).
