@@ -18721,3 +18721,34 @@ vez que a function de fato faz um `fetch()` autenticado contra
 nunca passou pela function rodando de verdade) — se algo não bater
 (formato mudou de novo, autenticação diferente da de produto/Kardex),
 mandar o HTML real de novo resolve rápido, mesmo processo já estabelecido.
+
+
+## "SAs em Aberto" — primeiro sync real confirmado (215 SAs) + limpeza de texto
+
+Cliente rodou o SQL, publicou `sync-sa-almoxarifado` (guiado passo a passo no
+terminal — mesmo processo de sempre pra quem é leigo em terminal: achar a
+pasta local já vinculada ao projeto Supabase de deploys anteriores, criar a
+subpasta da função nova, baixar o `index.ts` direto do GitHub via
+`Invoke-WebRequest`, e `npx supabase functions deploy`) e clicou
+**"Sincronizar agora"** — a PRIMEIRA vez que a função de fato buscou
+`sa_aberto.php` ao vivo, não só análise estática do HTML colado antes.
+**Funcionou de primeira**: 215 SAs encontradas na consulta, sem nenhum erro
+de parser — confirma que a calibração feita só a partir do HTML colado
+(sem nunca ter rodado contra o site real) bateu certo com a estrutura de
+verdade da página.
+
+Depois de ver a tela funcionando, pediu pra remover 2 textos: o `role-note`
+fixo no topo ("Sincroniza sozinho a cada 30 min... uma SA que some da
+consulta é considerada atendida na hora em que o sync percebe isso.") e a
+mensagem de sucesso que aparecia depois de clicar "Sincronizar agora"
+("Sincronizado agora — N SA(s) na consulta."). **A mensagem de ERRO foi
+mantida** (`msgSync.tipo==='erro'`) — continua útil se uma sincronização
+manual falhar; só o feedback de sucesso/o texto explicativo saíram, por
+decisão explícita do cliente confirmada via `AskUserQuestion` (as duas
+opções de remoção parcial foram oferecidas, ele escolheu remover as duas).
+
+Testado via transpile Babel do arquivo inteiro e balanceamento de chaves do
+CSS (668/668, sem mudança — só JSX removido, nenhuma classe CSS tocada).
+**Ainda falta**: agendar o `pg_cron` de 30 em 30 min (seção 13.4 do
+`backend/README.md`) — até lá, a tela só atualiza via clique manual em
+"Sincronizar agora".
