@@ -18954,3 +18954,142 @@ pedido é lançar uma FILA inteira de uma vez, colando vários códigos.
   de paste de verdade num navegador/tablet real, incluindo o caso de colar
   vindo do Excel) fica a cargo do cliente** — mesma limitação de sempre
   (login exige Supabase Auth real, não simulável no sandbox sem rede).
+
+## "Analisados" ganha, no menu "⋮", a opção de voltar o item pra "Itens Divergentes"
+
+Cliente pediu: "Tem umas contagens que liberei de 'Itens divergentes' para
+Analise, coloque naqueles 3 pontinhos a opção de voltar o item para a
+etapa anterior" — até aqui, o fluxo de 3 etapas (Itens Divergentes →
+Analisados → Aguardando Aprovação, ver "Fluxo real de ajuste de estoque da
+Selgron" no histórico acima) só andava PRA FRENTE — uma vez que o líder
+clicava "Enviar para SA" em "Itens Divergentes" (`enviarParaArmazem`), o
+item ficava preso em "Analisados" até alguém digitar o número da SA e
+decidir Ajuste/Devolução — sem nenhum jeito de desfazer um envio feito por
+engano (ou de "devolver" um item que na real ainda precisava de mais
+análise antes de virar uma SA de verdade).
+
+- **`voltarParaAnaliseLider(countId)`** (`App()`, logo depois de
+  `enviarParaArmazem`) — reverso exato: `status_aprovacao:
+  'aguardando_analise_lider'` (mesmo destino de origem), **zera**
+  `sa_gerada_por`/`sa_gerada_em` — a "liberação pra ajuste" que gerou esses
+  2 campos nunca chegou a se confirmar de verdade (nenhuma SA foi
+  realmente gerada nem processada pelo Armazém); se o líder mandar de novo
+  pra "Analisados" depois, `enviarParaArmazem` regrava os dois do zero,
+  normalmente. Mesmo padrão `await updateContagemStatusToSupabase(...)` →
+  só atualiza `counts` local se `res.ok` → sempre `return res` (pro
+  chamador mostrar erro inline se falhar) já usado por TODA ação de
+  status deste fluxo (`enviarParaArmazem`/`enviarParaAprovacaoDiretoria`/
+  `aprovarAjusteDiretoria`/`reprovarAjusteDiretoria`).
+- **Sem confirmação** — mesmo critério já usado em "Marcar urgente"/
+  "Liberar para o mesmo operador": não é uma ação destrutiva (o item só
+  reposiciona numa fila anterior do MESMO fluxo, nada é apagado, e pode
+  ser reenviado pra "Analisados" a qualquer momento depois), diferente de
+  "Excluir contagem"/"Reprovar", que exigem confirmação/motivo.
+- **`SolicitacaoArmazemPanel`** ("Analisados") ganhou a prop opcional
+  `onVoltarParaAnaliseLider` — o item novo no dropdown "⋮" (`<Ic>←</Ic>
+  Voltar para Itens Divergentes`) fica logo abaixo de "Marcar urgente"/
+  "Remover urgência" e acima de "Excluir contagem", com o MESMO gate
+  `canDecide` (líder OU admin — mesmo grupo que já decide Ajuste/
+  Devolução nesta tela) e `busyId`/`erros` já usados pelas outras ações do
+  painel — reaproveita o ícone `←` já mapeado em `EMOJI_TO_DICON`
+  (`chevronLeft`), sem precisar desenhar ícone novo. Só aparece quando a
+  prop é passada — mesmo padrão de "compatibilidade por presença de prop"
+  já usado pra `onDeleteCount`.
+- Testado via harness dedicado (`harness_voltar_analise_lider.js`, jsdom +
+  react-dom/client + `act()`, mesma técnica rigorosa de sempre — carrega o
+  `index.html` inteiro transpilado numa `vm.Script`): sem a prop, a opção
+  não aparece em lugar nenhum; com a prop e perfil líder/admin, o botão
+  aparece no dropdown, clicar chama o callback com o id certo e fecha o
+  menu sozinho; perfil operador não vê nem o "⋮" nesta tela; falha
+  simulada na gravação remota mostra o erro inline, sem fingir sucesso.
+  Rodei de novo toda a suíte de regressão do scratchpad (70 harnesses) —
+  0 falhas. Transpile Babel do arquivo inteiro e balanceamento de chaves
+  do CSS conferidos (668/668, sem mudança — nenhuma classe CSS nova, só
+  JS/JSX). **Falta o cliente confirmar visualmente** — mesma limitação de
+  sempre (login exige Supabase Auth real, não simulável no sandbox sem
+  rede).
+
+## "Colar lista de vários códigos" muda de lugar — de Contagem Manual pra "Itens Específicos"
+
+Cliente corrigiu o próprio pedido no mesmo dia em que a 1ª versão foi
+publicada (ver seção anterior no histórico, "'Colar lista de vários
+códigos' em Contagem Manual — fila via Ctrl+V"): "Errei aqui, essa opção
+tirar de contagem manual e mandar para Itens específicos, faz mais
+sentido conforme vou colando vai adicionando na fila de contagem" — a
+versão anterior lançava uma FILA DE CONTAGEM imediata (via
+`ManualPasteQueueFlow`, um motor próprio em cima de `useCountQueue`,
+igual Aleatória/Rota/Lista Importada) assim que o operador colava vários
+códigos em "Nova Contagem" → "Manual". Não era o caso de uso real: "Itens
+Específicos" (o tipo de inventário onde o líder já busca/clica
+"Adicionar" item por item pra montar a lista de um documento antes de
+criá-lo) é onde colar uma lista inteira faz sentido — cada código
+reconhecido só ENTRA NA FILA (o array `itensImportados` que já vira o
+inventário ao clicar "Criar Inventário"), sem disparar nenhuma tela de
+contagem.
+
+- **`ManualPasteQueueFlow` removida por completo** — junto dela, todo o
+  estado/UI que só existia em `ManualCountFlow` pra essa 1ª versão
+  (`colarAberto`/`colarTexto`/`carregandoLista`/`listaItems`/
+  `listaSessionId`, a função `lancarFilaColada`, o botão colapsável e o
+  bloco `if(listaItems){...}` que renderizava a fila). `ManualCountFlow`
+  volta a ser só busca+seleção avulsa, como era antes desta feature toda
+  existir — `parseCodigosColados` (a função de extrair códigos de um texto
+  colado) **não foi removida**, é genérica o bastante pra ser reaproveitada
+  no novo lugar sem mudar uma linha.
+- **`colarListaEspecificos(texto)`** (novo, dentro de `NewInventory`, logo
+  depois de `addItemEspecifico`/`removeItemEspecifico`) — reaproveita
+  `parseCodigosColados` (extração) + `fetchProdutosByCodigos` em lote
+  (mesma técnica de sempre — 1 requisição só pra todos os códigos, não uma
+  por item, já usada por `ImportedListCountFlow`/a versão anterior desta
+  mesma feature). Pra cada código: se já está na lista (`itensImportados`),
+  não duplica (mesmo critério de `addItemEspecifico`, "ignora clique
+  duplicado"); se achou no catálogo, adiciona com os dados reais (mesmo
+  shape que `addItemEspecifico` já produz — `{codigo, descricao, endereco,
+  almoxarifado:'', saldoSistema}`); se NÃO achou, adiciona mesmo assim, com
+  um fallback sintético (`descricao:codigo`, sem endereço/saldo) — nunca
+  bloqueia a colagem por um código desconhecido, mesmo critério de sempre
+  neste projeto (`foraDoCacheLocal`/fallback já usado em Lista Importada/
+  Recontagem). **Motivo de ser seguro adicionar sem resolver no catálogo
+  agora**: `ImportedListCountFlow` (o motor que de fato conta os itens de
+  "Itens Específicos"/"Lista Importada") já refaz essa MESMA busca AO VIVO
+  no momento de abrir o inventário pra contar (ver comentário lá,
+  "planilha continua prevalecendo sobre o catálogo... busca em lote, uma
+  requisição só") — um código "não encontrado" agora pode muito bem
+  resolver sozinho depois, sem precisar bloquear nada aqui.
+- **UI**: dentro do bloco `{isEspecificos && (...)}`, logo abaixo dos
+  resultados de busca — mesmo padrão visual/interativo já usado na versão
+  anterior (botão colapsável "Colar lista de vários códigos" com ícone
+  📋, textarea com `onPaste` que já lança a ação na hora — "colar (Ctrl+V)
+  já adiciona à fila" —, contador "N código(s) reconhecido(s)" ao vivo, e
+  um botão "Adicionar à fila (N)" como caminho manual de reforço). Ganhou
+  um resumo pós-ação (`especColarResumo`, `role-note`) que a versão
+  anterior não precisava ter (lá o resultado era visível na própria fila
+  de contagem que abria em seguida) — "N código(s) adicionado(s) à fila, M
+  já estava(m) na lista, K não foi(ram) encontrado(s) no catálogo
+  (adicionado(s) mesmo assim, dá pra contar normalmente)".
+- Testado via harness dedicado (`harness_especificos_colar_lista.js`,
+  jsdom + react-dom/client + `act()`, mesma técnica rigorosa de sempre —
+  carrega o `index.html` inteiro transpilado numa `vm.Script`, Supabase
+  mockado): confirmado por checagem de código-fonte que
+  `ManualPasteQueueFlow`/todo o estado antigo não sobra em lugar nenhum, e
+  que `ManualCountFlow` renderizado de verdade não mostra mais nenhum
+  botão/campo de colar; de ponta a ponta em `NewInventory` — escolher
+  "Itens Específicos", abrir "Colar lista de vários códigos", colar 2
+  códigos (1 no catálogo mockado + 1 fora dele) via simulação do evento de
+  paste, confirma que os 2 entram na fila (nenhuma tela de contagem é
+  aberta, `CountStep` nunca é renderizado), e que colar de novo com 1
+  código repetido + 1 novo só acrescenta o novo (resumo confirma "1
+  código adicionado" + "já estava na lista"). Um harness antigo desta
+  mesma feature (`harness_pular_contagem_defer.js`, que checava
+  `onSkip={()=>q.defer()}` aparecendo 4x — Random/Route/ImportedList/
+  `ManualPasteQueueFlow`) foi ajustado de volta pra 3x, já que o motor de
+  fila de contagem que essa 4ª ocorrência representava deixou de existir.
+  Rodei de novo toda a suíte de regressão do scratchpad (70 harnesses,
+  incluindo `harness_voltar_analise_lider.js` desta mesma rodada) — 0
+  falhas. Transpile Babel do arquivo inteiro e balanceamento de chaves do
+  CSS conferidos (668/668, sem mudança — nenhuma classe CSS nova, só JS/
+  JSX). **Verificação visual/funcional de ponta a ponta (colar de verdade
+  vindo do Excel, num navegador/tablet real) fica a cargo do cliente** —
+  mesma limitação de sempre (login exige Supabase Auth real, não
+  simulável no sandbox sem rede).
+

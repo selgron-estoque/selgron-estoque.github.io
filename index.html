@@ -5658,6 +5658,27 @@ function App(){
     return res;
   }
 
+  // Etapa 1, REVERSA — pedido do cliente: "tem umas contagens que liberei
+  // de 'Itens Divergentes' para Analise... voltar o item para a etapa
+  // anterior" — desfaz `enviarParaArmazem` sem exigir nada (sem SA, sem
+  // motivo, sem confirmação — mesmo critério de "Marcar urgente"/"Liberar
+  // para o mesmo operador": não é uma ação destrutiva, só reposiciona o
+  // item numa fila anterior do MESMO fluxo). Limpa sa_gerada_por/
+  // sa_gerada_em — a "liberação pra ajuste" que gerou esses campos nunca
+  // se confirmou de verdade; se o líder mandar de novo pra "Analisados"
+  // depois, `enviarParaArmazem` regrava os dois normalmente.
+  async function voltarParaAnaliseLider(countId){
+    const res = await updateContagemStatusToSupabase(countId, {
+      status_aprovacao: 'aguardando_analise_lider',
+      sa_gerada_por: null,
+      sa_gerada_em: null,
+    });
+    if(res.ok){
+      setCounts(prev=>prev.map(c=>c.id===countId?{...c, statusAprovacao:'aguardando_analise_lider', saGeradaPor:null, saGeradaEm:null}:c));
+    }
+    return res;
+  }
+
   // Etapa 2 — líder/admin digita o número da SA (chegou do Armazém) e, na
   // MESMA ação, decide se o caso é Ajuste ou Devolução (`ehDevolucao`) — já
   // encaminha direto pra decisão da Diretoria. É o número que "libera" as
@@ -6300,7 +6321,7 @@ function App(){
         {view==='importedListCount' && <ImportedListCountFlow inv={flowState} user={currentUser} counts={counts} inventories={inventories} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
         {view==='recounts' && hasAccess(currentUser,'recounts') && <RecountsPanel counts={counts} inventories={inventories} role={role} currentUser={currentUser} users={users} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onToggleLiberarOriginal={toggleLiberarRecontagemOriginal} onEditarMotivoObservacao={editarMotivoObservacaoContagem} onAtribuir={atribuirContagem} operadorVeValoresRecontagem={operadorVeValoresRecontagem} />}
         {view==='divergentes' && hasAccess(currentUser,'divergentes') && <DivergentItemsPanel counts={counts} inventories={inventories} role={role} goto={goto} onApprove={approveDivergence} onEnviarParaArmazem={enviarParaArmazem} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onEditarMotivoObservacao={editarMotivoObservacaoContagem} />}
-        {view==='solicitacaoArmazem' && hasAccess(currentUser,'solicitacaoArmazem') && <SolicitacaoArmazemPanel counts={counts} inventories={inventories} role={role} onEnviarParaDiretoria={enviarParaAprovacaoDiretoria} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} />}
+        {view==='solicitacaoArmazem' && hasAccess(currentUser,'solicitacaoArmazem') && <SolicitacaoArmazemPanel counts={counts} inventories={inventories} role={role} onEnviarParaDiretoria={enviarParaAprovacaoDiretoria} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onVoltarParaAnaliseLider={voltarParaAnaliseLider} />}
         {view==='aprovacaoDiretoria' && hasAccess(currentUser,'aprovacaoDiretoria') && <DiretoriaApprovalPanel counts={counts} inventories={inventories} role={role} onApproveSA={aprovarAjusteDiretoria} onRejectSA={reprovarAjusteDiretoria} onToggleUrgente={toggleUrgente} />}
         {view==='todasDivergencias' && <AllDivergencesPanel counts={counts} historicoConcluidas={historicoConcluidas} goto={goto} />}
         {view==='concluidas' && hasAccess(currentUser,'concluidas') && <ConcludedCountsPanel counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} onDeleteCount={role==='admin' ? deleteCount : undefined} onReprovarAjusteHistorico={role==='admin' ? reprovarAjusteHistorico : undefined} onRefresh={refreshHistoricoConcluidas} onEditarMotivoObservacao={role==='admin' ? editarMotivoObservacaoContagem : undefined} />}
@@ -8129,6 +8150,55 @@ function NewInventory({onCreate, goto, inventories, gruposExcluidos}){
     setItensImportados(prev=>(prev||[]).filter(it=>it.codigo!==codigo));
   }
 
+  // "Colar lista de vários códigos" — pedido original do cliente tinha isso
+  // em Contagem Manual (fila de contagem imediata), mas ele corrigiu o rumo
+  // na hora: "essa opção tirar de contagem manual e mandar para Itens
+  // específicos, faz mais sentido conforme vou colando vai adicionando na
+  // fila de contagem" — aqui não lança nenhuma contagem, só ACRESCENTA cada
+  // código reconhecido à mesma fila que "Adicionar" (busca item por item)
+  // já constrói, reaproveitando `parseCodigosColados` (extração de códigos
+  // de um texto colado, já existia pra esse fim antes de mudar de tela) +
+  // `fetchProdutosByCodigos` em lote (mesma técnica de sempre — 1 requisição
+  // só pra todos os códigos, não uma por item).
+  const [especColarAberto, setEspecColarAberto] = useState(false);
+  const [especColarTexto, setEspecColarTexto] = useState('');
+  const [especColarCarregando, setEspecColarCarregando] = useState(false);
+  const [especColarResumo, setEspecColarResumo] = useState(null);
+
+  // Código não encontrado no catálogo ainda assim entra na fila (fallback
+  // sintético, `descricao:codigo`, mesmo critério já usado no fallback de
+  // `ImportedListCountFlow`) — essa mesma tela já refaz a busca AO VIVO no
+  // momento de contar (ver comentário em `ImportedListCountFlow`), então um
+  // "não encontrado" agora pode muito bem resolver sozinho depois; bloquear
+  // a colagem por isso perderia o item sem necessidade.
+  async function colarListaEspecificos(texto){
+    const codigos = parseCodigosColados(texto);
+    if(codigos.length===0) return;
+    setEspecColarCarregando(true);
+    const catalogo = await fetchProdutosByCodigos(codigos);
+    const listaAtual = itensImportados || [];
+    const existentes = new Set(listaAtual.map(it=>it.codigo));
+    let adicionados = 0, jaEstavam = 0, naoEncontrados = 0;
+    const novos = [];
+    codigos.forEach(codigo=>{
+      if(existentes.has(codigo)){ jaEstavam++; return; }
+      const p = catalogo.get(codigo);
+      if(p){
+        novos.push({codigo:p.codigo, descricao:p.descricao, endereco:p.endereco||'', almoxarifado:'', saldoSistema:p.saldoSistema});
+      } else {
+        naoEncontrados++;
+        novos.push({codigo, descricao:codigo, endereco:'', almoxarifado:'', saldoSistema:null});
+      }
+      existentes.add(codigo);
+      adicionados++;
+    });
+    setItensImportados([...listaAtual, ...novos]);
+    setEspecColarResumo({adicionados, jaEstavam, naoEncontrados});
+    setEspecColarTexto('');
+    setEspecColarAberto(false);
+    setEspecColarCarregando(false);
+  }
+
   useEffect(()=>{
     let cancelado = false;
     fetchEstoqueValorPorAlmoxarifado().then(rows=>{
@@ -8427,6 +8497,46 @@ function NewInventory({onCreate, goto, inventories, gruposExcluidos}){
                 </div>
               );
             })}
+
+            <div style={{marginTop:16}}>
+              <button type="button" className="btn btn-outline btn-sm" onClick={()=>setEspecColarAberto(v=>!v)}>
+                <Ic>📋</Ic> {especColarAberto ? 'Ocultar' : 'Colar lista de vários códigos'}
+              </button>
+              {especColarAberto && (
+                <div className="field" style={{marginTop:10}}>
+                  <label>Cole os códigos (um por linha, ou separados por vírgula/espaço) — colar (Ctrl+V) já adiciona à fila</label>
+                  <textarea
+                    rows={4}
+                    value={especColarTexto}
+                    onChange={e=>setEspecColarTexto(e.target.value)}
+                    onPaste={e=>{
+                      const texto = e.clipboardData.getData('text');
+                      e.preventDefault();
+                      setEspecColarTexto(texto);
+                      colarListaEspecificos(texto);
+                    }}
+                    placeholder={'Ex:\n000.35310\n000.02353\n021.030.00023'}
+                  />
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:8,gap:10}}>
+                    <span style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)'}}>{parseCodigosColados(especColarTexto).length} código(s) reconhecido(s)</span>
+                    <button
+                      className="btn btn-primary btn-sm"
+                      disabled={especColarCarregando || parseCodigosColados(especColarTexto).length===0}
+                      onClick={()=>colarListaEspecificos(especColarTexto)}
+                    >
+                      {especColarCarregando ? 'Adicionando…' : 'Adicionar à fila ('+parseCodigosColados(especColarTexto).length+')'}
+                    </button>
+                  </div>
+                </div>
+              )}
+              {especColarResumo && (
+                <div className="role-note" style={{marginTop:10}}>
+                  <strong>{especColarResumo.adicionados}</strong> {especColarResumo.adicionados===1?'código adicionado':'códigos adicionados'} à fila
+                  {especColarResumo.jaEstavam>0 && (', ' + especColarResumo.jaEstavam + (especColarResumo.jaEstavam===1?' já estava':' já estavam') + ' na lista')}
+                  {especColarResumo.naoEncontrados>0 && (' — ' + especColarResumo.naoEncontrados + (especColarResumo.naoEncontrados===1?' não foi encontrado':' não foram encontrados') + ' no catálogo (adicionado' + (especColarResumo.naoEncontrados===1?'':'s') + ' mesmo assim, dá pra contar normalmente).')}
+                </div>
+              )}
+            </div>
 
             <div className="opt-desc" style={{marginTop:16,marginBottom:6}}>
               <strong>{(itensImportados||[]).length}</strong> {(itensImportados||[]).length===1 ? 'item adicionado' : 'itens adicionados'} à fila
@@ -9732,69 +9842,6 @@ function parseCodigosColados(texto){
   return unicos;
 }
 
-// Motor de fila pra "colar lista de vários códigos" em Contagem Manual —
-// pedido do cliente: "colar vários itens... Ctrl+V e ele lançar as
-// contagens um a um". Componente PRÓPRIO (não inline dentro de
-// `ManualCountFlow`) só pra poder remontar via `key` a cada novo "lançar
-// fila" — `useCountQueue` guarda `processados`/`adiados` como estado
-// LOCAL do hook; se `ManualCountFlow` chamasse `useCountQueue` direto e só
-// trocasse o array de itens entre uma colagem e outra (sem o componente em
-// si desmontar, já que "Contagem Manual" nunca navega pra fora entre
-// contagens — mesmo padrão já usado pro item avulso via busca), um código
-// que por coincidência já tivesse sido processado numa colagem ANTERIOR
-// ficaria escondido como "já contado" na fila NOVA. Trocar a `key` no ponto
-// de uso (`listaSessionId`, incrementado a cada `lancarFilaColada`) força
-// uma instância nova deste componente — e portanto um `useCountQueue` com
-// estado interno limpo — a cada fila lançada, mesmo truque já usado em
-// `key={q.current.codigo}`/`key={selected.codigo}` no resto do app.
-function ManualPasteQueueFlow({items, user, counts, inventories, onAddressProposed, onRegisterCount, operadorVeSaldo, onReservarItem, onLiberarItemReserva, onDone}){
-  const q = useCountQueue(items);
-
-  if(q.done){
-    return (
-      <div className="empty-state">
-        <div className="ic"><Ic size={40}>🎉</Ic></div>
-        Fila concluída — {items.length} {items.length===1?'item contado':'itens contados'} da lista colada.
-        <div style={{marginTop:16}}>
-          <button className="btn btn-primary" onClick={onDone}>Voltar à busca</button>
-        </div>
-      </div>
-    );
-  }
-
-  // Mesmo bloqueio já usado em `ManualCountFlow`/`ImportedListCountFlow`/
-  // `RandomCountFlow`/`RouteCountFlow` — item da fila que já está pendente
-  // em outro inventário "Itens Específicos"/"Lista Importada" (único tipo
-  // com lista fixa pra cruzar).
-  const conflitoInventario = inventories ? getOpenInventoryItemConflict(inventories, counts, null, q.current.codigo) : null;
-
-  return (
-    <div>
-      {q.idx===0 && (
-        <div className="role-note" style={{marginBottom:14}}>
-          Lista colada: {items.length} {items.length===1?'item':'itens'}, contando um de cada vez — "Pular" na tela de contagem manda o item pro final da fila sem perder nem contar como concluído.
-        </div>
-      )}
-      <CountStep
-        key={q.current.codigo}
-        product={q.current}
-        user={user}
-        counts={counts}
-        queueAtual={q.idx+1}
-        queueTotal={q.total}
-        onAddressProposed={onAddressProposed}
-        conflitoInventario={conflitoInventario}
-        onSkip={()=>q.defer()}
-        onComplete={(c)=>{ onRegisterCount(c); q.next(); }}
-        expectAddressCheck={true}
-        operadorVeSaldo={operadorVeSaldo}
-        onReservarItem={onReservarItem}
-        onLiberarItemReserva={onLiberarItemReserva}
-      />
-    </div>
-  );
-}
-
 function ManualCountFlow({user, onRegisterCount, onAddressProposed, counts, operadorVeSaldo, onReservarItem, onLiberarItemReserva, inventories}){
   // Armazém já nasce pré-selecionado em "1" (Armazém 01, disparado sozinho
   // na esmagadora maioria dos casos reais — ver CLAUDE.md "Cards de estoque
@@ -9810,16 +9857,6 @@ function ManualCountFlow({user, onRegisterCount, onAddressProposed, counts, oper
   const [scanning, setScanning] = useState(false);
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
-  // "Colar lista de vários códigos" — pedido do cliente pra lançar uma fila
-  // de contagem inteira colando (Ctrl+V) vários códigos de uma vez, em vez
-  // de buscar/selecionar um a um. `listaSessionId` muda a cada fila
-  // lançada, só pra forçar `ManualPasteQueueFlow` a remontar com estado
-  // limpo (ver comentário lá).
-  const [colarAberto, setColarAberto] = useState(false);
-  const [colarTexto, setColarTexto] = useState('');
-  const [carregandoLista, setCarregandoLista] = useState(false);
-  const [listaItems, setListaItems] = useState(null);
-  const [listaSessionId, setListaSessionId] = useState(0);
 
   // Lista de armazéns com saldo carregado, pro <select> — mesma fonte que
   // `ArmazemGate` já usava. Roda uma vez, em paralelo com o resto da tela
@@ -9850,54 +9887,6 @@ function ManualCountFlow({user, onRegisterCount, onAddressProposed, counts, oper
     }, 350);
     return ()=>{ cancelado = true; clearTimeout(timer); };
   }, [query, armazem]);
-
-  // Resolve os códigos colados em lote (mesmo padrão de
-  // `ImportedListCountFlow`/`fetchProdutosByCodigos`) e lança a fila — cai
-  // no MESMO fallback sintético já usado em toda a rodada quando o código
-  // não está no catálogo (`foraDoCacheLocal:true`, saldo tratado como 0
-  // real) em vez de bloquear/pular o item: a descrição/saldo/endereço ao
-  // vivo (consulta Selgron, já ligada dentro de `CountStep`) ainda resolve
-  // esses campos na hora de contar, mesmo pra um código fora do catálogo.
-  async function lancarFilaColada(texto){
-    const codigos = parseCodigosColados(texto);
-    if(codigos.length===0) return;
-    setCarregandoLista(true);
-    const catalogo = await fetchProdutosByCodigos(codigos, armazem);
-    const itens = codigos.map(codigo=>{
-      const doCatalogo = catalogo.get(codigo);
-      if(doCatalogo) return doCatalogo;
-      return {
-        codigo, descricao: codigo, unidade: null, familia: '—',
-        endereco: null, enderecoCadastrado: false, almoxarifado: armazem,
-        corredor: null, rua: null, saldoSistema: 0, custoUnit: 0,
-        valorFinanceiro: 0, semMovimentoRecente: false, ultimaSaida: null,
-        foraDoCacheLocal: true,
-      };
-    });
-    setListaItems(itens);
-    setListaSessionId(id=>id+1);
-    setColarTexto('');
-    setColarAberto(false);
-    setCarregandoLista(false);
-  }
-
-  if(listaItems){
-    return (
-      <ManualPasteQueueFlow
-        key={listaSessionId}
-        items={listaItems}
-        user={user}
-        counts={counts}
-        inventories={inventories}
-        onAddressProposed={onAddressProposed}
-        onRegisterCount={onRegisterCount}
-        operadorVeSaldo={operadorVeSaldo}
-        onReservarItem={onReservarItem}
-        onLiberarItemReserva={onLiberarItemReserva}
-        onDone={()=>setListaItems(null)}
-      />
-    );
-  }
 
   if(selected){
     // Pedido do cliente: ao confirmar a contagem, volta pra ESTA MESMA tela
@@ -9963,38 +9952,6 @@ function ManualCountFlow({user, onRegisterCount, onAddressProposed, counts, oper
       <div className="field">
         <label>Ou buscar por código, descrição ou código de barras</label>
         <input type="text" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Ex: 000.35310 ou parafuso" />
-      </div>
-      <div style={{marginBottom:14}}>
-        <button type="button" className="btn btn-outline btn-sm" onClick={()=>setColarAberto(v=>!v)}>
-          <Ic>📋</Ic> {colarAberto ? 'Ocultar' : 'Colar lista de vários códigos'}
-        </button>
-        {colarAberto && (
-          <div className="field" style={{marginTop:10}}>
-            <label>Cole os códigos (um por linha, ou separados por vírgula/espaço) — colar (Ctrl+V) já lança a fila</label>
-            <textarea
-              rows={4}
-              value={colarTexto}
-              onChange={e=>setColarTexto(e.target.value)}
-              onPaste={e=>{
-                const texto = e.clipboardData.getData('text');
-                e.preventDefault();
-                setColarTexto(texto);
-                lancarFilaColada(texto);
-              }}
-              placeholder={'Ex:\n000.35310\n000.02353\n021.030.00023'}
-            />
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:8,gap:10}}>
-              <span style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)'}}>{parseCodigosColados(colarTexto).length} código(s) reconhecido(s)</span>
-              <button
-                className="btn btn-primary btn-sm"
-                disabled={carregandoLista || parseCodigosColados(colarTexto).length===0}
-                onClick={()=>lancarFilaColada(colarTexto)}
-              >
-                {carregandoLista ? 'Carregando…' : 'Lançar fila ('+parseCodigosColados(colarTexto).length+')'}
-              </button>
-            </div>
-          </div>
-        )}
       </div>
       {loading && <div className="empty-state">Buscando no catálogo…</div>}
       {!loading && results.length===0 && query && <div className="empty-state">Nenhum item encontrado.</div>}
@@ -11395,7 +11352,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onEnvi
 // número que "libera" as duas decisões juntas, exatamente como o cliente
 // descreveu). Mesmo shell visual das outras telas de contagem (count-card/
 // SearchWithScanner/TrendFilterBar/result-grid-4col).
-function SolicitacaoArmazemPanel({counts, inventories, role, onEnviarParaDiretoria, onDeleteCount, onToggleUrgente}){
+function SolicitacaoArmazemPanel({counts, inventories, role, onEnviarParaDiretoria, onDeleteCount, onToggleUrgente, onVoltarParaAnaliseLider}){
   const canDecide = role==='lider' || role==='admin';
   const aguardandoArmazem = counts.filter(c=>c.statusAprovacao==='aguardando_solicitacao_armazem');
 
@@ -11446,6 +11403,17 @@ function SolicitacaoArmazemPanel({counts, inventories, role, onEnviarParaDiretor
     const res = await onToggleUrgente(c.id, !c.urgente);
     setBusyId(null);
     if(!res || !res.ok) setErros(prev=>({...prev, [c.id]: (res && res.erro) || 'Não foi possível salvar — tente novamente.'}));
+  }
+
+  // Pedido do cliente: "coloque naqueles 3 pontinhos a opção de voltar o
+  // item para a etapa anterior" — devolve o item pra "Itens Divergentes",
+  // sem confirmação (mesmo critério de "Marcar urgente", não é destrutivo).
+  async function handleVoltarAnaliseLider(c){
+    setBusyId(c.id);
+    setErros(prev=>({...prev, [c.id]: null}));
+    const res = await onVoltarParaAnaliseLider(c.id);
+    setBusyId(null);
+    if(!res || !res.ok) setErros(prev=>({...prev, [c.id]: (res && res.erro) || 'Não foi possível voltar o item — tente novamente.'}));
   }
 
   // Decisão de Ajuste ou Devolução acontece AQUI, junto com o número da SA
@@ -11528,6 +11496,9 @@ function SolicitacaoArmazemPanel({counts, inventories, role, onEnviarParaDiretor
                         <div className="count-card-menu-dropdown">
                           {canDecide && (
                             <button type="button" disabled={busyId===c.id} onClick={()=>{ handleToggleUrgente(c); setMenuAbertoId(null); }}><Ic>🔥</Ic> {busyId===c.id ? 'Salvando…' : (c.urgente ? 'Remover urgência' : 'Marcar urgente')}</button>
+                          )}
+                          {canDecide && onVoltarParaAnaliseLider && (
+                            <button type="button" disabled={busyId===c.id} onClick={()=>{ handleVoltarAnaliseLider(c); setMenuAbertoId(null); }}><Ic>←</Ic> {busyId===c.id ? 'Voltando…' : 'Voltar para Itens Divergentes'}</button>
                           )}
                           {onDeleteCount && (
                             <button type="button" className="menu-item-danger" onClick={()=>{ setConfirmDeleteId(c.id); setMenuAbertoId(null); }}><Ic>🗑</Ic> Excluir contagem</button>
