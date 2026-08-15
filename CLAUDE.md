@@ -18861,3 +18861,96 @@ NENHUMA quebra de página no DOM, e o Chrome ainda assim conta 2 páginas.
   + a checagem de "Mais definições" resolvem de verdade nessa máquina) fica
   100% a cargo do cliente** — mesma limitação de sempre nesta feature
   (sandbox sem impressora física, e login exige Supabase Auth real).
+
+
+## "Colar lista de vários códigos" em Contagem Manual — fila via Ctrl+V
+
+Cliente pediu: "Em contagem manual quero ter a opção de colar vários itens e
+ele lançar um crtl+v e ele lançar as contagens um a um" — até aqui,
+`ManualCountFlow` ("Nova Contagem" → "Manual") só permitia buscar/escanear
+UM item de cada vez, selecionar, contar, voltar pra busca, repetir. O
+pedido é lançar uma FILA inteira de uma vez, colando vários códigos.
+
+- **`parseCodigosColados(texto)`** (função nova, perto de `ManualCountFlow`)
+  — tokeniza em `/[\s,;]+/` (qualquer combinação de espaço/tab/quebra de
+  linha/vírgula/ponto-e-vírgula — cobre tanto colar de uma célula do Excel
+  quanto uma lista digitada separada por vírgula), remove vazio e
+  deduplica mantendo a 1ª ocorrência (mesmo critério já usado em
+  `parseImportedListRows`). Sem nenhuma validação de formato — qualquer
+  token vira um "código" tentado contra o catálogo; se não bater com nada,
+  cai no mesmo fallback sintético já usado em `ImportedListCountFlow`/
+  `RecountFlow` (`foraDoCacheLocal:true`, `saldoSistema:0` tratado como
+  real, `descricao: codigo` — nunca inventa uma descrição que não existe).
+- **`ManualPasteQueueFlow`** (componente novo, próprio — não inline dentro
+  de `ManualCountFlow`) — motor de fila mínimo em cima de `useCountQueue`
+  (o mesmo hook já usado por Aleatória/Rota/Lista Importada), reaproveitando
+  `CountStep` exatamente como os outros 3 fluxos com fila (`onSkip={()=>
+  q.defer()}`, progresso "Item X de Y", `conflitoInventario` checado via
+  `getOpenInventoryItemConflict` a cada item). Ao concluir todos, mostra
+  "Fila concluída — N itens contados" com um botão "Voltar à busca".
+  **Motivo de ser um componente separado, remontado via `key`**: `useCountQueue`
+  guarda `processados`/`adiados` como estado LOCAL do próprio hook — se
+  `ManualCountFlow` chamasse `useCountQueue` direto e só trocasse o array de
+  itens entre uma colagem e outra (o componente nunca desmonta entre
+  colagens, já que Contagem Manual nunca navega pra fora entre contagens),
+  um código que por coincidência já tivesse sido processado numa colagem
+  ANTERIOR ficaria escondido como "já contado" na fila NOVA. Resolvido com
+  o mesmo truque já usado em `key={q.current.codigo}`/`key={selected.codigo}`
+  no resto do app: `<ManualPasteQueueFlow key={listaSessionId} .../>`, com
+  `listaSessionId` incrementado a cada `lancarFilaColada` — força uma
+  instância nova (e portanto um `useCountQueue` com estado interno limpo) a
+  cada fila lançada, sem precisar tocar na assinatura do hook compartilhado.
+- **`ManualCountFlow`** ganhou o botão colapsável "Colar lista de vários
+  códigos" (fechado por padrão, mesmo critério de "poucos campos por tela"
+  já seguido no resto do app) — dentro dele, um `<textarea>` com
+  `onPaste` que já dispara `lancarFilaColada(texto)` na hora (o "Ctrl+V e
+  ele lançar" pedido explicitamente), MAIS um botão "Lançar fila (N)"
+  como caminho manual de reforço (digitar/colar sem o evento de paste
+  disparar corretamente em algum navegador/celular específico, ou o
+  operador preferir revisar antes de lançar) — os dois caminhos levam à
+  MESMA função. Contador "N código(s) reconhecido(s)" ao vivo, recalculado
+  a cada tecla.
+- **`lancarFilaColada(texto)`** — resolve os códigos em LOTE via
+  `fetchProdutosByCodigos(codigos, armazem)` (mesmo padrão já usado por
+  `ImportedListCountFlow`, uma requisição só pra todos os códigos, não uma
+  por item), monta a lista final (catálogo ou fallback sintético por
+  código) e chama `setListaItems`+`setListaSessionId(id=>id+1)` — a fila
+  aparece na MESMA tela, sem navegar pra lugar nenhum.
+- **Achado no caminho, sem mudar comportamento nenhum**: `fetchProdutosByCodigos`
+  nunca faz join com `enderecos` (só `produtos`+`estoque_saldo`) — mesmo um
+  código ACHADO no catálogo por essa função sai com `enderecoCadastrado:
+  false`, então TODO item da fila colada (achado ou não no catálogo) passa
+  pela etapa de informar o endereço manualmente — comportamento já
+  existente e correto (mesmo utilizado por `ImportedListCountFlow` pra
+  itens sem endereço na planilha), só documentado aqui pra não confundir
+  com bug.
+- Testado via harness novo (`harness_manual_colar_lista.js`, jsdom +
+  react-dom/client + `act()`, mesma técnica rigorosa de sempre — carrega o
+  `index.html` inteiro transpilado numa `vm.Script`, Supabase mockado):
+  `parseCodigosColados` isolada (separador por linha/vírgula/tab-espaço,
+  dedupe mantendo a 1ª ocorrência, texto vazio/`null`/só espaço); fluxo
+  completo via `ManualCountFlow` — botão de colar nasce fechado, digitar no
+  textarea atualiza o contador ao vivo e habilita "Lançar fila", um evento
+  de PASTE de verdade (3 códigos brutos com 1 repetido) já lança a fila
+  sozinho sem precisar clicar em nada, fecha a seção de colar sozinha,
+  mostra "Lista colada: 2 itens" (dedupe: 3→2); item 1 (achado no
+  catálogo) e item 2 (fora do catálogo, fallback sintético com
+  `descricao: codigo`) contados em sequência, cada um passando por
+  endereço→quantidade→confirmar, sem navegar pra fora da tela entre um e
+  outro (progresso "Item 1 de 2"/"Item 2 de 2" confirmado na etapa de
+  quantidade); `onRegisterCount` chamado exatamente 2 vezes, cada uma com
+  o `productCode` certo; ao concluir, "Fila concluída — 2 itens contados",
+  e "Voltar à busca" retorna pra tela de busca normal (botão de colar
+  lista reaparece). 34 asserções, todas passando. Rodei de novo toda a
+  suíte de regressão do scratchpad (69 harnesses) — 1 asserção precisou de
+  ajuste (`harness_pular_contagem_defer.js`, contagem de
+  `onSkip={()=>q.defer()}` subiu de 3 pra 4 ocorrências — mudança de
+  comportamento intencional desta rodada, o 4º fluxo com fila agora
+  existe; não é regressão), o resto passou sem tocar em nada. Transpile
+  Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos
+  (668/668, sem mudança — nenhuma classe CSS nova, reaproveita `.field`/
+  `.role-note`/`.empty-state`/`.btn-outline`/`.btn-sm`/`.btn-primary` já
+  existentes). **Verificação visual/funcional de ponta a ponta (o evento
+  de paste de verdade num navegador/tablet real, incluindo o caso de colar
+  vindo do Excel) fica a cargo do cliente** — mesma limitação de sempre
+  (login exige Supabase Auth real, não simulável no sandbox sem rede).

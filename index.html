@@ -9714,6 +9714,87 @@ function ArmazemGate({onSelected, titulo}){
   );
 }
 
+// Extrai códigos de produto de um texto colado (Ctrl+V) — um por linha, ou
+// separados por vírgula/ponto-e-vírgula/espaço/tab (cobre tanto colar uma
+// célula do Excel quanto digitar/colar uma lista separada por vírgula).
+// Remove vazio e duplicata (mantendo a 1ª ocorrência, mesmo critério já
+// usado em `parseImportedListRows`) — sem nenhuma validação de formato:
+// qualquer coisa que sobrar vira um "código" tentado contra o catálogo; se
+// não bater com nada, cai no mesmo fallback sintético já usado em
+// `ImportedListCountFlow`/`RecountFlow` (`foraDoCacheLocal:true`), nunca
+// bloqueia a fila por um código desconhecido.
+function parseCodigosColados(texto){
+  if(!texto) return [];
+  const brutos = String(texto).split(/[\s,;]+/).map(s=>s.trim()).filter(Boolean);
+  const vistos = new Set();
+  const unicos = [];
+  brutos.forEach(c=>{ if(!vistos.has(c)){ vistos.add(c); unicos.push(c); } });
+  return unicos;
+}
+
+// Motor de fila pra "colar lista de vários códigos" em Contagem Manual —
+// pedido do cliente: "colar vários itens... Ctrl+V e ele lançar as
+// contagens um a um". Componente PRÓPRIO (não inline dentro de
+// `ManualCountFlow`) só pra poder remontar via `key` a cada novo "lançar
+// fila" — `useCountQueue` guarda `processados`/`adiados` como estado
+// LOCAL do hook; se `ManualCountFlow` chamasse `useCountQueue` direto e só
+// trocasse o array de itens entre uma colagem e outra (sem o componente em
+// si desmontar, já que "Contagem Manual" nunca navega pra fora entre
+// contagens — mesmo padrão já usado pro item avulso via busca), um código
+// que por coincidência já tivesse sido processado numa colagem ANTERIOR
+// ficaria escondido como "já contado" na fila NOVA. Trocar a `key` no ponto
+// de uso (`listaSessionId`, incrementado a cada `lancarFilaColada`) força
+// uma instância nova deste componente — e portanto um `useCountQueue` com
+// estado interno limpo — a cada fila lançada, mesmo truque já usado em
+// `key={q.current.codigo}`/`key={selected.codigo}` no resto do app.
+function ManualPasteQueueFlow({items, user, counts, inventories, onAddressProposed, onRegisterCount, operadorVeSaldo, onReservarItem, onLiberarItemReserva, onDone}){
+  const q = useCountQueue(items);
+
+  if(q.done){
+    return (
+      <div className="empty-state">
+        <div className="ic"><Ic size={40}>🎉</Ic></div>
+        Fila concluída — {items.length} {items.length===1?'item contado':'itens contados'} da lista colada.
+        <div style={{marginTop:16}}>
+          <button className="btn btn-primary" onClick={onDone}>Voltar à busca</button>
+        </div>
+      </div>
+    );
+  }
+
+  // Mesmo bloqueio já usado em `ManualCountFlow`/`ImportedListCountFlow`/
+  // `RandomCountFlow`/`RouteCountFlow` — item da fila que já está pendente
+  // em outro inventário "Itens Específicos"/"Lista Importada" (único tipo
+  // com lista fixa pra cruzar).
+  const conflitoInventario = inventories ? getOpenInventoryItemConflict(inventories, counts, null, q.current.codigo) : null;
+
+  return (
+    <div>
+      {q.idx===0 && (
+        <div className="role-note" style={{marginBottom:14}}>
+          Lista colada: {items.length} {items.length===1?'item':'itens'}, contando um de cada vez — "Pular" na tela de contagem manda o item pro final da fila sem perder nem contar como concluído.
+        </div>
+      )}
+      <CountStep
+        key={q.current.codigo}
+        product={q.current}
+        user={user}
+        counts={counts}
+        queueAtual={q.idx+1}
+        queueTotal={q.total}
+        onAddressProposed={onAddressProposed}
+        conflitoInventario={conflitoInventario}
+        onSkip={()=>q.defer()}
+        onComplete={(c)=>{ onRegisterCount(c); q.next(); }}
+        expectAddressCheck={true}
+        operadorVeSaldo={operadorVeSaldo}
+        onReservarItem={onReservarItem}
+        onLiberarItemReserva={onLiberarItemReserva}
+      />
+    </div>
+  );
+}
+
 function ManualCountFlow({user, onRegisterCount, onAddressProposed, counts, operadorVeSaldo, onReservarItem, onLiberarItemReserva, inventories}){
   // Armazém já nasce pré-selecionado em "1" (Armazém 01, disparado sozinho
   // na esmagadora maioria dos casos reais — ver CLAUDE.md "Cards de estoque
@@ -9729,6 +9810,16 @@ function ManualCountFlow({user, onRegisterCount, onAddressProposed, counts, oper
   const [scanning, setScanning] = useState(false);
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
+  // "Colar lista de vários códigos" — pedido do cliente pra lançar uma fila
+  // de contagem inteira colando (Ctrl+V) vários códigos de uma vez, em vez
+  // de buscar/selecionar um a um. `listaSessionId` muda a cada fila
+  // lançada, só pra forçar `ManualPasteQueueFlow` a remontar com estado
+  // limpo (ver comentário lá).
+  const [colarAberto, setColarAberto] = useState(false);
+  const [colarTexto, setColarTexto] = useState('');
+  const [carregandoLista, setCarregandoLista] = useState(false);
+  const [listaItems, setListaItems] = useState(null);
+  const [listaSessionId, setListaSessionId] = useState(0);
 
   // Lista de armazéns com saldo carregado, pro <select> — mesma fonte que
   // `ArmazemGate` já usava. Roda uma vez, em paralelo com o resto da tela
@@ -9759,6 +9850,54 @@ function ManualCountFlow({user, onRegisterCount, onAddressProposed, counts, oper
     }, 350);
     return ()=>{ cancelado = true; clearTimeout(timer); };
   }, [query, armazem]);
+
+  // Resolve os códigos colados em lote (mesmo padrão de
+  // `ImportedListCountFlow`/`fetchProdutosByCodigos`) e lança a fila — cai
+  // no MESMO fallback sintético já usado em toda a rodada quando o código
+  // não está no catálogo (`foraDoCacheLocal:true`, saldo tratado como 0
+  // real) em vez de bloquear/pular o item: a descrição/saldo/endereço ao
+  // vivo (consulta Selgron, já ligada dentro de `CountStep`) ainda resolve
+  // esses campos na hora de contar, mesmo pra um código fora do catálogo.
+  async function lancarFilaColada(texto){
+    const codigos = parseCodigosColados(texto);
+    if(codigos.length===0) return;
+    setCarregandoLista(true);
+    const catalogo = await fetchProdutosByCodigos(codigos, armazem);
+    const itens = codigos.map(codigo=>{
+      const doCatalogo = catalogo.get(codigo);
+      if(doCatalogo) return doCatalogo;
+      return {
+        codigo, descricao: codigo, unidade: null, familia: '—',
+        endereco: null, enderecoCadastrado: false, almoxarifado: armazem,
+        corredor: null, rua: null, saldoSistema: 0, custoUnit: 0,
+        valorFinanceiro: 0, semMovimentoRecente: false, ultimaSaida: null,
+        foraDoCacheLocal: true,
+      };
+    });
+    setListaItems(itens);
+    setListaSessionId(id=>id+1);
+    setColarTexto('');
+    setColarAberto(false);
+    setCarregandoLista(false);
+  }
+
+  if(listaItems){
+    return (
+      <ManualPasteQueueFlow
+        key={listaSessionId}
+        items={listaItems}
+        user={user}
+        counts={counts}
+        inventories={inventories}
+        onAddressProposed={onAddressProposed}
+        onRegisterCount={onRegisterCount}
+        operadorVeSaldo={operadorVeSaldo}
+        onReservarItem={onReservarItem}
+        onLiberarItemReserva={onLiberarItemReserva}
+        onDone={()=>setListaItems(null)}
+      />
+    );
+  }
 
   if(selected){
     // Pedido do cliente: ao confirmar a contagem, volta pra ESTA MESMA tela
@@ -9824,6 +9963,38 @@ function ManualCountFlow({user, onRegisterCount, onAddressProposed, counts, oper
       <div className="field">
         <label>Ou buscar por código, descrição ou código de barras</label>
         <input type="text" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Ex: 000.35310 ou parafuso" />
+      </div>
+      <div style={{marginBottom:14}}>
+        <button type="button" className="btn btn-outline btn-sm" onClick={()=>setColarAberto(v=>!v)}>
+          <Ic>📋</Ic> {colarAberto ? 'Ocultar' : 'Colar lista de vários códigos'}
+        </button>
+        {colarAberto && (
+          <div className="field" style={{marginTop:10}}>
+            <label>Cole os códigos (um por linha, ou separados por vírgula/espaço) — colar (Ctrl+V) já lança a fila</label>
+            <textarea
+              rows={4}
+              value={colarTexto}
+              onChange={e=>setColarTexto(e.target.value)}
+              onPaste={e=>{
+                const texto = e.clipboardData.getData('text');
+                e.preventDefault();
+                setColarTexto(texto);
+                lancarFilaColada(texto);
+              }}
+              placeholder={'Ex:\n000.35310\n000.02353\n021.030.00023'}
+            />
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:8,gap:10}}>
+              <span style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)'}}>{parseCodigosColados(colarTexto).length} código(s) reconhecido(s)</span>
+              <button
+                className="btn btn-primary btn-sm"
+                disabled={carregandoLista || parseCodigosColados(colarTexto).length===0}
+                onClick={()=>lancarFilaColada(colarTexto)}
+              >
+                {carregandoLista ? 'Carregando…' : 'Lançar fila ('+parseCodigosColados(colarTexto).length+')'}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
       {loading && <div className="empty-state">Buscando no catálogo…</div>}
       {!loading && results.length===0 && query && <div className="empty-state">Nenhum item encontrado.</div>}
