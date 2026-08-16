@@ -81,6 +81,50 @@
     --blue: #2A6FD6;
     --blue-bg: #E3EEFC;
   }
+  /* TEMA ESCURO — ativado via <html data-theme="dark">, escolha pessoal por
+     aparelho (botão sol/lua no topbar/menu do usuário, salva no
+     localStorage via usePersistedState — nunca sincroniza entre aparelhos,
+     mesmo critério já usado pra sidebarCollapsed, é preferência de UI, não
+     configuração administrável). Só redefine os tokens do sistema
+     "tablet/operador" (--bg/--panel/--ink/etc — usados via var() em quase
+     todo o app graças às rodadas de padronização de cor documentadas no
+     CLAUDE.md) — --navy/--gray-*/--font-corp (a paleta da tela de LOGIN)
+     ficam intocados de propósito: o login tem um design pixel-perfect já
+     aprovado pelo cliente por imagem de referência específica, então
+     continua sempre claro, com ou sem tema escuro ativo no resto do app —
+     o botão de alternar nem aparece lá (só existe depois de logado). O
+     restante do sistema "corp" (Sidebar/DesktopTopbar/Dashboard) usa
+     --navy/--gray-* só pra borda/texto — os fundos brancos literais desses
+     componentes (cards de KPI, menus suspensos, etc.) ganham overrides
+     pontuais mais abaixo, reaproveitando os MESMOS tokens redefinidos
+     aqui (--panel/--line/--ink-dim), nunca uma paleta escura à parte. */
+  :root[data-theme="dark"]{
+    --bg: #14161B;
+    /* Mesma relação de elevação do tema claro (lá --panel:#FFFFFF é o tom
+       mais claro/proeminente, o card "de cima"; --panel-raised:#F3F5F7 é o
+       tom mais apagado, "afundado", usado em input/linha alternada — bem
+       mais perto do --bg). Em tema escuro, "mais elevado" também é "mais
+       claro" (convenção padrão de UI escura) — por isso --panel aqui é MAIS
+       claro que --panel-raised, não o contrário. */
+    --panel: #23272F;
+    --panel-raised: #1A1D24;
+    --line: #383D48;
+    --ink: #EDEEF2;
+    --ink-dim: #9AA0AC;
+    --ok: #34D399;
+    --ok-bg: #143829;
+    --warn: #FBBF24;
+    --warn-bg: #3A2A0A;
+    --danger: #F87171;
+    --danger-bg: #3A1512;
+    --accent2: #5AA9E6;
+    --purple: #B18AF0;
+    --purple-bg: #2A2140;
+    --teal: #2DD4C6;
+    --teal-bg: #123330;
+    --blue: #6FA8F5;
+    --blue-bg: #152A42;
+  }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);font-family:var(--font-body);height:100%;-webkit-tap-highlight-color:transparent;overscroll-behavior:none;}
   #root{min-height:100vh;display:flex;flex-direction:column;}
