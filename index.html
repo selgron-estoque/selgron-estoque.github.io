@@ -2374,11 +2374,24 @@ async function chamarUsuariosAdmin(acao, payload){
 // qualquer erro (rede, credencial, formato mudou do lado deles) devolve
 // `ok:false` sem travar a contagem — `CountStep` já sabe cair de volta pro
 // saldo do Supabase (`estoque_saldo`) nesse caso, mesmo padrão de sempre.
-async function fetchSaldoConsultaSelgron(codigo){
+// `armazem` é OPCIONAL — quando informado (ex.: `product.almoxarifado`),
+// desambigua entre múltiplos resultados que a consulta pode devolver pro
+// MESMO código (um por armazém em que ele existe — bug real reportado pelo
+// cliente: item com saldo 0 num armazém e saldo real 7 noutro, e a
+// function sempre pegava o valor do 1º resultado da página, não
+// necessariamente o do armazém sendo contado — ver CLAUDE.md). Sem esse
+// parâmetro, ou se a consulta não conseguir bater com exatamente 1
+// resultado pro armazém pedido, cada campo volta `null` — nunca adivinha,
+// o app já sabe cair pro saldo em cache do Supabase nesse caso.
+async function fetchSaldoConsultaSelgron(codigo, armazem){
   if(!supabaseClient || !codigo) return {ok:false, erro:'Não configurado.'};
+  // '—' é o placeholder já usado em todo o app pra "armazém desconhecido"
+  // (ver `almoxarifado: armazemParaBusca || '—'`, RecountFlow) — nunca faz
+  // sentido mandar isso como se fosse um armazém real pra desambiguar.
+  const armazemLimpo = (armazem && armazem !== '—') ? armazem : null;
   try{
     const { data, error } = await supabaseClient.functions.invoke('consultar-produto-selgron', {
-      body: {codigo},
+      body: armazemLimpo ? {codigo, armazem: armazemLimpo} : {codigo},
     });
     if(error){
       let erro = error.message;
@@ -2994,7 +3007,11 @@ async function fetchValorEstoqueArmazem01AoVivo(onProgress){
       const custoLocal = saldoLocal>0 ? Number(row.valor_financeiro || 0) / saldoLocal : 0;
       let saldo = saldoLocal, custo = custoLocal;
       try{
-        const res = await fetchSaldoConsultaSelgron(row.produto_codigo);
+        // Armazém sempre '1' aqui — a lista de códigos já vem filtrada por
+        // `almoxarifado='1'` (linha acima) — passar explícito evita o mesmo
+        // bug de pegar o saldo de OUTRO armazém quando o código existe em
+        // mais de um (ver fetchSaldoConsultaSelgron/CLAUDE.md).
+        const res = await fetchSaldoConsultaSelgron(row.produto_codigo, '1');
         if(res && res.ok){
           if(typeof res.saldo === 'number') saldo = res.saldo;
           if(typeof res.custoUnitario === 'number' && res.custoUnitario > 0) custo = res.custoUnitario;
@@ -9144,10 +9161,21 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   // mais rápido que a rede responde (ver comentário lá, bug real: "Sem
   // registro de movimentação" em item com movimentação de verdade).
   const liveConsultaPromiseRef = useRef(null);
+  // Passa o armazém sendo contado (`product.almoxarifado`) — sem isso, um
+  // código com saldo em mais de 1 armazém na consulta Selgron podia trazer
+  // o saldo do armazém ERRADO (bug real reportado pelo cliente: item
+  // "000.05587" mostrando Sistema:0 quando o Armazém 01 tinha saldo real
+  // de 7 — a consulta trazia 3 resultados pro mesmo código, e a function
+  // sempre pegava o 1º, que por acaso era de outro armazém). Refaz a busca
+  // quando o ARMAZÉM muda, não só quando o código muda — necessário pro
+  // seletor de armazém do `RecountFlow` (item sem armazém conhecido, ver
+  // lá): trocar o armazém no dropdown gera um `product` novo com o MESMO
+  // `codigo` mas `almoxarifado` diferente, e sem essa dependência a
+  // consulta ao vivo nunca refletiria a troca.
   useEffect(()=>{
     let cancelado = false;
     setLiveConsulta(null);
-    const p = fetchSaldoConsultaSelgron(product.codigo);
+    const p = fetchSaldoConsultaSelgron(product.codigo, product.almoxarifado);
     liveConsultaPromiseRef.current = p;
     p.then(res=>{
       if(cancelado) return;
@@ -9155,7 +9183,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
       else if(res.erro) console.warn('Consulta ao vivo (Selgron) falhou:', res.erro);
     });
     return ()=>{ cancelado = true; };
-  }, [product.codigo]);
+  }, [product.codigo, product.almoxarifado]);
   const saldoSistemaEfetivo = (liveConsulta && liveConsulta.saldo!=null) ? liveConsulta.saldo : product.saldoSistema;
   // Mesmo critério do saldo: descrição/unidade vindas da consulta ao vivo
   // (mais atuais que o catálogo local, que só é atualizado quando alguém

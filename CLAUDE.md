@@ -19176,4 +19176,120 @@ verdade (343 entradas, 372 saídas, movimentação em 15/08/2026, hoje). Mensage
   correção é só de LEITURA/timing (não depende de nenhuma migração de SQL nem de
   redeploy de Edge Function), já deve valer pra qualquer contagem nova assim que o
   deploy publicar.
+## Bug real: saldo do sistema vinha do ARMAZÉM ERRADO — consulta ao vivo ignorava blocos duplicados
+
+Cliente reportou, com 3 prints: 1 mostrando o card de `000.05587` em "Itens
+Divergentes" ("Sistema: 0"/"Físico: 7", "Valor divergente: R$ 2668.47") e 2
+recortes da própria busca da Selgron (`consulta.php`) pro mesmo código —
+"Sua busca por 000.05587 retornou 3 resultado(s)", com pelo menos dois
+blocos de resultado bem diferentes: um "Armazem: Sem armazém"/"Quantidade
+em estoque: 0.0", outro "Armazem: 01"/"Quantidade em estoque: 7.0" (o
+saldo real, batendo com o físico contado). Mensagem exata do cliente: "tem
+itens que está puxando saldo 0, exemplo o 000.05587. Não deve estar
+puxando o saldo do armazém correto."
+
+- **Causa raiz**: a Edge Function `consultar-produto-selgron` sempre tratou
+  a resposta de `produto.consulta.php` como um único bloco de texto —
+  `extrairCampo(texto, rotulos)` varre a página INTEIRA já achatada e
+  devolve o valor da PRIMEIRA linha que bate com o rótulo pedido
+  ("Quantidade em estoque:", "Armazem:", etc.). Quando a busca da Selgron
+  devolve mais de um resultado pro MESMO código (um por armazém em que ele
+  existe — confirmado nos prints do cliente), essa função sempre pegava o
+  valor do PRIMEIRO bloco da página, sem nenhuma noção de "blocos" — no
+  caso do cliente, o 1º bloco por acaso era "Sem armazém"/saldo 0, mascarando
+  o saldo real (7, no Armazém 01) mesmo o operador estando genuinamente
+  contando ali. Mesma categoria de bug silencioso já vista várias vezes
+  neste projeto (RLS sem policy, coluna com espaço no cabeçalho da SB2,
+  etc.) — nenhum erro, só um número errado.
+- **`dividirEmBlocos(texto)`** (função nova, Edge Function) — separa o
+  texto em blocos, um por resultado, usando a linha "Código do Produto:
+  ..." (que se repete uma vez por resultado, confirmado nos prints) como
+  marcador de início de cada bloco. Sem nenhuma ocorrência desse rótulo
+  (formato antigo/inesperado), cai num único bloco = o texto inteiro —
+  mesmo comportamento de sempre pro caso comum de 1 resultado só, sem
+  quebrar nada.
+- **`normalizarArmazem(v)`** — normaliza só pra COMPARAÇÃO (nunca pra
+  exibição): remove zero à esquerda quando o valor é 100% numérico ("01"→
+  "1", batendo com o mesmo código que `product.almoxarifado`/
+  `estoque_saldo.almoxarifado` já usam em todo o resto do app), mantém
+  texto não-numérico intacto em maiúsculo ("EX", "Sem armazém" — nunca
+  bateriam com um armazém numérico de qualquer jeito).
+- **Desambiguação, mesmo critério "nunca adivinha" já estabelecido nas
+  funções de catálogo do Supabase** (`fetchProdutosByCodigos`/
+  `searchSupabaseCatalog` — e reforçado por uma correção anterior já
+  revertida deste projeto, onde uma tentativa de "adivinhar" o armazém por
+  conveniência foi corrigida pelo próprio cliente: "SE EU ESTOU CONTANDO O
+  ARMAZEM 01, O SALDO QUE TEM QUE MOSTRA É O DO ARMAZEM 01"): 1 resultado
+  só → sem ambiguidade nenhuma, usa ele (comportamento de sempre, mesmo se
+  o armazém pedido não bater — não tem outro bloco pra escolher). Mais de 1
+  resultado → só resolve quando o armazém pedido bate com **exatamente 1**
+  bloco; sem armazém informado, ou nenhum bloco batendo, ou mais de um
+  batendo (nunca deveria acontecer) → cada campo (`saldo`/`endereco`/
+  `descricao`/`unidade`/`armazem`) sai `null`, sem adivinhar.
+- **Cada campo `null` independente, não a resposta inteira em `ok:false`**:
+  diferente da 1ª ideia (marcar a resposta inteira como falha quando
+  ambíguo), a Edge Function continua respondendo `ok:true` com os campos
+  específicos de armazém em `null` — o padrão "...Efetivo" já estabelecido
+  em `CountStep` (`saldoSistemaEfetivo`/`descricaoEfetiva`/etc., cada um
+  `liveConsulta.X!=null ? liveConsulta.X : product.X`) já sabe cair pro
+  cache do Supabase campo a campo. Isso também evita descartar à toa o
+  Kardex (`ultimaMovimentacao`/`custoUnitario`), que não é escopado por
+  armazém nesta versão e continua valendo mesmo quando o bloco de saldo
+  ficou ambíguo.
+- **Front-end passa o armazém sendo contado**: `fetchSaldoConsultaSelgron(codigo,
+  armazem)` ganhou o 2º parâmetro (opcional — `'—'`, o placeholder já usado
+  em todo o app pra "armazém desconhecido", nunca é mandado como se fosse
+  um armazém real). `CountStep` passa `product.almoxarifado` e o `useEffect`
+  da consulta ao vivo passou a depender de `[product.codigo,
+  product.almoxarifado]` (era só `[product.codigo]`) — necessário pro
+  seletor de armazém do `RecountFlow` (item sem armazém conhecido, ver
+  seção "Item com saldo real em 1 armazém aparecia zerado na recontagem"
+  mais acima): trocar o armazém no dropdown gera um `product` novo com o
+  MESMO código mas `almoxarifado` diferente, e sem essa dependência a
+  consulta ao vivo nunca refletiria a troca. `fetchValorEstoqueArmazem01AoVivo`
+  (o botão "Consultar ao vivo" do card "Valor em Estoque — Armazém 01",
+  Indicadores) também passou a informar `'1'` explicitamente — a lista de
+  códigos já vem filtrada por esse armazém, então essa soma corria o MESMO
+  risco de pegar o saldo de outro armazém silenciosamente, sem o cliente
+  nunca ter reportado isso especificamente.
+- **Fora de escopo, decisão consciente**: `EtiquetasPanel`
+  (`liveConsultaEtiqueta`, usado pra imprimir etiqueta) não foi tocado —
+  `selecionado.almoxarifado` ali não é um único armazém confiável (a busca
+  de catálogo dessa tela soma saldo entre armazéns quando o código existe
+  em mais de um, documentado em rodada anterior — "Almox" podia mostrar
+  literalmente "1/99"), e o cliente não reportou esse sintoma nesse fluxo.
+  Passar um valor assim pra `armazem` não quebraria nada (a normalização
+  simplesmente não bateria com nenhum bloco, caindo no mesmo fallback
+  seguro) mas também não foi testado/pedido — deixado de fora por
+  disciplina de escopo.
+- Testado via harness Node isolado (mesma técnica de sempre — Supabase
+  mockado, sem rede real): `dividirEmBlocos`/`normalizarArmazem`/a lógica
+  de escolha de bloco reproduzidas fielmente contra o cenário EXATO do
+  print do cliente (000.05587, bloco "Sem armazém"/saldo 0 + bloco
+  "Armazém 01"/saldo 7) — confirmando que, sem armazém informado, o
+  resultado é ambíguo (nunca mais "0" por padrão), e que informando "1"
+  resolve pro saldo real (7), endereço junto (013-F-5); confirmado também
+  que o comportamento OLD (antes da correção) de fato reproduzia
+  literalmente o bug relatado (saldoTexto="0.0"), provando que o harness
+  pega a regressão de verdade; regressão do caso comum (1 resultado só,
+  com ou sem armazém pedido) e do formato sem a marca de bloco (nunca
+  quebra). Harness separado confirma, via `CountStep` renderizado de
+  verdade (jsdom+react-dom/client+`act()`): a consulta ao vivo é disparada
+  com `armazem` igual a `product.almoxarifado`; `'—'` nunca é mandado como
+  armazém real; e — o cenário mais importante — trocar SÓ o armazém (mesmo
+  código, simulando o dropdown do `RecountFlow`) dispara uma 2ª busca de
+  verdade, com o saldo exibido na tela refletindo o armazém NOVO, não o
+  antigo. Rodei de novo toda a suíte de regressão do scratchpad (73
+  harnesses, 1204 asserções) — 0 falhas. Type-check da Edge Function via
+  `tsc --strict` (mesmo shim de sempre pros globais do Deno) sem erro.
+  Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  conferidos (668/668, sem mudança — nenhuma classe CSS tocada, só JS/TS).
+  **Nenhuma migração de SQL necessária** — a correção é só de leitura/
+  parsing, sem tocar em nenhuma tabela. **Falta o cliente rodar o deploy da
+  Edge Function atualizada** (`npx supabase functions deploy
+  consultar-produto-selgron`, mesmo comando de sempre) — até lá, a function
+  publicada continua com o comportamento antigo (bug presente). **Verificação
+  de ponta a ponta com o item real (000.05587) e outros códigos multi-
+  armazém fica a cargo do cliente** — mesma limitação de sempre (sandbox
+  sem acesso de rede ao domínio interno da Selgron).
 
