@@ -318,7 +318,13 @@
   .status-dot{width:7px;height:7px;border-radius:50%;background:currentColor;}
 
   /* ITEM CARD (count item) */
-  .item-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;margin-bottom:14px;}
+  /* overflow:hidden foi removido de propósito (bug real: clipava o menu "⋮"
+     — .count-card-menu-dropdown, position:absolute — que se estende além da
+     borda inferior do card; ver CLAUDE.md "Bug real: menu '⋮' clipado pelo
+     próprio card"). Nenhum filho deste card toca a borda de ponta a ponta
+     (sem barra colorida cheia como .count-card-bar abaixo), então perder o
+     clipping de canto não muda nada visualmente aqui. */
+  .item-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);margin-bottom:14px;position:relative;}
   .item-card.urgente{box-shadow:0 0 0 3px var(--danger), 0 1px 3px rgba(0,0,0,.04);}
   .item-card-head{padding:16px 18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
   .item-code{font-family:var(--font-mono);font-size:var(--text-sm);color:var(--safety);letter-spacing:0.5px;}
@@ -331,7 +337,13 @@
      Raio (16px) e sombra são PRÓPRIOS deste card (pedido explícito do
      cliente pra bater com o mockup de referência) — diferentes do
      --radius:10px usado no resto do app, de propósito, não é regressão. */
-  .count-card{background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden;margin-bottom:16px;display:flex;box-shadow:0 1px 3px rgba(0,0,0,.04);}
+  /* overflow:hidden foi removido de propósito (mesmo bug/motivo do
+     .item-card acima — clipava .count-card-menu-dropdown, o menu "⋮" que se
+     estende além da borda do card). O único filho que dependia do clipping
+     de canto pra ficar visualmente correto era .count-card-bar (a faixa de
+     severidade de 5px, edge-to-edge) — resolvido dando a ELA MESMA o raio
+     de canto (ver .count-card-bar logo abaixo), em vez de depender do pai. */
+  .count-card{background:var(--panel);border:1px solid var(--line);border-radius:16px;margin-bottom:16px;display:flex;box-shadow:0 1px 3px rgba(0,0,0,.04);position:relative;}
   /* Item marcado como urgente (líder/admin, Recontagens/Itens Divergentes) —
      destaque visual pra ele se sobressair na lista, além de vir ordenado
      primeiro (ver RecountsPanel/DivergentItemsPanel). Contorno vermelho e
@@ -350,7 +362,7 @@
      usada em "Pendente" no resto do app) — deliberadamente mais sutil que os
      outros dois anéis, que são pra CHAMAR atenção; este é o oposto. */
   .count-card.sem-ajuste-destaque{box-shadow:0 0 0 2px var(--warn), 0 1px 3px rgba(0,0,0,.04);}
-  .count-card-bar{width:5px;flex-shrink:0;}
+  .count-card-bar{width:5px;flex-shrink:0;border-top-left-radius:16px;border-bottom-left-radius:16px;}
   .count-card-body{flex:1;min-width:0;padding:16px 20px;display:flex;flex-direction:column;gap:10px;}
   .count-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
   .count-card-badges{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
@@ -3872,9 +3884,26 @@ async function fetchProdutosByCodigos(codigos, almoxarifado){
   const mapa = new Map();
   if(!supabaseClient || !codigos || codigos.length===0) return mapa;
   try{
+    // Bug real corrigido aqui: esta consulta nunca buscava endereço nenhum
+    // — `endereco_codigo` (mais abaixo) era gravado como `null`
+    // INCONDICIONALMENTE, então TODO item resolvido por esta função (Itens
+    // Específicos via "Colar lista de vários códigos"/`colarListaEspecificos`,
+    // e o re-fetch ao vivo de `ImportedListCountFlow` na hora de contar,
+    // pros dois tipos "Itens Específicos"/"Lista Importada") sempre saía
+    // com `enderecoCadastrado:false`, mesmo pra código com endereço
+    // genuinamente cadastrado em `estoque_enderecos`. Cliente reportou:
+    // "quando inicio a contagem ele não me joga os itens na sequencia de
+    // endereço, fico andando um monte lá e pra cá" — `ordenarPorEndereco`
+    // (função de ordenação em si, correta) não tinha NADA pra ordenar,
+    // porque todo item chegava com "sem endereço" mesmo quando cadastrado.
+    // `searchSupabaseCatalog` (usada só na busca item-a-item de "Adicionar")
+    // sempre resolveu isso certo via o mesmo join abaixo — só esta função
+    // (usada pela colagem em lote e pelo re-fetch de contagem) tinha ficado
+    // pra trás, mesma classe de bug já vista aqui antes com
+    // `data_ultima_saida`/`valor_financeiro` (ver comentários mais abaixo).
     const { data: produtosRows } = await supabaseClient
       .from('produtos')
-      .select('codigo, descricao, unidade, grupo')
+      .select('codigo, descricao, unidade, grupo, estoque_enderecos(saldo_no_endereco, enderecos(codigo))')
       .in('codigo', codigos);
     if(!produtosRows || produtosRows.length===0) return mapa;
 
@@ -3924,6 +3953,12 @@ async function fetchProdutosByCodigos(codigos, almoxarifado){
       const custoUnitarioFallback = custoPreferido
         ? Number(custoPreferido.valor_financeiro||0) / Number(custoPreferido.saldo||1)
         : null;
+      // Mesmo padrão de `searchSupabaseCatalog` — join aninhado
+      // `estoque_enderecos → enderecos`, primeira posição do array (um
+      // produto pode ter mais de um endereço cadastrado; sem critério pra
+      // escolher entre vários, usa o primeiro, mesma simplificação já
+      // aceita na busca manual).
+      const enderecoRow = (p.estoque_enderecos && p.estoque_enderecos[0] && p.estoque_enderecos[0].enderecos) || null;
       mapa.set(p.codigo, estoqueRowToProduct({
         codigo: p.codigo,
         descricao: p.descricao,
@@ -3934,7 +3969,7 @@ async function fetchProdutosByCodigos(codigos, almoxarifado){
         valor_financeiro: unica ? s.valor_financeiro : 0,
         data_ultima_saida: s.data_ultima_saida || null,
         sem_movimento_recente: false,
-        endereco_codigo: null,
+        endereco_codigo: enderecoRow ? enderecoRow.codigo : null,
         corredor: null,
         rua: null,
         custo_unitario_fallback: custoUnitarioFallback,

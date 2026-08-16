@@ -19292,4 +19292,143 @@ puxando o saldo do armazém correto."
   de ponta a ponta com o item real (000.05587) e outros códigos multi-
   armazém fica a cargo do cliente** — mesma limitação de sempre (sandbox
   sem acesso de rede ao domínio interno da Selgron).
+## Bug real: menu "⋮" clipado pelo próprio card (Inventários Pendentes e as 5
+## telas de contagem que compartilham o mesmo componente)
+
+Cliente mandou print de um card em "Inventários Pendentes" com o menu "⋮"
+aberto (mostrando "Marcar urgente"/"Atribuir a..."/"↓ Baixar") cortado bem
+onde o próximo card da lista começa — legenda: "Na pagina de inventários
+pendentes está oculto os botões".
+
+- **Causa**: `.item-card{overflow:hidden}` (o card de `InventoryList`) e
+  `.count-card{overflow:hidden}` (o card compartilhado por `RecountsPanel`/
+  `DivergentItemsPanel`/`SolicitacaoArmazemPanel`/`DiretoriaApprovalPanel`/
+  `ConcludedCountsPanel`) clipavam `.count-card-menu-dropdown`
+  (`position:absolute;top:100%`, ancorado em `.count-card-menu{position:
+  relative}`) — o dropdown se estende naturalmente ABAIXO da borda do
+  próprio card (é assim que qualquer dropdown funciona), mas como o card é
+  `overflow:hidden`, tudo que passa da borda inferior dele simplesmente
+  desaparece — exatamente o sintoma do print (texto cortado no meio).
+- **Por que o card tinha `overflow:hidden` em primeiro lugar**: só
+  `.count-card-bar` (a faixa de severidade colorida de 5px, primeiro filho
+  flex do `.count-card`, encostada de ponta a ponta na borda esquerda)
+  dependia disso — sem `overflow:hidden` no pai, os cantos daquela faixa
+  (que não tem raio próprio) ficariam quadrados, vazando pra fora dos
+  cantos arredondados do card. `.item-card` não tem nenhum filho parecido
+  (confirmado por grep — sem `.item-card-bar`, sem nenhum elemento colado na
+  borda com fundo diferente do próprio card) — o `overflow:hidden` ali não
+  protegia nada visualmente, só clipava o dropdown à toa.
+- **Correção**: `overflow:hidden` removido dos dois (`.item-card`/
+  `.count-card`) — em vez de depender do clipping do pai,
+  `.count-card-bar` ganhou `border-top-left-radius:16px;border-bottom-
+  left-radius:16px` (mesmo raio do card) — a faixa colorida continua com
+  os cantos visualmente arredondados, só que agora clipando A SI MESMA, não
+  dependendo do pai. `position:relative` foi adicionado aos dois cards por
+  precaução defensiva (não estritamente necessário — `.count-card-menu`
+  já é o ancestral posicionado que o dropdown usa pra se posicionar, e o
+  dropdown tem `z-index:5` próprio que já o faz pintar por cima de
+  qualquer irmão sem z-index explícito, verificado via análise de stacking
+  context antes de decidir manter — mas não custa nada deixar explícito).
+  `.count-card-menu-dropdown` mantém o PRÓPRIO `overflow:hidden` (pros
+  cantos arredondados dele mesmo, 8px) — isso nunca foi o problema, só o
+  clipping do CARD por volta dele.
+- Testado via harness dedicado (checando as 4 regras CSS relevantes: sem
+  `overflow:hidden` em `.item-card`/`.count-card`, `.count-card-bar` com o
+  raio novo, `.count-card-menu-dropdown` mantendo o próprio clipping) —
+  10/10 passando. Transpile Babel do arquivo inteiro e balanceamento de
+  chaves do CSS conferidos (668/668, sem mudança — só valores dentro de
+  regras já existentes). Rodei de novo toda a suíte de regressão do
+  scratchpad (74 harnesses, 1204+ asserções) — 0 falhas. **Verificação
+  visual de ponta a ponta (o menu abrindo por cima do próximo card, sem
+  cortar) fica a cargo do cliente** — mesma limitação de sempre (login
+  exige Supabase Auth real, não simulável no sandbox sem rede).
+
+## Bug real: `fetchProdutosByCodigos` nunca buscava endereço — Itens
+## Específicos/Lista Importada sempre "sem endereço", mesmo cadastrado
+
+Cliente mandou print de um inventário "Itens Específicos" (INV-359, 0/36
+itens) com "Itens" expandido mostrando vários códigos, todos "sem
+endereço" — legenda: "quando inicio a contagem ele não me joga os itens na
+sequencia de endereço, fico andando um monte lá e pra cá".
+
+- **`ordenarPorEndereco`/`compararPorEndereco`/`parseEnderecoPartes` em si
+  estavam corretas** (conferido lendo as 3 funções de novo) — o problema
+  não era a ORDENAÇÃO, era que ela nunca tinha NADA real pra ordenar.
+- **Causa raiz**: `fetchProdutosByCodigos` (usada por
+  `colarListaEspecificos` — "Colar lista de vários códigos" em Itens
+  Específicos — E pelo re-fetch ao vivo de `ImportedListCountFlow` na hora
+  de abrir qualquer inventário "Itens Específicos"/"Lista Importada" pra
+  contar) **nunca buscava `estoque_enderecos`/`enderecos` em lugar
+  nenhum** — a consulta a `produtos` só pedia `codigo, descricao, unidade,
+  grupo`, e o campo `endereco_codigo` do objeto passado pra
+  `estoqueRowToProduct` era gravado como `null` INCONDICIONALMENTE, sem
+  nenhuma tentativa de resolver. Resultado: **todo item resolvido por essa
+  função sempre saía com `enderecoCadastrado:false`**, mesmo pra código com
+  endereço genuinamente cadastrado — mesma categoria de bug silencioso já
+  vista várias vezes neste projeto (RLS sem policy, coluna com espaço no
+  cabeçalho da SB2, etc.), sem erro nenhum, só um dado sempre vazio.
+- **`searchSupabaseCatalog`** (usada só na busca item-a-item de
+  "Adicionar", o outro jeito de montar a lista de "Itens Específicos") já
+  resolvia isso certo desde sempre, via
+  `.select('codigo, descricao, unidade, grupo, estoque_enderecos
+  (saldo_no_endereco, enderecos(codigo))')` — um join aninhado real. Só
+  `fetchProdutosByCodigos` tinha ficado pra trás — mesma classe de "uma
+  função ficou desatualizada enquanto a irmã já tinha a correção" já vista
+  antes neste projeto (`data_ultima_saida`/`valor_financeiro`, corrigidos
+  em rodadas anteriores exatamente nesta mesma função).
+- **Efeito em cascata, explicando o sintoma exato do cliente**: em
+  `ImportedListCountFlow`, o merge de dados (`doCatalogo.enderecoCadastrado`
+  sempre `false` por causa do bug) faz o código sempre cair no fallback
+  `item.endereco` (o valor CONGELADO no momento em que o item foi
+  adicionado à lista) — que, pra item adicionado via "Colar lista de vários
+  códigos" (`colarListaEspecificos`, que usa a MESMA função com bug), já
+  nascia `null` desde o início, pra sempre. Ou seja: qualquer item
+  adicionado a "Itens Específicos" por colagem em massa nunca teria
+  endereço nenhum, mesmo já cadastrado — exatamente o inventário do print
+  (INV-359, todos "sem endereço").
+- **Correção**: `fetchProdutosByCodigos` ganhou o MESMO join aninhado já
+  usado em `searchSupabaseCatalog`
+  (`estoque_enderecos(saldo_no_endereco, enderecos(codigo))` no `select` de
+  `produtos`) — e, ao montar cada produto, resolve
+  `enderecoRow = p.estoque_enderecos?.[0]?.enderecos || null` (1ª posição,
+  mesma simplificação já aceita na busca manual — sem critério pra escolher
+  entre mais de um endereço cadastrado pro mesmo produto) e passa
+  `endereco_codigo: enderecoRow ? enderecoRow.codigo : null` pra
+  `estoqueRowToProduct`, em vez do `null` fixo de antes.
+- **Cobre os 2 pontos de consumo de uma vez só** (mesma função, um fix só):
+  `colarListaEspecificos` (item colado passa a nascer com o endereço real
+  já no `item.endereco`, não mais `''`) e o re-fetch ao vivo de
+  `ImportedListCountFlow` (item adicionado via "Adicionar" item-a-item, que
+  já tinha o endereço certo congelado desde sempre via
+  `searchSupabaseCatalog`, agora TAMBÉM teria isso confirmado de novo pelo
+  catálogo na hora de contar — redundante mas inofensivo nesse caso, só
+  importa de verdade pro caso da colagem).
+- Testado via harness dedicado (mock do Supabase com `estoque_enderecos`
+  aninhado, mesma técnica já usada em outros harnesses deste projeto): (1)
+  confirma que o `select` em `produtos` agora pede o join; (2) item com
+  endereço cadastrado de verdade sai com `enderecoCadastrado:true`/
+  `endereco` certo (antes sempre `false`/`null`); (3) item genuinamente sem
+  cadastro continua `false`/`null`, sem inventar endereço; (4) formato
+  inesperado (sem a chave `estoque_enderecos` no retorno) não quebra, cai
+  pra `null` com segurança; (5) ponta a ponta de `colarListaEspecificos`
+  confirmando que o item colado nasce com o endereço real. 8/8 passando —
+  **confirmado que o harness pega o bug de verdade**: rodado contra o
+  código de ANTES da correção (`git stash`), 4 das 8 asserções falharam
+  exatamente como esperado (endereço saindo `null` mesmo com cadastro
+  real); só com a correção aplicada é que passa 8/8. Rodei de novo os 2
+  harnesses pré-existentes mais próximos
+  (`harness_especificos_colar_lista.js`/`harness_itens_especificos_
+  ordenar_endereco.js`) — sem regressão, nenhum dos dois dependia do
+  comportamento antigo (bug nunca tinha sido percebido/testado antes).
+  Transpile Babel do arquivo inteiro conferido. Rodei de novo toda a suíte
+  completa do scratchpad (74 harnesses, 1222 asserções) — 0 falhas.
+  **Nenhuma migração de SQL necessária** — a correção é só de LEITURA
+  (front-end lendo um dado que já existia em `estoque_enderecos`/
+  `enderecos`, nunca buscado antes). **Verificação de ponta a ponta em
+  produção (o operador de fato andando menos, o inventário INV-359
+  reaberto mostrando endereço pros itens que já têm cadastro) fica a cargo
+  do cliente** — mesma limitação de sempre (login exige Supabase Auth
+  real, não simulável no sandbox sem rede) — mas como não depende de
+  nenhuma migração, já deve valer pra qualquer "Itens Específicos"/"Lista
+  Importada" reaberto assim que o deploy publicar.
 
