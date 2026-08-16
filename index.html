@@ -9139,10 +9139,17 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   // mesmo que a consulta já soubesse de algo mais recente). Ver o efeito
   // logo abaixo de `descricaoEfetiva`.
   const [liveConsulta, setLiveConsulta] = useState(null);
+  // Guarda a PROMISE em si (não só o resultado já resolvido) — usada por
+  // `finalize()` pra esperar a consulta terminar quando o operador confirma
+  // mais rápido que a rede responde (ver comentário lá, bug real: "Sem
+  // registro de movimentação" em item com movimentação de verdade).
+  const liveConsultaPromiseRef = useRef(null);
   useEffect(()=>{
     let cancelado = false;
     setLiveConsulta(null);
-    fetchSaldoConsultaSelgron(product.codigo).then(res=>{
+    const p = fetchSaldoConsultaSelgron(product.codigo);
+    liveConsultaPromiseRef.current = p;
+    p.then(res=>{
       if(cancelado) return;
       if(res.ok) setLiveConsulta(res);
       else if(res.erro) console.warn('Consulta ao vivo (Selgron) falhou:', res.erro);
@@ -9295,7 +9302,47 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   // não o valor em R$, pra não depender de arredondamento de multiplicação.
   const diferencaConfirmada = !!(hasSaldoLocal && numeroContagem>=2 && previousCount && previousCount.diferenca===diffAbs);
 
-  function finalize(){
+  // Protege contra clique duplo enquanto `finalize()` espera a consulta ao
+  // vivo (ver abaixo) — antes, `finalize` era 100% síncrono e chamava
+  // `onComplete` na hora, o que normalmente já tirava o botão de cena (o
+  // fluxo troca de item/navega logo em seguida); agora que pode aguardar
+  // uma promise, o botão continua na tela por um instante, então precisa
+  // de proteção própria.
+  const [confirmando, setConfirmando] = useState(false);
+
+  async function finalize(){
+    if(confirmando) return;
+    setConfirmando(true);
+    // Bug real corrigido aqui: `ultimaSaidaEfetiva` (calculada acima, no
+    // corpo do componente) é um SNAPSHOT do render em que o operador
+    // clicou "Confirmar" — se a consulta ao vivo (Selgron/Kardex) ainda
+    // não tinha respondido nesse instante, `finalize` gravava
+    // `ultimaSaida: null` pra sempre, mesmo que a resposta estivesse a
+    // caminho. Isso é MUITO mais provável numa RECONTAGEM (`expectAddressCheck`
+    // vem `false` — pula a etapa de endereço inteira, o operador cai direto
+    // na quantidade e pode confirmar em 1-2s, bem mais rápido que os até 8s
+    // que a consulta+Kardex podem levar) — e o sintoma só aparece pra
+    // ULTIMA SAÍDA (não pro saldo) porque o fallback local
+    // (`product.ultimaSaida`) só é populado por upload manual da planilha
+    // SB2, que o cliente já não faz mais — praticamente sempre `null` hoje,
+    // tornando essa corrida 100% visível como "Sem registro de
+    // movimentação" mesmo pra item com histórico real (reportado com print
+    // do Kardex real do item 000.42377, 343 entradas/372 saídas). Corrigido
+    // esperando a MESMA promise da consulta (já em andamento desde que o
+    // item foi aberto) ANTES de fechar a contagem — só quando ela ainda não
+    // tinha resolvido; se já resolveu (o caso comum), o `await` é
+    // instantâneo, sem nenhum atraso perceptível. Escopado só a este campo:
+    // saldo/classificação/status NÃO são recalculados aqui de propósito —
+    // já foram mostrados ao operador antes do clique, e um caso limite raro
+    // de rede lenta não deve fazer o veredito "trocar de figura" depois de
+    // já ter sido exibido.
+    let ultimaSaidaFinal = ultimaSaidaEfetiva;
+    if(!liveConsulta && liveConsultaPromiseRef.current){
+      try{
+        const res = await liveConsultaPromiseRef.current;
+        if(res && res.ok && res.ultimaMovimentacao) ultimaSaidaFinal = res.ultimaMovimentacao;
+      }catch(_e){ /* tolerante a falha, mesmo critério de sempre desta integração */ }
+    }
     const count = {
       id: 'CNT-'+Math.random().toString(36).slice(2,8).toUpperCase(),
       productCode: product.codigo,
@@ -9351,11 +9398,12 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
       // Data da última saída registrada do item — pedido do cliente: quer
       // ver "última movimentação" e "quantos dias parado" (`diasParado`,
       // calculado a partir desta data) direto em "Itens Divergentes", pra
-      // ajudar a decidir a tratativa da divergência. `ultimaSaidaEfetiva`
+      // ajudar a decidir a tratativa da divergência. `ultimaSaidaFinal`
       // prioriza o Kardex ao vivo (consulta Selgron/Protheus) sobre o que
-      // vem de `estoque_saldo`/planilha SB2 (mesmo critério de sempre —
-      // ver comentário onde essa variável é calculada, acima).
-      ultimaSaida: ultimaSaidaEfetiva || null,
+      // vem de `estoque_saldo`/planilha SB2 — já esperando a consulta
+      // terminar se ela ainda estava em andamento no momento do clique
+      // (ver o `await` no topo de `finalize()`, acima).
+      ultimaSaida: ultimaSaidaFinal || null,
       data: hojeLocalStr(),
       hora: new Date().toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'}),
       inventario: inv ? inv.id : '—',
@@ -9651,7 +9699,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
                 <div className="cs-footer-label">Quantidade</div>
                 <div className="cs-footer-qty">{qty===''?'0':fmtQtyBR(qty)}</div>
               </div>
-              <button className="btn btn-primary cs-footer-btn" disabled={qty===''} onClick={finalize}>Confirmar Contagem</button>
+              <button className="btn btn-primary cs-footer-btn" disabled={qty==='' || confirmando} onClick={finalize}>{confirmando ? 'Confirmando…' : 'Confirmar Contagem'}</button>
             </div>
           </div>
         </div>

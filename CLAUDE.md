@@ -19092,4 +19092,88 @@ contagem.
   vindo do Excel, num navegador/tablet real) fica a cargo do cliente** —
   mesma limitação de sempre (login exige Supabase Auth real, não
   simulável no sandbox sem rede).
+## Bug real: race condition fazia "Sem registro de movimentação" aparecer pra item com movimentação real
+
+Cliente mandou 2 prints: "Itens Divergentes" mostrando `000.42377`/`000.41224` (2ª/3ª
+contagem) com o aviso vermelho "Sem registro de movimentação"; e, ao lado, a própria
+página do Kardex real da Selgron pro item `000.42377` mostrando histórico extenso de
+verdade (343 entradas, 372 saídas, movimentação em 15/08/2026, hoje). Mensagem exata:
+"Tem itens aparecendo sem registro de movimentação, porém, eles tem movimentação."
+
+- **Causa raiz — race condition, não bug de parser**: `CountStep.finalize()` sempre foi
+  100% síncrono e usava `ultimaSaidaEfetiva` — um SNAPSHOT de `liveConsulta` (o
+  resultado da consulta ao vivo Selgron/Kardex) no exato RENDER em que o operador
+  clicou "Confirmar Contagem". Se a consulta (até 8s de timeout, hospedada fora, busca
+  dois recursos externos — produto + Kardex) ainda não tinha respondido nesse instante,
+  `finalize` gravava `ultimaSaida: null` pra sempre, mesmo que a resposta certa
+  estivesse a caminho.
+- **Por que isso é MUITO mais provável numa RECONTAGEM especificamente** (os 2 itens do
+  print eram 2ª/3ª contagem): `RecountFlow` passa `expectAddressCheck={!!product.
+  enderecoCadastrado}` — sempre `false` pra recontagem, por desenho (`enderecoCadastrado`
+  nunca é `true` num item recontado, mesmo com endereço reaproveitado da 1ª contagem pra
+  exibição — ver "Recontagem de item sem cadastro reaproveita o endereço..." no
+  histórico acima). Com `expectAddressCheck=false`, `CountStep` nasce DIRETO na etapa
+  `'count'` (`useState(expectAddressCheck ? 'enderecoManual' : 'count')`) — pulando a
+  etapa de endereço por completo. O operador pode digitar a quantidade e confirmar em
+  1-2 segundos, bem mais rápido que os até 8s que a consulta+Kardex podem levar.
+- **Por que o sintoma só aparece pra ÚLTIMA MOVIMENTAÇÃO, nunca pro saldo** (mesma
+  corrida, mas só um campo fica visivelmente errado): o FALLBACK usado quando
+  `liveConsulta` ainda é `null` (`product.ultimaSaida`) só é populado por upload manual
+  da planilha SB2 — e o cliente já não faz mais isso ("não vou mais precisar subir a
+  SB2"), então esse fallback é hoje praticamente sempre `null`, tornando a corrida 100%
+  visível como "Sem registro de movimentação". Já `product.saldoSistema` (o fallback do
+  SALDO) segue vindo de `estoque_saldo`, quase sempre com um número plausível — a MESMA
+  corrida também "erra" o saldo nesses casos raros, só que de um jeito invisível (o
+  operador vê um número real, só possivelmente um pouco desatualizado, não um "vazio"
+  gritante como o aviso vermelho).
+- **Correção**: `finalize()` virou `async`. A `useEffect` que dispara a consulta ao vivo
+  passou a guardar a PROMISE em si (não só o resultado já resolvido) num `useRef`
+  (`liveConsultaPromiseRef`) — `finalize()`, só quando `liveConsulta` ainda é `null` no
+  momento do clique, `await`a essa mesma promise antes de gravar `ultimaSaida`. Já
+  limitado pelo timeout de 8s do lado da Edge Function — nunca trava indefinidamente. Se
+  a consulta já tinha resolvido antes do clique (o caso comum, esmagadora maioria das
+  contagens), o `await` é instantâneo (resolve na mesma leva de microtasks), sem nenhum
+  atraso perceptível.
+- **Escopo deliberadamente restrito a `ultimaSaida`** — saldo/descrição/unidade/custo
+  (e a classificação/status que dependem do saldo) NÃO foram recalculados dentro de
+  `finalize()` depois do await: esses valores já foram mostrados ao operador ANTES do
+  clique (card de comparação, mini-cards de referência), e recalculá-los post-hoc
+  arriscaria o veredito "trocar de figura" depois de já exibido (ex: "Contagem confere"
+  em verde na tela, mas o registro salvo acabar divergindo por causa de um saldo mais
+  recente chegado só depois do clique) — um risco de confusão maior que o problema
+  original, sem o cliente ter reportado nada de errado nesses outros campos. Se o
+  cliente notar sintoma parecido no saldo/custo, é um pedido separado — a decisão aqui
+  foi corrigir exatamente o que foi reportado, sem generalizar demais.
+- **Proteção contra clique duplo, nova**: antes, `finalize` era síncrono e chamar
+  `onComplete` imediatamente já tirava o botão de cena (o fluxo troca de item/navega
+  logo depois). Agora que pode aguardar uma promise por um instante, o botão ficaria
+  clicável durante essa janela — um clique duplo impaciente poderia gerar duas
+  contagens do mesmo item. Corrigido com um estado `confirmando`
+  (`useState(false)`) — o botão "Confirmar Contagem" fica desabilitado e mostra
+  "Confirmando…" enquanto a promise resolve, com um guard (`if(confirmando) return;`)
+  no topo de `finalize()`.
+- Testado via harness dedicado (`harness_ultima_saida_race.js`, jsdom +
+  react-dom/client + `act()`, mesma técnica rigorosa de sempre — carrega o `index.html`
+  inteiro transpilado numa `vm.Script`): reproduzido o cenário EXATO do bug (recontagem,
+  `expectAddressCheck:false`, consulta ainda pendente no momento do clique via uma
+  Promise controlada manualmente) — confirma que `onComplete` NÃO é chamado enquanto a
+  consulta não resolve, que o botão mostra "Confirmando…"/fica desabilitado nesse
+  meio-tempo, e que assim que a consulta resolve (trazendo `ultimaMovimentacao:
+  '2026-08-15'`), a contagem salva grava essa data real — não mais `null`. Confirmado
+  também o caminho sem corrida (consulta já resolvida antes do clique — comportamento
+  idêntico ao de sempre, sem atraso) e o caminho de falha genuína da consulta (nunca
+  trava a contagem, cai pro fallback local honesto). 17/17 asserções passando. Rodei de
+  novo toda a suíte de regressão do scratchpad (71 harnesses, 1168 asserções) — só 1
+  harness pré-existente (`harness_classify_divergence_binario.js`) precisou de ajuste
+  mecânico nos próprios helpers de teste (`render`/`click` viraram `async`/`await
+  act(async()=>{...})`, mesmo padrão já usado nos harnesses mais recentes deste
+  projeto) — sem nenhuma mudança nas asserções em si, já que `onComplete` deixou de ser
+  chamado 100% síncrono dentro do clique (agora sempre passa por pelo menos 1 microtask
+  de `await`, mesmo no caminho "rápido") — não é regressão de comportamento real, só um
+  detalhe de timing que testes síncronos antigos precisam acomodar. **Verificação de
+  ponta a ponta em produção fica a cargo do cliente** — mesma limitação de sempre
+  (login exige Supabase Auth real, não simulável no sandbox sem rede) — mas como a
+  correção é só de LEITURA/timing (não depende de nenhuma migração de SQL nem de
+  redeploy de Edge Function), já deve valer pra qualquer contagem nova assim que o
+  deploy publicar.
 
