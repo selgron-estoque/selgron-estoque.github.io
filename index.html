@@ -11359,6 +11359,14 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onEnvi
                       <div className="rg"><div className="k">%</div><div className="v" style={{color:sev.color}}>{fmtAcuraciaItem(c)}</div></div>
                     </div>
                   )}
+                  {/* Bug real corrigido aqui: quando o item NÃO tem rodada
+                      anterior (nunca foi recontado — o caso mais comum), a
+                      tela não mostrava "quem contou" em lugar nenhum — só a
+                      variante com `anterior` (comparativo 1ª/2ª contagem)
+                      tinha essa informação, via `round-who`. Cliente
+                      reportou com print: "alguns casos não aparece quem
+                      contou" — batia exatamente com essa lacuna. */}
+                  {!anterior && <div style={{padding:'10px 16px 0',fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>Contado por <strong style={{color:'var(--ink)'}}>{c.usuario}</strong> em {c.data} {c.hora||''}</div>}
                   {c.motivo && <div style={{padding:'10px 16px 0',fontSize:'var(--text-sm)'}}>Motivo: <strong>{c.motivo}</strong></div>}
                   {c.valorDivergente!=null && Number(c.valorDivergente)!==0 && <div style={{padding:'6px 16px 0',fontSize:'var(--text-sm)'}}>Valor divergente: <strong>R$ {Number(c.valorDivergente).toFixed(2)}</strong></div>}
                   <div style={{padding:'6px 16px 0',fontSize:'var(--text-sm)'}}>

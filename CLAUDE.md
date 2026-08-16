@@ -19432,3 +19432,46 @@ sequencia de endereço, fico andando um monte lá e pra cá".
   nenhuma migração, já deve valer pra qualquer "Itens Específicos"/"Lista
   Importada" reaberto assim que o deploy publicar.
 
+## Bug real: "Itens Divergentes" não mostrava quem contou pra item sem recontagem
+
+Cliente mandou print de "Itens Divergentes" apontando: "alguns casos não aparece quem
+contou" — visível comparando dois grupos de cards no mesmo print. O card de um item já
+recontado (com o comparativo `.rounds-stack`, 2ª/3ª contagem lado a lado) mostrava
+"Alisson Silva · 2026-08-15 05:20"/"07:36" normalmente (via `.round-who`, um por
+rodada) — mas os cards seguintes, de itens SEM nenhuma recontagem ainda (o caso mais
+comum — 1ª contagem já divergente, direto pra análise do líder, sem `anterior`), não
+mostravam o operador em lugar nenhum: só o quadro Sistema/Físico/Diferença/% sozinho,
+sem nenhuma linha de "quem"/"quando".
+
+- **Causa raiz**: `DivergentItemsPanel` sempre teve DOIS caminhos de renderização pro
+  quadro de resultado — `anterior ? <rounds-stack com 2 round-who> : <result-grid
+  sozinho>` — só o 1º caminho (com `anterior`, ou seja, item já recontado) tinha
+  qualquer menção ao operador. O 2º caminho (`else`, sem `anterior` — a maioria dos
+  itens desta tela, já que a maior parte da divergência nunca chega a precisar de
+  recontagem antes de ir pra análise) nunca teve essa linha, desde que a tela foi
+  criada.
+- **Correção**: adicionada uma linha "Contado por **{c.usuario}** em {c.data} {c.hora}"
+  logo depois do quadro único (`!anterior &&`), no mesmo estilo/posição já usado por
+  "Motivo"/"Valor divergente" logo abaixo — mesmo formato textual do `round-who`
+  ("quem · quando"), só sem estar dentro de `.rounds-stack`. Escopado só ao caso `!
+  anterior` — o caso com `anterior` já mostra o operador nas DUAS rodadas via
+  `round-who`, adicionar de novo ali duplicaria a informação.
+- **Sem gate de perfil** — mesmo critério já documentado nesta tela ("nunca teve
+  nenhum mecanismo de restrição... Valor divergente segue o mesmo padrão, sem gate
+  nenhum"), o "quem contou" aparece pra qualquer perfil que já vê o card.
+- Testado via harness dedicado (`harness_divergentes_quem_contou.js`, jsdom +
+  react-dom/client + `act()`, mesma técnica rigorosa de sempre — carrega o
+  `index.html` inteiro transpilado numa `vm.Script`): renderiza 2 cards, um sem
+  `anterior` (000.62761, cenário exato do print) e um com (000.99999 + a rodada
+  anterior 000.99999/c2) — confirma que o card sem `anterior` mostra "Contado por
+  Alisson Silva", que o card com `anterior` continua mostrando os 2 `round-who`
+  certos (operador da rodada anterior e da atual) e NÃO duplica "Contado por" solto.
+  **Confirmado que o harness pega o bug de verdade**: rodado contra o código de ANTES
+  da correção (`git stash`), as 2 asserções relevantes falharam exatamente como
+  esperado (texto sem "Contado por"/sem o nome do operador); só com a correção
+  aplicada é que passa 11/11. Rodei de novo toda a suíte de regressão do scratchpad
+  (76 harnesses) — 0 falhas. Transpile Babel do arquivo inteiro e balanceamento de
+  chaves do CSS conferidos (668/668, sem mudança — nenhuma classe CSS nova, só JSX).
+  **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma limitação
+  de sempre (login exige Supabase Auth real, não simulável no sandbox sem rede).
+
