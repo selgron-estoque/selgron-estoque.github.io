@@ -15692,6 +15692,34 @@ function EtiquetasPanel({currentUser}){
     return ()=>{ cancelado = true; clearTimeout(timer); };
   }, [query, aba]);
 
+  // Armazém usado pra DESAMBIGUAR a consulta ao vivo (Selgron/Protheus) —
+  // mesmo bug já corrigido antes em CountStep pro SALDO ("Bug real: saldo
+  // do sistema vinha do ARMAZÉM ERRADO", CLAUDE.md): quando o código existe
+  // em mais de um armazém na busca da Selgron, `consultar-produto-selgron`
+  // só consegue escolher um bloco de resultado se um armazém for informado
+  // E bater com EXATAMENTE um deles — sem isso, TODOS os campos voltam
+  // `null` (`ambiguo:true`, nunca adivinha) e a tela cai pro cadastro local
+  // do Supabase, que pode não ter endereço/unidade cadastrados. Era
+  // exatamente o caso reportado: "tem item que possuem endereço, mas não
+  // está puxando" (000.53871 — existe em mais de um armazém na consulta
+  // real, mostrando "sem cadastro" no app mesmo tendo endereço/unidade
+  // reais na Selgron). Antes desta correção, `EtiquetasPanel` nunca mandava
+  // NENHUM armazém — sempre caía no caso ambíguo pra qualquer item
+  // multi-armazém. Mesmo padrão de fábrica já usado em `ManualCountFlow`
+  // (nasce em "1"/Armazém 01, `<select>` populado por
+  // `fetchEstoqueValorPorAlmoxarifado()`, trocável sem sair da tela).
+  const [armazemEtiqueta, setArmazemEtiqueta] = useState('1');
+  const [armazensEtiqueta, setArmazensEtiqueta] = useState(null); // null = carregando a lista de opções
+  useEffect(()=>{
+    let cancelado = false;
+    fetchEstoqueValorPorAlmoxarifado().then(rows=>{
+      if(cancelado) return;
+      const codigos = (rows||[]).map(r=>String(r.almoxarifado));
+      setArmazensEtiqueta(Array.from(new Set(['1', ...codigos])).sort());
+    });
+    return ()=>{ cancelado = true; };
+  }, []);
+
   // Consulta ao vivo (Selgron/Protheus) pro item selecionado — MESMO padrão
   // já usado em `CountStep` (`liveConsulta`/`unidadeEfetiva`/`descricaoEfetiva`,
   // ver perto de `fetchSaldoConsultaSelgron`). Cliente reportou (print de uma
@@ -15705,19 +15733,21 @@ function EtiquetasPanel({currentUser}){
   // certo. Pedido já dado antes, mais amplo ("todos os locais que pedem
   // unidade de medida e descrição, alterar da planilha para puxar direto do
   // Consulta") — igual `descricao` também. Só roda pra `aba==='produto'`
-  // (endereço nunca mostra unidade/descrição na etiqueta).
+  // (endereço nunca mostra unidade/descrição na etiqueta). Passa
+  // `armazemEtiqueta` (ver acima) — sem isso, item multi-armazém sempre
+  // caía no caso ambíguo (todo campo `null`).
   const [liveConsultaEtiqueta, setLiveConsultaEtiqueta] = useState(null);
   useEffect(()=>{
     if(aba!=='produto' || !selecionado){ setLiveConsultaEtiqueta(null); return; }
     let cancelado = false;
     setLiveConsultaEtiqueta(null);
-    fetchSaldoConsultaSelgron(selecionado.codigo).then(res=>{
+    fetchSaldoConsultaSelgron(selecionado.codigo, armazemEtiqueta).then(res=>{
       if(cancelado) return;
       if(res.ok) setLiveConsultaEtiqueta(res);
       else if(res.erro) console.warn('Consulta ao vivo (Selgron) falhou:', res.erro);
     });
     return ()=>{ cancelado = true; };
-  }, [aba, selecionado ? selecionado.codigo : null]);
+  }, [aba, selecionado ? selecionado.codigo : null, armazemEtiqueta]);
   const unidadeLiveValidaEtiqueta = liveConsultaEtiqueta ? unidadeCadastroValida(liveConsultaEtiqueta.unidade) : null;
   const unidadeEfetivaEtiqueta = selecionado ? (unidadeLiveValidaEtiqueta || selecionado.unidade || null) : null;
   const descricaoEfetivaEtiqueta = selecionado ? ((liveConsultaEtiqueta && liveConsultaEtiqueta.descricao) ? liveConsultaEtiqueta.descricao : selecionado.descricao) : null;
@@ -15946,6 +15976,25 @@ function EtiquetasPanel({currentUser}){
         <button className={'btn '+(aba==='produto'?'btn-primary':'btn-outline')+' btn-sm'} onClick={()=>setAba('produto')}>Produto</button>
         <button className={'btn '+(aba==='endereco'?'btn-primary':'btn-outline')+' btn-sm'} onClick={()=>setAba('endereco')}>Endereço</button>
       </div>
+
+      {/* Armazém usado pra desambiguar a consulta ao vivo — ver comentário
+          de `armazemEtiqueta`/`liveConsultaEtiqueta` mais acima. Só faz
+          sentido pra "Produto" (a busca de "Endereço" não passa pela
+          consulta ao vivo Selgron/Protheus). */}
+      {aba==='produto' && (
+        <div className="role-note" style={{marginBottom:14,display:'flex',justifyContent:'space-between',alignItems:'center',gap:10}}>
+          <span>Consultando ao vivo no <strong>Armazém {armazemEtiqueta.padStart(2,'0')}</strong></span>
+          <select
+            value={armazemEtiqueta}
+            onChange={e=>setArmazemEtiqueta(e.target.value)}
+            style={{background:'var(--panel-raised)', border:'1px solid var(--line)', color:'var(--ink)', borderRadius:8, padding:'6px 10px', fontSize:'var(--text-xs)', fontFamily:'var(--font-mono)'}}
+          >
+            {(armazensEtiqueta || ['1']).map(a=>(
+              <option key={a} value={a}>Armazém {a.padStart(2,'0')}</option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <div className="field">
         <label>{aba==='endereco' ? 'Buscar endereço' : 'Buscar produto (código ou descrição)'}</label>

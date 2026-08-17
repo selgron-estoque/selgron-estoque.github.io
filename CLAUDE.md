@@ -19580,3 +19580,67 @@ clicar "Enviar para Fila": `new row violates row-level security policy for table
   `eh_lider_ou_admin` sozinha — checar isso ANTES de escrever a policy, não depois de
   um usuário real ser bloqueado.
 
+
+
+## Bug real: etiqueta "puxava" sem cadastro pra item que TEM endereço/unidade real — consulta ao vivo nunca informava o armazém
+
+Cliente mandou 2 prints lado a lado: a tela "Etiquetas" do app, item `000.53871`,
+mostrando "Unidade: UN (padrão, sem cadastro)" e "Endereço: sem cadastro"; e a busca
+REAL de `consulta.selgron.com.br` pro mesmo código, mostrando um endereço genuíno
+(`010-H-6`), unidade (`PC`) e armazém (`01`) — com a mensagem: "tem item que possuem
+endereço, mas não está puxando".
+
+- **Causa raiz**: `EtiquetasPanel` sempre chamava `fetchSaldoConsultaSelgron(selecionado.
+  codigo)` **sem nenhum 2º argumento** (`armazem`). Isso é exatamente o mesmo tipo de
+  ambiguidade já corrigido antes só pro SALDO em `CountStep`/`ManualCountFlow` (ver "Bug
+  real: saldo do sistema vinha do ARMAZÉM ERRADO" no histórico acima): quando um código
+  existe em mais de um armazém na busca real da Selgron, `consultar-produto-selgron`
+  (a Edge Function) só consegue escolher UM bloco de resultado se um armazém for
+  informado E bater com exatamente um deles — sem isso, TODO campo (`descricao`/
+  `endereco`/`armazem`/`unidade`/`saldo`) volta `null` (`ambiguo:true`), com `ok:true`
+  ainda assim — silenciosamente, sem erro visível. `CountStep` já tinha sido corrigido
+  pra sempre passar `product.almoxarifado`; `ManualCountFlow` já tinha o seletor de
+  armazém desde que essa tela existe. `EtiquetasPanel` nunca tinha ganhado nenhum dos
+  dois — item `000.53871` (multi-armazém na consulta real) sempre caía no caso ambíguo,
+  e a tela mostrava o fallback pro cadastro LOCAL do Supabase, que pra esse código
+  também não tinha endereço/unidade cadastrados — daí "sem cadastro" mesmo com dado
+  real disponível na Selgron.
+- **Correção**: `EtiquetasPanel` ganhou o MESMO padrão de fábrica já usado em
+  `ManualCountFlow` — `armazemEtiqueta` (`useState('1')`, Armazém 01, o mais comum na
+  prática — ver "Cards de estoque no modelo de referência" no histórico) +
+  `armazensEtiqueta` (lista de opções via `fetchEstoqueValorPorAlmoxarifado()`, mesma
+  fonte de sempre) + um `<select>` novo, visível só na aba "Produto" (a busca de
+  "Endereço" não passa pela consulta ao vivo), logo abaixo dos botões
+  Produto/Endereço, mesmo estilo visual (`role-note` + `<select>`) do seletor de
+  `ManualCountFlow`. `fetchSaldoConsultaSelgron(selecionado.codigo, armazemEtiqueta)`
+  passou a informar o armazém — e o `useEffect` da consulta ao vivo ganhou
+  `armazemEtiqueta` no array de dependências, pra trocar de armazém no `<select>`
+  disparar uma nova consulta na hora (sem isso, o seletor existiria mas não teria
+  efeito nenhum).
+- **Nunca "adivinha" — mesmo critério "nunca adivinha" de sempre neste projeto**: um
+  código genuinamente ambíguo pro armazém escolhido (ex.: o item não existe de fato
+  nesse armazém, ou a consulta real não bate) continua devolvendo `null` em tudo,
+  caindo com segurança pro cadastro local — nunca inventa um valor, só passa a
+  RESOLVER os casos que já eram resolvíveis (item existe, sem ambiguidade, só faltava
+  informar o armazém certo).
+- Testado via harness dedicado (jsdom + react-dom/client + `act()`, mesma técnica
+  rigorosa de sempre — carrega o `index.html` inteiro transpilado numa `vm.Script`):
+  o seletor de armazém nasce em "Armazém 01"; a 1ª consulta ao vivo já manda
+  `armazem:'1'` (antes não mandava nenhum); com o armazém certo, endereço/unidade reais
+  aparecem na tela (não mais "sem cadastro"); trocar o `<select>` pra outro armazém
+  dispara uma NOVA consulta com o armazém novo, refletindo o resultado diferente (ou a
+  ausência de dado real nesse armazém, caindo pro cadastro local com honestidade); e um
+  código genuinamente sem correspondência em nenhum armazém pedido continua devolvendo
+  `null` em tudo, nunca adivinhando. 15 asserções, todas passando — **confirmado que o
+  harness pega a regressão de verdade**: rodado contra o código de ANTES da correção
+  (`git stash`), falhou exatamente como esperado (sem seletor de armazém nenhum na
+  tela). Rodei de novo toda a suíte de regressão do scratchpad (81 harnesses) — 0
+  falhas. Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  conferidos (669/669, sem mudança — esta correção não tocou em CSS nenhum, só JS/JSX).
+  **Nenhuma migração de SQL nem redeploy de Edge Function necessários** — a correção é
+  só de LEITURA no front-end (a Edge Function `consultar-produto-selgron` já sabia
+  receber/usar o parâmetro `armazem` desde a correção do saldo; só faltava
+  `EtiquetasPanel` informar). **Verificação de ponta a ponta com o item real
+  (000.53871, escolhendo "Armazém 01") fica a cargo do cliente** — mesma limitação de
+  sempre (login exige Supabase Auth real, não simulável no sandbox sem rede, e o
+  sandbox tampouco tem acesso à consulta interna da Selgron).
