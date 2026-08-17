@@ -113,6 +113,23 @@ function normalizarArmazem(v: string | null | undefined): string {
   return t.toUpperCase();
 }
 
+// Normaliza um CÓDIGO DE PRODUTO pra COMPARAÇÃO exata — a busca da Selgron
+// (campo "busca=") faz correspondência por PREFIXO/SUBSTRING, não por
+// código exato: buscar "000.26627" pode devolver blocos pra "000.26627"
+// (8 dígitos, formato XXX.XXXXX) MAS TAMBÉM "000.26627.1"/"000.26627.2"
+// (9 dígitos, formato XXX.XXXXX.X) — três produtos REAIS e DISTINTOS,
+// confirmado com o cliente ("aparece só um armazem do código 000.26627 os
+// outros são 000.26627.1 e 000.26627.2"), não o mesmo produto em 3
+// armazéns. Sem filtrar por código exato ANTES de desambiguar por armazém
+// (ver uso logo abaixo), o bloco escolhido podia acabar sendo de um
+// PRODUTO DIFERENTE do pedido, só porque o armazém dele batia — bug mais
+// sério que "sem saldo pra comparar": mostraria dado de outro item como se
+// fosse o item sendo contado, silenciosamente.
+function normalizarCodigo(v: string | null | undefined): string {
+  if (!v) return "";
+  return String(v).trim().toUpperCase();
+}
+
 // Divide o texto (já achatado por `htmlParaTexto`) em BLOCOS, um por
 // resultado — a busca da Selgron pode devolver MAIS DE UM resultado pro
 // MESMO código, um por armazém em que ele existe (confirmado com o
@@ -310,29 +327,41 @@ Deno.serve(async (req: Request) => {
     // Divide a página em blocos (1 por resultado) ANTES de extrair qualquer
     // campo — ver `dividirEmBlocos` pro motivo (mesmo código pode aparecer
     // em mais de um armazém, cada um com seu próprio bloco/saldo).
-    const blocos = dividirEmBlocos(texto).map(extrairBloco);
+    const blocosBrutos = dividirEmBlocos(texto).map(extrairBloco);
+
+    // Filtra ANTES de qualquer coisa pelo CÓDIGO EXATO pedido — a busca da
+    // Selgron é por prefixo/substring (ver `normalizarCodigo` acima), então
+    // `blocosBrutos` pode conter resultados de PRODUTOS DIFERENTES (ex.:
+    // pedir "000.26627" também traz "000.26627.1"/"000.26627.2"). Sem esse
+    // filtro, a desambiguação por armazém abaixo podia escolher o bloco
+    // errado — do produto errado, não só do armazém errado.
+    const codigoNormalizado = normalizarCodigo(codigo);
+    const blocos = blocosBrutos.filter((b) => normalizarCodigo(b.codigo) === codigoNormalizado);
 
     if (blocos.length === 1 && blocos[0].saldo == null) {
-      // Achou a página (não é "0 resultados"), mas não achou o rótulo do
-      // saldo no único resultado — sinal de que o formato da página mudou
-      // do lado de lá. Melhor devolver erro claro do que fingir um saldo
-      // errado (preserva o comportamento de sempre pro caso comum, 1
-      // resultado só — a lógica de múltiplos blocos abaixo nunca entra
-      // nesse caminho).
+      // Achou a página (não é "0 resultados") e achou o produto certo, mas
+      // não achou o rótulo do saldo no único resultado dele — sinal de que
+      // o formato da página mudou do lado de lá. Melhor devolver erro claro
+      // do que fingir um saldo errado (preserva o comportamento de sempre
+      // pro caso comum, 1 resultado só pro código pedido — a lógica de
+      // múltiplos blocos abaixo nunca entra nesse caminho).
       return resposta(200, {
         ok: false,
         erro: "Não consegui ler o saldo na resposta da consulta Selgron (formato da página pode ter mudado).",
       });
     }
 
-    // Escolhe QUAL bloco usar. 1 resultado só -> sem ambiguidade nenhuma,
-    // usa ele (comportamento de sempre). Mais de 1 -> só resolve quando o
-    // armazém pedido bate com EXATAMENTE 1 bloco; senão (sem armazém
-    // informado, nenhum bloco bate, ou mais de um bate — nunca deveria
-    // acontecer) fica `null`: cada campo abaixo sai `null` nesse caso, sem
-    // adivinhar — o front-end (padrão "...Efetivo" em CountStep) já sabe
-    // cair pro saldo/endereço/etc. já em cache no Supabase quando um campo
-    // vem `null` daqui, exatamente o comportamento seguro desejado.
+    // Escolhe QUAL bloco usar, só entre os que já batem com o código exato.
+    // 1 resultado só -> sem ambiguidade nenhuma, usa ele (comportamento de
+    // sempre). Mais de 1 (o código existe em mais de 1 armazém) -> só
+    // resolve quando o armazém pedido bate com EXATAMENTE 1 bloco; senão
+    // (sem armazém informado, nenhum bloco bate, ou mais de um bate — nunca
+    // deveria acontecer) fica `null`: cada campo abaixo sai `null` nesse
+    // caso, sem adivinhar — o front-end (padrão "...Efetivo" em CountStep)
+    // já sabe cair pro saldo/endereço/etc. já em cache no Supabase quando um
+    // campo vem `null` daqui, exatamente o comportamento seguro desejado.
+    // Zero blocos (o código pedido não bateu com nenhum resultado exato —
+    // só variações de prefixo) também cai aqui, com `escolhido:null`.
     let escolhido: BlocoResultado | null = null;
     if (blocos.length <= 1) {
       escolhido = blocos[0] || null;

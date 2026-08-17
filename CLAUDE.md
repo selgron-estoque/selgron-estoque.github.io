@@ -19823,3 +19823,80 @@ de ponta a ponta em produção fica a cargo do cliente** — mesma limitação d
 (login exige Supabase Auth real, não simulável no sandbox sem rede) — mas como a
 correção não depende de nenhuma migração de SQL nem de redeploy de Edge Function (só
 `index.html` mudou), já deve valer assim que o deploy publicar.
+
+## Bug real: consulta ao vivo escolhia bloco do PRODUTO ERRADO — busca da
+## Selgron é por prefixo, não por código exato
+
+Continuação direta do bug corrigido antes ("saldo do sistema vinha do
+ARMAZÉM ERRADO") — o cliente reportou outro item com o mesmo sintoma
+(campos sempre `null`), e ao investigar junto com ele qual código dava pra
+achar na consulta real, a resposta revelou uma causa mais funda: **"aparece
+só um armazem do código 000.26627 os outros são 000.26627.1 e
+000.26627.2"** — ou seja, buscar "000.26627" na Selgron
+(`consulta.selgron.com.br/produto.consulta.php`, campo `busca=`) devolve 3
+resultados, mas só 1 deles é de fato o código pedido; os outros 2 são
+**produtos genuinamente diferentes** (`000.26627.1`/`000.26627.2`, ambos
+formatos válidos de código da SB2 — 8 e 9 dígitos — que só por coincidência
+compartilham o mesmo prefixo). A busca é por PREFIXO/SUBSTRING, não por
+código exato.
+
+- **Causa raiz**: `dividirEmBlocos` já separava a resposta em blocos, um por
+  resultado (criado na correção anterior, pra não misturar saldo de
+  armazéns diferentes do MESMO código) — mas a escolha de qual bloco usar
+  (`escolhido`) SÓ filtrava por ARMAZÉM, nunca verificava se o
+  `codigo` de cada bloco batia com o código PEDIDO. Com uma busca por
+  prefixo devolvendo blocos de produtos diferentes, dois problemas reais:
+  (1) se nenhum bloco (entre os 3, produtos misturados) batesse
+  unicamente com o armazém pedido, tudo saía `null` mesmo havendo 1
+  resultado certo e sem ambiguidade nenhuma pra esse código específico;
+  (2) pior — se por acaso o armazém pedido batesse com o bloco de um
+  PRODUTO DIFERENTE (ex.: `000.26627.1` também no armazém "01"), a function
+  devolvia silenciosamente saldo/endereço/descrição de **outro item**,
+  como se fossem do código pedido — o tipo de bug mais grave possível aqui
+  (mostrar dado de um produto errado durante uma contagem).
+- **`normalizarCodigo(v)`** (função nova, Edge Function) — normaliza só pra
+  COMPARAÇÃO (trim + maiúsculo), mesmo espírito de `normalizarArmazem`
+  já existente.
+- **Correção**: antes de qualquer desambiguação por armazém, os blocos
+  passam por um filtro de CÓDIGO EXATO
+  (`blocosBrutos.filter(b => normalizarCodigo(b.codigo) === codigoNormalizado)`)
+  — só blocos do produto genuinamente pedido entram na disputa. A partir
+  daí, a lógica de sempre continua igual: 1 bloco só (depois do filtro) →
+  usa direto, sem precisar de armazém pra desambiguar (mesmo critério já
+  usado por `fetchProdutosByCodigos`/`searchSupabaseCatalog` no resto do
+  app: "código sem ambiguidade real, resolve mesmo se o armazém pedido não
+  bater"); mais de 1 (o produto certo existe em mais de 1 armazém de
+  verdade) → só resolve quando o armazém pedido bate com exatamente 1
+  desses blocos, senão fica `null` (nunca adivinha). O check de "formato da
+  página mudou" (bloco único sem saldo legível) também passou a rodar
+  sobre os blocos JÁ filtrados por código, não mais sobre a contagem bruta
+  — evita disparar esse erro por causa de um produto "vizinho" de prefixo
+  sem saldo, quando o código pedido em si já tinha um resultado válido.
+- **`ambiguo` (campo informativo da resposta)** também passou a refletir
+  os blocos filtrados por código (`blocos.length > 1 && !escolhido`),
+  mais preciso — antes contava qualquer resultado da busca por prefixo
+  como "ambiguidade", mesmo quando só 1 deles de fato era o produto
+  pedido.
+- Testado via harness Node isolado (mesma técnica de sempre — réplica das
+  funções puras da Edge Function, sem depender do runtime Deno, já
+  type-checado à parte via `tsc --strict`): reproduzido o cenário EXATO do
+  cliente (000.26627/000.26627.1/000.26627.2, 3 blocos, códigos
+  distintos) — confirmado que filtrar por código exato primeiro resolve
+  direto pro produto certo mesmo SEM informar armazém (só 1 bloco de
+  verdade é esse produto), que informar um armazém que também bate com o
+  produto ERRADO nunca mistura os dois, e que buscar por um dos "vizinhos"
+  de prefixo (`000.26627.2`) isola esse produto corretamente também — nos
+  dois sentidos. Uma réplica da versão SEM a correção, no mesmo cenário,
+  confirma que ela de fato devolveria o produto ERRADO (999 de saldo, do
+  código `000.26627.1`) quando o armazém pedido batesse por coincidência —
+  prova de que o teste pega a regressão de verdade, não só o caminho feliz.
+  Rodei de novo toda a suíte de regressão do scratchpad (83 harnesses,
+  1267 asserções) — 0 falhas. Type-check da Edge Function via `tsc
+  --strict` (mesmo shim de sempre pros globais do Deno) sem erro.
+  **Nenhuma migração de SQL necessária** — correção só de parsing/leitura.
+  **Falta o cliente rodar o deploy da Edge Function atualizada**
+  (`npx supabase functions deploy consultar-produto-selgron`, mesmo
+  comando de sempre) — até lá, a function publicada continua com o
+  comportamento antigo (bug presente). **Verificação de ponta a ponta com
+  o item real (000.26627) fica a cargo do cliente** — mesma limitação de
+  sempre (sandbox sem acesso de rede ao domínio interno da Selgron).
