@@ -18862,6 +18862,36 @@ NENHUMA quebra de página no DOM, e o Chrome ainda assim conta 2 páginas.
   100% a cargo do cliente** — mesma limitação de sempre nesta feature
   (sandbox sem impressora física, e login exige Supabase Auth real).
 
+### Confirmado: era mesmo a configuração do diálogo de impressão — "só no meu computador"
+
+Cliente mandou um NOVO print, direto do diálogo "Imprimir" do Chrome nesse
+computador específico, perguntando "Porque só no meu computador fica
+assim?" — e a resposta já estava no próprio print, confirmando de vez o
+"suspeito principal" registrado acima:
+
+- **"Margens: Mínima"** — não "Nenhuma", que é o valor certo. "Mínima" faz
+  o Chrome reservar o menor respiro que ELE MESMO considera imprimível
+  (alguns milímetros, ignorando o `@page{margin:0}` do CSS) — numa
+  etiqueta de só 30,5mm de altura, essa margem sozinha já é grande o
+  bastante pra empurrar parte do conteúdo pra uma 2ª página fantasma.
+- **"Cabeçalhos e rodapés" marcado** — reserva um pouco de espaço vertical
+  extra no topo/rodapé de CADA página pra URL/data/número de página (o
+  padrão do Chrome pra imprimir uma página comum) — mais um "ladrão" de
+  altura que uma etiqueta tão pequena não tem sobrando pra dar.
+- **Confirma exatamente "por que só nessa máquina"**: o Chrome guarda as
+  preferências de impressão POR IMPRESSORA, salvas localmente em cada
+  computador — não sincronizam entre aparelhos, mesmo entrando com a
+  mesma conta Google. O outro computador que já funciona certo
+  certamente já tem "Margens: Nenhuma" + "Cabeçalhos e rodapés"
+  desmarcado configurados de uma vez anterior — esse aqui nunca tinha
+  sido ajustado.
+- **Não é bug de código nenhum** — nenhuma mudança em `index.html` foi
+  necessária. Passado ao cliente o ajuste de 2 cliques: no painel "Mais
+  definições" do diálogo de impressão, trocar "Margens" pra "Nenhuma" e
+  desmarcar "Cabeçalhos e rodapés" — feito isso, a contagem de páginas do
+  próprio Chrome já deve cair pra "1 folha de papel" antes mesmo de
+  clicar em Imprimir.
+
 
 ## "Colar lista de vários códigos" em Contagem Manual — fila via Ctrl+V
 
