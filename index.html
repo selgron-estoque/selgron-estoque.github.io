@@ -5549,6 +5549,28 @@ function App(){
   // igualmente bloqueada.
   useEffect(()=>{
     if(currentUser && !hasAccess(currentUser, view)){
+      // Bug real (cliente: "tablet abrindo direto em 'Em Execução' e não
+      // consigo sair desta tela") — quando este bloqueio dispara logo
+      // depois de um `goto()` (ex.: operador sem acesso a "Início" tocando
+      // no botão "Início" do `MobileNavBar`), o `goto()` já tinha
+      // empurrado uma entrada em `navHistory` E no histórico real do
+      // navegador ANTES deste efeito rodar — como aqui a correção mexia
+      // em `view`/`flowState` direto (sem passar por `goto()`/`voltarUmPasso()`),
+      // as duas pilhas ficavam com uma entrada "fantasma" que não
+      // corresponde a nenhuma navegação de verdade: o botão "Voltar" (só
+      // no rodapé mobile, `MobileNavBar`) ficava HABILITADO sem nada real
+      // pra desfazer, e apertar ele (ou o botão físico/gesto do tablet)
+      // não mudava a tela visível nenhuma vez — o operador ficava preso
+      // sem nenhum feedback de que algo tinha, de fato, acontecido.
+      // Desfaz essa entrada fantasma: remove o topo de `navHistory` (a
+      // navegação que acabou de ser barrada) e substitui (não empurra) a
+      // entrada do histórico do navegador, deixando as duas pilhas
+      // exatamente como estavam ANTES do `goto()` bloqueado ter rodado —
+      // sem isso, cada tentativa de tocar num destino sem acesso
+      // (mesmo sempre bloqueado, mesmo sempre voltando pro mesmo lugar)
+      // deixava mais uma entrada fantasma acumulada.
+      setNavHistory(prev=>prev.length>0 ? prev.slice(0,-1) : prev);
+      try{ window.history.replaceState({stock360Nav:true}, '', window.location.href); }catch(e){}
       setView(primeiraTelaAcessivel(currentUser));
       setFlowState(null);
     }

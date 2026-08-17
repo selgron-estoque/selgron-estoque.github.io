@@ -19644,3 +19644,74 @@ endereço, mas não está puxando".
   (000.53871, escolhendo "Armazém 01") fica a cargo do cliente** — mesma limitação de
   sempre (login exige Supabase Auth real, não simulável no sandbox sem rede, e o
   sandbox tampouco tem acesso à consulta interna da Selgron).
+
+## Bug real: efeito de redirecionamento por permissão deixava `navHistory`/o histórico do navegador dessincronizados — "tablet preso em Em Execução"
+
+Cliente reportou: "verificar, tablet está abrindo direto na tela de 'Em execução' e não
+consigo sair desta tela". Investigado via 3 perguntas de esclarecimento (`AskUserQuestion`)
+antes de mexer em qualquer código — as respostas (perfil Operador; "nunca editei esse
+usuário"; e uma descrição ambígua de que "aparece a tela de dentro de Em Execução" ao
+tentar navegar) enfraqueceram a 1ª hipótese óbvia (o próprio admin ter removido acesso
+manualmente), mas não descartaram por completo que ALGUÉM (outro admin, ou uma edição
+antiga) tivesse tirado "Início" desse usuário específico via `acessosRemovidos` — e
+confirmaram, junto com a leitura do código, um bug real e concreto na mecânica de
+navegação, independente de quem/como esse acesso foi removido.
+
+- **Causa raiz confirmada por leitura de código**: `TODOS_OS_MENUS[0].id==='home'`,
+  `TODOS_OS_MENUS[1].id==='inventories'` ("Em Execução") — se `'home'` está em
+  `acessosRemovidos` desse usuário (por qualquer motivo), `primeiraTelaAcessivel` resolve
+  exatamente pra `'inventories'`, batendo com o nome exato que o cliente usou pra
+  descrever a tela onde ficou preso. E — o ponto mais importante, que explica o "não
+  consigo sair" mesmo tocando em "Início" repetidas vezes — no tablet (`MobileNavBar`,
+  única navegação disponível abaixo de 768px, só 2 ícones: Início/Voltar, ver "Menu
+  lateral (celular) vira rodapé com 2 ícones" no histórico acima), tocar "Início" chama
+  `goto('home')`, que sempre `pushState`s no histórico do navegador E empurra uma entrada
+  em `navHistory` (o estado que decide se "Voltar" faz alguma coisa) — só que o efeito de
+  redirecionamento (que bloqueia a navegação pra `'home'` e força de volta pra
+  `primeiraTelaAcessivel`) sempre mexeu em `view`/`flowState` DIRETO, bypassando
+  completamente `goto()`/`voltarUmPasso()` — as duas únicas rotinas que mantêm
+  `navHistory` e o histórico real do navegador em sincronia (documentado desde que essa
+  sincronia foi criada, "unificar os dois no MESMO handler garante que a pilha do
+  navegador e navHistory nunca saem de sincronia"). Cada toque em "Início" bloqueado
+  deixava uma entrada FANTASMA em `navHistory` — habilitando o botão "Voltar" sem nada
+  de real pra desfazer: apertar "Voltar" (ou o gesto/botão físico do tablet) simplesmente
+  não mudava a tela visível NENHUMA vez, porque a entrada fantasma sempre apontava pro
+  mesmo `{view:'inventories', ...}` que já era a tela atual — exatamente o sintoma
+  "tentei sair e não consegui", em qualquer combinação de tentar "Início" e "Voltar".
+- **Correção**: o efeito de redirecionamento (`App()`, "A navegação sobrevive a recarregar
+  a página...") passou a desfazer a entrada fantasma antes de corrigir a tela — remove o
+  topo de `navHistory` (`prev.slice(0,-1)`, só quando existe algo pra remover — no boot
+  normal do app, `navHistory` já está vazio, então isso é um no-op inofensivo) e troca a
+  entrada atual do histórico do navegador via `window.history.replaceState(...)` (nunca
+  `pushState`, que só piorava o acúmulo). **Limitação honesta, documentada no código**:
+  `replaceState` não consegue "apagar" a entrada que o `goto()` doomed já tinha
+  empurrado — a API do navegador não tem NENHUM primitivo pra isso (nem old nem new code
+  mudam `window.history.length` de verdade) — o que a correção garante é só que
+  `navHistory` (o estado do PRÓPRIO app que decide se "Voltar" faz alguma coisa) nunca
+  mais fica com resíduo, então o botão nunca mais fica "habilitado à toa" prometendo
+  desfazer algo que não existe.
+- **Ação recomendada ao cliente, sem código nenhum envolvido**: verificar se este
+  operador específico tem "Início" removido em Usuários → Editar → "Comandos Liberados"
+  (dual-list) — se estiver do lado esquerdo ("Comandos Disponíveis"), mover de volta pra
+  "Comandos Liberados" e salvar resolve o problema de verdade, já que no tablet
+  (`MobileNavBar`, só 2 ícones) perder acesso a "Início" tira TODA a navegação restante
+  do operador (não existe nenhum outro menu no tablet pra alcançar "Nova Contagem"/
+  "Recontagens"/etc. sem passar por "Início" primeiro) — a correção de código acima só
+  evita que o app pareça ainda MAIS quebrado enquanto isso não for corrigido (Voltar
+  passa a ficar corretamente desabilitado de novo, em vez de fingir que tem algo pra
+  desfazer), não substitui restaurar o acesso.
+- Testado via harness dedicado (jsdom + react-dom/client + `act()`, História API REAL do
+  jsdom — não mockada, mesma técnica já usada no bug do "botão físico de voltar fechando
+  o app inteiro"): réplica fiel de `goto`/`popstate`/`voltarUmPasso`/o efeito de
+  redirecionamento, alternando entre a versão de ANTES (bug real) e a de AGORA (index.html
+  atual) do único trecho que mudou — confirmado que a versão de ANTES de fato reproduz o
+  bug (1 entrada fantasma depois de 1 `goto('home')` bloqueado) e que a versão corrigida
+  nunca deixa nenhuma, mesmo depois de 3 tentativas seguidas; confirmado também que
+  navegação normal (pra tela acessível) e "Voltar" de uma navegação de verdade continuam
+  funcionando exatamente como antes, sem regressão. Rodei de novo toda a suíte completa
+  de regressão do scratchpad (82 harnesses, incluindo este novo) — 0 falhas. Transpile
+  Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos (669/669, sem
+  mudança — só JS, nenhuma classe CSS tocada). **Verificação de ponta a ponta no tablet
+  real (depois de corrigir o acesso do operador em Usuários) fica a cargo do cliente** —
+  mesma limitação de sempre (login exige Supabase Auth real, não simulável no sandbox
+  sem rede).
