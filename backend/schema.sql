@@ -1718,6 +1718,42 @@ $$ language sql stable security definer set search_path = public;
 revoke all on function public.eh_lider_ou_admin(uuid) from public;
 grant execute on function public.eh_lider_ou_admin(uuid) to authenticated;
 
+-- Helper novo (BUG CORRIGIDO, achado em produção logo após a rodada de RLS
+-- por papel/ação): `eh_lider_ou_admin` sozinha ignora o mecanismo de
+-- "Acesso por tela" (`acessos_extras`/`acessos_removidos` em `usuarios`,
+-- ver `UserForm`/`hasAccess` no index.html) — algumas telas restritas a
+-- líder/admin por padrão (`ACESSOS_RESTRITOS` no front-end: 'etiquetas',
+-- 'enderecos', 'solicitacaoArmazem', 'aprovacaoDiretoria', 'dashboard',
+-- 'relatorios', 'sasAberto') podem ser liberadas individualmente pra um
+-- operador específico — e, pra pelo menos duas delas (`EtiquetasPanel`/
+-- `AddressValidationPanel`), o acesso à TELA já é a única trava que o
+-- front-end aplica (a ação em si não tem um segundo gate de role) — a
+-- policy usando só `eh_lider_ou_admin` travava esse operador mesmo com a
+-- exceção concedida (achado real: um operador com a exceção 'etiquetas'
+-- não conseguia mais "Enviar para Fila", erro "new row violates row-level
+-- security policy for table etiquetas_fila"). Mirror exato de
+-- `hasAccess(user, viewId)` do index.html — só usado nas 2 tabelas que de
+-- fato têm esse mecanismo de exceção (etiquetas_fila, enderecos_propostos/
+-- enderecos/estoque_enderecos); as outras tabelas desta seção (contagens/
+-- inventarios) foram conferidas uma a uma e usam `role==='lider'||
+-- role==='admin'` direto no componente (`canApprove`/`canMark`/
+-- `canDecide`), sem nenhum caminho de exceção — `eh_lider_ou_admin`/
+-- `eh_admin` continuam corretas pra essas.
+create or replace function public.tem_acesso_tela(p_uid uuid, p_tela text)
+returns boolean as $$
+  select
+    case
+      when u.perfil = 'admin' then true
+      when (u.acessos_removidos ? p_tela) then false
+      when u.perfil = 'lider' then true
+      else (u.acessos_extras ? p_tela)
+    end
+  from usuarios u
+  where u.id = p_uid and u.status <> 'bloqueado';
+$$ language sql stable security definer set search_path = public;
+revoke all on function public.tem_acesso_tela(uuid, text) from public;
+grant execute on function public.tem_acesso_tela(uuid, text) to authenticated;
+
 -- -----------------------------------------------------------------------
 -- CONTAGENS — leitura continua ampla (várias telas — "Contagens de Hoje" na
 -- Home, busca de status, etc. — legitimamente mostram a fila de TODO
@@ -1819,18 +1855,21 @@ create policy "exclusão só admin" on inventarios for delete
 -- ENDERECOS_PROPOSTOS — inserção continua ampla (qualquer operador propõe
 -- um endereço enquanto conta, via `addAddressProposal`, passado aos
 -- fluxos de contagem sem restrição de perfil). UPDATE (confirmar/rejeitar
--- a proposta) só líder/admin — é exatamente a mesma decisão que já grava
--- em `enderecos`/`estoque_enderecos` (ver abaixo), protegida pelo MESMO
--- perfil — sem isso, um operador poderia auto-aprovar a própria proposta
--- direto via API, sem nunca precisar passar por `enderecos`/
--- `estoque_enderecos`.
+-- a proposta, `AddressValidationPanel`) usa `tem_acesso_tela(...,
+-- 'enderecos')`, não `eh_lider_ou_admin` puro — BUG REAL corrigido aqui
+-- (achado em produção, ver CLAUDE.md): `AddressValidationPanel` não tem
+-- NENHUM gate de role interno além do acesso à própria TELA
+-- (`hasAccess`/`ACESSOS_RESTRITOS.enderecos`, que já honra
+-- `acessosExtras`/`acessosRemovidos`) — um operador com a exceção
+-- concedida via "Acesso por tela" via a tela normalmente, mas
+-- `eh_lider_ou_admin` (perfil-only) bloqueava a escrita mesmo assim.
 -- -----------------------------------------------------------------------
 drop policy if exists "atualização autenticada" on enderecos_propostos;
 drop policy if exists "atualização pública" on enderecos_propostos;
 drop policy if exists "atualização líder ou admin" on enderecos_propostos;
 create policy "atualização líder ou admin" on enderecos_propostos for update
-  using (public.eh_lider_ou_admin(auth.uid()))
-  with check (public.eh_lider_ou_admin(auth.uid()));
+  using (public.tem_acesso_tela(auth.uid(), 'enderecos'))
+  with check (public.tem_acesso_tela(auth.uid(), 'enderecos'));
 
 -- -----------------------------------------------------------------------
 -- ESTOQUE_SALDO / PRODUTOS — leitura passa a exigir autenticação (era
@@ -1864,11 +1903,14 @@ create policy "escrita só admin" on produtos for all
 
 -- -----------------------------------------------------------------------
 -- ENDERECOS / ESTOQUE_ENDERECOS — leitura passa a exigir autenticação
--- (mesmo motivo acima). Escrita restrita a LÍDER OU ADMIN — dois
--- escritores reais confirmados: `upsertCatalogoDescricao` (admin, upload
--- em massa) E `aplicarEnderecoConfirmado` (líder/admin, aprovação de
--- endereço proposto em `AddressValidationPanel`) — a união dos dois é
--- líder+admin.
+-- (mesmo motivo acima). Escrita usa `tem_acesso_tela(..., 'enderecos')`
+-- (não `eh_lider_ou_admin` puro, mesmo bug/correção documentado acima em
+-- ENDERECOS_PROPOSTOS) — dois escritores reais confirmados:
+-- `upsertCatalogoDescricao` (admin, upload em massa — sempre passa,
+-- `tem_acesso_tela` retorna `true` pra admin incondicionalmente) E
+-- `aplicarEnderecoConfirmado` (líder/admin por padrão, OU qualquer
+-- perfil com a exceção `'enderecos'` concedida, aprovação de endereço
+-- proposto em `AddressValidationPanel`).
 -- -----------------------------------------------------------------------
 drop policy if exists "leitura pública" on enderecos;
 drop policy if exists "leitura autenticada" on enderecos;
@@ -1877,8 +1919,8 @@ create policy "leitura autenticada" on enderecos for select
 drop policy if exists "escrita autenticada" on enderecos;
 drop policy if exists "escrita líder ou admin" on enderecos;
 create policy "escrita líder ou admin" on enderecos for all
-  using (public.eh_lider_ou_admin(auth.uid()))
-  with check (public.eh_lider_ou_admin(auth.uid()));
+  using (public.tem_acesso_tela(auth.uid(), 'enderecos'))
+  with check (public.tem_acesso_tela(auth.uid(), 'enderecos'));
 
 drop policy if exists "leitura pública" on estoque_enderecos;
 drop policy if exists "leitura autenticada" on estoque_enderecos;
@@ -1887,8 +1929,8 @@ create policy "leitura autenticada" on estoque_enderecos for select
 drop policy if exists "escrita autenticada" on estoque_enderecos;
 drop policy if exists "escrita líder ou admin" on estoque_enderecos;
 create policy "escrita líder ou admin" on estoque_enderecos for all
-  using (public.eh_lider_ou_admin(auth.uid()))
-  with check (public.eh_lider_ou_admin(auth.uid()));
+  using (public.tem_acesso_tela(auth.uid(), 'enderecos'))
+  with check (public.tem_acesso_tela(auth.uid(), 'enderecos'));
 
 -- -----------------------------------------------------------------------
 -- ITEM_RESERVAS — pedido explícito: a duração da reserva precisa ser fixa
@@ -1973,11 +2015,18 @@ drop policy if exists "escrita autenticada" on item_reservas;
 -- reserva de qualquer código pra mostrar "já sendo contado por Fulano".
 
 -- -----------------------------------------------------------------------
--- ETIQUETAS_FILA — leitura/inserção/atualização restritas a LÍDER OU ADMIN
--- (mesmo grupo de `ACESSOS_RESTRITOS.etiquetas` — único lugar que grava
--- nesta tabela, `salvarEtiquetaNaFila`/`marcarEtiquetaImpressa`, os dois só
--- dentro de `EtiquetasPanel`). Sem policy de delete — nenhum caminho do
--- app apaga linha desta tabela.
+-- ETIQUETAS_FILA — leitura/inserção/atualização usam `tem_acesso_tela(...,
+-- 'etiquetas')`, não `eh_lider_ou_admin` puro. BUG REAL corrigido aqui —
+-- o primeiro sintoma relatado em produção deste round inteiro (ver
+-- CLAUDE.md): `EtiquetasPanel` não tem NENHUM gate de role interno além
+-- do acesso à própria TELA (`hasAccess`/`ACESSOS_RESTRITOS.etiquetas`, já
+-- honra `acessosExtras`/`acessosRemovidos`) — único lugar que grava nesta
+-- tabela, `salvarEtiquetaNaFila`/`marcarEtiquetaImpressa`. Um operador
+-- (Lucio Schultz, caso real) com a exceção `'etiquetas'` concedida
+-- conseguia abrir a tela normalmente mas era barrado por
+-- `eh_lider_ou_admin` (perfil-only) ao clicar "Enviar para Fila" — erro
+-- "new row violates row-level security policy for table 'etiquetas_fila'".
+-- Sem policy de delete — nenhum caminho do app apaga linha desta tabela.
 -- -----------------------------------------------------------------------
 drop policy if exists "leitura autenticada" on etiquetas_fila;
 drop policy if exists "escrita autenticada" on etiquetas_fila;
@@ -1985,12 +2034,12 @@ drop policy if exists "leitura líder ou admin" on etiquetas_fila;
 drop policy if exists "inserção líder ou admin" on etiquetas_fila;
 drop policy if exists "atualização líder ou admin" on etiquetas_fila;
 create policy "leitura líder ou admin" on etiquetas_fila for select
-  using (public.eh_lider_ou_admin(auth.uid()));
+  using (public.tem_acesso_tela(auth.uid(), 'etiquetas'));
 create policy "inserção líder ou admin" on etiquetas_fila for insert
-  with check (public.eh_lider_ou_admin(auth.uid()));
+  with check (public.tem_acesso_tela(auth.uid(), 'etiquetas'));
 create policy "atualização líder ou admin" on etiquetas_fila for update
-  using (public.eh_lider_ou_admin(auth.uid()))
-  with check (public.eh_lider_ou_admin(auth.uid()));
+  using (public.tem_acesso_tela(auth.uid(), 'etiquetas'))
+  with check (public.tem_acesso_tela(auth.uid(), 'etiquetas'));
 
 -- -----------------------------------------------------------------------
 -- LIMITAÇÃO CONHECIDA, DOCUMENTADA (não corrigida nesta rodada por

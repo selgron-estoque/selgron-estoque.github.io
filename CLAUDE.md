@@ -19475,3 +19475,78 @@ sem nenhuma linha de "quem"/"quando".
   **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma limitação
   de sempre (login exige Supabase Auth real, não simulável no sandbox sem rede).
 
+## Bug real em produção: RLS por papel/ação bloqueava operador com exceção
+## concedida via "Acesso por tela" — `tem_acesso_tela` corrige
+
+No mesmo dia em que o cliente aplicou, em produção, o grande bloco de RLS por papel/
+ação da "Rodada de segurança e confiabilidade" (ver seção acima — `contagens`/
+`inventarios`/`estoque_saldo`/`produtos`/`enderecos`/`estoque_enderecos`/
+`enderecos_propostos`/`item_reservas`/`etiquetas_fila`, guiado passo a passo
+terminal/SQL Editor numa sessão à parte), ele mandou print de um operador (Lucio
+Schultz) — que já tinha recebido a exceção `'etiquetas'` via "Acesso por tela" (o
+mecanismo do próprio app, `UserForm`/dual-list, ver seção "Acesso por tela — TODOS os
+menus" mais acima) e conseguia abrir a tela "Etiquetas" normalmente — sendo barrado ao
+clicar "Enviar para Fila": `new row violates row-level security policy for table
+"etiquetas_fila"`.
+
+- **Causa raiz**: as policies aplicadas naquela rodada usam
+  `eh_lider_ou_admin(auth.uid())` — checa só o `perfil` da linha em `usuarios`, sem
+  nenhuma noção de `acessos_extras`/`acessos_removidos`. Investigado caso a caso, ANTES
+  de corrigir qualquer coisa, se esse mesmo problema afetava as outras tabelas da
+  mesma rodada: `RecountsPanel.canMark`/`DivergentItemsPanel.canApprove`/
+  `SolicitacaoArmazemPanel.canDecide`/`DiretoriaApprovalPanel.canDecide`/
+  `InventoryList.canMark` — os 5 componentes que gatam as ações escritas em
+  `contagens`/`inventarios` — todos usam `role==='lider'||role==='admin'` HARDCODED
+  direto no componente, sem NENHUM caminho de exceção por tela — pra essas 2 tabelas,
+  `eh_lider_ou_admin` sempre foi (e continua sendo) exatamente correta, não foi
+  tocada.
+- **O problema é específico de 2 telas que nunca tiveram esse 2º gate de role**:
+  `EtiquetasPanel` e `AddressValidationPanel` — nelas, desde que foram criadas, o
+  ÚNICO controle de permissão que o front-end aplicava sempre foi o acesso à TELA em
+  si (`hasAccess`/`ACESSOS_RESTRITOS`, que já honra `acessosExtras`/`acessosRemovidos`)
+  — a AÇÃO dentro da tela nunca teve um 2º checkpoint de perfil. A RLS nova, ao usar
+  `eh_lider_ou_admin` (perfil-only) nas 4 tabelas que essas 2 telas escrevem, ficou
+  MAIS restritiva do que o próprio app sempre foi — um operador com a exceção
+  concedida passava pela tela sem problema, mas era barrado no banco.
+- **`tem_acesso_tela(p_uid, p_tela)`** (função nova, `security definer`, logo depois
+  de `eh_lider_ou_admin`) — mirror exato de `hasAccess(user, viewId)` do `index.html`:
+  admin sempre `true`; `acessos_removidos` contendo a tela bloqueia mesmo pra líder;
+  `perfil='lider'` libera por padrão (mesmo default de `ACESSOS_RESTRITOS` pra essas
+  telas); senão, só libera se `acessos_extras` contém a tela — via o operador `?` do
+  jsonb (`u.acessos_extras ? p_tela`), mesma semântica de `.includes(...)` do
+  front-end.
+- **4 policies trocadas**, as únicas que correspondem às 2 telas sem 2º gate: 3 em
+  `etiquetas_fila` (select/insert/update) → `tem_acesso_tela(..., 'etiquetas')`; e
+  `enderecos_propostos` (update, "confirmar/rejeitar" em `AddressValidationPanel`) +
+  `enderecos` (escrita) + `estoque_enderecos` (escrita) → `tem_acesso_tela(...,
+  'enderecos')` — as 3 últimas porque `aplicarEnderecoConfirmado` sempre grava esse
+  MESMO par de tabelas junto, atrás do mesmo gate de tela. `contagens`/`inventarios`/
+  `estoque_saldo`/`produtos`/`item_reservas` **não mudaram** — já conferidos como
+  corretos com `eh_lider_ou_admin`/`eh_admin` puros.
+- **Idempotente, mesmo padrão de sempre**: como o bloco inteiro da rodada de segurança
+  já usa `create or replace function`/`drop policy if exists` antes de cada `create
+  policy`, rodar o mesmo bloco de novo (agora já com a função nova e as 4 policies
+  corrigidas) aplica a correção sem apagar nenhum dado — não precisou de nenhum SQL
+  separado, só reexecutar o bloco inteiro mais uma vez.
+- **Diferente da verificação normal deste projeto (harness Node/jsdom, ou execução
+  real contra um Postgres local — ver "Rodada de segurança..." acima, seção "Dois
+  bugs reais achados testando contra um Postgres de verdade")**: dado que era um bug
+  já ATIVO em produção bloqueando um usuário real no meio do expediente, a correção
+  foi entregue ao cliente como SQL avulso pra rodar direto no SQL Editor,
+  imediatamente, ANTES de qualquer verificação formal — só depois disso o mesmo
+  conteúdo foi replicado no `backend/schema.sql`/`backend/README.md` (seção 14.12),
+  pra próxima aplicação do zero já vir corrigida. A verificação em si ficou por
+  leitura direta e sistemática do código-fonte (conferir os 5 componentes com
+  `canMark`/`canApprove`/`canDecide` hardcoded, um a um, pra confirmar que nenhum
+  outro tinha o mesmo problema — não só reagir ao sintoma relatado) — não deu tempo
+  de rodar de novo a suíte de testes contra Postgres real da rodada anterior antes de
+  entregar a correção emergencial; documentado no README como pendência, com os 2
+  controles que faltam pra fechar essa verificação (operador SEM a exceção continua
+  bloqueado; operador COM a exceção certa passa a funcionar).
+- **Lição pro futuro, registrada aqui**: sempre que uma rodada de RLS "por papel"
+  tocar uma tabela cuja tela correspondente usa `hasAccess`/`ACESSOS_RESTRITOS` como
+  único gate (em vez de um `role==='lider'||role==='admin'` hardcoded no componente),
+  a policy correta é `tem_acesso_tela(auth.uid(), '<view id>')`, nunca
+  `eh_lider_ou_admin` sozinha — checar isso ANTES de escrever a policy, não depois de
+  um usuário real ser bloqueado.
+

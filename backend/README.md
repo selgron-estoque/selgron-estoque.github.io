@@ -594,17 +594,21 @@ order by tablename, cmd;
 Depois de rodar o bloco, um **operador comum** deixa de conseguir, via API
 direta: aprovar/rejeitar divergência, marcar urgente, atribuir, gerar SA,
 aprovar/reprovar Diretoria, excluir contagem ou inventário, sobrescrever
-`estoque_saldo`/`produtos` (só admin), editar `enderecos`/
-`estoque_enderecos` (só líder/admin), ou escrever em `item_reservas`/
-`etiquetas_fila` fora dos caminhos previstos. **Nada muda pro fluxo normal
-de contar** — inserir uma contagem nova, avançar `contados` numa fila, ler
-qualquer uma dessas tabelas continuam liberados pra qualquer autenticado,
-exatamente como já funcionava.
+`estoque_saldo`/`produtos` (só admin). Editar `enderecos`/
+`estoque_enderecos`/`enderecos_propostos`/`etiquetas_fila` fica liberado
+pra líder/admin OU pra quem tiver a exceção `'enderecos'`/`'etiquetas'`
+concedida via "Acesso por tela" (mesmo mecanismo que já libera a TELA
+correspondente — ver seção 14.12, correção aplicada depois de um bug real
+em produção) — um operador comum sem essa exceção continua bloqueado.
+**Nada muda pro fluxo normal de contar** — inserir uma contagem nova,
+avançar `contados` numa fila, ler qualquer uma dessas tabelas continuam
+liberados pra qualquer autenticado, exatamente como já funcionava.
 
 **Este mesmo bloco também conserta, de graça, um bug real que fazia
 `reservar_item` (a trava de "item já sendo contado por outro operador")
 nunca funcionar — ver seção 14.11 antes de rodar, pra saber o que
-esperar.**
+esperar.** (E, se você já rodou este bloco antes de ler a seção 14.12,
+rodá-lo de novo já aplica a correção de lá também — é idempotente.)
 
 **Atenção a uma ambiguidade real, que não dá pra resolver só lendo o
 arquivo**: a tabela `usuarios` também foi reescrita — não mais espalhada em
@@ -859,3 +863,89 @@ O script completo (`stub_supabase_env.sql` + `test_rls_final.sql` +
 tudo e roda a suíte inteira sozinho) está preservado no scratchpad da
 sessão que fez esta verificação — reaproveitável em qualquer ambiente
 com PostgreSQL 16 disponível, sem depender de acesso ao Supabase real.
+
+### 14.12 — Bug real em produção: RLS da seção 14.3 travava um operador com
+### exceção concedida via "Acesso por tela" — `tem_acesso_tela` corrige
+
+No mesmo dia em que o cliente aplicou o bloco da seção 14.3 em produção,
+um operador (Lucio Schultz), que já tinha recebido a exceção `'etiquetas'`
+via "Acesso por tela" (o mecanismo do próprio app — `UserForm`, dual-list
+de "Comandos Liberados"/`acessos_extras`, ver CLAUDE.md) e conseguia abrir
+a tela normalmente, foi barrado ao clicar "Enviar para Fila" com o erro
+`new row violates row-level security policy for table "etiquetas_fila"`.
+
+**Causa raiz**: as policies aplicadas na seção 14.3 usam
+`eh_lider_ou_admin(auth.uid())` — checa só o `perfil` da linha em
+`usuarios`, sem nenhuma noção do mecanismo de exceção por tela
+(`acessos_extras`/`acessos_removidos`). Isso é exatamente correto pras
+tabelas cuja tela correspondente já tem um 2º gate de role HARDCODED no
+próprio componente, independente de `hasAccess`/`acessosExtras` —
+conferido caso a caso: `RecountsPanel.canMark`, `DivergentItemsPanel.
+canApprove`, `SolicitacaoArmazemPanel.canDecide`, `DiretoriaApprovalPanel.
+canDecide` e `InventoryList.canMark` todos usam `role==='lider'||
+role==='admin'` direto, sem caminho de exceção nenhum — pra essas telas
+(logo, pra `contagens`/`inventarios`), `eh_lider_ou_admin` continua 100%
+correta, **não foi tocada**.
+
+O problema é específico de **duas telas que nunca tiveram esse 2º gate**:
+`EtiquetasPanel` e `AddressValidationPanel` — nelas, o acesso à TELA
+(`hasAccess`/`ACESSOS_RESTRITOS`, que já honra `acessosExtras`/
+`acessosRemovidos`) sempre foi o ÚNICO controle de permissão que o
+front-end aplicava, tanto pra ver a tela quanto pra usar a ação dentro
+dela. A RLS da seção 14.3, ao usar `eh_lider_ou_admin` (perfil-only) nas
+4 tabelas que essas 2 telas escrevem, ficou mais restritiva que o
+comportamento que o próprio app sempre teve — um operador com a exceção
+concedida passava pela tela, mas era bloqueado no banco.
+
+**Corrigido com uma função nova, `tem_acesso_tela(p_uid, p_tela)`**
+(`schema.sql`, logo depois de `eh_lider_ou_admin`) — mirror exato de
+`hasAccess(user, viewId)` do `index.html`: admin sempre `true`;
+`acessos_removidos` contendo a tela bloqueia mesmo pra líder; `perfil=
+'lider'` libera por padrão pras telas deste grupo (mesmo default de
+`ACESSOS_RESTRITOS`); senão, só libera se `acessos_extras` contém a tela.
+Usa o operador `?` do jsonb (`u.acessos_extras ? p_tela`) — testa se a
+string é um elemento de topo do array, mesma semântica de `.includes(...)`
+no front-end.
+
+**4 policies trocadas** de `eh_lider_ou_admin(auth.uid())` pra
+`tem_acesso_tela(auth.uid(), '<tela>')` — as únicas 4 que correspondem às
+2 telas sem 2º gate:
+
+- `etiquetas_fila` (select/insert/update) → `tem_acesso_tela(...,
+  'etiquetas')`.
+- `enderecos_propostos` (update, "confirmar/rejeitar" em
+  `AddressValidationPanel`) → `tem_acesso_tela(..., 'enderecos')`.
+- `enderecos` (escrita) → `tem_acesso_tela(..., 'enderecos')` — mesmo
+  destino que `aplicarEnderecoConfirmado` já grava junto com
+  `enderecos_propostos`.
+- `estoque_enderecos` (escrita) → `tem_acesso_tela(..., 'enderecos')` —
+  mesma decisão, mesmo par de tabelas que `aplicarEnderecoConfirmado`
+  sempre grava junto.
+
+`contagens`/`inventarios`/`estoque_saldo`/`produtos`/`item_reservas`
+**não mudaram** — já conferidos como corretos com `eh_lider_ou_admin`/
+`eh_admin` puros, sem caminho de exceção em nenhuma tela que os escreve.
+
+**Já está tudo no `schema.sql` deste repositório** — como o bloco inteiro
+da seção 14.3 é idempotente (`create or replace function`/`drop policy if
+exists` antes de cada `create policy`), **rodar esse bloco de novo no seu
+projeto (o mesmo bloco da seção 14.3, do início ao fim) já aplica esta
+correção** — não precisa rodar nada separado, só reexecutar o bloco
+inteiro mais uma vez. Se você já tinha aplicado a versão antiga (a que
+causou o erro do Lucio), o `create or replace function
+tem_acesso_tela(...)` mais os 4 `drop policy`/`create policy` corrigidos
+substituem exatamente o que já estava lá, sem apagar nenhum dado.
+
+**Verificação**: por leitura direta do código-fonte (`ACESSOS_RESTRITOS`/
+`hasAccess`/`perfilLiberaPorPadrao` no `index.html`, e os 5 componentes com
+`canMark`/`canApprove`/`canDecide` hardcoded, conferidos um a um pra
+confirmar que nenhum outro tem o mesmo problema) — não houve tempo, dado
+a urgência do bug em produção, de rodar de novo a suíte de teste contra
+Postgres real da seção 14.11 antes de entregar a correção emergencial ao
+cliente. **Se quiser essa confirmação empírica**, o mesmo script
+(`stub_supabase_env.sql`/`test_rls_final.sql`) da seção 14.11 é
+reaproveitável — bastaria adicionar 2 controles novos: um operador SEM
+`acessos_extras` continua bloqueado em `etiquetas_fila`/`enderecos`
+(regressão não introduzida), e um operador COM `acessos_extras` contendo
+a tela certa consegue escrever (o caso que estava quebrado, agora
+corrigido).
