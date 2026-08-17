@@ -9320,6 +9320,11 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   // Confirmar sem mudar nada (cadastro já bate) não gera proposta nenhuma —
   // evita repropor o mesmo endereço a cada contagem do mesmo item.
   function confirmEnderecoManual(){
+    // Mesmo guard do botão (disabled), replicado aqui de propósito — defesa
+    // extra contra confirmar um endereço que só veio do cadastro local
+    // (SB2), sem confirmação ao vivo nem autorização de líder/admin (ver
+    // painelBloqueioConsultaAoVivo, mais abaixo).
+    if(precisaAutorizarEndereco || enderecoAguardandoConfirmacao) return;
     const enderecoFinal = enderecoInformado.toUpperCase();
     const divergeDoCadastro = !!product.enderecoCadastrado && enderecoFinal !== (product.endereco||'').toUpperCase();
     if(onAddressProposed && ENDERECO_REGEX.test(enderecoInformado) && (needsAddressInput || divergeDoCadastro)){
@@ -9364,6 +9369,21 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   // mesmo que a consulta já soubesse de algo mais recente). Ver o efeito
   // logo abaixo de `descricaoEfetiva`.
   const [liveConsulta, setLiveConsulta] = useState(null);
+  // Erro real (rede/credencial/timeout) da consulta ao vivo — antes disso
+  // existia só um `console.warn`, e a tela seguia usando o cadastro local
+  // (SB2) pra sempre, sem nenhum aviso nem bloqueio. Bug real reportado
+  // pelo cliente: "Esse erro é grave, não mostrar a quantidade ao vivo ele
+  // não deveria nem seguir a contagem. Não pode puxar da planilha SB2 sem
+  // autorização." — ver os dois blocos de bloqueio mais abaixo
+  // (`precisaAutorizarEndereco`/`precisaAutorizarSaldo`), que passaram a
+  // travar a confirmação de endereço/quantidade sempre que a única fonte
+  // disponível é o cadastro local SEM confirmação ao vivo, exigindo ou uma
+  // nova tentativa (retry) ou autorização explícita de líder/admin.
+  const [liveConsultaErro, setLiveConsultaErro] = useState(null);
+  // Incrementado pelo botão "Tentar novamente" (nos blocos de bloqueio
+  // abaixo) — entra no array de dependências do efeito, forçando ele rodar
+  // de novo mesmo com o mesmo código/armazém.
+  const [liveConsultaTentativa, setLiveConsultaTentativa] = useState(0);
   // Guarda a PROMISE em si (não só o resultado já resolvido) — usada por
   // `finalize()` pra esperar a consulta terminar quando o operador confirma
   // mais rápido que a rede responde (ver comentário lá, bug real: "Sem
@@ -9383,15 +9403,20 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   useEffect(()=>{
     let cancelado = false;
     setLiveConsulta(null);
+    setLiveConsultaErro(null);
     const p = fetchSaldoConsultaSelgron(product.codigo, product.almoxarifado);
     liveConsultaPromiseRef.current = p;
     p.then(res=>{
       if(cancelado) return;
-      if(res.ok) setLiveConsulta(res);
-      else if(res.erro) console.warn('Consulta ao vivo (Selgron) falhou:', res.erro);
+      if(res.ok){
+        setLiveConsulta(res);
+      } else {
+        if(res.erro) console.warn('Consulta ao vivo (Selgron) falhou:', res.erro);
+        setLiveConsultaErro(res.erro || 'Consulta ao vivo indisponível.');
+      }
     });
     return ()=>{ cancelado = true; };
-  }, [product.codigo, product.almoxarifado]);
+  }, [product.codigo, product.almoxarifado, liveConsultaTentativa]);
   const saldoSistemaEfetivo = (liveConsulta && liveConsulta.saldo!=null) ? liveConsulta.saldo : product.saldoSistema;
   // Mesmo critério do saldo: descrição/unidade vindas da consulta ao vivo
   // (mais atuais que o catálogo local, que só é atualizado quando alguém
@@ -9493,6 +9518,43 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   // checado ao vivo.
   const enderecoSoCadastro = !!(liveConsulta && !liveEnderecoValido && product.enderecoCadastrado);
 
+  // BLOQUEIO REAL — pedido explícito e urgente do cliente ("Esse erro é
+  // grave, não mostrar a quantidade ao vivo ele não deveria nem seguir a
+  // contagem. Não pode puxar da planilha SB2 sem autorização."). Até aqui
+  // a consulta ao vivo era só uma MELHORIA — falhando ou não confirmando
+  // nada, a tela sempre seguia em frente silenciosamente usando o cadastro
+  // local (que, tanto pra endereço quanto pra saldo, tem a MESMA origem
+  // antiga: upload manual da planilha SB2/"Descrição de Produtos"). Agora
+  // isso trava de verdade: só é permitido confirmar endereço/quantidade
+  // usando um valor que NUNCA foi confirmado ao vivo se um líder/admin
+  // autorizar explicitamente (`podeAutorizarDadosLocais`/`autorizouX`) —
+  // ou o operador tentar de novo até a consulta responder de verdade
+  // (`liveConsultaTentativa`, botão "Tentar novamente" nos painéis de
+  // bloqueio, mais abaixo). Continua SEM bloquear quando não existe dado
+  // local nenhum que pudesse ser usado por engano (1ª captura de endereço
+  // — `enderecoNaoEncontrado` — ou item genuinamente sem saldo em lugar
+  // nenhum) — nesses casos não há "SB2 sendo usada sem autorização", só
+  // falta dado mesmo, e o app já trata isso normalmente.
+  const podeAutorizarDadosLocais = user.perfil==='lider' || user.perfil==='admin';
+  const [autorizouEnderecoLocal, setAutorizouEnderecoLocal] = useState(false);
+  const [autorizouSaldoLocal, setAutorizouSaldoLocal] = useState(false);
+  const precisaAutorizarEndereco = (enderecoSoCadastro || (!!liveConsultaErro && product.enderecoCadastrado)) && !autorizouEnderecoLocal;
+
+  // Mesmo bloqueio de cima, agora pro SALDO — decide se o "Sistema" que a
+  // tela vai mostrar/usar pra classificar a contagem é de fato confirmado
+  // ao vivo, ou só o cadastro local (SB2) sem checagem nenhuma nesta
+  // sessão. Calculado ANTES de `hasSaldoLocal`/`mostrarSaldo` porque essas
+  // duas variáveis já misturam as duas fontes — o bloqueio precisa
+  // distinguir uma da outra pra decidir se trava a confirmação.
+  const saldoConfirmadoAoVivo = !!(liveConsulta && liveConsulta.saldo!=null);
+  const saldoTemFallbackLocal = typeof product.saldoSistema === 'number';
+  // Consulta ainda não respondeu (nem sucesso nem erro) — só importa
+  // esperar se existe um valor local que poderia ser usado por engano
+  // antes da resposta chegar; sem fallback nenhum, esperar não muda nada
+  // (a tela já mostraria "sem saldo" nos dois casos).
+  const saldoAguardandoConfirmacao = !liveConsulta && !liveConsultaErro && saldoTemFallbackLocal;
+  const precisaAutorizarSaldo = (!saldoConfirmadoAoVivo && !saldoAguardandoConfirmacao && saldoTemFallbackLocal) && !autorizouSaldoLocal;
+
   const hasSaldoLocal = typeof saldoSistemaEfetivo === 'number';
   // Controla só o que aparece NA TELA (referência antes de digitar, card de
   // comparação ao vivo, cor da borda do campo) — a regra de negócio real
@@ -9548,6 +9610,12 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
 
   async function finalize(){
     if(confirmando) return;
+    // Mesmo guard do botão (disabled), replicado aqui de propósito — defesa
+    // extra contra chamar `finalize()` com saldo ainda não confirmado ao
+    // vivo e sem autorização de líder/admin (ver painelBloqueioConsultaAoVivo
+    // acima). Bug real reportado pelo cliente: contagem seguindo em frente
+    // usando saldo só do cadastro local (SB2), sem nenhuma confirmação.
+    if(precisaAutorizarSaldo || saldoAguardandoConfirmacao) return;
     setConfirmando(true);
     // Bug real corrigido aqui: `ultimaSaidaEfetiva` (calculada acima, no
     // corpo do componente) é um SNAPSHOT do render em que o operador
@@ -9678,6 +9746,49 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   // `previousCount` existe.
   const previousSeverity = previousCount ? classifySeverity4(severidadeDe(previousCount)) : null;
 
+  // Consulta ainda em andamento (nem sucesso nem erro) — só interessa
+  // travar "Confirmar e continuar" enquanto isso durar se existe um
+  // endereço cadastrado local que seria usado sem confirmação; sem
+  // cadastro nenhum (1ª captura), não há nada de SB2 pra "vazar" enquanto
+  // espera, então não bloqueia.
+  const enderecoAguardandoConfirmacao = !liveConsulta && !liveConsultaErro && product.enderecoCadastrado;
+
+  // Painel de bloqueio compartilhado pelas 2 etapas (endereço/quantidade) —
+  // função simples que devolve JSX, NÃO um componente (evita o app remontar
+  // o bloco a cada render só por causa de uma função redefinida dentro de
+  // `CountStep`). `onAutorizar` só é passado quando `podeAutorizarDadosLocais`
+  // é true — líder/admin autoriza usando o cadastro local mesmo sem
+  // confirmação ao vivo; operador só vê a opção de tentar de novo.
+  function painelBloqueioConsultaAoVivo(mensagemSemConfirmar, onAutorizar){
+    return (
+      <div className="divergence-alert" style={{marginTop:6,marginBottom:14,flexDirection:'column',alignItems:'stretch',gap:10}}>
+        <div style={{display:'flex',gap:8,alignItems:'flex-start'}}>
+          <Ic>🔒</Ic>
+          <span>
+            {liveConsultaErro
+              ? <>Não foi possível confirmar isso ao vivo na Selgron ({liveConsultaErro}).</>
+              : <>A consulta ao vivo respondeu, mas {mensagemSemConfirmar}.</>
+            }{' '}Continuar usando só o cadastro local (planilha SB2) sem confirmação ao vivo não é seguro — a
+            contagem não pode seguir até isso ser resolvido.
+          </span>
+        </div>
+        <div className="btn-row">
+          <button type="button" className="btn btn-outline" onClick={()=>setLiveConsultaTentativa(t=>t+1)}>
+            <Ic>🔄</Ic> Tentar novamente
+          </button>
+          {podeAutorizarDadosLocais && (
+            <button type="button" className="btn btn-danger" onClick={onAutorizar}>Autorizar cadastro local mesmo assim</button>
+          )}
+        </div>
+        {!podeAutorizarDadosLocais && (
+          <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)'}}>
+            Peça a um líder ou administrador pra autorizar, ou tente novamente em instantes.
+          </div>
+        )}
+      </div>
+    );
+  }
+
   // Bloqueio da reserva — checado por ÚLTIMO (depois de todos os hooks já
   // declarados acima, nunca antes) pra não violar a ordem de hooks entre
   // renders da MESMA instância montada (mesmo cuidado já documentado nos
@@ -9755,11 +9866,18 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
           {enderecoSoCadastro && (
             <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:-10,marginBottom:12}}>ℹ Consulta ao vivo não confirmou este endereço — mostrando o cadastro local, que pode estar desatualizado.</div>
           )}
+          {enderecoAguardandoConfirmacao && !precisaAutorizarEndereco && (
+            <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:-10,marginBottom:12}}>Consultando endereço ao vivo na Selgron…</div>
+          )}
+          {precisaAutorizarEndereco && painelBloqueioConsultaAoVivo(
+            'não confirmou nenhum endereço para este código/armazém',
+            ()=>setAutorizouEnderecoLocal(true)
+          )}
           {scanning ? (
             <CameraScanner onDetected={handleEnderecoManualScanDetected} onCancel={()=>setScanning(false)} />
           ) : (
             <div style={{display:'flex',gap:8}}>
-              <button className="btn btn-primary" style={{flex:1}} disabled={!ENDERECO_REGEX.test(enderecoInformado)} onClick={confirmEnderecoManual}>Confirmar e continuar</button>
+              <button className="btn btn-primary" style={{flex:1}} disabled={!ENDERECO_REGEX.test(enderecoInformado) || enderecoAguardandoConfirmacao || precisaAutorizarEndereco} onClick={confirmEnderecoManual}>Confirmar e continuar</button>
               <button type="button" className="btn btn-primary" style={{flex:'0 0 auto',width:56,padding:0}} title="Escanear código do endereço" aria-label="Escanear código do endereço" onClick={()=>setScanning(true)}>
                 <Ic size={20}>📷</Ic>
               </button>
@@ -9807,13 +9925,20 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
             <div className={"cs-scan-feedback "+(itemScanFeedback.ok ? 'ok' : 'warn')}>{itemScanFeedback.text}</div>
           )}
 
-          {mostrarSaldo && (
+          {mostrarSaldo && !precisaAutorizarSaldo && !saldoAguardandoConfirmacao && (
             <div className="cs-sistema-ref">
               <div className="cs-sistema-k">Sistema{liveConsulta && liveConsulta.saldo!=null ? ' (ao vivo)' : ''}</div>
               <div className="cs-sistema-v">{fmtQtyBR(saldoSistemaEfetivo)} {unidadeEfetiva || 'un.'}</div>
             </div>
           )}
-          {mostrarSaldo && <div className="cs-sistema-arrow"><DIcon name="arrowDown" size={18} /></div>}
+          {mostrarSaldo && !precisaAutorizarSaldo && !saldoAguardandoConfirmacao && <div className="cs-sistema-arrow"><DIcon name="arrowDown" size={18} /></div>}
+          {saldoAguardandoConfirmacao && !precisaAutorizarSaldo && (
+            <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginBottom:12,textAlign:'center'}}>Consultando saldo ao vivo na Selgron…</div>
+          )}
+          {precisaAutorizarSaldo && painelBloqueioConsultaAoVivo(
+            'não confirmou o saldo do sistema para este item/armazém',
+            ()=>setAutorizouSaldoLocal(true)
+          )}
           <div className="cs-qty-label-row">
             <div className="cs-qty-label">{mostrarSaldo ? 'Informe a quantidade' : 'Quantidade encontrada'}</div>
             <button type="button" className="cs-calc-btn" title="Calculadora" aria-label="Calculadora" onClick={()=>{calcClear(); setCalcOpen(o=>!o);}}>
@@ -9821,7 +9946,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
             </button>
           </div>
           <input
-            className={"cs-qty-input"+(((mostrarSaldo || !hasSaldoLocal) && qty!=='') ? ' '+classification.level : '')}
+            className={"cs-qty-input"+(((mostrarSaldo || !hasSaldoLocal) && !precisaAutorizarSaldo && !saldoAguardandoConfirmacao && qty!=='') ? ' '+classification.level : '')}
             type="text"
             inputMode="decimal"
             value={fmtQtyBR(qty)}
@@ -9858,7 +9983,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
               <button type="button" className="btn btn-primary" style={{width:'100%',marginTop:10}} onClick={calcUsarValor}>Usar valor na quantidade</button>
             </div>
           )}
-          {mostrarSaldo && qty!=='' && (
+          {mostrarSaldo && !precisaAutorizarSaldo && !saldoAguardandoConfirmacao && qty!=='' && (
             <div className={"cs-compare "+classification.level}>
               <div className="cs-compare-grid">
                 <div className="cs-compare-cell"><div className="k">Sistema</div><div className="v">{fmtQtyBR(saldoSistemaEfetivo)}</div></div>
@@ -9868,7 +9993,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
               {feedbackTexto && <div className="cs-feedback"><span className="cs-dot"></span>{feedbackTexto}</div>}
             </div>
           )}
-          {mostrarSaldo===false && hasSaldoLocal && user.perfil==='operador' && qty!=='' && (
+          {mostrarSaldo===false && hasSaldoLocal && !precisaAutorizarSaldo && !saldoAguardandoConfirmacao && user.perfil==='operador' && qty!=='' && (
             <div className="role-note" style={{marginBottom:0}}>Contagem cega — o saldo do sistema fica oculto pra você durante a contagem.</div>
           )}
 
@@ -9935,7 +10060,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
                 <div className="cs-footer-label">Quantidade</div>
                 <div className="cs-footer-qty">{qty===''?'0':fmtQtyBR(qty)}</div>
               </div>
-              <button className="btn btn-primary cs-footer-btn" disabled={qty==='' || confirmando} onClick={finalize}>{confirmando ? 'Confirmando…' : 'Confirmar Contagem'}</button>
+              <button className="btn btn-primary cs-footer-btn" disabled={qty==='' || confirmando || precisaAutorizarSaldo || saldoAguardandoConfirmacao} onClick={finalize}>{confirmando ? 'Confirmando…' : 'Confirmar Contagem'}</button>
             </div>
           </div>
         </div>

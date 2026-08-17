@@ -19715,3 +19715,111 @@ navegação, independente de quem/como esse acesso foi removido.
   real (depois de corrigir o acesso do operador em Usuários) fica a cargo do cliente** —
   mesma limitação de sempre (login exige Supabase Auth real, não simulável no sandbox
   sem rede).
+
+
+## Bloqueio real: contagem não pode seguir usando dado só do cadastro local (SB2) sem confirmação ao vivo — com autorização/retry
+
+Cliente mandou print da tela "Recontar Item" mostrando um aviso ("Consulta ao vivo não
+confirmou este endereço — mostrando o cadastro local, que pode estar desatualizado.")
+com o botão "CONFIRMAR E CONTINUAR" continuando disponível, e reagiu direto:
+
+> "Esse erro é grave, não mostrar a quantidade ao vivo ele não deveria nem seguir a
+> contagem. Não pode puxar da planilha SB2 sem autorização."
+
+Até essa rodada, a consulta ao vivo (Selgron/Protheus, `consultar-produto-selgron`) era
+tratada como uma MELHORIA sobre o cadastro local — se ela falhasse ou não confirmasse
+nada pro código/armazém, a tela sempre seguia em frente silenciosamente usando o valor
+do cadastro (que, tanto pra endereço quanto pra saldo, sempre vem da mesma origem
+antiga: upload manual da planilha SB2/"Descrição de Produtos", ver histórico deste
+arquivo). O cliente deixou claro que isso não é mais aceitável: sem confirmação ao vivo,
+a contagem não pode prosseguir usando esse dado potencialmente desatualizado — a menos
+que alguém com autoridade (líder/admin) autorize explicitamente.
+
+### O bloqueio, nos dois pontos que dependiam do cadastro local
+
+- **`liveConsultaErro`** (novo `useState`, `CountStep`) — antes, uma falha da consulta
+  (rede/credencial/timeout) só virava um `console.warn`, sem nenhum efeito visível. Agora
+  fica guardada e usada pelos dois bloqueios abaixo. **`liveConsultaTentativa`** (novo
+  `useState`, contador) — incrementado pelo botão "Tentar novamente" dos painéis de
+  bloqueio, entra no array de dependências do `useEffect` da consulta ao vivo, forçando
+  ela rodar de novo mesmo com o mesmo código/armazém (o pedido mid-turn do cliente,
+  **"Tentar novamente"**, confirmando que ele esperava esse mecanismo).
+- **Endereço**: `precisaAutorizarEndereco = (enderecoSoCadastro || (liveConsultaErro &&
+  product.enderecoCadastrado)) && !autorizouEnderecoLocal` — trava "Confirmar e
+  continuar" sempre que o único valor disponível é o cadastro local, sem a consulta ter
+  confirmado nada (nem por sucesso-sem-match, nem por falha). **Nunca bloqueia item sem
+  cadastro nenhum** (1ª captura, `enderecoNaoEncontrado`) — não há SB2 nenhuma "vazando"
+  nesse caso, é falta de dado mesmo, tratada como sempre.
+- **Saldo/quantidade**: mesmo raciocínio, `precisaAutorizarSaldo`/
+  `saldoAguardandoConfirmacao` (`saldoTemFallbackLocal = typeof product.saldoSistema===
+  'number'`) — só entra em jogo quando existe um saldo local que PODERIA ser usado por
+  engano; item genuinamente sem saldo em lugar nenhum (`!saldoTemFallbackLocal`) nunca
+  bloqueia, já cai no fluxo normal de "sem saldo pra comparar".
+- **`painelBloqueioConsultaAoVivo(mensagem, onAutorizar)`** — painel compartilhado pelas
+  duas etapas (🔒, mesmo ícone/estilo `divergence-alert` já usado em outros bloqueios do
+  app): sempre mostra "Tentar novamente" (qualquer perfil, incrementa
+  `liveConsultaTentativa`); mostra "Autorizar cadastro local mesmo assim" só pra
+  `podeAutorizarDadosLocais` (`user.perfil==='lider'||'admin'`) — operador só vê a
+  instrução de pedir a um líder ou tentar de novo. Autorizar seta
+  `autorizouEnderecoLocal`/`autorizouSaldoLocal` (dois `useState(false)` próprios) —
+  válido só pela vida da instância MONTADA de `CountStep` (nunca persiste, nunca
+  sincroniza) — cada item novo exige autorização própria de novo.
+- **Os campos em si (input de endereço, input de quantidade) continuam sempre
+  renderizados**, só o BOTÃO de confirmar e o card de referência/comparação (saldo,
+  card "Sistema", card de comparação ao vivo) ficam condicionados a
+  `!precisaAutorizarX && !xAguardandoConfirmacao` — o operador nunca vê um número vindo
+  só do cadastro local sem saber que não foi confirmado, e nunca consegue confirmar em
+  cima dele sem autorização.
+- **`finalize()`** ganhou o mesmo guard replicado (`if(precisaAutorizarSaldo ||
+  saldoAguardandoConfirmacao) return;`) e **`confirmEnderecoManual()`** também
+  (`if(precisaAutorizarEndereco || enderecoAguardandoConfirmacao) return;`) — defesa
+  extra contra qualquer caminho que tentasse confirmar programaticamente, não só o botão
+  desabilitado na UI.
+
+### Achado interessante durante o teste: `RecountFlow` remonta `CountStep` ao trocar de armazém, mesmo sem `key` explícito
+
+Investigando se uma autorização já dada sobreviveria à troca do seletor de armazém
+(item sem armazém conhecido, recontagem de item vindo do histórico — ver "Item com
+saldo real em 1 armazém aparecia zerado na recontagem" no histórico acima), confirmei
+que **não sobrevive — e isso é o comportamento correto, não um bug**: mesmo sem nenhum
+`key` explícito em `<CountStep>`, o `useEffect` de `produtoBase` (`RecountFlow`) chama
+`setProdutoBase(null)` de forma síncrona antes de rebuscar o produto no armazém novo, e
+o JSX (`{produtoBase===null ? <div className="empty-state">...</div> : (<CountStep
+.../>)}`) troca o TIPO de elemento na mesma posição da árvore — isso força o React a
+desmontar e remontar todo o subtree, mesmo sem `key`. Uma autorização dada pro Armazém
+01 não deveria mesmo valer pro Armazém 04 — é um saldo local DIFERENTE, igualmente sem
+confirmação ao vivo.
+
+### Verificação
+
+Testado via harnesses dedicados (jsdom + react-dom/client + `act()`, mesma técnica
+rigorosa de sempre — carrega o `index.html` inteiro transpilado numa `vm.Script`):
+cobertura direta do bloqueio (endereço só-cadastro, saldo só-cadastro, os dois com
+consulta falhando, "Tentar novamente" refazendo a consulta, autorização por
+líder/admin liberando a confirmação, operador nunca vendo o botão de autorizar, e a
+troca de armazém em `RecountFlow` exigindo autorização nova) — mais o reteste completo
+do cenário original de corrida ("Sem registro de movimentação" pra item com Kardex
+real, `harness_ultima_saida_race.js`, reajustado pra usar um item sem NENHUM saldo
+local em cache, já que o novo bloqueio por si só já impede o clique prematuro pra
+qualquer item COM saldo em cache — um efeito colateral bom da correção nova, que só
+deixou a corrida original genuinamente alcançável via botão pro caso "sem cache algum").
+
+Sistematicamente revisados e corrigidos todos os harnesses pré-existentes do
+scratchpad que passaram a exercitar esse bloqueio sem intenção (o novo gate intercepta
+qualquer cenário de teste que tivesse cadastro local + consulta ao vivo mockada sem
+sucesso, mesmo quando o teste em si não tinha nada a ver com esse bloqueio) —
+`harness_saldo_ambiguo_zero_noise.js`, `harness_elimina_tela_qrcode_endereco.js`,
+`harness_inventario_ciclico_relatorio.js`, `harness_classify_divergence_binario.js`,
+`harness_consulta_selgron_endereco_prefill.js`,
+`harness_consulta_selgron_ultima_movimentacao.js`,
+`harness_countstep_proposta_divergente.js` — todos ajustados pra autorizar
+explicitamente (clique no botão "Autorizar cadastro local mesmo assim", perfil
+líder/admin) antes do ponto do teste que dependia de passar da etapa bloqueada, nunca
+mudando a asserção que o teste de fato verifica. Rodada a suíte COMPLETA do scratchpad
+(83 harnesses) depois de todos os ajustes — **0 falhas em nenhum arquivo**. Transpile
+Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos (669/669, sem
+mudança de contagem — só JS, nenhuma classe CSS nova). **Verificação visual/funcional
+de ponta a ponta em produção fica a cargo do cliente** — mesma limitação de sempre
+(login exige Supabase Auth real, não simulável no sandbox sem rede) — mas como a
+correção não depende de nenhuma migração de SQL nem de redeploy de Edge Function (só
+`index.html` mudou), já deve valer assim que o deploy publicar.
