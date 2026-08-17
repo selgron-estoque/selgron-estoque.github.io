@@ -16,46 +16,111 @@
 create extension if not exists pgcrypto; -- para gen_random_uuid()
 
 -- ---------------------------------------------------------------------------
--- USUÁRIOS — VERSÃO LEVE (mesmo espírito de `contagens`/`inventarios`: sync
--- sem Supabase Auth de verdade). A versão original desta tabela (comentário
--- "senha fica no Supabase Auth") nunca chegou a ser usada — o app sempre
--- autenticou 100% contra o `localStorage` (ver `attemptLogin` no index.html),
--- e migrar login pra Supabase Auth de verdade foi adiado explicitamente (ver
--- CLAUDE.md, "Terceiro pedaço do backend real") porque resetar senha de
--- OUTRO usuário via Auth exigiria a service role key no navegador — falha de
--- segurança grave. Essa tabela aqui NÃO é isso: é só um espelho da lista de
--- usuários (mesma senha em texto puro do protótipo, mesma limitação já
--- documentada no README) pra resolver um problema concreto — excluir/criar/
--- editar um usuário num aparelho não propagava pra os outros, porque `users`
--- só existia no `localStorage` de cada um.
+-- USUÁRIOS — via Supabase Auth de verdade (não mais senha em texto puro numa
+-- tabela nossa). `id` é `uuid`, o MESMO id de `auth.users` — criar/editar
+-- perfil/definir senha/bloquear/excluir sempre passa pela Edge Function
+-- `usuarios-admin` (roda com a service role key, nunca no navegador).
 --
--- `id` é `text` (não `uuid`) porque o app já gera seus próprios ids
--- (`'u'+Math.random()...`, ver `createUser` no index.html) — mesmo padrão já
--- usado em `inventarios`/`contagens` (`'INV-XXX'`/`'CNT-XXX'`).
--- `atualizado_em` cumpre o mesmo papel que já cumpre em `contagens`: decidir
--- qual lado (local vs. remoto) é mais recente ao reconciliar no sync de 30s.
+-- Definida logo aqui no topo (não mais espalhada em 3 gerações sucessivas ao
+-- longo do arquivo, como era antes desta limpeza de segurança) porque
+-- `enderecos`/`estoque_enderecos`/`endereco_propostas` mais abaixo já têm FK
+-- `uuid references usuarios(id)` — precisa existir na forma final ANTES
+-- delas, senão o schema não roda numa base nova (erro de tipo incompatível
+-- na FK). O histórico de como se chegou a este formato (tabela local antiga
+-- com senha em texto puro → tentativa intermediária → Supabase Auth) fica
+-- só no `git log -p -- backend/schema.sql` e no CLAUDE.md — não faz sentido
+-- reexecutar essa transição numa base de dados nova, que nunca teve as
+-- formas antigas pra começar.
 -- ---------------------------------------------------------------------------
 create table usuarios (
-  id text primary key,
+  id uuid primary key references auth.users(id) on delete cascade,
   nome text not null,
-  usuario text not null,
-  email text,
-  senha text,                       -- texto puro, mesma limitação já documentada no README
+  usuario text not null,             -- login por username continua existindo (UX preservada), só não é mais a chave de auth
+  email text not null,               -- agora obrigatório: Supabase Auth exige e-mail real por conta
   perfil text not null check (perfil in ('operador','lider','admin')),
   status text not null default 'ativo' check (status in ('ativo','bloqueado','deve_definir_senha')),
-  -- Exceção de acesso por usuário, independente do perfil cadastrado (ex.:
-  -- dar acesso a "Indicadores"/"Relatórios" pra um operador específico sem
-  -- promovê-lo a líder) — ver ACESSOS_RESTRITOS/hasAccess no index.html.
-  -- Só ADICIONA acesso além do que o perfil já libera, nunca remove.
   acessos_extras jsonb not null default '[]'::jsonb,
-  -- Data/hora do último login bem-sucedido (attemptLogin/selfSetNewPassword
-  -- no index.html) — exibido na tela "Usuários", pedido do cliente. `null`
-  -- = usuário criado mas nunca fez login ainda.
   ultimo_acesso timestamptz,
   criado_em timestamptz not null default now(),
   atualizado_em timestamptz not null default now()
 );
 create unique index idx_usuarios_login on usuarios (lower(usuario));
+create unique index idx_usuarios_email on usuarios (lower(email));
+
+-- ---- Funções de apoio ao login (rodam ANTES de autenticar) ----
+
+-- ATENÇÃO — endurecimento de segurança: esta função NÃO é mais chamável por
+-- `anon`/`authenticated`. Ela devolvia `id`/`email`/`status` pra QUALQUER
+-- identifier tentado, mesmo antes de validar senha nenhuma — um oráculo de
+-- enumeração de usuários (dá pra descobrir quem tem conta, quem está
+-- bloqueado, e o `id` devolvido já foi, no passado, aceito como credencial
+-- sozinho por `auto_definir_senha`, permitindo tomar conta de qualquer
+-- usuário sem saber a senha). A resolução "usuário OU e-mail → e-mail real"
+-- continua existindo, mas migrou pra dentro da Edge Function pública
+-- `auth-publico` (ação `login`), que roda com a SERVICE ROLE key (ignora
+-- RLS, não depende de nenhuma função `security definer` chamável por anon) e
+-- funde a resolução com a verificação de senha no mesmo passo — "usuário não
+-- existe" e "senha errada" ficam indistinguíveis pra quem está tentando
+-- adivinhar, o que uma RPC de resolução isolada nunca conseguiria garantir
+-- sozinha, não importa quão pouco ela devolvesse.
+--
+-- A função continua definida aqui só por referência/histórico — sem grant
+-- pra `anon`/`authenticated`, ninguém além do dono (postgres) consegue
+-- chamá-la. Se algum dia precisar de novo por algum motivo (ex.: um painel
+-- administrativo interno), conceda a `service_role` explicitamente, nunca a
+-- `anon`.
+create or replace function public.resolver_login(p_identifier text)
+returns table(id uuid, email text, status text) as $$
+  select u.id, u.email, u.status
+  from usuarios u
+  where lower(u.usuario) = lower(p_identifier) or lower(u.email) = lower(p_identifier)
+  limit 1;
+$$ language sql stable security definer set search_path = public;
+revoke all on function public.resolver_login(text) from public, anon, authenticated;
+
+-- Helper de autorização — evita RLS recursiva ("select da própria tabela
+-- usuarios dentro de uma policy de usuarios"). `security definer` deixa a
+-- intenção clara e não depende de RLS dentro da própria checagem de RLS.
+-- Espelha EXATAMENTE o `hasAccess(user, 'usuarios')` do index.html — o
+-- perfil admin já libera por padrão, e um líder/operador pode ganhar a
+-- mesma exceção via `acessos_extras` (ver ACESSOS_RESTRITOS/hasAccess, e
+-- checkboxes "Acessos extras" no UserForm) sem precisar virar admin. Sem
+-- espelhar essa segunda condição aqui, a funcionalidade de "acessos
+-- extras" quebraria silenciosamente pra esta tela específica assim que o
+-- RLS entrasse em vigor: o usuário continuaria vendo o item no menu (isso
+-- é decidido no client), mas a lista viria sempre vazia/só a própria linha.
+create or replace function public.pode_gerenciar_usuarios(p_uid uuid)
+returns boolean as $$
+  select exists(
+    select 1 from usuarios
+    where id = p_uid and status <> 'bloqueado'
+      and (perfil = 'admin' or acessos_extras ? 'usuarios')
+  );
+$$ language sql stable security definer set search_path = public;
+revoke all on function public.pode_gerenciar_usuarios(uuid) from public;
+grant execute on function public.pode_gerenciar_usuarios(uuid) to authenticated;
+
+alter table usuarios enable row level security;
+
+-- Leitura: cada usuário só vê a própria linha; quem tem acesso à tela
+-- "Usuários" (admin, ou exceção via acessos_extras) vê todas.
+create policy "leitura própria ou com acesso a usuários" on usuarios for select
+  using (auth.uid() = id or public.pode_gerenciar_usuarios(auth.uid()));
+
+-- Única escrita que o CLIENTE (navegador) ainda faz direto, sem passar pela
+-- Edge Function: gravar o próprio "último acesso" no login bem-sucedido
+-- (ver attemptLogin no index.html) — self-only E restrita à coluna
+-- `ultimo_acesso` via GRANT de coluna (RLS sozinha só filtra LINHA, não
+-- coluna; sem esse grant restrito, qualquer usuário autenticado poderia se
+-- autopromover a admin via um PATCH direto na própria linha).
+create policy "atualizar próprio último acesso" on usuarios for update
+  using (auth.uid() = id) with check (auth.uid() = id);
+revoke update on usuarios from authenticated;
+grant update (ultimo_acesso) on usuarios to authenticated;
+
+-- Sem policy de INSERT/DELETE pra authenticated/anon: criar, editar perfil/
+-- senha/acessos_extras, bloquear e excluir usuário passam a ser só a Edge
+-- Function `usuarios-admin` (roda com a service role key, ignora RLS).
 
 -- ---------------------------------------------------------------------------
 -- ENDEREÇOS PROPOSTOS — fila de validação do líder (Módulo 5/6): operador
@@ -150,69 +215,19 @@ returns table(armazens_ativos bigint, itens_distintos bigint, cobertura_pct nume
     (select round(100.0 * count(distinct produto_codigo) / nullif((select count(*) from produtos), 0), 1) from estoque_saldo);
 $$ language sql stable;
 
--- Gera a lista priorizada de itens pra contagem "Aleatória"/"Curva ABC" e
--- "Rota de Endereço" — substitui o cache local estático de 300 SKUs que o
--- app usava antes (RAW_SB2_PRODUCTS/PRODUCTS, removido do index.html) pela
--- base real do Supabase. Reproduz a mesma prioridade que o app já aplicava
--- no navegador: item sem saída recente primeiro, depois por valor financeiro
--- decrescente (curva A) — só que como ORDER BY de duas chaves em vez do hack
--- antigo "(semMovimentoRecente?50000:0) + valorFinanceiro" (que corria risco
--- de um item de alta rotação só de valor muito alto "furar" a prioridade de
--- um item parado; o ORDER BY de duas chaves não tem essa falha).
---
--- "Sem movimento recente" = sem saída há 90+ dias (ou nunca teve saída
--- registrada). Esse limiar não existia documentado em lugar nenhum antes —
--- o campo equivalente no cache local antigo era só um valor fixo, sem regra
--- visível — 90 dias é uma escolha razoável de "giro lento", ajustável se
--- o cliente pedir outro número.
---
--- LEFT JOIN com estoque_enderecos/enderecos porque a MAIORIA dos itens ainda
--- não tem endereço cadastrado (essas tabelas seguem praticamente vazias) —
--- INNER JOIN esconderia quase tudo. `corredor`/`rua`/`endereco_codigo` vêm
--- null até o cadastro de endereços avançar de verdade.
---
--- `p_grupos` (opcional, default null = comportamento de sempre, sem filtro)
--- foi acrescentado pro tipo de inventário "Contagem por Grupo" — quando
--- informado, filtra só os itens de QUALQUER um dos grupos/famílias de
--- produto na lista (`grupo` em `produtos`, SB2 — permite selecionar mais de
--- um grupo na mesma contagem, pedido do cliente), mantendo a mesma
--- prioridade (sem movimento recente primeiro, depois valor financeiro).
---
--- `p_almoxarifados` (opcional, default null = sem filtro) — cliente
--- reportou que um item com saldo em MAIS de um armazém nunca batia na
--- contagem, porque o app comparava contra o saldo somado de todos os
--- armazéns, e fisicamente só existe saldo de UM armazém no local onde o
--- item está sendo contado. Cada linha de `estoque_saldo` já é por armazém
--- (não precisa somar nada aqui) — só faltava poder RESTRINGIR a busca ao(s)
--- armazém(ns) do inventário, em vez de trazer o item de qualquer armazém.
--- `drop function` primeiro porque a assinatura mudou de `p_grupo text` (uma
--- rodada anterior, texto único) pra `p_grupos text[]` (lista) — Postgres
--- trata assinaturas diferentes como funções SOBRECARREGADAS distintas, não
--- substitui sozinho; sem o drop, a versão antiga ficaria "fantasma" no banco.
-drop function if exists contagem_itens_prioritarios(int, text);
-drop function if exists contagem_itens_prioritarios(int, text[]);
-create or replace function contagem_itens_prioritarios(p_limit int default 50, p_grupos text[] default null, p_almoxarifados text[] default null)
-returns table(
-  codigo text, descricao text, grupo text, almoxarifado text, saldo numeric,
-  valor_financeiro numeric, data_ultima_saida date, sem_movimento_recente boolean,
-  endereco_codigo text, corredor text, rua text
-) as $$
-  select
-    p.codigo, p.descricao, p.grupo, es.almoxarifado, es.saldo, es.valor_financeiro,
-    es.data_ultima_saida,
-    (es.data_ultima_saida is null or es.data_ultima_saida < current_date - interval '90 days'),
-    e.codigo, e.corredor, e.rua
-  from estoque_saldo es
-  join produtos p on p.codigo = es.produto_codigo
-  left join estoque_enderecos ee on ee.produto_codigo = es.produto_codigo
-  left join enderecos e on e.id = ee.endereco_id
-  where (p_grupos is null or p.grupo = any(p_grupos))
-    and (p_almoxarifados is null or es.almoxarifado = any(p_almoxarifados))
-  order by
-    (es.data_ultima_saida is null or es.data_ultima_saida < current_date - interval '90 days') desc,
-    es.valor_financeiro desc
-  limit p_limit;
-$$ language sql stable;
+-- `contagem_itens_prioritarios()` morava aqui originalmente, mas o corpo
+-- dela faz LEFT JOIN com `estoque_enderecos`/`enderecos` — tabelas que só
+-- são criadas mais abaixo neste arquivo. Numa base NOVA (schema.sql rodado
+-- do zero, sem nenhuma dessas tabelas ainda existindo), isso fazia o
+-- `create or replace function` falhar aqui com "relation estoque_enderecos
+-- does not exist" — confirmado rodando o arquivo inteiro contra um Postgres
+-- vazio (ver CLAUDE.md). Como as 2 gerações seguintes da mesma função (que
+-- ganham a coluna `unidade` e depois `custo_unitario_fallback`) já ficam
+-- corretamente posicionadas DEPOIS dessas tabelas, a correção foi só mover
+-- esta 1ª definição pra logo depois de `estoque_enderecos` (perto da seção
+-- "ENDEREÇOS" mais abaixo) — sem mudar uma linha do SQL em si, só a posição
+-- no arquivo. As 2 redefinições seguintes (`drop function`+`create or
+-- replace`) continuam exatamente onde já estavam.
 
 -- Lista os grupos que realmente têm algum item com saldo carregado (não os
 -- 248 grupos possíveis do catálogo inteiro, a maioria sem saldo ainda) —
@@ -264,19 +279,78 @@ create table estoque_enderecos (
   primary key (produto_codigo, endereco_id)
 );
 
--- Fila de endereços informados por operadores durante a contagem, aguardando
--- confirmação do líder — é a versão persistida do que hoje roda só em
--- memória no protótipo (painel "Endereços Pendentes de Cadastro").
-create table endereco_propostas (
-  id uuid primary key default gen_random_uuid(),
-  produto_codigo text not null references produtos(codigo),
-  endereco_informado text not null,
-  usuario_id uuid not null references usuarios(id),
-  status text not null default 'pendente' check (status in ('pendente','confirmado','rejeitado')),
-  criado_em timestamptz not null default now(),
-  resolvido_por uuid references usuarios(id),
-  resolvido_em timestamptz
-);
+-- NOTA — `endereco_propostas` (singular) NÃO é criada aqui de propósito: foi
+-- um objeto órfão, criado uma vez direto no painel do Supabase (fora deste
+-- schema.sql) num projeto real, nunca usado pelo app (que sempre leu/gravou
+-- em `enderecos_propostos`, PLURAL, criada mais abaixo) — já foi removida do
+-- banco real (ver histórico) e não faz sentido recriá-la numa base nova.
+
+-- Gera a lista priorizada de itens pra contagem "Aleatória"/"Curva ABC" e
+-- "Rota de Endereço" — substitui o cache local estático de 300 SKUs que o
+-- app usava antes (RAW_SB2_PRODUCTS/PRODUCTS, removido do index.html) pela
+-- base real do Supabase. Reproduz a mesma prioridade que o app já aplicava
+-- no navegador: item sem saída recente primeiro, depois por valor financeiro
+-- decrescente (curva A) — só que como ORDER BY de duas chaves em vez do hack
+-- antigo "(semMovimentoRecente?50000:0) + valorFinanceiro" (que corria risco
+-- de um item de alta rotação só de valor muito alto "furar" a prioridade de
+-- um item parado; o ORDER BY de duas chaves não tem essa falha).
+--
+-- "Sem movimento recente" = sem saída há 90+ dias (ou nunca teve saída
+-- registrada). Esse limiar não existia documentado em lugar nenhum antes —
+-- o campo equivalente no cache local antigo era só um valor fixo, sem regra
+-- visível — 90 dias é uma escolha razoável de "giro lento", ajustável se
+-- o cliente pedir outro número.
+--
+-- LEFT JOIN com estoque_enderecos/enderecos porque a MAIORIA dos itens ainda
+-- não tem endereço cadastrado (essas tabelas seguem praticamente vazias) —
+-- INNER JOIN esconderia quase tudo. `corredor`/`rua`/`endereco_codigo` vêm
+-- null até o cadastro de endereços avançar de verdade.
+--
+-- `p_grupos` (opcional, default null = comportamento de sempre, sem filtro)
+-- foi acrescentado pro tipo de inventário "Contagem por Grupo" — quando
+-- informado, filtra só os itens de QUALQUER um dos grupos/famílias de
+-- produto na lista (`grupo` em `produtos`, SB2 — permite selecionar mais de
+-- um grupo na mesma contagem, pedido do cliente), mantendo a mesma
+-- prioridade (sem movimento recente primeiro, depois valor financeiro).
+--
+-- `p_almoxarifados` (opcional, default null = sem filtro) — cliente
+-- reportou que um item com saldo em MAIS de um armazém nunca batia na
+-- contagem, porque o app comparava contra o saldo somado de todos os
+-- armazéns, e fisicamente só existe saldo de UM armazém no local onde o
+-- item está sendo contado. Cada linha de `estoque_saldo` já é por armazém
+-- (não precisa somar nada aqui) — só faltava poder RESTRINGIR a busca ao(s)
+-- armazém(ns) do inventário, em vez de trazer o item de qualquer armazém.
+-- `drop function` primeiro porque a assinatura mudou de `p_grupo text` (uma
+-- rodada anterior, texto único) pra `p_grupos text[]` (lista) — Postgres
+-- trata assinaturas diferentes como funções SOBRECARREGADAS distintas, não
+-- substitui sozinho; sem o drop, a versão antiga ficaria "fantasma" no banco.
+-- (Definição original desta função ficava lá em cima, perto de `estoque_
+-- saldo` — movida pra cá porque referencia `estoque_enderecos`/`enderecos`,
+-- que só existem a partir daqui; ver comentário no lugar antigo.)
+drop function if exists contagem_itens_prioritarios(int, text);
+drop function if exists contagem_itens_prioritarios(int, text[]);
+create or replace function contagem_itens_prioritarios(p_limit int default 50, p_grupos text[] default null, p_almoxarifados text[] default null)
+returns table(
+  codigo text, descricao text, grupo text, almoxarifado text, saldo numeric,
+  valor_financeiro numeric, data_ultima_saida date, sem_movimento_recente boolean,
+  endereco_codigo text, corredor text, rua text
+) as $$
+  select
+    p.codigo, p.descricao, p.grupo, es.almoxarifado, es.saldo, es.valor_financeiro,
+    es.data_ultima_saida,
+    (es.data_ultima_saida is null or es.data_ultima_saida < current_date - interval '90 days'),
+    e.codigo, e.corredor, e.rua
+  from estoque_saldo es
+  join produtos p on p.codigo = es.produto_codigo
+  left join estoque_enderecos ee on ee.produto_codigo = es.produto_codigo
+  left join enderecos e on e.id = ee.endereco_id
+  where (p_grupos is null or p.grupo = any(p_grupos))
+    and (p_almoxarifados is null or es.almoxarifado = any(p_almoxarifados))
+  order by
+    (es.data_ultima_saida is null or es.data_ultima_saida < current_date - interval '90 days') desc,
+    es.valor_financeiro desc
+  limit p_limit;
+$$ language sql stable;
 
 -- ---------------------------------------------------------------------------
 -- INVENTÁRIOS — VERSÃO DENORMALIZADA (mesma decisão já tomada pra `contagens`:
@@ -546,10 +620,12 @@ create policy "leitura pública" on contagens_historico for select using (true);
 create policy "escrita pública" on contagens_historico for all using (true) with check (true);
 
 -- ---------------------------------------------------------------------------
--- MIGRAÇÃO — rodar isto no projeto Supabase REAL já existente (as tabelas
--- `contagens`/`inventarios` acima já foram criadas antes desta mudança; use
--- este bloco em vez de re-rodar os `create table`, que falhariam por já
--- existir). Ver seção "Histórico único e centralizado" no CLAUDE.md.
+-- Colunas adicionadas depois da criação inicial de `contagens`/`inventarios`
+-- neste projeto (histórico completo no `git log -p`/CLAUDE.md) — mantidas
+-- aqui como `add column if not exists` porque são seguras/idempotentes tanto
+-- numa base nova (a tabela já as tem desde o `create table` acima, então
+-- este bloco não faz nada) quanto num projeto real mais antigo que ainda não
+-- rodou esta atualização.
 -- ---------------------------------------------------------------------------
 alter table contagens add column if not exists aprovado_por text;
 alter table contagens add column if not exists aprovado_em text;
@@ -557,205 +633,96 @@ alter table contagens add column if not exists recontagem_solicitada_pelo_lider 
 alter table contagens add column if not exists recontagem_solicitada_por text;
 alter table contagens add column if not exists recontagem_solicitada_em text;
 alter table contagens add column if not exists atualizado_em timestamptz not null default now();
-
-create policy "atualização pública" on contagens for update using (true) with check (true);
-create policy "exclusão pública" on inventarios for delete using (true);
-create policy "exclusão pública" on contagens for delete using (true);
-
--- Tipo de inventário novo "Contagem por Grupo" (ver CLAUDE.md) — grava o
--- grupo/família escolhido pra filtrar a busca de itens.
 alter table inventarios add column if not exists grupo text;
-
--- Armazém onde cada contagem foi feita (ver CLAUDE.md "considerar saldo de
--- armazéns em separado") — sem isso, recontagem não sabia contra qual
--- armazém comparar quando o item tem saldo em mais de um.
 alter table contagens add column if not exists almoxarifado text;
 
--- USUÁRIOS — o projeto real já tem uma tabela `usuarios` desde a aplicação
--- inicial do schema, mas com a estrutura ANTIGA (id uuid, sem coluna de
--- senha, pensada pra um Supabase Auth que nunca chegou a ser aplicado — ver
--- comentário na definição nova, mais acima neste arquivo). Como essa tabela
--- nunca foi populada de verdade (login sempre autenticou 100% contra o
--- localStorage), é seguro dropar e recriar do zero em vez de fazer `alter
--- table add column` em cima da estrutura errada.
---
--- `cascade` é necessário aqui: o projeto real tinha objetos criados direto
--- no painel do Supabase, fora deste schema.sql (`enderecos.criado_por` e
--- uma tabela `endereco_propostas`, singular — nomes/colunas que não existem
--- em lugar nenhum deste arquivo), ambos com FK pra `usuarios`. Confirmado
--- via `select count(*)` que as três tabelas envolvidas estavam com ZERO
--- linhas antes desta migração — `cascade` só remove as CONSTRAINTS de FK
--- que dependem de `usuarios`, não apaga a tabela `enderecos` nem dado
--- nenhum (não que houvesse dado pra perder). Se um dia isso rodar de novo
--- num projeto com dado real nessas colunas, conferir antes com
--- `select count(*) from enderecos where criado_por is not null` — se vier
--- >0, não rode isto sem decidir antes o que fazer com esse vínculo.
-drop table if exists usuarios cascade;
+-- NOTA — endurecimento de segurança (limpeza deste arquivo): as 3
+-- `create policy "atualização pública"/"exclusão pública"` que existiam
+-- aqui foram REMOVIDAS por serem duplicatas exatas das mesmas policies já
+-- criadas mais acima, junto da definição de `contagens`/`inventarios` — a
+-- duplicata fazia o script inteiro falhar com `policy already exists` ao
+-- rodar contra uma base nova (ou reaplicar contra uma já migrada). E o
+-- bloco de migração de `usuarios` que também vivia aqui (drop/recreate da
+-- versão antiga em texto puro, depois rename+recreate pro formato uuid do
+-- Supabase Auth) foi consolidado: a tabela `usuarios` agora é definida UMA
+-- única vez, já no formato final, perto do topo deste arquivo — ver o
+-- comentário lá pra explicação completa. O histórico das 3 gerações
+-- anteriores continua disponível via `git log -p -- backend/schema.sql` e
+-- no CLAUDE.md, não foi apagado, só não é mais SQL executável aqui.
 
--- `endereco_propostas` (singular) é o mesmo objeto órfão mencionado acima —
--- ficaria duplicando o papel de `enderecos_propostos` (plural, a tabela que
--- o app de fato lê/escreve, criada logo abaixo). Também confirmada vazia
--- antes de dropar.
-drop table if exists endereco_propostas;
-
-create table usuarios (
-  id text primary key,
-  nome text not null,
-  usuario text not null,
-  email text,
-  senha text,
-  perfil text not null check (perfil in ('operador','lider','admin')),
-  status text not null default 'ativo' check (status in ('ativo','bloqueado','deve_definir_senha')),
-  criado_em timestamptz not null default now(),
-  atualizado_em timestamptz not null default now()
+-- =============================================================================
+-- RECUPERAÇÃO DE SENHA — token de uso único, hash em repouso, expiração curta
+-- =============================================================================
+-- Suporta o fluxo novo de "esqueci minha senha"/"definir nova senha" (ver
+-- supabase/functions/auth-publico/index.ts, ações `recuperar_solicitar` e
+-- `recuperar_confirmar`). Antes disso, `auto_definir_senha` aceitava
+-- `userId` sozinho como se fosse uma credencial — qualquer um que soubesse
+-- (ou adivinhasse, ver o oráculo de `resolver_login` acima) o UUID de outra
+-- pessoa conseguia definir a senha dela. Agora:
+--   1. o ADMIN autenticado libera a conta (`usuarios-admin`, ação
+--      `definir_senha` modo `liberar`) — só ele consegue gerar um token novo;
+--   2. o token é um segredo aleatório de 256 bits, entregue ao admin (mesmo
+--      canal de confiança já usado pra "senha temporária", fora de banda —
+--      verbal/WhatsApp, mesmo padrão que este projeto já documentava antes);
+--   3. só o HASH (SHA-256) do token fica gravado aqui — nunca o valor em si,
+--      mesmo raciocínio de nunca guardar senha em texto puro, aplicado a um
+--      segredo de uso único;
+--   4. `expires_at` (30 min) + `used_at` (uso único, marcado na confirmação)
+--      fecham a janela de ataque — um token vazado/interceptado tem vida
+--      curta e só serve uma vez.
+-- Sem NENHUMA policy de select/insert/update/delete pra `anon`/
+-- `authenticated` — só a Edge Function (service role, ignora RLS) toca esta
+-- tabela. Mesmo um SELECT liberado pra `anon` já seria perigoso (um invasor
+-- poderia usá-lo pra checar em massa se algum `token_hash` "existe", um
+-- oráculo por si só) — o cliente nunca consulta isso diretamente, só manda o
+-- token de volta pra Edge Function validar.
+create table if not exists password_reset_tokens (
+  id uuid primary key default gen_random_uuid(),
+  usuario_id uuid not null references usuarios(id) on delete cascade,
+  token_hash text not null,
+  expires_at timestamptz not null,
+  used_at timestamptz,
+  created_at timestamptz not null default now()
 );
-create unique index idx_usuarios_login on usuarios (lower(usuario));
-alter table usuarios enable row level security;
-create policy "leitura pública" on usuarios for select using (true);
-create policy "inserção pública" on usuarios for insert with check (true);
-create policy "atualização pública" on usuarios for update using (true) with check (true);
-create policy "exclusão pública" on usuarios for delete using (true);
+create index if not exists idx_password_reset_tokens_hash on password_reset_tokens (token_hash);
+create index if not exists idx_password_reset_tokens_usuario on password_reset_tokens (usuario_id);
+alter table password_reset_tokens enable row level security;
+-- (proposital: nenhuma policy criada — RLS ligado + zero grant = bloqueado
+-- por padrão pra qualquer role que não seja o dono/service_role)
 
--- ENDEREÇOS PROPOSTOS — tabela nova, não existia antes (com este nome); só o
--- `create table enderecos_propostos` de verdade (mais acima neste arquivo,
--- junto das RLS logo depois) precisa ser rodado — nada mais pra migrar aqui.
-
--- ACESSOS EXTRAS POR USUÁRIO — pedido do cliente: "posso dar acesso a abas
--- diferentes pra qualquer operador independente do perfil cadastrado". A
--- tabela `usuarios` do projeto real já existe e está populada (migração
--- acima já foi aplicada) — `add column if not exists` em vez de recriar,
--- mesmo padrão já usado pra `inventarios.grupo`/`contagens.almoxarifado`.
-alter table usuarios add column if not exists acessos_extras jsonb not null default '[]'::jsonb;
-
--- ÚLTIMO ACESSO — pedido do cliente ("incluir abaixo de cada um o último
--- acesso, data e hora", tela Usuários). Mesmo padrão de migração aditiva.
-alter table usuarios add column if not exists ultimo_acesso timestamptz;
-
--- =============================================================================
--- MIGRAÇÃO — LOGIN VIA SUPABASE AUTH DE VERDADE (substitui o localStorage
--- puro, ver comentário no topo da definição original de `usuarios` mais
--- acima neste arquivo — essa migração já tinha sido adiada duas vezes por
--- causa do problema abaixo).
---
--- Motivo de ter ficado pra depois até agora: qualquer ação do admin sobre
--- OUTRO usuário (criar, redefinir senha, bloquear, excluir) exige a Admin
--- API do Supabase Auth, que só funciona com a service role key — uma chave
--- que nunca pode existir no navegador. A partir de agora essas ações vivem
--- na Edge Function `usuarios-admin` (supabase/functions/usuarios-admin/
--- index.ts), que guarda essa chave só no servidor.
---
--- PASSO 0 — RODAR ANTES DE QUALQUER COISA ABAIXO: confirmar que não sobrou
--- nenhuma foreign key apontando pra `usuarios` no projeto REAL (o arquivo
--- schema.sql nem sempre reflete o estado exato do banco ao vivo — já
--- aconteceu antes, ver migração de `usuarios` mais acima, que precisou de
--- `cascade` por causa de objetos criados direto no painel). Rodar:
---
---   select conname, conrelid::regclass, confrelid::regclass
---   from pg_constraint
---   where confrelid = 'usuarios'::regclass;
---
--- Se vier alguma linha, resolver (normalmente dropar a constraint — o app
--- nunca escreve nesses campos, confirmado por grep em index.html) ANTES de
--- seguir pro restante deste bloco.
---
--- Diferente da migração anterior de `usuarios` (que fazia `drop table
--- cascade` com segurança porque a tabela real estava ZERADA), desta vez a
--- tabela tem linhas reais — por isso RENOMEIA em vez de dropar, preservando
--- o dado pra reconciliar depois de criar os usuários de verdade no Supabase
--- Auth (ver backend/README.md, seção "Migrar login pro Supabase Auth").
---
--- `senha` sai de vez daqui — a partir de agora mora só no `auth.users` do
--- Supabase, gerenciada via Admin API pela Edge Function `usuarios-admin`,
--- nunca mais em texto puro numa tabela nossa. `id` vira `uuid` igual ao
--- `auth.users.id` (era `text`, gerado pelo próprio app) — seguro depois de
--- confirmado o Passo 0 acima.
--- =============================================================================
-alter table usuarios rename to usuarios_pre_auth_backup;
--- Renomear a TABELA não renomeia o ÍNDICE junto (Postgres mantém o nome
--- original do índice) — sem isso, o `create unique index idx_usuarios_login`
--- da tabela nova colide com o nome que já existe na tabela renomeada.
-alter index idx_usuarios_login rename to idx_usuarios_pre_auth_backup_login;
-
-create table usuarios (
-  id uuid primary key references auth.users(id) on delete cascade,
-  nome text not null,
-  usuario text not null,             -- login por username continua existindo (UX preservada), só não é mais a chave de auth
-  email text not null,               -- agora obrigatório: Supabase Auth exige e-mail real por conta
-  perfil text not null check (perfil in ('operador','lider','admin')),
-  status text not null default 'ativo' check (status in ('ativo','bloqueado','deve_definir_senha')),
-  acessos_extras jsonb not null default '[]'::jsonb,
-  ultimo_acesso timestamptz,
+-- Fila de "esqueci minha senha" pendente de aprovação do admin — mesmo
+-- conceito que já existia como o array `passwordRequests` guardado em
+-- `localStorage` no index.html (bug real já documentado: nunca sincronizava
+-- entre aparelhos, uma solicitação feita num tablet era invisível pro admin
+-- usando outro). Agora centralizado aqui, lido pelo admin via a ação
+-- `listar_solicitacoes_senha` de `usuarios-admin` (autenticada) — nunca
+-- exposto a `anon` diretamente (mesmo raciocínio de `password_reset_tokens`:
+-- mesmo um SELECT aqui revelaria quais contas pediram recuperação
+-- recentemente, um vazamento de informação desnecessário).
+create table if not exists password_reset_requests (
+  id uuid primary key default gen_random_uuid(),
+  usuario_id uuid not null references usuarios(id) on delete cascade,
   criado_em timestamptz not null default now(),
-  atualizado_em timestamptz not null default now()
+  resolvido boolean not null default false,
+  resolvido_em timestamptz,
+  resolvido_por text
 );
-create unique index idx_usuarios_login on usuarios (lower(usuario));
-create unique index idx_usuarios_email on usuarios (lower(email));
-
--- ---- Funções de apoio ao login (rodam ANTES de autenticar) ----
-
--- Resolve "usuário ou e-mail" (a tela de login aceita os dois, ver
--- `identifier` em `attemptLogin` no index.html) pro e-mail real que o
--- Supabase Auth precisa pra `signInWithPassword` — sem isso, precisaríamos
--- expor a tabela inteira via SELECT público de novo (senão a UX de "logar
--- com usuário" quebra). `security definer` funciona mesmo com a tabela
--- travada por RLS pra admin/dono da linha só (ver policies abaixo). Devolve
--- só o mínimo necessário (id/email/status) — nunca perfil, acessos_extras.
-create or replace function public.resolver_login(p_identifier text)
-returns table(id uuid, email text, status text) as $$
-  select u.id, u.email, u.status
-  from usuarios u
-  where lower(u.usuario) = lower(p_identifier) or lower(u.email) = lower(p_identifier)
-  limit 1;
-$$ language sql stable security definer set search_path = public;
-revoke all on function public.resolver_login(text) from public;
-grant execute on function public.resolver_login(text) to anon, authenticated;
-
--- Helper de autorização — evita RLS recursiva ("select da própria tabela
--- usuarios dentro de uma policy de usuarios"). `security definer` deixa a
--- intenção clara e não depende de RLS dentro da própria checagem de RLS.
--- Espelha EXATAMENTE o `hasAccess(user, 'usuarios')` do index.html — o
--- perfil admin já libera por padrão, e um líder/operador pode ganhar a
--- mesma exceção via `acessos_extras` (ver ACESSOS_RESTRITOS/hasAccess, e
--- checkboxes "Acessos extras" no UserForm) sem precisar virar admin. Sem
--- espelhar essa segunda condição aqui, a funcionalidade de "acessos
--- extras" quebraria silenciosamente pra esta tela específica assim que o
--- RLS entrasse em vigor: o usuário continuaria vendo o item no menu (isso
--- é decidido no client), mas a lista viria sempre vazia/só a própria linha.
-create or replace function public.pode_gerenciar_usuarios(p_uid uuid)
-returns boolean as $$
-  select exists(
-    select 1 from usuarios
-    where id = p_uid and status <> 'bloqueado'
-      and (perfil = 'admin' or acessos_extras ? 'usuarios')
-  );
-$$ language sql stable security definer set search_path = public;
-revoke all on function public.pode_gerenciar_usuarios(uuid) from public;
-grant execute on function public.pode_gerenciar_usuarios(uuid) to authenticated;
-
-alter table usuarios enable row level security;
-
--- Leitura: cada usuário só vê a própria linha; quem tem acesso à tela
--- "Usuários" (admin, ou exceção via acessos_extras) vê todas.
-create policy "leitura própria ou com acesso a usuários" on usuarios for select
-  using (auth.uid() = id or public.pode_gerenciar_usuarios(auth.uid()));
-
--- Única escrita que o CLIENTE (navegador) ainda faz direto, sem passar pela
--- Edge Function: gravar o próprio "último acesso" no login bem-sucedido
--- (ver attemptLogin no index.html) — self-only E restrita à coluna
--- `ultimo_acesso` via GRANT de coluna (RLS sozinha só filtra LINHA, não
--- coluna; sem esse grant restrito, qualquer usuário autenticado poderia se
--- autopromover a admin via um PATCH direto na própria linha).
-create policy "atualizar próprio último acesso" on usuarios for update
-  using (auth.uid() = id) with check (auth.uid() = id);
-revoke update on usuarios from authenticated;
-grant update (ultimo_acesso) on usuarios to authenticated;
-
--- Sem policy de INSERT/DELETE pra authenticated/anon: criar, editar perfil/
--- senha/acessos_extras, bloquear e excluir usuário passam a ser só a Edge
--- Function `usuarios-admin` (roda com a service role key, ignora RLS).
+create index if not exists idx_password_reset_requests_pendentes
+  on password_reset_requests (usuario_id) where not resolvido;
+alter table password_reset_requests enable row level security;
+-- (proposital: nenhuma policy criada — mesmo critério acima)
 
 -- =============================================================================
--- RECONCILIAÇÃO DOS USUÁRIOS REAIS — rodar DEPOIS de criar cada usuário de
+-- RECONCILIAÇÃO DOS USUÁRIOS REAIS — histórico/referência. Já foi aplicada
+-- por completo no projeto Supabase real deste cliente (ver CLAUDE.md,
+-- "Migração pro Supabase Auth confirmada em produção") — não faz parte do
+-- fluxo normal pra uma base nova (que nunca tem `usuarios_pre_auth_backup`
+-- pra reconciliar) nem precisa ser rodada de novo no projeto já migrado.
+-- Preservada aqui só como referência de COMO foi feito, caso um dia outro
+-- projeto precise do mesmo tipo de migração. Nenhum comando abaixo roda
+-- sozinho — é tudo comentário com SQL de exemplo, a colar manualmente.
+--
+-- Rodar DEPOIS de criar cada usuário de
 -- verdade em Authentication → Add User no painel do Supabase (ver
 -- backend/README.md). Não dá pra fazer isso automaticamente por e-mail (a
 -- coluna `email` era OPCIONAL na tabela antiga — pode estar vazia pra algum
@@ -1151,6 +1118,18 @@ create or replace function reservar_item(p_produto_codigo text, p_inventario_id 
 returns table(produto_codigo text, inventario_id text, usuario text, usuario_id uuid, criado_em timestamptz, expira_em timestamptz, reservado_por_mim boolean)
 language plpgsql
 as $$
+#variable_conflict use_column
+-- BUG REAL corrigido aqui (achado testando contra um Postgres de verdade,
+-- ver CLAUDE.md): `returns table(produto_codigo text, ...)` cria uma
+-- variável PL/pgSQL implícita chamada `produto_codigo` — colidindo com a
+-- COLUNA `produto_codigo` referenciada sem qualificação em
+-- `on conflict (produto_codigo)` logo abaixo. Sem este pragma, TODA chamada
+-- desta função falhava com "column reference produto_codigo is ambiguous",
+-- sempre, em qualquer Postgres (não é specífico deste sandbox) — a função
+-- nunca funcionou de verdade. `use_column` resolve a ambiguidade a favor da
+-- COLUNA da tabela nesse ponto específico, sem mudar nenhum outro
+-- comportamento (o resto do corpo já qualifica tudo explicitamente com
+-- `ir.`/`r.`/`v_`).
 declare
   v_uid uuid := auth.uid();
   v_nome text;
@@ -1653,11 +1632,17 @@ alter table contagens add column if not exists custo_unitario numeric(14,4);
 -- fica aberta. Mesmo critério já usado em `diasParado()` no index.html.
 --
 -- Reaplicando este bloco por cima de uma tabela já criada com o desenho
--- antigo (PK só `numero_sa`)? `drop table` é seguro aqui — é uma tabela só
--- de espelho/consulta (sem FK apontando pra ela, sem dado que não possa ser
--- resincronizado sozinho no próximo poll de 30 min ou num "Sincronizar
--- agora" manual).
-drop table if exists sa_almoxarifado cascade;
+-- antigo (PK só `numero_sa`)? `drop table` é seguro aqui SEM `cascade` — é
+-- uma tabela só de espelho/consulta, sem nenhum outro objeto deste arquivo
+-- com FK apontando pra ela, e sem dado que não possa ser resincronizado
+-- sozinho no próximo poll de 30 min ou num "Sincronizar agora" manual.
+-- Deliberadamente SEM `cascade`: se algum dia existir uma FK real apontando
+-- pra esta tabela (algo criado fora deste arquivo, direto no painel — já
+-- aconteceu antes com `usuarios`, ver o comentário na definição dela no
+-- topo deste arquivo), este comando erra e pára em vez de silenciosamente
+-- arrastar essa constraint junto — force conferir manualmente antes de
+-- decidir o que fazer, em vez de cascatear às cegas.
+drop table if exists sa_almoxarifado;
 create table sa_almoxarifado (
   chave text primary key,        -- numero_sa || '-' || item
   numero_sa text not null,
@@ -1691,3 +1676,331 @@ create policy "leitura autenticada" on sa_almoxarifado for select using (auth.ro
 -- antes de rodar, mesmo motivo de sempre (evita erro de "already member"):
 --   select schemaname, tablename from pg_publication_tables where pubname = 'supabase_realtime';
 alter publication supabase_realtime add table sa_almoxarifado;
+
+-- =============================================================================
+-- CORREÇÃO DE SEGURANÇA: RLS POR PAPEL/AÇÃO NAS TABELAS OPERACIONAIS
+-- =============================================================================
+-- Até aqui, a maior parte da escrita nestas tabelas era liberada pra
+-- QUALQUER usuário autenticado (`auth.role() = 'authenticated'`), sem
+-- distinguir operador de líder/admin — suficiente pra barrar `anon`, mas não
+-- pra impedir um OPERADOR de, via uma chamada direta à API REST/RPC (sem
+-- passar pela UI, que já restringia essas ações por perfil no front-end),
+-- aprovar divergência, excluir contagem/inventário, sobrescrever saldo do
+-- sistema, editar o catálogo, ou confirmar endereço proposto — tudo isso
+-- hoje só é barrado no cliente (`role==='...' ? ... : undefined`/
+-- `hasAccess`), nunca validado no servidor.
+--
+-- Esta seção reaproveita o MESMO padrão `security definer` já usado em
+-- `pode_gerenciar_usuarios`/`eh_admin` (acima) — evita RLS recursiva ao
+-- consultar `usuarios` dentro da policy de outra tabela — pra fechar essa
+-- lacuna tabela por tabela, no que já existe hoje: sem criar nenhuma tabela/
+-- coluna nova, sem apagar nenhum dado. Cada policy/função foi desenhada
+-- consultando de perto QUEM de fato escreve em cada tabela hoje (grep de
+-- todo `.from('<tabela>').insert/update/delete/upsert(` em index.html,
+-- cruzado com o gate de perfil da tela que chama cada função) — pra nunca
+-- restringir mais do que o app já faz na prática. Idempotente (`drop policy
+-- if exists` antes de cada `create policy`, `create or replace function`) —
+-- roda tanto num banco que já aplicou as seções anteriores deste arquivo
+-- quanto num banco novo, rodando o arquivo inteiro em sequência.
+-- =============================================================================
+
+-- Helper novo: líder OU admin — mesmo raciocínio de `pode_gerenciar_usuarios`/
+-- `eh_admin` (mais acima neste arquivo), reaproveitado por várias policies
+-- abaixo.
+create or replace function public.eh_lider_ou_admin(p_uid uuid)
+returns boolean as $$
+  select exists(
+    select 1 from usuarios
+    where id = p_uid and status <> 'bloqueado'
+      and perfil in ('lider','admin')
+  );
+$$ language sql stable security definer set search_path = public;
+revoke all on function public.eh_lider_ou_admin(uuid) from public;
+grant execute on function public.eh_lider_ou_admin(uuid) to authenticated;
+
+-- -----------------------------------------------------------------------
+-- CONTAGENS — leitura continua ampla (várias telas — "Contagens de Hoje" na
+-- Home, busca de status, etc. — legitimamente mostram a fila de TODO
+-- mundo, pra qualquer perfil). Inserção continua ampla — é assim que
+-- QUALQUER operador lança uma contagem nova, via `CountStep.finalize()` ->
+-- `saveContagemToSupabase` (inclusive recontagem, que também é só um
+-- INSERT novo com `numero_contagem+1`/`contagem_anterior_id`). UPDATE
+-- (aprovar/rejeitar divergência, marcar urgente, atribuir, gerar SA,
+-- aprovar/reprovar Diretoria, editar motivo, voltar pra análise) e DELETE
+-- (excluir contagem) nunca são feitos por operador em NENHUM fluxo da UI —
+-- sempre líder/admin (UPDATE, ver `approveDivergence`/
+-- `requestRecountFromOperator`/`toggleUrgente`/`atribuirContagem`/
+-- `enviarParaArmazem`/`enviarParaAprovacaoDiretoria`/
+-- `aprovarAjusteDiretoria`/`reprovarAjusteDiretoria`/
+-- `editarMotivoObservacaoContagem`/`voltarParaAnaliseLider` em App()) ou só
+-- admin (DELETE, ver `onDeleteCount={role==='admin'?deleteCount:undefined}`
+-- nos 4 painéis que oferecem excluir).
+-- -----------------------------------------------------------------------
+drop policy if exists "atualização autenticada" on contagens;
+drop policy if exists "atualização pública" on contagens;
+drop policy if exists "atualização líder ou admin" on contagens;
+drop policy if exists "exclusão autenticada" on contagens;
+drop policy if exists "exclusão pública" on contagens;
+drop policy if exists "exclusão só admin" on contagens;
+create policy "atualização líder ou admin" on contagens for update
+  using (public.eh_lider_ou_admin(auth.uid()))
+  with check (public.eh_lider_ou_admin(auth.uid()));
+create policy "exclusão só admin" on contagens for delete
+  using (public.eh_admin(auth.uid()));
+
+-- Trava de integridade na INSERÇÃO: o INSERT continua liberado pra qualquer
+-- autenticado (precisa continuar assim — é o caminho normal de contar),
+-- mas sem essa trava um operador poderia inserir uma linha JÁ com
+-- `status_aprovacao='aprovado_lider'` (ou qualquer outro veredito que só o
+-- líder deveria poder dar) direto via API, pulando a análise por completo —
+-- risco real de "aprovação" mesmo sem nenhuma tela permitir isso.
+-- `CountStep.finalize()` (o ÚNICO ponto de INSERT usado por QUALQUER
+-- perfil pra lançar uma contagem nova) nunca produz nada além de
+-- 'aprovado_auto'/'aprovado_segunda'/'aguardando_segunda'/
+-- 'aguardando_analise_lider' (ver `computeStatus` em index.html) — a
+-- importação de histórico (`seedRecontarQueueFromHistorico`, admin-only)
+-- também só usa esses dois últimos. Os outros 4 estados
+-- ('aprovado_lider', 'aguardando_solicitacao_armazem',
+-- 'aguardando_aprovacao_diretoria', 'ajuste_aprovado_diretoria') só
+-- existem via UPDATE (já travado acima pra líder/admin), nunca via INSERT
+-- em nenhum fluxo real — travar isso na inserção não quebra nenhuma
+-- funcionalidade existente, líder/admin continuam livres (a trava só se
+-- aplica a quem NÃO é líder/admin).
+create or replace function public.contagens_valida_status_insercao()
+returns trigger as $$
+begin
+  if new.status_aprovacao not in ('aprovado_auto','aprovado_segunda','aguardando_segunda','aguardando_analise_lider')
+     and not public.eh_lider_ou_admin(auth.uid()) then
+    raise exception 'status_aprovacao inválido para inserção direta por este perfil: %', new.status_aprovacao;
+  end if;
+  return new;
+end;
+$$ language plpgsql security definer set search_path = public;
+drop trigger if exists trg_contagens_valida_status_insercao on contagens;
+create trigger trg_contagens_valida_status_insercao
+  before insert on contagens
+  for each row execute function public.contagens_valida_status_insercao();
+
+-- -----------------------------------------------------------------------
+-- INVENTARIOS — leitura e inserção continuam amplas (operador cria
+-- inventário avulso o tempo todo via "Nova Contagem" — `PickCountType` não
+-- restringe por perfil). UPDATE (marcar urgente, atribuir, cancelar,
+-- remover item pendente) e DELETE (excluir) só líder/admin — mesmo padrão
+-- de `InventoryList`, que só mostra Baixar/Cancelar/Excluir dentro do
+-- bloco `role==='admin'`; "Marcar urgente"/"Atribuir a..." já eram
+-- líder/admin.
+--
+-- `increment_contados` precisa virar `security definer`: é o ÚNICO
+-- caminho de UPDATE que QUALQUER perfil (inclusive operador) legitimamente
+-- usa — avançar o cursor `contados` ao confirmar um item de uma fila
+-- (`RandomCountFlow`/`RouteCountFlow`/`ImportedListCountFlow`). Sem isso,
+-- travar UPDATE pra líder/admin quebraria a contagem em fila do operador.
+-- -----------------------------------------------------------------------
+create or replace function increment_contados(p_id text)
+returns void as $$
+  update inventarios set contados = contados + 1 where id = p_id;
+$$ language sql security definer set search_path = public;
+revoke all on function increment_contados(text) from public;
+grant execute on function increment_contados(text) to authenticated;
+
+drop policy if exists "atualização autenticada" on inventarios;
+drop policy if exists "atualização pública" on inventarios;
+drop policy if exists "atualização líder ou admin" on inventarios;
+drop policy if exists "exclusão autenticada" on inventarios;
+drop policy if exists "exclusão pública" on inventarios;
+drop policy if exists "exclusão só admin" on inventarios;
+create policy "atualização líder ou admin" on inventarios for update
+  using (public.eh_lider_ou_admin(auth.uid()))
+  with check (public.eh_lider_ou_admin(auth.uid()));
+create policy "exclusão só admin" on inventarios for delete
+  using (public.eh_admin(auth.uid()));
+
+-- -----------------------------------------------------------------------
+-- ENDERECOS_PROPOSTOS — inserção continua ampla (qualquer operador propõe
+-- um endereço enquanto conta, via `addAddressProposal`, passado aos
+-- fluxos de contagem sem restrição de perfil). UPDATE (confirmar/rejeitar
+-- a proposta) só líder/admin — é exatamente a mesma decisão que já grava
+-- em `enderecos`/`estoque_enderecos` (ver abaixo), protegida pelo MESMO
+-- perfil — sem isso, um operador poderia auto-aprovar a própria proposta
+-- direto via API, sem nunca precisar passar por `enderecos`/
+-- `estoque_enderecos`.
+-- -----------------------------------------------------------------------
+drop policy if exists "atualização autenticada" on enderecos_propostos;
+drop policy if exists "atualização pública" on enderecos_propostos;
+drop policy if exists "atualização líder ou admin" on enderecos_propostos;
+create policy "atualização líder ou admin" on enderecos_propostos for update
+  using (public.eh_lider_ou_admin(auth.uid()))
+  with check (public.eh_lider_ou_admin(auth.uid()));
+
+-- -----------------------------------------------------------------------
+-- ESTOQUE_SALDO / PRODUTOS — leitura passa a exigir autenticação (era
+-- `using(true)`, aberta até pra `anon` — sem necessidade real, já que
+-- login sempre foi obrigatório pra usar o app desde a migração pro
+-- Supabase Auth). Escrita restrita a ADMIN — únicos escritores reais são
+-- `replaceEstoqueSaldoInSupabase` (StockSyncPanel, upload da SB2) e
+-- `upsertCatalogoDescricao` (CatalogoDescricaoSyncPanel), os dois só
+-- dentro de Configurações → admin.
+-- -----------------------------------------------------------------------
+drop policy if exists "leitura pública" on estoque_saldo;
+drop policy if exists "leitura autenticada" on estoque_saldo;
+create policy "leitura autenticada" on estoque_saldo for select
+  using (auth.role() = 'authenticated');
+drop policy if exists "escrita autenticada" on estoque_saldo;
+drop policy if exists "escrita pública" on estoque_saldo;
+drop policy if exists "escrita só admin" on estoque_saldo;
+create policy "escrita só admin" on estoque_saldo for all
+  using (public.eh_admin(auth.uid()))
+  with check (public.eh_admin(auth.uid()));
+
+drop policy if exists "leitura pública" on produtos;
+drop policy if exists "leitura autenticada" on produtos;
+create policy "leitura autenticada" on produtos for select
+  using (auth.role() = 'authenticated');
+drop policy if exists "escrita autenticada" on produtos;
+drop policy if exists "escrita só admin" on produtos;
+create policy "escrita só admin" on produtos for all
+  using (public.eh_admin(auth.uid()))
+  with check (public.eh_admin(auth.uid()));
+
+-- -----------------------------------------------------------------------
+-- ENDERECOS / ESTOQUE_ENDERECOS — leitura passa a exigir autenticação
+-- (mesmo motivo acima). Escrita restrita a LÍDER OU ADMIN — dois
+-- escritores reais confirmados: `upsertCatalogoDescricao` (admin, upload
+-- em massa) E `aplicarEnderecoConfirmado` (líder/admin, aprovação de
+-- endereço proposto em `AddressValidationPanel`) — a união dos dois é
+-- líder+admin.
+-- -----------------------------------------------------------------------
+drop policy if exists "leitura pública" on enderecos;
+drop policy if exists "leitura autenticada" on enderecos;
+create policy "leitura autenticada" on enderecos for select
+  using (auth.role() = 'authenticated');
+drop policy if exists "escrita autenticada" on enderecos;
+drop policy if exists "escrita líder ou admin" on enderecos;
+create policy "escrita líder ou admin" on enderecos for all
+  using (public.eh_lider_ou_admin(auth.uid()))
+  with check (public.eh_lider_ou_admin(auth.uid()));
+
+drop policy if exists "leitura pública" on estoque_enderecos;
+drop policy if exists "leitura autenticada" on estoque_enderecos;
+create policy "leitura autenticada" on estoque_enderecos for select
+  using (auth.role() = 'authenticated');
+drop policy if exists "escrita autenticada" on estoque_enderecos;
+drop policy if exists "escrita líder ou admin" on estoque_enderecos;
+create policy "escrita líder ou admin" on estoque_enderecos for all
+  using (public.eh_lider_ou_admin(auth.uid()))
+  with check (public.eh_lider_ou_admin(auth.uid()));
+
+-- -----------------------------------------------------------------------
+-- ITEM_RESERVAS — pedido explícito: a duração da reserva precisa ser fixa
+-- NO SERVIDOR (nunca confiar no `p_minutos` que o client manda), e só o
+-- dono pode renovar/liberar a própria reserva. `reservar_item`/
+-- `liberar_item_reserva` viram `security definer` — a lógica interna já
+-- era correta (só sobrescreve reserva expirada ou do próprio usuário;
+-- `liberar_item_reserva` já filtrava por `usuario_id = auth.uid()`), só
+-- precisa deixar de depender da RLS de quem chama pra funcionar — e a
+-- policy de escrita ampla (`for all` pra qualquer autenticado) é REMOVIDA
+-- por completo: sem nenhuma policy de insert/update/delete pra
+-- `authenticated`, a ÚNICA forma de escrever nesta tabela passa a ser
+-- através dessas duas funções (que rodam com privilégio elevado — bypassam
+-- RLS — mas só fazem exatamente o que o próprio código delas já permitia).
+-- Confirmado via grep que index.html nunca chama `.from('item_reservas')`
+-- direto em lugar nenhum — só via `.rpc('reservar_item'/'liberar_item_reserva', ...)`.
+--
+-- `p_minutos` continua no parâmetro só por compatibilidade com a chamada já
+-- existente no front-end (`reservarItemSupabase`, `p_minutos:5`) — o valor
+-- recebido é ignorado de propósito, a duração real vem sempre da constante
+-- `v_duracao` abaixo. Corpo idêntico ao original em tudo mais (mesmas
+-- colunas retornadas, mesma faxina de reserva velha, mesma regra de
+-- sobrescrita).
+-- -----------------------------------------------------------------------
+create or replace function reservar_item(p_produto_codigo text, p_inventario_id text, p_minutos int default 5)
+returns table(produto_codigo text, inventario_id text, usuario text, usuario_id uuid, criado_em timestamptz, expira_em timestamptz, reservado_por_mim boolean)
+language plpgsql
+security definer
+set search_path = public
+as $$
+#variable_conflict use_column
+-- BUG REAL corrigido aqui (achado testando contra um Postgres de verdade,
+-- ver CLAUDE.md) — mesmo problema do corpo original acima: `returns
+-- table(produto_codigo text, ...)` cria uma variável implícita que colide
+-- com a COLUNA `produto_codigo` em `on conflict (produto_codigo)`. Sem este
+-- pragma, a função sempre falhava com "column reference produto_codigo is
+-- ambiguous" — nunca tinha funcionado de verdade, em nenhum Postgres.
+declare
+  v_uid uuid := auth.uid();
+  v_nome text;
+  v_duracao constant interval := interval '5 minutes'; -- fixa no servidor — `p_minutos` (parâmetro do client) é ignorado de propósito
+begin
+  select u.nome into v_nome from usuarios u where u.id = v_uid;
+
+  delete from item_reservas ir2 where ir2.expira_em < now() - interval '1 hour';
+
+  insert into item_reservas as r (produto_codigo, inventario_id, usuario, usuario_id, criado_em, expira_em)
+  values (p_produto_codigo, p_inventario_id, coalesce(v_nome, 'Desconhecido'), v_uid, now(), now() + v_duracao)
+  on conflict (produto_codigo) do update
+    set inventario_id = excluded.inventario_id,
+        usuario = excluded.usuario,
+        usuario_id = excluded.usuario_id,
+        criado_em = excluded.criado_em,
+        expira_em = excluded.expira_em
+    where r.expira_em < now() or r.usuario_id = v_uid;
+
+  return query
+    select ir.produto_codigo, ir.inventario_id, ir.usuario, ir.usuario_id, ir.criado_em, ir.expira_em,
+           (ir.usuario_id = v_uid) as reservado_por_mim
+    from item_reservas ir where ir.produto_codigo = p_produto_codigo;
+end;
+$$;
+revoke all on function reservar_item(text, text, int) from public;
+grant execute on function reservar_item(text, text, int) to authenticated;
+
+create or replace function liberar_item_reserva(p_produto_codigo text)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  delete from item_reservas where produto_codigo = p_produto_codigo and usuario_id = auth.uid();
+$$;
+revoke all on function liberar_item_reserva(text) from public;
+grant execute on function liberar_item_reserva(text) to authenticated;
+
+drop policy if exists "escrita autenticada" on item_reservas;
+-- Sem nenhuma policy de insert/update/delete pra `authenticated` daqui em
+-- diante — só as duas funções acima (security definer) escrevem aqui, de
+-- propósito. "leitura autenticada" (já existente, ver mais acima) continua
+-- igual — não é dado sensível, e o front-end precisa ler o estado da
+-- reserva de qualquer código pra mostrar "já sendo contado por Fulano".
+
+-- -----------------------------------------------------------------------
+-- ETIQUETAS_FILA — leitura/inserção/atualização restritas a LÍDER OU ADMIN
+-- (mesmo grupo de `ACESSOS_RESTRITOS.etiquetas` — único lugar que grava
+-- nesta tabela, `salvarEtiquetaNaFila`/`marcarEtiquetaImpressa`, os dois só
+-- dentro de `EtiquetasPanel`). Sem policy de delete — nenhum caminho do
+-- app apaga linha desta tabela.
+-- -----------------------------------------------------------------------
+drop policy if exists "leitura autenticada" on etiquetas_fila;
+drop policy if exists "escrita autenticada" on etiquetas_fila;
+drop policy if exists "leitura líder ou admin" on etiquetas_fila;
+drop policy if exists "inserção líder ou admin" on etiquetas_fila;
+drop policy if exists "atualização líder ou admin" on etiquetas_fila;
+create policy "leitura líder ou admin" on etiquetas_fila for select
+  using (public.eh_lider_ou_admin(auth.uid()));
+create policy "inserção líder ou admin" on etiquetas_fila for insert
+  with check (public.eh_lider_ou_admin(auth.uid()));
+create policy "atualização líder ou admin" on etiquetas_fila for update
+  using (public.eh_lider_ou_admin(auth.uid()))
+  with check (public.eh_lider_ou_admin(auth.uid()));
+
+-- -----------------------------------------------------------------------
+-- LIMITAÇÃO CONHECIDA, DOCUMENTADA (não corrigida nesta rodada por
+-- disciplina de escopo — não fazia parte da lista de 8 tabelas pedida
+-- explicitamente): `contagens_historico` continua com leitura E escrita
+-- totalmente públicas pra qualquer autenticado (`using(true)` nos dois,
+-- ver mais acima neste arquivo) — é o espelho só-consulta da planilha
+-- `BD_Contagens` importada, sem nenhum escritor direto do app hoje (só
+-- entra via `HistoricoImportPanel`, admin-only, e via
+-- `reprovarAjusteHistoricoNaLinha`, também admin-only), mas a RLS em si
+-- não reflete isso. Se quiser fechar também, o mesmo padrão desta seção
+-- (`eh_admin`/`eh_lider_ou_admin`) se aplica igual.
+-- -----------------------------------------------------------------------

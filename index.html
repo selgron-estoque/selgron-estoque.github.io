@@ -29,12 +29,21 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<!-- Versão exata fixada (era "@2", major solto — corrigido na rodada de
+     segurança: um float de major version deixa a página vulnerável a receber
+     um patch novo do supabase-js sem revisão nenhuma, silenciosamente, a
+     qualquer momento. Fixado na versão mais recente publicada no momento da
+     correção (2.112.3) — mesmo comportamento observável de antes (era isso
+     que "@2" já resolvia), só que travado, sem risco de mudar sozinho depois. -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.3/dist/umd/supabase.min.js"></script>
 <!-- Gera o código de barras (Code128) da etiqueta impressa via window.print() —
      ver "IMPRESSÃO DE ETIQUETA" no script principal do app, próximo de
-     EtiquetasPanel. Versão @3 (major) do jsDelivr, mesmo padrão de dependência
-     externa via CDN já usado por html5-qrcode/xlsx neste projeto. -->
-<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3/dist/JsBarcode.all.min.js"></script>
+     EtiquetasPanel. Versão exata fixada (era "@3", major solto — mesma
+     correção de segurança do supabase-js acima, pedida explicitamente:
+     "Não use @3 sem versão exata para JsBarcode"). Fixado em 3.12.3 (a mais
+     recente publicada no momento da correção), mesmo comportamento
+     observável de antes. -->
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.12.3/dist/JsBarcode.all.min.js"></script>
 <style>
   :root{
     --bg: #EEF0F3;
@@ -2367,11 +2376,16 @@ function usuarioRowToLocal(row){
   };
 }
 
-// Chama a Edge Function `usuarios-admin` — ela decodifica o JWT de quem
-// está logado (anexado automaticamente por `functions.invoke`) e confirma
-// que é admin antes de fazer qualquer coisa privilegiada. `acao` é sempre
-// um dos valores tratados lá dentro (criar_usuario/atualizar_usuario/
-// definir_senha/alternar_bloqueio/excluir_usuario/auto_definir_senha).
+// Chama a Edge Function `usuarios-admin` — SEMPRE exige uma sessão válida
+// (renovada logo abaixo via `refreshSession`) e decide, do lado do
+// servidor (`podeExecutar`, ver o próprio arquivo da function), se quem
+// está logado pode de fato executar a ação pedida — nunca ação pública/sem
+// sessão (isso mora em `auth-publico`/`invocarAuthPublico`, ver abaixo:
+// misturar as duas coisas neste mesmo helper era o que fazia
+// `refreshSession()` incondicional travar o fluxo de "definir nova senha",
+// que nunca tem sessão nenhuma pra renovar). `acao` é sempre um dos valores
+// tratados lá dentro (criar_usuario/atualizar_usuario/definir_senha/
+// alternar_bloqueio/excluir_usuario/listar_solicitacoes_senha).
 async function chamarUsuariosAdmin(acao, payload){
   if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
   try{
@@ -2404,6 +2418,40 @@ async function chamarUsuariosAdmin(acao, payload){
       // no corpo bruto da resposta, em `error.context` (um Response). Sem
       // isso, todo erro da função aparecia com o mesmo texto genérico,
       // sem dizer o que realmente deu errado.
+      let erro = error.message;
+      if(error.context && typeof error.context.json==='function'){
+        try{
+          const corpo = await error.context.json();
+          if(corpo && corpo.erro) erro = corpo.erro;
+        }catch(_e){ /* corpo não era JSON — mantém a mensagem genérica */ }
+      }
+      return {ok:false, erro};
+    }
+    return data;
+  }catch(err){
+    return {ok:false, erro:String(err && err.message || err)};
+  }
+}
+
+// Chama a Edge Function PÚBLICA `auth-publico` (login, "esqueci minha
+// senha", confirmação de recuperação por token) — NUNCA chama
+// `refreshSession()` antes, diferente de `chamarUsuariosAdmin`: os 3
+// fluxos que passam por aqui não têm nenhuma sessão pra renovar (é
+// exatamente essa mistura, no código antigo, que fazia a tela "Nova senha"
+// (sem sessão nenhuma) bater no `refreshSession()` incondicional de
+// `chamarUsuariosAdmin` e travar com "Sessão inválida ou expirada" antes
+// mesmo da Edge Function ser chamada — bug real reportado pelo cliente).
+// `functions.invoke` já manda a publishable key como apikey/Authorization
+// padrão mesmo sem sessão — suficiente pra function aceitar a chamada, já
+// que ela mesma nunca decodifica um JWT de usuário (resolve tudo com a
+// service role internamente).
+async function invocarAuthPublico(acao, payload){
+  if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
+  try{
+    const { data, error } = await supabaseClient.functions.invoke('auth-publico', {
+      body: {acao, ...payload},
+    });
+    if(error){
       let erro = error.message;
       if(error.context && typeof error.context.json==='function'){
         try{
@@ -5328,7 +5376,16 @@ function App(){
   // chave NÃO bastaria sozinho: sem apagar a tabela no Supabase também, o
   // próximo sync traria as mesmas propostas de volta pro cache local zerado.
   const [enderecosPropostos, setEnderecosPropostos] = usePersistedState('enderecosPropostos_v3', []); // endereços informados por operadores, aguardando validação do líder
-  const [passwordRequests, setPasswordRequests] = usePersistedState('passwordRequests', []); // solicitações de "esqueci minha senha"
+  // Solicitações de "esqueci minha senha" — deixou de ser `usePersistedState`
+  // (localStorage, por aparelho) porque isso era exatamente o bug: uma
+  // solicitação feita num tablet nunca aparecia pro admin logado em outro.
+  // Agora vive só em `password_reset_requests` (Supabase, gravada pela Edge
+  // Function pública `auth-publico`) — este estado é só um CACHE de leitura,
+  // repovoado via `refreshSolicitacoesSenha()` (não pode ser lido direto por
+  // `select()` do client: a tabela não tem nenhuma policy de SELECT pra
+  // `authenticated`, só a Edge Function com service role enxerga — ver
+  // `usuarios-admin`, ação `listar_solicitacoes_senha`).
+  const [passwordRequests, setPasswordRequests] = useState([]);
   const [passwordHistory, setPasswordHistory] = usePersistedState('passwordHistory', []); // histórico de alterações de senha
   const [reportSendHistory, setReportSendHistory] = usePersistedState('reportSendHistory', []); // histórico de envios de relatório por e-mail
   // Configurações do admin (Configurações → "Visibilidade do Saldo na
@@ -5582,6 +5639,30 @@ function App(){
       .subscribe(status=>{ if(status==='SUBSCRIBED') refreshUsuarios(); });
     return ()=>{ supabaseClient.removeChannel(channel); };
   }, [podeGerenciarUsuarios]);
+
+  // Solicitações de "esqueci minha senha" (`password_reset_requests`) — a
+  // tabela não tem policy de SELECT pra `authenticated` (só a Edge Function,
+  // com service role, enxerga — mesmo critério de "menor privilégio
+  // possível" já aplicado no resto do endurecimento de RLS), então não dá
+  // pra assinar um canal Realtime direto nela como em `usuarios` — só a
+  // Edge Function `listar_solicitacoes_senha` (usuarios-admin) resolve isso.
+  // Busca 1x quando quem está logado ganha acesso à tela de Usuários, e de
+  // novo manualmente logo após resolver uma solicitação (ver
+  // `applyAdminPasswordAction`) — suficiente pro caso de uso (o admin
+  // decide sobre a fila enquanto está NA tela, não precisa de tempo real).
+  async function refreshSolicitacoesSenha(){
+    if(!supabaseClient || !podeGerenciarUsuarios) return;
+    const res = await chamarUsuariosAdmin('listar_solicitacoes_senha', {});
+    if(!res.ok) { console.warn('Falha ao buscar solicitações de senha:', res.erro); return; }
+    setPasswordRequests((res.solicitacoes||[]).map(row=>({
+      id: row.id,
+      userId: row.usuario_id,
+      usuarioNome: (row.usuarios && row.usuarios.nome) || row.usuario_id,
+      data: row.criado_em ? new Date(row.criado_em).toLocaleString('pt-BR') : '',
+      status: 'pendente', // a Edge Function já só devolve as não-resolvidas
+    })));
+  }
+  useEffect(()=>{ refreshSolicitacoesSenha(); }, [podeGerenciarUsuarios]);
 
   // Reflete `getPendingIncrements().length` (ver index.html perto de
   // incrementContadosSupabase) de forma reativa, só pro indicador visual —
@@ -6027,29 +6108,41 @@ function App(){
   }
 
   // ---- Autenticação (Supabase Auth de verdade) ----
-  // A tela de login aceita "usuário ou e-mail" — como o Supabase Auth só
-  // autentica por e-mail, `resolver_login` (RPC, roda no servidor) resolve
-  // o identificador digitado pro e-mail real antes de chamar
-  // `signInWithPassword`. `currentUserId` não precisa ser setado aqui —
-  // `onAuthStateChange` (useEffect acima) já reage à sessão nova sozinho.
+  // Login não resolve mais usuário→e-mail nem verifica senha aqui — os dois
+  // passos acontecem DENTRO da Edge Function pública `auth-publico` (ação
+  // `login`), com service role, sem nunca expor e-mail/id/status de conta
+  // pra quem ainda não provou a senha certa. A antiga RPC `resolver_login`
+  // (chamável direto por `anon`, devolvia id/e-mail/status ANTES de
+  // qualquer senha ser verificada — um oráculo de existência de usuário, e
+  // o `id` devolvido virava a "credencial" que `auto_definir_senha` aceitava
+  // pra trocar a senha de QUALQUER conta) foi revogada de `anon`/
+  // `authenticated` por completo (ver backend/schema.sql) — a function
+  // resolve isso internamente e devolve só o resultado final da tentativa.
+  // `currentUserId` não precisa ser setado aqui — `onAuthStateChange`
+  // (useEffect acima) já reage à sessão nova sozinho assim que `setSession`
+  // roda.
   async function attemptLogin(identifier, senha, lembrar=true){
-    const id = identifier.trim().toLowerCase();
-    const { data: matches, error: rpcErr } = await supabaseClient.rpc('resolver_login', {p_identifier:id});
-    const match = matches && matches[0];
-    if(rpcErr || !match) return {ok:false, error:'Usuário ou senha inválidos.'};
-    if(match.status==='bloqueado') return {ok:false, error:'Usuário bloqueado. Contate o administrador.'};
-    if(match.status==='deve_definir_senha') return {ok:false, needsNewPassword:true, userId:match.id};
-    const { error } = await supabaseClient.auth.signInWithPassword({email:match.email, password:senha});
-    if(error) return {ok:false, error:'Usuário ou senha inválidos.'};
+    const res = await invocarAuthPublico('login', {identifier: identifier.trim(), senha});
+    if(!res.ok){
+      // `needsNewPassword` não carrega mais nenhum `userId` — a única forma
+      // de destravar essa conta agora é com o token de recuperação de uso
+      // único que um admin já autenticado gerou (`usuarios-admin`, modo
+      // `liberar`) e repassou por fora do app, nunca com o identificador da
+      // conta sozinho.
+      if(res.needsNewPassword) return {ok:false, needsNewPassword:true};
+      return {ok:false, error: res.erro || 'Usuário ou senha inválidos.'};
+    }
+    const { error: setErr } = await supabaseClient.auth.setSession({
+      access_token: res.access_token, refresh_token: res.refresh_token,
+    });
+    if(setErr) return {ok:false, error:'Não foi possível concluir o login. Tente novamente.'};
     // "Lembrar-me": guarda (ou esquece) o identificador digitado, nunca a
     // senha — ver comentário perto de `LOGIN_LEMBRADO_KEY`.
     if(lembrar) salvarLoginLembrado(identifier); else limparLoginLembrado();
     touchLastActivity();
     setView('home');
-    const agora = new Date().toISOString();
-    updateUsuarioToSupabase(match.id, {ultimoAcesso:agora}).then(res=>{
-      if(!res.ok) console.warn('Falha ao registrar último acesso:', res.erro);
-    });
+    // `ultimo_acesso` já é gravado dentro da própria Edge Function, na mesma
+    // chamada que verificou a senha — não precisa de um 2º write daqui.
     return {ok:true};
   }
 
@@ -6062,17 +6155,15 @@ function App(){
     setLogoutNotice(notice || '');
   }
 
-  function requestPasswordReset(identifier){
-    const id = identifier.trim().toLowerCase();
-    const user = users.find(u => u.usuario.toLowerCase()===id || (u.email && u.email.toLowerCase()===id));
-    if(user){
-      setPasswordRequests(prev=>[{
-        id:'REQ-'+Math.random().toString(36).slice(2,7).toUpperCase(),
-        userId:user.id, usuarioNome:user.nome, data:new Date().toLocaleString('pt-BR'), status:'pendente',
-      }, ...prev]);
-    }
-    // Mensagem genérica sempre — evita confirmar/negar se o usuário existe (boa prática de segurança)
-    return 'Se o usuário existir, uma solicitação foi enviada para aprovação do administrador.';
+  // Grava a solicitação no SERVIDOR (`password_reset_requests`, via
+  // `auth-publico`), não mais só num array local (`usePersistedState`,
+  // localStorage) — o bug antigo era exatamente esse: uma solicitação feita
+  // num tablet nunca aparecia pro admin logado em outro aparelho. Sempre a
+  // MESMA mensagem genérica, exista ou não o usuário — nunca confirma/nega
+  // existência de conta pra quem ainda não está logado.
+  async function requestPasswordReset(identifier){
+    const res = await invocarAuthPublico('recuperar_solicitar', {identifier: identifier.trim()});
+    return (res && res.msg) || 'Se o usuário existir, uma solicitação foi enviada para aprovação do administrador.';
   }
 
   async function resolvePasswordRequest(reqId, acao, novaSenhaDigitada){
@@ -6080,7 +6171,11 @@ function App(){
     if(!req) return {ok:false, erro:'Solicitação não encontrada.'};
     const res = await applyAdminPasswordAction(req.userId, acao, novaSenhaDigitada);
     if(res.ok){
-      setPasswordRequests(prev=>prev.map(r=>r.id===reqId?{...r, status:'resolvido'}:r));
+      // A solicitação já foi marcada como resolvida do lado do servidor
+      // (`marcarSolicitacaoResolvida`, dentro de `usuarios-admin`) — busca a
+      // lista de novo (só as ainda pendentes) em vez de só marcar local,
+      // pra ficar em sincronia com o que qualquer outro admin logado vê.
+      await refreshSolicitacoesSenha();
     }
     return res;
   }
@@ -6089,7 +6184,9 @@ function App(){
   // (service role, só ela consegue mexer em `auth.users`) — nunca mais
   // escrevem direto na tabela `usuarios`. Só atualizam o estado local
   // depois de confirmar que a Edge Function respondeu `ok` — mesmo padrão
-  // já usado em `approveDivergence`/`deleteInventory`.
+  // já usado em `approveDivergence`/`deleteInventory`. A autorização por
+  // ação (quem pode fazer o quê) é decidida DENTRO da Edge Function
+  // (`podeExecutar`) — este front-end nunca decide isso sozinho.
   async function applyAdminPasswordAction(userId, acao, novaSenhaDigitada){
     const target = users.find(u=>u.id===userId);
     if(!target || !currentUser) return {ok:false, erro:'Usuário não encontrado.'};
@@ -6100,40 +6197,27 @@ function App(){
       setUsers(prev=>prev.map(u=>u.id===userId?{...u, status:novoStatus}:u));
       const acaoLabel = acao==='temp' ? `Senha temporária gerada (${res.senhaTemporaria}) — repassar ao usuário`
         : acao==='definir' ? 'Nova senha definida pelo administrador'
-        : 'Usuário liberado para criar nova senha';
+        : `Usuário liberado — código de recuperação gerado (${res.token}) — repassar ao usuário`;
       logHistory(target.nome, acaoLabel, currentUser.nome);
     }
     return res;
   }
 
-  // Chamado pela tela "Nova senha" (usuário liberado pelo admin definindo a
-  // própria senha) — não exige admin logado (a própria Edge Function trata
-  // esse caso sem checar JWT, ver `auto_definir_senha`).
-  //
-  // NÃO tenta logar automaticamente depois de salvar — antes tentava
-  // (`signInWithPassword` na hora), mas `target` (o registro local do
-  // usuário, usado só pra pegar o e-mail) normalmente é `undefined` no
-  // aparelho do OPERADOR: a sincronização completa de `users` só roda pra
-  // quem já está logado E tem acesso à tela "Usuários" (ver seção
-  // "Quarto pedaço do backend real" no CLAUDE.md) — um operador nunca tem
-  // isso, então o aparelho dele geralmente nunca teve `users` carregado
-  // antes do primeiro login. Sem `target`, o login automático era pulado
-  // em silêncio (sem erro, sem navegar) — a tela "Nova senha" ficava
-  // parada, sem feedback nenhum, e se o usuário clicasse "Definir senha e
-  // entrar" de novo, a 2ª chamada batia num status que já tinha virado
-  // 'ativo' na 1ª tentativa e voltava "Esta conta não está liberada para
-  // definir uma nova senha" — confuso, já que a senha TINHA sido salva.
-  // Agora só salva a senha e devolve `{ok:true}` — `LoginScreen` volta pra
-  // tela de login normal com um aviso de sucesso, e o usuário loga de
-  // verdade por ali (fluxo simples e sem essa dependência frágil).
-  async function selfSetNewPassword(userId, novaSenha){
-    const target = users.find(u=>u.id===userId);
-    const res = await chamarUsuariosAdmin('auto_definir_senha', {userId, novaSenha});
-    if(res.ok && target){
-      setUsers(prev=>prev.map(u=>u.id===userId?{...u, status:'ativo'}:u));
-      logHistory(target.nome, 'Senha definida pelo próprio usuário', '—');
-    }
-    return res;
+  // Chamado pela tela "Nova senha" — não é mais alcançável só com um
+  // `userId` (a causa raiz do bug antigo: `auto_definir_senha` aceitava
+  // trocar a senha de QUALQUER conta com `status='deve_definir_senha'` só
+  // de saber o id dela — id esse que a própria RPC de login vazava pra
+  // `anon`). Agora exige o TOKEN de recuperação de uso único que um admin
+  // já autenticado gerou (`usuarios-admin`/`definir_senha`/modo `liberar`,
+  // ver `applyAdminPasswordAction` acima) e repassou ao usuário por fora do
+  // app — validado inteiramente dentro de `auth-publico` (hash + expiração
+  // de 30 min + uso único + status da conta), sem exigir sessão nenhuma
+  // aqui (mesmo motivo de `requestPasswordReset`: quem chama isso nunca
+  // está logado ainda). Sem `userId`/`users` local disponível pra
+  // correlacionar, não dá mais pra registrar em `logHistory` — a ação em si
+  // já fica auditável no servidor (`password_reset_tokens.used_at`).
+  async function confirmarRecuperacaoSenha(token, novaSenha){
+    return await invocarAuthPublico('recuperar_confirmar', {token, novaSenha});
   }
 
   async function createUser(data){
@@ -6370,7 +6454,7 @@ function App(){
       <LoginScreen
         onLogin={attemptLogin}
         onForgot={requestPasswordReset}
-        onSelfSetPassword={selfSetNewPassword}
+        onSelfSetPassword={confirmarRecuperacaoSenha}
         notice={logoutNotice}
         clearNotice={()=>setLogoutNotice('')}
       />
@@ -6621,10 +6705,16 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
   // `selfSetNewPassword`), então precisa deixar claro que a senha JÁ foi
   // salva e o próximo passo é logar com ela.
   const [successMsg, setSuccessMsg] = useState('');
-  const [pendingUserId, setPendingUserId] = useState(null);
+  // Código de recuperação de uso único (gerado por um admin já autenticado,
+  // ver `applyAdminPasswordAction`/modo `liberar`, repassado ao usuário por
+  // fora do app) — substitui o antigo `pendingUserId`: a tela "Nova senha"
+  // não recebe mais NENHUM identificador de conta vazado pelo login, só o
+  // que o próprio usuário digita aqui.
+  const [token, setToken] = useState('');
   const [novaSenha, setNovaSenha] = useState('');
   const [confirmaSenha, setConfirmaSenha] = useState('');
   const [salvandoSenha, setSalvandoSenha] = useState(false);
+  const [enviandoForgot, setEnviandoForgot] = useState(false);
   // Login agora é uma chamada de rede de verdade (Supabase Auth) em vez de
   // uma checagem local instantânea — precisa de um estado de "enviando"
   // pra desabilitar o botão e não deixar dois cliques dispararem duas
@@ -6677,7 +6767,9 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
     setSalvandoLogin(false);
     if(!result.ok){
       if(result.needsNewPassword){
-        setPendingUserId(result.userId);
+        // Sem nenhum id vindo do resultado — a tela "Nova senha" agora só
+        // avança com o código de recuperação que o próprio usuário digitar.
+        setToken('');
         setMode('newPassword');
       } else {
         setError(result.error);
@@ -6685,33 +6777,36 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
     }
   }
 
-  function submitForgot(e){
+  async function submitForgot(e){
     e.preventDefault();
-    const msg = onForgot(identifier);
+    setEnviandoForgot(true);
+    const msg = await onForgot(identifier);
+    setEnviandoForgot(false);
     setForgotMsg(msg);
   }
 
   async function submitNewPassword(e){
     e.preventDefault();
     setError('');
+    if(!token.trim()){ setError('Informe o código de recuperação.'); return; }
     if(novaSenha.length < 6){ setError('A nova senha deve ter pelo menos 6 caracteres.'); return; }
     if(novaSenha !== confirmaSenha){ setError('As senhas não coincidem.'); return; }
     setSalvandoSenha(true);
-    const res = await onSelfSetPassword(pendingUserId, novaSenha);
+    const res = await onSelfSetPassword(token.trim(), novaSenha);
     setSalvandoSenha(false);
     if(res && res.ok){
       // Senha salva — volta pra tela de login normal em vez de tentar
-      // entrar direto (ver comentário em `selfSetNewPassword`). Limpa a
-      // senha antiga que tinha sido digitada na 1ª tentativa (o campo
+      // entrar direto (ver comentário em `confirmarRecuperacaoSenha`). Limpa
+      // a senha antiga que tinha sido digitada na 1ª tentativa (o campo
       // "Usuário ou e-mail" continua preenchido, já que nunca foi limpo).
+      setToken('');
       setNovaSenha('');
       setConfirmaSenha('');
       setSenha('');
-      setPendingUserId(null);
       setMode('login');
       setSuccessMsg('Senha definida com sucesso! Faça login com sua nova senha.');
     } else if(res){
-      setError(res.erro || 'Não foi possível salvar a nova senha — tente novamente.');
+      setError(res.erro || 'Código inválido ou expirado — peça um novo ao administrador.');
     }
   }
 
@@ -6768,6 +6863,7 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
                   <DIcon name="qrCode" size={18} /> Entrar com código de acesso
                 </button>
                 {qrNote && <div className="login-inline-note2">Login por código de acesso ainda não está disponível.</div>}
+                <button type="button" className="login-forgot2" style={{marginTop:14,display:'block',width:'100%',textAlign:'center'}} onClick={()=>{setToken(''); setError(''); setNovaSenha(''); setConfirmaSenha(''); setMode('newPassword');}}>Já tenho um código de recuperação</button>
               </form>
             )}
 
@@ -6776,7 +6872,7 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
                 <h2 className="login-welcome-title" style={{fontSize:'clamp(24px,2.6vw,34px)'}}>Recuperar acesso</h2>
                 {!forgotMsg ? (
                   <div>
-                    <p className="login-welcome-sub" style={{marginBottom:20}}>Informe seu usuário ou e-mail. Um administrador vai analisar e liberar o acesso.</p>
+                    <p className="login-welcome-sub" style={{marginBottom:20}}>Informe seu usuário ou e-mail. Se a conta existir, um código de recuperação será gerado para o administrador liberar o acesso.</p>
                     <div className="login-field2 login-field">
                       <label>Usuário ou e-mail</label>
                       <div className="field-wrap2">
@@ -6784,10 +6880,13 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
                         <input type="text" value={identifier} onChange={e=>setIdentifier(e.target.value)} autoFocus />
                       </div>
                     </div>
-                    <button className="login-btn2 login-btn" type="submit">Solicitar recuperação</button>
+                    <button className="login-btn2 login-btn" type="submit" disabled={enviandoForgot}>{enviandoForgot ? 'Enviando…' : 'Solicitar recuperação'}</button>
                   </div>
                 ) : (
-                  <div className="login-success2">{forgotMsg}</div>
+                  <div>
+                    <div className="login-success2">{forgotMsg}</div>
+                    <button type="button" className="login-forgot2" style={{marginTop:14,display:'block',width:'100%',textAlign:'center'}} onClick={()=>{setToken(''); setError(''); setNovaSenha(''); setConfirmaSenha(''); setForgotMsg(''); setMode('newPassword');}}>Já tenho um código de recuperação</button>
+                  </div>
                 )}
                 <button type="button" className="login-back2" onClick={()=>{setMode('login'); setForgotMsg(''); setIdentifier('');}}>← Voltar ao login</button>
               </form>
@@ -6796,13 +6895,20 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
             {mode==='newPassword' && (
               <form onSubmit={submitNewPassword}>
                 <h2 className="login-welcome-title" style={{fontSize:'clamp(24px,2.6vw,34px)'}}>Nova senha</h2>
-                <div className="login-role-note2" style={{marginTop:16}}>O administrador liberou sua conta para você criar uma nova senha.</div>
+                <div className="login-role-note2" style={{marginTop:16}}>Informe o código de recuperação (gerado por um administrador, ou recebido após solicitar recuperação) e defina sua nova senha.</div>
                 {error && <div className="login-error2">{error}</div>}
+                <div className="login-field2 login-field">
+                  <label>Código de recuperação</label>
+                  <div className="field-wrap2">
+                    <span className="field-icon2"><LoginFieldIcon name="user" /></span>
+                    <input type="text" value={token} onChange={e=>setToken(e.target.value)} autoFocus autoCapitalize="none" />
+                  </div>
+                </div>
                 <div className="login-field2 login-field">
                   <label>Nova senha</label>
                   <div className="field-wrap2">
                     <span className="field-icon2"><LoginFieldIcon name="lock" /></span>
-                    <input type="password" value={novaSenha} onChange={e=>setNovaSenha(e.target.value)} autoFocus />
+                    <input type="password" value={novaSenha} onChange={e=>setNovaSenha(e.target.value)} />
                   </div>
                 </div>
                 <div className="login-field2 login-field">
@@ -6813,6 +6919,7 @@ function LoginScreen({onLogin, onForgot, onSelfSetPassword, notice, clearNotice}
                   </div>
                 </div>
                 <button className="login-btn2 login-btn" type="submit" disabled={salvandoSenha}>{salvandoSenha ? 'Salvando…' : 'Definir senha e entrar'}</button>
+                <button type="button" className="login-back2" onClick={()=>{setMode('login'); setToken(''); setError(''); setNovaSenha(''); setConfirmaSenha('');}}>← Voltar ao login</button>
               </form>
             )}
 

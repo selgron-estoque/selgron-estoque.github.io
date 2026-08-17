@@ -498,3 +498,364 @@ gravada como meia-noite daquele dia. Consequência honesta: "tempo em
 aberto" pode ter até ~24h de imprecisão em relação ao momento exato em
 que a SA foi de fato aberta no Protheus — não é um bug do parser, é uma
 limitação real da página de origem.
+
+## 14. Rodada de segurança e confiabilidade — recuperação de senha por token, autorização granular, RLS por papel/ação
+
+Esta seção documenta uma rodada de correções pedida explicitamente com foco
+em segurança/confiabilidade — trata 4 problemas de RISCO REAL (não só
+organização de código) que existiam desde as rodadas anteriores:
+
+1. **`auto_definir_senha` aceitava só o `userId`** como se fosse uma
+   credencial — qualquer um que soubesse (ou adivinhasse) o UUID de outra
+   pessoa conseguia definir a senha dela, sem precisar de nenhum token/
+   confirmação. Vira um fluxo de token aleatório de uso único, com
+   expiração curta, hash em repouso.
+2. **A exceção `'usuarios'` em `acessos_extras`** (pensada só pra deixar um
+   líder gerenciar usuário comum) dava, na prática, poder IRRESTRITO — dava
+   pra criar/promover admin, editar/bloquear/resetar senha de outro admin,
+   e excluir qualquer usuário. Vira autorização granular por ação.
+3. **A maior parte das tabelas operacionais** (`contagens`/`inventarios`/
+   `estoque_saldo`/`produtos`/`enderecos`/`estoque_enderecos`) só distinguia
+   "autenticado" de "anônimo" — qualquer operador, chamando a API REST/RPC
+   direto (sem passar pela UI, que já restringia por perfil só no
+   front-end), conseguia aprovar divergência, excluir contagem/inventário,
+   sobrescrever saldo do sistema, editar catálogo. Vira RLS por papel/ação.
+4. **`resolver_login`** devolvia `id`/`email`/`status` de QUALQUER
+   identifier tentado, mesmo antes de validar senha — um oráculo de
+   enumeração de usuários, e o `id` devolvido já tinha sido, no passado,
+   aceito como credencial sozinha pelo problema 1. Fica travada, sem grant
+   pra `anon`/`authenticated`.
+
+**Nenhum dado foi apagado.** Todo SQL novo desta rodada é aditivo
+(`create table if not exists`) ou reversível (`create or replace function`,
+`drop policy if exists` seguido de `create policy` — sempre o mesmo nome
+que já existia, nunca um nome novo "por cima" do antigo).
+
+### 14.1 — Tabelas novas: recuperação de senha por token
+
+No SQL Editor, rode o bloco "RECUPERAÇÃO DE SENHA — token de uso único,
+hash em repouso, expiração curta" do `schema.sql` (cria `password_reset_
+tokens` e `password_reset_requests`, as duas com RLS habilitado e **zero**
+policy pra `anon`/`authenticated` — só a Edge Function, rodando com a
+service role key, toca essas tabelas). Seguro rodar contra o banco já em
+produção — são tabelas novas, `if not exists`, sem nenhuma dependência de
+dado já existente.
+
+```sql
+-- Confirma que as duas tabelas não existiam antes (evita rodar à toa se já
+-- tiver aplicado esta seção antes):
+select table_name from information_schema.tables
+where table_name in ('password_reset_tokens', 'password_reset_requests');
+```
+
+### 14.2 — Travar `resolver_login`
+
+Uma única linha, isolada e segura de rodar a qualquer momento (revogar algo
+já revogado, ou revogar de uma função que ainda tem grants, nunca dá erro):
+
+```sql
+revoke all on function public.resolver_login(text) from public, anon, authenticated;
+```
+
+Depois de rodar isso, `resolver_login` só é chamável pelo dono da função
+(o superusuário `postgres`/o painel do Supabase) — nenhum client (nem
+`anon`, nem um usuário já logado) consegue mais chamá-la. **Isso não quebra
+o login** — a resolução "usuário ou e-mail → e-mail real" migrou pra dentro
+da nova Edge Function `auth-publico` (ação `login`), que já faz essa
+resolução com a service role key (ignora RLS, não depende de nenhuma
+função `security definer` chamável por fora) — ver 14.4.
+
+### 14.3 — RLS por papel/ação nas tabelas operacionais
+
+No SQL Editor, rode o bloco "CORREÇÃO DE SEGURANÇA: RLS POR PAPEL/AÇÃO NAS
+TABELAS OPERACIONAIS" do `schema.sql` (a partir do comentário com esse
+título, até o fim do arquivo). Cobre `contagens`, `inventarios`,
+`enderecos_propostos`, `estoque_saldo`, `produtos`, `enderecos`,
+`estoque_enderecos`, `item_reservas` e `etiquetas_fila` — sempre
+`drop policy if exists "<nome exato que já existia>" ...` antes de criar a
+policy nova, então é seguro rodar mais de uma vez (reaplicar não dá erro,
+só recria a mesma coisa).
+
+**Antes de rodar**, se quiser confirmar que os nomes de policy que o
+bloco vai dropar realmente batem com o que está no seu projeto (evita
+qualquer susto, mesmo padrão de cautela já usado nas rodadas anteriores
+deste projeto):
+
+```sql
+select tablename, policyname, cmd
+from pg_policies
+where tablename in (
+  'contagens','inventarios','enderecos_propostos','estoque_saldo',
+  'produtos','enderecos','estoque_enderecos','item_reservas','etiquetas_fila'
+)
+order by tablename, cmd;
+```
+
+Depois de rodar o bloco, um **operador comum** deixa de conseguir, via API
+direta: aprovar/rejeitar divergência, marcar urgente, atribuir, gerar SA,
+aprovar/reprovar Diretoria, excluir contagem ou inventário, sobrescrever
+`estoque_saldo`/`produtos` (só admin), editar `enderecos`/
+`estoque_enderecos` (só líder/admin), ou escrever em `item_reservas`/
+`etiquetas_fila` fora dos caminhos previstos. **Nada muda pro fluxo normal
+de contar** — inserir uma contagem nova, avançar `contados` numa fila, ler
+qualquer uma dessas tabelas continuam liberados pra qualquer autenticado,
+exatamente como já funcionava.
+
+**Este mesmo bloco também conserta, de graça, um bug real que fazia
+`reservar_item` (a trava de "item já sendo contado por outro operador")
+nunca funcionar — ver seção 14.11 antes de rodar, pra saber o que
+esperar.**
+
+**Atenção a uma ambiguidade real, que não dá pra resolver só lendo o
+arquivo**: a tabela `usuarios` também foi reescrita — não mais espalhada em
+3 gerações sucessivas ao longo do arquivo, agora definida uma única vez
+(já no formato Auth atual) perto do topo. Pra um banco **novo**, isso é
+exatamente o que se quer. Pro banco **já em produção** (que já passou pela
+migração da seção 9), não dá pra saber com certeza, sem consultar o banco
+de verdade, se o texto exato dessa definição (nomes de policy, colunas)
+já bate 100% com o que está lá — bem provável que sim (o comportamento
+descrito bate com o que a seção 9 já deixou aplicado), mas não confirmado.
+**Recomendação: não rode esse bloco específico (o `create table usuarios`
+do topo do arquivo) contra o banco em produção sem antes comparar** — rode
+a introspecção abaixo e só ajuste o que realmente divergir:
+
+```sql
+select column_name, data_type, is_nullable
+from information_schema.columns where table_name = 'usuarios'
+order by ordinal_position;
+
+select policyname, cmd, qual, with_check
+from pg_policies where tablename = 'usuarios';
+```
+
+Se as colunas/policies já baterem com o que está descrito no topo do
+`schema.sql`, não precisa rodar nada daquele bloco — ele só existe pra
+documentar o formato final, útil pra um banco novo, não pra reaplicar aqui.
+
+### 14.4 — Deploy da Edge Function nova: `auth-publico`
+
+Primeira vez que este projeto separa ações ADMINISTRATIVAS (sempre
+autenticadas — `usuarios-admin`) de ações PÚBLICAS (nunca autenticadas —
+login, "esqueci minha senha", confirmar token — `auth-publico`). Mesmo
+terminal/pasta já usado nos deploys anteriores (ver seção 9.6 se for a
+primeira vez):
+
+```bash
+npx supabase functions deploy auth-publico
+```
+
+Não precisa de nenhum secret novo — usa as mesmas
+`SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` que toda Edge Function deste
+projeto já recebe automaticamente.
+
+### 14.5 — Redeploy da Edge Function existente: `usuarios-admin`
+
+O código mudou bastante (autorização granular por ação, ver 14.6) — precisa
+de um redeploy, mesmo comando de sempre:
+
+```bash
+npx supabase functions deploy usuarios-admin
+```
+
+### 14.6 — O que mudou em `usuarios-admin` (autorização granular)
+
+Antes, a checagem de permissão era só "é admin OU tem a exceção
+`'usuarios'`" — as duas liberavam QUALQUER ação por igual. Agora,
+`podeExecutar()` (dentro da function) decide por AÇÃO:
+
+- **Administrador de verdade**: pode tudo, sem exceção.
+- **Quem tem a exceção `'usuarios'` (líder ou operador, concedida via
+  "Acesso por tela" no `UserForm`)**: pode criar/editar/bloquear/redefinir
+  senha de usuário **não-admin**, mas nunca:
+  - criar ou promover ninguém a admin;
+  - tocar (editar/bloquear/redefinir senha) numa conta que **já** é admin;
+  - **excluir** ninguém — exclusão continua sempre admin-only, mesmo com a
+    exceção.
+- **Qualquer outro chamador** (operador sem a exceção, ou não autenticado):
+  nenhuma ação.
+
+Nenhuma mudança de comportamento pra quem é admin de verdade — essa
+correção só reduz o poder de quem tinha a exceção `'usuarios'` sem ser
+admin. Se hoje algum líder com essa exceção legitimamente PRECISA criar/
+promover um admin, isso passou a exigir um admin de verdade fazer essa
+ação específica — decisão deliberada (ver acceptance criteria do pedido:
+"Apenas administradores reais devem poder criar/promover administradores").
+
+### 14.7 — Bug corrigido: tela de "Nova senha" travava sem sessão
+
+`chamarUsuariosAdmin()` (usada por toda ação ADMINISTRATIVA) sempre chama
+`refreshSession()` antes de invocar a Edge Function — correto pra ação
+autenticada, mas a tela de "Nova senha" (fluxo de recuperação, acessado
+por quem **não tem sessão nenhuma**, de propósito) chamava essa mesma
+função, travando ali mesmo antes da Edge Function ser sequer chamada. Fica
+resolvido pela própria separação: o fluxo de recuperação (`recuperar_
+solicitar`/`recuperar_confirmar`) agora passa por `invocarAuthPublico()`,
+uma função irmã que **nunca** chama `refreshSession()` — funciona
+igualmente bem logado ou deslogado, porque as duas ações não fazem sentido
+nenhum como "administrativas autenticadas" pra começar.
+
+### 14.8 — Ordem recomendada pra aplicar tudo isso
+
+1. 14.1 (tabelas novas) — sem risco, aditivo puro.
+2. 14.2 (travar `resolver_login`) — sem risco, reversível
+   (`grant execute on function public.resolver_login(text) to anon;`
+   desfaz, se precisar por algum motivo).
+3. 14.4 (deploy `auth-publico`) — a função nova só passa a ser CHAMADA
+   depois que o `index.html` novo for publicado (14.9); publicá-la antes
+   não quebra nada, só fica sem uso ainda.
+4. 14.5 (redeploy `usuarios-admin`) — o código novo (`podeExecutar`) só
+   muda o resultado de chamadas feitas pelo `index.html` NOVO; o `index.html`
+   antigo, ainda no ar, continua chamando as mesmas ações de sempre e
+   continua funcionando (a checagem fica mais granular, não mais
+   restritiva pra quem já era admin).
+5. **Publicar o `index.html` novo** (push já faz isso, GitHub Pages) — só
+   a partir daqui o fluxo de recuperação por token e a autorização granular
+   passam a valer de verdade na tela.
+6. **Testar de ponta a ponta antes de seguir pro próximo passo** — roteiro
+   completo no relatório final desta rodada (login normal; "esqueci minha
+   senha" gerando e confirmando um token de teste; um usuário com a
+   exceção `'usuarios'` tentando promover alguém a admin, esperando ver o
+   erro).
+7. 14.3 (RLS por papel/ação) — **por último, de propósito**, mesmo
+   raciocínio já usado na 9.9: só depois de confirmar que o `index.html`
+   novo funciona ponta a ponta. Rodar esse bloco cedo demais (com o app
+   antigo ainda no ar, ou sem confirmar que os fluxos novos funcionam)
+   pode bloquear uma ação que o app antigo ainda tentava fazer de um jeito
+   que a RLS nova não reconhece mais. **Este passo também corrige, sem
+   ação extra nenhuma, os 2 bugs reais descritos na seção 14.11** — vale
+   ler antes de rodar, só pra saber o que esperar.
+
+### 14.9 — Dependências de CDN fixadas em versão exata
+
+`@supabase/supabase-js` e `jsbarcode` (as duas únicas que ainda estavam
+soltas em `@2`/`@3`, sem versão exata) foram fixadas em `2.112.3`/`3.12.3`
+— mesmo comportamento de antes, só sem risco de receber um patch novo
+sem revisão nenhuma. Não precisa de nenhuma ação no Supabase — é só
+`index.html`, já publicado junto do resto.
+
+**SRI (Subresource Integrity) não foi adicionado** a nenhuma das 7 tags
+`<script src="https://cdn...">` — ver "Limitações" no relatório final desta
+rodada, é uma limitação do ambiente onde esta correção foi feita, não uma
+decisão de não fazer.
+
+### 14.10 — Modularização do `index.html`: não feita nesta rodada, roteiro pra fazer depois
+
+O pedido original incluía "separar, gradualmente e sem reescrever tudo de
+uma vez, o `index.html` em módulos de autenticação, acesso a dados e UI".
+**Decisão desta rodada: não mexer nisso agora** — não porque seja difícil,
+mas porque este projeto não tem build step (Babel Standalone via CDN,
+sem bundler) nem forma de abrir o app num navegador de verdade neste
+ambiente pra confirmar visualmente que uma separação de arquivo não quebrou
+nada — o único jeito de verificar aqui é reler o código e rodar transpile/
+testes automatizados, insuficiente pra garantir que a ORDEM de carregamento
+de múltiplos `<script>` (sem bundler, sem module system real) continua
+funcionando igual num navegador de verdade. Preferi não arriscar quebrar um
+app em produção sem esse tipo de confirmação, principalmente por ser
+literalmente o único item desta lista sem nenhum ganho de segurança direto
+(é organização de código).
+
+**Roteiro pra fazer isso com segurança, quando quiser seguir**: começar
+pelo pedaço de MENOR risco — funções puras, sem JSX, sem hook de React
+(ex.: `formatEnderecoInput`/`compararPorEndereco`/`parseEnderecoPartes`/
+os formatadores de data/moeda) — extrair pra um arquivo `utils.js` comum,
+carregado via `<script src="./utils.js"></script>` ANTES do
+`<script type="text/babel">` principal (os nomes ficam disponíveis no
+escopo global, sem precisar de `import`/`export`, mesmo jeito que
+`html5-qrcode`/`xlsx`/`JsBarcode` já são carregados hoje). Só depois de
+confirmar isso funcionando de verdade no navegador (não só no sandbox),
+seguir pro próximo pedaço (ex.: as funções `fetchX`/`saveXToSupabase` de
+acesso a dados, que também não têm JSX). Deixar por último qualquer coisa
+com componente React/JSX — é onde a co-localização com Babel importa mais
+e onde um erro de separação é mais fácil de não perceber sem abrir o app
+de verdade.
+
+### 14.11 — Dois bugs reais achados testando contra um Postgres de verdade
+
+As rodadas anteriores desta lista foram verificadas por transpile Babel,
+balanceamento de chaves de CSS, harness jsdom/`react-dom`, e `tsc --strict`
+pras Edge Functions — nunca por EXECUÇÃO real de SQL contra um banco de
+verdade (o sandbox onde este trabalho foi feito não tinha acesso a rede
+pro Supabase real). Nesta rodada, descobri que o sandbox tinha PostgreSQL
+16 local disponível — subi um banco descartável, criei um stub mínimo do
+que a própria plataforma Supabase já provisiona sozinha (schema `auth`,
+roles `anon`/`authenticated`/`service_role`, os GRANTs de tabela que a
+plataforma concede automaticamente, a publicação `supabase_realtime`) e
+apliquei o `backend/schema.sql` de verdade contra ele — a 1ª vez que
+qualquer trecho de SQL deste projeto foi de fato EXECUTADO, não só lido.
+Isso achou 2 bugs reais que nenhuma verificação anterior tinha pego:
+
+**1. `contagem_itens_prioritarios()` referenciava tabelas antes delas
+existirem.** A 1ª definição da função (a mais antiga do arquivo) faz
+`left join estoque_enderecos ... left join enderecos ...`, mas essas duas
+tabelas só são criadas bem mais abaixo no arquivo — rodar o schema.sql do
+começo ao fim num banco novo falhava com
+`relation "estoque_enderecos" does not exist` exatamente nesse `create
+function`. **Corrigido**: a definição foi movida (mesmo corpo, byte a
+byte) pra logo depois da criação de `estoque_enderecos`/`enderecos` — as
+duas redefinições seguintes (que já vinham depois, adicionando as colunas
+`unidade` e depois `custo_unitario_fallback` — evolução real de schema já
+documentada no CLAUDE.md) não precisaram mudar nada.
+
+**2. `reservar_item()` nunca funcionou, em nenhum Postgres, desde que foi
+escrita — bug pré-existente, não introduzido por esta rodada de
+segurança.** `returns table(produto_codigo text, ...)` cria uma variável
+PL/pgSQL implícita chamada `produto_codigo` — que colide com a coluna de
+mesmo nome usada em `on conflict (produto_codigo)` dentro do corpo da
+função. Toda chamada de `reservar_item(...)` (a trava que impede dois
+operadores contarem o mesmo item ao mesmo tempo) sempre falhava com
+`ERROR: column reference "produto_codigo" is ambiguous` — em produção,
+isso teria feito a "reserva de item" (Configurações → nunca chegou a
+funcionar de verdade em nenhum aparelho, mesmo antes desta rodada de
+segurança) travar silenciosamente pro operador, sem nenhuma mensagem
+clara do motivo. **Corrigido**: adicionado o pragma
+`#variable_conflict use_column` logo no início do corpo da função (nos
+DOIS lugares do arquivo onde ela é definida — a original e a versão já
+endurecida por esta rodada de segurança, com duração fixa de 5 minutos no
+servidor) — resolve a ambiguidade a favor da COLUNA da tabela, sem mudar
+nenhum outro comportamento.
+
+**Os dois já estão corrigidos no `schema.sql` deste repositório.** Como o
+bloco de RLS da seção 14.3 já recria `reservar_item`/`liberar_item_reserva`
+via `create or replace function` (idempotente, sem apagar nada), **rodar
+aquele bloco no seu projeto real já aplica esta correção de graça** — não
+precisa de nenhum passo extra além do que a seção 14.3 já pede. Se você já
+tinha notado a "reserva de item" nunca travando de verdade (dois
+aparelhos conseguindo abrir o mesmo item pra contar sem aviso nenhum),
+essa é provavelmente a causa raiz.
+
+**Verificação, desta vez com execução real, não só leitura estática**:
+`backend/schema.sql` aplicado do início ao fim contra um Postgres 16 vazio
+(exit 0, zero linha `ERROR`/`FATAL` no log) — confirmação empírica direta
+do critério de aceite "o schema base roda em banco vazio sem erro" (as
+rodadas anteriores só sustentavam isso por inspeção estrutural do SQL,
+nunca por ter rodado de verdade). Em seguida, 12 testes de comportamento
+via `set role authenticated; set request.jwt.claim.sub='<uuid>'; ...` (simula
+um chamador autenticado específico sem precisar de um JWT de verdade) —
+6 controles NEGATIVOS (ação bloqueada) e 4 controles POSITIVOS (a mesma
+ação, pelo papel/dono certo, continua funcionando — prova que a
+correção não quebrou o uso legítimo), todos passando:
+
+- `reservar_item` com `p_minutos=99999` (malicioso) sempre devolve
+  duração de exatamente `00:05:00` — o servidor ignora o parâmetro.
+- Operador não insere `contagens` com `status_aprovacao` fora da lista
+  permitida (trigger bloqueia) nem aprova via `UPDATE` direto (RLS filtra,
+  0 linhas afetadas) — mas **líder consegue** (controle positivo).
+- `anon` lê `contagens` e recebe 0 linhas; não consegue chamar
+  `resolver_login` (`permission denied for function`).
+- Operador não se autopromove a admin via `UPDATE` direto em `usuarios`
+  (bypass da Edge Function) — bloqueado no nível do BANCO, não só na
+  lógica da Edge Function.
+- Operador avança `contados` via `increment_contados` normalmente
+  (controle positivo — o único caminho de escrita que ele de fato precisa
+  em `inventarios` continua liberado).
+- Só o DONO de uma reserva (`item_reservas`) consegue liberá-la via
+  `liberar_item_reserva` — outro usuário tentando libera 0 linhas, o
+  dono libera normalmente (controle positivo).
+- Operador não escreve direto em `estoque_saldo`/`produtos` (RLS
+  bloqueia as duas).
+
+O script completo (`stub_supabase_env.sql` + `test_rls_final.sql` +
+`run_schema_sql_postgres_live.sh`, que recria um banco descartável, aplica
+tudo e roda a suíte inteira sozinho) está preservado no scratchpad da
+sessão que fez esta verificação — reaproveitável em qualquer ambiente
+com PostgreSQL 16 disponível, sem depender de acesso ao Supabase real.
