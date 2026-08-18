@@ -4056,7 +4056,25 @@ async function fetchProdutosByCodigos(codigos, almoxarifado){
         descricao: p.descricao,
         unidade: p.unidade,
         grupo: p.grupo,
-        almoxarifado: s.almoxarifado || (linhasDoArmazem.length>1 ? linhasDoArmazem.map(l=>l.almoxarifado).join('/') : '—'),
+        // Bug real (recontagem do item 000.53871, print do cliente): quando quem
+        // chama esta função já sabe/pede um armazém específico (ex.: `RecountFlow`
+        // passando `original.almoxarifado`), mas o cache local (`estoque_saldo`) não
+        // tem NENHUMA linha pra esse código+armazém exato (`linhasDoArmazem.length===0`,
+        // `s` vira `{}`, `s.almoxarifado` é `undefined`), o código antigo caía direto
+        // no `'—'` — descartando o armazém que o CHAMADOR já sabia, mesmo sem
+        // ambiguidade nenhuma de verdade (não tem "vários armazéns pra escolher", só
+        // não tem cache local pra ESSE armazém específico). Esse `'—'` virava
+        // `product.almoxarifado`, ia direto pra `fetchSaldoConsultaSelgron(codigo,
+        // armazem)` como se fosse um armazém real, nunca batia com nenhum bloco da
+        // consulta ao vivo, e disparava o bloqueio "não confirmou o saldo do sistema
+        // para este item/armazém" à toa — mesmo o operador genuinamente contando um
+        // armazém válido. Corrigido priorizando o armazém PEDIDO pelo chamador
+        // (`almoxarifado`, o parâmetro da função) quando ele existe — só cai pro valor
+        // do cache/ambiguidade quando ninguém pediu um armazém específico (chamada sem
+        // esse parâmetro). NÃO é o mesmo tipo de "adivinhação" já revertida antes
+        // (aquela tentava ESCOLHER entre 2 armazéns reais por qual tinha saldo — aqui
+        // não tem escolha nenhuma, é só respeitar o armazém que já foi informado).
+        almoxarifado: almoxarifado || s.almoxarifado || (linhasDoArmazem.length>1 ? linhasDoArmazem.map(l=>l.almoxarifado).join('/') : '—'),
         saldo: unica ? s.saldo : null,
         valor_financeiro: unica ? s.valor_financeiro : 0,
         data_ultima_saida: s.data_ultima_saida || null,

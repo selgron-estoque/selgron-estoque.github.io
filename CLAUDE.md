@@ -19900,3 +19900,78 @@ código exato.
   comportamento antigo (bug presente). **Verificação de ponta a ponta com
   o item real (000.26627) fica a cargo do cliente** — mesma limitação de
   sempre (sandbox sem acesso de rede ao domínio interno da Selgron).
+
+
+## Bug real: armazém pedido descartado em `fetchProdutosByCodigos` — bloqueava
+## a recontagem com "não confirmou o saldo do sistema"
+
+Cliente mandou 2 screenshots durante o teste da correção anterior (bug do
+prefixo de código na consulta ao vivo, já resolvido e publicado): a tela
+"Recontar Item" (Módulo 7) pro código `000.53871`/"CREMALHEIRA M.1 15X15X300"
+travada com o painel de bloqueio "🔒 A consulta ao vivo respondeu, mas não
+confirmou o saldo do sistema para este item/armazém... Continuar usando só o
+cadastro local (planilha SB2) sem confirmação ao vivo não é seguro — a
+contagem não pode seguir até isso ser resolvido." — com o mini-card mostrando
+"ALMOX: —" (vazio), mesmo o endereço (`010-H-6`) e o Kardex (última
+movimentação/valor unitário) aparecendo certos ao lado. Pergunta do cliente:
+"porque não está puxando o saldo??"
+
+- **Causa raiz**: `fetchProdutosByCodigos(codigos, almoxarifado)` — quando
+  quem chama a função JÁ SABE/pede um armazém específico (aqui, `RecountFlow`
+  passando `original.almoxarifado`, o armazém já conhecido da 1ª contagem ao
+  vivo), mas o cache local (`estoque_saldo`) não tem NENHUMA linha pra esse
+  código+armazém exato (`linhasDoArmazem.length===0`, então `s` vira `{}` e
+  `s.almoxarifado` é `undefined`), a linha
+  `almoxarifado: s.almoxarifado || (linhasDoArmazem.length>1 ? ... : '—')`
+  caía direto no `'—'` — descartando o armazém que o CHAMADOR já sabia, sem
+  nenhuma ambiguidade de verdade (não é "vários armazéns pra escolher", só
+  falta cache local pra esse armazém específico). Esse `'—'` virava
+  `product.almoxarifado` (por isso o mini-card mostrava "ALMOX: —") e era
+  mandado como armazém pra `fetchSaldoConsultaSelgron(codigo, armazem)` — que
+  nunca bate com nenhum bloco real da consulta ao vivo (não existe armazém
+  chamado "—" na Selgron), fazendo a consulta responder sem confirmar nada e
+  disparando o bloqueio de segurança "não confirmou o saldo" à toa, mesmo o
+  operador genuinamente contando um armazém válido. Mesma categoria de bug
+  silencioso já vista várias vezes neste projeto — nenhum erro, só um valor
+  errado (aqui, o placeholder de debug em vez do armazém real).
+- **Correção**: `almoxarifado: almoxarifado || s.almoxarifado || (...)` — o
+  armazém PEDIDO pelo chamador (o parâmetro da própria função) passou a ter
+  prioridade sempre que existe; só cai pro valor resolvido do cache/
+  ambiguidade quando ninguém pediu um armazém específico (chamada sem esse
+  parâmetro, ex.: busca livre sem contexto de contagem). **Não é a mesma
+  "adivinhação" já revertida antes neste projeto** (aquela tentava ESCOLHER
+  entre 2 armazéns reais por qual tinha saldo não-zero — corrigida depois do
+  cliente apontar "SE EU ESTOU CONTANDO O ARMAZEM 01, O SALDO QUE TEM QUE
+  MOSTRA É O DO ARMAZEM 01") — aqui não existe escolha nenhuma entre
+  candidatos, é só respeitar o armazém que o próprio chamador já informou,
+  em vez de descartá-lo por falta de cache local.
+- **Deploy**: correção só em `index.html` (JS puro, `fetchProdutosByCodigos`)
+  — **diferente das 2 correções anteriores desta mesma sessão** (que viviam
+  na Edge Function `consultar-produto-selgron` e exigiam redeploy manual pelo
+  cliente), esta publica sozinha via o deploy normal do GitHub Pages, sem
+  nenhum passo extra do lado do Supabase.
+- Testado via harness dedicado (`harness_fetchprodutos_armazem_pedido.js`,
+  jsdom + react-dom/client + `act()`, mesma técnica rigorosa de sempre —
+  carrega o `index.html` inteiro transpilado numa `vm.Script`, Supabase
+  mockado): **o bug foi reproduzido de verdade** rodando o mesmo cenário
+  contra o código do commit ANTERIOR (`git show HEAD:index.html`, antes desta
+  correção) — confirmando `almoxarifado==='—'` no código antigo, prova de que
+  o harness pega a regressão e não só confirma o caminho feliz; a correção
+  confirma `almoxarifado==='1'` (o armazém pedido, preservado) no mesmo
+  cenário exato do print (000.53871, cache só com uma linha de outro
+  armazém); os 4 casos preservados (armazém pedido com linha local
+  correspondente; sem armazém pedido com 1 linha só, inequívoco; sem armazém
+  pedido sem nenhuma linha, cai em "—"; sem armazém pedido com ambiguidade
+  genuína entre 2 armazéns reais, nunca adivinha, mantém o texto concatenado
+  "1/99") continuam batendo, sem regressão; e um teste de ponta a ponta via
+  `RecountFlow` renderizado de verdade confirma que o mini-card passa a
+  mostrar "Almox 1" (não mais "—") e que a chamada à consulta ao vivo recebe
+  `armazem:'1'` (não mais "—"). 16 asserções, todas passando. Rodei de novo
+  toda a suíte completa de regressão do scratchpad (84 harnesses) — 0
+  falhas. Transpile Babel do arquivo inteiro conferido. **Nenhuma migração
+  de SQL nem redeploy de Edge Function necessários desta vez** — só o
+  `index.html` mudou, publica sozinho via GitHub Pages. **Verificação de
+  ponta a ponta com o item real (000.53871) fica a cargo do cliente** —
+  mesma limitação de sempre (login exige Supabase Auth real, não simulável
+  no sandbox sem rede) — mas basta recarregar a página (F5) depois do
+  deploy publicar, sem precisar redeployar nenhuma Edge Function desta vez.
