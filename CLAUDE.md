@@ -19975,3 +19975,87 @@ movimentação/valor unitário) aparecendo certos ao lado. Pergunta do cliente:
   mesma limitação de sempre (login exige Supabase Auth real, não simulável
   no sandbox sem rede) — mas basta recarregar a página (F5) depois do
   deploy publicar, sem precisar redeployar nenhuma Edge Function desta vez.
+
+
+## "Aguardando Aprovação" exporta Excel no formato real de SA da Selgron
+
+Cliente mandou print de uma planilha real — a "Solicitação ao Almoxarifado" (SA) que
+ele já usa fora do app — e pediu: "Em aguardando aprovação, quero que ao gerar o excel
+venha neste formato". Até aqui, o botão "Baixar (.xlsx)" dessa tela (o mesmo
+`ModuloDownloadButton`/`baixarRelatorioModulo` já usado por outras 4 telas de listagem
+de contagem — Recontagens/Itens Divergentes/Analisados/Contagens Concluídas) sempre
+exportava no formato genérico `buildCountRows` (vocabulário interno do app, alinhado
+com `BD_Contagens`) — nunca no formato da planilha real de SA, com colunas bem
+diferentes (Numero/Solicitante/Emissao/Iten/Cod Produto/Descricao/Quant/Saldo SA/
+Vlr. Unitário/Total/Saldo Estoque/Alm/Obs/OP/Cod. C.Custo/C. Custo).
+
+- **`baixarRelatorioModulo(counts, sheetName, nomeArquivo, buildRows)`** ganhou um 4º
+  parâmetro OPCIONAL — `(buildRows || buildCountRows)(counts)` — quando nenhuma função
+  de linha é passada, cai no formato genérico de sempre (as outras 4 telas nunca
+  passam esse argumento, sem nenhuma mudança de comportamento nelas). `ModuloDownloadButton`
+  virou um repasse fino (`buildRows` como prop opcional, encaminhada direto pra
+  `baixarRelatorioModulo`).
+- **`buildSaAprovacaoRows(counts)`** (função nova) — só o `DiretoriaApprovalPanel`
+  ("Aguardando Aprovação") passa essa função (`<ModuloDownloadButton ...
+  buildRows={buildSaAprovacaoRows} />`); os outros 4 painéis continuam sem passar
+  nada, no formato genérico de sempre. Mapeamento a partir do que a contagem já grava,
+  sem inventar nenhum dado novo (mesmo critério de honestidade de sempre neste
+  projeto):
+  - **"Iten" é sempre 1** — cada SA no app cobre exatamente 1 material (`contagens` é
+    denormalizada, sem lista de itens própria, mesma decisão já documentada pra essa
+    tabela), nunca uma SA com várias linhas.
+  - **"Quant"/"Saldo SA" usam o mesmo valor** (`|diferença|`) — uma SA aguardando
+    aprovação da Diretoria nunca foi parcialmente atendida ainda (é justamente o que
+    está pendente de decidir), então o saldo em aberto é sempre a quantidade inteira
+    pedida, igual o "Saldo SA" real de uma SA ainda não atendida.
+  - **"Vlr. Unitário"/"Total" vêm de `custoUnit`/`valorDivergente`** — os mesmos dois
+    campos que já alimentam "Valor divergente" no card desta mesma tela
+    (`valorDivergente = |diferença| × custoUnit`, identidade já estabelecida em outro
+    lugar do código) — por isso os dois batem matematicamente com Quant×Vlr. Unitário,
+    igual no exemplo real do cliente (1×R$13,42=R$13,42).
+  - **"Saldo Estoque" é `saldoSistema`** — o saldo que o sistema já mostrava no
+    momento da contagem, mesmo conceito de "saldo em estoque" da SA real.
+  - **"Emissao"** extrai só a data (regex `\d{2}\/\d{2}\/\d{4}`) de `saGeradaEm` —
+    esse campo é uma STRING já formatada via `toLocaleString('pt-BR')` (data+hora
+    completos, não uma coluna `timestamptz`), então precisa desse recorte pra bater
+    com o formato "DD/MM/AAAA" (sem hora) que a planilha real usa; sem match
+    reconhecível, cai no valor cru sem quebrar.
+  - **"Obs" junta `motivo`+`observacao`** com travessão quando os dois existem
+    (`[c.motivo, c.observacao].filter(Boolean).join(' — ')`) — nunca deixa um
+    travessão sobrando quando só um dos dois está presente; bate com o estilo de nota
+    curta do exemplo real ("SUCATA-DOBRA ERRADA").
+  - **"OP"/"Cod. C.Custo"/"C. Custo" saem SEMPRE em branco** — o app não captura
+    nenhum dos três em lugar nenhum do fluxo de contagem/aprovação hoje, mesmo
+    critério já usado pra "Classe"/"Dias S/ Mov." em `buildCountRows` (nunca fabricar
+    dado que não existe).
+  - **Nomes de coluna sem acento** ("Numero", "Emissao", "Descricao") — mesma
+    convenção "estilo Protheus" já usada noutras planilhas reais deste projeto (SB2,
+    `BD_Contagens`), pra bater byte a byte com o que o cliente já sabe ler/colar.
+- Testado via harness dedicado (`harness_sa_aprovacao_excel.js`, jsdom +
+  react-dom/client + `act()`, mesma técnica rigorosa de sempre — carrega o
+  `index.html` inteiro transpilado numa `vm.Script`): `buildSaAprovacaoRows` isolada
+  reproduzindo o exemplo EXATO do print do cliente (SA 73020, `000.66697`, R$13,42×1)
+  com todas as 16 colunas conferidas uma a uma, incluindo a identidade matemática
+  Quant×Vlr.Unitário=Total; casos de borda (Obs com só motivo/só observação/nenhum
+  dos dois; diferença/saldo exatamente 0 nunca virando string vazia; todos os campos
+  `null` nunca fabricando 0; `saGeradaEm` ausente ou em formato inesperado nunca
+  quebrando o regex; arredondamento de custo com muitas casas decimais); regressão de
+  `baixarRelatorioModulo` confirmando que SEM `buildRows` continua no formato
+  genérico (`'Código'`/`'ID Contagem'` presentes, `'Numero'` ausente) e COM
+  `buildRows=buildSaAprovacaoRows` sai no formato SA (`'Numero'`/`'Iten'` presentes,
+  `'Código'`/`'ID Contagem'` ausentes); e de ponta a ponta, `DiretoriaApprovalPanel`
+  renderizado de verdade clicando o botão real confirma a linha exportada batendo
+  com o exemplo do cliente, enquanto `RecountsPanel` (outro painel, sem passar
+  `buildRows`) continua exportando no formato genérico, sem nenhuma regressão. 54
+  asserções, todas passando. Rodei de novo toda a suíte completa de regressão do
+  scratchpad (85 harnesses, 1.474 asserções) — só a mesma falha já pré-existente e
+  documentada antes (`harness_fetchprodutos_armazem_pedido.js`, um artefato de design
+  do próprio harness — usa `git show HEAD:index.html` pra capturar "o código de
+  antes" da correção que ele testa, e HEAD já avançou muitos commits desde então; não
+  tem nenhuma relação com esta mudança, confirmado que `fetchProdutosByCodigos` não
+  foi tocado aqui). Transpile Babel do arquivo inteiro e balanceamento de chaves do
+  CSS conferidos (669/669, sem mudança — esta feature não tocou em CSS nenhum, só
+  JS/JSX). **Nenhuma migração de SQL nem redeploy de Edge Function necessários** —
+  publica sozinho via GitHub Pages assim que o deploy processar. **Verificação
+  visual/funcional de ponta a ponta fica a cargo do cliente** — mesma limitação de
+  sempre (login exige Supabase Auth real, não simulável no sandbox sem rede).
