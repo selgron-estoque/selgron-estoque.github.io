@@ -20059,3 +20059,167 @@ Vlr. Unitário/Total/Saldo Estoque/Alm/Obs/OP/Cod. C.Custo/C. Custo).
   publica sozinho via GitHub Pages assim que o deploy processar. **Verificação
   visual/funcional de ponta a ponta fica a cargo do cliente** — mesma limitação de
   sempre (login exige Supabase Auth real, não simulável no sandbox sem rede).
+
+
+## "Aguardando Aprovação": modelo REAL de SA (arquivo .xlsx anexado) — corrige e
+## substitui a versão anterior baseada só num print
+
+Logo depois da rodada anterior (SA exportada como planilha genérica, "Iten" sempre 1,
+baseada só num PRINT da planilha real), o cliente anexou o **arquivo `.xlsx` de
+verdade** e foi direto: **"na verdade, este é o modelo final, seguir fielmente."** —
+instrução clara de que o print anterior não bastava, e que agora a estrutura exata
+(nomes de coluna, agrupamento, formatação visual) do arquivo real precisa ser
+replicada, não só aproximada.
+
+**Inspeção do arquivo real via `openpyxl`** (não estava pré-instalado no sandbox,
+precisou de `pip install`) revelou que a suposição da rodada anterior estava errada: a
+planilha real de SA não tem 1 linha por SA — **uma SA pode pedir vários materiais
+diferentes**, cada um numa linha própria, numerada pela coluna **"Item"** (1, 2, 3...
+dentro da MESMA SA, na ordem em que aparecem na planilha — não necessariamente a ordem
+de "Item"), seguida de uma **linha "Total"** somando a coluna "Total" só daquele grupo.
+A tabela em si é uma **Tabela do Excel de verdade** ("Tabela1", com `totalsRowCount=1`
+e uma fórmula `SUBTOTAL(109, Tabela1[Total])` autogerada na linha de Total, zebra-
+striping nativo via estilo de Tabela) — um recurso que nenhuma biblioteca JS pura
+consegue replicar sem manipular o XML OOXML bruto, fora de alcance aqui (documentado
+como limitação honesta, não escondida).
+
+Confirmado com o cliente via `AskUserQuestion` (3 perguntas) antes de reimplementar,
+dado o tamanho da correção:
+
+1. **Fidelidade visual**: "Replicar cores e formatação (Recomendado)" — exige uma
+   biblioteca XLSX com suporte a estilo de célula, que o SheetJS puro (`xlsx.full.
+   min.js`, já usado em todo o resto do app) não tem.
+2. **2ª tabela/texto livre** ("Análise de Materiais Parados 180+", blocos Motivo/Ação):
+   "Não incluir por enquanto" — só a tabela principal de SA é exportada nesta rodada.
+3. **Mais de uma SA no mesmo arquivo**: "Indiferente, único arquivo pode uma ser ou
+   várias SAs" — resolvido como um cabeçalho único no topo da aba, com cada SA virando
+   o próprio bloco (linhas de dado + linha Total), empilhados, separados por 1 linha
+   em branco.
+
+### `xlsx-js-style` — 2ª biblioteca XLSX, isolada sob nome próprio, sem tocar em nada
+### já em produção
+
+O SheetJS puro (`xlsx.full.min.js`, cdnjs) nunca teve suporte a estilo de célula
+(`.s`) — é usado por TODO import/upload já existente (`parseSB2Rows`/
+`parseImportedListRows`/`parseHistoricoContagensRows`/`parseDescricaoProdutosRows`) e
+todo export já existente (`generateReportWorkbook`/`buildInventarioCiclicoWorkbook`/
+`buildImportTemplateWorkbook`/`baixarRelatorioModulo`) — trocar `window.XLSX` global
+por um fork com suporte a estilo arriscaria quebrar algo que nunca foi testado contra
+esse fork.
+
+- **`xlsx-js-style@1.2.0`** (jsdelivr, versão fixada — mesmo critério de segurança já
+  aplicado ao supabase-js/JsBarcode) é carregado LOGO DEPOIS do SheetJS puro no
+  `<head>` — como os dois expõem o MESMO nome global `window.XLSX`, um `<script>`
+  inline logo antes captura o SheetJS puro sob `window.__XLSX_BASE__`, e outro logo
+  depois captura o fork recém-carregado sob um nome PRÓPRIO
+  (`window.XLSXStyled = window.XLSX`) e restaura `window.XLSX` de volta pro original
+  (`window.XLSX = window.__XLSX_BASE__`). Resultado: **zero risco pra qualquer
+  caminho já em produção** — só a função nova (`buildSaAprovacaoWorkbook`) enxerga
+  `window.XLSXStyled`, todo o resto do app continua vendo exatamente o mesmo
+  `window.XLSX` de sempre.
+- **API de estilo confirmada via `WebFetch` do README real do projeto** (o
+  `cdn.jsdelivr.net` está bloqueado pro proxy de rede do sandbox, `raw.
+  githubusercontent.com` não): `.s.font{name,sz,bold,color:{rgb}}`,
+  `.s.fill{patternType,fgColor:{rgb}}`, `.s.alignment{horizontal,vertical,wrapText}`,
+  `.s.border{top/bottom/left/right:{style,color:{rgb}}}`, `.s.numFmt`. **Cores em RGB
+  puro de 6 dígitos, sem prefixo de alpha** — diferente do ARGB de 8 dígitos que o
+  `openpyxl` usa pra ler o arquivo real; precisou remover o "FF" inicial de cada cor
+  copiada da inspeção antes de escrever no código (ex.: `FFF6A200`→`F6A200`).
+- **Fallback gracioso**: `buildSaAprovacaoWorkbook` usa `window.XLSXStyled ||
+  window.XLSX` — se o CDN do fork falhar (rede), cai pro SheetJS puro sem travar a
+  exportação; a propriedade `.s` extra que sobraria nos objetos de célula é
+  simplesmente ignorada pelo SheetJS puro na hora de escrever o arquivo, nunca quebra.
+
+### `buildSaAprovacaoWorkbook(counts)` — substitui por completo `buildSaAprovacaoRows`/
+### o parâmetro `buildRows` da rodada anterior
+
+`baixarRelatorioModulo`/`ModuloDownloadButton` **voltaram exatamente à forma simples de
+antes da rodada anterior** (sem o 4º parâmetro `buildRows`) — "Aguardando Aprovação"
+ganhou um exportador **totalmente próprio** (`buildSaAprovacaoWorkbook`/
+`SaAprovacaoDownloadButton`), já que o formato real (agrupado, com linha de Total,
+formatação visual, múltiplas SAs por arquivo) não cabe no molde genérico "1 linha por
+item, sem estilo" que os outros 4 painéis (Recontagens/Itens Divergentes/Analisados/
+Contagens Concluídas) continuam usando sem nenhuma mudança.
+
+- **Colunas exatas do arquivo real** (confirmadas via `openpyxl`, não mais adivinhadas
+  a partir de um print): `Numero/Solicitante/Emissao/Item/Cod Produto/Descricao/Quant/
+  Saldo SA/Vlr. Unitário/Total/Saldo Estoque/Almox/Obs/OP/Cod. C.Custo/C. Custo` — sem
+  acento, **"Almox"** (não "Alm") e **"Item"** (não "Iten") — os 2 erros de nome de
+  coluna da versão baseada só no print, corrigidos agora que o arquivo real confirma.
+- **Agrupamento por SA** (`c.solicitacaoAjuste`, ou `'(Devolução)'`/`'(sem SA)'` quando
+  ausente — mesmo critério de honestidade da rodada anterior, nunca esconde o item nem
+  quebra num grupo "undefined"), preservando a ORDEM de 1ª aparição na lista já
+  filtrada pela tela — nunca reordena o que o líder já está vendo.
+- **"Item" agora é sequencial DENTRO de cada grupo** (`i+1`, reinicia em 1 a cada SA
+  nova) — não mais fixo em 1.
+- **Linha "Total" por grupo**: soma só o "Total" (`valorDivergente`) dos itens daquele
+  grupo, com a MESMA formatação visual do arquivo real (célula de soma com moldura fina
+  em cima/embaixo + moldura média nos lados, preenchimento amarelo-claro, fonte negrito
+  cinza-escuro, formato de moeda — só nessa 1 célula, igual o arquivo real, que também
+  não estiliza a linha inteira).
+- **Colunas "Vlr. Unitário"/"Total" destacadas em laranja** (`#F6A200`, o mesmo
+  `--safety` da marca, batendo exatamente com o preenchimento do cabeçalho dessas 2
+  colunas no arquivo real) — os únicos 2 campos calculados da planilha.
+- **Múltiplas SAs no mesmo arquivo**: um cabeçalho só no topo da aba, cada SA virando
+  seu próprio bloco (linhas de dado + linha Total), separado do próximo por 1 linha em
+  branco — resolve a pergunta 3 confirmada com o cliente.
+- **Mapeamento de campo, mesmo critério de honestidade já usado desde a rodada
+  anterior**: "Quant"/"Saldo SA" = `|diferença|`; "Vlr. Unitário"/"Total" =
+  `custoUnit`/`valorDivergente` (mesma identidade Quant×Vlr.Unitário=Total já
+  estabelecida); "Saldo Estoque" = `saldoSistema`; "Almox" = `almoxarifado`; "Obs" =
+  `motivo`+`observacao` unidos por travessão quando os dois existem; "Emissao" extrai
+  só a data (regex) de `saGeradaEm`, que é uma string já formatada em pt-BR completa
+  (data+hora), não uma coluna `timestamptz`; **"OP"/"Cod. C.Custo"/"C. Custo" saem
+  SEMPRE em branco** — o app não captura nenhum dos três em lugar nenhum do fluxo de
+  contagem/aprovação hoje, mesmo critério já usado pra "Classe"/"Dias S/ Mov." em
+  `buildCountRows`.
+- **FORA de escopo nesta rodada, confirmado**: a 2ª tabela "Análise de Materiais
+  Parados 180+" e os blocos de texto livre Motivo/Ação do arquivo real; e, fora do
+  alcance de uma lib JS pura sem motor de Tabela nativa do Excel, o zebra-striping
+  automático e o toggle de "ocultar linhas de grade" — nenhum dos dois muda o dado, só
+  polimento visual que exigiria manipular XML OOXML bruto, risco não justificado.
+
+### Verificação
+
+O harness anterior (`harness_sa_aprovacao_excel.js`, que testava `buildSaAprovacaoRows`/
+o parâmetro `buildRows`) foi **reescrito por completo** — os dois não existem mais.
+Testado (jsdom + react-dom/client + `act()`, mesma técnica rigorosa de sempre — carrega
+o `index.html` inteiro transpilado numa `vm.Script`, com um mock razoavelmente fiel do
+SheetJS/xlsx-js-style que constrói objetos de célula endereçados de verdade via
+`aoa_to_sheet`): (1) 1 SA/1 material, réplica do exemplo real anterior; (2) estilo —
+cabeçalho negrito centralizado, laranja da marca só nas 2 colunas calculadas, a célula
+de soma do Total com moldura/preenchimento/negrito/cor certos; (3) múltiplos materiais
+na MESMA SA — Item sequencial (1,2,3...), Total somando só o grupo; (4) múltiplas SAs —
+cada uma vira bloco próprio, separado por linha em branco, Item REINICIA em 1 a cada
+SA nova; (5) item sem número de SA (devolução/sem SA) agrupa sob rótulo textual, sem
+quebrar; (6) casos de borda — campos nulos nunca fabricam 0, arredondamento, largura de
+coluna/altura de linha, sem contagem nenhuma, sem nenhuma biblioteca disponível; (7)
+fallback pra `window.XLSX` puro quando `window.XLSXStyled` não existe, sem travar a
+exportação; (8) regressão — `baixarRelatorioModulo`/`ModuloDownloadButton` (as outras 4
+telas) NUNCA tocam em `window.XLSXStyled`, mesmo quando ele existe disponível; (9) de
+ponta a ponta, `DiretoriaApprovalPanel` renderizado de verdade confirma que usa
+`SaAprovacaoDownloadButton` (não mais `ModuloDownloadButton`) exportando no formato SA
+completo, enquanto `RecountsPanel` (outro painel) continua com `ModuloDownloadButton`
+no formato genérico, sem regressão nenhuma. 78 asserções, todas passando. Rodei de novo
+toda a suíte completa de regressão do scratchpad (85 harnesses) — sem quebrar nenhum
+outro caminho (nenhum outro import/export do app toca em `window.XLSXStyled`,
+confirmado pela isolação de nome). Transpile Babel do arquivo inteiro conferido.
+**Nenhuma migração de SQL necessária.** **Verificação visual/funcional de ponta a
+ponta (abrir o arquivo gerado num Excel/LibreOffice de verdade e comparar lado a lado
+com o modelo real, incluindo se `xlsx-js-style` de fato produz o visual esperado — nunca
+testável neste sandbox por causa do bloqueio de rede pro CDN) fica a cargo do cliente**
+— mesma limitação de sempre (login exige Supabase Auth real, e agora também uma
+biblioteca externa nunca exercitada de verdade neste ambiente, não simuláveis no
+sandbox sem rede).
+
+- **`harness_modulo_download_button.js` ficou desatualizado por causa desta mudança**
+  (testava `DiretoriaApprovalPanel` via `ModuloDownloadButton` com o mock simples de
+  `XLSX`, esperando a aba "Aguardando Aprovação" no formato genérico — comportamento
+  que não existe mais desde que esse painel passou a usar `SaAprovacaoDownloadButton`,
+  que exige `XLSX.utils.encode_cell`, ausente nesse mock) — corrigido removendo o
+  bloco de asserções duplicadas (a cobertura de ponta a ponta de `DiretoriaApprovalPanel`
+  já mora inteira em `harness_sa_aprovacao_excel.js`, seção 9), mantendo só a checagem
+  de que o botão de download existe ali (sem clicar, sem depender do mock certo pra
+  isso). Rodada a suíte completa de novo depois do ajuste — só a mesma falha
+  pré-existente e já documentada (`harness_fetchprodutos_armazem_pedido.js`, artefato
+  de teste sem relação com esta mudança) continua, confirmada de novo.

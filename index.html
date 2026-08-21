@@ -29,6 +29,26 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>window.__XLSX_BASE__ = window.XLSX;</script>
+<!-- xlsx-js-style: fork do SheetJS com célula .s (font/fill/border/numFmt) — só usado
+     pelo export de "Solicitação ao Almoxarifado" (buildSaAprovacaoWorkbook), que
+     precisa replicar formatação visual real (pedido explícito: "seguir fielmente" um
+     modelo .xlsx com cores/negrito/moldura). Expõe o MESMO nome global "XLSX" do
+     SheetJS puro acima — carregá-lo aqui SOBRESCREVERIA window.XLSX silenciosamente
+     pra toda a página, e todo import/upload já existente (parseSB2Rows,
+     parseImportedListRows, parseHistoricoContagensRows, parseDescricaoProdutosRows)
+     e todo export já existente (generateReportWorkbook, buildInventarioCiclicoWorkbook,
+     buildImportTemplateWorkbook, baixarRelatorioModulo) dependem do comportamento do
+     SheetJS puro, nunca testado contra este fork. Por isso o script abaixo captura a
+     versão nova sob um nome PRÓPRIO (window.XLSXStyled) e restaura window.XLSX pro
+     original — zero risco pra qualquer caminho já em produção, só o export de SA
+     enxerga o fork. Versão exata fixada (1.2.0, publicada no momento desta mudança),
+     mesmo critério de segurança já aplicado ao supabase-js/JsBarcode logo abaixo. -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.min.js"></script>
+<script>
+  window.XLSXStyled = window.XLSX;
+  window.XLSX = window.__XLSX_BASE__;
+</script>
 <!-- Versão exata fixada (era "@2", major solto — corrigido na rodada de
      segurança: um float de major version deixa a página vulnerável a receber
      um patch novo do supabase-js sem revisão nenhuma, silenciosamente, a
@@ -4834,79 +4854,199 @@ function buildCountRows(counts){
 // cliente já sabe ler no Excel, sem inventar um formato novo — só isola
 // numa aba própria, já filtrada pelo que está sendo mostrado NA TELA no
 // momento do clique (busca/severidade/status/período já aplicados pela
-// própria tela, antes de chegar aqui). `buildRows` é opcional — quando não
-// passado, cai no formato padrão (`buildCountRows`); "Aguardando Aprovação"
-// passa `buildSaAprovacaoRows` pra sair no formato real de SA do cliente
-// (ver comentário lá).
-function baixarRelatorioModulo(counts, sheetName, nomeArquivo, buildRows){
+// própria tela, antes de chegar aqui). "Aguardando Aprovação" NÃO usa esta
+// função — tem exportador próprio (`buildSaAprovacaoWorkbook`, logo
+// abaixo), já que o formato real de SA (agrupado por número, com linha de
+// Total e formatação de cor/moeda) não cabe no molde genérico "1 linha por
+// item, sem estilo" deste botão.
+function baixarRelatorioModulo(counts, sheetName, nomeArquivo){
   if(!window.XLSX) return {ok:false, erro:'A biblioteca de exportação não carregou (verifique a conexão com a internet).'};
   if(!counts.length) return {ok:false, erro:'Nenhum item para exportar com os filtros atuais.'};
   const XLSX = window.XLSX;
   const wb = XLSX.utils.book_new();
-  const rows = (buildRows || buildCountRows)(counts);
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), sheetName);
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(buildCountRows(counts)), sheetName);
   const filename = `GestaoEstoques_${nomeArquivo}_${hojeLocalStr()}.xlsx`;
   XLSX.writeFile(wb, filename);
   return {ok:true, filename};
 }
 
-// Formato real de "Solicitação ao Almoxarifado" (SA) que o cliente já usa
-// fora do app — pedido explícito, com print da planilha real: "Em
-// aguardando aprovação, quero que ao gerar o excel venha neste formato"
-// (colunas Numero/Solicitante/Emissao/Iten/Cod Produto/Descricao/Quant/
-// Saldo SA/Vlr. Unitário/Total/Saldo Estoque/Alm/Obs/OP/Cod. C.Custo/
-// C. Custo — nomes sem acento de propósito, mesma convenção "estilo
-// Protheus" já usada em outras planilhas reais deste projeto, pra bater
-// exatamente com o que o cliente já sabe ler/colar).
+// Exportador PRÓPRIO de "Solicitação ao Almoxarifado" (SA) pra "Aguardando
+// Aprovação" — pedido em 2 rodadas: 1º um PRINT da planilha real ("Em
+// aguardando aprovação, quero que ao gerar o excel venha neste formato"),
+// depois o ARQUIVO .xlsx real em si ("na verdade, este é o modelo final,
+// seguir fielmente") — o arquivo revelou que a suposição inicial (1 linha
+// por SA, sempre Item=1) estava errada: uma SA real cobre VÁRIOS
+// materiais — cada um vira uma linha própria, numerada por "Item" (1, 2,
+// 3... dentro da MESMA SA, sequencial na ordem em que os itens já
+// aparecem na tela — o arquivo real em si não vem ordenado por Item,
+// então não há "a ordem certa" a replicar além disso), seguida de uma
+// linha "Total" somando a coluna Total daquele grupo. Se a lista filtrada
+// tiver mais de uma SA, cada uma vira o próprio bloco (cabeçalho/dados/
+// Total), empilhados na MESMA aba, separados por uma linha em branco —
+// confirmado com o cliente via AskUserQuestion ("indiferente, único
+// arquivo pode ser uma ou várias SAs").
 //
-// Mapeamento a partir do que a contagem já grava, sem inventar nada novo:
-// - "Iten" é sempre 1 — cada SA no app cobre exatamente 1 material (mesmo
-//   critério de "contagens é denormalizada, sem lista de itens própria" já
-//   documentado pra essa tabela), nunca uma SA com várias linhas.
-// - "Quant"/"Saldo SA" usam o mesmo valor (|diferença|) — no app, uma SA
-//   aguardando aprovação da Diretoria NUNCA foi parcialmente atendida
-//   ainda (é justamente o que está pendente de decidir), então o saldo
-//   em aberto é sempre a quantidade inteira pedida, igual o real "Saldo
-//   SA" de uma SA ainda não atendida.
-// - "Vlr. Unitário"/"Total" vêm de `custoUnit`/`valorDivergente` — os
-//   mesmos dois campos que já alimentam "Valor divergente" no card desta
-//   tela (`valorDivergente = |diferença| × custoUnit`, por isso os dois
-//   batem matematicamente com Quant×Vlr. Unitário, igual no exemplo real
-//   do cliente: 1×R$13,42=R$13,42).
-// - "Saldo Estoque" é `saldoSistema` — o saldo que o sistema já mostrava
-//   no momento da contagem, mesmo conceito de "saldo em estoque" da SA
-//   real.
-// - "Obs" junta `motivo`+`observacao` quando os dois existem (mesmo
-//   critério já usado noutros lugares deste app pra combinar os dois sem
-//   perder nenhum) — bate com o estilo de nota curta do exemplo real
-//   ("SUCATA-DOBRA ERRADA").
+// Colunas exatas do arquivo real (confirmadas via inspeção com openpyxl,
+// nunca adivinhadas): Numero/Solicitante/Emissao/Item/Cod Produto/
+// Descricao/Quant/Saldo SA/Vlr. Unitário/Total/Saldo Estoque/Almox/Obs/
+// OP/Cod. C.Custo/C. Custo — sem acento, "Almox" (não "Alm"), "Item" (não
+// "Iten", erro da 1ª versão baseada só no print).
+//
+// Mapeamento a partir do que a contagem já grava, sem inventar nada novo
+// (mesmo critério da versão anterior, ainda válido):
+// - "Quant"/"Saldo SA" usam o mesmo valor (|diferença|) — no app, um item
+//   aguardando aprovação da Diretoria nunca foi parcialmente atendido
+//   ainda, então o saldo em aberto é sempre a quantidade inteira pedida.
+// - "Vlr. Unitário"/"Total" vêm de `custoUnit`/`valorDivergente` (mesma
+//   identidade Quant×Vlr.Unitário=Total já usada no card desta tela).
+// - "Saldo Estoque" é `saldoSistema`, "Almox" é `almoxarifado`.
+// - "Obs" junta `motivo`+`observacao` quando os dois existem.
 // - "OP"/"Cod. C.Custo"/"C. Custo" saem SEMPRE em branco — o app não
 //   captura nenhum dos três em lugar nenhum do fluxo de contagem/aprovação
-//   hoje, mesmo critério de honestidade já usado pra "Classe"/"Dias S/
-//   Mov." em `buildCountRows` (nunca fabricar dado que não existe).
-function buildSaAprovacaoRows(counts){
-  return counts.map(c=>{
-    const diferencaAbs = c.diferenca==null ? '' : Math.abs(Number(c.diferenca));
-    const emissaoMatch = (c.saGeradaEm||'').match(/\d{2}\/\d{2}\/\d{4}/);
-    return {
-      'Numero': c.solicitacaoAjuste || '',
-      'Solicitante': c.saGeradaPor || '',
-      'Emissao': emissaoMatch ? emissaoMatch[0] : (c.saGeradaEm || ''),
-      'Iten': 1,
-      'Cod Produto': c.productCode,
-      'Descricao': c.descricao,
-      'Quant': diferencaAbs,
-      'Saldo SA': diferencaAbs,
-      'Vlr. Unitário': c.custoUnit!=null ? Number(Number(c.custoUnit).toFixed(2)) : '',
-      'Total': c.valorDivergente!=null ? Number(Number(c.valorDivergente).toFixed(2)) : '',
-      'Saldo Estoque': c.saldoSistema==null ? '' : c.saldoSistema,
-      'Alm': c.almoxarifado || '',
-      'Obs': [c.motivo, c.observacao].filter(Boolean).join(' — '),
-      'OP': '',
-      'Cod. C.Custo': '',
-      'C. Custo': '',
-    };
+//   hoje (mesmo critério de honestidade já usado pra "Classe"/"Dias S/
+//   Mov." em `buildCountRows`).
+// - Item sem número de SA (ex.: devolução sem SA, ver `ehDevolucao` no
+//   histórico) agrupa sob o rótulo "(Devolução)"/"(sem SA)" em vez de
+//   quebrar ou virar um grupo "undefined" — nunca esconde o item.
+//
+// Formatação visual replicada do arquivo real (pedido confirmado via
+// AskUserQuestion: "Replicar cores e formatação"): cabeçalho em negrito
+// centralizado; "Vlr. Unitário"/"Total" com o mesmo laranja da marca
+// (#F6A200, `--safety`) usado no arquivo real pra destacar os 2 campos
+// calculados; moeda no formato contábil brasileiro; linha "Total" de cada
+// grupo com a mesma moldura/preenchimento amarelo-claro/texto cinza-escuro
+// negrito do arquivo real, só na célula de soma (mesmo padrão exato do
+// arquivo, que também só estiliza essa 1 célula na linha de total, não a
+// linha inteira). Usa `window.XLSXStyled` (fork xlsx-js-style, ver
+// comentário no <head>) quando disponível — se por algum motivo não tiver
+// carregado (falha de rede no CDN), cai pra `window.XLSX` puro sem
+// travar a exportação, só sem o estilo (a propriedade `.s` extra é apenas
+// ignorada pelo SheetJS puro, nunca quebra o arquivo gerado).
+//
+// FORA DE ESCOPO nesta rodada (confirmado via AskUserQuestion, "Não
+// incluir por enquanto"): a 2ª tabela "Análise de Materiais Parados 180+"
+// e os blocos de texto livre Motivo/Ação do arquivo real — só a tabela
+// principal de SA é exportada. Também fora de alcance de uma lib JS pura
+// (sem motor de Tabela nativa do Excel): o zebra-striping automático que
+// o arquivo real ganha por ser uma Tabela Excel de verdade, e o toggle de
+// "ocultar linhas de grade" da planilha — nenhum dos dois muda o dado, só
+// polimento visual, não valeu o risco de tentar forjar via XML bruto.
+const SA_APROVACAO_COLS = ['Numero','Solicitante','Emissao','Item','Cod Produto','Descricao','Quant','Saldo SA','Vlr. Unitário','Total','Saldo Estoque','Almox','Obs','OP','Cod. C.Custo','C. Custo'];
+const SA_APROVACAO_MOEDA_FMT = '_-"R$"\\ * #,##0.00_-;\\-"R$"\\ * #,##0.00_-;_-"R$"\\ * "-"??_-;_-@_-';
+// [alinhamento, formato numérico|null, destaque laranja]
+const SA_APROVACAO_COL_META = [
+  ['center','0',false],                    // Numero
+  ['center',null,false],                   // Solicitante
+  ['center',null,false],                   // Emissao
+  ['center','0',false],                    // Item
+  ['left',null,false],                     // Cod Produto
+  ['left',null,false],                     // Descricao
+  ['right','0',false],                     // Quant
+  ['right','0',false],                     // Saldo SA
+  ['center',SA_APROVACAO_MOEDA_FMT,true],  // Vlr. Unitário
+  ['center',SA_APROVACAO_MOEDA_FMT,true],  // Total
+  ['right','0',false],                     // Saldo Estoque
+  ['center','0',false],                    // Almox
+  ['left',null,false],                     // Obs
+  ['center',null,false],                   // OP
+  ['center',null,false],                   // Cod. C.Custo
+  ['center',null,false],                   // C. Custo
+];
+
+function buildSaAprovacaoWorkbook(counts){
+  const XLSX = window.XLSXStyled || window.XLSX;
+  if(!XLSX) return {ok:false, erro:'A biblioteca de exportação não carregou (verifique a conexão com a internet).'};
+  if(!counts.length) return {ok:false, erro:'Nenhum item para exportar com os filtros atuais.'};
+
+  // Agrupa por SA, preservando a ordem de 1ª aparição na tela — nunca
+  // reordena o que o líder já está vendo filtrado.
+  const gruposOrdem = [];
+  const grupos = {};
+  counts.forEach(c=>{
+    const chave = c.solicitacaoAjuste || (c.ehDevolucao ? '(Devolução)' : '(sem SA)');
+    if(!grupos[chave]){ grupos[chave] = []; gruposOrdem.push(chave); }
+    grupos[chave].push(c);
   });
+
+  const aoa = [SA_APROVACAO_COLS];
+  const estilos = {}; // 'linha,coluna' -> objeto de estilo xlsx-js-style
+  const alturasLinha = [{r:0, hpt:27.75}]; // cabeçalho, mesma altura do arquivo real
+  const setEstilo = (r, c, style) => { estilos[r+','+c] = style; };
+
+  SA_APROVACAO_COLS.forEach((_,c)=>{
+    setEstilo(0, c, {font:{name:'Calibri', sz:10, bold:true}, alignment:{horizontal:'center', vertical:'center'}});
+  });
+
+  gruposOrdem.forEach((chave, gIdx)=>{
+    if(gIdx>0) aoa.push([]); // linha em branco separando os grupos de SA
+    const itens = grupos[chave];
+    let totalGrupo = 0;
+    itens.forEach((c, i)=>{
+      const r = aoa.length;
+      const diferencaAbs = c.diferenca==null ? null : Math.abs(Number(c.diferenca));
+      const emissaoMatch = (c.saGeradaEm||'').match(/\d{2}\/\d{2}\/\d{4}/);
+      const numeroCru = Number(chave);
+      const vlrUnit = c.custoUnit!=null ? Number(Number(c.custoUnit).toFixed(2)) : null;
+      const total = c.valorDivergente!=null ? Number(Number(c.valorDivergente).toFixed(2)) : null;
+      if(total!=null) totalGrupo += total;
+      aoa.push([
+        Number.isFinite(numeroCru) ? numeroCru : chave,
+        c.saGeradaPor || null,
+        emissaoMatch ? emissaoMatch[0] : (c.saGeradaEm || null),
+        i+1,
+        c.productCode || null,
+        c.descricao || null,
+        diferencaAbs,
+        diferencaAbs,
+        vlrUnit,
+        total,
+        c.saldoSistema==null ? null : c.saldoSistema,
+        c.almoxarifado || null,
+        [c.motivo, c.observacao].filter(Boolean).join(' — ') || null,
+        null, null, null,
+      ]);
+      SA_APROVACAO_COL_META.forEach(([align, numFmt, laranja], c2)=>{
+        const style = {font:{name:'Calibri', sz:10}, alignment:{horizontal:align, vertical:'center'}};
+        if(numFmt) style.numFmt = numFmt;
+        if(laranja) style.fill = {patternType:'solid', fgColor:{rgb:'F6A200'}};
+        setEstilo(r, c2, style);
+      });
+    });
+    const rTotal = aoa.length;
+    const linhaTotal = new Array(SA_APROVACAO_COLS.length).fill(null);
+    linhaTotal[0] = 'Total';
+    linhaTotal[9] = Number(totalGrupo.toFixed(2));
+    aoa.push(linhaTotal);
+    alturasLinha.push({r:rTotal, hpt:20.1});
+    setEstilo(rTotal, 0, {font:{name:'Calibri', sz:10}, alignment:{horizontal:'center', vertical:'center'}});
+    setEstilo(rTotal, 9, {
+      font:{name:'Calibri', sz:11, bold:true, color:{rgb:'4D4D4D'}},
+      fill:{patternType:'solid', fgColor:{rgb:'FFF8E7'}},
+      border:{
+        top:{style:'thin', color:{rgb:'000000'}}, bottom:{style:'thin', color:{rgb:'000000'}},
+        left:{style:'medium', color:{rgb:'000000'}}, right:{style:'medium', color:{rgb:'000000'}},
+      },
+      alignment:{horizontal:'center', vertical:'center', wrapText:true},
+      numFmt:'"R$ "#,##0.00',
+    });
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  Object.keys(estilos).forEach(k=>{
+    const [r,c] = k.split(',').map(Number);
+    const addr = XLSX.utils.encode_cell({r, c});
+    if(ws[addr]) ws[addr].s = estilos[k];
+  });
+  ws['!cols'] = [8,13.57,11.29,5.14,14.29,35,8.71,9.43,11.43,13.43,12.71,6.57,40.71,3.57,11.57,30].map(wch=>({wch}));
+  const rows = [];
+  alturasLinha.forEach(({r,hpt})=>{ rows[r] = {hpt}; });
+  ws['!rows'] = rows;
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Solicitação de Ajuste');
+  const filename = `GestaoEstoques_SolicitacaoAjuste_${hojeLocalStr()}.xlsx`;
+  XLSX.writeFile(wb, filename);
+  return {ok:true, filename};
 }
 
 // Espelha o formato da planilha que o cliente sobe pra gerar a lista de
@@ -11046,23 +11186,47 @@ function PaginationControls({pagina, setPagina, totalPaginas, tamanhoPagina, set
   );
 }
 
-// Botão de download compacto, reaproveitado nas 5 telas de "tipos de
-// contagem" (Recontagens/Itens Divergentes/Analisados/Aguardando Aprovação/
-// Contagens Concluídas) — pedido do cliente: "quero um botão de download em
-// todos os tipos de contagem, caso eu queira baixar um relatório especifico
-// de cada módulo." Cada tela passa a própria lista JÁ FILTRADA (o que está
-// visível na hora do clique, com busca/severidade/status/período já
-// aplicados) e um nome de aba/arquivo próprio — nunca a lista bruta sem
-// filtro nenhum, pra o Excel bater com o que a pessoa está vendo na tela.
-function ModuloDownloadButton({counts, sheetName, nomeArquivo, buildRows}){
+// Botão de download compacto, reaproveitado em 4 das 5 telas de "tipos de
+// contagem" (Recontagens/Itens Divergentes/Analisados/Contagens Concluídas
+// — "Aguardando Aprovação" usa `SaAprovacaoDownloadButton`, logo abaixo,
+// já que o formato real de SA não cabe no molde genérico deste botão) —
+// pedido do cliente: "quero um botão de download em todos os tipos de
+// contagem, caso eu queira baixar um relatório especifico de cada módulo."
+// Cada tela passa a própria lista JÁ FILTRADA (o que está visível na hora
+// do clique, com busca/severidade/status/período já aplicados) e um nome
+// de aba/arquivo próprio — nunca a lista bruta sem filtro nenhum, pra o
+// Excel bater com o que a pessoa está vendo na tela.
+function ModuloDownloadButton({counts, sheetName, nomeArquivo}){
   const [msg, setMsg] = useState('');
   function handleClick(){
-    const res = baixarRelatorioModulo(counts, sheetName, nomeArquivo, buildRows);
+    const res = baixarRelatorioModulo(counts, sheetName, nomeArquivo);
     setMsg(res.ok ? ('Baixado: '+res.filename) : res.erro);
   }
   return (
     <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:4}}>
       <button type="button" className="btn btn-outline btn-sm" onClick={handleClick} disabled={!counts.length} title="Baixar um relatório .xlsx só com os itens desta lista, do jeito que estão filtrados agora">
+        <Ic>⬇</Ic> Baixar (.xlsx)
+      </button>
+      {msg && <div style={{fontSize:'var(--text-2xs)',color:'var(--ink-dim)',maxWidth:220,textAlign:'right'}}>{msg}</div>}
+    </div>
+  );
+}
+
+// Mesmo botão/visual de `ModuloDownloadButton` acima, só que chamando o
+// exportador PRÓPRIO de SA (`buildSaAprovacaoWorkbook`, ver comentário lá)
+// — só usado em "Aguardando Aprovação". Não reaproveita `ModuloDownloadButton`
+// porque o formato de SA (agrupado por número, com linha de Total e
+// formatação de cor/moeda) não cabe no molde genérico "1 linha por item,
+// sem estilo" que `baixarRelatorioModulo` sempre usou.
+function SaAprovacaoDownloadButton({counts}){
+  const [msg, setMsg] = useState('');
+  function handleClick(){
+    const res = buildSaAprovacaoWorkbook(counts);
+    setMsg(res.ok ? ('Baixado: '+res.filename) : res.erro);
+  }
+  return (
+    <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:4}}>
+      <button type="button" className="btn btn-outline btn-sm" onClick={handleClick} disabled={!counts.length} title="Baixar um relatório .xlsx no formato real de Solicitação ao Almoxarifado (SA), só com os itens desta lista, do jeito que estão filtrados agora">
         <Ic>⬇</Ic> Baixar (.xlsx)
       </button>
       {msg && <div style={{fontSize:'var(--text-2xs)',color:'var(--ink-dim)',maxWidth:220,textAlign:'right'}}>{msg}</div>}
@@ -12185,7 +12349,7 @@ function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejec
           <strong style={{color:'var(--ink)'}}>{aguardandoDiretoria.length}</strong> pendentes
           {aguardandoDiretoriaNoPeriodo.length!==aguardandoDiretoria.length && <> · <strong style={{color:'var(--ink)'}}>{aguardandoDiretoriaNoPeriodo.length}</strong> no período selecionado</>}
         </span>
-        <ModuloDownloadButton counts={listaFiltrada} sheetName="Aguardando Aprovação" nomeArquivo="AguardandoAprovacao" buildRows={buildSaAprovacaoRows} />
+        <SaAprovacaoDownloadButton counts={listaFiltrada} />
       </div>
 
       <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
