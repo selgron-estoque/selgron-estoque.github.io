@@ -16336,25 +16336,51 @@ function EtiquetasPanel({currentUser}){
 
   return (
     <div>
-      {/* Pedido do cliente: "remover os textos e manter apenas os botões...
-          um lugar que eu possa ler para entender pra que serve cada botão" —
-          os 2 parágrafos explicativos viraram 2 ícones "?"/link discretos,
-          com o texto completo só no `title` (tooltip nativo do navegador,
-          mesmo padrão já usado em Configurações via `.cfg-help-btn`) — só
-          aparece se passar o mouse/tocar, não ocupa espaço permanente. */}
-      <div style={{display:'flex',alignItems:'center',justifyContent:'flex-end',gap:8,marginBottom:14}}>
-        <span className="cfg-help-btn" title='Ao clicar em "Imprimir Etiqueta", abre a janela de impressão normal do navegador — escolha a impressora TSC e confirme o tamanho da folha (101×31mm) se for pedido.'>?</span>
-        {currentUser.perfil==='admin' && (
-          <a href="preview-etiqueta.html" target="_blank" rel="noopener" className="cfg-help-btn" title="Quer ajustar o layout da etiqueta (tamanho de fonte, código de barras, etc.) você mesmo? Edite o CSS em index.html no GitHub e confira o resultado aqui (preview-etiqueta.html), sem precisar imprimir.">
-            <DIcon name="palette" size={13}/>
-          </a>
-        )}
-        <button type="button" className="btn btn-outline btn-xs" onClick={()=>setMostrarCalibracao(v=>!v)}>
-          {mostrarCalibracao ? 'Ocultar calibração' : 'Calibrar etiquetas'}
-        </button>
+      {/* Cabeçalho compacto — pedido do cliente ("tem muito espaçamento
+          aqui, fica ruim para trabalhar em telas menores, tem que ficar
+          subindo e descendo a tela"): as abas Produto/Endereço, o
+          seletor de Armazém e os ícones de ajuda/calibração — antes 3
+          fileiras separadas, cada uma com 14px de margem própria (~56px
+          só de espaçamento vertical) — viraram UMA fileira só, com
+          `justifyContent:'space-between'`. Só quebra em 2 linhas em telas
+          bem estreitas (`flexWrap:'wrap'`), nunca mais em 3-4 fixas como
+          antes. O rótulo "Armazém" solto foi removido — o próprio
+          `<select>` já mostra "Armazém 01" dentro da opção escolhida, sem
+          precisar de um rótulo ao lado repetindo a mesma palavra. */}
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8,marginBottom:10}}>
+        <div style={{display:'flex',gap:8}}>
+          <button className={'btn '+(aba==='produto'?'btn-primary':'btn-outline')+' btn-sm'} onClick={()=>setAba('produto')}>Produto</button>
+          <button className={'btn '+(aba==='endereco'?'btn-primary':'btn-outline')+' btn-sm'} onClick={()=>setAba('endereco')}>Endereço</button>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+          {/* Armazém usado pra desambiguar a consulta ao vivo — ver
+              comentário de `armazemEtiqueta`/`liveConsultaEtiqueta` mais
+              acima. Só faz sentido pra "Produto" (a busca de "Endereço"
+              não passa pela consulta ao vivo Selgron/Protheus). */}
+          {aba==='produto' && (
+            <select
+              value={armazemEtiqueta}
+              onChange={e=>setArmazemEtiqueta(e.target.value)}
+              style={{background:'var(--panel-raised)', border:'1px solid var(--line)', color:'var(--ink)', borderRadius:8, padding:'6px 10px', fontSize:'var(--text-xs)', fontFamily:'var(--font-mono)'}}
+            >
+              {(armazensEtiqueta || ['1']).map(a=>(
+                <option key={a} value={a}>Armazém {a.padStart(2,'0')}</option>
+              ))}
+            </select>
+          )}
+          <span className="cfg-help-btn" title='Ao clicar em "Imprimir Etiqueta", abre a janela de impressão normal do navegador — escolha a impressora TSC e confirme o tamanho da folha (101×31mm) se for pedido.'>?</span>
+          {currentUser.perfil==='admin' && (
+            <a href="preview-etiqueta.html" target="_blank" rel="noopener" className="cfg-help-btn" title="Quer ajustar o layout da etiqueta (tamanho de fonte, código de barras, etc.) você mesmo? Edite o CSS em index.html no GitHub e confira o resultado aqui (preview-etiqueta.html), sem precisar imprimir.">
+              <DIcon name="palette" size={13}/>
+            </a>
+          )}
+          <button type="button" className="btn btn-outline btn-xs" onClick={()=>setMostrarCalibracao(v=>!v)}>
+            {mostrarCalibracao ? 'Ocultar calibração' : 'Calibrar etiquetas'}
+          </button>
+        </div>
       </div>
       {mostrarCalibracao && (
-        <div className="role-note" style={{marginBottom:14}}>
+        <div className="role-note" style={{marginBottom:10}}>
           <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginBottom:8}}>
             Tem casos em que a bobina vem torta e uma das duas etiquetas (esquerda ou
             direita) sai deslocada em relação à outra — ajuste cada lado em milímetros pra
@@ -16394,38 +16420,7 @@ function EtiquetasPanel({currentUser}){
         </div>
       )}
 
-      <div style={{display:'flex',gap:8,marginBottom:14,marginTop:14}}>
-        <button className={'btn '+(aba==='produto'?'btn-primary':'btn-outline')+' btn-sm'} onClick={()=>setAba('produto')}>Produto</button>
-        <button className={'btn '+(aba==='endereco'?'btn-primary':'btn-outline')+' btn-sm'} onClick={()=>setAba('endereco')}>Endereço</button>
-      </div>
-
-      {/* Armazém usado pra desambiguar a consulta ao vivo — ver comentário
-          de `armazemEtiqueta`/`liveConsultaEtiqueta` mais acima. Só faz
-          sentido pra "Produto" (a busca de "Endereço" não passa pela
-          consulta ao vivo Selgron/Protheus). Cliente pediu pra tirar o
-          texto explicativo ("Consultando ao vivo no Armazém X", numa
-          faixa `.role-note` destacada) — a informação em si não tem
-          necessidade, mas o `<select>` continua (nunca foi "informação",
-          é o controle que resolve a ambiguidade de saldo/endereço entre
-          armazéns pro mesmo código — remover ele reabriria o bug real já
-          corrigido antes, "consulta ao vivo nunca informava o armazém").
-          Fica compacto, à direita, sem a faixa de aviso. */}
-      {aba==='produto' && (
-        <div style={{marginBottom:14,display:'flex',justifyContent:'flex-end',alignItems:'center',gap:8}}>
-          <label style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)'}}>Armazém</label>
-          <select
-            value={armazemEtiqueta}
-            onChange={e=>setArmazemEtiqueta(e.target.value)}
-            style={{background:'var(--panel-raised)', border:'1px solid var(--line)', color:'var(--ink)', borderRadius:8, padding:'6px 10px', fontSize:'var(--text-xs)', fontFamily:'var(--font-mono)'}}
-          >
-            {(armazensEtiqueta || ['1']).map(a=>(
-              <option key={a} value={a}>Armazém {a.padStart(2,'0')}</option>
-            ))}
-          </select>
-        </div>
-      )}
-
-      <div className="field">
+      <div className="field" style={{marginBottom:8}}>
         <label>{aba==='endereco' ? 'Buscar endereço' : 'Buscar produto (código ou descrição)'}</label>
         <input type="text" value={query} onChange={e=>{ setQuery(e.target.value); setSelecionado(null); setSucessoImpressao(false); }} placeholder={aba==='endereco' ? 'Ex: 035-A-1' : 'Ex: 000.35310 ou parafuso'} />
       </div>

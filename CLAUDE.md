@@ -20459,3 +20459,50 @@ lista principal — o cliente escolheu **"Botão 'Ver histórico' na mesma tela
   (`enderecosPropostos`) já carregado. **Verificação visual/funcional de ponta a ponta
   fica a cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth real,
   não simulável no sandbox sem rede).
+
+
+## "Etiquetas": cabeçalho compactado numa linha só — menos rolagem em telas menores
+
+Cliente mandou print da tela "Etiquetas" (aba Produto) com um retângulo vermelho ao
+redor da região do topo inteira — abas Produto/Endereço, ícone "?", ícone de paleta
+(admin), botão "Calibrar etiquetas", rótulo "Armazém" + `<select>`, e o campo de busca —
+e pediu, direto: "pode otimizar este espaço, botar tudo em uma linha, tem muito
+espaçamento aqui, fica ruim para trabalhar em telas menores, tem que ficar subindo e
+descendo a tela a todo momento".
+
+- **Causa do espaço excessivo**: a região tinha 4 blocos empilhados, cada um com
+  `marginBottom:14` próprio (a fileira de ícones de ajuda/calibrar, a fileira de abas
+  Produto/Endereço — que ainda tinha `marginTop:14` — a fileira condicional do
+  `<select>` de Armazém com um `<label>Armazém</label>` solto ao lado, e o painel de
+  calibração quando aberto) — mais o `margin-bottom:16px` padrão da classe global
+  `.field` no campo de busca logo depois. Somado, dava bem mais respiro vertical do que
+  o conteúdo real precisava, obrigando rolar a tela num aparelho menor só pra ver os
+  resultados da busca.
+- **Correção**: as 3 primeiras fileiras (ícones/abas/seletor de armazém) viraram UMA
+  fileira só, `display:flex;justifyContent:'space-between';flexWrap:'wrap';gap:8;
+  marginBottom:10` — abas Produto/Endereço à esquerda, `<select>` de Armazém + ícone
+  "?" + ícone de paleta (admin) + botão "Calibrar etiquetas" à direita. Só quebra em 2
+  linhas em telas bem estreitas (`flexWrap`), nunca mais em 3-4 fixas como antes.
+  Removido o `<label>Armazém</label>` solto — o próprio `<select>` já mostra "Armazém
+  01" dentro da opção escolhida, repetir a palavra do lado era redundante. O painel de
+  calibração (quando aberto) teve o `marginBottom` reduzido de 14 pra 10, sem nenhuma
+  mudança no conteúdo interno (os 4 campos de mm, o botão "Restaurar as duas (0,0)",
+  tudo intocado). O campo de busca ganhou `style={{marginBottom:8}}` no próprio wrapper
+  `.field` (override local, sem tocar na classe CSS global `.field`, compartilhada por
+  todo o resto do app — mesmo cuidado de escopo já seguido em outras compactações deste
+  projeto).
+- **Nenhuma mudança de comportamento** — todo `onClick`/`onChange`/`title` continua
+  exatamente igual, só a disposição visual mudou. `armazemEtiqueta`/
+  `liveConsultaEtiqueta` (a desambiguação de saldo/endereço por armazém na consulta ao
+  vivo Selgron/Protheus) não foi tocada — o `<select>` só mudou de posição na tela.
+- Testado via transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  (669/669, sem mudança — nenhuma classe CSS nova, só JSX/`style` inline). Rodei de
+  novo toda a suíte de Etiquetas (16 harnesses) — nenhum precisou de ajuste, nenhum
+  assumia a estrutura antiga em 3-4 fileiras separadas — e a suíte completa do
+  scratchpad (86 harnesses, ~1.533 asserções) — só a mesma falha pré-existente e já
+  documentada (`harness_fetchprodutos_armazem_pedido.js`, artefato de teste sem relação
+  com esta mudança) continua, confirmada de novo. **Nenhuma migração de SQL nem
+  redeploy de Edge Function necessários** — publica sozinho via GitHub Pages.
+  **Verificação visual de ponta a ponta (o quanto isso reduz a rolagem de verdade num
+  tablet/celular real) fica a cargo do cliente** — mesma limitação de sempre (login
+  exige Supabase Auth real, não simulável no sandbox sem rede).
