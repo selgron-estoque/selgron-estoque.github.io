@@ -20559,3 +20559,107 @@ canto superior esquerdo do gráfico — o rótulo "85%" do 1º ponto (Sem 26) co
   simulável no sandbox sem rede) — mas desta vez a melhoria geométrica já foi medida de
   verdade num navegador (Chromium via Playwright), não só verificada por leitura de
   código.
+
+## Bug real: "Grupo PC" no indicador "Divergência por Família/Grupo" — mesmo
+## desalinhamento de coluna já corrigido pra `unidade`, agora vazando pro grupo
+
+Cliente mandou print de "Divergência por Família/Grupo (Top 7)" (Indicadores)
+mostrando "Grupo PC" como a maior barra (98, nitidamente maior que as demais,
+todas com nome real — "CALDEIRARIA C/ ST.", "FERRAMENTAS" etc.) e perguntou:
+"Grupo PC está correto? da onde vem essa informação?"
+
+- **Diagnóstico**: "Grupo PC" é o FALLBACK de `describeGrupo(grupo)` — usado
+  quando o código de grupo não bate com nenhuma das 248 entradas conhecidas
+  de `GRUPO_DESCRICOES` (confirmado por script à parte que todas as 248 chaves
+  são strings 100% numéricas, nunca letra). Ou seja: pra 98 itens, o valor CRU
+  gravado em `produtos.grupo` no Supabase é literalmente o texto **"PC"**, não
+  um código numérico da SB2. Levantei a hipótese, antes de qualquer mudança,
+  de que fosse a MESMA classe de bug já corrigida antes pra `unidade`
+  (`unidadeCadastroValida`, ver "Bug real: 'Unidade' mostrando valor no
+  formato de endereço" no histórico acima) — só que na direção oposta: "PC" é
+  a abreviação clássica de "peça", batendo exatamente com o valor que a
+  coluna **Unidade** normalmente traz — sugerindo que o valor de Unidade
+  vazou pra dentro da coluna Grupo pra essas linhas, na planilha "Descrição de
+  Produtos" (`parseDescricaoProdutosRows`, que lê `grupo`/`unidade` por
+  POSIÇÃO fixa de coluna — índice 2/3 — mesma fragilidade estrutural já
+  documentada quando o bug de `unidade` foi corrigido).
+- **Pedi um item real pra confirmar** — o cliente mandou um print da própria
+  consulta ao vivo da Selgron (`consulta.selgron.com.br`) pro código
+  **000.18407** ("EIXO EXPANSIVEL"): **Grupo: 0071-MATERIAIS TECNICOS** e,
+  logo abaixo, **Unidade medida: PC** — confirmando a hipótese byte a byte:
+  o grupo REAL é o código 71 (já mapeado corretamente em `GRUPO_DESCRICOES`
+  como "MATERIAIS TECNICOS" — o MAPA nunca foi o problema, só o dado bruto
+  gravado errado em `produtos.grupo`), e "PC" é de fato a Unidade, não o
+  Grupo. Mensagem exata do cliente confirmando: "esta puxando errado mesmo".
+- **`grupoCadastroValido(bruto)`** (função nova, logo depois de
+  `unidadeCadastroValida`, mesmo padrão de proteção na LEITURA) — rejeita
+  qualquer valor de grupo que não seja 100% dígitos (vira `null`) — nenhum
+  dos 248 grupos reais tem letra no código, então um valor com letra é
+  garantidamente dado corrompido, nunca um código legítimo ainda não
+  mapeado (esse caso continua caindo no fallback antigo "Grupo N", só que
+  agora só pra código genuinamente NUMÉRICO desconhecido).
+- **2 dos 3 pontos que calculam `product.familia` corrigidos** — os dois que
+  alimentam tanto a exibição na tela quanto o valor persistido em
+  `contagens.familia` (`CountStep.finalize()`, que é o que o indicador de
+  fato lê): `estoqueRowToProduct` (usada por `fetchContagemItensPrioritarios`/
+  `fetchItensPorEnderecoCompleto`/`fetchProdutosByCodigos` — cobre Aleatória/
+  Curva ABC/Grupo/Rota/Lista Importada/Itens Específicos/Recontagem) e
+  `searchSupabaseCatalog` (Nova Contagem Manual) — os dois trocaram
+  `familia: describeGrupo(row.grupo)` por `familia: grupoCadastroValido
+  (row.grupo) ? describeGrupo(row.grupo) : null`. Um `familia` nulo já é
+  automaticamente excluído do indicador (`if(c.familia) porFamiliaObj[...]
+  =...`, regra "nunca fabricar dado" já existente) — nunca mais aparece como
+  "Grupo PC" nem como qualquer outro rótulo fabricado a partir de lixo.
+- **3º ponto deliberadamente NÃO tocado**: a função que monta a lista de
+  seleção de grupo pra "Contagem por Grupo"/"Grupos Excluídos da Contagem
+  Automática" (`fetchGruposComEstoque`, perto de `formatGrupoLabel`) continua
+  chamando `describeGrupo(row.grupo)` direto, sem o gate novo — mesmo
+  critério de escopo de sempre neste projeto (só corrigir exatamente o que
+  foi diagnosticado/pedido, sem generalizar sem necessidade). Isso significa
+  que um "Grupo PC" ainda pode aparecer como OPÇÃO nesse seletor específico
+  — sinalizado ao cliente, não corrigido nesta rodada.
+- **Escopo real desta correção: só a LEITURA, não retroativo** — os 98
+  registros JÁ SALVOS em `contagens.familia = 'Grupo PC'` continuam exatamente
+  assim no banco; a correção só evita que uma contagem NOVA grave/exiba esse
+  valor fabricado daqui pra frente. Passei ao cliente duas ações de
+  acompanhamento, nenhuma delas aplicada por mim (fora do escopo do pedido —
+  ele só perguntou "de onde vem" e confirmou "tá errado mesmo", sem pedir
+  correção retroativa):
+  1. **Limpeza retroativa opcional** — um `UPDATE` que ele pode rodar no SQL
+     Editor pra nular só os registros com esse tipo de valor fabricado, sem
+     tocar em nenhum "Grupo N" legítimo de código numérico não mapeado:
+     `update contagens set familia = null where familia ~ '^Grupo [^0-9]';`
+  2. **Correção na origem** — o dado errado em `produtos.grupo` só se
+     corrige reimportando a planilha "Descrição de Produtos" com o
+     desalinhamento de coluna já corrigido pro conjunto de linhas afetado
+     (mesma orientação já dada quando o bug irmão de `unidade` foi achado).
+- Testado via harness Node isolado (mesma técnica de sempre — carrega o
+  `index.html` inteiro transpilado numa `vm.Script`, mockando
+  `window.supabase.createClient`/React/ReactDOM só o suficiente pra deixar
+  o bootstrap do script rodar sem lançar antes de `GRUPO_DESCRICOES`
+  inicializar): `grupoCadastroValido` isolada (rejeita "PC"/"KG"/misturas
+  dígito+letra, aceita código numérico puro com/sem zero à esquerda, trim,
+  `null`/vazio → `null`); `describeGrupo('71')` confirmando que o MAPA já
+  tinha "MATERIAIS TECNICOS" certo (prova de que o mapa nunca foi o
+  problema); ponta a ponta via `estoqueRowToProduct` com o cenário EXATO do
+  print do cliente (código 000.18407, `grupo:'PC'`, `unidade:'PC'`) —
+  confirma `familia: null` (não mais "Grupo PC") e `unidade: 'PC'` intacta
+  (a unidade É legítima, só o grupo que vazou); regressão de item com grupo
+  numérico válido continuando a resolver a descrição certa, sem mudança de
+  comportamento. 18 asserções, todas passando. Rodei de novo toda a suíte
+  completa de regressão do scratchpad (88 harnesses) — só a mesma falha
+  pré-existente e já documentada antes (`harness_fetchprodutos_armazem_
+  pedido.js`, artefato do próprio harness usando `git show HEAD:index.html`
+  pra capturar "o código de antes" de uma correção anterior, sem nenhuma
+  relação com esta mudança — confirmado rodando o mesmo harness via `git
+  stash` que a falha já existia idêntica sem esta mudança) continua,
+  reconfirmada de novo. Transpile Babel do arquivo inteiro e balanceamento de
+  chaves do CSS conferidos (669/669, sem mudança — esta correção não tocou em
+  CSS nenhum, só JS). **Nenhuma migração de SQL nem redeploy de Edge Function
+  necessários** — publica sozinho via GitHub Pages assim que o deploy
+  processar. **Verificação visual do indicador em produção fica a cargo do
+  cliente** — mesma limitação de sempre (login exige Supabase Auth real, não
+  simulável no sandbox sem rede) — mas como a correção é só de LEITURA, já
+  deve valer pro próximo item contado assim que o deploy publicar; os 98
+  registros já divergentes continuam mostrando "Grupo PC" até uma das duas
+  ações de acompanhamento acima ser aplicada.

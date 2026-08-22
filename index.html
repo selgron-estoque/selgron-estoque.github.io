@@ -1449,6 +1449,28 @@ function unidadeCadastroValida(bruto){
   return v;
 }
 
+// Mesmo tipo de proteção, agora pro GRUPO: cliente reportou (comparando
+// com a consulta real da Selgron, item 000.18407) o indicador "Divergência
+// por Família/Grupo" mostrando "Grupo PC" — o fallback de `describeGrupo()`
+// pra um código de grupo desconhecido. Nenhum dos 248 grupos reais tem
+// formato assim (são sempre um código NUMÉRICO puro, "1".."9999", nunca
+// letra) — e "PC" bate exato com a Unidade de Medida do mesmo item
+// (confirmado no print: "Unidade medida: PC"), então a causa mais provável
+// é o mesmo desalinhamento de coluna já visto em `unidadeCadastroValida`
+// (`parseDescricaoProdutosRows` lê grupo/unidade por POSIÇÃO fixa —
+// código:0/descrição:1/grupo:2/unidade:3/endereço:4 — se a planilha de
+// origem já tinha esse deslocamento pra alguma linha específica, o parser
+// herda o erro sem ter como perceber). Proteção na LEITURA (nunca deixa um
+// valor não-numérico virar um "nome de família" fabricado), não uma
+// correção do dado em si — quem já gravou errado no Supabase continua
+// errado até reimportar a planilha corrigida.
+function grupoCadastroValido(bruto){
+  const v = String(bruto==null ? '' : bruto).trim();
+  if(!v) return null;
+  if(!/^\d+$/.test(v)) return null;
+  return v;
+}
+
 // Busca no catálogo real (85 mil+ produtos) por código ou descrição — única
 // fonte de busca do app (o cache local de 300 SKUs foi removido, ver
 // CLAUDE.md "Remoção do cache local de 300 SKUs"). Enriquece com saldo
@@ -1583,7 +1605,7 @@ async function searchSupabaseCatalog(query, almoxarifado){
       codigo: row.codigo,
       descricao: row.descricao,
       unidade: unidadeCadastroValida(row.unidade),
-      familia: describeGrupo(row.grupo),
+      familia: grupoCadastroValido(row.grupo) ? describeGrupo(row.grupo) : null,
       endereco: enderecoRow ? enderecoRow.codigo : null,
       enderecoCadastrado: !!enderecoRow,
       almoxarifado: almoxarifado || '—',
@@ -3858,7 +3880,7 @@ function estoqueRowToProduct(row){
     codigo: row.codigo,
     descricao: row.descricao,
     unidade: unidadeCadastroValida(row.unidade),
-    familia: describeGrupo(row.grupo),
+    familia: grupoCadastroValido(row.grupo) ? describeGrupo(row.grupo) : null,
     grupo: row.grupo,
     endereco: row.endereco_codigo || null,
     enderecoCadastrado: !!row.endereco_codigo,
