@@ -16398,10 +16398,17 @@ function EtiquetasPanel({currentUser}){
       {/* Armazém usado pra desambiguar a consulta ao vivo — ver comentário
           de `armazemEtiqueta`/`liveConsultaEtiqueta` mais acima. Só faz
           sentido pra "Produto" (a busca de "Endereço" não passa pela
-          consulta ao vivo Selgron/Protheus). */}
+          consulta ao vivo Selgron/Protheus). Cliente pediu pra tirar o
+          texto explicativo ("Consultando ao vivo no Armazém X", numa
+          faixa `.role-note` destacada) — a informação em si não tem
+          necessidade, mas o `<select>` continua (nunca foi "informação",
+          é o controle que resolve a ambiguidade de saldo/endereço entre
+          armazéns pro mesmo código — remover ele reabriria o bug real já
+          corrigido antes, "consulta ao vivo nunca informava o armazém").
+          Fica compacto, à direita, sem a faixa de aviso. */}
       {aba==='produto' && (
-        <div className="role-note" style={{marginBottom:14,display:'flex',justifyContent:'space-between',alignItems:'center',gap:10}}>
-          <span>Consultando ao vivo no <strong>Armazém {armazemEtiqueta.padStart(2,'0')}</strong></span>
+        <div style={{marginBottom:14,display:'flex',justifyContent:'flex-end',alignItems:'center',gap:8}}>
+          <label style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)'}}>Armazém</label>
           <select
             value={armazemEtiqueta}
             onChange={e=>setArmazemEtiqueta(e.target.value)}
@@ -16546,12 +16553,6 @@ function EtiquetasPanel({currentUser}){
               <DIcon name="printer" size={14}/> {imprimindoFilaIds.size>0 ? 'Imprimindo…' : 'Imprimir Todos'}
             </button>
           </div>
-          {filaPendente.length>1 && (
-            <div className="role-note" style={{marginBottom:10}}>
-              O rolo tem 2 colunas — ao imprimir, cada folha sai com este item e o
-              próximo pendente lado a lado, pra não desperdiçar a coluna direita.
-            </div>
-          )}
           {filaPendente.map(item=>(
             <div key={item.id} className="list-row" style={{cursor:'default',flexWrap:'wrap'}}>
               <div>

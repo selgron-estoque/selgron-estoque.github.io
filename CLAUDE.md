@@ -20280,3 +20280,50 @@ diferentes entraram no export.
   cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth real, e
   a biblioteca `xlsx-js-style` nunca é exercitada de verdade neste sandbox por causa
   do bloqueio de rede pro CDN).
+
+
+## Etiquetas: remove os 2 avisos textuais ("Consultando ao vivo no Armazém X" e
+## "O rolo tem 2 colunas...") — mantém o seletor de armazém, funcional
+
+Cliente mandou print da tela "Etiquetas" com 2 setas vermelhas marcando: o texto
+"Consultando ao vivo no Armazém 01" (logo abaixo das abas Produto/Endereço, numa
+faixa `.role-note` destacada) e o aviso "O rolo tem 2 colunas — ao imprimir, cada
+folha sai com este item e o próximo pendente lado a lado, pra não desperdiçar a
+coluna direita." (acima da lista da "Fila de impressão") — pedido direto:
+**"Remover essas informações, não tem necessidade."**
+
+- **"O rolo tem 2 colunas..." — removido por completo**, sem substituto. É texto
+  puro, sem controle nenhum atrelado — o mecanismo de PAREAMENTO em si (imprimir o
+  item clicado junto do próximo pendente, lado a lado, quando existe mais de 1 na
+  fila — pedido de uma rodada bem anterior, "se tiver mais de uma etiqueta na fila
+  imprimir uma em cada, não desperdiçar etiqueta") não mudou nada, só o aviso que
+  descrevia esse comportamento na tela.
+- **"Consultando ao vivo no Armazém X" — só o texto saiu, o `<select>` continua**:
+  diferente do aviso da fila, esse bloco tinha um `<span>` explicativo E um
+  `<select>` funcional lado a lado (`justifyContent:'space-between'`, dentro do
+  mesmo `.role-note`) — o seletor é o que resolve a ambiguidade de saldo/endereço
+  entre armazéns pro mesmo código na consulta ao vivo Selgron/Protheus
+  (`armazemEtiqueta`/`liveConsultaEtiqueta`), corrigindo um bug real já documentado
+  antes ("consulta ao vivo nunca informava o armazém" — sem informar, a Edge
+  Function `consultar-produto-selgron` não consegue desambiguar entre blocos de
+  resultado de armazéns diferentes pro mesmo código). Remover o `<select>` junto
+  reabriria esse bug — "informação" (o texto explicativo) e "controle" (o seletor)
+  são coisas diferentes, e o pedido do cliente foi só sobre a primeira. Trocado
+  pra um bloco compacto, sem a faixa `.role-note` destacada nem o texto — só um
+  rótulo pequeno "Armazém" (cinza, discreto, não mais um "aviso") ao lado do
+  `<select>`, alinhado à direita, sem chamar tanta atenção quanto a faixa
+  colorida de antes.
+- Testado via `harness_etiqueta_duas_colunas.js` (1 asserção invertida — antes
+  checava que o texto "cada folha sai com este item e o" APARECIA com 2+ itens na
+  fila, agora checa que ele NUNCA aparece, comportamento de pareamento em si
+  continuando coberto pelas asserções seguintes — 1 folha impressa, 2 colunas
+  preenchidas, os 2 itens marcados "impressa") e rodei de novo toda a suíte de
+  Etiquetas (16 harnesses) + a suíte completa do scratchpad — só a mesma falha
+  pré-existente e já documentada (`harness_fetchprodutos_armazem_pedido.js`,
+  artefato de teste sem relação com esta mudança) continua, confirmada de novo.
+  Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos
+  (669/669, sem mudança — nenhuma classe CSS nova/removida, só JSX). **Nenhuma
+  migração de SQL nem redeploy de Edge Function necessários** — publica sozinho
+  via GitHub Pages. **Verificação visual de ponta a ponta fica a cargo do
+  cliente** — mesma limitação de sempre (login exige Supabase Auth real, não
+  simulável no sandbox sem rede).
