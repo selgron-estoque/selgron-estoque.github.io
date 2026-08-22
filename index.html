@@ -16586,6 +16586,20 @@ function EtiquetasPanel({currentUser}){
 // destacado pra tela própria (goto('enderecos')) porque estava se misturando
 // visualmente com o cadastro de usuário. Mesmo componente/lógica de antes, só
 // a navegação até ele que mudou (ver Home, Sidebar).
+// Trecho de "onde foi informado" compartilhado entre o card pendente (com
+// botões de ação) e o card de histórico (com só o chip de status) — extraído
+// pra não duplicar o mesmo JSX/lógica de `enderecoAnterior` nos dois lugares.
+function EnderecoPropostoLinha({e}){
+  return (
+    <div className="lr-sub">
+      {e.productCode} · {e.enderecoAnterior
+        ? <>cadastrado como <strong style={{color:'var(--ink)'}}>{e.enderecoAnterior}</strong>, encontrado em <strong style={{color:'var(--ink)'}}>{e.enderecoInformado}</strong></>
+        : <>informado como <strong style={{color:'var(--ink)'}}>{e.enderecoInformado}</strong></>
+      } por {e.usuario} em {e.data}
+    </div>
+  );
+}
+
 function AddressValidationPanel({enderecosPropostos=[], onResolve}){
   const pendentes = enderecosPropostos.filter(e=>e.status==='pendente');
   // Confirmar/rejeitar agora aguarda confirmação do Supabase (ver
@@ -16593,6 +16607,23 @@ function AddressValidationPanel({enderecosPropostos=[], onResolve}){
   // em UserManagementPanel/RecountsPanel.
   const [busyId, setBusyId] = useState(null);
   const [erros, setErros] = useState({});
+  // "Ver histórico" — depois da lista principal passar a mostrar só
+  // pendentes (pedido anterior do cliente), ele perguntou onde consultar
+  // quem pediu uma alteração já confirmada/rejeitada — confirmado via
+  // AskUserQuestion: um botão nesta mesma tela, some por padrão, revela
+  // busca + lista ao clicar. Mesmo padrão de toggle+busca já usado em
+  // Recontagens/Itens Divergentes/Contagens Concluídas (essas com mais
+  // volume, ganharam paginação também — aqui não, mesmo critério já aceito
+  // em MyCounts pra lista sem esse volume).
+  const resolvidos = enderecosPropostos.filter(e=>e.status!=='pendente');
+  const [historicoAberto, setHistoricoAberto] = useState(false);
+  const [buscaHistorico, setBuscaHistorico] = useState('');
+  const buscaNorm = buscaHistorico.trim().toLowerCase();
+  const resolvidosFiltrados = !buscaNorm ? resolvidos : resolvidos.filter(e=>
+    (e.descricao||'').toLowerCase().includes(buscaNorm) ||
+    (e.productCode||'').toLowerCase().includes(buscaNorm) ||
+    (e.usuario||'').toLowerCase().includes(buscaNorm)
+  );
 
   async function handleResolve(id, status){
     setBusyId(id);
@@ -16632,12 +16663,7 @@ function AddressValidationPanel({enderecosPropostos=[], onResolve}){
               {/* `enderecoAnterior` só vem preenchido quando o item JÁ TINHA
                   cadastro (correção de endereço errado) — sem isso, o item
                   nunca teve endereço nenhum, mesmo texto de sempre. */}
-              <div className="lr-sub">
-                {e.productCode} · {e.enderecoAnterior
-                  ? <>cadastrado como <strong style={{color:'var(--ink)'}}>{e.enderecoAnterior}</strong>, encontrado em <strong style={{color:'var(--ink)'}}>{e.enderecoInformado}</strong></>
-                  : <>informado como <strong style={{color:'var(--ink)'}}>{e.enderecoInformado}</strong></>
-                } por {e.usuario} em {e.data}
-              </div>
+              <EnderecoPropostoLinha e={e} />
               {erros[e.id] && <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginTop:4}}>{erros[e.id]}</div>}
             </div>
             <div className="btn-row" style={{width:'auto'}}>
@@ -16646,6 +16672,31 @@ function AddressValidationPanel({enderecosPropostos=[], onResolve}){
             </div>
           </div>
         ))
+      )}
+      {resolvidos.length>0 && (
+        <div style={{marginTop:18,paddingTop:14,borderTop:'1px solid var(--line)'}}>
+          <button type="button" className="btn btn-outline btn-sm" onClick={()=>setHistoricoAberto(v=>!v)}>
+            {historicoAberto ? 'Ocultar histórico' : `Ver histórico (${resolvidos.length})`}
+          </button>
+          {historicoAberto && (
+            <div style={{marginTop:12}}>
+              <SearchWithScanner value={buscaHistorico} onChange={setBuscaHistorico} placeholder="Código, descrição ou quem pediu" />
+              {resolvidosFiltrados.length===0 ? (
+                <div className="empty-state">Nenhum resultado para essa busca.</div>
+              ) : (
+                resolvidosFiltrados.map(e=>(
+                  <div key={e.id} className="list-row" style={{flexWrap:'wrap'}}>
+                    <div>
+                      <div className="lr-title">{e.descricao}</div>
+                      <EnderecoPropostoLinha e={e} />
+                    </div>
+                    <StatusTag status={e.status==='confirmado'?'ok':'danger'} text={e.status==='confirmado'?'Confirmado':'Rejeitado'} />
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

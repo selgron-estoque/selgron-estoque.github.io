@@ -20406,3 +20406,56 @@ botões "Rejeitar"/"Confirmar" por um chip `StatusTag` ("Confirmado"/
   necessária.** **Verificação visual de ponta a ponta fica a cargo do
   cliente** — mesma limitação de sempre (login exige Supabase Auth real, não
   simulável no sandbox sem rede).
+
+## "Endereços Pendentes de Cadastro" ganha "Ver histórico" — busca quem pediu um
+## endereço já confirmado/rejeitado
+
+Continuação direta do pedido anterior (ocultar da lista principal os itens já
+confirmados/rejeitados) — o cliente perguntou em seguida: **"aparece a onde agora? caso
+eu precise pesquisar quem pediu alteração do endereço"** — depois de esconder os itens
+resolvidos, não sobrava NENHUM lugar no app pra consultar quem propôs um endereço já
+confirmado/rejeitado (confirmado via busca no código inteiro por `enderecosPropostos` —
+só o badge da Home e o próprio painel liam esse dado, e o painel agora só mostrava
+pendente). Perguntado via `AskUserQuestion` entre um botão "Ver histórico" (escondido
+por padrão, revela busca+lista ao clicar) ou uma 2ª seção sempre visível abaixo da
+lista principal — o cliente escolheu **"Botão 'Ver histórico' na mesma tela
+(Recomendado)"**.
+
+- **`EnderecoPropostoLinha({e})`** (componente novo, extraído antes de
+  `AddressValidationPanel`) — a linha "código · cadastrado como X, encontrado em Y (ou
+  'informado como Y' pra 1ª captura) por Fulano em DD/MM" que já existia inline no card
+  pendente, virou compartilhada entre o card pendente (com botões de ação) e o novo
+  card de histórico (com só o chip de status) — evita duplicar o mesmo JSX/ternário de
+  `enderecoAnterior` nos dois lugares.
+- **`resolvidos`** (`enderecosPropostos.filter(e=>e.status!=='pendente')`) + estado novo
+  `historicoAberto`/`buscaHistorico` — mesmo padrão de toggle+busca já usado em
+  Recontagens/Itens Divergentes/Contagens Concluídas (`busca`/`SearchWithScanner`), só
+  que aqui a SEÇÃO INTEIRA também começa escondida (não só o campo de busca), já que o
+  pedido era "esconder por padrão".
+- **Botão "Ver histórico (N)"/"Ocultar histórico"** (`.btn.btn-outline.btn-sm`, mesma
+  classe combinada já usada em outros toggles do app) — só aparece quando existe pelo
+  menos 1 item resolvido (`resolvidos.length>0`); sem nenhum resolvido ainda, a seção
+  inteira nem entra no DOM (nada pra "ver histórico" de verdade).
+- **Sem paginação** — mesmo critério já aceito em `MyCounts` (lista sem volume grande o
+  bastante pra justificar), diferente de Recontagens/Itens Divergentes/Concluídas (que
+  ganharam paginação numa rodada bem anterior, mas lidam com volume bem maior).
+- Testado via harness estendido (`harness_enderecos_pendentes_oculta_resolvidos.js`,
+  jsdom + react-dom/client + `act()`, mesma técnica rigorosa de sempre): botão "Ver
+  histórico" nasce escondido (nenhum item resolvido visível, nenhum campo de busca no
+  DOM); mostra a contagem certa no rótulo; clicar revela os 2 itens resolvidos com o
+  chip certo (Confirmado/Rejeitado) e o nome de quem pediu cada um; buscar por nome de
+  operador filtra corretamente, mantendo só o item daquele operador; limpar a busca e
+  clicar "Ocultar histórico" esconde tudo de novo; o item ainda PENDENTE nunca aparece
+  na lista de histórico (continua só na lista principal, com o botão de ação); e sem
+  nenhum item resolvido, o botão "Ver histórico" nem existe. 32/32 asserções passando
+  (as 13 da rodada anterior + 19 novas). Rodei de novo toda a suíte completa de
+  regressão do scratchpad (89 harnesses, 1.533 asserções) — só a mesma falha
+  pré-existente e já documentada (`harness_fetchprodutos_armazem_pedido.js`, artefato de
+  teste sem relação com esta mudança) continua, confirmada de novo. Transpile Babel do
+  arquivo inteiro e balanceamento de chaves do CSS conferidos (669/669, sem mudança —
+  nenhuma classe CSS nova, reaproveita `.btn-outline`/`.btn-sm`/`.list-row`/`.lr-title`/
+  `.empty-state`/`StatusTag`/`SearchWithScanner` já existentes). **Nenhuma migração de
+  SQL necessária** — a correção é só de exibição, sobre o mesmo dado local
+  (`enderecosPropostos`) já carregado. **Verificação visual/funcional de ponta a ponta
+  fica a cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth real,
+  não simulável no sandbox sem rede).
