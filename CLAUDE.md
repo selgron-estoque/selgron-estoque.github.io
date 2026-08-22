@@ -20506,3 +20506,56 @@ descendo a tela a todo momento".
   **Verificação visual de ponta a ponta (o quanto isso reduz a rolagem de verdade num
   tablet/celular real) fica a cargo do cliente** — mesma limitação de sempre (login
   exige Supabase Auth real, não simulável no sandbox sem rede).
+
+
+## Bug real: "Acuracidade Semanal" ainda ficava "amontoado" perto do eixo Y — colisão
+## vertical, não só horizontal
+
+Cliente mandou print de "Acuracidade Semanal (%)" marcando (retângulo vermelho) o
+canto superior esquerdo do gráfico — o rótulo "85%" do 1º ponto (Sem 26) coladinho no
+"100%" do eixo — com a mensagem: "corrigir, ficou amontoado".
+
+- **Causa**: uma rodada anterior já tinha corrigido a colisão HORIZONTAL entre o
+  rótulo do eixo Y ("100%", ancorado "end" em `x=padL-8`) e o rótulo do 1º ponto
+  (trocando `textAnchor` de "middle" pra "start", ver "Bug real: rótulo do 1º ponto de
+  'Acuracidade Semanal' colidia com '100%' do eixo Y" no histórico acima) — mas isso só
+  resolvia a metade do problema. Quando o valor do 1º ponto é alto (85%, perto de
+  100%), o PONTO em si já nasce perto da linha "100%" — e o rótulo, 11 unidades acima
+  do ponto, ficava só ~7 unidades de distância VERTICAL do texto do eixo (baseline a
+  baseline) — com fontes de 10-11px, as duas caixas de texto colidem de verdade nessa
+  faixa, mesmo sem colidir mais na horizontal. O retângulo do cliente mostrava
+  exatamente essa mancha — os dois textos praticamente empilhados.
+- **Correção, duas partes, só pro 1º/último ponto** (`WeeklyLineChart`): (1) o rótulo
+  do 1º ponto ganhou um deslocamento horizontal extra de +5 unidades (o último, -5) —
+  além do `textAnchor` certo, agora fica visivelmente mais pra dentro do gráfico, longe
+  da coluna de rótulos do eixo; (2) nenhum rótulo de ponto (não só o 1º — qualquer
+  semana com valor alto) pode subir além de `padT+14` — um teto de segurança que
+  garante uma folga mínima abaixo da linha/rótulo "100%", mesmo que o valor da semana
+  seja 100% redondo. Pro cenário exato do print (Sem 26, 85%), isso empurra o rótulo de
+  y=44,9 pra y=48 — folga vertical de ~10,5 unidades em vez de ~7,4.
+- Testado via harness dedicado (`harness_weekly_line_chart_amontoado.js`) — **desta
+  vez com Playwright de verdade** (jsdom não calcula layout real de SVG/
+  `getBoundingClientRect`, mesma limitação de sempre pra esse tipo de bug geométrico),
+  usando o dataset EXATO do print do cliente (Sem 26-34, 85/86/71/54/66/85/88/71/58%):
+  confirmado que os bounding boxes de "100%" (eixo) e "85%" (1º ponto) não colidem mais
+  (folga horizontal real de 12,6px, contra 7,5px antes da correção), que o rótulo nunca
+  sobe além do teto `padT+14=48` (confirmado em unidades de viewBox via o atributo `y`
+  do próprio `<text>`), e que o deslocamento horizontal de +5 está aplicado. **Confirmado
+  que o harness pega a regressão de verdade**: rodado contra o código de ANTES desta
+  correção (`git stash`), 2 das 6 asserções falharam exatamente como esperado (rótulo
+  nascendo em y=44,9/x=34, sem o teto nem o deslocamento) — só com a correção aplicada é
+  que passa 6/6. Rodei de novo os 2 harnesses já existentes de `WeeklyLineChart`
+  (`harness_weekly_line_chart_label_anchor.js`/`harness_weekly_pie_bate.js`, 18
+  asserções) sem quebrar nada — a correção é aditiva em cima do fix anterior de anchor,
+  não muda o comportamento que esses dois já verificavam. Rodei de novo toda a suíte
+  completa de regressão do scratchpad (87 harnesses, 1.401 asserções) — só a mesma
+  falha pré-existente e já documentada (`harness_fetchprodutos_armazem_pedido.js`,
+  artefato de teste sem relação com esta mudança) continua, confirmada de novo.
+  Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos
+  (669/669, sem mudança — só JS/JSX dentro de `WeeklyLineChart`, nenhuma classe CSS
+  tocada). **Nenhuma migração de SQL nem redeploy de Edge Function necessários** —
+  publica sozinho via GitHub Pages. **Verificação visual de ponta a ponta fica a cargo
+  do cliente** — mesma limitação de sempre (login exige Supabase Auth real, não
+  simulável no sandbox sem rede) — mas desta vez a melhoria geométrica já foi medida de
+  verdade num navegador (Chromium via Playwright), não só verificada por leitura de
+  código.

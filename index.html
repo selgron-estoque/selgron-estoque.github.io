@@ -14015,6 +14015,18 @@ function WeeklyLineChart({weeks, meta=META_ACURACIDADE_SEMANAL}){
         // não têm esse risco: são barras, e a 1ª barra fica centralizada
         // em `padL + slot/2` (não em `padL` puro), já com folga natural.
         const anchor = i===0 ? 'start' : (i===weeks.length-1 ? 'end' : 'middle');
+        // Ainda ficava "amontoado" (cliente, print de "Sem 26" com 85%):
+        // mesmo sem sobrepor na horizontal, um valor alto (perto de 100%)
+        // deixa o PONTO/rótulo bem perto da linha "100%" na VERTICAL —
+        // com só ~7 unidades de distância entre as duas linhas de texto
+        // (rótulo do eixo + rótulo do ponto), as duas colidem visualmente
+        // mesmo com o anchor certo. Duas folgas extras, só pro 1º/último
+        // ponto (onde o rótulo do eixo Y existe do lado): empurra o texto
+        // um pouco mais pra dentro do gráfico na horizontal (+5/-5) e
+        // nunca deixa NENHUM rótulo de ponto subir mais que `padT+14` —
+        // mesmo um valor de 100% fica com uma folga mínima abaixo da
+        // linha/rótulo do eixo, em vez de tentar ficar bem em cima dela.
+        const labelX = i===0 ? x(i)+5 : (i===weeks.length-1 ? x(i)-5 : x(i));
         return (
         <g key={w.key}>
           {w.acuracidade!=null ? (
@@ -14022,7 +14034,7 @@ function WeeklyLineChart({weeks, meta=META_ACURACIDADE_SEMANAL}){
               <circle cx={x(i)} cy={y(w.acuracidade)} r={4} fill={WEEKLY_CHART_COLOR} stroke="var(--panel)" strokeWidth={2}>
                 <title>{w.label} ({w.sublabel}): {w.acuracidade.toFixed(1)}% · {w.total} contagem(ns)</title>
               </circle>
-              <text x={x(i)} y={y(w.acuracidade)-11} textAnchor={anchor} fontSize={11} fontWeight={700} fill="var(--ink)" fontFamily="var(--font-mono)">{Math.round(w.acuracidade)}%</text>
+              <text x={labelX} y={Math.max(y(w.acuracidade)-11, padT+14)} textAnchor={anchor} fontSize={11} fontWeight={700} fill="var(--ink)" fontFamily="var(--font-mono)">{Math.round(w.acuracidade)}%</text>
             </>
           ) : (
             <circle cx={x(i)} cy={y(0)} r={2.5} fill="var(--ink-dim)" opacity={0.5}>
