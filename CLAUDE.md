@@ -20327,3 +20327,36 @@ coluna direita." (acima da lista da "Fila de impressão") — pedido direto:
   via GitHub Pages. **Verificação visual de ponta a ponta fica a cargo do
   cliente** — mesma limitação de sempre (login exige Supabase Auth real, não
   simulável no sandbox sem rede).
+
+
+## "Analisados": botões renomeados, reordenados e com cores invertidas
+
+Cliente mandou print com um retângulo vermelho nos 2 botões de decisão da tela
+"Analisados" (`SolicitacaoArmazemPanel`) e pediu 3 ajustes juntos: renomear
+"Registrar como Ajuste" → "Gerar SA" e "Registrar como Devolução" → "Devolução";
+trocar a ordem (Devolução em cima); e inverter as cores entre os dois.
+
+- **Só texto/ordem/cor mudaram** — nenhuma mudança de comportamento:
+  `handleEnviar(c, false)` (Gerar SA) continua exigindo o número da SA
+  preenchido antes de habilitar (item com falta, depende do Armazém devolver
+  o número), `handleEnviar(c, true)` (Devolução) continua sem exigir nada
+  (item com sobra) — mesma regra de negócio já documentada em "3ª correção
+  do fluxo de SA"/"Devolução deixa de exigir número de SA", intocada aqui.
+- **Ordem**: "Devolução" virou o 1º botão do `.count-card-actions-col`,
+  "Gerar SA" o 2º — antes era o inverso.
+- **Cores invertidas**: "Devolução" (que era `.btn-primary`, laranja) virou
+  `.btn-secondary`; "Gerar SA" (que era `.btn-secondary`) virou
+  `.btn-primary`, laranja — literalmente uma troca de classe entre os dois
+  botões, sem introduzir nenhuma cor nova.
+- Testado via `harness_devolucao_sem_sa.js` (atualizado — os seletores de
+  botão passaram a procurar pelo texto novo, mais 3 asserções novas
+  confirmando a ordem no DOM e as classes de cor certas em cada um) — 12/12
+  passando. Rodei de novo toda a suíte completa de regressão do scratchpad
+  (85 harnesses) — só a mesma falha pré-existente e já documentada
+  (`harness_fetchprodutos_armazem_pedido.js`, artefato de teste sem relação
+  com esta mudança) continua, confirmada de novo. Transpile Babel do arquivo
+  inteiro e balanceamento de chaves do CSS conferidos (669/669, sem mudança
+  — só JSX/classe, nenhum CSS novo). **Nenhuma migração de SQL necessária.**
+  **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma
+  limitação de sempre (login exige Supabase Auth real, não simulável no
+  sandbox sem rede).

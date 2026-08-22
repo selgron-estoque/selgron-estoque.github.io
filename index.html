@@ -12108,8 +12108,8 @@ function SolicitacaoArmazemPanel({counts, inventories, role, onEnviarParaDiretor
   // (não mais em "Itens Divergentes") — `ehDevolucao` decide qual das duas.
   // Pedido do cliente: item com saldo POSITIVO (sobra) não precisa de
   // número de SA nenhum, só uma devolução — o número só é obrigatório pra
-  // "Registrar como Ajuste" (item com falta, que de fato depende do
-  // Armazém devolver a SA antes de prosseguir).
+  // "Gerar SA" (item com falta, que de fato depende do Armazém devolver
+  // a SA antes de prosseguir).
   async function handleEnviar(c, ehDevolucao){
     const numeroSa = saInputValue(c).trim();
     if(!ehDevolucao && !numeroSa) return;
@@ -12238,11 +12238,15 @@ function SolicitacaoArmazemPanel({counts, inventories, role, onEnviarParaDiretor
                 </div>
                 {canDecide && confirmDeleteId!==c.id && (
                   <div className="count-card-actions-col">
-                    <button className="btn btn-secondary" disabled={busyId===c.id || !saInputValue(c).trim()} onClick={()=>handleEnviar(c, false)}><Ic>📋</Ic> {busyId===c.id ? 'Enviando…' : 'Registrar como Ajuste'}</button>
                     {/* Devolução (item com saldo positivo/sobra) não depende
-                        do número da SA — só "Ajuste" (item com falta)
-                        exige o Armazém ter devolvido o número antes. */}
-                    <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>handleEnviar(c, true)}><Ic>📦</Ic> {busyId===c.id ? 'Enviando…' : 'Registrar como Devolução'}</button>
+                        do número da SA — só "Gerar SA" (item com falta)
+                        exige o Armazém ter devolvido o número antes.
+                        Pedido do cliente: Devolução em cima (era embaixo) e
+                        cores invertidas entre os dois botões (Devolução era
+                        primário/laranja, virou secundário; Gerar SA era
+                        secundário, virou primário/laranja). */}
+                    <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>handleEnviar(c, true)}><Ic>📦</Ic> {busyId===c.id ? 'Enviando…' : 'Devolução'}</button>
+                    <button className="btn btn-primary" disabled={busyId===c.id || !saInputValue(c).trim()} onClick={()=>handleEnviar(c, false)}><Ic>📋</Ic> {busyId===c.id ? 'Enviando…' : 'Gerar SA'}</button>
                   </div>
                 )}
               </div>
