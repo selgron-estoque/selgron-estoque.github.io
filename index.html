@@ -3975,7 +3975,13 @@ async function fetchGruposComEstoque(gruposExcluidos){
   try{
     const { data, error } = await supabaseClient.rpc('grupos_com_estoque');
     if(error || !data) return [];
-    let lista = data.map(row => ({ grupo: row.grupo, descricao: describeGrupo(row.grupo), label: formatGrupoLabel(row.grupo), qtdItens: Number(row.qtd_itens) }));
+    // Mesma proteção de `estoqueRowToProduct`/`searchSupabaseCatalog`: código de
+    // grupo que não é 100% numérico é dado corrompido (ex: a Unidade "PC" vazou
+    // pra coluna Grupo em parte da planilha "Descrição de Produtos") — nenhum
+    // dos 248 grupos reais tem letra. Sem isso, o seletor oferece um "Grupo PC"
+    // fantasma que nunca vai casar com item nenhum de verdade.
+    let lista = data.filter(row => grupoCadastroValido(row.grupo))
+      .map(row => ({ grupo: row.grupo, descricao: describeGrupo(row.grupo), label: formatGrupoLabel(row.grupo), qtdItens: Number(row.qtd_itens) }));
     if(gruposExcluidos && gruposExcluidos.length) lista = lista.filter(g => !gruposExcluidos.includes(String(g.grupo)));
     return lista;
   }catch(err){

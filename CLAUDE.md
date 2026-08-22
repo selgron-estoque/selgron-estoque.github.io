@@ -20663,3 +20663,54 @@ todas com nome real — "CALDEIRARIA C/ ST.", "FERRAMENTAS" etc.) e perguntou:
   deve valer pro próximo item contado assim que o deploy publicar; os 98
   registros já divergentes continuam mostrando "Grupo PC" até uma das duas
   ações de acompanhamento acima ser aplicada.
+
+
+## Fecha o gap do "Grupo PC": seletor de grupo também para de oferecer opção fantasma
+
+Complemento direto da rodada anterior ("Bug real: 'Grupo PC' no indicador
+'Divergência por Família/Grupo'"), onde eu tinha corrigido 2 dos 3 pontos que
+montam rótulo de grupo e sinalizado o 3º como gap conhecido, deixado de fora por
+disciplina de escopo (o cliente tinha perguntado sobre o INDICADOR, não sobre o
+seletor). Ao relatar o deploy, mencionei que ainda dava pra estender — cliente
+respondeu **"Pode corrigir"**.
+
+- **`fetchGruposComEstoque`** (a função que alimenta o `<select>` de grupo em
+  "Contagem por Grupo" — tanto na criação de inventário quanto na contagem
+  avulsa — e a lista de "Grupos Excluídos da Contagem Automática" em
+  Configurações) ganhou o MESMO gate já usado em `estoqueRowToProduct`/
+  `searchSupabaseCatalog`: `data.filter(row => grupoCadastroValido(row.grupo))`
+  antes do `.map(...)` que monta `{grupo, descricao, label, qtdItens}`. Um código
+  de grupo não-numérico (dado corrompido pelo desalinhamento de coluna da
+  planilha "Descrição de Produtos" — a Unidade "PC" vazando pra coluna Grupo)
+  deixa de aparecer como opção selecionável.
+- **Por que era um problema de verdade, não só cosmético**: escolher "Grupo PC"
+  no seletor geraria um inventário/contagem que nunca casaria com item nenhum
+  (a RPC `contagem_itens_prioritarios` filtra por `produtos.grupo`, e o grupo
+  REAL desses itens é numérico — "PC" só existe como lixo na coluna) — o
+  operador cairia numa fila vazia sem entender por quê. E, em "Grupos
+  Excluídos", excluir "Grupo PC" também não excluiria nada de verdade.
+- **O filtro de `gruposExcluidos` já existente continua funcionando igual**,
+  aplicado depois (nenhuma mudança nessa parte).
+- **Continua sendo correção só de LEITURA, não retroativa** — o dado bruto
+  errado em `produtos.grupo` só se corrige reimportando a planilha "Descrição de
+  Produtos" com as colunas alinhadas (mesma ação de acompanhamento já registrada
+  na rodada anterior, junto do `UPDATE` opcional de limpeza de
+  `contagens.familia`).
+- Testado estendendo o harness já existente da rodada anterior
+  (`harness_grupo_cadastro_valido.js`, +9 asserções, 27/27 passando): a RPC
+  mockada devolvendo 3 grupos (2 numéricos + 1 "PC") produz uma lista de 2, sem
+  nenhum "Grupo PC"; grupo numérico válido continua com a descrição certa
+  ("MATERIAIS TECNICOS" pro 71, o mesmo código real do print do cliente);
+  `gruposExcluidos` continua filtrando junto, sem regressão; e uma RPC que só
+  devolve lixo ("PC"/"KG") produz lista vazia, nunca uma opção fantasma.
+  **Confirmado que o harness pega a regressão de verdade**: rodado contra o
+  código de ANTES desta correção (`git stash`), as 4 asserções novas de
+  `fetchGruposComEstoque` falharam exatamente como esperado. Rodei de novo toda
+  a suíte completa de regressão do scratchpad — só a mesma falha pré-existente e
+  já documentada (`harness_fetchprodutos_armazem_pedido.js`, artefato do próprio
+  harness, sem relação com esta mudança) continua. Transpile Babel do arquivo
+  inteiro e balanceamento de chaves do CSS conferidos (669/669, sem mudança — só
+  JS, nenhuma classe CSS tocada). **Nenhuma migração de SQL nem redeploy de Edge
+  Function necessários** — publica sozinho via GitHub Pages. **Verificação
+  visual do seletor em produção fica a cargo do cliente** — mesma limitação de
+  sempre (login exige Supabase Auth real, não simulável no sandbox sem rede).
