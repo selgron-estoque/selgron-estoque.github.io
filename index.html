@@ -4871,7 +4871,7 @@ function baixarRelatorioModulo(counts, sheetName, nomeArquivo){
 }
 
 // Exportador PRÓPRIO de "Solicitação ao Almoxarifado" (SA) pra "Aguardando
-// Aprovação" — pedido em 2 rodadas: 1º um PRINT da planilha real ("Em
+// Aprovação" — pedido em 3 rodadas: 1º um PRINT da planilha real ("Em
 // aguardando aprovação, quero que ao gerar o excel venha neste formato"),
 // depois o ARQUIVO .xlsx real em si ("na verdade, este é o modelo final,
 // seguir fielmente") — o arquivo revelou que a suposição inicial (1 linha
@@ -4879,12 +4879,19 @@ function baixarRelatorioModulo(counts, sheetName, nomeArquivo){
 // materiais — cada um vira uma linha própria, numerada por "Item" (1, 2,
 // 3... dentro da MESMA SA, sequencial na ordem em que os itens já
 // aparecem na tela — o arquivo real em si não vem ordenado por Item,
-// então não há "a ordem certa" a replicar além disso), seguida de uma
-// linha "Total" somando a coluna Total daquele grupo. Se a lista filtrada
-// tiver mais de uma SA, cada uma vira o próprio bloco (cabeçalho/dados/
-// Total), empilhados na MESMA aba, separados por uma linha em branco —
-// confirmado com o cliente via AskUserQuestion ("indiferente, único
-// arquivo pode ser uma ou várias SAs").
+// então não há "a ordem certa" a replicar além disso). Se a lista
+// filtrada tiver mais de uma SA, cada uma vira o próprio bloco (dados
+// agrupados, Item reiniciando em 1), empilhados na MESMA aba, separados
+// por uma linha em branco — confirmado com o cliente via AskUserQuestion
+// ("indiferente, único arquivo pode ser uma ou várias SAs").
+//
+// 3ª rodada, correção do cliente: "Não separei total, o total vai ser
+// sempre de tudo que eu extrair" — a versão anterior calculava um Total
+// POR GRUPO (por SA), suposição nunca confirmada; **existe UMA ÚNICA
+// linha "Total" no fim da planilha inteira**, somando TODOS os itens
+// extraídos, não importa quantas SAs diferentes entraram no export —
+// bate com o arquivo real (1 SA, 9 materiais, 1 Total só, sempre na
+// última linha da tabela, sem nenhuma linha em branco antes dele).
 //
 // Colunas exatas do arquivo real (confirmadas via inspeção com openpyxl,
 // nunca adivinhadas): Numero/Solicitante/Emissao/Item/Cod Produto/
@@ -4910,14 +4917,24 @@ function baixarRelatorioModulo(counts, sheetName, nomeArquivo){
 //   quebrar ou virar um grupo "undefined" — nunca esconde o item.
 //
 // Formatação visual replicada do arquivo real (pedido confirmado via
-// AskUserQuestion: "Replicar cores e formatação"): cabeçalho em negrito
-// centralizado; "Vlr. Unitário"/"Total" com o mesmo laranja da marca
-// (#F6A200, `--safety`) usado no arquivo real pra destacar os 2 campos
-// calculados; moeda no formato contábil brasileiro; linha "Total" de cada
-// grupo com a mesma moldura/preenchimento amarelo-claro/texto cinza-escuro
-// negrito do arquivo real, só na célula de soma (mesmo padrão exato do
-// arquivo, que também só estiliza essa 1 célula na linha de total, não a
-// linha inteira). Usa `window.XLSXStyled` (fork xlsx-js-style, ver
+// AskUserQuestion: "Replicar cores e formatação", depois revisada contra
+// o arquivo de verdade via openpyxl): cabeçalho em negrito centralizado,
+// SEM preenchimento nenhum (conferido célula a célula — o laranja não
+// aparece no cabeçalho, só nas colunas de dado); "Vlr. Unitário"/"Total"
+// com o mesmo laranja da marca (#F6A200, `--safety`) usado no arquivo
+// real pra destacar os 2 campos calculados, em TODA linha de dado; moeda
+// no formato contábil brasileiro; UMA ÚNICA linha "Total" no fim da
+// planilha inteira (não por grupo — "o total vai ser sempre de tudo que
+// eu extrair", corrigido depois de a 1ª versão separar um Total por SA;
+// o arquivo real confirma isso, é sempre 1 SA só com N materiais e 1
+// Total no fim, nunca mais de um), com a mesma moldura/preenchimento
+// amarelo-claro/texto cinza-escuro negrito do arquivo real, só na célula
+// de soma (mesmo padrão exato do arquivo, que também só estiliza essa 1
+// célula na linha de total, não a linha inteira) — moldura fina cinza
+// claro (#CCCCCC) em cima/embaixo e moldura média LARANJA (#F6A200,
+// não preta) nas laterais, confirmado célula a célula contra o arquivo
+// real (a 1ª versão usava preto nos 4 lados, por suposição, sem ter
+// conferido ainda). Usa `window.XLSXStyled` (fork xlsx-js-style, ver
 // comentário no <head>) quando disponível — se por algum motivo não tiver
 // carregado (falha de rede no CDN), cai pra `window.XLSX` puro sem
 // travar a exportação, só sem o estilo (a propriedade `.s` extra é apenas
@@ -4977,10 +4994,13 @@ function buildSaAprovacaoWorkbook(counts){
     setEstilo(0, c, {font:{name:'Calibri', sz:10, bold:true}, alignment:{horizontal:'center', vertical:'center'}});
   });
 
+  // Soma de TODOS os itens extraídos, não por grupo — só 1 linha de Total
+  // no fim da planilha inteira (ver comentário acima).
+  let totalGeral = 0;
+
   gruposOrdem.forEach((chave, gIdx)=>{
     if(gIdx>0) aoa.push([]); // linha em branco separando os grupos de SA
     const itens = grupos[chave];
-    let totalGrupo = 0;
     itens.forEach((c, i)=>{
       const r = aoa.length;
       const diferencaAbs = c.diferenca==null ? null : Math.abs(Number(c.diferenca));
@@ -4988,7 +5008,7 @@ function buildSaAprovacaoWorkbook(counts){
       const numeroCru = Number(chave);
       const vlrUnit = c.custoUnit!=null ? Number(Number(c.custoUnit).toFixed(2)) : null;
       const total = c.valorDivergente!=null ? Number(Number(c.valorDivergente).toFixed(2)) : null;
-      if(total!=null) totalGrupo += total;
+      if(total!=null) totalGeral += total;
       aoa.push([
         Number.isFinite(numeroCru) ? numeroCru : chave,
         c.saGeradaPor || null,
@@ -5012,23 +5032,29 @@ function buildSaAprovacaoWorkbook(counts){
         setEstilo(r, c2, style);
       });
     });
-    const rTotal = aoa.length;
-    const linhaTotal = new Array(SA_APROVACAO_COLS.length).fill(null);
-    linhaTotal[0] = 'Total';
-    linhaTotal[9] = Number(totalGrupo.toFixed(2));
-    aoa.push(linhaTotal);
-    alturasLinha.push({r:rTotal, hpt:20.1});
-    setEstilo(rTotal, 0, {font:{name:'Calibri', sz:10}, alignment:{horizontal:'center', vertical:'center'}});
-    setEstilo(rTotal, 9, {
-      font:{name:'Calibri', sz:11, bold:true, color:{rgb:'4D4D4D'}},
-      fill:{patternType:'solid', fgColor:{rgb:'FFF8E7'}},
-      border:{
-        top:{style:'thin', color:{rgb:'000000'}}, bottom:{style:'thin', color:{rgb:'000000'}},
-        left:{style:'medium', color:{rgb:'000000'}}, right:{style:'medium', color:{rgb:'000000'}},
-      },
-      alignment:{horizontal:'center', vertical:'center', wrapText:true},
-      numFmt:'"R$ "#,##0.00',
-    });
+  });
+
+  // Uma única linha "Total" no fim, sem linha em branco antes (mesmo
+  // formato do arquivo real — a linha de Total sempre vem colada na
+  // última linha de dado). Cores conferidas célula a célula contra o
+  // arquivo real: moldura fina cinza-claro em cima/embaixo, moldura
+  // MÉDIA LARANJA (não preta) nos lados.
+  const rTotal = aoa.length;
+  const linhaTotal = new Array(SA_APROVACAO_COLS.length).fill(null);
+  linhaTotal[0] = 'Total';
+  linhaTotal[9] = Number(totalGeral.toFixed(2));
+  aoa.push(linhaTotal);
+  alturasLinha.push({r:rTotal, hpt:20.1});
+  setEstilo(rTotal, 0, {font:{name:'Calibri', sz:10}, alignment:{horizontal:'center', vertical:'center'}});
+  setEstilo(rTotal, 9, {
+    font:{name:'Calibri', sz:11, bold:true, color:{rgb:'4D4D4D'}},
+    fill:{patternType:'solid', fgColor:{rgb:'FFF8E7'}},
+    border:{
+      top:{style:'thin', color:{rgb:'CCCCCC'}}, bottom:{style:'thin', color:{rgb:'CCCCCC'}},
+      left:{style:'medium', color:{rgb:'F6A200'}}, right:{style:'medium', color:{rgb:'F6A200'}},
+    },
+    alignment:{horizontal:'center', vertical:'center', wrapText:true},
+    numFmt:'"R$ "#,##0.00',
   });
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);

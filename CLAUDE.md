@@ -20223,3 +20223,60 @@ sandbox sem rede).
   isso). Rodada a suíte completa de novo depois do ajuste — só a mesma falha
   pré-existente e já documentada (`harness_fetchprodutos_armazem_pedido.js`, artefato
   de teste sem relação com esta mudança) continua, confirmada de novo.
+
+
+## "Aguardando Aprovação": Excel de SA corrigido — Total único, não por grupo, e cor
+## certa da moldura (2ª correção do cliente sobre o mesmo export)
+
+Logo depois de publicar a versão "seguir fielmente" do export de SA (ver seção
+anterior), o cliente mandou uma correção curta e direta em cima do mesmo arquivo:
+**"Não separei total, o total vai ser sempre de tudo que eu extrair, e revise a
+formatação de cor."**
+
+A versão anterior tinha uma suposição NUNCA confirmada: como o arquivo real anexado
+só mostrava 1 SA (73005, 9 materiais), e a pergunta feita ao cliente via
+`AskUserQuestion` só confirmava que MÚLTIPLAS SAs distintas PODIAM entrar no mesmo
+arquivo (sem nunca perguntar se cada uma ganharia seu próprio subtotal), a
+implementação tinha extrapolado — errado — que cada grupo de SA deveria fechar com
+sua própria linha "Total". O cliente corrigiu: existe **uma única linha "Total" no
+fim da planilha inteira**, somando TODOS os itens extraídos, não importa quantas SAs
+diferentes entraram no export.
+
+- **Reconferido o arquivo real via `openpyxl`, célula a célula, de novo** (mesma
+  técnica já usada na rodada anterior) — confirmado que a tabela do arquivo real
+  (`A1:P11`, `Tabela1`, `headerRowCount=1`, `totalsRowCount=1`) tem exatamente 1
+  cabeçalho + 9 linhas de dado (todas com "Numero"=73005, a MESMA SA) + 1 linha de
+  Total — nunca mostra mais de um grupo, então a suposição de "Total por grupo" da
+  1ª versão nunca tinha sido de fato validada contra o arquivo, só extrapolada.
+- **Achado junto, na mesma reconferência**: a moldura da célula de soma do Total
+  (`J11` no arquivo real) usa `top`/`bottom` finos em **cinza-claro (`#CCCCCC`)** e
+  `left`/`right` médios em **laranja da marca (`#F6A200`)** — a 1ª versão tinha
+  codificado os 4 lados em preto (`#000000`), por suposição, sem ter conferido ainda.
+- **`buildSaAprovacaoWorkbook` (`index.html`)**: `totalGrupo` (somado e resetado
+  dentro do laço de grupos, gerando uma linha "Total" a cada SA) virou `totalGeral`
+  — declarado ANTES do laço de grupos, incrementado a cada item de QUALQUER grupo, e
+  usado numa ÚNICA linha "Total" escrita só DEPOIS de todo o laço de grupos terminar
+  (sem linha em branco antes dela, igual ao arquivo real). O agrupamento por SA em si
+  (blocos separados por linha em branco, "Item" reiniciando em 1 a cada SA nova) não
+  mudou — só a lógica de ONDE/QUANTAS vezes a linha "Total" é escrita. A moldura da
+  célula de soma corrigida pra `top`/`bottom:{style:'thin',color:{rgb:'CCCCCC'}}`,
+  `left`/`right:{style:'medium',color:{rgb:'F6A200'}}`.
+- Testado via `harness_sa_aprovacao_excel.js` (reescrito nas seções 2 e 4): a seção
+  2 ganhou asserções checando `.s.border.{top,bottom}.color.rgb==='CCCCCC'` e
+  `.s.border.{left,right}.color.rgb==='F6A200'` na célula de soma (antes só
+  `.style`/`'thin'`/`'medium'` eram checados, nunca a cor — por isso o erro de preto
+  nunca tinha sido pego); a seção 4 (múltiplas SAs) foi reescrita por completo —
+  confirma que os 2 blocos de SA (2+1 itens) não têm mais nenhuma linha "Total"
+  própria no meio, que a linha em branco separadora continua no lugar certo, e que a
+  ÚNICA linha "Total" da planilha inteira vem só depois do último item do ÚLTIMO
+  grupo, somando os 3 itens de AMBOS os grupos (10+5+7=22), não só o último (7).
+  79 asserções, todas passando. Rodei de novo toda a suíte completa de regressão do
+  scratchpad (86 harnesses) — só a mesma falha pré-existente e já documentada
+  (`harness_fetchprodutos_armazem_pedido.js`, artefato de teste sem relação com esta
+  mudança) continua, confirmada de novo. Transpile Babel do arquivo inteiro
+  conferido. **Nenhuma migração de SQL necessária.** **Verificação visual/funcional
+  de ponta a ponta (abrir o arquivo gerado num Excel/LibreOffice de verdade e
+  conferir que a cor da moldura e o Total único batem com o modelo real) fica a
+  cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth real, e
+  a biblioteca `xlsx-js-style` nunca é exercitada de verdade neste sandbox por causa
+  do bloqueio de rede pro CDN).
