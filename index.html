@@ -16615,8 +16615,17 @@ function AddressValidationPanel({enderecosPropostos=[], onResolve}){
           onde encontrou, e a proposta aparece aqui para validação. Ao confirmar, o cadastro é
           corrigido de verdade: a próxima contagem desse item já puxa o endereço certo.
         </div>
+      ) : pendentes.length===0 ? (
+        // Pedido do cliente: "os itens já confirmados ou rejeitados ocultar" —
+        // a tela vira só a fila de pendência, sem histórico de decisões
+        // antigas acumulando na mesma lista. Diferente do empty-state acima
+        // (nunca teve NENHUMA proposta) — aqui já existiu proposta, só que
+        // todas já foram resolvidas.
+        <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>
+          Nenhum endereço pendente no momento — todos já foram confirmados ou rejeitados.
+        </div>
       ) : (
-        enderecosPropostos.map(e=>(
+        pendentes.map(e=>(
           <div key={e.id} className="list-row" style={{flexWrap:'wrap'}}>
             <div>
               <div className="lr-title">{e.descricao}</div>
@@ -16631,14 +16640,10 @@ function AddressValidationPanel({enderecosPropostos=[], onResolve}){
               </div>
               {erros[e.id] && <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginTop:4}}>{erros[e.id]}</div>}
             </div>
-            {e.status==='pendente' ? (
-              <div className="btn-row" style={{width:'auto'}}>
-                <button className="btn btn-secondary" style={{padding:'8px 12px',fontSize:'var(--text-xs)'}} disabled={busyId===e.id} onClick={()=>handleResolve(e.id,'rejeitado')}>Rejeitar</button>
-                <button className="btn btn-primary" style={{padding:'8px 12px',fontSize:'var(--text-xs)'}} disabled={busyId===e.id} onClick={()=>handleResolve(e.id,'confirmado')}>{busyId===e.id ? 'Gravando…' : 'Confirmar'}</button>
-              </div>
-            ) : (
-              <StatusTag status={e.status==='confirmado'?'ok':'danger'} text={e.status==='confirmado'?'Confirmado':'Rejeitado'} />
-            )}
+            <div className="btn-row" style={{width:'auto'}}>
+              <button className="btn btn-secondary" style={{padding:'8px 12px',fontSize:'var(--text-xs)'}} disabled={busyId===e.id} onClick={()=>handleResolve(e.id,'rejeitado')}>Rejeitar</button>
+              <button className="btn btn-primary" style={{padding:'8px 12px',fontSize:'var(--text-xs)'}} disabled={busyId===e.id} onClick={()=>handleResolve(e.id,'confirmado')}>{busyId===e.id ? 'Gravando…' : 'Confirmar'}</button>
+            </div>
           </div>
         ))
       )}

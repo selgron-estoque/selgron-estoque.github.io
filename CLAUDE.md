@@ -20360,3 +20360,49 @@ trocar a ordem (Devolução em cima); e inverter as cores entre os dois.
   **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma
   limitação de sempre (login exige Supabase Auth real, não simulável no
   sandbox sem rede).
+
+
+## "Endereços Pendentes de Cadastro" oculta itens já confirmados/rejeitados
+
+Cliente pediu: "Em Endereços Pendentes, os itens já confirmados ou rejeitados
+ocultar" — a tela (`AddressValidationPanel`) sempre listou TODAS as propostas
+de endereço já feitas, não só as pendentes: um item já `confirmado`/
+`rejeitado` continuava aparecendo na lista pra sempre, só trocando o par de
+botões "Rejeitar"/"Confirmar" por um chip `StatusTag` ("Confirmado"/
+"Rejeitado") — nunca saía da tela.
+
+- **`enderecosPropostos.map(...)` virou `pendentes.map(...)`** — a variável
+  `pendentes` (`enderecosPropostos.filter(e=>e.status==='pendente')`) já
+  existia (usada só pro número do badge do título) e passou a ser a fonte da
+  própria lista renderizada. Como só sobra item `status==='pendente'`, o
+  ramo condicional que trocava entre botões de ação e `StatusTag` virou
+  código morto — removido, sempre renderiza os botões "Rejeitar"/"Confirmar"
+  agora (nunca mais chega um item já resolvido nessa lista).
+- **2 empty-states diferentes, não 1 só**: o texto original ("Nenhum endereço
+  informado ainda...") continua exatamente igual quando NUNCA existiu
+  nenhuma proposta (`enderecosPropostos.length===0`) — mas um segundo caso
+  novo, "Nenhum endereço pendente no momento — todos já foram confirmados ou
+  rejeitados.", cobre quando já existiu proposta mas todas já foram
+  resolvidas (`pendentes.length===0` com `enderecosPropostos.length>0`) —
+  sem isso, esse cenário cairia silenciosamente numa lista vazia sem
+  nenhuma explicação.
+- **Nenhum dado é apagado** — as propostas já resolvidas continuam gravadas
+  normalmente em `enderecos_propostos` (Supabase), só deixaram de aparecer
+  NESTA tela — é puramente uma mudança de exibição/filtro, sem nenhuma
+  migração de SQL envolvida.
+- Testado via harness novo (`harness_enderecos_pendentes_oculta_resolvidos.js`,
+  jsdom + react-dom/client + `act()`, mesma técnica rigorosa de sempre —
+  carrega o `index.html` inteiro transpilado numa `vm.Script`): confirma os
+  3 cenários — nunca teve proposta (mensagem original); só propostas
+  resolvidas (somem da lista, sem badge, mensagem nova); mistura de
+  resolvida+pendente (só a pendente aparece, com os botões funcionando
+  normalmente — `onResolve` chamado com o id/status certos). 13 asserções,
+  todas passando. Rodei de novo toda a suíte completa de regressão do
+  scratchpad — só a mesma falha pré-existente e já documentada
+  (`harness_fetchprodutos_armazem_pedido.js`, artefato de teste sem relação
+  com esta mudança) continua, confirmada de novo. Transpile Babel do arquivo
+  inteiro e balanceamento de chaves do CSS conferidos (669/669, sem mudança
+  — só JSX, nenhuma classe CSS nova/removida). **Nenhuma migração de SQL
+  necessária.** **Verificação visual de ponta a ponta fica a cargo do
+  cliente** — mesma limitação de sempre (login exige Supabase Auth real, não
+  simulável no sandbox sem rede).
