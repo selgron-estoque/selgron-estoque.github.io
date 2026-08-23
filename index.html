@@ -727,7 +727,13 @@
   @media (min-width:1024px){
     .health-card{flex-direction:row;align-items:center;gap:24px;margin-bottom:18px;flex-wrap:wrap;}
     .health-left{flex:1;min-width:220px;}
-    .health-chart{flex:1.4;min-width:220px;max-width:360px;order:0;}
+    /* Antes flex:1.4/max-width:360px — sobrava muito espaço vazio ao redor
+       do mini-gráfico (cliente marcou com print). Cresce bem mais
+       (flex:3, sem teto de largura) pra ocupar praticamente toda a fileira
+       entre `.health-left` e `.health-current` — a altura acompanha
+       proporcionalmente sozinha (viewBox fixo do HealthSparkline,
+       width:100%/height:auto). */
+    .health-chart{flex:3;min-width:260px;order:0;}
     .health-current{flex-shrink:0;order:0;}
   }
 
