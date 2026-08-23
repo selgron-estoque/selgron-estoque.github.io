@@ -12531,7 +12531,7 @@ function AllDivergencesPanel({counts, historicoConcluidas, goto}){
                 const valorComSinal = valorDivergenteComSinal(c);
                 return (
                   <tr key={c.id}>
-                    <td>{reconstructNumericCode(c.productCode)} · {c.descricao}</td>
+                    <td><div style={{fontSize:'var(--text-xs)',fontWeight:700,color:'var(--ink-dim)'}}>{reconstructNumericCode(c.productCode)}</div><div>{c.descricao}</div></td>
                     <td>{almoxLabel}</td>
                     <td className="num">{c.saldoSistema==null ? '—' : c.saldoSistema}</td>
                     <td className="num">{c.qtdContada}</td>
