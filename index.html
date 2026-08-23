@@ -7954,39 +7954,6 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], historic
           </div>
         </div>
 
-        <div className="pnl-row">
-          <div className="pnl-col-5 pnl-card">
-            <div className="pnl-section-head">
-              <div className="pnl-section-title">Situação Geral dos Inventários</div>
-            </div>
-            <div className="pnl-donut-wrap">
-              <PnlDonut segments={statusRows} />
-              <div className="pnl-donut-legend">
-                {statusRows.map(r=>(
-                  <div key={r.label} className="pnl-legend-row">
-                    <span className="pnl-legend-dot" style={{background:r.color}}></span>
-                    {r.label}
-                    <span className="n">{r.value}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="pnl-col-7 pnl-card">
-            <div className="pnl-section-head">
-              <div className="pnl-section-title">Status dos Inventários</div>
-            </div>
-            {statusRows.map(r=>(
-              <div key={r.label} className="pnl-bar-row">
-                <div className="pnl-bar-label">{r.label}</div>
-                <div className="pnl-bar-track"><div className="pnl-bar-fill" style={{width:(r.value/maxRow*100)+'%', background:r.color}}></div></div>
-                <div className="pnl-bar-num">{r.value} · {totalInv?Math.round(r.value/totalInv*100):0}%</div>
-              </div>
-            ))}
-          </div>
-        </div>
-
         <div className="pnl-footer">
           <span>© {new Date().getFullYear()} Selgron</span>
           <div className="pnl-footer-links">
