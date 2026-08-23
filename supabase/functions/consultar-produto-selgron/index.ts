@@ -30,6 +30,19 @@
 const CONSULTA_SELGRON_USER = Deno.env.get("CONSULTA_SELGRON_USER") ?? "";
 const CONSULTA_SELGRON_PASS = Deno.env.get("CONSULTA_SELGRON_PASS") ?? "";
 const CONSULTA_URL = "https://consulta.selgron.com.br/produto.consulta.php";
+// Kardex — histórico de movimentação do item, usado só pra derivar a data da
+// ÚLTIMA movimentação (pedido do cliente: "não vou mais precisar subir a
+// SB2, mas ainda preciso saber quantos dias o material está parado"). Ver
+// CLAUDE.md, seção "Última movimentação via Kardex ao vivo" pro contexto
+// completo — resumo: cada linha da tabela carrega `data-sort='<unix>'` na
+// coluna "Dt. Emissão", então a data mais recente é só um Math.max() sobre
+// todos os data-sort da página — nunca dá pra confiar na 1ª linha do HTML
+// (as linhas vêm agrupadas por tipo de movimento, não ordenadas globalmente
+// por data) nem no campo "Dados Finais" do resumo (é só o fim da janela de
+// filtro padrão da própria página, coincide com "hoje", não com a última
+// movimentação real — confirmado com o cliente: "Desconsidera isso é outra
+// coisa, o campo de data é DT Emissão").
+const KARDEX_URL = "https://consulta.selgron.com.br/kardex.php";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -85,6 +98,156 @@ function extrairCampo(texto: string, rotulos: string[]): string | null {
   return null;
 }
 
+// Normaliza um código de armazém pra COMPARAÇÃO (não pra exibição) — "01" e
+// "1" precisam bater como o mesmo armazém (a consulta Selgron mostra com
+// zero à esquerda, "Armazem: 01"; o app internamente usa "1", mesmo valor
+// de `estoque_saldo.almoxarifado`/`product.almoxarifado` em todo o resto do
+// código). Só remove zero à esquerda quando o valor é 100% numérico — um
+// código tipo "EX" ou o texto "Sem armazém" passam intactos (maiúsculos),
+// nunca bateriam com um armazém numérico de qualquer jeito.
+function normalizarArmazem(v: string | null | undefined): string {
+  if (!v) return "";
+  const t = String(v).trim();
+  if (!t) return "";
+  if (/^\d+$/.test(t)) return String(Number(t));
+  return t.toUpperCase();
+}
+
+// Normaliza um CÓDIGO DE PRODUTO pra COMPARAÇÃO exata — a busca da Selgron
+// (campo "busca=") faz correspondência por PREFIXO/SUBSTRING, não por
+// código exato: buscar "000.26627" pode devolver blocos pra "000.26627"
+// (8 dígitos, formato XXX.XXXXX) MAS TAMBÉM "000.26627.1"/"000.26627.2"
+// (9 dígitos, formato XXX.XXXXX.X) — três produtos REAIS e DISTINTOS,
+// confirmado com o cliente ("aparece só um armazem do código 000.26627 os
+// outros são 000.26627.1 e 000.26627.2"), não o mesmo produto em 3
+// armazéns. Sem filtrar por código exato ANTES de desambiguar por armazém
+// (ver uso logo abaixo), o bloco escolhido podia acabar sendo de um
+// PRODUTO DIFERENTE do pedido, só porque o armazém dele batia — bug mais
+// sério que "sem saldo pra comparar": mostraria dado de outro item como se
+// fosse o item sendo contado, silenciosamente.
+function normalizarCodigo(v: string | null | undefined): string {
+  if (!v) return "";
+  return String(v).trim().toUpperCase();
+}
+
+// Divide o texto (já achatado por `htmlParaTexto`) em BLOCOS, um por
+// resultado — a busca da Selgron pode devolver MAIS DE UM resultado pro
+// MESMO código, um por armazém em que ele existe (confirmado com o
+// cliente, print real: "Sua busca por 000.05587 retornou 3 resultado(s)",
+// com um bloco "Armazem: Sem armazém"/"Quantidade em estoque: 0.0" e outro
+// "Armazem: 01"/"Quantidade em estoque: 7.0" — o mesmo código, dois
+// armazéns, dois saldos bem diferentes). SEM essa divisão, `extrairCampo`
+// (que varre o texto INTEIRO) sempre pegava o valor do PRIMEIRO bloco da
+// página inteira — podia ser exatamente o armazém errado, silenciosamente
+// (mesma categoria de bug já vista várias vezes neste projeto: nenhum
+// erro, só um número errado). Cada bloco começa numa linha "Código do
+// Produto: ...", que se repete uma vez por resultado. Sem NENHUMA
+// ocorrência desse rótulo (formato inesperado, ou resposta mais antiga que
+// nunca teve mais de 1 resultado), cai num único bloco = o texto inteiro —
+// mesmo comportamento de sempre, nunca quebra o caso comum de 1 resultado.
+function dividirEmBlocos(texto: string): string[] {
+  const linhas = texto.split("\n");
+  const blocos: string[][] = [];
+  let atual: string[] | null = null;
+  for (const linha of linhas) {
+    if (/^C[oó]digo do Produto\s*:/i.test(linha)) {
+      atual = [];
+      blocos.push(atual);
+    }
+    if (atual) atual.push(linha);
+  }
+  if (blocos.length === 0) return [texto];
+  return blocos.map((b) => b.join("\n"));
+}
+
+interface BlocoResultado {
+  codigo: string | null;
+  descricao: string | null;
+  saldo: number | null;
+  endereco: string | null;
+  armazem: string | null;
+  unidade: string | null;
+}
+
+// Extrai os campos de UM bloco (um resultado da busca) — mesmos rótulos de
+// sempre, só que aplicados ao texto do bloco isolado, não à página inteira.
+function extrairBloco(blocoTexto: string): BlocoResultado {
+  const saldoTexto = extrairCampo(blocoTexto, ["Quantidade em estoque"]);
+  const saldoNum = saldoTexto != null ? Number(String(saldoTexto).replace(",", ".")) : null;
+  return {
+    codigo: extrairCampo(blocoTexto, ["Código do Produto"]),
+    descricao: extrairCampo(blocoTexto, ["Descrição", "Descricao"]),
+    saldo: saldoNum != null && Number.isFinite(saldoNum) ? saldoNum : null,
+    endereco: extrairCampo(blocoTexto, ["Endereço", "Endereco"]),
+    armazem: extrairCampo(blocoTexto, ["Armazem", "Armazém"]),
+    unidade: extrairCampo(blocoTexto, ["Unidade medida"]),
+  };
+}
+
+// Extrai o texto de cada célula <td> de UMA linha <tr>...</tr> do Kardex,
+// na ordem em que aparecem — usado só pra pegar o "Valor Unitário" da linha
+// vencedora (ver `extrairDadosKardex` abaixo), já que essa tabela não tem
+// rótulo por célula (é posicional, ao contrário do "Rótulo: valor" da
+// consulta de produto) — mesmo padrão "ler por posição de coluna" já usado
+// em outros parsers de planilha/tabela deste app quando não há como
+// resolver por nome de coluna de forma confiável.
+function celulasDaLinha(linhaHtml: string): string[] {
+  const matches = [...linhaHtml.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)];
+  return matches.map((m) => m[1].replace(/<[^>]+>/g, " ").replace(/&nbsp;/gi, " ").trim());
+}
+
+// Índice da coluna "Valor Unitário" dentro da linha (0-based, contando as
+// células <td> visíveis) — confirmado no HTML real que o cliente mandou
+// (View Source, produto 030.090.00019): Tipo(0) / Produto(1) /
+// Descrição(2) / Tipo(3) / Armazém(4) / Quantidade(5) / Valor Unitário(6) /
+// ICMS(7) / IPI(8) / TM-TES(9) / Operação(10) / Documento(11) / Serie(12) /
+// Centro Custo(13) / OP(14) / SA(15) / Observação(16) / Fornecedor-
+// Cliente(17) / Dt. Emissão(18, com data-sort).
+const KARDEX_COL_VALOR_UNITARIO = 6;
+
+// Acha a movimentação MAIS RECENTE dentro do HTML do Kardex — varre TODO
+// `data-sort='<unix>'` da página (a coluna "Dt. Emissão" da tabela
+// DataTables carrega o timestamp Unix pronto ali, mais confiável e simples
+// que parsear o texto "DD/MM/AAAA" exibido) e usa a linha com o MAIOR
+// valor, já que as linhas vêm agrupadas por tipo de movimento, não
+// ordenadas globalmente por data (nunca dá pra confiar na 1ª/última linha
+// do documento). Devolve a data dessa linha (formato "YYYY-MM-DD", mesmo
+// que `diasParado()`/o resto do app já espera) e o "Valor Unitário" da
+// MESMA linha — a movimentação mais recente é a melhor aproximação
+// disponível pro custo unitário "atual" do item, já que o Kardex não tem
+// nenhum campo de custo médio corrente à parte (mesmo espírito do que a
+// planilha SB2 já entregava: valor_financeiro/saldo era só um retrato do
+// custo no momento do upload, não um "custo médio" calculado à parte).
+// `{ultimaMovimentacao:null, custoUnitario:null}` se a página não tiver
+// nenhuma linha reconhecível (item sem nenhuma movimentação, ou o formato
+// da página mudou do lado de lá).
+function extrairDadosKardex(html: string): { ultimaMovimentacao: string | null; custoUnitario: number | null } {
+  const linhas = html.match(/<tr[^>]*>[\s\S]*?<\/tr>/gi) || [];
+  let maiorUnix = 0;
+  let custoUnitario: number | null = null;
+  for (const linha of linhas) {
+    const mSort = /data-sort=['"](\d+)['"]/i.exec(linha);
+    if (!mSort) continue;
+    const v = Number(mSort[1]);
+    // Filtro de sanidade: um timestamp em segundos plausível pra "alguma
+    // data real do calendário" fica entre ~2000-01-01 (946684800) e
+    // ~2100-01-01 (4102444800) — protege contra `data-sort` de OUTRA
+    // coluna da mesma tabela (ex: um valor monetário/quantidade) que por
+    // acaso também usa esse atributo pro DataTables ordenar numericamente,
+    // sem ser uma data de verdade.
+    if (!Number.isFinite(v) || v <= 946684800 || v >= 4102444800) continue;
+    if (v > maiorUnix) {
+      maiorUnix = v;
+      const celulas = celulasDaLinha(linha);
+      const bruto = celulas[KARDEX_COL_VALOR_UNITARIO];
+      const num = bruto != null && bruto !== "" ? Number(String(bruto).replace(",", ".")) : NaN;
+      custoUnitario = Number.isFinite(num) ? num : null;
+    }
+  }
+  const ultimaMovimentacao = maiorUnix === 0 ? null : new Date(maiorUnix * 1000).toISOString().slice(0, 10);
+  return { ultimaMovimentacao, custoUnitario };
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS_HEADERS });
 
@@ -104,9 +267,29 @@ Deno.serve(async (req: Request) => {
 
   const codigo = String(body?.codigo || "").trim();
   if (!codigo) return resposta(400, { ok: false, erro: "Código do produto não informado." });
+  // Opcional — quando informado (ex.: `product.almoxarifado`, o mesmo
+  // código de armazém já usado em todo o resto do app), desambigua entre
+  // múltiplos resultados da busca (ver `dividirEmBlocos`/`normalizarArmazem`
+  // abaixo). Sem ele, um código com mais de 1 armazém na consulta cai como
+  // ambíguo — nunca adivinha, mesmo critério já usado nas funções de
+  // catálogo do Supabase (`fetchProdutosByCodigos`/`searchSupabaseCatalog`).
+  const armazemPedido = normalizarArmazem(body?.armazem != null ? String(body.armazem) : null);
 
   try {
     const auth = "Basic " + btoa(`${CONSULTA_SELGRON_USER}:${CONSULTA_SELGRON_PASS}`);
+
+    // Kardex é buscado em PARALELO com a consulta de produto (não em
+    // sequência) — reduz a latência total pro operador, já que os dois
+    // fetches independem um do outro. Falha do Kardex NUNCA derruba a
+    // consulta inteira — `.catch(()=>null)` isola essa 2ª requisição: se
+    // ela falhar (timeout, rede, formato mudou), `ultimaMovimentacao`
+    // simplesmente sai `null` na resposta, e o resto dos dados do produto
+    // (saldo/endereço/descrição/unidade) continua respondendo normalmente.
+    const kardexPromise = fetch(
+      KARDEX_URL + "?codprod=" + encodeURIComponent(codigo),
+      { method: "GET", headers: { Authorization: auth }, signal: AbortSignal.timeout(8000) },
+    ).catch(() => null);
+
     const resp = await fetch(CONSULTA_URL, {
       method: "POST",
       headers: {
@@ -141,33 +324,94 @@ Deno.serve(async (req: Request) => {
       return resposta(200, { ok: false, erro: "Código não encontrado na consulta Selgron.", naoEncontrado: true });
     }
 
-    const codigoRetornado = extrairCampo(texto, ["Código do Produto"]);
-    const descricao = extrairCampo(texto, ["Descrição", "Descricao"]);
-    const saldoTexto = extrairCampo(texto, ["Quantidade em estoque"]);
-    const endereco = extrairCampo(texto, ["Endereço", "Endereco"]);
-    const armazem = extrairCampo(texto, ["Armazem", "Armazém"]);
-    const unidade = extrairCampo(texto, ["Unidade medida"]);
+    // Divide a página em blocos (1 por resultado) ANTES de extrair qualquer
+    // campo — ver `dividirEmBlocos` pro motivo (mesmo código pode aparecer
+    // em mais de um armazém, cada um com seu próprio bloco/saldo).
+    const blocosBrutos = dividirEmBlocos(texto).map(extrairBloco);
 
-    if (saldoTexto == null) {
-      // Achou a página (não é "0 resultados"), mas não achou o rótulo do
-      // saldo — sinal de que o formato da página mudou do lado de lá.
-      // Melhor devolver erro claro do que fingir um saldo errado.
+    // Filtra ANTES de qualquer coisa pelo CÓDIGO EXATO pedido — a busca da
+    // Selgron é por prefixo/substring (ver `normalizarCodigo` acima), então
+    // `blocosBrutos` pode conter resultados de PRODUTOS DIFERENTES (ex.:
+    // pedir "000.26627" também traz "000.26627.1"/"000.26627.2"). Sem esse
+    // filtro, a desambiguação por armazém abaixo podia escolher o bloco
+    // errado — do produto errado, não só do armazém errado.
+    const codigoNormalizado = normalizarCodigo(codigo);
+    const blocos = blocosBrutos.filter((b) => normalizarCodigo(b.codigo) === codigoNormalizado);
+
+    if (blocos.length === 1 && blocos[0].saldo == null) {
+      // Achou a página (não é "0 resultados") e achou o produto certo, mas
+      // não achou o rótulo do saldo no único resultado dele — sinal de que
+      // o formato da página mudou do lado de lá. Melhor devolver erro claro
+      // do que fingir um saldo errado (preserva o comportamento de sempre
+      // pro caso comum, 1 resultado só pro código pedido — a lógica de
+      // múltiplos blocos abaixo nunca entra nesse caminho).
       return resposta(200, {
         ok: false,
         erro: "Não consegui ler o saldo na resposta da consulta Selgron (formato da página pode ter mudado).",
       });
     }
 
-    const saldo = Number(String(saldoTexto).replace(",", "."));
+    // Escolhe QUAL bloco usar, só entre os que já batem com o código exato.
+    // 1 resultado só -> sem ambiguidade nenhuma, usa ele (comportamento de
+    // sempre). Mais de 1 (o código existe em mais de 1 armazém) -> só
+    // resolve quando o armazém pedido bate com EXATAMENTE 1 bloco; senão
+    // (sem armazém informado, nenhum bloco bate, ou mais de um bate — nunca
+    // deveria acontecer) fica `null`: cada campo abaixo sai `null` nesse
+    // caso, sem adivinhar — o front-end (padrão "...Efetivo" em CountStep)
+    // já sabe cair pro saldo/endereço/etc. já em cache no Supabase quando um
+    // campo vem `null` daqui, exatamente o comportamento seguro desejado.
+    // Zero blocos (o código pedido não bateu com nenhum resultado exato —
+    // só variações de prefixo) também cai aqui, com `escolhido:null`.
+    let escolhido: BlocoResultado | null = null;
+    if (blocos.length <= 1) {
+      escolhido = blocos[0] || null;
+    } else if (armazemPedido) {
+      const candidatos = blocos.filter((b) => normalizarArmazem(b.armazem) === armazemPedido);
+      escolhido = candidatos.length === 1 ? candidatos[0] : null;
+    }
+
+    const codigoRetornado = escolhido ? escolhido.codigo : null;
+    const descricao = escolhido ? escolhido.descricao : null;
+    const endereco = escolhido ? escolhido.endereco : null;
+    const armazem = escolhido ? escolhido.armazem : null;
+    const unidade = escolhido ? escolhido.unidade : null;
+    const saldo = escolhido && escolhido.saldo != null ? escolhido.saldo : null;
+
+    // Resolve o Kardex (já disparado em paralelo lá em cima) — nunca lança
+    // erro pra fora daqui, sempre cai em `null` silenciosamente no que
+    // falhar (rede, timeout, resposta não-2xx, formato inesperado).
+    let ultimaMovimentacao: string | null = null;
+    let custoUnitario: number | null = null;
+    try {
+      const respKardex = await kardexPromise;
+      if (respKardex && respKardex.ok) {
+        const htmlKardex = await respKardex.text();
+        const dadosKardex = extrairDadosKardex(htmlKardex);
+        ultimaMovimentacao = dadosKardex.ultimaMovimentacao;
+        custoUnitario = dadosKardex.custoUnitario;
+      }
+    } catch {
+      ultimaMovimentacao = null;
+      custoUnitario = null;
+    }
 
     return resposta(200, {
       ok: true,
       codigo: codigoRetornado || codigo,
       descricao: descricao || null,
-      saldo: Number.isFinite(saldo) ? saldo : null,
+      saldo: saldo != null && Number.isFinite(saldo) ? saldo : null,
       endereco: endereco || null,
       armazem: armazem || null,
       unidade: unidade || null,
+      // Kardex não é escopado por armazém nesta versão (a movimentação mais
+      // recente vale pro código inteiro) — continua valendo mesmo quando o
+      // bloco de saldo/endereço acima ficou ambíguo/sem match.
+      ultimaMovimentacao,
+      custoUnitario,
+      // Informativo só — o front-end não lê isto quando ok:true (cada campo
+      // acima já reflete `null` sozinho quando não deu pra resolver), mas
+      // ajuda a diagnosticar um "saldo sumiu" via log/DevTools no futuro.
+      ambiguo: blocos.length > 1 && !escolhido,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

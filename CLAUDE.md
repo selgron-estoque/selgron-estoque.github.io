@@ -16418,3 +16418,4299 @@ descrição do catálogo local normalmente, sem quebrar. **Verificação de
 ponta a ponta com o site real da Selgron fica a cargo do cliente** — mesma
 limitação de sempre (sandbox sem acesso de rede ao domínio interno da
 Selgron).
+
+## Elimina a tela que puxa o endereço da planilha — duas telas de endereço viram uma só
+
+Depois de ver as duas telas de captura de endereço lado a lado (uma que exige escanear o
+QR Code do endereço já CADASTRADO, vindo da planilha importada, pra confirmar que o
+operador está no lugar certo; outra, só pra item sem cadastro nenhum, que pede pra
+informar onde encontrou), o cliente perguntou: "tenho duas telas com a mesma finalidade,
+daria para eliminar uma??" — expliquei a diferença funcional real entre as duas
+(verificação de local físico contra um cadastro conhecido vs. 1ª captura sem nada pra
+comparar) e perguntei via `AskUserQuestion` qual direção ele queria. Resposta exata:
+**"Elimina a tela que puxa o endereço da planilha"** — ou seja, eliminar a tela de QR
+Code (cuja referência vem do cadastro importado da planilha), unificando TODO item
+(com ou sem cadastro) na mesma tela de campo único que já existia pra item sem cadastro.
+
+- **`hasAddress`/`step==='scan'`/`step==='scanResult'` removidos por completo** — junto
+  de `scannedCode`/`addressOk` (estado), `handleAddressScanDetected`/`simulateScan`
+  (comparação por QR Code), `digitandoEndereco`/`enderecoDigitado`/
+  `confirmarEnderecoDigitado` ("Digitar outro endereço", um sub-fluxo que só existia
+  dentro da tela de QR Code) e `confirmarContarComEnderecoDivergente` ("Contar mesmo
+  assim", a saída pra quando o QR Code lido não batia com o cadastro).
+- **`step` agora só tem 2 valores possíveis**: `'enderecoManual'` (sempre que
+  `expectAddressCheck` é true, pra QUALQUER item) ou `'count'` — a condição de
+  inicialização deixou de depender de `product.enderecoCadastrado`.
+- **`enderecoInformado` (o campo único) passou a nascer PRÉ-PREENCHIDO com o cadastro,
+  quando existe** (`useState(() => (expectAddressCheck && product.enderecoCadastrado &&
+  product.endereco) ? product.endereco : '')`) — poupa o operador de redigitar/reescanear
+  um local que o app já conhece; item sem cadastro continua nascendo vazio, exatamente
+  como já era. A consulta ao vivo da Selgron (`liveConsulta`, ver seção anterior)
+  continua só preenchendo quando o campo está VAZIO (`prev===''`) — pra item com
+  cadastro, isso na prática nunca sobrescreve (o campo já nasce com o valor do cadastro),
+  então a prioridade fica: cadastro > consulta ao vivo > vazio.
+- **`confirmEnderecoManual` (função única agora) decide sozinha quando propor pro
+  líder**: sempre que `needsAddressInput` é true (item nunca teve cadastro — 1ª captura,
+  igual sempre foi) OU quando o valor confirmado DIVERGE do que já estava cadastrado
+  (`divergeDoCadastro`, comparação com `product.endereco`) — é a MESMA revisão que
+  "Contar mesmo assim" já disparava antes, só que agora dentro da mesma tela, sem etapa
+  própria. Confirmar sem editar nada (cadastro já bate) não gera proposta nenhuma — evita
+  repropor o mesmo endereço a cada contagem do mesmo item. `enderecoAnterior` continua
+  preenchido com o valor antigo do cadastro quando existe divergência, pro líder comparar
+  os dois lados em "Endereços Pendentes de Cadastro" — nenhuma mudança na tela de
+  aprovação em si (`AddressValidationPanel`/`aplicarEnderecoConfirmado`).
+- **`finalize()`**: `enderecoContado` deixou de depender de `scannedCode` (removido) —
+  vira só `enderecoInformado.toUpperCase()` (o mesmo campo único, sempre).
+- **CSS órfão removido**: `.address-chip` (chip de endereço grande, exibido no topo da
+  tela de QR Code), `.scan-toggle-row` (fileira dos 2 botões de debug "Sem câmera:
+  simular leitura..."), `.result-banner.warn`/`.result-banner.danger`/`.rb-title`/
+  `.rb-sub` (usados só pelas mensagens "Endereço confirmado"/"Atenção" da tela removida
+  — `.result-banner`/`.result-banner.ok`, em uso em outro lugar do app, ficaram intactos).
+- **Escopo consciente, não tocado**: a verificação opcional do ITEM por câmera dentro da
+  etapa de contagem (`scanningItem`/`handleItemVerifyScan`, o botão 📷 ao lado do código
+  na etapa `count`) é uma feature DIFERENTE (confere se o código escaneado bate com o
+  item já carregado na tela, não tem nada a ver com endereço) — continua exatamente como
+  estava.
+- Testado via harness novo (`harness_elimina_tela_qrcode_endereco.js`, jsdom +
+  react-dom/client + `act()`, mesma técnica rigorosa de sempre — carrega o `index.html`
+  inteiro transpilado numa `vm.Script`): confirma que nenhum vestígio da tela antiga
+  sobra pra item com cadastro (sem "Escanear com a câmera"/"Digitar outro endereço"/
+  "Sem câmera: simular leitura.../Contar mesmo assim"/"Endereço confirmado"); que o
+  campo único existe e já vem preenchido com o cadastro; que item sem cadastro continua
+  nascendo vazio e obrigando preencher antes de habilitar "Confirmar e continuar"; que
+  confirmar sem cadastro sempre propõe (1ª captura, `enderecoAnterior:null`); e que
+  `enderecoContado` grava certo sem depender de `scannedCode`. Reescritos 3 harnesses que
+  testavam diretamente a tela removida: `harness_classify_divergence_binario.js` (só
+  precisou trocar "Sem câmera: simular leitura certa"+"Continuar" por "Confirmar e
+  continuar" pra chegar na etapa de quantidade, sem mudança de asserção sobre
+  classificação); `harness_countstep_proposta_divergente.js` (Cenário 1 reescrito pra
+  editar o campo único em vez de "Digitar outro endereço"/"Contar mesmo assim",
+  Cenário 2 corrigido pra esperar `enderecoAnterior:null` em vez de `undefined`, já que
+  o código agora sempre grava esse campo explicitamente). **`harness_digitar_endereco_
+  scan.js` foi removido do scratchpad** (não atualizado) — testava exclusivamente o
+  sub-fluxo "Digitar outro endereço", que deixou de existir como elemento discreto (virou
+  só "editar o campo", já coberto pelos harnesses acima); mantê-lo reescrito seria
+  puro duplicado sem cobertura nova. Rodei de novo toda a suíte de regressão do
+  scratchpad (52 arquivos) — só as mesmas 3 falhas já confirmadas pré-existentes/sem
+  relação com esta mudança continuam (`harness_actions_beside_content.js`/
+  `harness_dashboard_render_dedup.js`/`harness_ultima_contagem_por_codigo.js`,
+  reconfirmado via `git stash` que já falham identicamente sem esta mudança). Transpile
+  Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos (666/666, caiu de
+  672 — as 6 regras CSS órfãs removidas). **Verificação visual/funcional de ponta a ponta
+  fica a cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth real,
+  não simulável no sandbox sem rede).
+
+## Falhas dos 3 harnesses "pré-existentes" corrigidas — eram testes desatualizados, não bugs do app
+
+Cliente perguntou "Quais 3 falhas?" (as 3 já reportadas como pré-existentes/sem relação numa
+rodada anterior, junto da eliminação da tela de QR Code) e depois pediu explicitamente "Pode
+corrigir essas falhas?". Investigado cada uma via `git log -S "<texto>" -- index.html` + `git show`
+ANTES de mexer em qualquer teste (mesmo cuidado de sempre — nunca "consertar" um teste sem antes
+confirmar que o app é que está certo, não o teste) — as 3 eram, sem exceção, ASSERÇÕES
+DESATUALIZADAS de rodadas anteriores que já tinham mudado o comportamento do app de propósito,
+nunca um bug real:
+
+- **`harness_actions_beside_content.js`** — o botão "Enviar para SA" (Itens Divergentes) tinha
+  virado "Ajustar" (a SA de Ajuste virou uma etapa própria antes da Diretoria, "Aguardando
+  Armazém", numa rodada anterior — ver histórico deste arquivo); o placeholder do campo de SA
+  mudou (`Ex: SA-2026-00123` continua, mas com texto ao redor diferente); os botões "Reprovar"/
+  "Aprovar" (Aguardando Aprovação) viraram "Reprovado"/"Aprovado" (particípio, pedido do cliente,
+  ver `43a4031`). 3 asserções corrigidas pra bater com o texto atual.
+- **`harness_dashboard_render_dedup.js`** — o card "Itens Divergentes" trocou de rótulo/critério
+  ("N códigos avaliados" → "N itens · N códigos · N divergentes (cód.)", dedup por DOCUMENTO em
+  vez de por código, ver `58078ee` "Corrige critério de acuracidade: dedup por DOCUMENTO, não por
+  código" — dois documentos independentes do mesmo código agora contam separado, por decisão
+  explícita do cliente já registrada em rodada anterior). 2 asserções reescritas com o formato/
+  valores certos.
+- **`harness_ultima_contagem_por_codigo.js`** — testava `ultimaContagemPorCodigo`, função que não
+  existe mais (substituída por `ultimaContagemPorDocumento`, com semântica DIFERENTE, na mesma
+  rodada acima). Como `harness_ultima_contagem_por_documento.js` (pré-existente, nunca tocado) já
+  cobre a função atual por completo, **este arquivo foi removido** — mesmo padrão já usado antes
+  pra `harness_digitar_endereco_scan.js`: reescrever seria puro duplicado sem cobertura nova, só
+  ficaria testando de novo o que outro harness já testa.
+
+Nenhuma mudança em `index.html` — só os 3 arquivos de teste no scratchpad. Suíte completa (52
+arquivos após esta rodada, incluindo o novo desta sessão) confirmada em 0 falhas.
+
+## Endereço da consulta ao vivo passa a ter prioridade sobre o cadastro local — sempre, não só quando o campo está vazio
+
+Depois de ver um print da tela única de endereço com um valor pré-preenchido (`042-E-4`, item já
+cadastrado) e nenhuma dica de confirmação, o cliente perguntou o motivo. Expliquei que o
+comportamento então vigente (herdado da unificação das duas telas, ver seção acima) era: item COM
+cadastro sempre nascia com o valor do CADASTRO, e a consulta ao vivo só entrava pra pré-preencher
+quando o item **não tinha** cadastro nenhum — item cadastrado nunca via a consulta sobrescrever
+nada. O cliente rejeitou essa explicação como o comportamento CORRETO, de forma direta:
+
+> "Não, o comportamento correto é puxar de consulta, porque se houve uma atualização neste meio
+> tempo ele não vai mostrar"
+
+Ou seja: se o endereço no Protheus mudou depois do último sync do cadastro local (`estoque_
+enderecos`, que só é atualizado por reimportação manual da planilha "Descrição de Produtos" ou
+pela aprovação de uma proposta de endereço — nenhum dos dois acontece em tempo real), a versão
+antiga do app nunca revelaria essa mudança pro operador — ele continuaria vendo e confirmando um
+endereço desatualizado, mesmo com a consulta ao vivo já sabendo do valor certo.
+
+### O que mudou
+
+- **A consulta ao vivo (Selgron/Protheus) agora SEMPRE vence sobre o cadastro local quando
+  responde com um endereço válido** — pra QUALQUER item, com ou sem cadastro (antes só valia pra
+  item sem cadastro nenhum). O cadastro local virou só o valor INICIAL/fallback — mostrado
+  enquanto a consulta (assíncrona) ainda não respondeu, ou quando ela responde sem nenhum endereço
+  válido pro código — nunca mais a palavra final.
+- **`enderecoEditadoManualmente`** (`useState(false)`, novo) — a única coisa que ainda pode
+  "vencer" da consulta ao vivo é o próprio operador: setado pra `true` no `onChange` do campo de
+  texto e em `handleEnderecoManualScanDetected` (leitura por câmera) — o efeito de pré-
+  preenchimento (abaixo) checa esse flag primeiro e nunca sobrescreve nada depois que o operador
+  mexeu no campo, mesmo que a consulta responda (ou responda de novo) depois.
+- **`liveEnderecoValido`** (computado a cada render, não é hook) — formata e valida
+  (`formatEnderecoInput`+`ENDERECO_REGEX`) o endereço vindo da consulta, uma vez só, reaproveitado
+  tanto pelo efeito de pré-preenchimento quanto pelas 3 dicas visuais abaixo — evita duplicar a
+  mesma lógica de formatação/validação em 3 lugares diferentes.
+- **O `useEffect` de pré-preenchimento foi reescrito por completo**: antes, só rodava quando
+  `needsAddressInput` (sem cadastro) e só preenchia se `prev===''` (campo vazio). Agora roda pra
+  qualquer item, ignora só quando `enderecoEditadoManualmente` é `true`, e:
+  - Consulta trouxe endereço válido (`liveEnderecoValido`) → **sobrescreve** o campo com ele,
+    incondicionalmente (não checa mais se já tinha algo — é isso que resolve o pedido: um cadastro
+    desatualizado deixa de "esconder" a atualização da consulta).
+  - Consulta respondeu mas sem endereço válido pro código, e o item TEM cadastro → cai pro valor
+    do cadastro (fallback honesto, mesmo raciocínio de sempre).
+  - Consulta ainda não respondeu (ou falhou — `liveConsulta` nunca é setado nesse caso, ver
+    `fetchSaldoConsultaSelgron`) → não faz nada, mantém o valor atual (cadastro inicial ou vazio).
+- **3 dicas visuais, mutuamente exclusivas, todas honestas sobre o que foi (ou não) checado ao
+  vivo**:
+  - 🟢 **"✓ Endereço confirmado pela consulta ao vivo."** — o valor no campo é literalmente o que a
+    consulta acabou de trazer. Vale pra QUALQUER item agora (antes só aparecia pra item sem
+    cadastro) — é essa dica que garante ao operador que o que ele vê é dado atual, não um cadastro
+    potencialmente velho. Texto trocado de "✓ Endereço encontrado." pra deixar explícito que foi a
+    CONSULTA quem confirmou (o texto antigo já não fazia sentido pra um item que sempre teve
+    cadastro — "encontrado" soaria estranho quando na real já existia).
+  - 🔴 **"✗ Endereço não encontrado."** (texto de sempre, sem mudança) — consulta respondeu sem
+    endereço válido E o item também não tem cadastro nenhum pra cair de volta — o campo fica vazio
+    de verdade.
+  - ⚪ **"ℹ Consulta ao vivo não confirmou este endereço — mostrando o cadastro local, que pode
+    estar desatualizado."** (mensagem NOVA) — consulta respondeu sem confirmar nada, mas o item
+    TEM cadastro — o campo mostra o cadastro como fallback, com o aviso explícito de que não foi
+    checado ao vivo. É exatamente o cenário que o cliente não queria mais deixar escondido — antes,
+    esse caso não mostrava dica nenhuma (nem positiva nem negativa), dando a falsa impressão de que
+    o valor exibido era garantidamente atual.
+- **Efeito colateral bom, não pedido explicitamente mas natural da mudança**: `confirmEnderecoManual`
+  já calculava `divergeDoCadastro` comparando o valor CONFIRMADO contra `product.endereco`
+  (cadastro) pra decidir se propõe correção pro líder — como o valor confirmado agora pode vir da
+  consulta ao vivo (não mais preso ao cadastro), um operador que só clica "Confirmar e continuar"
+  SEM editar nada, num item cujo cadastro está desatualizado, já dispara sozinho a proposta de
+  correção pro líder — é assim que o cadastro local se atualiza com o tempo, sem trabalho manual
+  extra além do fluxo normal de contagem. Testado explicitamente (Cenário 5 do harness novo).
+- **`needsAddressInput` não decide mais nenhuma das 3 dicas** — continua existindo só pra decidir
+  se a PROPOSTA de endereço deve ser enviada mesmo sem `divergeDoCadastro` (item que nunca teve
+  cadastro nenhum, onde qualquer confirmação já é a 1ª captura) — comentário no topo do componente
+  atualizado pra refletir isso.
+
+### Verificação
+
+Testado via harness novo (`harness_consulta_selgron_endereco_prioridade.js`, jsdom +
+react-dom/client + `act()`, mesma técnica rigorosa de sempre — carrega o `index.html` inteiro
+transpilado numa `vm.Script`, com `supabaseClient.functions.invoke` mockado por cenário): item
+COM cadastro + consulta responde com endereço DIFERENTE → campo é sobrescrito, mostra a dica
+verde nova (não a neutra nem a vermelha); item COM cadastro + consulta sem endereço nenhum → cai
+pro cadastro, mostra a dica NEUTRA nova (não a verde nem a vermelha); operador edita o campo
+ANTES da consulta responder → quando ela resolve com valor diferente, o campo NÃO é sobrescrito
+(proteção contra perder edição manual); item SEM cadastro + consulta sem endereço → continua
+mostrando "✗ Endereço não encontrado." (comportamento de sempre, não a dica neutra — essa é só
+pra item com cadastro); confirmar sem editar nada, com a consulta tendo trazido um endereço
+diferente do cadastro, já propõe a correção pro líder sozinho (`divergeDoCadastro` calculado em
+cima do valor efetivo). 18 asserções, todas passando.
+
+`harness_consulta_selgron_endereco_prefill.js` (pré-existente) teve o Cenário 3 reescrito — antes
+testava explicitamente que um item com cadastro NÃO era sobrescrito pela consulta (o
+comportamento antigo, agora superado) — reescrito pra confirmar o oposto: o campo É sobrescrito
+com o valor da consulta, e a dica verde aparece. `harness_endereco_manual_redesign.js` (pré-
+existente) teve 1 asserção de texto atualizada (`"✓ Endereço encontrado."` → `"✓ Endereço
+confirmado pela consulta ao vivo."`, mudança de texto intencional desta rodada, não regressão).
+Rodei de novo toda a suíte de regressão do scratchpad (52 arquivos) — **0 falhas**. Transpile
+Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos (666/666, sem mudança —
+nenhuma classe CSS nova, só JS/JSX dentro de `CountStep`). **Verificação visual/funcional de
+ponta a ponta fica a cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth
+real, não simulável no sandbox sem rede).
+
+## "Sem endereço cadastrado" na lista de busca vira "sem cadastro local"
+
+Depois da mudança anterior (consulta ao vivo sempre vence sobre o cadastro no campo de
+endereço), o cliente apontou, com print da tela "Nova Contagem" avulsa (busca "353",
+vários resultados mostrando "sem endereço cadastrado" logo abaixo do código):
+**"Sem endereço cadastrado, essa mensagem agora não faz mais sentido"**. Pedi
+confirmação de qual mensagem exatamente (existiam 3 candidatas na tela de contagem em
+si) — o print recebido mostrou que não era nenhuma das 3 dicas de `CountStep`, e sim o
+texto da LISTA DE RESULTADOS DE BUSCA, mostrado antes mesmo de abrir o item.
+
+- **Causa**: `ManualCountFlow` (Nova Contagem avulsa) e o mesmo trecho em "Itens
+  Específicos" (`NewInventory`) sempre mostraram `p.enderecoCadastrado ? p.endereco :
+  'sem endereço cadastrado'` — uma afirmação categórica, calculada só a partir do
+  cadastro LOCAL, antes de o operador sequer abrir o item. Desde que a consulta ao vivo
+  (Selgron/Protheus) passou a rodar dentro de `CountStep` assim que o item é aberto pra
+  contar (e agora sempre VENCE o cadastro local quando encontra algo, ver seção
+  anterior), essa frase ficou desatualizada: um item que mostra "sem endereço
+  cadastrado" na lista pode muito bem ter um endereço real assim que a consulta ao vivo
+  rodar — a frase promete algo que não foi (e propositalmente nunca é, pra não disparar
+  N requisições pra uma ferramenta interna pensada pra 1 consulta de cada vez) checado
+  nesse ponto da tela.
+- **Correção**: texto trocado pra **"sem cadastro local"** — continua descrevendo com
+  precisão o que de fato sabemos (não tem registro no banco local), sem prometer nada
+  sobre o que a consulta ao vivo vai (ou não) encontrar depois. **Deliberadamente NÃO
+  disparei uma consulta ao vivo por item da lista** — a consulta é uma ferramenta
+  interna de 1-produto-por-vez (ver "Saldo 'ao vivo' direto do Protheus" mais acima),
+  bombardeá-la com uma requisição por linha de resultado de busca contrariaria o desenho
+  original dessa integração.
+- **2 pontos idênticos corrigidos**: `ManualCountFlow` (linha do print do cliente) e
+  "Itens Específicos" (`NewInventory.addItemEspecifico`, mesmo trecho JSX, mesma
+  condição) — os dois mostravam a mesma frase categórica, então os dois precisavam da
+  mesma correção.
+- **Não tocado, contextos diferentes**: os 6 outros usos da string "sem endereço
+  cadastrado" no arquivo — 4 são comentários explicando comportamento interno (não
+  texto de UI), e 1 é o resumo pós-importação da planilha "Descrição de Produtos"
+  (`parseResult.resumo.enderecosIgnorados`, "Endereços Pendentes de Cadastro") — essa
+  última é sobre uma linha da planilha que o parser genuinamente não conseguiu
+  interpretar como endereço válido, uma afirmação factual sobre o PARSE, não uma
+  previsão sobre o que a consulta ao vivo acharia depois — contexto diferente, mensagem
+  continua correta como está.
+- Testado via harness novo (`harness_busca_sem_cadastro_local.js`, jsdom +
+  react-dom/client + `act()`, mesma técnica rigorosa de sempre — carrega o `index.html`
+  inteiro transpilado numa `vm.Script`, com `searchSupabaseCatalog` exercitado de
+  verdade via mock do Supabase, `produtos`+`estoque_saldo`): renderizei `ManualCountFlow`
+  de ponta a ponta, digitei "353" no campo de busca, esperei o debounce de 350ms, e
+  confirmei que o texto "sem endereço cadastrado" não aparece mais em lugar nenhum, que
+  "sem cadastro local" aparece pro item sem cadastro, e que um item COM cadastro
+  continua mostrando o endereço real normalmente (039-A-2), sem regressão. Rodei de
+  novo toda a suíte de regressão do scratchpad (53 arquivos) — 0 falhas. Transpile
+  Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos (666/666, sem
+  mudança — só texto, nenhuma classe CSS nova). **Verificação visual de ponta a ponta
+  fica a cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth
+  real, não simulável no sandbox sem rede).
+
+## Lista de busca: item sem cadastro deixa de mostrar QUALQUER texto sobre endereço
+
+Cliente testou a correção anterior ("sem cadastro local") e foi direto: **"eu não quero
+nenhum texto ali"**. `ManualCountFlow`/"Itens Específicos" trocaram
+`{p.codigo} · {p.enderecoCadastrado ? p.endereco : 'sem cadastro local'}` por
+`{p.codigo}{p.enderecoCadastrado ? ' · '+p.endereco : ''}` — item sem cadastro mostra
+só o código sozinho (sem separador " · " nem texto nenhum depois); item COM cadastro
+continua mostrando "código · endereço" normalmente, sem mudança. Mesmos 2 pontos
+idênticos de sempre (`ManualCountFlow` e `NewInventory.addItemEspecifico`).
+
+- Harness `harness_busca_sem_cadastro_local.js` atualizado (não recriado) — passou a
+  checar o `.textContent.trim()` exato de cada linha (`.lr-sub`), confirmando "000.00353"
+  sozinho (sem cadastro) e "000.02353 · 039-A-2" (com cadastro), além de confirmar que
+  nem o texto antigo nem o intermediário ("sem endereço cadastrado"/"sem cadastro
+  local") sobram em lugar nenhum. Rodei de novo toda a suíte de regressão do scratchpad
+  (53 arquivos) — 0 falhas. Transpile Babel do arquivo inteiro e balanceamento de
+  chaves do CSS conferidos (666/666, sem mudança — só JSX). **Verificação visual de
+  ponta a ponta fica a cargo do cliente** — mesma limitação de sempre (login exige
+  Supabase Auth real, não simulável no sandbox sem rede).
+
+## Última movimentação via Kardex ao vivo — fecha o motivo que ainda prendia o cliente à planilha SB2
+
+Depois de ver o saldo/endereço/descrição/unidade já funcionando ao vivo (seção "Saldo
+'ao vivo' direto do Protheus" e as rodadas seguintes, mais acima), o cliente apontou o
+último motivo que ainda o obrigava a subir a planilha SB2 periodicamente: **"Vamos ser
+mais ousado, como não vou mais precisar subir a SB2, eu ainda preciso saber a última
+movimentação para saber quantos dias o material está parado, para isso precisaria abrir
+o Kardex e pegar a última data, é possivel?"** — `estoque_saldo.data_ultima_saida` (o
+campo usado por `diasParado()` em "Itens Divergentes") sempre veio só do upload manual
+da SB2; sem isso, não teria como calcular "dias parado" nem sob a nova rotina 100% ao
+vivo.
+
+Investigado com o cliente via DevTools (Network) e View Source, em vez de eu supor o
+formato — confirmado passo a passo:
+
+- **URL simples, sem encadeamento de sessão**: `GET https://consulta.selgron.com.br/
+  kardex.php?codprod=<código>` — mais simples do que eu temia inicialmente (achei que
+  precisaria abrir a página do produto primeiro pra herdar algum cookie de sessão).
+- **`Dados Finais: 06/08/2026` do resumo da própria página NÃO é a última movimentação
+  real** — é só o fim da janela de filtro padrão (coincide com "hoje", suspeita minha
+  confirmada pelo próprio cliente: **"Desconsidera isso é outra coisa, o campo de data é
+  DT Emissão"**) — precisa vir da coluna "Dt. Emissão" de cada linha da tabela, não de
+  um campo de resumo pronto.
+- **`data-sort='<unix>'`/`data-order='<unix>'` na célula da coluna "Dt. Emissão"** —
+  achado no HTML cru que o cliente mandou (View Source, produto `030.090.00019`, "FITA
+  CREPE MARROM 50MMX50M") — bem mais simples e confiável que parsear o texto
+  "DD/MM/AAAA" exibido: é só comparar inteiros.
+- **As linhas NÃO vêm ordenadas globalmente por data** — confirmado inspecionando o HTML
+  completo (141 linhas de movimentação): agrupadas por tipo (todas as NF-ENTRADA
+  primeiro, ordenadas decrescente só dentro do próprio grupo, depois todas as
+  MOV-SAIDA) — nunca dá pra confiar na 1ª nem na última linha do documento; a única forma
+  correta é varrer TODAS e pegar o `Math.max()`.
+- **DataTables com `paging:false`** — confirma que a tabela inteira já vem no HTML de
+  uma resposta só, sem precisar de nenhuma 2ª requisição AJAX de paginação.
+
+### `consultar-produto-selgron/index.ts` — Kardex buscado em paralelo, nunca derruba a consulta
+
+- **`KARDEX_URL`** — nova constante (`.../kardex.php`).
+- **`extrairUltimaMovimentacao(html)`** (função nova) — varre `data-sort=['"](\d+)['"]`
+  (aceita aspas simples OU duplas, mesma tolerância de robustez já usada nos outros
+  parsers deste app) em TODA a página, com um filtro de sanidade (só aceita valores entre
+  ~2000 e ~2100, protegendo contra um `data-sort` de outra coluna da mesma tabela — ex.
+  um valor monetário — que por acaso também use esse atributo pro DataTables ordenar
+  numericamente, sem ser uma data de verdade) — devolve o MAIOR valor encontrado, já
+  convertido pra `"YYYY-MM-DD"` (mesmo formato que `diasParado()`/o resto do app já
+  espera).
+- **Fetch do Kardex disparado em PARALELO** com a consulta de produto já existente
+  (`kardexPromise`, iniciado antes do `await` do fetch principal) — reduz a latência
+  total pro operador em vez de esperar um terminar pra começar o outro. Usa a MESMA
+  autenticação Basic Auth já usada pra `produto.consulta.php` (não confirmado ainda
+  contra o site real — assunção a testar no 1º deploy).
+- **Isolado com `.catch(()=>null)`** — se o Kardex falhar (timeout, rede, formato mudou),
+  isso NUNCA derruba a consulta inteira: `ultimaMovimentacao` sai `null` na resposta, e
+  o resto dos dados do produto (saldo/endereço/descrição/unidade) continua respondendo
+  normalmente, mesmo tratamento de falha isolada já usado no resto desta Edge Function.
+- Resposta final ganhou o campo `ultimaMovimentacao` (string `"YYYY-MM-DD"` ou `null`).
+
+### `index.html` — `ultimaSaidaEfetiva`, mesmo padrão "ao vivo vence, cadastro é fallback"
+
+- **`CountStep` ganhou `ultimaSaidaEfetiva`** — `(liveConsulta && liveConsulta.
+  ultimaMovimentacao) ? liveConsulta.ultimaMovimentacao : product.ultimaSaida` — idêntico
+  ao critério já usado pra `saldoSistemaEfetivo`/`descricaoEfetiva`/`unidadeEfetiva`: a
+  consulta ao vivo (agora incluindo o Kardex) vence quando presente, cai pro que já veio
+  do catálogo local (`product.ultimaSaida`, hoje só populado pela SB2) quando a consulta
+  ainda não respondeu ou não achou nenhuma movimentação.
+- **`CountStep.finalize()`**: `ultimaSaida: product.ultimaSaida || null` virou
+  `ultimaSaida: ultimaSaidaEfetiva || null` — a contagem GRAVADA passa a refletir o valor
+  ao vivo, não o congelado da SB2.
+- **Mini-card novo** "Última movimentação (Selgron)" dentro do `.cs-mini-grid`, mesmo
+  padrão visual/condicional já usado pro mini-card de "Endereço (consulta Selgron)" —
+  só aparece quando `liveConsulta.ultimaMovimentacao` existe, formatado em pt-BR via
+  `fmtDataBR`. Confirma visualmente, na hora da contagem, que o Kardex respondeu — sem
+  isso o operador só saberia depois, olhando "Itens Divergentes".
+- **`DivergentItemsPanel` não precisou de nenhuma mudança** — já lia `c.ultimaSaida` da
+  contagem salva pra montar "Última movimentação: ... · N dias parado" (ver seção
+  "'Itens Divergentes' ganha 'Última movimentação'..." mais acima) — como a origem do
+  dado mudou só na LEITURA/gravação em `CountStep`, essa tela passa a mostrar o valor ao
+  vivo automaticamente, sem tocar em uma linha de código lá.
+
+### Verificação
+
+Type-check da Edge Function via `tsc` (mesmo shim de sempre pros globais do Deno) sem
+erro. Testado via 2 harnesses novos (mesma técnica rigorosa de sempre — sandbox sem
+acesso de rede real ao domínio da Selgron):
+- **`harness_kardex_ultima_movimentacao.js`** (13/13) — `extrairUltimaMovimentacao`
+  testada contra um TRECHO REAL do HTML mandado pelo cliente (bate exatamente com
+  "2026-08-03", a mesma data que "Dt. Emissão" mostra pra linha mais recente); linhas
+  fora de ordem (a mais recente no MEIO do documento, não na 1ª nem na última linha);
+  tabela vazia (sem nenhum data-sort) → `null`, sem quebrar; aspas duplas também
+  funcionam; filtro de sanidade ignora valores fora da faixa plausível de data; e — o
+  teste mais forte — rodado contra o HTML COMPLETO real (arquivo inteiro que o cliente
+  mandou via View Source, 141 linhas de movimentação), confirmando o mesmo resultado
+  "2026-08-03" batendo com o cálculo feito via Python direto no arquivo, fora do app.
+- **`harness_consulta_selgron_ultima_movimentacao.js`** (9/9, jsdom + react-dom/client +
+  `act()`, mesma técnica rigorosa de sempre — carrega o `index.html` inteiro
+  transpilado numa `vm.Script`) — consulta ao vivo com `ultimaMovimentacao` preenchida
+  SOBRESCREVE `product.ultimaSaida` (SB2 antiga) tanto na exibição (mini-card, data em
+  pt-BR) quanto na contagem GRAVADA (`onComplete`); consulta OK mas sem
+  `ultimaMovimentacao` (Kardex falhou do lado da Edge Function, resto da consulta
+  funcionou) cai pro valor da SB2 sem quebrar; falha total da consulta (exceção de rede)
+  também cai pro valor da SB2, mini-card novo não aparece em nenhum dos dois casos de
+  fallback.
+
+Rodei de novo toda a suíte de regressão do scratchpad (55 arquivos, incluindo os 2
+novos) — 0 falhas. Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+conferidos (666/666, sem mudança — nenhuma classe CSS nova, só JS/JSX).
+
+**Falta o cliente**: rodar `npx supabase functions deploy consultar-produto-selgron`
+(mesmo comando de sempre — Edge Function não é publicada automaticamente pelo GitHub
+Pages, só o `index.html`/CSS vão ao ar sozinhos) e testar ao vivo contra
+`consulta.selgron.com.br/kardex.php` — mesma limitação de sempre (sandbox sem acesso de
+rede ao domínio interno da Selgron). Dois pontos específicos, não confirmáveis daqui,
+que o próprio teste ao vivo do cliente vai validar: (1) se a MESMA credencial HTTP Basic
+Auth já configurada (`CONSULTA_SELGRON_USER`/`CONSULTA_SELGRON_PASS`) também autentica
+contra `kardex.php` (assunção razoável — mesmo domínio/sistema — mas nunca testada
+contra esse endpoint específico); (2) se o formato real de `data-sort` no HTML de
+QUALQUER produto (não só o de teste, `030.090.00019`) segue o mesmo padrão — o parser já
+tolera aspas simples/duplas e filtra valores fora da faixa de data plausível, mas se a
+página real usar uma estrutura bem diferente pro atributo em algum caso, o campo
+simplesmente sai `null` (nunca quebra a consulta, só fica sem essa informação) — mesmo
+padrão de degradação segura já usado no resto desta Edge Function.
+
+## "Valor Unitário" também vem do Kardex ao vivo — fecha o 2º motivo que ainda prendia o cliente à SB2
+
+Na sequência direta da seção anterior, o cliente pediu mais um campo: "além da data
+puxar também 'Valor Unitário', isso também eu usava da SB2" — o custo unitário do item
+(`custoUnit`, usado pra calcular `valorDivergente`/"Valor do ajuste" em toda contagem)
+sempre veio só de `estoque_saldo.valor_financeiro/saldo` (`estoqueRowToProduct`/
+`fetchProdutosByCodigos`), ou seja, do último upload manual da SB2 — o mesmo motivo que
+já tinha sido resolvido pra "última movimentação" na seção anterior, agora repetido pro
+custo.
+
+Investigando o mesmo HTML do Kardex que o cliente já tinha mandado (`View Source`,
+produto `030.090.00019`), a coluna "Valor Unitário" já estava lá, na tabela principal
+(não no resumo) — confirmado o cabeçalho completo (19 colunas: Tipo/Produto/Descrição/
+Tipo/Armazém/Quantidade/**Valor Unitário**/ICMS/IPI/TM-TES/Operação/Documento/Serie/
+Centro Custo/OP/SA/Observação/Fornecedor-Cliente/Dt. Emissão) e o valor real de uma linha
+(`10.0` de Quantidade, `14.113` de Valor Unitário, formato com PONTO decimal — diferente
+da vírgula BR usada em "Quantidade em estoque" da consulta de produto).
+
+**Decisão de qual linha usar** (não perguntada explicitamente ao cliente, mas
+justificada por analogia direta ao que a SB2 já fazia): o Kardex não tem nenhum campo de
+"custo médio corrente" separado, só o Valor Unitário de CADA movimentação individual —
+a melhor aproximação disponível pro custo "atual" é o Valor Unitário da MESMA linha já
+usada pra `ultimaMovimentacao` (a movimentação mais recente), exatamente o mesmo
+espírito do que `valor_financeiro/saldo` da SB2 já entregava (um retrato do custo no
+momento do upload, não uma média calculada à parte).
+
+### `consultar-produto-selgron/index.ts` — `extrairUltimaMovimentacao` vira `extrairDadosKardex`
+
+- **Refatorado pra uma função só**, em vez de duas (evita escanear o mesmo HTML duas
+  vezes e duplicar a lógica de achar a linha vencedora): `extrairDadosKardex(html)`
+  devolve `{ultimaMovimentacao, custoUnitario}` — acha a linha com o MAIOR `data-sort`
+  (mesmo critério de sempre) e, na hora, já extrai o "Valor Unitário" DESSA MESMA linha.
+- **`celulasDaLinha(linhaHtml)`** (função nova) — extrai o texto de cada célula `<td>`
+  de uma linha `<tr>`, na ordem em que aparecem. Diferente de `extrairCampo` (a consulta
+  de produto, que é "Rótulo: valor" por linha de texto), o Kardex é uma TABELA sem
+  rótulo por célula — só dá pra ler por POSIÇÃO de coluna, mesmo critério já usado em
+  outros parsers de planilha/tabela deste app quando não há como resolver por nome de
+  coluna de forma confiável.
+- **`KARDEX_COL_VALOR_UNITARIO = 6`** (constante, 0-based) — índice da coluna dentro da
+  linha, documentado com a lista completa das 19 colunas confirmadas no HTML real.
+  Conversão de vírgula pra ponto (`.replace(",", ".")`) aplicada por segurança, mesma
+  tolerância já usada no saldo — mesmo a página real usando ponto hoje, protege contra
+  uma mudança futura pro formato BR sem quebrar o parser.
+- **Célula vazia/ausente na linha vencedora vira `null`** (não inventa `0`) — mesmo
+  critério de honestidade de sempre neste projeto.
+- Resposta final ganhou o campo `custoUnitario` (número ou `null`), ao lado de
+  `ultimaMovimentacao`.
+
+### `index.html` — `custoUnitEfetivo`, mesmo padrão "ao vivo vence, cadastro é fallback"
+
+- **`CountStep` ganhou `custoUnitEfetivo`** — `(liveConsulta && typeof liveConsulta.
+  custoUnitario==='number' && liveConsulta.custoUnitario>0) ? liveConsulta.custoUnitario
+  : product.custoUnit` — mesmo critério de `saldoSistemaEfetivo`/`descricaoEfetiva`/
+  `unidadeEfetiva`/`ultimaSaidaEfetiva`. O guard `>0` evita usar um custo zero/negativo
+  vindo de um parse estranho (célula vazia já vira `null` do lado da Edge Function, mas
+  esse guard é uma 2ª camada de defesa aqui também).
+- **`CountStep.finalize()`**: `valorDivergente: hasSaldoLocal ? (Math.abs(diffAbs) *
+  Number(product.custoUnit)).toFixed(2) : '0.00'` virou `Number(custoUnitEfetivo)` no
+  lugar de `Number(product.custoUnit)` — o "Valor do ajuste"/"Valor divergente" gravado
+  em CADA contagem passa a refletir o custo mais atual, não o congelado na última
+  planilha SB2.
+- **Mini-card novo** "Valor Unitário (Selgron)" no `.cs-mini-grid`, mesmo padrão visual/
+  condicional dos outros mini-cards de referência — formatado como `R$ {v.toFixed(2)}`
+  (mesmo padrão já usado em "Valor divergente" no resto do app, ponto decimal, não
+  vírgula). Confirma na hora, pro operador/líder, que o valor calculado já usa o custo
+  ao vivo.
+- **Nenhuma outra tela precisou de mudança** — `classifySeverity4` (severidade visual em
+  Recontagens/Itens Divergentes/Concluídas, por faixa de R$), o painel "Aguardando
+  Aprovação"/geração de SA, tudo isso já lê `valorDivergente` da contagem SALVA — como a
+  correção é na ORIGEM (o momento em que a contagem é gravada), tudo que consome esse
+  campo depois passa a receber o valor certo automaticamente.
+
+### Verificação
+
+Reaproveitado o mesmo par de harnesses da seção anterior, estendidos:
+- **`harness_kardex_ultima_movimentacao.js`** (25/25, era 13) — `extrairDadosKardex`
+  isolada: confirma que a função antiga (`extrairUltimaMovimentacao`, só data) não
+  existe mais; que o Valor Unitário extraído bate com a linha VENCEDORA (não com a 1ª
+  nem com outra linha qualquer, testado com valores propositalmente diferentes entre as
+  linhas do cenário sintético); vírgula decimal também funciona; célula vazia vira
+  `null` sem inventar `0`; e, contra o HTML COMPLETO real do cliente (141 linhas),
+  confirma `custoUnitario === 14.113` pra mesma linha que já dá `ultimaMovimentacao ===
+  "2026-08-03"`.
+- **`harness_consulta_selgron_ultima_movimentacao.js`** (16/16, era 9) — `CountStep` de
+  ponta a ponta: com saldo ao vivo=12/informado=10 (diferença de 2) e custo ao vivo=
+  14.113, o `valorDivergente` GRAVADO sai `"28.23"` (2×14.113), não `"2.00"` (o que
+  daria com o custo antigo da SB2, `product.custoUnit=1`) — prova de que o custo ao vivo
+  está sendo usado de verdade no cálculo, não só exibido; os 2 cenários de fallback
+  (Kardex sem custo, consulta falhando por completo) confirmam `valorDivergente` caindo
+  pro custo da SB2 (`"2.00"`) e nenhum dos dois mini-cards novos aparecendo.
+
+Rodei de novo toda a suíte de regressão do scratchpad (55 arquivos, os 2 atualizados
+inclusos) — 0 falhas. Type-check da Edge Function via `tsc` sem erro. Transpile Babel do
+arquivo inteiro e balanceamento de chaves do CSS conferidos (666/666, sem mudança —
+nenhuma classe CSS nova, só JS/JSX/TS).
+
+**Falta o cliente**: rodar `npx supabase functions deploy consultar-produto-selgron` de
+novo (o mesmo deploy pendente da seção anterior já cobre esta mudança também — é o
+mesmo arquivo, não precisa de dois deploys separados) e testar ao vivo — mesma
+limitação de sempre (sandbox sem acesso de rede ao domínio interno da Selgron). Vale
+conferir, no primeiro teste real, se o "Valor Unitário" de outros produtos (não só o de
+teste) sempre usa ponto decimal como neste exemplo, ou se varia — o parser já tolera os
+dois formatos, mas é bom confirmar visualmente que o número que aparece no mini-card
+bate com o que a página do Kardex mostra de verdade.
+
+## Etiquetas: "Enviar para Fila" sobe pro topo do card, ao lado do código
+
+Cliente mandou print de "Etiquetas" (aba Produto, item já selecionado — QTD Recebida/
+Data/Quantidade de Etiquetas visíveis, os 3 botões "Voltar"/"Enviar para Fila"/"Imprimir
+Etiqueta" lá embaixo) e pediu: "o botão de 'Enviar para fila' colocar ao lado do campo
+de código" — sem confirmar exatamente qual "campo de código" (o campo de busca no topo
+da tela, ou o código do item já selecionado dentro do card, `000.35310`), e sem
+responder a uma pergunta de esclarecimento antes de eu implementar.
+
+- **Interpretação escolhida**: ao lado de `.item-code` (o código do item JÁ
+  selecionado, no topo do card de confirmação) — não do campo de busca no topo da tela.
+  Motivo: `handleEnviarParaFila` só funciona depois de um item selecionado
+  (`if(!selecionado) return;`), então colocar o botão junto do campo de busca (antes de
+  qualquer seleção) deixaria ele sem função nesse ponto; junto de `.item-code` também
+  resolve o problema real por trás do pedido — evitar rolar a tela num tablet passando
+  por Quantidade/Data/Quantidade de Etiquetas só pra achar o botão lá embaixo.
+- `.item-code` (só o código, sozinho) virou um `<div style={{display:'flex',
+  justifyContent:'space-between'}}>` com o código à esquerda e "Enviar para Fila" à
+  direita (mesmos `handleEnviarParaFila`/`enviandoParaFila` de sempre, só reposicionado
+  — nenhuma mudança de comportamento na função em si).
+- **Removido da fileira de baixo** (`.btn-row`) — não duplicado, só movido: "Voltar"/
+  "Imprimir Etiqueta" continuam lá, agora só os 2 (a fileira de 2 botões preenche a
+  largura normalmente, `.btn-row .btn{flex:1}` já existia). Mensagens de sucesso/erro do
+  envio pra fila (`sucessoFilaEnvio`/`erroFilaEnvio`) continuam no mesmo lugar de sempre
+  (logo acima da fileira de baixo), sem mudança.
+- Testado via harness novo (`harness_etiqueta_enviar_fila_topo.js`, jsdom +
+  react-dom/client + `act()`, mesma técnica rigorosa de sempre): confirma que "Enviar
+  para Fila" é IRMÃO direto de `.item-code` no mesmo container flex (não só "em algum
+  lugar da tela"); que `.btn-row` passou a ter exatamente 2 botões (Voltar/Imprimir
+  Etiqueta, sem "Enviar para Fila"); que só existe 1 botão "Enviar para Fila" na tela
+  inteira (não duplicado); e que ele continua funcional na posição nova (clicar grava a
+  linha certa no banco, mostra a mensagem de sucesso). Rodei de novo toda a suíte de
+  Etiquetas (11 harnesses) e a suíte completa do scratchpad (56 arquivos) — 0 falhas,
+  nenhum dos harnesses antigos quebrou (todos localizam o botão por TEXTO, não por
+  posição). Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  conferidos (666/666, sem mudança — nenhuma classe CSS nova, só reposicionamento de
+  JSX). **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma
+  limitação de sempre (login exige Supabase Auth real, não simulável no sandbox sem
+  rede). Se a intenção era o campo de busca no topo da tela (não o código do item já
+  selecionado), é só avisar que ajusto.
+
+## Incidente: deploy do GitHub Pages travou preso em "deployment_queued" (2 tentativas)
+
+O cliente reportou que a mudança acima ("Enviar para Fila" ao lado do código) não
+apareceu no site — mandou print mostrando a fileira antiga de 3 botões ainda intacta, e
+sugeriu um lugar novo (área vazia no topo, perto das abas Produto/Endereço) achando que
+a posição escolhida "não funcionou". **Não era isso** — confirmado via GitHub Actions
+que o deploy desse commit (`76ded2c`) falhou de verdade, duas vezes seguidas, mesmo com
+o commit já correto e já publicado nos dois branches (`main`/`claude/ola-4icnez`).
+
+- **Sintoma no log**: `actions/deploy-pages@v4` cria o deployment normalmente (artefato
+  sobe, `Created deployment for <sha>, ID: <sha>`), mas o status fica preso em
+  `deployment_queued` por 10 minutos seguidos (200+ polls de 5s), até a própria action
+  desistir ("Timeout reached, aborting!") e cancelar o deployment sozinha. Reproduzido
+  DUAS vezes com o `rerun_workflow_run` da mesma run — as duas tentativas usaram o MESMO
+  `pages_build_version`/ID de deployment (a SHA do commit nunca muda entre reruns), e as
+  duas travaram exatamente do mesmo jeito — sugere que o problema pode estar grudado
+  nesse ID de deployment específico (lock/estado preso do lado do backend do GitHub
+  Pages), não só uma instabilidade aleatória de infraestrutura que uma nova tentativa
+  resolveria sozinha.
+- **Não é bug de código nem de configuração do repo** — o `.github/workflows/` não foi
+  tocado, o artefato sobe certo (confirmado pelo `tar`/upload no log, incluindo
+  `index.html` com o conteúdo certo), e commits anteriores (`24f0d3c`, `c656290`, etc.)
+  sempre publicaram normalmente em 1-2 minutos. É uma instabilidade do lado do GitHub
+  (Pages deployment backend), fora do alcance do código deste projeto.
+- **Mitigação aplicada**: em vez de insistir num 3º `rerun_workflow_run` do mesmo commit
+  (mesmo ID de deployment, mesmo risco de travar de novo), esta própria seção do
+  CLAUDE.md virou o commit seguinte — um SHA novo pega um ID de deployment novo,
+  contornando um possível lock preso no ID antigo.
+- **Lição pro futuro, registrada aqui pra não repetir a investigação do zero**: sempre
+  que o cliente disser "não mudou nada" mesmo depois de eu confirmar que o commit certo
+  já está no `main`, o próximo passo (antes de desconfiar de cache do navegador ou da
+  interpretação do pedido) é checar o histórico de runs do "Deploy to GitHub Pages" via
+  GitHub Actions — `mcp__github__actions_list` (`method:'list_workflow_runs'`) mostra se
+  o deploy daquele commit específico teve `conclusion:'failure'`. Se sim, os logs do job
+  (`mcp__github__get_job_logs`) costumam apontar exatamente esse padrão de
+  `deployment_queued` travado — vale rodar `mcp__github__actions_run_trigger` com
+  `method:'rerun_workflow_run'`, mas se travar de novo no mesmo SHA, um commit novo
+  (mesmo que só documentação) já resolve na prática, sem precisar esperar o GitHub do
+  outro lado destravar sozinho.
+
+**Atualização — o padrão se repetiu mais 5 vezes ao longo do mesmo dia** (commits
+`0cb2f2a`, `01367f0`, e depois — já numa sessão seguinte — `15520b1`/`e73b390`, este
+último ~21 min preso antes de cancelar sozinho, `job.conclusion:'cancelled'` sem nenhum
+step chegando a rodar, não mais `'failure'` com log de "Timeout reached" — mesma causa
+de fundo, só a forma como a action reporta o cancelamento mudou entre versões/tentativas)
+— total de **7 falhas seguidas** desse mesmo padrão num único dia, intercaladas com
+deploys que funcionaram normalmente antes e depois (`24f0d3c`, `c656290`). Isso é
+instabilidade demais pra ser só "flakiness aleatória" — vale o cliente checar, pelo
+painel web do GitHub (não acessível por API através do proxy deste sandbox — tentativa
+de checar `GET /repos/.../environments` retornou "Access to this GitHub API path is not
+permitted through this proxy"):
+- **Settings → Environments → `github-pages`** — se existir um "wait timer" ou
+  "required reviewers" configurado nesse ambiente, isso bloquearia o deployment
+  exatamente do jeito visto aqui (fica "queued" um tempo fixo, depois a action desiste e
+  cancela) — combina bem com o timing observado (~10-21 min sempre antes de cancelar).
+- **Settings → Pages** — confirmar que a fonte continua "GitHub Actions" (não
+  "Deploy from a branch", que usaria um mecanismo totalmente diferente) e que não há
+  nenhum aviso/erro listado ali sobre o domínio custom ou certificado.
+- Se nenhum dos dois explicar, é mesmo uma instabilidade do backend de Pages do lado do
+  GitHub — nesse caso abrir um ticket de suporte com o link de uma das runs travadas
+  (ex.: `https://github.com/selgron-estoque/selgron-estoque.github.io/actions/runs/31122801737`)
+  é o próximo passo, já que reruns/commits novos claramente não estão resolvendo sozinhos
+  depois da 7ª repetição.
+
+## Segundo reset de "Endereços Pendentes" — chave `_v3`, cliente vai começar a usar de verdade agora
+
+Cliente pediu: "Limpar fila de Endereços pendentes, vou começar a trabalhar com ela a
+partir de agora" — mesmo padrão de reset já aplicado antes a `inventories`/`counts`
+("Reset geral de contagens/inventários...") e à própria fila de endereços uma vez
+("Quarto pedaço do backend real..." — na época, item de teste tipo "TRAVA ROLO PRESS").
+
+- **Bump de chave**: `enderecosPropostos_v2` → `enderecosPropostos_v3` — mesmo
+  mecanismo de sempre, zera o cache local de qualquer aparelho que abrir depois deste
+  deploy, sem comando manual em cada um.
+- **Diferente do reset anterior desta mesma fila**: hoje `enderecos_propostos` já
+  sincroniza via Realtime (não sincronizava na época do reset `_v2`) — e o merge dessa
+  tabela é **aditivo, nunca remove localmente**
+  (`mergeByIdComTimestamp(prev, remote, {timestampField:'atualizadoEm'})`, SEM
+  `removeMissing:true` — decisão de propósito, documentada no próprio `useEffect`:
+  "proposta nunca é deletada no app"). Isso significa que só bumpar a chave NÃO seria
+  suficiente desta vez: sem apagar a tabela no Supabase também, o próximo `sync()`
+  (conexão do canal Realtime) traria de volta as MESMAS propostas antigas pro cache
+  local recém-zerado, entre elas "confirmado"/"rejeitado" também (a tela
+  `AddressValidationPanel` mostra a lista inteira, não só `status==='pendente'` — os já
+  resolvidos aparecem com a tag "Confirmado"/"Rejeitado" na mesma lista, sem seção
+  separada).
+- **Precisa do cliente rodar no Supabase** (SQL Editor do projeto real, sandbox sem
+  acesso de rede pra fazer isso à distância, mesma limitação de sempre):
+  ```sql
+  delete from enderecos_propostos;
+  ```
+  Sem `cascade`/dependência de FK — a tabela nunca teve nenhuma outra apontando pra ela
+  (sempre foi desenhada denormalizada, sem FK pra `usuarios`/`produtos`, mesma razão já
+  documentada quando foi criada).
+- Testado via transpile Babel do arquivo inteiro (OK) e balanceamento de chaves do CSS
+  (666/666, sem mudança — só um literal de string trocado, nenhuma classe CSS tocada).
+  Rodei de novo toda a suíte de regressão do scratchpad (56 harnesses, 737 asserções) —
+  0 falhas. **Falta o cliente rodar o `delete` acima no Supabase real** — só depois
+  disso a fila fica genuinamente vazia em todos os aparelhos (o bump de chave sozinho já
+  publicado não é suficiente sem esse passo, pelo motivo explicado acima).
+
+## Bug real (urgente): "Lista Importada (Excel)" não seguia a sequência de endereço
+
+Cliente reportou, marcado urgente: "Lista importada não está seguindo sequencia de
+endereço" — operadores andando de um lado pro outro no armazém contando fora de ordem.
+Investigado: uma decisão anterior deste projeto (ver seção "Novo tipo de inventário:
+'Itens Específicos'" mais acima) tinha adicionado `ordenarPorEndereco` só pro tipo
+"Itens Específicos", deixando "Lista Importada (Excel)" de propósito respeitando a
+ordem exata da planilha (`ImportedListCountFlow`, `setAllItems(inv.tipo==='Itens
+Específicos' ? ordenarPorEndereco(montado) : montado)`). O cliente deixou claro agora
+que isso não é o que ele quer — os dois tipos precisam seguir a sequência física.
+
+- **`ImportedListCountFlow` passou a ordenar por endereço pros DOIS tipos**, sem
+  distinção — mesma função `ordenarPorEndereco` (corredor→rua→posição numérica) já
+  usada em Aleatória/Curva ABC/Grupo/Itens Específicos.
+- **Bug real, achado só ao escrever o teste do cenário de migração (inventário JÁ
+  parcialmente contado sob a ordem antiga da planilha no momento deste deploy)**: a
+  1ª versão da correção separava os itens por "já tem contagem registrada NESTE
+  inventário" (via `counts`, não posição no array — protegendo contra pular/repetir
+  item numa migração) e concatenava `[...ordenarPorEndereco(naoContados),
+  ...ordenarPorEndereco(jaContados)]` — mesmo padrão já usado em `RandomCountFlow`. Só
+  que essa ordem está ERRADA pra `ImportedListCountFlow`: `inv` aqui vem de
+  `flowState` — um retrato CONGELADO no momento da navegação, nunca muda de
+  identidade durante a sessão (diferente do que uma leitura rápida do código sugere) —
+  então `jaContados = inv.contados` fica FIXO a sessão inteira, e `pendentes =
+  allItems.slice(jaContados)` só funciona certo se os primeiros `jaContados`
+  elementos do array forem justamente os JÁ CONTADOS (removidos do início pelo
+  slice), sobrando só os pendentes depois. Com "não contados primeiro" (a ordem
+  copiada de `RandomCountFlow`), o slice cortava itens NUNCA contados do início da
+  fila e devolvia itens JÁ contados misturados nos pendentes — silenciosamente, sem
+  erro nenhum. Corrigido invertendo a ordem: `[...ordenarPorEndereco(jaContados),
+  ...ordenarPorEndereco(naoContados)]` — já-contados primeiro, pendentes depois.
+- **Por que `RandomCountFlow` usa a ordem OPOSTA e está certo assim**: lá, `allItems`
+  não é uma lista fixa pertencente ao inventário — é um pool recém-buscado por RPC
+  (`fetchContagemItensPrioritarios`) a cada mount, e o split por "já contado" ali é
+  só pra PRIORIZAR item nunca contado (em QUALQUER inventário) dentro do corte
+  `.slice(0, qtd)` do pool — um conceito diferente do "resume exato por posição
+  dentro de uma lista fixa" que `ImportedListCountFlow` precisa. Os dois componentes
+  têm razão de ser cada um com sua ordem — não é uma inconsistência a corrigir.
+- Testado via harness dedicado (`harness_lista_importada_ordenar_endereco.js`, extraído
+  do `index.html` real via Babel+`vm.Script`, mesma técnica de sempre): confirma que
+  a linha antiga (ternário por `inv.tipo`) não existe mais; que um inventário NOVO
+  (sem nenhuma contagem ainda) sai com a fila inteira em ordem de endereço, sem perder
+  nenhum item; e — o teste que pegou o bug — que um inventário MIGRADO (2 de 5 itens
+  já contados sob a ordem antiga da planilha, em posições não-contíguas) tem `pendentes
+  = allItems.slice(jaContados)` batendo EXATAMENTE com os itens nunca contados neste
+  inventário, em ordem de endereço, sem repetir nem pular nenhum, e sem confundir uma
+  contagem de OUTRO inventário do mesmo código como se fosse deste (contagem é por
+  documento, não por código global). Harness pré-existente
+  (`harness_itens_especificos_ordenar_endereco.js`) atualizado — a asserção que
+  checava a distinção por tipo virou uma checagem de que ela NÃO existe mais (mudança
+  de comportamento intencional, não regressão). Rodei de novo toda a suíte de
+  regressão do scratchpad (57 harnesses) — 0 falhas. Transpile Babel do arquivo
+  inteiro e balanceamento de chaves do CSS conferidos (666/666, sem mudança — só JS,
+  nenhuma classe CSS tocada). **Verificação visual/funcional de ponta a ponta (o
+  operador andando na sequência certa de verdade) fica a cargo do cliente** — mesma
+  limitação de sempre (login exige Supabase Auth real, não simulável no sandbox sem
+  rede) — mas como a correção é só na LEITURA (não depende de nenhuma migração de
+  SQL), já deve valer pra qualquer inventário "Lista Importada"/"Itens Específicos"
+  assim que o deploy publicar, inclusive os já parcialmente contados.
+
+## "Pular contagem" passa a adiar pro FINAL da fila, dentro da mesma sessão + bug real de item perdido em Rota de Endereço
+
+Cliente pediu: "Colocar opção de próxima para caso eu queira pular contagem, e no
+final eu volto para aquele item". O botão "Pular contagem" já existia (ver seção
+"Botão 'Pular contagem'..." mais acima) — sua confirmação já PROMETIA exatamente isso
+("Ele continua pendente e volta a aparecer na fila mais tarde"), mas a implementação
+de fato (`q.next()`, o mesmo método usado ao FINALIZAR uma contagem de verdade) só
+avançava o cursor pra frente — o item pulado só reaparecia numa sessão FUTURA (saindo
+e reentrando no inventário), nunca "no final" da fila atual, como o cliente queria.
+
+- **`useCountQueue` reescrito**: em vez de um `idx` numérico (posição no array),
+  passou a rastrear progresso por CÓDIGO — `processados` (Set, marcado por `next()`,
+  remove o item da fila de vez) e `adiados` (objeto código→ordem, marcado por
+  `defer()`, só REORDENA o item pro final da fila de pendentes, sem tirá-lo dela).
+  `current` é sempre derivado direto da lista `items` recebida (filtrada por
+  `processados`, ordenada por `adiados`), nunca de uma posição numérica congelada.
+- **Bug real, achado e corrigido no mesmo lugar (não fazia parte do pedido original,
+  mas é o mesmo mecanismo)**: `RouteCountFlow` usa uma fila que ENCOLHE ao vivo
+  (`itensCorredor`, recalculada a cada `counts` novo — o item recém-contado sai do
+  array na mesma leva de atualização que o antigo `idx` incrementava). Confirmado
+  empiricamente (harness dedicado, extraindo o `useCountQueue` REAL do sandbox, não
+  uma reimplementação à mão): completar o 1º de 3 itens de um corredor já pulava
+  direto pro 3º (o 2º nunca aparecia); completar mais um marcava "Corredor concluído"
+  com o 2º item nunca contado — silenciosamente perdido daquela passada pelo corredor
+  (só reapareceria escolhendo o MESMO corredor de novo, na tela de escolha, que
+  recalcula `pendentesCor` do zero). Rastrear por código elimina esse descompasso —
+  `current` nunca mais depende de um índice que pode ficar desalinhado quando o array
+  muda de tamanho entre um render e outro.
+- **`onSkip` nos 3 fluxos com fila** (`RandomCountFlow`/`RouteCountFlow`/
+  `ImportedListCountFlow`) trocou de `()=>q.next()` pra `()=>q.defer()` — pular deixa
+  de "concluir" silenciosamente a posição (o que fazia `q.idx`/`queueAtual` avançar
+  como se o item tivesse sido resolvido) e passa a só reordenar. `ManualCountFlow`
+  (busca avulsa, sem fila) não foi tocado — continua só limpando a busca.
+  `q.idx` agora só avança quando um item é de fato CONCLUÍDO (`next()`) — adiar não
+  mexe no contador "Item N de Total", já que o item continua pendente, só mudou de
+  posição.
+- **Texto do botão/confirmação não mudou** — "Pular este item? Ele continua pendente
+  e volta a aparecer na fila mais tarde — nada é registrado como contado agora." já
+  descrevia com precisão o comportamento pedido; só a implementação por trás precisava
+  entregar de verdade essa promessa, dentro da MESMA sessão de contagem.
+- Testado via harness dedicado (`harness_pular_contagem_defer.js`, `useCountQueue`
+  extraído do `index.html` real via Babel+`vm.Script`+`react-dom/client`+`act()`, mesma
+  técnica de sempre): (1) fila ESTÁVEL (padrão Random/ImportedList) — adiar o 1º item
+  mostra o 2º sem pular pro 3º, o contador de progresso não avança em cima de um
+  defer, e o item adiado reaparece corretamente no final assim que os outros dois são
+  concluídos, sem nunca cair em "fila concluída" enquanto ele ainda está pendente; (2)
+  fila que ENCOLHE ao vivo (padrão Route) — confirma o bug antigo reproduzido e
+  corrigido (completar o 1º item agora mostra o 2º, nunca pula pro 3º; nenhum item se
+  perde ao concluir os 3), e que adiar também funciona corretamente nesse padrão,
+  incluindo o item adiado reaparecendo no final mesmo com o array mudando de tamanho
+  entre um passo e outro; (3) checagem de código-fonte confirmando que os 3 fluxos
+  usam `q.defer()` (nenhum mais usa `q.next()` no `onSkip`) e que `ManualCountFlow`
+  não foi tocado. Rodei de novo toda a suíte de regressão do scratchpad (58
+  harnesses) — 0 falhas. Transpile Babel do arquivo inteiro e balanceamento de chaves
+  do CSS conferidos (666/666, sem mudança — só JS, nenhuma classe CSS tocada).
+  **Verificação visual/funcional de ponta a ponta (pular um item de verdade numa
+  Rota de Endereço/Aleatória/Lista Importada e ver ele reaparecer no fim da fila) fica
+  a cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth real,
+  não simulável no sandbox sem rede) — mas como a correção é só de lógica de front-end
+  (não depende de nenhuma migração de SQL), já deve valer assim que o deploy publicar.
+
+## Etiquetas: tamanho sobe pra 100×30mm por coluna + calibração ganha o lado esquerdo
+
+Cliente pediu: "atualizar em todos os locais o tamanho da etiqueta para 100x30" —
+até aqui, cada coluna do rolo TSC era 50×30mm (folha inteira 101×31mm, 2 colunas +
+~1mm de gap). Perguntei via `AskUserQuestion` qual das 3 leituras possíveis era a
+certa (etiqueta única sem pareamento / as 2 colunas viram 100mm cada, mesmo
+pareamento / a folha inteira vira 100×30mm com colunas de ~49,5mm) — sem resposta
+direta a essa pergunta, mas o cliente mandou, em seguida, um esclarecimento que já
+resolve a ambiguidade sozinho: **"na calibragem de etiqueta incluir calibragem para
+a etiqueta da esquerda também"** — só faz sentido pedir calibração pro lado
+ESQUERDO se o pareamento de 2 colunas continua existindo (antes só a direita podia
+ser calibrada, ver seção "Calibração manual da margem da etiqueta da direita" mais
+acima) — confirma que a leitura certa é a 2ª: cada uma das 2 colunas passa a ser
+100×30mm (a folha física inteira vai de 101mm pra 201mm de largura, mesma conta de
+sempre pro vão entre colunas — 2×100+1mm de gap).
+
+- **CSS**: `@page`/`.etq-page` (101mm→201mm de largura), `.etq-page-col` (50mm→
+  100mm) — altura não mudou em nenhum dos dois (continua 30/30,5/31mm, mesmos
+  valores de sempre, inclusive a folga de 0,5mm contra o bug do Chrome 109/Windows 7
+  já documentado antes). Alvo do código de barras (bloco inteiro, barras+texto
+  descritivo) dobrou de largura nos 3 tipos de etiqueta — `.etq-endereco .etq-
+  barcode` 44→88mm, `.etq-produto .etq-barcode` 46→92mm, `.etq-prateleira .etq-
+  barcode` 46→92mm — e `.etq-prat-desc{max-width}` acompanhou (46→92mm). Nenhuma
+  fonte/padding/margem interna mudou — só a largura disponível cresceu, então o
+  espaço extra vira folga, não aperto.
+- **`ETIQUETA_BARCODE_CONFIG.larguraMm`** (JS, alimenta `desenharBarcodesEtiqueta` —
+  a técnica de "nasce no tamanho físico exato via JsBarcode em 2 passadas", pra
+  nunca depender de reescala forçada pelo CSS) atualizado em paralelo, mesmos 3
+  valores (88/92/92) — já era um ponto sensível de dessincronia neste projeto (ver
+  seção "Bug real: constante JS dessincronizada da caixa CSS" mais acima), então
+  os dois lugares foram trocados juntos, no mesmo commit.
+- **Calibração vira POR LADO (esquerda + direita), não só direita**: a chave de
+  `localStorage` mudou de forma (`{x,y}` de 1 lado só → `{esquerda:{x,y},
+  direita:{x,y}}`) — bump de chave (`etiquetaAjusteMargemDireita` →
+  `etiquetaAjusteMargem_v2`, mesmo critério já usado em outras chaves deste app
+  quando o FORMATO muda de jeito incompatível, ex. `inventories_v2`/`counts_v2`) em
+  vez de tentar migrar o dado antigo — é só uma calibração de bancada, sem custo
+  nenhum refazer. `salvarAjusteMargemEtiquetaDireita`/`carregarAjusteMargemEtiquetaDireita`
+  viraram `salvarAjusteMargemEtiqueta`/`carregarAjusteMargemEtiqueta` (sem "Direita"
+  no nome — não faz mais sentido, cobrem os dois lados agora).
+- **`buildEtiquetaPageHtml(itens, quebrarDepois, ajustes)`**: o 3º parâmetro deixou
+  de ser só o ajuste da direita e virou `{esquerda, direita}` — cada COLUNA aplica
+  o ajuste do PRÓPRIO lado (`i===0` usa `ajustes.esquerda`, `i===1` usa
+  `ajustes.direita`), de forma independente uma da outra. Numa folha de 1 item só
+  (impressão avulsa sem par disponível), a única coluna usa o ajuste da esquerda —
+  o da direita fica sem nenhuma coluna pra se aplicar nesse caso, exatamente como
+  antes só a direita tinha efeito numa folha de 2 colunas.
+- **`EtiquetasPanel`**: o painel de calibração (toggle "Calibrar etiquetas", era
+  "Calibrar etiqueta da direita") ganhou uma 2ª seção — "Etiqueta da esquerda" e
+  "Etiqueta da direita", cada uma com os mesmos 2 campos de sempre (Horizontal/
+  Vertical em mm, texto sanitizado, grava a cada tecla sem botão "Salvar" — mesmo
+  padrão já estabelecido). "Restaurar (0,0)" virou "Restaurar as duas (0,0)" — zera
+  os 4 valores de uma vez, não só 2.
+- **`preview-etiqueta.html`** (ferramenta de autonomia do cliente, já publicada)
+  sincronizada com os mesmos valores — os 2 boxes de prévia (`width:50mm`→`100mm`),
+  o `#css-baseline` (cópia estática de fallback do CSS) e o `ETIQUETA_BARCODE_CONFIG`
+  local (mirror em JS, `larguraMm` 44/46→88/92) — mesmo cuidado de sempre nesta
+  ferramenta, já que ela só reflete o CSS ao vivo do `index.html`, mas mantém uma
+  cópia estática de segurança que precisa ser atualizada manualmente. Continua sem
+  suporte ao tipo "Prateleira/Caixa" (gap já aceito desde que essa etiqueta foi
+  criada, não coberto aqui).
+- Testado via harness reescrito por completo (`harness_etiqueta_calibracao_margem.js`,
+  49 asserções — cobre os 2 lados independentes, valor zerado em cada lado sem
+  afetar o outro, folha de 1 item usando só o ajuste da esquerda, chave antiga
+  ignorada sem quebrar, e a UI com os 4 campos/2 seções) e os 3 harnesses que já
+  verificavam tamanho em mm no CSS/`ETIQUETA_BARCODE_CONFIG` atualizados pros
+  valores novos (`harness_etiqueta_layout_endereco.js`/`harness_etiqueta_layout_fix.js`/
+  comentário de `harness_etiqueta_duas_colunas.js`). Rodei de novo a suíte completa
+  do scratchpad (58 harnesses) — 0 falhas. Transpile Babel do arquivo inteiro e
+  balanceamento de chaves do CSS conferidos (666/666, sem mudança líquida — só
+  valores dentro de regras já existentes). **Verificação física de ponta a ponta
+  (o rolo real de 100mm por coluna, os dois lados calibrando corretamente) fica
+  100% a cargo do cliente** — mesma limitação de sempre nesta feature (sandbox sem
+  impressora física).
+
+## Tamanho da etiqueta revertido de volta a 50×30mm — só a calibração dos 2 lados ficou
+
+Cliente testou a rodada anterior (100×30mm por coluna) e voltou atrás: **"a etiqueta
+não muda o tamanho manter 50x30 incluir apenas a calibragem das duas etiquetas
+esquerda e direita"** — ou seja, das duas mudanças que tinham ido juntas no mesmo
+commit (aumento de tamanho + calibração dos 2 lados), só a 2ª era pra ficar.
+
+- **Revertido cirurgicamente, não com `git revert` do commit inteiro** — as duas
+  mudanças estavam de fato misturadas no mesmo commit (`6ca5ac1`), então um revert
+  puro desfaria a calibração dos 2 lados junto, que o cliente quer manter. Em vez
+  disso, cada valor de tamanho foi devolvido à mão pro que era antes (`@page`/
+  `.etq-page`/`.etq-page-col`: 201mm→101mm de folha, 100mm→50mm por coluna; os 3
+  alvos de código de barras — endereço/produto/prateleira — voltaram de 88/92/92mm
+  pra 44/46/46mm de largura; `ETIQUETA_BARCODE_CONFIG.larguraMm` acompanhou junto,
+  mesmo cuidado de sempre pra não dessincronizar CSS/JS; textos de UI que citavam
+  "201×31mm" voltaram a dizer "101×31mm") — mantendo intocado tudo que é só sobre
+  calibração (`ETIQUETA_AJUSTE_MARGEM_KEY`/`_v2`, `salvarAjusteMargemEtiqueta`/
+  `carregarAjusteMargemEtiqueta`, `buildEtiquetaPageHtml(itens, quebrarDepois,
+  ajustes)` com `{esquerda, direita}`, o painel em `EtiquetasPanel` com as 2 seções
+  de campos "Etiqueta da esquerda"/"Etiqueta da direita"). O tamanho da etiqueta e a
+  calibração por lado sempre foram conceitos independentes — reverter um sem tocar
+  no outro não exigiu nenhum truque, só cuidado pra separar as duas coisas no diff.
+- **`preview-etiqueta.html`** revertido por completo pro estado anterior a esse
+  commit (`git show <commit> -- preview-etiqueta.html | git apply -R`) — esse
+  arquivo não tem nada relacionado a calibração (é só a prévia visual/CSS), então
+  o revert ali é 100% limpo, sem precisar separar nada.
+- Testado via transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  (666/666, batendo com o valor de antes da rodada anterior — o mesmo número de
+  antes de 100×30mm, como esperado de um revert exato). Os 3 harnesses que tinham
+  sido atualizados pra 100×30mm (`harness_etiqueta_layout_endereco.js`/
+  `harness_etiqueta_layout_fix.js`) voltaram a checar 44/46mm e 50mm/101mm — o
+  harness de calibração (`harness_etiqueta_calibracao_margem.js`, que testa a
+  MECÂNICA de calibrar os 2 lados, não valores de mm da etiqueta em si) não
+  precisou de nenhuma mudança, continuou passando as mesmas 49 asserções sem
+  tocar em nada. Rodei de novo toda a suíte completa do scratchpad (58 harnesses,
+  789 asserções) — 0 falhas. **Verificação física de ponta a ponta (calibrar os 2
+  lados de verdade contra o rolo real de 50mm por coluna) fica a cargo do
+  cliente** — mesma limitação de sempre nesta feature (sandbox sem impressora
+  física).
+
+## "Aguardando Armazém" renomeado pra "Analisados"
+
+Cliente pediu: "Aguardando Armazém para Analisados" — mesmo padrão de rename já
+usado antes ("Aprovação de Ajustes" → "Aguardando Aprovação"): só o RÓTULO
+exibido mudou, o id interno da view (`solicitacaoArmazem`) foi mantido de
+propósito, pra não precisar tocar em `hasAccess`/`goto()`/`ACESSOS_RESTRITOS`/
+`SolicitacaoArmazemPanel` nem em nenhuma outra referência interna.
+
+- **4 lugares com texto visível trocados**: `TODOS_OS_MENUS` (rótulo usado no
+  dual-list "Editar Usuário"), `VIEW_TITLES.solicitacaoArmazem` (título do
+  `DesktopTopbar` ao entrar na tela), `buildSidebarGroups` (rótulo do item no
+  menu lateral) e o `label` do KPI correspondente na Home.
+- **12 ocorrências em comentários de código** (`index.html` + 3 harnesses do
+  scratchpad) trocadas via find/replace direto, mesmo critério já usado no
+  rename anterior — sem efeito em runtime, só pra não deixar comentário
+  desatualizado citando o nome antigo.
+- Testado via transpile Babel do arquivo inteiro e balanceamento de chaves do
+  CSS (666/666, sem mudança — troca só de texto). Rodei de novo toda a suíte
+  completa do scratchpad (58 harnesses, 789 asserções) — 0 falhas. **Verificação
+  visual de ponta a ponta fica a cargo do cliente** — mesma limitação de sempre
+  (login exige Supabase Auth real, não simulável no sandbox sem rede).
+
+## Tela "Etiquetas" fica mais compacta — 4 ajustes de UX numa mensagem só
+
+Cliente mandou um print da tela "Etiquetas" com 4 pontos marcados: "1 - Remover
+os textos e manter apenas os botões. O texto explicativo botão em um botão de
+sobreposição, sei lá um lugar que eu possa ler para entender para que serve
+cada botão. 2 - Código com a fonte maior, visto que ele é o principal meio de
+identificação. 3 - Quantidade Recebida e de etiqueta pode ser uma ao lado da
+outra e pode justificar o campo de data. 4 - Como vai reduzir bastante a
+altura desta tela pode voltar o botão de fila para ao lado dos demais."
+
+- **1 — Textos explicativos viram ícone "?"/link, sem prosa solta na tela**:
+  os 2 parágrafos longos (instruções de como imprimir; dica sobre o
+  `preview-etiqueta.html`) saíram do fluxo visual — reaproveitado o mesmo
+  padrão `.cfg-help-btn` já estabelecido em Configurações (círculo pequeno com
+  "?", `cursor:help`, texto completo só no `title`, tooltip nativo do
+  navegador, sem popover/JS customizado). O link pro `preview-etiqueta.html`
+  (só admin) virou um ícone clicável (`DIcon name="palette"`) com o mesmo
+  padrão de tooltip, em vez de um parágrafo com link embutido — continua
+  abrindo em nova aba, só ficou compacto. O botão "Calibrar etiquetas" não fez
+  parte dessa limpeza (não é texto explicativo, é uma ação em si) — continua
+  como estava, só reposicionado na mesma fileira compacta.
+- **2 — Código do item em fonte maior**: `.item-code` ganhou `style={{fontSize:
+  26,fontWeight:700}}` inline (a classe base é `var(--text-sm)`, 12.5px) —
+  "principal meio de identificação", pedido explícito do cliente. Mesmo
+  padrão de escopo já usado antes neste projeto pra overrides pontuais de
+  fonte (inline `style` em vez de mexer na regra CSS compartilhada, que é
+  usada por outras telas também).
+- **3 — Quantidade Recebida/Quantidade de Etiquetas/Data numa linha só**: os 3
+  campos (que antes ficavam em 2 blocos — Recebida+Data juntos, Etiquetas
+  sozinha embaixo) viraram 3 filhos diretos do MESMO container flex
+  (`display:flex;gap:10px;flexWrap:'wrap'`), cada um com `flex:1;minWidth:110`
+  — cabe os 3 lado a lado em telas largas, quebra pra 2/1 por linha só se a
+  tela for estreita demais (`flexWrap`). Só vale pro modelo "Recebimento"
+  (`modeloEtiqueta==='recebimento'`) — o modelo "Prateleira/Caixa" nunca teve
+  Quantidade Recebida/Data (não fazem sentido nesse modelo, decisão já
+  documentada antes), continua só com "Quantidade de etiquetas" sozinho, num
+  campo próprio e mais estreito (`maxWidth:200`).
+- **4 — "Enviar para Fila" volta pra fileira de baixo, junto dos outros 2**:
+  reverte uma mudança de uma rodada anterior (que tinha movido esse botão pra
+  cima, ao lado do código, por causa da rolagem que a tela alta exigia) — como
+  os pontos 1-3 já reduzem bastante a altura da tela, o motivo original de
+  mantê-lo perto do topo deixou de existir. `.btn-row` (rodapé do card de
+  confirmação) voltou a ter os 3 botões de sempre — "Voltar"/"Enviar para
+  Fila"/"Imprimir Etiqueta" — e `.item-code` ficou sozinho no topo do card,
+  só com o código em si (fonte maior, ponto 2) mais a descrição logo abaixo.
+- Testado via harness novo (`harness_etiqueta_layout_compacto.js`, jsdom +
+  react-dom/client + `act()`, mesma técnica rigorosa de sempre — carrega o
+  `index.html` inteiro transpilado numa `vm.Script`): confirma que os 2 textos
+  longos não aparecem mais como texto visível na tela; que o ícone "?" existe
+  com o texto completo das instruções de impressão no `title`; que o link pro
+  `preview-etiqueta.html` continua existindo/clicável/com tooltip completo
+  (só pra admin — confirmado que um perfil operador não vê esse link, mas
+  continua vendo o ícone de ajuda geral); que o botão "Calibrar etiquetas"
+  continua existindo; que `.item-code` tem a fonte maior (26px/700) depois de
+  selecionar um item; que os 3 campos (Recebida/Etiquetas/Data) são filhos
+  diretos do MESMO container flex, não mais espalhados em 2 blocos; e que o
+  modelo "Prateleira/Caixa" continua mostrando só "Quantidade de etiquetas",
+  sem Recebida/Data. 2 harnesses pré-existentes precisaram de ajuste — mudança
+  de comportamento intencional desta rodada, não regressão:
+  `harness_etiqueta_enter_data_travada.js` (a dica "toque 2x pra alterar" da
+  Data virou só "toque 2x", mais curta, pra caber no rótulo compacto da linha
+  de 3 campos) e `harness_etiqueta_enviar_fila_topo.js` (reescrito por
+  completo — as asserções que checavam o botão AO LADO do código agora
+  checam o oposto: `.item-code` sem nenhum `<button>` como irmão direto, e
+  `.btn-row` de volta com os 3 botões). Rodei de novo toda a suíte completa
+  do scratchpad (59 harnesses, 1.113 asserções) — 0 falhas. Transpile Babel do
+  arquivo inteiro e balanceamento de chaves do CSS conferidos (666/666, sem
+  mudança — nenhuma classe CSS nova, tudo reaproveitado via `.cfg-help-btn`/
+  `.role-note`/`.field`/`.btn-row` já existentes mais `style` inline).
+  **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma
+  limitação de sempre (login exige Supabase Auth real, não simulável no
+  sandbox sem rede).
+
+## "Pulando uma fileira" na impressão de etiqueta avulsa — não era bug do app
+
+Cliente mandou foto de uma impressão real reclamando: "Quando eu imprimo uma
+etiqueta sozinha ele pula uma fileira de etiqueta. Se imprimir mais ele vai
+normal." Investigado a fundo (recortes da foto em pixel, cruzados com o
+código de `imprimirEtiquetaViaNavegador`/`buildEtiquetaPageHtml`/`.etq-page`)
+antes de responder — nenhum bug encontrado em nenhum caminho de código:
+`.etq-page` é uma única `<div>` de 101×30,5mm por impressão avulsa, sem
+transbordo pra 2ª página; só existe 1 elemento `#etiqueta-print-area` no
+arquivo (sem duplicata escondendo impressão antiga); `#root{display:none
+!important}` esconde o app inteiro durante a impressão; e nenhuma das 3
+funções que imprimem (`handleImprimir`/`handleImprimirFila`/
+`handleImprimirTodos`) chama `window.print()` duas vezes — o botão fica
+`disabled` enquanto imprime, protegido contra duplo-clique. Concluído (e
+comunicado ao cliente): isso é comportamento de **driver da impressora/
+Windows**, não do site — comum em impressoras térmicas de etiqueta avançar
+uma etiqueta extra em branco no FIM de um trabalho de impressão muito curto
+(1 página só), configuração normalmente chamada de "Tear-off"/"Avanço"/
+"Backfeed" nas Preferências de Impressão do driver — some quando o trabalho
+tem várias páginas juntas (o avanço extra só acontece 1 vez, no fim do job
+inteiro, ficando proporcionalmente menos perceptível). Nenhuma mudança de
+código nesta investigação — registrado aqui só pra não repetir a
+investigação do zero se o cliente relatar de novo.
+
+## Bug real: unidade de medida da etiqueta não usava a consulta ao vivo — "Nas contagens ok, mas na etiqueta não"
+
+Cliente mandou print de uma etiqueta mostrando "QTD: 10 UN" e apontou:
+"A unidade de medida não está puxando corretamente. Nas contagens OK, mas na
+etiqueta não." Investigado: `CountStep` (o motor de contagem) já tinha DUAS
+fontes pra unidade/descrição desde a rodada "Última movimentação via Kardex
+ao vivo" (ver seção "Descrição/unidade também passam a vir da consulta ao
+vivo" mais acima) — `unidadeEfetiva`/`descricaoEfetiva`, que priorizam a
+consulta ao vivo (Selgron/Protheus, via `fetchSaldoConsultaSelgron`) sobre o
+cadastro do Supabase (`produtos.unidade`, só atualizado quando alguém
+reimporta a planilha manualmente em Configurações — pode estar desatualizado
+ou simplesmente nunca ter sido preenchido pra aquele código). **A tela
+"Etiquetas" nunca teve essa 2ª fonte** — `EtiquetasPanel` chamava
+`searchSupabaseCatalog` só uma vez, na busca, e usava `selecionado.unidade`/
+`selecionado.descricao` direto pra montar a etiqueta, sem nunca consultar o
+Selgron ao vivo — daí a divergência exata reportada: a MESMA unidade que a
+contagem já mostrava certa (via consulta ao vivo) saía errada/genérica
+("UN", o fallback) na etiqueta (só cadastro, sem consulta).
+
+- **`liveConsultaEtiqueta`** (novo `useState`, `EtiquetasPanel`) — mesmo
+  padrão exato de `CountStep.liveConsulta`: um `useEffect` disparado quando
+  `selecionado.codigo` muda (só pra `aba==='produto'` — a etiqueta de
+  endereço nunca mostra unidade/descrição, não precisa dessa consulta extra)
+  chama `fetchSaldoConsultaSelgron(selecionado.codigo)`.
+- **`unidadeEfetivaEtiqueta`/`descricaoEfetivaEtiqueta`** — mesma fórmula de
+  `CountStep` (`unidadeCadastroValida` reaplicada na unidade vinda da
+  consulta, mesma proteção contra o parser devolver algo no formato de
+  endereço por engano — ver "Bug real: 'Unidade' mostrando valor no formato
+  de endereço" mais acima). Substituem `selecionado.unidade`/
+  `selecionado.descricao` nos 3 pontos que montam a etiqueta
+  (`montarItensParaImprimir`, tanto pro modelo "Recebimento" quanto
+  "Prateleira/Caixa") e no card de confirmação da tela (`.item-desc`).
+- **Nova linha "Unidade: X" no card de confirmação** (só modelo
+  "Recebimento", que é o único que mostra QTD) — deixa visível ANTES de
+  imprimir qual unidade vai sair na etiqueta, com "(ao vivo)" só quando
+  genuinamente veio da consulta (nunca afirma isso sem ter checado, mesmo
+  critério de honestidade de sempre neste projeto) — não existia nenhum jeito
+  de conferir isso antes de imprimir, só depois, olhando a etiqueta física.
+- **Pedido mais amplo já dado antes, reaproveitado aqui**: "todos os locais
+  que pedem unidade de medida e descrição, alterar da planilha para puxar
+  direto do Consulta" — como a tela de Etiquetas mostra os dois, corrigi os
+  dois juntos (não só a unidade reportada), evitando deixar a descrição com
+  o mesmo tipo de defeito só pra aparecer como uma reclamação nova depois.
+- Testado via harness novo (`harness_etiqueta_unidade_consulta_ao_vivo.js`,
+  jsdom + react-dom/client + `act()`, mesma técnica rigorosa de sempre —
+  carrega o `index.html` inteiro transpilado numa `vm.Script`): consulta ao
+  vivo respondendo com unidade/descrição diferentes do cadastro — as duas
+  aparecem no card ANTES de imprimir, e o HTML de fato mandado pra impressora
+  usa "M" (a unidade real), não mais "UN" (o fallback genérico); consulta
+  falhando (rede/credencial) — cai pro cadastro do Supabase normalmente, sem
+  quebrar, sem mostrar "(ao vivo)" (nunca afirma o que não checou); consulta
+  respondendo mas sem unidade nenhuma (célula vazia do Kardex/consulta) —
+  mesmo fallback, sem confundir "respondeu vazio" com "não respondeu"; aba
+  "Endereço" nunca dispara essa consulta extra (não precisa). 17 asserções,
+  todas passando — mais 1 harness pré-existente (`harness_etiqueta_unidade_
+  cadastro.js`) atualizado (checava o padrão antigo por inspeção de
+  código-fonte, `selecionado.unidade` direto — mudança de comportamento
+  intencional desta rodada, não regressão). Rodei de novo toda a suíte
+  completa do scratchpad (60 harnesses) — 0 falhas. Transpile Babel do
+  arquivo inteiro e balanceamento de chaves do CSS conferidos (666/666, sem
+  mudança — nenhuma classe CSS nova, só JS/JSX). **Nenhuma migração de SQL
+  necessária** (a Edge Function `consultar-produto-selgron` já está deployada
+  e já tinha `unidade`/`descricao` no retorno desde as rodadas anteriores).
+  **Verificação visual/física de ponta a ponta (a etiqueta impressa de
+  verdade mostrando a unidade certa) fica a cargo do cliente** — mesma
+  limitação de sempre (login exige Supabase Auth real, não simulável no
+  sandbox sem rede).
+
+## Bug real: nenhuma tela de contagem mostrava o nome de quem está contando
+
+Cliente reportou, direto: "em nenhuma das formas de contagem está aparecendo
+o nome do contador" — nas 5 telas de contagem (Aleatória/Curva ABC/Grupo,
+Manual, Rota de Endereço, Lista Importada/Itens Específicos, Recontagem),
+nenhuma delas mostrava o nome do usuário logado em lugar nenhum.
+
+- **Causa raiz, confirmada lendo o próprio comentário do código**: numa
+  rodada anterior ("Tela de contagem: remove o cabeçalho do app, reordena
+  hierarquia...", ver histórico acima), `TopBar`/`DesktopTopbar` (que
+  sempre mostraram nome/avatar/perfil do usuário logado) passaram a ser
+  ESCONDIDOS especificamente nas 5 telas de contagem (`COUNT_SCREEN_VIEWS`)
+  — pedido explícito do cliente na época, pra liberar espaço vertical numa
+  tela usada o dia inteiro. O comentário que documentava essa decisão já
+  dizia, sem perceber a consequência: "essas informações já existem em
+  outras partes da aplicação... o espaço liberado é usado por este
+  contexto operacional (progresso da fila ou prioridade da recontagem) em
+  vez de nome/avatar/perfil do usuário" — só que NENHUMA outra parte do
+  `CountStep` (o motor compartilhado pelos 5 fluxos) mostrava esse dado —
+  a suposição de que "já existe em outro lugar" não se sustentava dentro da
+  própria tela de contagem em si, só fora dela (Sidebar/DesktopTopbar,
+  ambos escondidos justamente enquanto o operador está contando).
+- **`.cs-operator-badge`** (JSX novo, primeiro elemento dentro do `return`
+  principal de `CountStep`, ANTES até do banner de "Pular contagem" —
+  visível em QUALQUER etapa: `enderecoManual` ou `count`, nas 5 telas, sem
+  depender de `queueAtual`/`previousCount` existirem, diferente do bloco
+  `.cs-context` — que só aparece condicionalmente): uma linha bem fina,
+  "Contando como: **{nome}** · {perfil}" (`DIcon name="user"` + `user.nome`
+  + `ROLE_LABELS[user.perfil]`) — deliberadamente NÃO é o cabeçalho de
+  volta (não reabre o problema de espaço vertical que motivou a remoção
+  original), só o mínimo necessário pra responder "quem está contando
+  agora" de relance, mesmo espírito de "contexto operacional compacto" já
+  estabelecido pro resto dessa seção (barra de progresso/badge de
+  severidade).
+- **Cobre os 5 fluxos de uma vez só**: como `CountStep` é o único
+  componente que renderiza a UI de contagem em si (`RandomCountFlow`/
+  `ManualCountFlow`/`RouteCountFlow`/`ImportedListCountFlow`/`RecountFlow`
+  só montam a fila/contexto e delegam a tela pra ele), um edit só nesse
+  componente resolve o pedido nas 5 telas — confirmado que os 5 pontos de
+  instanciação (`<RandomCountFlow.../>` etc. em `App()`) já passavam
+  `user={currentUser}` corretamente, e que o objeto salvo em
+  `finalize()` (`usuario: user.nome`) já estava certo há tempos — o defeito
+  era 100% de EXIBIÇÃO durante a contagem, nunca de gravação (os painéis de
+  revisão — Recontagens/Itens Divergentes/Analisados/Aguardando Aprovação/
+  Contagens Concluídas — já mostravam "Contado por {c.usuario}" corretamente
+  desde antes, não precisaram de nenhuma mudança).
+- **`RecountFlow` mostra o nome de quem está RECONTANDO, não o da 1ª
+  contagem** — já que `CountStep` recebe `user` (o usuário logado agora),
+  não `original.usuario` (quem contou antes) — testado explicitamente, pra
+  não confundir os dois nomes na mesma tela.
+- **Perfil não reconhecido não quebra nada** — `ROLE_LABELS[user.perfil]`
+  simplesmente não encontra entrada e o "· {perfil}" não aparece, sem
+  lançar erro; o nome continua sendo mostrado normalmente.
+- Testado via harness novo (`harness_cs_operator_badge.js`, jsdom +
+  react-dom/client + `act()`, mesma técnica rigorosa de sempre — carrega o
+  `index.html` inteiro transpilado numa `vm.Script`): confirmei que o badge
+  aparece mesmo SEM fila (cenário da Manual, sem `queueAtual`/`queueTotal`);
+  que aparece também COM fila, sempre ANTES da barra de progresso no DOM;
+  que aparece na etapa `enderecoManual` (item sem cadastro), antes mesmo de
+  chegar na etapa de quantidade; que um perfil desconhecido não quebra o
+  componente; e que `RecountFlow` mostra o nome de quem está recontando
+  agora, não o da 1ª contagem. 14 asserções, todas passando. Rodei de novo
+  toda a suíte completa do scratchpad (61 harnesses) — 0 falhas. Transpile
+  Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos
+  (668/668 — 1 regra CSS nova, `.cs-operator-badge`). **Nenhuma migração de
+  SQL necessária** (é só exibição de um dado que já existia em memória, sem
+  tocar em nenhuma tabela). **Verificação visual de ponta a ponta fica a
+  cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth
+  real, não simulável no sandbox sem rede).
+
+## Bug real: "Contados × Divergências" contava a mesma cadeia de recontagem duas vezes
+
+Cliente mandou print do painel "Contados × Divergências" (Indicadores) e um
+item real pra reproduzir: **000.45570** — 1ª contagem registrou 0 (o sistema
+dizia 1, diferença -1, divergente); na recontagem, o material foi
+encontrado e a contagem corrigida pra 1 (bate com o sistema, diferença 0).
+A pizza mostrava **"1 divergência + 1 sem divergência"** pro MESMO
+documento — nas palavras do cliente: "se esse item vai para recontagem e,
+nessa segunda contagem, o material é encontrado, isso não caracteriza uma
+divergência de estoque, e sim um erro na primeira contagem... O correto
+seria considerar apenas o resultado final da recontagem."
+
+- **Causa raiz**: esse EXATO bug já tinha sido corrigido antes, só que em
+  outro lugar — `todasParaQualidade` (o pool usado por "Resumo da Operação",
+  "Itens Divergentes", "Top 5 Maiores Divergências", "Divergência por
+  Família/Grupo") já passa por `ultimaContagemPorDocumento()` desde uma
+  rodada anterior, motivada por um pedido quase idêntico do cliente ("se o
+  item A tem duas contagens, considerar apenas a última contagem
+  registrada" — ver comentário já existente perto dessa função). A pizza
+  "Contados × Divergências", criada numa rodada posterior, usa um pool
+  DIFERENTE — `poolTendencia` (mais largo, inclui item "Pendente" do
+  histórico, pra bater com "Contagens na Semana"/"Acuracidade Semanal") —
+  e essa construção nunca tinha passado pelo mesmo dedup, herdando o bug
+  de novo por não reaproveitar a correção já existente.
+- **Correção escopada só à pizza**: `poolTendenciaNoPeriodo` agora vem de
+  `ultimaContagemPorDocumento(poolTendencia)` ANTES do filtro de período
+  (não depois — precisa ser assim pra resolver a cadeia corretamente mesmo
+  quando a 1ª contagem e a recontagem caem em datas diferentes, possivelmente
+  fora do período escolhido no painel "Filtros"; o resultado final passa a
+  usar a DATA da recontagem, não a da 1ª contagem, mesmo critério já usado
+  pelos outros indicadores deduplicados). **Deliberadamente NÃO tocado**:
+  `poolTendencia` em si, usado por "Contagens na Semana"/"Acuracidade
+  Semanal"/"Acuracidade Mensal" — esses 3 gráficos respondem uma pergunta
+  DIFERENTE ("quanto TRABALHO de contagem foi feito", onde cada rodada,
+  incluindo recontagem, é um evento real que aconteceu), decisão já
+  confirmada explicitamente pelo cliente numa rodada anterior ("Acuracidade
+  Geral vira a média das barras de Acuracidade Mensal") — só a pizza
+  responde "de tudo que já foi CONTADO, quanto diverge de verdade", que é
+  uma pergunta sobre o RESULTADO FINAL de cada item, não sobre volume de
+  trabalho.
+- Linha de histórico (`historicoParaTendencia`, sem `id`/`contagemAnteriorId`
+  — planilha importada não tem esse conceito de cadeia) nunca é afetada
+  pelo dedup — `ultimaContagemPorDocumento` só filtra registros cujo `id`
+  aparece como `contagemAnteriorId` de outro registro no mesmo pool; linha
+  sem `id` sempre passa intacta.
+- Testado via harness novo (`harness_pizza_dedup_recontagem.js`, jsdom +
+  react-dom/client + `act()`, mesma técnica rigorosa de sempre): cenário
+  EXATO do cliente (000.45570, 1ª contagem -1/divergente → recontagem 0/sem
+  divergência) — antes da correção, o donut mostrava 2 contados/50%
+  divergente; depois, mostra 1 contado/0% divergente (só o resultado final);
+  cenário inverso (1ª contagem bateu, recontagem divergiu) também dedupica
+  corretamente pro resultado final (100% divergente); item sem cadeia de
+  recontagem (a maioria) continua contando normalmente, sem regressão; linha
+  de histórico solta continua entrando sem ser filtrada por engano.
+  **Confirmei que o harness de fato pega o bug**: rodei ele contra o código
+  ANTES da correção (`git stash`) e 5 das 9 asserções falharam exatamente
+  como esperado (mostrando "2" no lugar de "1", "50%" no lugar de "0%") — só
+  depois da correção aplicada é que passa limpo. Rodei de novo toda a suíte
+  de regressão do scratchpad (62 harnesses, incluindo o
+  `harness_pizza_contados_divergencias.js` já existente, que não tinha
+  nenhum cenário de cadeia de recontagem e por isso não pegava esse bug) —
+  0 falhas. Transpile Babel do arquivo inteiro e balanceamento de chaves do
+  CSS conferidos (668/668, sem mudança — só JS, nenhuma classe CSS tocada).
+  **Nenhuma migração de SQL necessária** (correção é só de leitura/
+  agregação em memória). **Verificação visual do número real em produção
+  fica a cargo do cliente** — mesma limitação de sempre (login exige
+  Supabase Auth real, não simulável no sandbox sem rede) — mas como não
+  depende de nenhuma migração, já deve refletir certo no próximo
+  carregamento da página.
+## Novo indicador "Itens Contados na Semana" — mesma formatação de "Contagens na Semana", pool deduplicado
+
+Na sequência direta da correção acima (pizza "Contados × Divergências"), o cliente fez
+duas perguntas de esclarecimento sobre a origem exata dos dados de cada indicador de
+"divergência" no app (respondidas sem nenhuma mudança de código — havia 4 lugares
+diferentes com o rótulo "Itens Divergentes"/conceitos parecidos, cada um com um
+escopo/regra própria: KPI da Home + `DivergentItemsPanel`, sempre a fila viva por
+status; "Resumo da Operação" + a própria pizza, cumulativo e deduplicado por
+documento; `AllDivergencesPanel`, qualquer item com discrepância independente de
+status; e o relatório Excel, mesma regra central mas sem dedup). Depois pediu, de
+forma direta: **"Crie um indicador com a formatação igual de contagens da semana, mas
+que mostre a quantidade de itens contado semanalmente"**.
+
+- **Reaproveita 100% o componente `WeeklyCountChart`** (mesmo gráfico de barras já
+  usado por "Contagens na Semana", mesma constante `META_CONTAGENS_SEMANAL=250` como
+  meta padrão, mesmo `chart-meta-badge` no cabeçalho) — só a fonte de dados muda.
+- **A diferença exata, que é o motivo de existir um indicador novo em vez de só
+  reaproveitar "Contagens na Semana"**: aquele gráfico conta toda RODADA registrada
+  na semana — uma recontagem soma separado da 1ª contagem, porque representa volume
+  de TRABALHO real (cada rodada é um evento que de fato aconteceu). O indicador novo
+  responde uma pergunta diferente — "quantos ITENS, de fato, foram resolvidos" — e
+  usa o MESMO pool já deduplicado que resolveu o bug da pizza
+  (`poolTendenciaDedup = ultimaContagemPorDocumento(poolTendencia)`, ver seção
+  acima): a 1ª contagem de um item que foi recontado não soma mais separada da
+  recontagem que a decidiu — só a rodada FINAL entra, na semana em que ela
+  aconteceu.
+- **`poolTendenciaDedup` subiu de posição** — antes só existia dentro do bloco da
+  pizza (calculado ali por perto de onde era consumido); agora é calculado logo
+  depois de `poolTendencia` (bem mais acima na função), porque alimenta os DOIS
+  indicadores (a pizza e o gráfico novo) — precisa existir antes dos dois consumirem.
+  O bloco da pizza só reaproveita a variável já calculada, sem recalcular.
+- **`weeklyStatsItensUnicos = computeWeeklyStats(poolTendenciaDedup, dataInicioStr,
+  dataFimStr)`** — mesma função, mesmo intervalo de data do painel "Filtros" que já
+  alimenta "Contagens na Semana" ao lado, só trocando o pool de entrada — os dois
+  gráficos ficam comparáveis lado a lado, olhando exatamente a mesma janela de tempo.
+- **Posição na tela**: entrou como par da pizza "Contados × Divergências" na
+  **Fileira 3** da seção "Tendência" (Indicadores) — essa fileira era `weekly-solo-row`
+  (pizza sozinha, largura total) e virou `weekly-pair-row` (mesmo componente de grid
+  de 2 colunas já usado nas outras 2 fileiras dessa seção) — pizza à esquerda, gráfico
+  novo à direita. Faz sentido como par porque os dois respondem a mesma pergunta de
+  fundo ("de tudo que já foi contado, deduplicado por item, quanto isso dá") — só um
+  agregado no período inteiro (pizza) e o outro quebrado por semana (barras), mesmo
+  raciocínio já usado nos outros 2 pares da seção (Acuracidade Semanal+Contagens na
+  Semana; Acuracidade Mensal+Divergência por Família/Grupo).
+- **Título "Itens Contados na Semana"**, subtítulo "Cada item conta uma vez só, mesmo
+  se recontado." — deixa a diferença pro gráfico vizinho ("Contagens na Semana")
+  explícita pra quem está lendo a tela, sem precisar adivinhar.
+- Testado via harness novo (`harness_itens_contados_semana.js`, mesma técnica
+  rigorosa de sempre — jsdom+react-dom/client+`act()`, `index.html` inteiro
+  transpilado numa `vm.Script`): confirma que o título/subtítulo aparecem, que a
+  pizza continua aparecendo ao lado (agora em par, não mais sozinha), e que o badge
+  "Meta: 250" aparece exatamente 2 vezes (1 por painel — checado pela classe
+  `chart-meta-badge` especificamente, não por substring solta, já que o SVG de cada
+  `WeeklyCountChart` também tem um `<title>Meta: X</title>` interno na linha
+  tracejada, que dobra a contagem se checado à toa). **O cenário que prova a
+  diferença de verdade**: uma cadeia de recontagem (1ª contagem -1/divergente →
+  recontagem 0/resolvida) mostra **2** contagens na semana atual em "Contagens na
+  Semana" (cada rodada é trabalho real) e **1** em "Itens Contados na Semana"
+  (deduplicado, só o resultado final) — os dois números diferentes, na MESMA semana,
+  pro MESMO pool de dados, confirmando que o gráfico novo realmente usa a lógica
+  certa e não é só uma cópia visual do outro. Cenário de regressão (3 itens sem
+  nenhuma cadeia de recontagem) confirma que os dois gráficos mostram o MESMO total
+  quando não há nada pra deduplicar — sem cadeia, os dois concordam. Rodei de novo
+  toda a suíte de regressão do scratchpad (63 harnesses) — 0 falhas. Transpile Babel
+  do arquivo inteiro e balanceamento de chaves do CSS conferidos (668/668, sem
+  mudança — nenhuma classe CSS nova, reaproveita `weekly-pair-row`/`panel`/
+  `chart-meta-badge` já existentes). **Nenhuma migração de SQL necessária**
+  (indicador é só leitura/agregação em memória do mesmo dado já carregado).
+  **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma limitação
+  de sempre (login exige Supabase Auth real, não simulável no sandbox sem rede).
+## Bug real: etiqueta de produto não refletia endereço atualizado na Selgron
+
+Cliente reportou: "000.64731 eu alterei o endereço agora, porém ainda não puxa para
+imprimir na etiqueta" — mesma classe de bug já corrigida antes nesta feature (ver
+"Bug real: unidade de medida da etiqueta não usava a consulta ao vivo" mais acima), só
+que dessa vez pro campo Endereço.
+
+- **Causa raiz**: `EtiquetasPanel.montarItensParaImprimir` sempre usava
+  `selecionado.endereco` — o cadastro LOCAL (`produtos` → `estoque_enderecos` →
+  `enderecos`, via `searchSupabaseCatalog`), só atualizado quando alguém reimporta a
+  planilha "Descrição de Produtos" manualmente ou quando uma proposta de endereço já
+  foi aprovada pelo líder. `liveConsultaEtiqueta` (a consulta ao vivo Selgron/Protheus,
+  já usada nesta tela desde a correção de unidade/descrição) até já buscava
+  `endereco` na resposta da Edge Function — só nunca era LIDA em lugar nenhum do
+  componente, muito menos usada na hora de montar o item pra impressão. Se o cliente
+  atualizasse o endereço no Protheus/Selgron (fora do app), a etiqueta continuava
+  imprimindo o valor antigo do cadastro local, indefinidamente.
+- **Correção**: `liveEnderecoValidoEtiqueta`/`enderecoEfetivaEtiqueta` — mesmo padrão
+  exato já usado em `CountStep.liveEnderecoValido` (a consulta ao vivo sempre vence
+  quando confirma um endereço válido pro código, via `formatEnderecoInput`+
+  `ENDERECO_REGEX`; cai pro cadastro local só como fallback quando a consulta não
+  confirma nada). `montarItensParaImprimir` passou a usar `enderecoEfetivaEtiqueta`
+  em vez de `selecionado.endereco` direto — como tanto `handleImprimir` (impressão
+  direta) quanto `handleEnviarParaFila` (fila de impressão) chamam essa MESMA função,
+  a correção cobre os dois caminhos de uma vez, sem precisar duplicar lógica (a coluna
+  `endereco` já existia em `etiquetas_fila` desde uma rodada anterior, então a fila não
+  precisou de nenhuma migração de SQL nova).
+- **Linha "Endereço: X (ao vivo)" nova no card de confirmação**, ao lado da linha
+  "Unidade" já existente — mesmo critério de honestidade de sempre: "(ao vivo)" só
+  aparece quando o valor veio de fato da consulta Selgron confirmada, nunca quando é
+  só o cadastro local usado como fallback. Deixa visível, ANTES de imprimir, qual
+  endereço vai sair na etiqueta — sem isso, o único jeito de descobrir era olhar a
+  etiqueta física já impressa.
+- Testado via harness novo (`harness_etiqueta_endereco_ao_vivo.js`, jsdom +
+  react-dom/client + `act()`, mesma técnica rigorosa de sempre — carrega o
+  `index.html` inteiro transpilado numa `vm.Script`, Supabase mockado com cadastro
+  local "999-A-9" e consulta ao vivo devolvendo "035-A-1", o cenário exato do
+  cliente): consulta confirmando um endereço válido sobrescreve o cadastro local
+  antigo (mostra "035-A-1", não mais "999-A-9", com a dica "(ao vivo)"); consulta
+  falhando cai pro cadastro local (999-A-9) sem quebrar, sem afirmar "(ao vivo)" à
+  toa. 8 asserções, todas passando. Rodei de novo toda a suíte de regressão do
+  scratchpad (64 harnesses) — 0 falhas. Transpile Babel do arquivo inteiro e
+  balanceamento de chaves do CSS conferidos (668/668, sem mudança — nenhuma classe
+  CSS nova, só JS/JSX). **Nenhuma migração de SQL necessária** (correção é só de
+  leitura, reaproveitando dado que a Edge Function já devolvia). **Verificação de
+  ponta a ponta com o item real (000.64731) fica a cargo do cliente** — mesma
+  limitação de sempre (login exige Supabase Auth real, não simulável no sandbox sem
+  rede).
+## Etiquetas: remove a dica "(ao vivo)" do campo Unidade/Endereço
+
+Cliente pediu, direto, em cima do card de confirmação da etiqueta (que já mostrava
+"Unidade: PC (ao vivo)"/"Endereço: 013-F-5 (ao vivo)" desde a correção anterior):
+**"apague a mensagem de AO VIVO"**.
+
+- Removidas as duas expressões `{unidadeLiveValidaEtiqueta && ' (ao vivo)'}`/
+  `{liveEnderecoValidoEtiqueta && ' (ao vivo)'}` do card de confirmação de
+  `EtiquetasPanel` — só o texto/dica visual saiu, a PRIORIDADE em si (a consulta ao
+  vivo Selgron/Protheus continua vencendo o cadastro local quando confirma um valor
+  válido, mesmo padrão de `CountStep`) não mudou nada — `unidadeLiveValidaEtiqueta`/
+  `liveEnderecoValidoEtiqueta` continuam calculadas e usadas normalmente pra decidir
+  `unidadeEfetivaEtiqueta`/`enderecoEfetivaEtiqueta`, só pararam de aparecer na tela.
+- Escopo restrito a `EtiquetasPanel` — o indicador irmão "Sistema (ao vivo)" da tela
+  de contagem (`CountStep`, `.cs-sistema-k`) não fazia parte do print/pedido do
+  cliente e não foi tocado.
+- Testado atualizando o harness já existente (`harness_etiqueta_endereco_ao_vivo.js`,
+  2 assertions trocadas de "aparece (ao vivo)" pra "NÃO aparece (ao vivo) em lugar
+  nenhum") e `harness_etiqueta_unidade_consulta_ao_vivo.js` (1 assertion invertida
+  pelo mesmo motivo) — os dois continuam confirmando que o VALOR certo (consulta ao
+  vivo vencendo o cadastro) ainda aparece, só sem o texto extra. Rodei de novo toda a
+  suíte de regressão do scratchpad (64 harnesses) — 0 falhas. Transpile Babel do
+  arquivo inteiro e balanceamento de chaves do CSS conferidos (668/668, sem mudança
+  — só JSX removido, nenhuma classe CSS tocada). **Verificação visual de ponta a
+  ponta fica a cargo do cliente** — mesma limitação de sempre (login exige Supabase
+  Auth real, não simulável no sandbox sem rede).
+
+## Etiquetas: "Quantidade Recebida" deixa de dividir entre as etiquetas
+
+Cliente mandou print do card de confirmação (campos "Quantidade Recebida"/
+"Quantidade de Etiquetas" marcados) e pediu: **"Este campo alterar deste formato
+para eu decidir livremente a quantidade de cada etiqueta e quantas etiquetas eu
+quero."** Até aqui, `splitQuantidadeEtiquetas(total, n)` DIVIDIA a quantidade
+recebida entre N etiquetas (distribuindo o resto nas primeiras, ex. 500÷10=50 em
+cada) — mecanismo criado numa rodada bem anterior ("se eu receber 500 peças e
+quiser 10 etiquetas ele manda pra impressora 10 etiquetas de QTD: 50").
+
+Perguntado via `AskUserQuestion` entre 2 leituras possíveis do pedido — (A) lista
+com 1 campo de quantidade POR etiqueta, cada uma podendo ter um valor diferente; (B)
+1 campo só, mas sem dividir mais — o mesmo valor digitado sai IGUAL em cada cópia
+impressa, "Quantidade de Etiquetas" vira só "quantas cópias idênticas imprimir" —
+o cliente escolheu **"1 campo só, sem dividir"**.
+
+- **`montarItensParaImprimir`** (`EtiquetasPanel`) parou de chamar
+  `splitQuantidadeEtiquetas` — pro modelo "Recebimento", agora gera N itens
+  (`Array.from({length:n}, ()=>({...}))`) todos com `quantidade: quantidade || ''`
+  (o mesmo valor digitado, sem nenhuma conta) — mesmo padrão que o modelo
+  "Prateleira/Caixa" já usava pra "N cópias idênticas" (não tinha nenhuma noção de
+  quantidade, só código/descrição repetidos).
+- **`splitQuantidadeEtiquetas` removida por completo** do módulo — sem nenhum
+  consumidor sobrando depois da mudança (as 3 chamadas que existiam, todas dentro de
+  `EtiquetasPanel`, foram embora junto).
+- **Campo "Quantidade Recebida" renomeado pra "Quantidade por etiqueta"**
+  (placeholder `Ex: 500`→`Ex: 50`, já que agora o valor digitado É literalmente o que
+  vai aparecer numa etiqueta, não mais um total a ratear) — deixa explícito o novo
+  comportamento só pelo rótulo, sem precisar de texto explicativo extra.
+- **Prévia** ("N etiquetas — QTD: X / QTD: Y", que antes podia mostrar 2 valores
+  diferentes quando a divisão não era exata) virou "N etiquetas idênticas — QTD: X em
+  cada" — sempre um valor só, já que não existe mais divisão nenhuma pra gerar
+  valores diferentes entre etiquetas.
+- Testado via harness reescrito por completo (`harness_etiqueta_qtd_split.js` — a
+  versão antiga testava só a função `splitQuantidadeEtiquetas` em si, que não existe
+  mais): confirma que a função foi removida (`typeof ... === 'undefined'`); que
+  imprimir com "Quantidade por etiqueta"=17 (número ÍMPAR de propósito — se alguma
+  divisão ainda estivesse rodando por engano, 17÷6 geraria valores diferentes tipo
+  [3,3,3,3,3,2]) e "Quantidade de etiquetas"=6 gera 6 etiquetas, TODAS mostrando
+  "QTD: 17 UN" idêntico; que enviar pra fila com 25/4 grava 4 linhas, TODAS com
+  quantidade "25" (não 25÷4=[7,6,6,6], que seria o resultado da divisão antiga).
+  Atualizados também os outros 5 harnesses de Etiquetas que referenciavam o
+  placeholder antigo (`Ex: 500`) ou o rótulo antigo ("Quantidade recebida") —
+  `harness_etiqueta_enter_data_travada.js`/`harness_etiqueta_layout_compacto.js`/
+  `harness_etiqueta_unidade_consulta_ao_vivo.js`/`harness_etiqueta_layout_endereco.js`/
+  `harness_etiqueta_modelo_prateleira.js` — mudança de comportamento intencional
+  desta rodada, não regressão. Rodei de novo toda a suíte de regressão do scratchpad
+  (64 harnesses) — 0 falhas. Transpile Babel do arquivo inteiro e balanceamento de
+  chaves do CSS conferidos (668/668, sem mudança — nenhuma classe CSS nova, só JS/
+  JSX). **Verificação visual/funcional de ponta a ponta fica a cargo do cliente** —
+  mesma limitação de sempre (login exige Supabase Auth real, não simulável no
+  sandbox sem rede).
+## Etiquetas: remove a prévia "N etiquetas idênticas — QTD: X em cada"
+
+Logo depois da rodada anterior ("Quantidade Recebida" deixa de dividir entre
+as etiquetas, virando "Quantidade por etiqueta" repetida em N cópias
+idênticas), o cliente pediu pra tirar a linha de prévia que essa mesma
+rodada tinha introduzido no card de confirmação (modelo "Recebimento"):
+**"Essa informação pode remover: '2 etiquetas idênticas — QTD: 20 em
+cada'"**.
+
+- **Só a linha de PRÉVIA foi removida** — o bloco JSX condicional
+  (`aba==='produto' && modeloEtiqueta==='recebimento' &&
+  Number(quantidadeEtiquetas)>1 && quantidade && (...)`) saiu por completo
+  do `EtiquetasPanel`. **A lógica de repetição por trás (`montarItensParaImprimir`,
+  que gera N cópias idênticas com a mesma quantidade digitada) não mudou em
+  nada** — o cliente pediu pra remover a MENSAGEM na tela, não o
+  comportamento; imprimir/enviar pra fila continua funcionando exatamente
+  como na rodada anterior.
+- **Escopo confirmado, não confundido com a etiqueta "Prateleira/Caixa"**:
+  esse OUTRO modelo tem sua própria linha de prévia, com texto diferente
+  ("N etiquetas idênticas (mesmo código/descrição em cada uma)", sem o
+  trecho "— QTD: X em cada", já que esse modelo nunca teve campo de
+  quantidade) — não fazia parte do pedido do cliente (que citou o texto
+  exato do modelo Recebimento) e **não foi tocada**.
+- Testado via `harness_etiqueta_qtd_split.js` (atualizado — a asserção que
+  checava a prévia "6 etiquetas"/"QTD: 17" virou uma que confirma que o
+  texto "etiquetas idênticas" não aparece mais em lugar nenhum do card,
+  mesmo com `quantidadeEtiquetas>1`) e `harness_etiqueta_modelo_prateleira.js`
+  (conferido que a prévia da OUTRA etiqueta, Prateleira/Caixa, continua
+  intacta, sem regressão). Rodei de novo toda a suíte completa do
+  scratchpad (64 harnesses) — 0 falhas. Transpile Babel do arquivo inteiro
+  e balanceamento de chaves do CSS conferidos (668/668, sem mudança — pura
+  remoção de JSX, sem nenhum CSS envolvido). **Verificação visual de ponta
+  a ponta fica a cargo do cliente** — mesma limitação de sempre (login
+  exige Supabase Auth real, não simulável no sandbox sem rede).
+## "Analisados": texto do card muda de "Enviado ao Armazém por" pra "Liberado para ajuste por"
+
+Cliente mandou print do card de um item em "Analisados" (view
+`solicitacaoArmazem`) e pediu pra trocar a frase "Enviado ao Armazém por
+Alisson Silva em..." por **"Liberado para ajuste por..."** — só o texto,
+sem mudança de dado: continua mostrando `c.saGeradaPor`/`c.saGeradaEm`
+(as mesmas colunas gravadas por `enviarParaArmazem`, ver seção "3ª
+correção do fluxo de SA" mais acima) — a frase antiga já não descrevia bem
+o momento (o item nessa tela está aguardando o NÚMERO da SA, não uma ação
+do Armazém em si). Trocado direto em `SolicitacaoArmazemPanel`, único
+lugar que mostra essa frase.
+
+Testado via transpile Babel do arquivo inteiro e balanceamento de chaves
+do CSS (668/668, sem mudança — só texto). **Verificação visual fica a
+cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth
+real, não simulável no sandbox sem rede).
+
+
+## "Relatório Semanal (Diretoria)" — Excel no mesmo formato do que já é mandado hoje
+
+Cliente mandou um PDF real (nome do arquivo continha "ESTOQUE_ARMAZEM") com a instrução
+explícita **"NÃO SUBA NADA PARA O SITE!!!"** — não uma proibição de implementar a
+funcionalidade, e sim uma restrição sobre o ARQUIVO em si: é o relatório que ele já manda
+toda semana pra Diretoria, com nome real da empresa, valores financeiros reais e nomes de
+funcionário reais — nunca foi publicado como Artifact nem commitado no repositório, e não
+deve ser. O pedido, junto do arquivo: "Este é o relatório que eu mando semanalmente para
+diretoria, nele consta todos os itens que foram contados na semana ou nas semanas.
+Conseguimos fazer algo neste estilo??"
+
+**Estrutura do PDF de referência** (analisada, nunca reproduzida com dado real em lugar
+nenhum do código/documentação): cabeçalho com nome da empresa + "INVENTÁRIO CÍCLICO -
+ALMOX 01" + "SEMANA: N, N e N"; uma caixa "ACURACIDADE" com 5 métricas (Nº de Itens
+Inventariados, Itens sem Divergência, Itens com Divergência, Itens com divergência a
+maior, Itens com divergência a menor — cada uma com contagem + percentual); uma tabela de
+~460 linhas (ID/Seq./Código/Descrição/Tipo/Endereço, depois 3 grupos de colunas — Sistema
+TOTVS, Físico, Diferenças — cada um com Quant./Custo Unitário/Custo Total quando
+aplicável, mais uma coluna "Ref."); uma linha de Total; blocos de texto livre
+"MOTIVO"/"AÇÃO"; e 3 linhas de assinatura (Analista de Estoque, Coordenador de
+Almoxarifado, Coordenador de Suprimentos) — uma com assinatura manuscrita de verdade, as
+outras duas só nome digitado + linha.
+
+**3 decisões de escopo confirmadas via `AskUserQuestion`** antes de escrever qualquer
+código, porque cada uma muda a modelagem:
+
+1. **Formato do arquivo**: Excel (não tentar replicar o PDF pixel a pixel).
+2. **Quais itens entram na lista**: só o que foi CONTADO PELO APP — não o armazém
+   inteiro. O PDF do cliente parece ser um export direto do TOTVS/Protheus (a contagem de
+   itens bate com "o armazém inteiro", não só com o que o app registrou) — reproduzir
+   isso exigiria ler o armazém inteiro de `estoque_saldo`, misturando item genuinamente
+   contado com item nunca tocado. O app não tem esse dado pronto pra virar relatório sem
+   inventar linha nenhuma — confirmado explicitamente que o escopo é só contagem real.
+3. **Motivo/Ação**: campo pra digitar TODA VEZ que o relatório é gerado (não um texto
+   fixo salvo) — o cliente escolheu essa opção entre as 2 apresentadas.
+
+### Bug de fundo descoberto ANTES de escrever a feature: `count.custoUnit` nunca era salvo
+
+Pra montar "Custo Unitário"/"Custo Total (Sistema/Físico)" por item — colunas centrais do
+PDF de referência —, investigado o objeto `count` salvo por `CountStep.finalize()` e
+achado que **o custo unitário em si nunca tinha sido persistido**, só
+`valorDivergente` (`= |diferença| × custoUnit`, que **é sempre "0.00" quando não há
+divergência** — não dá pra recuperar o custo unitário de volta a partir dele quando a
+contagem bateu exata, que é a maioria dos itens em qualquer inventário saudável).
+
+- **`CountStep.finalize()`** ganhou o campo novo `custoUnit: hasSaldoLocal ?
+  Number(custoUnitEfetivo) : null` (ao lado de `valorDivergente`, mesma condição
+  `hasSaldoLocal`) — `custoUnitEfetivo` já existia (a variável usada pra calcular
+  `valorDivergente`, ela mesma já contempla a prioridade "custo vindo da consulta ao
+  vivo Selgron/Protheus > custo do catálogo Supabase", ver seção "Saldo 'ao vivo' direto
+  do Protheus" mais acima) — não precisou de nenhum cálculo novo, só de PERSISTIR um
+  valor que já existia em memória e sempre foi descartado depois de usado.
+- **`saveContagemToSupabase`/`contagemRowToLocal`** ganharam o mapeamento
+  `custoUnit`↔`custo_unitario` (mesmo padrão de sempre pra campo novo em `contagens`).
+- **`backend/schema.sql`**: `contagens.custo_unitario numeric(14,4)` na definição da
+  tabela + bloco de migração `alter table contagens add column if not exists
+  custo_unitario numeric(14,4);` pro projeto já aplicado.
+- **Limitação honesta, documentada na própria tela do relatório**: só contagens feitas a
+  partir desta rodada têm esse dado — contagens já registradas antes continuam sem
+  `custoUnit` (não dá pra reconstruir retroativamente, mesmo critério de sempre neste
+  projeto de nunca fabricar dado que não existe) — aparecem com "Custo Unitário"/"Custo
+  Total" em branco no relatório, nunca com um valor inventado.
+
+### `buildInventarioCiclicoRows(counts)` — dedup + ordenação física, mesmo padrão já
+### estabelecido em outras telas de auditoria
+
+Reaproveita `ultimaContagemPorDocumento(counts)` (a MESMA função já usada por "Contados ×
+Divergências"/"Itens Contados na Semana"/"Resumo da Operação" — só a rodada FINAL de uma
+cadeia de recontagem entra, nunca a 1ª contagem intermediária já superada) e
+`compararPorEndereco` (mesma ordenação física corredor→rua→posição já usada em toda fila
+de contagem do app) — o relatório mostra os itens na mesma sequência que um operador
+andaria pelo armazém, igual o PDF de referência já faz. IDs sequenciais (1..N) são
+recalculados na ORDEM FINAL da tabela, não herdados do id interno da contagem. Item sem
+`custoUnit` (contagem antiga, ver acima) sai com "Custo Unitário"/"Custo Total" em branco
+(string vazia, não `0`/`null` renderizado feio no Excel).
+
+### `computeAcuracidadeSemanal(counts)` — mesmas 5 métricas da caixa "ACURACIDADE" do PDF
+
+Mesmo critério de "sem saldo pra comparar cai em 'sem divergência', nunca numa 3ª
+categoria" já usado na pizza "Contados × Divergências" (Indicadores) — item com
+`diferenca===null` conta como sem divergência, não fica de fora da conta nem vira uma
+categoria à parte. Mesmo dedup por documento de `buildInventarioCiclicoRows`. Protegido
+contra divisão por zero (pool vazio devolve tudo zerado, sem quebrar).
+
+### `buildInventarioCiclicoWorkbook({counts, armazemLabel, motivo, acao, assinaturas})`
+
+Workbook NOVO, com aba própria "Inventário Cíclico" — **não** uma 5ª aba dentro do
+`generateReportWorkbook` existente (Resumo/Contagens/Contar/Solicitação de Ajuste): é um
+documento com propósito e público diferentes (relatório formal pra Diretoria, download
+avulso sob demanda, não parte do pacote de relatório operacional de sempre) — mesma
+lógica já usada quando "Solicitação de Ajuste" ganhou sua própria aba em vez de reusar
+"Contagens".
+
+- **Montado via `XLSX.utils.aoa_to_sheet`** (array-de-arrays), não `json_to_sheet` — o
+  layout do PDF de referência é um documento de formulário livre (título, caixa de
+  métricas, tabela, total, texto corrido, assinaturas), não uma lista tabular
+  uniforme — AOA dá controle linha a linha que o padrão "1 linha por registro" dos
+  outros relatórios deste app não oferece.
+- **Cabeçalho da tabela em UMA linha só, com nome composto** ("Sistema TOTVS - Quant.",
+  "Sistema TOTVS - Custo Unitário", etc.) em vez de 2 linhas mescladas (Sistema/Físico/
+  Diferenças como super-cabeçalho + Quant./Custo Unitário/Custo Total como sub-cabeçalho,
+  como o PDF de fato mostra) — célula mesclada em Excel via SheetJS puro (sem
+  `xlsx-style`/biblioteca paga) é frágil e nunca foi usado em nenhum outro relatório
+  deste app; nome composto numa linha só é mais simples de gerar e continua
+  perfeitamente legível/filtrável no Excel.
+- **"SEMANA:"** calculado via `getWeekInfo` (já existente) sobre as datas distintas dos
+  itens da lista — "25, 26 e 27" quando são 3 semanas diferentes (vírgula entre as
+  primeiras, "e" antes da última — mesmo padrão de português natural do PDF real).
+- **`fmtPctBR(n)`** — formata como "66,67%" (vírgula decimal, 2 casas), consistente com o
+  resto do app (nunca ponto decimal em texto voltado pro usuário brasileiro).
+- **Total da tabela**: soma de Quant./Custo Total nas colunas Sistema e Físico —
+  calculado a partir das MESMAS linhas já montadas por `buildInventarioCiclicoRows`
+  (nenhuma 2ª passada sobre `counts` cru).
+
+### `InventarioCiclicoPanel` — painel novo dentro de "Relatórios" (`ReportsScreen`)
+
+Inserido entre o painel "Baixar Relatório" (já existente) e "Enviar por E-mail" (já
+existente) — reaproveita `todasContagens` que `ReportsScreen` já monta (`counts` + o
+histórico importado convertido via `historicoRowToCountLike`).
+
+- **Armazém é obrigatório**, escolhido num `<select>` populado com os valores distintos
+  de `almoxarifado` presentes em `todasContagens` (mesmo padrão `formatArmazemLabel` já
+  usado no resto do app — "1" vira "Armazém 01"). Sem nenhuma contagem com armazém
+  informado, o painel mostra um aviso e nem tenta mostrar o select.
+- **Período (De/Até) opcional** — filtra por `c.data`, mesmo critério "vazio = sem
+  filtro" já usado em `filtroData` do painel "Baixar Relatório".
+- **`historicoRowToCountLike` nunca preenche `almoxarifado`** — item do histórico
+  importado (planilha `BD_Contagens` antiga) nunca vai bater com nenhum filtro de
+  armazém deste painel novo (fica de fora, sempre) — limitação real, honesta,
+  documentada aqui: esse relatório é sobre contagem feita DENTRO do app com armazém
+  conhecido, não sobre o histórico pré-existente sem esse dado.
+- **Motivo/Ação NÃO persistem** (`useState` puro, nunca gravado em `localStorage`) —
+  decisão explícita do cliente ("campo pra digitar toda vez"), documentada com comentário
+  no próprio código pra não ser "corrigida" por engano numa rodada futura achando que é
+  um esquecimento.
+- **Assinaturas persistem via `localStorage`** (`INVENTARIO_CICLICO_ASSINATURAS_KEY`,
+  mesmo padrão simples já usado em `LOGIN_LEMBRADO_KEY` — só um texto de conveniência,
+  nunca dado sensível) — tendem a se repetir semana a semana (é sempre o mesmo Analista/
+  Coordenador assinando), diferente do Motivo/Ação, que muda a cada semana. "Analista de
+  Estoque" nasce pré-preenchido com `currentUser.nome` na 1ª vez (quem gera o relatório
+  normalmente é quem está logado), os outros dois nascem vazios e são lembrados depois
+  que alguém digita uma vez.
+- **Botão "Baixar Relatório"** só habilita com armazém escolhido E pelo menos 1 contagem
+  no filtro atual — nome do arquivo:
+  `GestaoEstoques_InventarioCiclico_{armazem}_{hojeLocalStr()}.xlsx` (mesmo prefixo
+  "GestaoEstoques_" já usado nos outros arquivos gerados pelo app, mesmo helper de data
+  local-safe `hojeLocalStr` já usado em outros relatórios).
+
+### Verificação
+
+Testado via harness dedicado (`harness_inventario_ciclico_relatorio.js`, jsdom +
+react-dom/client + `act()`, mesma técnica rigorosa de sempre — carrega o `index.html`
+inteiro transpilado numa `vm.Script`, com um mock de `window.XLSX`, já que o pacote real
+não está instalado no sandbox de teste): (1) `buildInventarioCiclicoRows` — dedup de uma
+cadeia de recontagem (4 registros/1 cadeia de 2 viram 3 linhas), ordenação física
+correta, IDs sequenciais na ordem final, custo em branco pra item sem `custoUnit` vs.
+calculado certo pra item com; (2) `computeAcuracidadeSemanal` — as 5 métricas batendo
+(incluindo item sem saldo contando como "sem divergência", dedup de cadeia, percentual
+certo), pool vazio sem quebrar; (3) `buildInventarioCiclicoWorkbook` — layout completo
+verificado linha a linha (cabeçalho da empresa, título com armazém, "SEMANA: 25, 26 e 27"
+com 3 semanas distintas nos dados de teste, caixa ACURACIDADE com as 5 métricas e o
+percentual em pt-BR, cabeçalho da tabela com as colunas certas, 3 linhas de dado na ordem
+física certa, linha de Total somando certo, blocos MOTIVO/AÇÃO com o texto digitado,
+bloco de assinaturas com os 3 nomes); (4) `custoUnit` capturado de ponta a ponta em
+`CountStep.finalize()` (contando 8 de um sistema de 8, custo 12.5 → grava 12.5, não
+recalculado a partir de `valorDivergente`, que seria 0 sem divergência) e o round-trip
+`saveContagemToSupabase`/`contagemRowToLocal` (payload manda `custo_unitario`, linha sem
+esse campo mapeia pra `null`, não `0`/`undefined` inventado); (5) `InventarioCiclicoPanel`
+de ponta a ponta — estado vazio (sem armazém disponível) sem `<select>`; com 2 armazéns
+distintos, o select mostra os 2 formatados; botão de download desabilitado sem armazém
+escolhido; escolher um armazém filtra certo (3 contagens de 4, já que 1 é de outro
+armazém); filtro de período exclui item fora da janela (2 de 3, o de 2020 fica de fora);
+campo "Analista de Estoque" já nasce com o nome do usuário logado (`input.value`, não
+`textContent` — input controlado não aparece como texto solto no DOM); digitar no campo
+"Coordenador de Almoxarifado" grava no localStorage na hora; digitar em "Motivo" NÃO gera
+nenhuma chave nova no localStorage (confirma que não persiste); clicar "Baixar Relatório"
+chama `window.XLSX.writeFile` com o nome de arquivo certo. 69 asserções, todas passando.
+Rodei de novo toda a suíte de regressão do scratchpad (66 harnesses, incluindo este novo)
+— 0 falhas. Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+conferidos (668/668, sem mudança — esta feature não tocou em CSS nenhum, só JS/JSX).
+**Falta o cliente rodar o SQL novo** (`alter table contagens add column if not exists
+custo_unitario numeric(14,4);`) no projeto real — até lá, `custo_unitario` simplesmente
+não é gravado no Supabase (mesmo tratamento "fire and forget" de sempre, não quebra a
+contagem), mas já aparece corretamente no relatório baixado localmente a partir do
+próximo deploy, já que a captura em `CountStep.finalize()` não depende de nenhuma coluna
+existir no banco. **O PDF de referência enviado pelo cliente nunca foi commitado no
+repositório, publicado como Artifact, nem reproduzido com dado real em nenhum lugar desta
+documentação** — só a ESTRUTURA (nomes de coluna, seções, formato) foi usada como
+referência de design. **Verificação visual/funcional de ponta a ponta fica a cargo do
+cliente** — mesma limitação de sempre (login exige Supabase Auth real, não simulável no
+sandbox sem rede).
+
+
+## "Relatório Semanal (Diretoria)" — puxa só itens com contagem concluída ou aguardando aprovação
+
+Cliente, direto: "Nessa planilha quero que puxe apenas itens com contagens
+concluídas e itens aguardando aprovação" — até aqui, `InventarioCiclicoPanel`
+filtrava só por armazém e período, incluindo TODO status: um item ainda em
+"Recontagens Pendentes"/"Itens Divergentes"/"Analisados" (aguardando_segunda/
+aguardando_analise_lider/aguardando_solicitacao_armazem) entrava no relatório
+igual a um item já resolvido — inconsistente com o que a Diretoria espera
+ver num documento formal (o veredito de cada item, não uma contagem ainda em
+andamento).
+
+- **`inventarioCiclicoStatusIncluido(c)`** (função nova, perto de
+  `OPEN_STATUSES`) — decide se um documento entra: pra contagem AO VIVO,
+  inclui se `statusAprovacao==='aguardando_aprovacao_diretoria'` (é
+  literalmente "aguardando aprovação") OU se não está em `OPEN_STATUSES`
+  (ou seja, já chegou a um veredito final — `aprovado_auto`/
+  `aprovado_segunda`/`aprovado_lider`/`ajuste_aprovado_diretoria`); pra linha
+  do HISTÓRICO importado (`_fromHistorico`), só entra se `_statusOriginal`
+  já é um dos 3 concluídos na planilha original
+  (`HISTORICO_STATUS_CONCLUIDOS`, `['OK','Sem Ajuste','Ajustado']`) — o
+  histórico nunca tem o conceito de "aguardando aprovação da Diretoria",
+  essa fila só existe no fluxo AO VIVO do app (`statusAprovacao` sempre vem
+  `null` numa linha convertida via `historicoRowToCountLike`).
+- **`itensIncluidosInventarioCiclico(counts)`** — combina
+  `ultimaContagemPorDocumento` (dedup por documento, já existia) com o
+  filtro de status acima, numa função só, reaproveitada nos 3 lugares que
+  precisam concordar sobre "o que entra": `buildInventarioCiclicoRows`,
+  `computeAcuracidadeSemanal` (a caixa "ACURACIDADE" no cabeçalho do Excel
+  também passou a refletir só o subconjunto incluído, não mais o total bruto
+  do armazém/período) e o próprio painel (`InventarioCiclicoPanel`, pro
+  contador "N contagens encontradas" já bater exatamente com o que sai no
+  Excel, em vez de mostrar um número maior do que o relatório de fato usa).
+  Extrair como função única evita a definição de "o que conta" divergir
+  entre um lugar e outro com o tempo — mesma categoria de cuidado já tomada
+  várias vezes neste projeto (ex.: `ETIQUETA_BARCODE_CONFIG` sincronizado
+  entre CSS/JS).
+- **Textos da tela atualizados**: a descrição do painel e a mensagem de
+  vazio ("Nenhuma contagem concluída ou aguardando aprovação nesse armazém/
+  período.") deixam o critério explícito, em vez de um texto genérico que
+  já não bateria com o comportamento novo.
+- Testado via harness já existente (`harness_inventario_ciclico_relatorio.js`,
+  estendido) — 17 asserções novas: `inventarioCiclicoStatusIncluido` isolada
+  cobrindo os 4 status concluídos ao vivo (incluídos), os 3 status "ainda em
+  análise" (excluídos) e os 3 status do histórico (OK/Sem Ajuste/Ajustado
+  incluídos, Pendente/Ajustar excluídos); `itensIncluidosInventarioCiclico`
+  com um pool de 13 itens misturando os 8 casos, confirmando exatamente os 8
+  certos; `buildInventarioCiclicoRows`/`computeAcuracidadeSemanal` só
+  contando os itens incluídos; e um teste de ponta a ponta pelo componente
+  (`InventarioCiclicoPanel` de verdade, 3 itens no mesmo armazém — 1
+  concluído, 1 aguardando aprovação, 1 ainda em análise — confirma que o
+  contador mostra "2 contagens encontradas", não 3). Rodei de novo toda a
+  suíte de regressão do scratchpad (65 harnesses) — 0 falhas. Transpile
+  Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos
+  (668/668, sem mudança — esta correção não tocou em CSS nenhum, só JS/JSX).
+  **Verificação visual/funcional de ponta a ponta fica a cargo do cliente**
+  — mesma limitação de sempre (login exige Supabase Auth real, não
+  simulável no sandbox sem rede).
+
+
+## Botão de download por módulo (5 telas de contagem) + busca de status na Home
+
+Cliente mandou print da Sidebar (grupo "Gestão de Inventário": Recontagens/
+Itens Divergentes/Analisados/Aguardando Aprovação/Contagens Concluídas) com
+dois pedidos numa mensagem só: "quero um botão de download em todos os tipos
+de contagem, caso eu queira baixar um relatório especifico de cada módulo. E
+incluir na tela inicial um campo de busca, caso eu queira saber o status de
+algum item."
+
+### 1. Download por módulo
+
+- **`baixarRelatorioModulo(counts, sheetName, nomeArquivo)`** (função nova,
+  logo depois de `buildCountRows`) — reaproveita o MESMO layout de colunas do
+  relatório principal (`buildCountRows`, o que já bate com o vocabulário da
+  planilha `BD_Contagens` do cliente) numa aba só, isolada por módulo — sem
+  inventar um formato novo. Recebe a lista JÁ FILTRADA (o que está visível na
+  tela no momento do clique — busca/severidade/status/período já aplicados
+  pela própria tela), nunca a lista bruta. Nome do arquivo:
+  `GestaoEstoques_{Modulo}_{hojeLocalStr()}.xlsx`.
+- **`ModuloDownloadButton({counts, sheetName, nomeArquivo})`** (componente
+  compartilhado, logo depois de `PaginationControls`, mesma vizinhança dos
+  outros subcomponentes reutilizados por essas telas —
+  `SeverityFilterRow`/`SearchWithScanner`/`StatusConcluidoFilterRow`) — botão
+  compacto (`<Ic>⬇</Ic> Baixar (.xlsx)`), desabilitado sem nenhum item pra
+  exportar, com mensagem de sucesso/erro inline.
+- **Wiring nos 5 painéis**: `RecountsPanel`/`DivergentItemsPanel`/
+  `SolicitacaoArmazemPanel`/`DiretoriaApprovalPanel` já tinham uma fileira de
+  cabeçalho idêntica (`justifyContent:'space-between'`, com o contador "N
+  pendentes" — `ModuloDownloadButton` entrou como irmão desse `<span>`,
+  exportando `listaFiltrada` (o array final, pré-paginação, de cada painel).
+  `ConcludedCountsPanel` não tinha essa fileira (só um `.section-title`
+  "Histórico" solto) — precisou ser envolvido numa `<div>` flex nova pra caber
+  o botão ao lado, exportando `cadeiasFiltradas.map(cd=>cd.tip)` (a RODADA
+  FINAL de cada cadeia, não a cadeia inteira — mesmo dado que a tela já
+  mostra).
+
+### 2. Busca de status na Home
+
+- **`buscarStatusItens(termo, counts, historicoConcluidas)`** (função nova,
+  perto de `getOpenInventoryItemConflict`) — busca por código OU descrição,
+  sem nenhuma consulta nova ao Supabase: filtra em memória sobre o MESMO pool
+  que a Home já usa pros KPIs (contagem ao vivo + histórico já concluído, via
+  `historicoRowToCountLike`). Só a PONTA de cada documento entra
+  (`ultimaContagemPorDocumento`, mesma lógica de `getOpenCountForProduct`
+  generalizada) — nunca mostra uma rodada já superada por uma recontagem
+  seguinte como se fosse o status atual. Ordenado por data mais recente
+  primeiro, cortado em 15 resultados.
+- **`resolverStatusParaBusca(c)`** (mesmo lugar) — reaproveita `STATUS_INFO`
+  (contagem ao vivo) ou `_statusDisplay` (histórico importado) pro
+  rótulo/cor, sem inventar uma classificação nova. Resolve o destino de
+  navegação (`recounts`/`divergentes`/`solicitacaoArmazem`/
+  `aprovacaoDiretoria`/`concluidas`) a partir do `statusAprovacao` — item do
+  histórico importado nunca tem destino (`null`), já que não existe tela
+  própria de "abrir esse item específico" pra ele, é só consulta/auditoria.
+- **`ItemStatusSearchPanel({counts, historicoConcluidas, user, goto})`**
+  (componente novo, logo antes de `/* ---------------- HOME ---------------- */`)
+  — campo de busca (reaproveita `SearchWithScanner`, com botão de câmera) +
+  lista de resultados, cada um com código/descrição/chip de status
+  (`.pnl-status`, mesmo componente visual já usado no resto da Home) e um
+  botão "Abrir" **só quando `hasAccess(user, destino)` é true** — mesmo
+  critério "nunca deixar link morto" já usado nos outros KPIs da tela (ex.:
+  operador vê o status de um item em "Analisados", mas não vê o botão de
+  abrir, já que não tem acesso a essa tela por padrão).
+- **Renderizado FORA de `.pnl-wrap`/`.mobile-home-menu`** (os dois blocos que
+  se alternam por tamanho de tela — Dashboard completo em telas ≥768px,
+  menu simples em celular) — mesmo lugar de `.greet`/`.greet-title`, que
+  nunca têm `display:none` em nenhum breakpoint — pra aparecer em QUALQUER
+  tamanho de tela sem precisar duplicar o componente uma vez pro desktop e
+  outra pro celular.
+- **Bug real pego durante o teste, corrigido antes de rodar qualquer
+  harness**: `baixarRelatorioModulo` usava `XLSX.utils...` sem alias local
+  (`const XLSX = window.XLSX;`) — padrão que TODO outro gerador de workbook
+  do arquivo já segue (`generateReportWorkbook`/`buildInventarioCiclicoWorkbook`/
+  `buildImportTemplateWorkbook`), só esta função nova tinha ficado pra trás.
+  Sem o alias, `XLSX` (sem `window.`) nunca resolve fora de um navegador de
+  verdade — pego na 1ª rodada de teste (harness com mock em `window.XLSX`),
+  corrigido antes de qualquer commit.
+
+Testado via 2 harnesses novos (jsdom + react-dom/client + `act()`, mesma
+técnica rigorosa de sempre — carrega o `index.html` inteiro transpilado numa
+`vm.Script`): `harness_modulo_download_button.js` (35 asserções —
+`baixarRelatorioModulo` isolada incluindo lista vazia/sem XLSX carregado;
+`ModuloDownloadButton` habilitado/desabilitado; os 5 painéis de ponta a
+ponta, cada um clicando o botão e confirmando nome da aba/arquivo certos, e
+`ConcludedCountsPanel` vazio mostrando o botão desabilitado em vez de
+escondido) e `harness_item_status_search.js` (39 asserções —
+`buscarStatusItens` isolada incluindo dedup de cadeia de recontagem, busca
+por descrição parcial, item só do histórico, limite de 15, ordenação por
+data; `resolverStatusParaBusca` nos 7 status possíveis;
+`ItemStatusSearchPanel` de ponta a ponta com os 3 perfis — operador sem
+botão "Abrir", líder com o botão navegando pro destino certo, busca sem
+resultado mostrando o empty-state honesto; e `Home` renderizada de verdade
+confirmando o painel está genuinamente integrado, não só existe isolado).
+Rodei de novo toda a suíte de regressão do scratchpad (67 harnesses ao
+todo) — 0 falhas. Transpile Babel do arquivo inteiro e balanceamento de
+chaves do CSS conferidos (668/668, sem mudança — nenhuma classe CSS nova,
+tudo reaproveitado via `.section-title`/`.panel`/`.empty-state`/
+`.pnl-status`/`.btn-outline`/`.btn-sm` já existentes). **Verificação
+visual/funcional de ponta a ponta fica a cargo do cliente** — mesma
+limitação de sempre (login exige Supabase Auth real, não simulável no
+sandbox sem rede).
+
+
+## "Valores por Armazém" eliminado + "Valor em Estoque" vira só Armazém 01, ao vivo
+
+Cliente mandou print de "Indicadores" (mobile) e pediu, direto: "Elimine o
+indicador de valores por armazém e este valor em estoque contemple apenas
+o valor que temos de saldo no armazém 01 saldo x custo unitário, puxando
+do consulta." Duas mudanças na mesma seção "Resumo da Operação"/"Tendência"
+(Dashboard):
+
+1. **Painel "Valores por Armazém" removido por completo** (barras
+   horizontais por armazém, toggle "Valor (R$)"/"% do Total", último bloco
+   da tela) — sem substituto, o cliente só quis eliminar.
+2. **Card "Valor em Estoque" deixou de somar os 8 armazéns** — passou a
+   mostrar só o valor do **Armazém 01**, calculado como **saldo × custo
+   unitário item a item**, e — a parte que mudou a arquitetura da conta —
+   **"puxando do consulta"**: não é mais uma leitura agregada do cache
+   `estoque_saldo` (alimentado pela planilha SB2), é uma soma feita **AO
+   VIVO**, produto a produto, na consulta interna da Selgron
+   (`consultar-produto-selgron`, a mesma Edge Function já usada em
+   `CountStep`/`EtiquetasPanel`).
+
+Confirmado o design em duas rodadas de `AskUserQuestion` antes de
+implementar, dado o tamanho da mudança de arquitetura:
+
+- **1ª pergunta**: de onde viria o dado — cache do Supabase filtrado por
+  Armazém 01 (rápido, já pronto) ou consulta ao vivo item a item (mais
+  fiel, mas a ferramenta da Selgron foi pensada pra 1 lookup manual de
+  cada vez, não bulk). Cliente respondeu **"Ao vivo assim como você
+  calcula os valores de divergências das contagens"** — confirmando que
+  queria o mesmo princípio já usado em `CountStep`
+  (`saldoSistemaEfetivo`/`custoUnitEfetivo`: valor da consulta ao vivo
+  VENCE quando disponível, cache local é só fallback).
+- **2ª pergunta**: como lidar com a escala — um armazém pode ter
+  centenas/milhares de códigos, e cada um exige 1 requisição pra um
+  sistema interno pensado pra uso manual, então isso pode levar minutos.
+  Cliente escolheu **"só busca quando eu clicar em 'Atualizar', com barra
+  de progresso"** — não dispara sozinho ao abrir a tela.
+
+### `fetchValorEstoqueArmazem01AoVivo(onProgress)` (index.html)
+
+Função nova, perto de `fetchEstoqueResumoGeral` (que foi REMOVIDA nesta
+mesma rodada, ver abaixo). Dois passos:
+
+1. **A LISTA de códigos** a percorrer vem do cache local (`estoque_saldo`
+   filtrado por `almoxarifado='1'`, o mesmo dado já carregado via upload
+   manual da planilha SB2 em Configurações) — não tem outro jeito
+   confiável de saber "quais códigos existem no Armazém 01" sem alguma
+   fonte prévia, e essa já existe.
+2. **O VALOR de cada item** (saldo/custo) é resolvido AO VIVO, um por vez,
+   via `fetchSaldoConsultaSelgron(codigo)` — mesma função já usada em
+   `CountStep`/`EtiquetasPanel`. Quando a consulta responde com sucesso,
+   `saldo`/`custoUnitario` dela VENCEM; quando falha (timeout, código não
+   encontrado, etc.), cai pro saldo/custo já calculado a partir da linha
+   local (`valor_financeiro/saldo`) — nunca deixa um item de fora da soma
+   só porque a consulta falhou pra ele especificamente.
+3. `onProgress({feito, total})` chamado a cada item — é o que alimenta a
+   barra de progresso.
+
+### `Dashboard` — botão manual, nunca dispara sozinho
+
+- **`valorArmazem01`/`carregandoArmazem01`/`progressoArmazem01`/
+  `erroArmazem01`** (estado novo) + **`armazem01RunIdRef`** (`useRef`,
+  contador de execução) — protege contra o componente desmontar (usuário
+  navega pra outra tela) NO MEIO de uma consulta que pode levar minutos:
+  cada clique incrementa o `runId`, e qualquer `setState` só é aplicado se
+  o `runId` capturado no início da chamada ainda for o atual — mesmo
+  princípio de guard já usado antes neste projeto pra evitar `setState`
+  em componente desmontado (ver o bug da câmera travando,
+  `CameraScanner`), só que aqui pra um loop assíncrono bem mais longo.
+- **Botão "Consultar ao vivo"/"Atualizar (ao vivo)"** dentro do próprio
+  card "Valor em Estoque — Armazém 01" — desabilitado enquanto roda, com
+  uma barra de progresso fina (`{feito} de {total}`) e o meta-text do
+  card trocando pra "Consultando ao vivo… X de Y" durante a busca. Depois
+  de concluir, mostra "saldo × custo unitário, ao vivo · N itens" e, se
+  algum item falhou na consulta, "· N sem resposta (usou cache)" — nunca
+  finge que 100% veio ao vivo quando parte caiu no fallback.
+- **Nunca dispara no `useEffect` de mount** — diferente de `carregarEstoque`
+  (que já roda sozinho ao abrir a tela, pra popular `estoqueRemoto`/
+  `valorTotalEstoque`, ainda usado pela % do card "Valor Divergente" —
+  ver abaixo), este cálculo só começa com o clique explícito do admin.
+
+### Limpeza — `resumoGeral`/`armazensAtivos`/`fetchEstoqueResumoGeral` viraram código morto
+
+Com o texto "N armazéns ativos" saindo do card (não faz mais sentido pra
+um card escopado a 1 armazém só), `armazensAtivos` (calculado a partir de
+`resumoGeral.armazens_ativos`) ficou sem nenhum consumidor — removidos
+junto: o estado `resumoGeral`/`setResumoGeral`, a variável
+`armazensAtivos`, e a função `fetchEstoqueResumoGeral()` em si (só tinha
+esse único ponto de chamada). `modoValor`/`setModoValor`/
+`armazensPorValor`/`maxArmazemValor`/`armazensTreemapData`/
+`fmtReaisAbrev` também removidos — existiam só pro painel "Valores por
+Armazém", que saiu.
+
+**Mantido de propósito**: `estoqueRemoto`/`carregarEstoque`/`porArmazem`/
+`armazens`/`valorTotalEstoque` — `valorTotalEstoque` (soma de TODOS os
+armazéns) continua alimentando a % do card "Valor Divergente" ("X% do
+valor total em estoque"), que o cliente não pediu pra mudar; e
+`carregarEstoque` continua sendo o que o botão "Atualizar" do painel
+"Filtros" (`TrendFilterBar onRefresh`) já chama. A função RPC
+`estoque_resumo_geral()` continua existindo no `backend/schema.sql` (não
+removida do banco, só parou de ser chamada pelo front-end) — decisão
+consciente de não mexer em infraestrutura de banco que não está causando
+problema nenhum.
+
+**Nenhuma migração de SQL necessária** — `fetchValorEstoqueArmazem01AoVivo`
+só faz uma leitura autenticada comum de `estoque_saldo` (já com RLS
+liberado pra `authenticated` desde o endurecimento pós-migração Supabase
+Auth) e reaproveita a Edge Function `consultar-produto-selgron` já
+publicada e em uso.
+
+Testado via harness dedicado
+(`harness_valor_armazem01_ao_vivo.js`, jsdom + react-dom/client + `act()`,
+mesma técnica rigorosa de sempre — carrega o `index.html` inteiro
+transpilado numa `vm.Script`, Supabase mockado incluindo `estoque_saldo`
+filtrado por armazém E `consultar-produto-selgron` respondendo por
+código): `fetchValorEstoqueArmazem01AoVivo` isolada — 2 itens do Armazém
+01, um respondendo ao vivo com saldo/custo DIFERENTES do cache local
+(prova que o valor ao vivo vence) e outro falhando na consulta (prova que
+cai pro cache local sem derrubar a soma) — total bate exatamente (48 ao
+vivo + 40 fallback = 88), `onProgress` chamado 1x por item, `falhas:1`
+contabilizado certo. `Dashboard` de ponta a ponta: "Valores por Armazém"
+não aparece em lugar nenhum da tela; o card mostra "Valor em Estoque —
+Armazém 01", nasce com "—" e o botão "Consultar ao vivo"; **nenhuma
+requisição dispara sozinha no mount**; clicar no botão dispara exatamente
+2 chamadas (1 por código do Armazém 01), o card atualiza pro valor
+calculado (R$ 88), mostra "2 itens"/"1 sem resposta (usou cache)", e o
+botão vira "Atualizar (ao vivo)". Rodei de novo toda a suíte de regressão
+do scratchpad (67 harnesses, 1.031 asserções) — 0 falhas (removido
+`harness_valores_armazem_final_pagina.js`, que testava exclusivamente o
+painel agora eliminado — mesmo critério já usado antes neste projeto pra
+harness que testa exclusivamente algo que deixou de existir). Transpile
+Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos
+(668/668, sem mudança — só JS/JSX, nenhuma classe CSS tocada nem
+removida). **Verificação visual/funcional de ponta a ponta (o botão de
+verdade contra a consulta real da Selgron, incluindo quanto tempo leva
+pra um armazém com muitos códigos) fica a cargo do cliente** — mesma
+limitação de sempre (login exige Supabase Auth real, não simulável no
+sandbox sem rede, e o sandbox tampouco tem acesso à consulta interna da
+Selgron).
+
+
+## "SAs em Aberto" — desempenho do almoxarifado atendendo Solicitações (SA)
+
+Cliente pediu uma página nova (grupo "Análise" da Sidebar) pra acompanhar
+automaticamente quanto tempo o almoxarifado leva pra atender uma
+"Solicitação ao Almoxarifado" (SA) — hoje ele visita
+`https://consulta.selgron.com.br/sa_aberto.php` manualmente todo dia e
+filtra a tabela de SAs em aberto na mão. Meta confirmada: **menos de 2 dias
+(48h corridas)**. Pedido completo, com exemplos exatos de formatação
+("01 dia e 05 horas → Dentro da meta" / "02 dias e 03 horas → Fora da
+meta") e dois casos reais de transição aberta→atendida — SA 12345
+(abertura 10/08 08:00, sumiu da consulta 11/08 14:00 → 1 dia e 6 horas →
+dentro da meta) e SA 12346 (abertura 10/08 08:00, sumiu 12/08 10:00 → 2
+dias e 2 horas → fora da meta) — e uma restrição explícita: **"não quero
+simplesmente criar uma tela com dados fictícios ou mockados"**, a página
+precisa estar estruturada pros dados reais desde o início.
+
+**Regra central, explícita no pedido**: `sa_aberto.php` só mostra SA AINDA
+pendente — quando uma SA some da lista, ela foi atendida. Isso só dá pra
+capturar rodando periodicamente e comparando o retrato de agora contra o
+retrato anterior — sem isso, uma SA que abre E fecha entre duas visitas
+manuais do cliente nunca teria o tempo de atendimento registrado.
+Confirmado com o cliente (`AskUserQuestion`, 2 perguntas): o nome da tela
+("SAs em Aberto", não "Desempenho do Time" — a outra opção do pedido
+original) e a sincronização automática via `pg_cron` a cada **30 minutos**
+— mesmo mecanismo de scheduling já documentado (nunca aplicado antes) em
+`backend/README.md` seção 5, e o mesmo tipo de scraping autenticado de
+página interna da Selgron que já está em produção
+(`consultar-produto-selgron`, usado por `CountStep`/`EtiquetasPanel`).
+
+### `backend/schema.sql` — tabela nova, `sa_almoxarifado`
+
+Uma linha por SA (estado atual + histórico da transição), não uma tabela de
+snapshot por poll (que cresceria sem necessidade — o que importa preservar
+é só "quando abriu"/"quando foi atendida", não cada rodada intermediária em
+que ela ainda aparecia pendente): `numero_sa` (chave primária), `solicitante`,
+`material_codigo`/`material_descricao`, `quantidade`, `aberta_em`, `status`
+(`'aberta'`/`'atendida'`), `atendida_em`, `ultima_vista_em`. RLS: só leitura
+pra `authenticated` (mesmo padrão já usado em `item_reservas`/
+`etiquetas_fila` — nenhuma policy de insert/update/delete pra
+`authenticated`, só a Edge Function, rodando com service role, grava aqui).
+Realtime habilitado (`alter publication supabase_realtime add table
+sa_almoxarifado`) — o app inteiro reage sozinho quando o cron atualiza uma
+linha, sem precisar recarregar a página.
+
+**Tempo de atendimento e "dentro/fora da meta" são calculados no
+FRONT-END, não colunas persistidas** — mesmo critério já usado em
+`diasParado()` (sempre em cima de "agora", nunca congelado): pra SA ainda
+aberta, o tempo decorrido usa o momento atual como fim, então cresce
+sozinho enquanto ela continuar pendente; pra SA já atendida, usa
+`atendida_em` fixo.
+
+### Edge Function nova: `supabase/functions/sync-sa-almoxarifado/index.ts`
+
+Segue o arcabouço de duas Edge Functions já existentes: HTTP Basic Auth +
+parser tolerante de `consultar-produto-selgron` (mesmos secrets
+`CONSULTA_SELGRON_USER`/`CONSULTA_SELGRON_PASS`, reaproveitados — é o mesmo
+domínio `consulta.selgron.com.br`), e o padrão service-role + log de
+execução em `sync_log` de `sync-saldo-protheus` (`origem=
+'sa_almoxarifado'`). `extrairSasAbertas(html)` resolve as colunas da tabela
+pelo NOME do cabeçalho (não posição fixa) — mesmo espírito já usado em
+`parseHistoricoContagensRows` ("robusto a reordenação"). Pra cada SA
+encontrada na consulta: upsert com `status='aberta'`, `ultima_vista_em=
+now()` (e `aberta_em` só na 1ª vez que aparece). Pra qualquer SA que
+estava `'aberta'` no banco mas NÃO apareceu nesta rodada: vira
+`'atendida'`, com `atendida_em=now()` — a hora deste poll é a melhor
+aproximação possível do momento real de atendimento (ficou em algum ponto
+entre o poll anterior, que ainda a viu, e este, que não viu mais).
+**Proteção deliberada**: se o parser não reconhecer NENHUMA linha na
+resposta (formato da página mudou, sessão expirou, etc.), a função para
+sozinha ANTES de reconciliar — nunca marca todo mundo como "atendido" só
+porque parou de reconhecer o HTML, mesma categoria de proteção já usada
+em `salvarInventarioToSupabase`/outras rotinas que nunca assumem sucesso
+silencioso. Sempre HTTP 200 com `{ok:false,erro}` pra falha esperada
+(mesma lição já registrada neste projeto — status não-2xx faz o
+`supabase-js` descartar o corpo real do erro).
+
+### `index.html` — tela nova, `SAsAbertoPanel`
+
+Wiring de registro de página (mesmo padrão usado 6× neste projeto):
+`ACESSOS_RESTRITOS.sasAberto=['lider','admin']` (mesmo grupo de
+"Indicadores"/"Relatórios" — análise gerencial, operador não participa por
+padrão, mas o admin pode conceder a exceção como qualquer outra tela via
+`acessosExtras`), `TODOS_OS_MENUS`, `VIEW_TITLES`, `VIEW_SUBTITLES`,
+`buildSidebarGroups` (grupo "Análise", ícone `clock`), guard de rota em
+`App()`.
+
+- **`saAlmoxarifadoRowToLocal`/`fetchSaAlmoxarifado`** (via
+  `fetchTodasPaginado`, mesmo helper de sempre pra nunca depender do teto
+  implícito de linhas do Supabase) — leitura simples, snake_case→camelCase.
+- **`sincronizarSaAlmoxarifadoAgora()`** — botão "Sincronizar agora" (só
+  líder/admin), chama `supabaseClient.functions.invoke('sync-sa-
+  almoxarifado')` direto, sem esperar o cron — útil pro 1º teste real e pra
+  forçar atualização pontual. Lê o erro de verdade via `error.context.
+  json()` (mesma técnica já usada em `chamarUsuariosAdmin`), não a mensagem
+  genérica do supabase-js.
+- **`SA_META_HORAS=48`**, **`saTempoAbertoMs`**, **`saTempoAbertoTexto`**
+  (formata "01 dia e 06 horas"/"02 dias e 02 horas" — exemplos exatos do
+  cliente, conferidos byte a byte no teste), **`saDentroMeta`** (`ms<48h`;
+  exatamente 48h já é FORA da meta — a regra é "menos de 2 dias", não "até
+  2 dias").
+- **`computeSaKpis`** — os 6 KPIs pedidos: SAs em Aberto/SAs Vencidas são
+  estado ATUAL (sem filtro de período, mesmo critério já usado em filas de
+  pendência — Recontagens/Itens Divergentes, pendência não some por causa
+  de filtro de data); SAs Atendidas/%/tempo médio são escopadas ao período
+  do painel "Filtros", pela DATA DE ATENDIMENTO.
+- **`computeSaHistoricoPorDia`**/**`computeSaWeeklyStats`** — "Histórico de
+  desempenho" (tabela por dia, sem zero-preencher dia sem atendimento
+  nenhum, mesmo critério de `acuracidadeMediaMensal`) e o gráfico de
+  evolução (reaproveita `WeeklyLineChart` tal como já existe — mesmo
+  formato `{key,label,sublabel,total,acuracidade}`, aqui `acuracidade`
+  carrega o **% dentro da meta por semana**, não acuracidade de contagem;
+  meta da linha de referência é 100%, direto da própria definição da regra
+  — não um número novo inventado). Mesmo cuidado de "pré-preenche os
+  baldes de semana ANTES de contar dado real" já usado em
+  `computeWeeklyStats`, protegendo contra o mesmo bug de "semana parcial
+  nas pontas" já corrigido lá antes.
+- **Tabela "Acompanhamento das SAs"** (`.rank-table`, mesmo componente já
+  usado em `AllDivergencesPanel`) — SEM filtro de período (fila viva),
+  ordenada por tempo em aberto decrescente (o que coloca a meta em risco
+  primeiro). Colunas: SA/Abertura/Solicitante/Material/Qtd./Tempo em
+  aberto/Status/Situação da meta — as duas últimas via `StatusTag`
+  (verde/âmbar/vermelho, mesmo componente de sempre). Filtros: busca (SA/
+  material/solicitante, reaproveita `SearchWithScanner`), chips de Status
+  (Aberta/Atendida/Todos — padrão "Aberta", bate com o nome da própria
+  tela) e Situação da meta (Dentro/Fora/Todos), `<select>` de Solicitante
+  (distinct dos dados carregados). `usePaginacaoLista`/`PaginationControls`
+  (mesmo padrão já usado em Recontagens/Itens Divergentes).
+
+### Pendência real, não resolvível no sandbox
+
+O parser (`extrairSasAbertas`) foi escrito só a partir da DESCRIÇÃO do
+cliente — nunca viu o HTML real de `sa_aberto.php`, mesma situação que
+`consultar-produto-selgron`/Kardex tiveram no início e precisaram de 1-2
+rodadas de ajuste depois que o cliente mandou o HTML de verdade
+(`Ctrl+U`). Documentado em `backend/README.md` seção 13.5: se "Sincronizar
+agora" não reconhecer nenhuma linha, nada é apagado/alterado (proteção já
+descrita acima) — só falta o cliente mandar o HTML real pra eu calibrar o
+parser em minutos, mesmo processo já estabelecido neste projeto.
+
+### Verificação
+
+Testado via harness dedicado (`harness_sa_almoxarifado.js`, jsdom +
+react-dom/client + `act()`, mesma técnica rigorosa de sempre — carrega o
+`index.html` inteiro transpilado numa `vm.Script`, Supabase mockado com um
+"banco" em memória pra `sa_almoxarifado` + canal Realtime simulável):
+`saAlmoxarifadoRowToLocal`/`fetchSaAlmoxarifado` isoladas; `saTempoAbertoMs`/
+`saTempoAbertoTexto`/`saDentroMeta` contra os DOIS exemplos exatos do
+cliente (SA 12345→"01 dia e 06 horas"/dentro, SA 12346→"02 dias e 02
+horas"/fora, incluindo a borda exata de 48h caindo pra fora da meta);
+`computeSaKpis` com um cenário misto (abertas dentro do prazo, 1 vencida,
+atendidas dentro/fora do período de filtro, uma fora do período pra
+confirmar que não conta) — incluindo o caso "sem nenhuma SA atendida no
+período" devolvendo `null` (não 0% inventado); `computeSaHistoricoPorDia`
+(sem zero-fill, ordenado do dia mais recente); `computeSaWeeklyStats`
+reproduzindo o MESMO tipo de bug de "semana parcial na ponta" já corrigido
+em `computeWeeklyStats` (item na mesma semana ISO mas antes da data exata
+do filtro não pode contar) — confirmado excluído corretamente; e
+`SAsAbertoPanel` de ponta a ponta — KPIs renderizando, tabela mostrando só
+"Aberta" por padrão (some quando filtra "Atendida" fica visível), busca por
+número de SA filtrando certo, "Sincronizar agora" funcionando nos 3
+cenários (sucesso, erro real da Edge Function via `error.context.json()`,
+e ausente pro perfil operador), evento Realtime (INSERT) atualizando a
+tabela sem reload, e o estado vazio honesto ("Nenhuma SA sincronizada
+ainda") quando o banco não tem nenhuma linha. 57 asserções, todas
+passando. Rodei de novo toda a suíte de regressão do scratchpad (68
+harnesses) — 0 falhas. Transpile Babel do arquivo inteiro e balanceamento
+de chaves do CSS conferidos (668/668, sem mudança — nenhuma classe CSS
+nova, reaproveita `.rank-table`/`.ops-kpi-row`/`.panel`/`.role-note`/
+`.login-error2`/`.chart-meta-badge`/`.weekly-solo-row` já existentes).
+Type-check da Edge Function via `tsc` (mesmo shim de sempre pros globais
+do Deno) sem erro.
+
+**Falta o cliente**: (1) rodar o SQL novo (`backend/schema.sql`, bloco
+`sa_almoxarifado`) no projeto Supabase real; (2) `npx supabase functions
+deploy sync-sa-almoxarifado`; (3) o `pg_cron.schedule(...)` de 30 em 30 min
+(seção 13.4 do README); (4) testar "Sincronizar agora" na tela e, se o
+parser não reconhecer nenhuma SA, mandar o HTML real de `sa_aberto.php`
+(`Ctrl+U`) pra eu calibrar — mesmo handoff de sempre pra integração com
+página interna da Selgron. **Verificação visual/funcional de ponta a
+ponta fica a cargo do cliente** — mesma limitação de sempre (login exige
+Supabase Auth real, não simulável no sandbox sem rede, e o sandbox
+tampouco tem acesso à consulta interna da Selgron).
+
+
+## "SAs em Aberto" — calibrado contra o HTML real: SA não é única por linha
+
+O cliente perguntou "Qual sql rodar?" (a SA de Aberto já tinha sido
+implementada numa rodada anterior, mas ele ainda não tinha rodado nenhum
+SQL) — antes de eu responder, ele mandou (sem nenhum texto, só o dado em
+si) o HTML real de `https://consulta.selgron.com.br/sa_aberto.php` via "Ver
+código-fonte da página" — mesmo padrão já estabelecido neste projeto
+("mandar dado real depois de eu avisar que o parser é só uma suposição" já
+aconteceu antes com `consultar-produto-selgron`/Kardex): o dado em si já é
+a instrução, "calibra contra isso".
+
+**Achado que mudou o DESENHO, não só o parser**: "Numero" (a SA) não é
+identidade única por linha — uma SA pode pedir vários materiais diferentes,
+cada um numa linha própria da tabela, numerada pela coluna **"Item"** (01,
+02, 03... dentro da MESMA SA — confirmado com exemplos reais no HTML
+mandado, ex. uma SA com 10 linhas, Item 01 a 10, cada uma com um código/
+descrição/quantidade diferente). O schema original (`sa_almoxarifado`,
+`numero_sa text primary key`) presumia 1 linha = 1 SA = 1 material — errado.
+A identidade de verdade é o PAR `(numero_sa, item)` — corrigido com uma
+coluna nova, `chave` (`numero_sa || '-' || item`), virando a PRIMARY KEY.
+**Por que isso importava de verdade, não só teoricamente**: sem essa
+correção, o item de uma SA multi-material sendo atendido faria a
+reconciliação da Edge Function (que compara "quem sumiu da consulta")
+errar de dois jeitos possíveis dependendo de como fosse implementada — ou
+fechar TODOS os itens da SA junto (se "sumir" fosse checado por numero_sa
+presente/ausente na lista inteira), ou nunca fechar NENHUM item enquanto
+pelo menos 1 dos outros da mesma SA continuasse pendente (o que a versão
+antiga realmente faria, provado no teste: com uma SA de 3 itens, 2 ainda
+abertos, resolver o 3º NUNCA seria detectado, porque "073445" continua
+aparecendo na consulta via os outros 2 itens).
+
+**Estrutura real da tabela** (DataTables, `id='tbemp'`): `<thead>` +
+`<tfoot>` (os dois com o MESMO cabeçalho, repetido como células `<th>` — o
+`<tfoot>` serve pros campos de busca por coluna do próprio DataTables) +
+`<tbody>` (as linhas de dado de verdade, células `<td>`). `extrairSasAbertas`
+foi reescrita pra classificar linha por CONTEÚDO da célula, não por qual
+tag-pai a envolve: a primeira linha com `<th>` encontrada no documento é o
+cabeçalho (é a do `<thead>` — sempre vem antes do `<tfoot>`, e os dois só
+têm `<th>`, nunca `<td>`); qualquer linha com `<td>` é dado — isso exclui
+`<thead>` E `<tfoot>` automaticamente, sem precisar identificar qual deles é
+qual. Achado colateral, também corrigido: `COLUNA_KEYWORDS` tinha um
+fallback genérico `"sa"` pra `numero` (`["numero da sa","numero sa","nº
+sa","num sa","sa"]`) que teria colidido com o cabeçalho real "Saldo SA" (que
+contém a substring "sa") — nunca chegou a causar bug em produção (a function
+nunca tinha sido testada contra HTML real antes), mas foi removido —
+substituído por palavras-chave únicas e precisas (`numero`/`item`/
+`emissao`/`solicitante`/`cod produto`/`descricao`/`quant`/`almox`),
+conferidas uma a uma contra os 14 cabeçalhos reais da página (Numero,
+Solicitante, Emissao, Item, Cod Produto, Descricao, Quant, Saldo SA, Saldo
+Estoque, Almox, Obs, OP, Cod. C.Custo, C. Custo) pra garantir que nenhuma
+colide por substring com outra.
+
+**"Emissao" é data-only, nunca tem hora** — diferente dos dois exemplos
+hipotéticos que o cliente tinha dado no pedido original (que citavam hora
+de abertura, ex. "10/08 08:00") — confirmado no HTML real, a coluna só traz
+"DD/MM/AAAA". `parseDataHoraCelula` já lidava com isso corretamente (sempre
+tratou "sem hora" como "00:00:00", sem precisar de nenhuma mudança de
+código) — só precisou virar uma limitação DOCUMENTADA (schema.sql,
+backend/README.md, e o comentário da própria Edge Function): "tempo em
+aberto"/"dentro da meta" podem ter até ~24h de imprecisão por causa disso —
+real limitação da fonte, não bug do parser.
+
+**Achado à parte, sem efeito em código**: as colunas numéricas (Quant/Saldo
+SA/Saldo Estoque) usam PONTO como separador decimal (ex. "1.761", "4.6307")
+— diferente da convenção brasileira de vírgula que o resto do texto da
+página usa (a própria descrição do item, ex. "30X30X1,2MM", usa vírgula) —
+achado por análise de plausibilidade (um item de tubo de aço com saldo em
+dezenas faz sentido como peso em kg; a mesma leitura tratando o ponto como
+separador de milhar daria valores absurdos, na casa dos milhões). **Não
+afeta nenhum código**: `quantidade` é guardada e exibida como TEXTO puro, a
+função nunca converte pra número em lugar nenhum — registrado aqui só pra
+não se perder, caso um dia o app precise somar/comparar essa coluna
+numericamente.
+
+### O que mudou
+
+- **`backend/schema.sql`**: `sa_almoxarifado` reescrita com `chave text
+  primary key` (era `numero_sa`), mais as colunas novas `numero_sa`/`item`/
+  `almoxarifado` (as duas primeiras agora `not null`, sem ser mais a PK).
+  Bloco começa com `drop table if exists sa_almoxarifado cascade;` — seguro
+  porque é uma tabela só de espelho da consulta (sem FK apontando pra ela,
+  sem dado que não seja resincronizado sozinho no próximo poll/"Sincronizar
+  agora").
+- **`supabase/functions/sync-sa-almoxarifado/index.ts`** reescrita por
+  completo: `SaAberta` ganhou `item`/`almoxarifado`; `COLUNA_KEYWORDS`
+  trocado pelas palavras-chave precisas; `extrairSasAbertas` reescrita com a
+  classificação de linha por conteúdo (`<th>` vs. `<td>`) em vez do "1ª
+  linha da tabela é sempre o cabeçalho" de antes; item sem coluna própria
+  (formato degradado/mais antigo) cai num fallback de posição da linha
+  (1-based, zero à esquerda) — garante `chave` única mesmo sem essa coluna.
+  O `upsert`/reconciliação (a parte crítica) passaram de operar sobre
+  `numero_sa` pra operar sobre `chave` — `onConflict:'chave'`, e o `select`/
+  `filter`/`update` que decide quem fechar também usa `chave`, nunca mais
+  `numero_sa` isolado.
+- **`index.html`**: `saAlmoxarifadoRowToLocal` ganhou os campos novos;
+  `fetchSaAlmoxarifado` trocou o tiebreaker de ordenação de `numero_sa` pra
+  `chave` (não é mais único, não faz sentido como critério de ordenação);
+  o dedup do canal Realtime (INSERT/UPDATE e DELETE) trocou de
+  `s.numeroSa!==...` pra `s.chave!==...` — sem essa troca, duas linhas com o
+  mesmo `numero_sa` (itens diferentes) chegando via Realtime se
+  sobrescreveriam uma à outra no estado local, mesmo sendo dois itens
+  genuinamente diferentes; o `key` do React na tabela também virou
+  `s.chave`. A célula "SA" da tabela ganhou uma 2ª linha pequena ("Item
+  NN") abaixo do número — necessário agora que o mesmo número de SA pode
+  aparecer em mais de uma linha, não é mais opcional/cosmético.
+- **`backend/README.md`** seção 13 atualizada (13.2 menciona o `drop table`
+  seguro; 13.5 reescrita explicando os dois achados que mudaram o desenho,
+  não só "o parser pode precisar de ajuste"; 13.6 ganhou a nota sobre a
+  imprecisão de ~24h por causa do Emissao ser data-only).
+
+### Verificação
+
+Testado via harness reescrito (mesma técnica rigorosa de sempre — jsdom +
+react-dom/client + `act()`, `index.html` inteiro transpilado numa
+`vm.Script`) MAIS uma réplica em JS puro da lógica de parsing da Edge
+Function (copiada linha a linha do `.ts`, só removendo anotação de tipo —
+mesmo padrão já usado antes pra testar Edge Function sem Deno disponível no
+sandbox), rodada contra um HTML **estruturalmente fiel** ao real (mesma
+estrutura `id='tbemp'` + `<thead>`+`<tfoot>` duplicados + `<tbody>`, mesma
+ordem de 14 colunas confirmada) — não é o HTML literal que o cliente mandou
+(não sobreviveu em bytes exatos no contexto desta sessão), mas reproduz
+fielmente tag por tag e coluna por coluna o que foi confirmado nele,
+incluindo uma SA de 3 itens (o cenário central da correção) e uma de item
+único. Confirmado: as 4 linhas de dado são reconhecidas (não 8 — os
+cabeçalhos duplicados do `<thead>`/`<tfoot>` nunca viram "dado"); a SA
+multi-item vira 3 entradas distintas, cada uma com o próprio código/
+descrição/quantidade; `mapearColunas` bate no índice certo pras 8 colunas
+usadas sem colidir com nenhuma das 6 não-usadas (incluindo o caso que já
+foi bug — "Saldo SA" não é mais confundida com "Numero"); Emissao "sem
+hora" vira meia-noite ISO. **A prova mais importante**: simulei a
+reconciliação NOVA (por `chave`) contra a ANTIGA (por `numero_sa`,
+replicada só pra comparação) no mesmo cenário — uma SA de 3 itens onde só o
+item 02 é atendido — confirmando que a reconciliação nova fecha exatamente
+`073445-02` (só esse), enquanto a lógica antiga não fecharia NADA (a SA
+"073445" continua aparecendo na consulta via os itens 01/03, então o item
+02 — genuinamente resolvido — ficaria aberto pra sempre sob o desenho
+anterior). Testado também de ponta a ponta em `SAsAbertoPanel`: 2 linhas
+com o MESMO `numero_sa` (itens diferentes) aparecem como 2 LINHAS
+distintas na tabela (não colapsam numa só), tanto no fetch inicial quanto
+via um evento Realtime de INSERT simulado — o cerne visual da correção.
+88 asserções, todas passando. Rodei de novo toda a suíte de regressão do
+scratchpad (68 harnesses) — 0 falhas. Transpile Babel do arquivo inteiro e
+balanceamento de chaves do CSS conferidos (668/668, sem mudança — nenhuma
+classe CSS nova/tocada, só JS/JSX/SQL/TS). Type-check da Edge Function via
+`tsc` (mesmo shim de sempre pros globais do Deno) sem erro.
+
+**Falta o cliente**: rodar o SQL corrigido (o bloco `sa_almoxarifado`
+inteiro de `backend/schema.sql`, com `drop table cascade` — seguro mesmo
+que ele já tenha rodado a versão anterior, nada de real é perdido),
+`npx supabase functions deploy sync-sa-almoxarifado` de novo (o código
+mudou bastante), e então testar "Sincronizar agora" — essa é a PRIMEIRA
+vez que a function de fato faz um `fetch()` autenticado contra
+`sa_aberto.php` real (o HTML mandado antes foi só analisado estaticamente,
+nunca passou pela function rodando de verdade) — se algo não bater
+(formato mudou de novo, autenticação diferente da de produto/Kardex),
+mandar o HTML real de novo resolve rápido, mesmo processo já estabelecido.
+
+
+## "SAs em Aberto" — primeiro sync real confirmado (215 SAs) + limpeza de texto
+
+Cliente rodou o SQL, publicou `sync-sa-almoxarifado` (guiado passo a passo no
+terminal — mesmo processo de sempre pra quem é leigo em terminal: achar a
+pasta local já vinculada ao projeto Supabase de deploys anteriores, criar a
+subpasta da função nova, baixar o `index.ts` direto do GitHub via
+`Invoke-WebRequest`, e `npx supabase functions deploy`) e clicou
+**"Sincronizar agora"** — a PRIMEIRA vez que a função de fato buscou
+`sa_aberto.php` ao vivo, não só análise estática do HTML colado antes.
+**Funcionou de primeira**: 215 SAs encontradas na consulta, sem nenhum erro
+de parser — confirma que a calibração feita só a partir do HTML colado
+(sem nunca ter rodado contra o site real) bateu certo com a estrutura de
+verdade da página.
+
+Depois de ver a tela funcionando, pediu pra remover 2 textos: o `role-note`
+fixo no topo ("Sincroniza sozinho a cada 30 min... uma SA que some da
+consulta é considerada atendida na hora em que o sync percebe isso.") e a
+mensagem de sucesso que aparecia depois de clicar "Sincronizar agora"
+("Sincronizado agora — N SA(s) na consulta."). **A mensagem de ERRO foi
+mantida** (`msgSync.tipo==='erro'`) — continua útil se uma sincronização
+manual falhar; só o feedback de sucesso/o texto explicativo saíram, por
+decisão explícita do cliente confirmada via `AskUserQuestion` (as duas
+opções de remoção parcial foram oferecidas, ele escolheu remover as duas).
+
+Testado via transpile Babel do arquivo inteiro e balanceamento de chaves do
+CSS (668/668, sem mudança — só JSX removido, nenhuma classe CSS tocada).
+**Ainda falta**: agendar o `pg_cron` de 30 em 30 min (seção 13.4 do
+`backend/README.md`) — até lá, a tela só atualiza via clique manual em
+"Sincronizar agora".
+
+
+## Bug real: data de abertura da SA aparecia 1 dia "voltada" — fuso horário
+
+Cliente comparou a tabela do app com a página real (`sa_aberto.php`) e
+apontou: a mesma SA (073491) mostrava "Emissao: 12/08/2026" na página real,
+mas "11/08/2026, 21:00:00" na tela "SAs em Aberto" do app.
+
+- **Causa**: `parseDataHoraCelula` (Edge Function `sync-sa-almoxarifado`)
+  montava o ISO da data com sufixo `"Z"` (UTC) — "Emissao: 12/08/2026" (sem
+  hora, tratado como meia-noite) virava `2026-08-12T00:00:00Z`. Só que a
+  página é um sistema interno brasileiro — a data exibida ali já é horário
+  de Brasília, não UTC. Gravar como meia-noite EM UTC e depois exibir
+  convertido de volta pra Brasília (`new Date(...).toLocaleString('pt-BR')`,
+  index.html) empurrava a data pro dia ANTERIOR às 21h (meia-noite UTC =
+  21h do dia anterior em UTC-3) — o sintoma exato reportado. Diferente da
+  limitação já documentada ("Emissao não tem hora, só até ~24h de
+  imprecisão") — isso aqui trocava o DIA inteiro, não só a hora.
+- **Corrigido**: o sufixo virou `"-03:00"` (Brasília, fuso fixo — Brasil
+  não tem mais horário de verão desde 2019, não precisa de lógica de DST)
+  em vez de `"Z"` — meia-noite em Brasília agora é gravada como 03:00 UTC,
+  e ao converter de volta pra exibição em Brasília mostra meia-noite do dia
+  CERTO.
+- Testado via o mesmo harness já existente
+  (`harness_sa_almoxarifado.js`, réplica JS da lógica de parsing) — a
+  asserção que checava o ISO gerado foi atualizada pro valor certo
+  (`2026-08-11T03:00:00.000Z` em vez de `...T00:00:00.000Z`, pro mesmo
+  exemplo "Emissao: 11/08/2026"). `tsc --noEmit --strict` sem erro. Suíte
+  completa do scratchpad (68 harnesses) sem regressão.
+- **Falta o cliente redeployar** — `npx supabase functions deploy
+  sync-sa-almoxarifado` de novo (mesmo comando de sempre) — até lá, as SAs
+  JÁ sincronizadas no banco continuam com a data errada (a correção só vale
+  pra próximas sincronizações; não fiz nenhum `update` retroativo, já que
+  o próximo poll de 30 min — ou um "Sincronizar agora" manual — já
+  regrava `aberta_em` de qualquer item ainda `'aberta'` com o valor
+  certo, corrigindo sozinho com o tempo, sem precisar de SQL manual).
+
+
+## "2 folhas" no diálogo do Chrome pra impressão de 1 item só — não é mais o bug de page-break-after
+
+Cliente mandou foto de uma impressão real (item `000.33818`, "Impressora TSC
+Recebimento", a mesma máquina Chrome 109/Windows 7 já documentada antes)
+mostrando o diálogo de impressão do próprio Chrome com **"2 folhas"** pra uma
+etiqueta AVULSA — 1 item só, `imprimirEtiquetaViaNavegador(item1)` sem
+`item2`, ou seja **sem nenhum `page-break-after` no HTML** (esse estilo só é
+aplicado condicionalmente por `buildEtiquetaPageHtml`, e só quando existe uma
+PRÓXIMA folha no mesmo job — nunca no caso de 1 item avulso). Isso descarta
+de vez a causa já corrigida antes ("duas propriedades de quebra de página ao
+mesmo tempo", `page-break-after`+`break-after` juntos) — aqui não existe
+NENHUMA quebra de página no DOM, e o Chrome ainda assim conta 2 páginas.
+
+- **Ponto importante pra não confundir com investigações anteriores**: "2
+  folhas" aparece no PRÓPRIO diálogo do Chrome, calculado a partir do HTML/
+  CSS, ANTES de qualquer driver de impressora entrar em jogo — diferente do
+  caso já investigado e resolvido antes ("'pulando uma fileira' na impressão
+  avulsa — não era bug do app", concluído como comportamento de driver/Tear-
+  off do Windows) — aquele sintoma só aparecia DEPOIS de enviar pro
+  spooler/impressora, nunca na contagem de páginas do Chrome em si. Este
+  aqui é genuinamente o Chrome achando que existem 2 páginas de CSS, então
+  volta a ser um problema potencialmente influenciável por CSS/config do
+  navegador, não um comportamento inevitável da impressora física.
+- **Conferido o modelo de caixa antes de mexer em qualquer valor**:
+  `.etq-page-col{height:30mm}` (fixo) dentro de `.etq-page{height:30.5mm}`
+  (fixo, `align-items:center`) — com `.etq-produto`/`.etq-endereco`/
+  `.etq-prateleira` preenchendo `100%` do `.etq-page-col` e já com
+  `overflow:hidden` própria — não existe, pelo modelo de caixa CSS puro,
+  nenhum jeito do conteúdo interno crescer além dos 30.5mm da folha. Também
+  conferido que `<body>` só tem 2 filhos (`#root`, escondido via `display:
+  none !important` durante impressão, e `#etiqueta-print-area`) — nenhum
+  elemento solto extra que pudesse ficar visível sem querer.
+- **Reforço defensivo aplicado** (baixo risco, não muda o tamanho físico real
+  — `@page` continua `101mm 31mm`, o que o driver da impressora espera):
+  `overflow:hidden` em `#etiqueta-print-area` (dentro do `@media print`) e em
+  `.etq-page` — nenhum dos dois tinha essa proteção antes, mesmo o conteúdo
+  já devendo caber pelo box model. Não resolve sozinho se a causa for a que
+  parece mais provável agora (ver abaixo), mas fecha de vez qualquer
+  transbordo latente que o box model não devesse permitir mas que esse
+  Chrome específico possa calcular diferente.
+- **Suspeito principal, ainda não confirmado (precisa do cliente checar na
+  hora)**: como é o PRÓPRIO Chrome contando "2 folhas" antes do driver, o
+  candidato mais forte agora é a configuração "Mais definições" do diálogo
+  de impressão daquele Chrome especificamente — "Margens" (precisa ser
+  "Nenhuma", não "Padrão" — um valor "Padrão" adiciona uma margem física por
+  cima do `@page{margin:0}` do CSS, que sozinha já pode ultrapassar os
+  30,5mm/31mm da etiqueta e empurrar o resto pra uma 2ª folha), "Escala"
+  (precisa ser 100%, não "Ajustar à página" — isso re-calcula o layout de
+  um jeito que pode gerar página extra num navegador antigo) e "Tamanho do
+  papel" (precisa bater com a etiqueta customizada, não cair pra A4/Carta
+  por engano). Essas 3 configurações já tinham sido perguntadas numa
+  investigação anterior (o cliente confirmou "Margens: Nenhuma" na época),
+  mas Chrome não garante lembrar essa escolha entre sessões/reinícios do
+  navegador — vale confirmar de novo nesta máquina especificamente, já que
+  ela é a única com esse Chrome 109 tão desatualizado.
+- **Se as 3 configurações já estiverem certas e o problema persistir**: aí
+  sim a causa é mesmo um bug de paginação desse Chrome antigo com `@page`
+  de tamanho customizado tão pequeno (101x31mm) — nesse caso o próximo passo
+  seria reduzir ainda mais a altura de `.etq-page` (hoje 30,5mm, 0,5mm de
+  folga) pra dar mais margem de segurança, mas evitar repetir esse palpite
+  sem antes confirmar as 3 configurações acima — a mesma categoria de ajuste
+  especulativo já tentada uma vez (31mm→30,5mm) sem confirmação de que
+  resolveu de verdade.
+- Testado via transpile Babel do arquivo inteiro e balanceamento de chaves
+  do CSS (668/668, sem mudança — só propriedades novas dentro de 2 regras
+  já existentes, nenhuma regra nova). Rodei de novo toda a suíte de
+  Etiquetas (15 harnesses) e a suíte completa do scratchpad (68 harnesses)
+  — 0 falhas. **Verificação física de ponta a ponta (se o reforço defensivo
+  + a checagem de "Mais definições" resolvem de verdade nessa máquina) fica
+  100% a cargo do cliente** — mesma limitação de sempre nesta feature
+  (sandbox sem impressora física, e login exige Supabase Auth real).
+
+### Confirmado: era mesmo a configuração do diálogo de impressão — "só no meu computador"
+
+Cliente mandou um NOVO print, direto do diálogo "Imprimir" do Chrome nesse
+computador específico, perguntando "Porque só no meu computador fica
+assim?" — e a resposta já estava no próprio print, confirmando de vez o
+"suspeito principal" registrado acima:
+
+- **"Margens: Mínima"** — não "Nenhuma", que é o valor certo. "Mínima" faz
+  o Chrome reservar o menor respiro que ELE MESMO considera imprimível
+  (alguns milímetros, ignorando o `@page{margin:0}` do CSS) — numa
+  etiqueta de só 30,5mm de altura, essa margem sozinha já é grande o
+  bastante pra empurrar parte do conteúdo pra uma 2ª página fantasma.
+- **"Cabeçalhos e rodapés" marcado** — reserva um pouco de espaço vertical
+  extra no topo/rodapé de CADA página pra URL/data/número de página (o
+  padrão do Chrome pra imprimir uma página comum) — mais um "ladrão" de
+  altura que uma etiqueta tão pequena não tem sobrando pra dar.
+- **Confirma exatamente "por que só nessa máquina"**: o Chrome guarda as
+  preferências de impressão POR IMPRESSORA, salvas localmente em cada
+  computador — não sincronizam entre aparelhos, mesmo entrando com a
+  mesma conta Google. O outro computador que já funciona certo
+  certamente já tem "Margens: Nenhuma" + "Cabeçalhos e rodapés"
+  desmarcado configurados de uma vez anterior — esse aqui nunca tinha
+  sido ajustado.
+- **Não é bug de código nenhum** — nenhuma mudança em `index.html` foi
+  necessária. Passado ao cliente o ajuste de 2 cliques: no painel "Mais
+  definições" do diálogo de impressão, trocar "Margens" pra "Nenhuma" e
+  desmarcar "Cabeçalhos e rodapés" — feito isso, a contagem de páginas do
+  próprio Chrome já deve cair pra "1 folha de papel" antes mesmo de
+  clicar em Imprimir.
+
+
+## "Colar lista de vários códigos" em Contagem Manual — fila via Ctrl+V
+
+Cliente pediu: "Em contagem manual quero ter a opção de colar vários itens e
+ele lançar um crtl+v e ele lançar as contagens um a um" — até aqui,
+`ManualCountFlow` ("Nova Contagem" → "Manual") só permitia buscar/escanear
+UM item de cada vez, selecionar, contar, voltar pra busca, repetir. O
+pedido é lançar uma FILA inteira de uma vez, colando vários códigos.
+
+- **`parseCodigosColados(texto)`** (função nova, perto de `ManualCountFlow`)
+  — tokeniza em `/[\s,;]+/` (qualquer combinação de espaço/tab/quebra de
+  linha/vírgula/ponto-e-vírgula — cobre tanto colar de uma célula do Excel
+  quanto uma lista digitada separada por vírgula), remove vazio e
+  deduplica mantendo a 1ª ocorrência (mesmo critério já usado em
+  `parseImportedListRows`). Sem nenhuma validação de formato — qualquer
+  token vira um "código" tentado contra o catálogo; se não bater com nada,
+  cai no mesmo fallback sintético já usado em `ImportedListCountFlow`/
+  `RecountFlow` (`foraDoCacheLocal:true`, `saldoSistema:0` tratado como
+  real, `descricao: codigo` — nunca inventa uma descrição que não existe).
+- **`ManualPasteQueueFlow`** (componente novo, próprio — não inline dentro
+  de `ManualCountFlow`) — motor de fila mínimo em cima de `useCountQueue`
+  (o mesmo hook já usado por Aleatória/Rota/Lista Importada), reaproveitando
+  `CountStep` exatamente como os outros 3 fluxos com fila (`onSkip={()=>
+  q.defer()}`, progresso "Item X de Y", `conflitoInventario` checado via
+  `getOpenInventoryItemConflict` a cada item). Ao concluir todos, mostra
+  "Fila concluída — N itens contados" com um botão "Voltar à busca".
+  **Motivo de ser um componente separado, remontado via `key`**: `useCountQueue`
+  guarda `processados`/`adiados` como estado LOCAL do próprio hook — se
+  `ManualCountFlow` chamasse `useCountQueue` direto e só trocasse o array de
+  itens entre uma colagem e outra (o componente nunca desmonta entre
+  colagens, já que Contagem Manual nunca navega pra fora entre contagens),
+  um código que por coincidência já tivesse sido processado numa colagem
+  ANTERIOR ficaria escondido como "já contado" na fila NOVA. Resolvido com
+  o mesmo truque já usado em `key={q.current.codigo}`/`key={selected.codigo}`
+  no resto do app: `<ManualPasteQueueFlow key={listaSessionId} .../>`, com
+  `listaSessionId` incrementado a cada `lancarFilaColada` — força uma
+  instância nova (e portanto um `useCountQueue` com estado interno limpo) a
+  cada fila lançada, sem precisar tocar na assinatura do hook compartilhado.
+- **`ManualCountFlow`** ganhou o botão colapsável "Colar lista de vários
+  códigos" (fechado por padrão, mesmo critério de "poucos campos por tela"
+  já seguido no resto do app) — dentro dele, um `<textarea>` com
+  `onPaste` que já dispara `lancarFilaColada(texto)` na hora (o "Ctrl+V e
+  ele lançar" pedido explicitamente), MAIS um botão "Lançar fila (N)"
+  como caminho manual de reforço (digitar/colar sem o evento de paste
+  disparar corretamente em algum navegador/celular específico, ou o
+  operador preferir revisar antes de lançar) — os dois caminhos levam à
+  MESMA função. Contador "N código(s) reconhecido(s)" ao vivo, recalculado
+  a cada tecla.
+- **`lancarFilaColada(texto)`** — resolve os códigos em LOTE via
+  `fetchProdutosByCodigos(codigos, armazem)` (mesmo padrão já usado por
+  `ImportedListCountFlow`, uma requisição só pra todos os códigos, não uma
+  por item), monta a lista final (catálogo ou fallback sintético por
+  código) e chama `setListaItems`+`setListaSessionId(id=>id+1)` — a fila
+  aparece na MESMA tela, sem navegar pra lugar nenhum.
+- **Achado no caminho, sem mudar comportamento nenhum**: `fetchProdutosByCodigos`
+  nunca faz join com `enderecos` (só `produtos`+`estoque_saldo`) — mesmo um
+  código ACHADO no catálogo por essa função sai com `enderecoCadastrado:
+  false`, então TODO item da fila colada (achado ou não no catálogo) passa
+  pela etapa de informar o endereço manualmente — comportamento já
+  existente e correto (mesmo utilizado por `ImportedListCountFlow` pra
+  itens sem endereço na planilha), só documentado aqui pra não confundir
+  com bug.
+- Testado via harness novo (`harness_manual_colar_lista.js`, jsdom +
+  react-dom/client + `act()`, mesma técnica rigorosa de sempre — carrega o
+  `index.html` inteiro transpilado numa `vm.Script`, Supabase mockado):
+  `parseCodigosColados` isolada (separador por linha/vírgula/tab-espaço,
+  dedupe mantendo a 1ª ocorrência, texto vazio/`null`/só espaço); fluxo
+  completo via `ManualCountFlow` — botão de colar nasce fechado, digitar no
+  textarea atualiza o contador ao vivo e habilita "Lançar fila", um evento
+  de PASTE de verdade (3 códigos brutos com 1 repetido) já lança a fila
+  sozinho sem precisar clicar em nada, fecha a seção de colar sozinha,
+  mostra "Lista colada: 2 itens" (dedupe: 3→2); item 1 (achado no
+  catálogo) e item 2 (fora do catálogo, fallback sintético com
+  `descricao: codigo`) contados em sequência, cada um passando por
+  endereço→quantidade→confirmar, sem navegar pra fora da tela entre um e
+  outro (progresso "Item 1 de 2"/"Item 2 de 2" confirmado na etapa de
+  quantidade); `onRegisterCount` chamado exatamente 2 vezes, cada uma com
+  o `productCode` certo; ao concluir, "Fila concluída — 2 itens contados",
+  e "Voltar à busca" retorna pra tela de busca normal (botão de colar
+  lista reaparece). 34 asserções, todas passando. Rodei de novo toda a
+  suíte de regressão do scratchpad (69 harnesses) — 1 asserção precisou de
+  ajuste (`harness_pular_contagem_defer.js`, contagem de
+  `onSkip={()=>q.defer()}` subiu de 3 pra 4 ocorrências — mudança de
+  comportamento intencional desta rodada, o 4º fluxo com fila agora
+  existe; não é regressão), o resto passou sem tocar em nada. Transpile
+  Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos
+  (668/668, sem mudança — nenhuma classe CSS nova, reaproveita `.field`/
+  `.role-note`/`.empty-state`/`.btn-outline`/`.btn-sm`/`.btn-primary` já
+  existentes). **Verificação visual/funcional de ponta a ponta (o evento
+  de paste de verdade num navegador/tablet real, incluindo o caso de colar
+  vindo do Excel) fica a cargo do cliente** — mesma limitação de sempre
+  (login exige Supabase Auth real, não simulável no sandbox sem rede).
+
+## "Analisados" ganha, no menu "⋮", a opção de voltar o item pra "Itens Divergentes"
+
+Cliente pediu: "Tem umas contagens que liberei de 'Itens divergentes' para
+Analise, coloque naqueles 3 pontinhos a opção de voltar o item para a
+etapa anterior" — até aqui, o fluxo de 3 etapas (Itens Divergentes →
+Analisados → Aguardando Aprovação, ver "Fluxo real de ajuste de estoque da
+Selgron" no histórico acima) só andava PRA FRENTE — uma vez que o líder
+clicava "Enviar para SA" em "Itens Divergentes" (`enviarParaArmazem`), o
+item ficava preso em "Analisados" até alguém digitar o número da SA e
+decidir Ajuste/Devolução — sem nenhum jeito de desfazer um envio feito por
+engano (ou de "devolver" um item que na real ainda precisava de mais
+análise antes de virar uma SA de verdade).
+
+- **`voltarParaAnaliseLider(countId)`** (`App()`, logo depois de
+  `enviarParaArmazem`) — reverso exato: `status_aprovacao:
+  'aguardando_analise_lider'` (mesmo destino de origem), **zera**
+  `sa_gerada_por`/`sa_gerada_em` — a "liberação pra ajuste" que gerou esses
+  2 campos nunca chegou a se confirmar de verdade (nenhuma SA foi
+  realmente gerada nem processada pelo Armazém); se o líder mandar de novo
+  pra "Analisados" depois, `enviarParaArmazem` regrava os dois do zero,
+  normalmente. Mesmo padrão `await updateContagemStatusToSupabase(...)` →
+  só atualiza `counts` local se `res.ok` → sempre `return res` (pro
+  chamador mostrar erro inline se falhar) já usado por TODA ação de
+  status deste fluxo (`enviarParaArmazem`/`enviarParaAprovacaoDiretoria`/
+  `aprovarAjusteDiretoria`/`reprovarAjusteDiretoria`).
+- **Sem confirmação** — mesmo critério já usado em "Marcar urgente"/
+  "Liberar para o mesmo operador": não é uma ação destrutiva (o item só
+  reposiciona numa fila anterior do MESMO fluxo, nada é apagado, e pode
+  ser reenviado pra "Analisados" a qualquer momento depois), diferente de
+  "Excluir contagem"/"Reprovar", que exigem confirmação/motivo.
+- **`SolicitacaoArmazemPanel`** ("Analisados") ganhou a prop opcional
+  `onVoltarParaAnaliseLider` — o item novo no dropdown "⋮" (`<Ic>←</Ic>
+  Voltar para Itens Divergentes`) fica logo abaixo de "Marcar urgente"/
+  "Remover urgência" e acima de "Excluir contagem", com o MESMO gate
+  `canDecide` (líder OU admin — mesmo grupo que já decide Ajuste/
+  Devolução nesta tela) e `busyId`/`erros` já usados pelas outras ações do
+  painel — reaproveita o ícone `←` já mapeado em `EMOJI_TO_DICON`
+  (`chevronLeft`), sem precisar desenhar ícone novo. Só aparece quando a
+  prop é passada — mesmo padrão de "compatibilidade por presença de prop"
+  já usado pra `onDeleteCount`.
+- Testado via harness dedicado (`harness_voltar_analise_lider.js`, jsdom +
+  react-dom/client + `act()`, mesma técnica rigorosa de sempre — carrega o
+  `index.html` inteiro transpilado numa `vm.Script`): sem a prop, a opção
+  não aparece em lugar nenhum; com a prop e perfil líder/admin, o botão
+  aparece no dropdown, clicar chama o callback com o id certo e fecha o
+  menu sozinho; perfil operador não vê nem o "⋮" nesta tela; falha
+  simulada na gravação remota mostra o erro inline, sem fingir sucesso.
+  Rodei de novo toda a suíte de regressão do scratchpad (70 harnesses) —
+  0 falhas. Transpile Babel do arquivo inteiro e balanceamento de chaves
+  do CSS conferidos (668/668, sem mudança — nenhuma classe CSS nova, só
+  JS/JSX). **Falta o cliente confirmar visualmente** — mesma limitação de
+  sempre (login exige Supabase Auth real, não simulável no sandbox sem
+  rede).
+
+## "Colar lista de vários códigos" muda de lugar — de Contagem Manual pra "Itens Específicos"
+
+Cliente corrigiu o próprio pedido no mesmo dia em que a 1ª versão foi
+publicada (ver seção anterior no histórico, "'Colar lista de vários
+códigos' em Contagem Manual — fila via Ctrl+V"): "Errei aqui, essa opção
+tirar de contagem manual e mandar para Itens específicos, faz mais
+sentido conforme vou colando vai adicionando na fila de contagem" — a
+versão anterior lançava uma FILA DE CONTAGEM imediata (via
+`ManualPasteQueueFlow`, um motor próprio em cima de `useCountQueue`,
+igual Aleatória/Rota/Lista Importada) assim que o operador colava vários
+códigos em "Nova Contagem" → "Manual". Não era o caso de uso real: "Itens
+Específicos" (o tipo de inventário onde o líder já busca/clica
+"Adicionar" item por item pra montar a lista de um documento antes de
+criá-lo) é onde colar uma lista inteira faz sentido — cada código
+reconhecido só ENTRA NA FILA (o array `itensImportados` que já vira o
+inventário ao clicar "Criar Inventário"), sem disparar nenhuma tela de
+contagem.
+
+- **`ManualPasteQueueFlow` removida por completo** — junto dela, todo o
+  estado/UI que só existia em `ManualCountFlow` pra essa 1ª versão
+  (`colarAberto`/`colarTexto`/`carregandoLista`/`listaItems`/
+  `listaSessionId`, a função `lancarFilaColada`, o botão colapsável e o
+  bloco `if(listaItems){...}` que renderizava a fila). `ManualCountFlow`
+  volta a ser só busca+seleção avulsa, como era antes desta feature toda
+  existir — `parseCodigosColados` (a função de extrair códigos de um texto
+  colado) **não foi removida**, é genérica o bastante pra ser reaproveitada
+  no novo lugar sem mudar uma linha.
+- **`colarListaEspecificos(texto)`** (novo, dentro de `NewInventory`, logo
+  depois de `addItemEspecifico`/`removeItemEspecifico`) — reaproveita
+  `parseCodigosColados` (extração) + `fetchProdutosByCodigos` em lote
+  (mesma técnica de sempre — 1 requisição só pra todos os códigos, não uma
+  por item, já usada por `ImportedListCountFlow`/a versão anterior desta
+  mesma feature). Pra cada código: se já está na lista (`itensImportados`),
+  não duplica (mesmo critério de `addItemEspecifico`, "ignora clique
+  duplicado"); se achou no catálogo, adiciona com os dados reais (mesmo
+  shape que `addItemEspecifico` já produz — `{codigo, descricao, endereco,
+  almoxarifado:'', saldoSistema}`); se NÃO achou, adiciona mesmo assim, com
+  um fallback sintético (`descricao:codigo`, sem endereço/saldo) — nunca
+  bloqueia a colagem por um código desconhecido, mesmo critério de sempre
+  neste projeto (`foraDoCacheLocal`/fallback já usado em Lista Importada/
+  Recontagem). **Motivo de ser seguro adicionar sem resolver no catálogo
+  agora**: `ImportedListCountFlow` (o motor que de fato conta os itens de
+  "Itens Específicos"/"Lista Importada") já refaz essa MESMA busca AO VIVO
+  no momento de abrir o inventário pra contar (ver comentário lá,
+  "planilha continua prevalecendo sobre o catálogo... busca em lote, uma
+  requisição só") — um código "não encontrado" agora pode muito bem
+  resolver sozinho depois, sem precisar bloquear nada aqui.
+- **UI**: dentro do bloco `{isEspecificos && (...)}`, logo abaixo dos
+  resultados de busca — mesmo padrão visual/interativo já usado na versão
+  anterior (botão colapsável "Colar lista de vários códigos" com ícone
+  📋, textarea com `onPaste` que já lança a ação na hora — "colar (Ctrl+V)
+  já adiciona à fila" —, contador "N código(s) reconhecido(s)" ao vivo, e
+  um botão "Adicionar à fila (N)" como caminho manual de reforço). Ganhou
+  um resumo pós-ação (`especColarResumo`, `role-note`) que a versão
+  anterior não precisava ter (lá o resultado era visível na própria fila
+  de contagem que abria em seguida) — "N código(s) adicionado(s) à fila, M
+  já estava(m) na lista, K não foi(ram) encontrado(s) no catálogo
+  (adicionado(s) mesmo assim, dá pra contar normalmente)".
+- Testado via harness dedicado (`harness_especificos_colar_lista.js`,
+  jsdom + react-dom/client + `act()`, mesma técnica rigorosa de sempre —
+  carrega o `index.html` inteiro transpilado numa `vm.Script`, Supabase
+  mockado): confirmado por checagem de código-fonte que
+  `ManualPasteQueueFlow`/todo o estado antigo não sobra em lugar nenhum, e
+  que `ManualCountFlow` renderizado de verdade não mostra mais nenhum
+  botão/campo de colar; de ponta a ponta em `NewInventory` — escolher
+  "Itens Específicos", abrir "Colar lista de vários códigos", colar 2
+  códigos (1 no catálogo mockado + 1 fora dele) via simulação do evento de
+  paste, confirma que os 2 entram na fila (nenhuma tela de contagem é
+  aberta, `CountStep` nunca é renderizado), e que colar de novo com 1
+  código repetido + 1 novo só acrescenta o novo (resumo confirma "1
+  código adicionado" + "já estava na lista"). Um harness antigo desta
+  mesma feature (`harness_pular_contagem_defer.js`, que checava
+  `onSkip={()=>q.defer()}` aparecendo 4x — Random/Route/ImportedList/
+  `ManualPasteQueueFlow`) foi ajustado de volta pra 3x, já que o motor de
+  fila de contagem que essa 4ª ocorrência representava deixou de existir.
+  Rodei de novo toda a suíte de regressão do scratchpad (70 harnesses,
+  incluindo `harness_voltar_analise_lider.js` desta mesma rodada) — 0
+  falhas. Transpile Babel do arquivo inteiro e balanceamento de chaves do
+  CSS conferidos (668/668, sem mudança — nenhuma classe CSS nova, só JS/
+  JSX). **Verificação visual/funcional de ponta a ponta (colar de verdade
+  vindo do Excel, num navegador/tablet real) fica a cargo do cliente** —
+  mesma limitação de sempre (login exige Supabase Auth real, não
+  simulável no sandbox sem rede).
+## Bug real: race condition fazia "Sem registro de movimentação" aparecer pra item com movimentação real
+
+Cliente mandou 2 prints: "Itens Divergentes" mostrando `000.42377`/`000.41224` (2ª/3ª
+contagem) com o aviso vermelho "Sem registro de movimentação"; e, ao lado, a própria
+página do Kardex real da Selgron pro item `000.42377` mostrando histórico extenso de
+verdade (343 entradas, 372 saídas, movimentação em 15/08/2026, hoje). Mensagem exata:
+"Tem itens aparecendo sem registro de movimentação, porém, eles tem movimentação."
+
+- **Causa raiz — race condition, não bug de parser**: `CountStep.finalize()` sempre foi
+  100% síncrono e usava `ultimaSaidaEfetiva` — um SNAPSHOT de `liveConsulta` (o
+  resultado da consulta ao vivo Selgron/Kardex) no exato RENDER em que o operador
+  clicou "Confirmar Contagem". Se a consulta (até 8s de timeout, hospedada fora, busca
+  dois recursos externos — produto + Kardex) ainda não tinha respondido nesse instante,
+  `finalize` gravava `ultimaSaida: null` pra sempre, mesmo que a resposta certa
+  estivesse a caminho.
+- **Por que isso é MUITO mais provável numa RECONTAGEM especificamente** (os 2 itens do
+  print eram 2ª/3ª contagem): `RecountFlow` passa `expectAddressCheck={!!product.
+  enderecoCadastrado}` — sempre `false` pra recontagem, por desenho (`enderecoCadastrado`
+  nunca é `true` num item recontado, mesmo com endereço reaproveitado da 1ª contagem pra
+  exibição — ver "Recontagem de item sem cadastro reaproveita o endereço..." no
+  histórico acima). Com `expectAddressCheck=false`, `CountStep` nasce DIRETO na etapa
+  `'count'` (`useState(expectAddressCheck ? 'enderecoManual' : 'count')`) — pulando a
+  etapa de endereço por completo. O operador pode digitar a quantidade e confirmar em
+  1-2 segundos, bem mais rápido que os até 8s que a consulta+Kardex podem levar.
+- **Por que o sintoma só aparece pra ÚLTIMA MOVIMENTAÇÃO, nunca pro saldo** (mesma
+  corrida, mas só um campo fica visivelmente errado): o FALLBACK usado quando
+  `liveConsulta` ainda é `null` (`product.ultimaSaida`) só é populado por upload manual
+  da planilha SB2 — e o cliente já não faz mais isso ("não vou mais precisar subir a
+  SB2"), então esse fallback é hoje praticamente sempre `null`, tornando a corrida 100%
+  visível como "Sem registro de movimentação". Já `product.saldoSistema` (o fallback do
+  SALDO) segue vindo de `estoque_saldo`, quase sempre com um número plausível — a MESMA
+  corrida também "erra" o saldo nesses casos raros, só que de um jeito invisível (o
+  operador vê um número real, só possivelmente um pouco desatualizado, não um "vazio"
+  gritante como o aviso vermelho).
+- **Correção**: `finalize()` virou `async`. A `useEffect` que dispara a consulta ao vivo
+  passou a guardar a PROMISE em si (não só o resultado já resolvido) num `useRef`
+  (`liveConsultaPromiseRef`) — `finalize()`, só quando `liveConsulta` ainda é `null` no
+  momento do clique, `await`a essa mesma promise antes de gravar `ultimaSaida`. Já
+  limitado pelo timeout de 8s do lado da Edge Function — nunca trava indefinidamente. Se
+  a consulta já tinha resolvido antes do clique (o caso comum, esmagadora maioria das
+  contagens), o `await` é instantâneo (resolve na mesma leva de microtasks), sem nenhum
+  atraso perceptível.
+- **Escopo deliberadamente restrito a `ultimaSaida`** — saldo/descrição/unidade/custo
+  (e a classificação/status que dependem do saldo) NÃO foram recalculados dentro de
+  `finalize()` depois do await: esses valores já foram mostrados ao operador ANTES do
+  clique (card de comparação, mini-cards de referência), e recalculá-los post-hoc
+  arriscaria o veredito "trocar de figura" depois de já exibido (ex: "Contagem confere"
+  em verde na tela, mas o registro salvo acabar divergindo por causa de um saldo mais
+  recente chegado só depois do clique) — um risco de confusão maior que o problema
+  original, sem o cliente ter reportado nada de errado nesses outros campos. Se o
+  cliente notar sintoma parecido no saldo/custo, é um pedido separado — a decisão aqui
+  foi corrigir exatamente o que foi reportado, sem generalizar demais.
+- **Proteção contra clique duplo, nova**: antes, `finalize` era síncrono e chamar
+  `onComplete` imediatamente já tirava o botão de cena (o fluxo troca de item/navega
+  logo depois). Agora que pode aguardar uma promise por um instante, o botão ficaria
+  clicável durante essa janela — um clique duplo impaciente poderia gerar duas
+  contagens do mesmo item. Corrigido com um estado `confirmando`
+  (`useState(false)`) — o botão "Confirmar Contagem" fica desabilitado e mostra
+  "Confirmando…" enquanto a promise resolve, com um guard (`if(confirmando) return;`)
+  no topo de `finalize()`.
+- Testado via harness dedicado (`harness_ultima_saida_race.js`, jsdom +
+  react-dom/client + `act()`, mesma técnica rigorosa de sempre — carrega o `index.html`
+  inteiro transpilado numa `vm.Script`): reproduzido o cenário EXATO do bug (recontagem,
+  `expectAddressCheck:false`, consulta ainda pendente no momento do clique via uma
+  Promise controlada manualmente) — confirma que `onComplete` NÃO é chamado enquanto a
+  consulta não resolve, que o botão mostra "Confirmando…"/fica desabilitado nesse
+  meio-tempo, e que assim que a consulta resolve (trazendo `ultimaMovimentacao:
+  '2026-08-15'`), a contagem salva grava essa data real — não mais `null`. Confirmado
+  também o caminho sem corrida (consulta já resolvida antes do clique — comportamento
+  idêntico ao de sempre, sem atraso) e o caminho de falha genuína da consulta (nunca
+  trava a contagem, cai pro fallback local honesto). 17/17 asserções passando. Rodei de
+  novo toda a suíte de regressão do scratchpad (71 harnesses, 1168 asserções) — só 1
+  harness pré-existente (`harness_classify_divergence_binario.js`) precisou de ajuste
+  mecânico nos próprios helpers de teste (`render`/`click` viraram `async`/`await
+  act(async()=>{...})`, mesmo padrão já usado nos harnesses mais recentes deste
+  projeto) — sem nenhuma mudança nas asserções em si, já que `onComplete` deixou de ser
+  chamado 100% síncrono dentro do clique (agora sempre passa por pelo menos 1 microtask
+  de `await`, mesmo no caminho "rápido") — não é regressão de comportamento real, só um
+  detalhe de timing que testes síncronos antigos precisam acomodar. **Verificação de
+  ponta a ponta em produção fica a cargo do cliente** — mesma limitação de sempre
+  (login exige Supabase Auth real, não simulável no sandbox sem rede) — mas como a
+  correção é só de LEITURA/timing (não depende de nenhuma migração de SQL nem de
+  redeploy de Edge Function), já deve valer pra qualquer contagem nova assim que o
+  deploy publicar.
+## Bug real: saldo do sistema vinha do ARMAZÉM ERRADO — consulta ao vivo ignorava blocos duplicados
+
+Cliente reportou, com 3 prints: 1 mostrando o card de `000.05587` em "Itens
+Divergentes" ("Sistema: 0"/"Físico: 7", "Valor divergente: R$ 2668.47") e 2
+recortes da própria busca da Selgron (`consulta.php`) pro mesmo código —
+"Sua busca por 000.05587 retornou 3 resultado(s)", com pelo menos dois
+blocos de resultado bem diferentes: um "Armazem: Sem armazém"/"Quantidade
+em estoque: 0.0", outro "Armazem: 01"/"Quantidade em estoque: 7.0" (o
+saldo real, batendo com o físico contado). Mensagem exata do cliente: "tem
+itens que está puxando saldo 0, exemplo o 000.05587. Não deve estar
+puxando o saldo do armazém correto."
+
+- **Causa raiz**: a Edge Function `consultar-produto-selgron` sempre tratou
+  a resposta de `produto.consulta.php` como um único bloco de texto —
+  `extrairCampo(texto, rotulos)` varre a página INTEIRA já achatada e
+  devolve o valor da PRIMEIRA linha que bate com o rótulo pedido
+  ("Quantidade em estoque:", "Armazem:", etc.). Quando a busca da Selgron
+  devolve mais de um resultado pro MESMO código (um por armazém em que ele
+  existe — confirmado nos prints do cliente), essa função sempre pegava o
+  valor do PRIMEIRO bloco da página, sem nenhuma noção de "blocos" — no
+  caso do cliente, o 1º bloco por acaso era "Sem armazém"/saldo 0, mascarando
+  o saldo real (7, no Armazém 01) mesmo o operador estando genuinamente
+  contando ali. Mesma categoria de bug silencioso já vista várias vezes
+  neste projeto (RLS sem policy, coluna com espaço no cabeçalho da SB2,
+  etc.) — nenhum erro, só um número errado.
+- **`dividirEmBlocos(texto)`** (função nova, Edge Function) — separa o
+  texto em blocos, um por resultado, usando a linha "Código do Produto:
+  ..." (que se repete uma vez por resultado, confirmado nos prints) como
+  marcador de início de cada bloco. Sem nenhuma ocorrência desse rótulo
+  (formato antigo/inesperado), cai num único bloco = o texto inteiro —
+  mesmo comportamento de sempre pro caso comum de 1 resultado só, sem
+  quebrar nada.
+- **`normalizarArmazem(v)`** — normaliza só pra COMPARAÇÃO (nunca pra
+  exibição): remove zero à esquerda quando o valor é 100% numérico ("01"→
+  "1", batendo com o mesmo código que `product.almoxarifado`/
+  `estoque_saldo.almoxarifado` já usam em todo o resto do app), mantém
+  texto não-numérico intacto em maiúsculo ("EX", "Sem armazém" — nunca
+  bateriam com um armazém numérico de qualquer jeito).
+- **Desambiguação, mesmo critério "nunca adivinha" já estabelecido nas
+  funções de catálogo do Supabase** (`fetchProdutosByCodigos`/
+  `searchSupabaseCatalog` — e reforçado por uma correção anterior já
+  revertida deste projeto, onde uma tentativa de "adivinhar" o armazém por
+  conveniência foi corrigida pelo próprio cliente: "SE EU ESTOU CONTANDO O
+  ARMAZEM 01, O SALDO QUE TEM QUE MOSTRA É O DO ARMAZEM 01"): 1 resultado
+  só → sem ambiguidade nenhuma, usa ele (comportamento de sempre, mesmo se
+  o armazém pedido não bater — não tem outro bloco pra escolher). Mais de 1
+  resultado → só resolve quando o armazém pedido bate com **exatamente 1**
+  bloco; sem armazém informado, ou nenhum bloco batendo, ou mais de um
+  batendo (nunca deveria acontecer) → cada campo (`saldo`/`endereco`/
+  `descricao`/`unidade`/`armazem`) sai `null`, sem adivinhar.
+- **Cada campo `null` independente, não a resposta inteira em `ok:false`**:
+  diferente da 1ª ideia (marcar a resposta inteira como falha quando
+  ambíguo), a Edge Function continua respondendo `ok:true` com os campos
+  específicos de armazém em `null` — o padrão "...Efetivo" já estabelecido
+  em `CountStep` (`saldoSistemaEfetivo`/`descricaoEfetiva`/etc., cada um
+  `liveConsulta.X!=null ? liveConsulta.X : product.X`) já sabe cair pro
+  cache do Supabase campo a campo. Isso também evita descartar à toa o
+  Kardex (`ultimaMovimentacao`/`custoUnitario`), que não é escopado por
+  armazém nesta versão e continua valendo mesmo quando o bloco de saldo
+  ficou ambíguo.
+- **Front-end passa o armazém sendo contado**: `fetchSaldoConsultaSelgron(codigo,
+  armazem)` ganhou o 2º parâmetro (opcional — `'—'`, o placeholder já usado
+  em todo o app pra "armazém desconhecido", nunca é mandado como se fosse
+  um armazém real). `CountStep` passa `product.almoxarifado` e o `useEffect`
+  da consulta ao vivo passou a depender de `[product.codigo,
+  product.almoxarifado]` (era só `[product.codigo]`) — necessário pro
+  seletor de armazém do `RecountFlow` (item sem armazém conhecido, ver
+  seção "Item com saldo real em 1 armazém aparecia zerado na recontagem"
+  mais acima): trocar o armazém no dropdown gera um `product` novo com o
+  MESMO código mas `almoxarifado` diferente, e sem essa dependência a
+  consulta ao vivo nunca refletiria a troca. `fetchValorEstoqueArmazem01AoVivo`
+  (o botão "Consultar ao vivo" do card "Valor em Estoque — Armazém 01",
+  Indicadores) também passou a informar `'1'` explicitamente — a lista de
+  códigos já vem filtrada por esse armazém, então essa soma corria o MESMO
+  risco de pegar o saldo de outro armazém silenciosamente, sem o cliente
+  nunca ter reportado isso especificamente.
+- **Fora de escopo, decisão consciente**: `EtiquetasPanel`
+  (`liveConsultaEtiqueta`, usado pra imprimir etiqueta) não foi tocado —
+  `selecionado.almoxarifado` ali não é um único armazém confiável (a busca
+  de catálogo dessa tela soma saldo entre armazéns quando o código existe
+  em mais de um, documentado em rodada anterior — "Almox" podia mostrar
+  literalmente "1/99"), e o cliente não reportou esse sintoma nesse fluxo.
+  Passar um valor assim pra `armazem` não quebraria nada (a normalização
+  simplesmente não bateria com nenhum bloco, caindo no mesmo fallback
+  seguro) mas também não foi testado/pedido — deixado de fora por
+  disciplina de escopo.
+- Testado via harness Node isolado (mesma técnica de sempre — Supabase
+  mockado, sem rede real): `dividirEmBlocos`/`normalizarArmazem`/a lógica
+  de escolha de bloco reproduzidas fielmente contra o cenário EXATO do
+  print do cliente (000.05587, bloco "Sem armazém"/saldo 0 + bloco
+  "Armazém 01"/saldo 7) — confirmando que, sem armazém informado, o
+  resultado é ambíguo (nunca mais "0" por padrão), e que informando "1"
+  resolve pro saldo real (7), endereço junto (013-F-5); confirmado também
+  que o comportamento OLD (antes da correção) de fato reproduzia
+  literalmente o bug relatado (saldoTexto="0.0"), provando que o harness
+  pega a regressão de verdade; regressão do caso comum (1 resultado só,
+  com ou sem armazém pedido) e do formato sem a marca de bloco (nunca
+  quebra). Harness separado confirma, via `CountStep` renderizado de
+  verdade (jsdom+react-dom/client+`act()`): a consulta ao vivo é disparada
+  com `armazem` igual a `product.almoxarifado`; `'—'` nunca é mandado como
+  armazém real; e — o cenário mais importante — trocar SÓ o armazém (mesmo
+  código, simulando o dropdown do `RecountFlow`) dispara uma 2ª busca de
+  verdade, com o saldo exibido na tela refletindo o armazém NOVO, não o
+  antigo. Rodei de novo toda a suíte de regressão do scratchpad (73
+  harnesses, 1204 asserções) — 0 falhas. Type-check da Edge Function via
+  `tsc --strict` (mesmo shim de sempre pros globais do Deno) sem erro.
+  Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  conferidos (668/668, sem mudança — nenhuma classe CSS tocada, só JS/TS).
+  **Nenhuma migração de SQL necessária** — a correção é só de leitura/
+  parsing, sem tocar em nenhuma tabela. **Falta o cliente rodar o deploy da
+  Edge Function atualizada** (`npx supabase functions deploy
+  consultar-produto-selgron`, mesmo comando de sempre) — até lá, a function
+  publicada continua com o comportamento antigo (bug presente). **Verificação
+  de ponta a ponta com o item real (000.05587) e outros códigos multi-
+  armazém fica a cargo do cliente** — mesma limitação de sempre (sandbox
+  sem acesso de rede ao domínio interno da Selgron).
+## Bug real: menu "⋮" clipado pelo próprio card (Inventários Pendentes e as 5
+## telas de contagem que compartilham o mesmo componente)
+
+Cliente mandou print de um card em "Inventários Pendentes" com o menu "⋮"
+aberto (mostrando "Marcar urgente"/"Atribuir a..."/"↓ Baixar") cortado bem
+onde o próximo card da lista começa — legenda: "Na pagina de inventários
+pendentes está oculto os botões".
+
+- **Causa**: `.item-card{overflow:hidden}` (o card de `InventoryList`) e
+  `.count-card{overflow:hidden}` (o card compartilhado por `RecountsPanel`/
+  `DivergentItemsPanel`/`SolicitacaoArmazemPanel`/`DiretoriaApprovalPanel`/
+  `ConcludedCountsPanel`) clipavam `.count-card-menu-dropdown`
+  (`position:absolute;top:100%`, ancorado em `.count-card-menu{position:
+  relative}`) — o dropdown se estende naturalmente ABAIXO da borda do
+  próprio card (é assim que qualquer dropdown funciona), mas como o card é
+  `overflow:hidden`, tudo que passa da borda inferior dele simplesmente
+  desaparece — exatamente o sintoma do print (texto cortado no meio).
+- **Por que o card tinha `overflow:hidden` em primeiro lugar**: só
+  `.count-card-bar` (a faixa de severidade colorida de 5px, primeiro filho
+  flex do `.count-card`, encostada de ponta a ponta na borda esquerda)
+  dependia disso — sem `overflow:hidden` no pai, os cantos daquela faixa
+  (que não tem raio próprio) ficariam quadrados, vazando pra fora dos
+  cantos arredondados do card. `.item-card` não tem nenhum filho parecido
+  (confirmado por grep — sem `.item-card-bar`, sem nenhum elemento colado na
+  borda com fundo diferente do próprio card) — o `overflow:hidden` ali não
+  protegia nada visualmente, só clipava o dropdown à toa.
+- **Correção**: `overflow:hidden` removido dos dois (`.item-card`/
+  `.count-card`) — em vez de depender do clipping do pai,
+  `.count-card-bar` ganhou `border-top-left-radius:16px;border-bottom-
+  left-radius:16px` (mesmo raio do card) — a faixa colorida continua com
+  os cantos visualmente arredondados, só que agora clipando A SI MESMA, não
+  dependendo do pai. `position:relative` foi adicionado aos dois cards por
+  precaução defensiva (não estritamente necessário — `.count-card-menu`
+  já é o ancestral posicionado que o dropdown usa pra se posicionar, e o
+  dropdown tem `z-index:5` próprio que já o faz pintar por cima de
+  qualquer irmão sem z-index explícito, verificado via análise de stacking
+  context antes de decidir manter — mas não custa nada deixar explícito).
+  `.count-card-menu-dropdown` mantém o PRÓPRIO `overflow:hidden` (pros
+  cantos arredondados dele mesmo, 8px) — isso nunca foi o problema, só o
+  clipping do CARD por volta dele.
+- Testado via harness dedicado (checando as 4 regras CSS relevantes: sem
+  `overflow:hidden` em `.item-card`/`.count-card`, `.count-card-bar` com o
+  raio novo, `.count-card-menu-dropdown` mantendo o próprio clipping) —
+  10/10 passando. Transpile Babel do arquivo inteiro e balanceamento de
+  chaves do CSS conferidos (668/668, sem mudança — só valores dentro de
+  regras já existentes). Rodei de novo toda a suíte de regressão do
+  scratchpad (74 harnesses, 1204+ asserções) — 0 falhas. **Verificação
+  visual de ponta a ponta (o menu abrindo por cima do próximo card, sem
+  cortar) fica a cargo do cliente** — mesma limitação de sempre (login
+  exige Supabase Auth real, não simulável no sandbox sem rede).
+
+## Bug real: `fetchProdutosByCodigos` nunca buscava endereço — Itens
+## Específicos/Lista Importada sempre "sem endereço", mesmo cadastrado
+
+Cliente mandou print de um inventário "Itens Específicos" (INV-359, 0/36
+itens) com "Itens" expandido mostrando vários códigos, todos "sem
+endereço" — legenda: "quando inicio a contagem ele não me joga os itens na
+sequencia de endereço, fico andando um monte lá e pra cá".
+
+- **`ordenarPorEndereco`/`compararPorEndereco`/`parseEnderecoPartes` em si
+  estavam corretas** (conferido lendo as 3 funções de novo) — o problema
+  não era a ORDENAÇÃO, era que ela nunca tinha NADA real pra ordenar.
+- **Causa raiz**: `fetchProdutosByCodigos` (usada por
+  `colarListaEspecificos` — "Colar lista de vários códigos" em Itens
+  Específicos — E pelo re-fetch ao vivo de `ImportedListCountFlow` na hora
+  de abrir qualquer inventário "Itens Específicos"/"Lista Importada" pra
+  contar) **nunca buscava `estoque_enderecos`/`enderecos` em lugar
+  nenhum** — a consulta a `produtos` só pedia `codigo, descricao, unidade,
+  grupo`, e o campo `endereco_codigo` do objeto passado pra
+  `estoqueRowToProduct` era gravado como `null` INCONDICIONALMENTE, sem
+  nenhuma tentativa de resolver. Resultado: **todo item resolvido por essa
+  função sempre saía com `enderecoCadastrado:false`**, mesmo pra código com
+  endereço genuinamente cadastrado — mesma categoria de bug silencioso já
+  vista várias vezes neste projeto (RLS sem policy, coluna com espaço no
+  cabeçalho da SB2, etc.), sem erro nenhum, só um dado sempre vazio.
+- **`searchSupabaseCatalog`** (usada só na busca item-a-item de
+  "Adicionar", o outro jeito de montar a lista de "Itens Específicos") já
+  resolvia isso certo desde sempre, via
+  `.select('codigo, descricao, unidade, grupo, estoque_enderecos
+  (saldo_no_endereco, enderecos(codigo))')` — um join aninhado real. Só
+  `fetchProdutosByCodigos` tinha ficado pra trás — mesma classe de "uma
+  função ficou desatualizada enquanto a irmã já tinha a correção" já vista
+  antes neste projeto (`data_ultima_saida`/`valor_financeiro`, corrigidos
+  em rodadas anteriores exatamente nesta mesma função).
+- **Efeito em cascata, explicando o sintoma exato do cliente**: em
+  `ImportedListCountFlow`, o merge de dados (`doCatalogo.enderecoCadastrado`
+  sempre `false` por causa do bug) faz o código sempre cair no fallback
+  `item.endereco` (o valor CONGELADO no momento em que o item foi
+  adicionado à lista) — que, pra item adicionado via "Colar lista de vários
+  códigos" (`colarListaEspecificos`, que usa a MESMA função com bug), já
+  nascia `null` desde o início, pra sempre. Ou seja: qualquer item
+  adicionado a "Itens Específicos" por colagem em massa nunca teria
+  endereço nenhum, mesmo já cadastrado — exatamente o inventário do print
+  (INV-359, todos "sem endereço").
+- **Correção**: `fetchProdutosByCodigos` ganhou o MESMO join aninhado já
+  usado em `searchSupabaseCatalog`
+  (`estoque_enderecos(saldo_no_endereco, enderecos(codigo))` no `select` de
+  `produtos`) — e, ao montar cada produto, resolve
+  `enderecoRow = p.estoque_enderecos?.[0]?.enderecos || null` (1ª posição,
+  mesma simplificação já aceita na busca manual — sem critério pra escolher
+  entre mais de um endereço cadastrado pro mesmo produto) e passa
+  `endereco_codigo: enderecoRow ? enderecoRow.codigo : null` pra
+  `estoqueRowToProduct`, em vez do `null` fixo de antes.
+- **Cobre os 2 pontos de consumo de uma vez só** (mesma função, um fix só):
+  `colarListaEspecificos` (item colado passa a nascer com o endereço real
+  já no `item.endereco`, não mais `''`) e o re-fetch ao vivo de
+  `ImportedListCountFlow` (item adicionado via "Adicionar" item-a-item, que
+  já tinha o endereço certo congelado desde sempre via
+  `searchSupabaseCatalog`, agora TAMBÉM teria isso confirmado de novo pelo
+  catálogo na hora de contar — redundante mas inofensivo nesse caso, só
+  importa de verdade pro caso da colagem).
+- Testado via harness dedicado (mock do Supabase com `estoque_enderecos`
+  aninhado, mesma técnica já usada em outros harnesses deste projeto): (1)
+  confirma que o `select` em `produtos` agora pede o join; (2) item com
+  endereço cadastrado de verdade sai com `enderecoCadastrado:true`/
+  `endereco` certo (antes sempre `false`/`null`); (3) item genuinamente sem
+  cadastro continua `false`/`null`, sem inventar endereço; (4) formato
+  inesperado (sem a chave `estoque_enderecos` no retorno) não quebra, cai
+  pra `null` com segurança; (5) ponta a ponta de `colarListaEspecificos`
+  confirmando que o item colado nasce com o endereço real. 8/8 passando —
+  **confirmado que o harness pega o bug de verdade**: rodado contra o
+  código de ANTES da correção (`git stash`), 4 das 8 asserções falharam
+  exatamente como esperado (endereço saindo `null` mesmo com cadastro
+  real); só com a correção aplicada é que passa 8/8. Rodei de novo os 2
+  harnesses pré-existentes mais próximos
+  (`harness_especificos_colar_lista.js`/`harness_itens_especificos_
+  ordenar_endereco.js`) — sem regressão, nenhum dos dois dependia do
+  comportamento antigo (bug nunca tinha sido percebido/testado antes).
+  Transpile Babel do arquivo inteiro conferido. Rodei de novo toda a suíte
+  completa do scratchpad (74 harnesses, 1222 asserções) — 0 falhas.
+  **Nenhuma migração de SQL necessária** — a correção é só de LEITURA
+  (front-end lendo um dado que já existia em `estoque_enderecos`/
+  `enderecos`, nunca buscado antes). **Verificação de ponta a ponta em
+  produção (o operador de fato andando menos, o inventário INV-359
+  reaberto mostrando endereço pros itens que já têm cadastro) fica a cargo
+  do cliente** — mesma limitação de sempre (login exige Supabase Auth
+  real, não simulável no sandbox sem rede) — mas como não depende de
+  nenhuma migração, já deve valer pra qualquer "Itens Específicos"/"Lista
+  Importada" reaberto assim que o deploy publicar.
+
+## Bug real: "Itens Divergentes" não mostrava quem contou pra item sem recontagem
+
+Cliente mandou print de "Itens Divergentes" apontando: "alguns casos não aparece quem
+contou" — visível comparando dois grupos de cards no mesmo print. O card de um item já
+recontado (com o comparativo `.rounds-stack`, 2ª/3ª contagem lado a lado) mostrava
+"Alisson Silva · 2026-08-15 05:20"/"07:36" normalmente (via `.round-who`, um por
+rodada) — mas os cards seguintes, de itens SEM nenhuma recontagem ainda (o caso mais
+comum — 1ª contagem já divergente, direto pra análise do líder, sem `anterior`), não
+mostravam o operador em lugar nenhum: só o quadro Sistema/Físico/Diferença/% sozinho,
+sem nenhuma linha de "quem"/"quando".
+
+- **Causa raiz**: `DivergentItemsPanel` sempre teve DOIS caminhos de renderização pro
+  quadro de resultado — `anterior ? <rounds-stack com 2 round-who> : <result-grid
+  sozinho>` — só o 1º caminho (com `anterior`, ou seja, item já recontado) tinha
+  qualquer menção ao operador. O 2º caminho (`else`, sem `anterior` — a maioria dos
+  itens desta tela, já que a maior parte da divergência nunca chega a precisar de
+  recontagem antes de ir pra análise) nunca teve essa linha, desde que a tela foi
+  criada.
+- **Correção**: adicionada uma linha "Contado por **{c.usuario}** em {c.data} {c.hora}"
+  logo depois do quadro único (`!anterior &&`), no mesmo estilo/posição já usado por
+  "Motivo"/"Valor divergente" logo abaixo — mesmo formato textual do `round-who`
+  ("quem · quando"), só sem estar dentro de `.rounds-stack`. Escopado só ao caso `!
+  anterior` — o caso com `anterior` já mostra o operador nas DUAS rodadas via
+  `round-who`, adicionar de novo ali duplicaria a informação.
+- **Sem gate de perfil** — mesmo critério já documentado nesta tela ("nunca teve
+  nenhum mecanismo de restrição... Valor divergente segue o mesmo padrão, sem gate
+  nenhum"), o "quem contou" aparece pra qualquer perfil que já vê o card.
+- Testado via harness dedicado (`harness_divergentes_quem_contou.js`, jsdom +
+  react-dom/client + `act()`, mesma técnica rigorosa de sempre — carrega o
+  `index.html` inteiro transpilado numa `vm.Script`): renderiza 2 cards, um sem
+  `anterior` (000.62761, cenário exato do print) e um com (000.99999 + a rodada
+  anterior 000.99999/c2) — confirma que o card sem `anterior` mostra "Contado por
+  Alisson Silva", que o card com `anterior` continua mostrando os 2 `round-who`
+  certos (operador da rodada anterior e da atual) e NÃO duplica "Contado por" solto.
+  **Confirmado que o harness pega o bug de verdade**: rodado contra o código de ANTES
+  da correção (`git stash`), as 2 asserções relevantes falharam exatamente como
+  esperado (texto sem "Contado por"/sem o nome do operador); só com a correção
+  aplicada é que passa 11/11. Rodei de novo toda a suíte de regressão do scratchpad
+  (76 harnesses) — 0 falhas. Transpile Babel do arquivo inteiro e balanceamento de
+  chaves do CSS conferidos (668/668, sem mudança — nenhuma classe CSS nova, só JSX).
+  **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma limitação
+  de sempre (login exige Supabase Auth real, não simulável no sandbox sem rede).
+
+## Bug real em produção: RLS por papel/ação bloqueava operador com exceção
+## concedida via "Acesso por tela" — `tem_acesso_tela` corrige
+
+No mesmo dia em que o cliente aplicou, em produção, o grande bloco de RLS por papel/
+ação da "Rodada de segurança e confiabilidade" (ver seção acima — `contagens`/
+`inventarios`/`estoque_saldo`/`produtos`/`enderecos`/`estoque_enderecos`/
+`enderecos_propostos`/`item_reservas`/`etiquetas_fila`, guiado passo a passo
+terminal/SQL Editor numa sessão à parte), ele mandou print de um operador (Lucio
+Schultz) — que já tinha recebido a exceção `'etiquetas'` via "Acesso por tela" (o
+mecanismo do próprio app, `UserForm`/dual-list, ver seção "Acesso por tela — TODOS os
+menus" mais acima) e conseguia abrir a tela "Etiquetas" normalmente — sendo barrado ao
+clicar "Enviar para Fila": `new row violates row-level security policy for table
+"etiquetas_fila"`.
+
+- **Causa raiz**: as policies aplicadas naquela rodada usam
+  `eh_lider_ou_admin(auth.uid())` — checa só o `perfil` da linha em `usuarios`, sem
+  nenhuma noção de `acessos_extras`/`acessos_removidos`. Investigado caso a caso, ANTES
+  de corrigir qualquer coisa, se esse mesmo problema afetava as outras tabelas da
+  mesma rodada: `RecountsPanel.canMark`/`DivergentItemsPanel.canApprove`/
+  `SolicitacaoArmazemPanel.canDecide`/`DiretoriaApprovalPanel.canDecide`/
+  `InventoryList.canMark` — os 5 componentes que gatam as ações escritas em
+  `contagens`/`inventarios` — todos usam `role==='lider'||role==='admin'` HARDCODED
+  direto no componente, sem NENHUM caminho de exceção por tela — pra essas 2 tabelas,
+  `eh_lider_ou_admin` sempre foi (e continua sendo) exatamente correta, não foi
+  tocada.
+- **O problema é específico de 2 telas que nunca tiveram esse 2º gate de role**:
+  `EtiquetasPanel` e `AddressValidationPanel` — nelas, desde que foram criadas, o
+  ÚNICO controle de permissão que o front-end aplicava sempre foi o acesso à TELA em
+  si (`hasAccess`/`ACESSOS_RESTRITOS`, que já honra `acessosExtras`/`acessosRemovidos`)
+  — a AÇÃO dentro da tela nunca teve um 2º checkpoint de perfil. A RLS nova, ao usar
+  `eh_lider_ou_admin` (perfil-only) nas 4 tabelas que essas 2 telas escrevem, ficou
+  MAIS restritiva do que o próprio app sempre foi — um operador com a exceção
+  concedida passava pela tela sem problema, mas era barrado no banco.
+- **`tem_acesso_tela(p_uid, p_tela)`** (função nova, `security definer`, logo depois
+  de `eh_lider_ou_admin`) — mirror exato de `hasAccess(user, viewId)` do `index.html`:
+  admin sempre `true`; `acessos_removidos` contendo a tela bloqueia mesmo pra líder;
+  `perfil='lider'` libera por padrão (mesmo default de `ACESSOS_RESTRITOS` pra essas
+  telas); senão, só libera se `acessos_extras` contém a tela — via o operador `?` do
+  jsonb (`u.acessos_extras ? p_tela`), mesma semântica de `.includes(...)` do
+  front-end.
+- **4 policies trocadas**, as únicas que correspondem às 2 telas sem 2º gate: 3 em
+  `etiquetas_fila` (select/insert/update) → `tem_acesso_tela(..., 'etiquetas')`; e
+  `enderecos_propostos` (update, "confirmar/rejeitar" em `AddressValidationPanel`) +
+  `enderecos` (escrita) + `estoque_enderecos` (escrita) → `tem_acesso_tela(...,
+  'enderecos')` — as 3 últimas porque `aplicarEnderecoConfirmado` sempre grava esse
+  MESMO par de tabelas junto, atrás do mesmo gate de tela. `contagens`/`inventarios`/
+  `estoque_saldo`/`produtos`/`item_reservas` **não mudaram** — já conferidos como
+  corretos com `eh_lider_ou_admin`/`eh_admin` puros.
+- **Idempotente, mesmo padrão de sempre**: como o bloco inteiro da rodada de segurança
+  já usa `create or replace function`/`drop policy if exists` antes de cada `create
+  policy`, rodar o mesmo bloco de novo (agora já com a função nova e as 4 policies
+  corrigidas) aplica a correção sem apagar nenhum dado — não precisou de nenhum SQL
+  separado, só reexecutar o bloco inteiro mais uma vez.
+- **Diferente da verificação normal deste projeto (harness Node/jsdom, ou execução
+  real contra um Postgres local — ver "Rodada de segurança..." acima, seção "Dois
+  bugs reais achados testando contra um Postgres de verdade")**: dado que era um bug
+  já ATIVO em produção bloqueando um usuário real no meio do expediente, a correção
+  foi entregue ao cliente como SQL avulso pra rodar direto no SQL Editor,
+  imediatamente, ANTES de qualquer verificação formal — só depois disso o mesmo
+  conteúdo foi replicado no `backend/schema.sql`/`backend/README.md` (seção 14.12),
+  pra próxima aplicação do zero já vir corrigida. A verificação em si ficou por
+  leitura direta e sistemática do código-fonte (conferir os 5 componentes com
+  `canMark`/`canApprove`/`canDecide` hardcoded, um a um, pra confirmar que nenhum
+  outro tinha o mesmo problema — não só reagir ao sintoma relatado) — não deu tempo
+  de rodar de novo a suíte de testes contra Postgres real da rodada anterior antes de
+  entregar a correção emergencial; documentado no README como pendência, com os 2
+  controles que faltam pra fechar essa verificação (operador SEM a exceção continua
+  bloqueado; operador COM a exceção certa passa a funcionar).
+- **Lição pro futuro, registrada aqui**: sempre que uma rodada de RLS "por papel"
+  tocar uma tabela cuja tela correspondente usa `hasAccess`/`ACESSOS_RESTRITOS` como
+  único gate (em vez de um `role==='lider'||role==='admin'` hardcoded no componente),
+  a policy correta é `tem_acesso_tela(auth.uid(), '<view id>')`, nunca
+  `eh_lider_ou_admin` sozinha — checar isso ANTES de escrever a policy, não depois de
+  um usuário real ser bloqueado.
+
+
+
+## Bug real: etiqueta "puxava" sem cadastro pra item que TEM endereço/unidade real — consulta ao vivo nunca informava o armazém
+
+Cliente mandou 2 prints lado a lado: a tela "Etiquetas" do app, item `000.53871`,
+mostrando "Unidade: UN (padrão, sem cadastro)" e "Endereço: sem cadastro"; e a busca
+REAL de `consulta.selgron.com.br` pro mesmo código, mostrando um endereço genuíno
+(`010-H-6`), unidade (`PC`) e armazém (`01`) — com a mensagem: "tem item que possuem
+endereço, mas não está puxando".
+
+- **Causa raiz**: `EtiquetasPanel` sempre chamava `fetchSaldoConsultaSelgron(selecionado.
+  codigo)` **sem nenhum 2º argumento** (`armazem`). Isso é exatamente o mesmo tipo de
+  ambiguidade já corrigido antes só pro SALDO em `CountStep`/`ManualCountFlow` (ver "Bug
+  real: saldo do sistema vinha do ARMAZÉM ERRADO" no histórico acima): quando um código
+  existe em mais de um armazém na busca real da Selgron, `consultar-produto-selgron`
+  (a Edge Function) só consegue escolher UM bloco de resultado se um armazém for
+  informado E bater com exatamente um deles — sem isso, TODO campo (`descricao`/
+  `endereco`/`armazem`/`unidade`/`saldo`) volta `null` (`ambiguo:true`), com `ok:true`
+  ainda assim — silenciosamente, sem erro visível. `CountStep` já tinha sido corrigido
+  pra sempre passar `product.almoxarifado`; `ManualCountFlow` já tinha o seletor de
+  armazém desde que essa tela existe. `EtiquetasPanel` nunca tinha ganhado nenhum dos
+  dois — item `000.53871` (multi-armazém na consulta real) sempre caía no caso ambíguo,
+  e a tela mostrava o fallback pro cadastro LOCAL do Supabase, que pra esse código
+  também não tinha endereço/unidade cadastrados — daí "sem cadastro" mesmo com dado
+  real disponível na Selgron.
+- **Correção**: `EtiquetasPanel` ganhou o MESMO padrão de fábrica já usado em
+  `ManualCountFlow` — `armazemEtiqueta` (`useState('1')`, Armazém 01, o mais comum na
+  prática — ver "Cards de estoque no modelo de referência" no histórico) +
+  `armazensEtiqueta` (lista de opções via `fetchEstoqueValorPorAlmoxarifado()`, mesma
+  fonte de sempre) + um `<select>` novo, visível só na aba "Produto" (a busca de
+  "Endereço" não passa pela consulta ao vivo), logo abaixo dos botões
+  Produto/Endereço, mesmo estilo visual (`role-note` + `<select>`) do seletor de
+  `ManualCountFlow`. `fetchSaldoConsultaSelgron(selecionado.codigo, armazemEtiqueta)`
+  passou a informar o armazém — e o `useEffect` da consulta ao vivo ganhou
+  `armazemEtiqueta` no array de dependências, pra trocar de armazém no `<select>`
+  disparar uma nova consulta na hora (sem isso, o seletor existiria mas não teria
+  efeito nenhum).
+- **Nunca "adivinha" — mesmo critério "nunca adivinha" de sempre neste projeto**: um
+  código genuinamente ambíguo pro armazém escolhido (ex.: o item não existe de fato
+  nesse armazém, ou a consulta real não bate) continua devolvendo `null` em tudo,
+  caindo com segurança pro cadastro local — nunca inventa um valor, só passa a
+  RESOLVER os casos que já eram resolvíveis (item existe, sem ambiguidade, só faltava
+  informar o armazém certo).
+- Testado via harness dedicado (jsdom + react-dom/client + `act()`, mesma técnica
+  rigorosa de sempre — carrega o `index.html` inteiro transpilado numa `vm.Script`):
+  o seletor de armazém nasce em "Armazém 01"; a 1ª consulta ao vivo já manda
+  `armazem:'1'` (antes não mandava nenhum); com o armazém certo, endereço/unidade reais
+  aparecem na tela (não mais "sem cadastro"); trocar o `<select>` pra outro armazém
+  dispara uma NOVA consulta com o armazém novo, refletindo o resultado diferente (ou a
+  ausência de dado real nesse armazém, caindo pro cadastro local com honestidade); e um
+  código genuinamente sem correspondência em nenhum armazém pedido continua devolvendo
+  `null` em tudo, nunca adivinhando. 15 asserções, todas passando — **confirmado que o
+  harness pega a regressão de verdade**: rodado contra o código de ANTES da correção
+  (`git stash`), falhou exatamente como esperado (sem seletor de armazém nenhum na
+  tela). Rodei de novo toda a suíte de regressão do scratchpad (81 harnesses) — 0
+  falhas. Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  conferidos (669/669, sem mudança — esta correção não tocou em CSS nenhum, só JS/JSX).
+  **Nenhuma migração de SQL nem redeploy de Edge Function necessários** — a correção é
+  só de LEITURA no front-end (a Edge Function `consultar-produto-selgron` já sabia
+  receber/usar o parâmetro `armazem` desde a correção do saldo; só faltava
+  `EtiquetasPanel` informar). **Verificação de ponta a ponta com o item real
+  (000.53871, escolhendo "Armazém 01") fica a cargo do cliente** — mesma limitação de
+  sempre (login exige Supabase Auth real, não simulável no sandbox sem rede, e o
+  sandbox tampouco tem acesso à consulta interna da Selgron).
+
+## Bug real: efeito de redirecionamento por permissão deixava `navHistory`/o histórico do navegador dessincronizados — "tablet preso em Em Execução"
+
+Cliente reportou: "verificar, tablet está abrindo direto na tela de 'Em execução' e não
+consigo sair desta tela". Investigado via 3 perguntas de esclarecimento (`AskUserQuestion`)
+antes de mexer em qualquer código — as respostas (perfil Operador; "nunca editei esse
+usuário"; e uma descrição ambígua de que "aparece a tela de dentro de Em Execução" ao
+tentar navegar) enfraqueceram a 1ª hipótese óbvia (o próprio admin ter removido acesso
+manualmente), mas não descartaram por completo que ALGUÉM (outro admin, ou uma edição
+antiga) tivesse tirado "Início" desse usuário específico via `acessosRemovidos` — e
+confirmaram, junto com a leitura do código, um bug real e concreto na mecânica de
+navegação, independente de quem/como esse acesso foi removido.
+
+- **Causa raiz confirmada por leitura de código**: `TODOS_OS_MENUS[0].id==='home'`,
+  `TODOS_OS_MENUS[1].id==='inventories'` ("Em Execução") — se `'home'` está em
+  `acessosRemovidos` desse usuário (por qualquer motivo), `primeiraTelaAcessivel` resolve
+  exatamente pra `'inventories'`, batendo com o nome exato que o cliente usou pra
+  descrever a tela onde ficou preso. E — o ponto mais importante, que explica o "não
+  consigo sair" mesmo tocando em "Início" repetidas vezes — no tablet (`MobileNavBar`,
+  única navegação disponível abaixo de 768px, só 2 ícones: Início/Voltar, ver "Menu
+  lateral (celular) vira rodapé com 2 ícones" no histórico acima), tocar "Início" chama
+  `goto('home')`, que sempre `pushState`s no histórico do navegador E empurra uma entrada
+  em `navHistory` (o estado que decide se "Voltar" faz alguma coisa) — só que o efeito de
+  redirecionamento (que bloqueia a navegação pra `'home'` e força de volta pra
+  `primeiraTelaAcessivel`) sempre mexeu em `view`/`flowState` DIRETO, bypassando
+  completamente `goto()`/`voltarUmPasso()` — as duas únicas rotinas que mantêm
+  `navHistory` e o histórico real do navegador em sincronia (documentado desde que essa
+  sincronia foi criada, "unificar os dois no MESMO handler garante que a pilha do
+  navegador e navHistory nunca saem de sincronia"). Cada toque em "Início" bloqueado
+  deixava uma entrada FANTASMA em `navHistory` — habilitando o botão "Voltar" sem nada
+  de real pra desfazer: apertar "Voltar" (ou o gesto/botão físico do tablet) simplesmente
+  não mudava a tela visível NENHUMA vez, porque a entrada fantasma sempre apontava pro
+  mesmo `{view:'inventories', ...}` que já era a tela atual — exatamente o sintoma
+  "tentei sair e não consegui", em qualquer combinação de tentar "Início" e "Voltar".
+- **Correção**: o efeito de redirecionamento (`App()`, "A navegação sobrevive a recarregar
+  a página...") passou a desfazer a entrada fantasma antes de corrigir a tela — remove o
+  topo de `navHistory` (`prev.slice(0,-1)`, só quando existe algo pra remover — no boot
+  normal do app, `navHistory` já está vazio, então isso é um no-op inofensivo) e troca a
+  entrada atual do histórico do navegador via `window.history.replaceState(...)` (nunca
+  `pushState`, que só piorava o acúmulo). **Limitação honesta, documentada no código**:
+  `replaceState` não consegue "apagar" a entrada que o `goto()` doomed já tinha
+  empurrado — a API do navegador não tem NENHUM primitivo pra isso (nem old nem new code
+  mudam `window.history.length` de verdade) — o que a correção garante é só que
+  `navHistory` (o estado do PRÓPRIO app que decide se "Voltar" faz alguma coisa) nunca
+  mais fica com resíduo, então o botão nunca mais fica "habilitado à toa" prometendo
+  desfazer algo que não existe.
+- **Ação recomendada ao cliente, sem código nenhum envolvido**: verificar se este
+  operador específico tem "Início" removido em Usuários → Editar → "Comandos Liberados"
+  (dual-list) — se estiver do lado esquerdo ("Comandos Disponíveis"), mover de volta pra
+  "Comandos Liberados" e salvar resolve o problema de verdade, já que no tablet
+  (`MobileNavBar`, só 2 ícones) perder acesso a "Início" tira TODA a navegação restante
+  do operador (não existe nenhum outro menu no tablet pra alcançar "Nova Contagem"/
+  "Recontagens"/etc. sem passar por "Início" primeiro) — a correção de código acima só
+  evita que o app pareça ainda MAIS quebrado enquanto isso não for corrigido (Voltar
+  passa a ficar corretamente desabilitado de novo, em vez de fingir que tem algo pra
+  desfazer), não substitui restaurar o acesso.
+- Testado via harness dedicado (jsdom + react-dom/client + `act()`, História API REAL do
+  jsdom — não mockada, mesma técnica já usada no bug do "botão físico de voltar fechando
+  o app inteiro"): réplica fiel de `goto`/`popstate`/`voltarUmPasso`/o efeito de
+  redirecionamento, alternando entre a versão de ANTES (bug real) e a de AGORA (index.html
+  atual) do único trecho que mudou — confirmado que a versão de ANTES de fato reproduz o
+  bug (1 entrada fantasma depois de 1 `goto('home')` bloqueado) e que a versão corrigida
+  nunca deixa nenhuma, mesmo depois de 3 tentativas seguidas; confirmado também que
+  navegação normal (pra tela acessível) e "Voltar" de uma navegação de verdade continuam
+  funcionando exatamente como antes, sem regressão. Rodei de novo toda a suíte completa
+  de regressão do scratchpad (82 harnesses, incluindo este novo) — 0 falhas. Transpile
+  Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos (669/669, sem
+  mudança — só JS, nenhuma classe CSS tocada). **Verificação de ponta a ponta no tablet
+  real (depois de corrigir o acesso do operador em Usuários) fica a cargo do cliente** —
+  mesma limitação de sempre (login exige Supabase Auth real, não simulável no sandbox
+  sem rede).
+
+
+## Bloqueio real: contagem não pode seguir usando dado só do cadastro local (SB2) sem confirmação ao vivo — com autorização/retry
+
+Cliente mandou print da tela "Recontar Item" mostrando um aviso ("Consulta ao vivo não
+confirmou este endereço — mostrando o cadastro local, que pode estar desatualizado.")
+com o botão "CONFIRMAR E CONTINUAR" continuando disponível, e reagiu direto:
+
+> "Esse erro é grave, não mostrar a quantidade ao vivo ele não deveria nem seguir a
+> contagem. Não pode puxar da planilha SB2 sem autorização."
+
+Até essa rodada, a consulta ao vivo (Selgron/Protheus, `consultar-produto-selgron`) era
+tratada como uma MELHORIA sobre o cadastro local — se ela falhasse ou não confirmasse
+nada pro código/armazém, a tela sempre seguia em frente silenciosamente usando o valor
+do cadastro (que, tanto pra endereço quanto pra saldo, sempre vem da mesma origem
+antiga: upload manual da planilha SB2/"Descrição de Produtos", ver histórico deste
+arquivo). O cliente deixou claro que isso não é mais aceitável: sem confirmação ao vivo,
+a contagem não pode prosseguir usando esse dado potencialmente desatualizado — a menos
+que alguém com autoridade (líder/admin) autorize explicitamente.
+
+### O bloqueio, nos dois pontos que dependiam do cadastro local
+
+- **`liveConsultaErro`** (novo `useState`, `CountStep`) — antes, uma falha da consulta
+  (rede/credencial/timeout) só virava um `console.warn`, sem nenhum efeito visível. Agora
+  fica guardada e usada pelos dois bloqueios abaixo. **`liveConsultaTentativa`** (novo
+  `useState`, contador) — incrementado pelo botão "Tentar novamente" dos painéis de
+  bloqueio, entra no array de dependências do `useEffect` da consulta ao vivo, forçando
+  ela rodar de novo mesmo com o mesmo código/armazém (o pedido mid-turn do cliente,
+  **"Tentar novamente"**, confirmando que ele esperava esse mecanismo).
+- **Endereço**: `precisaAutorizarEndereco = (enderecoSoCadastro || (liveConsultaErro &&
+  product.enderecoCadastrado)) && !autorizouEnderecoLocal` — trava "Confirmar e
+  continuar" sempre que o único valor disponível é o cadastro local, sem a consulta ter
+  confirmado nada (nem por sucesso-sem-match, nem por falha). **Nunca bloqueia item sem
+  cadastro nenhum** (1ª captura, `enderecoNaoEncontrado`) — não há SB2 nenhuma "vazando"
+  nesse caso, é falta de dado mesmo, tratada como sempre.
+- **Saldo/quantidade**: mesmo raciocínio, `precisaAutorizarSaldo`/
+  `saldoAguardandoConfirmacao` (`saldoTemFallbackLocal = typeof product.saldoSistema===
+  'number'`) — só entra em jogo quando existe um saldo local que PODERIA ser usado por
+  engano; item genuinamente sem saldo em lugar nenhum (`!saldoTemFallbackLocal`) nunca
+  bloqueia, já cai no fluxo normal de "sem saldo pra comparar".
+- **`painelBloqueioConsultaAoVivo(mensagem, onAutorizar)`** — painel compartilhado pelas
+  duas etapas (🔒, mesmo ícone/estilo `divergence-alert` já usado em outros bloqueios do
+  app): sempre mostra "Tentar novamente" (qualquer perfil, incrementa
+  `liveConsultaTentativa`); mostra "Autorizar cadastro local mesmo assim" só pra
+  `podeAutorizarDadosLocais` (`user.perfil==='lider'||'admin'`) — operador só vê a
+  instrução de pedir a um líder ou tentar de novo. Autorizar seta
+  `autorizouEnderecoLocal`/`autorizouSaldoLocal` (dois `useState(false)` próprios) —
+  válido só pela vida da instância MONTADA de `CountStep` (nunca persiste, nunca
+  sincroniza) — cada item novo exige autorização própria de novo.
+- **Os campos em si (input de endereço, input de quantidade) continuam sempre
+  renderizados**, só o BOTÃO de confirmar e o card de referência/comparação (saldo,
+  card "Sistema", card de comparação ao vivo) ficam condicionados a
+  `!precisaAutorizarX && !xAguardandoConfirmacao` — o operador nunca vê um número vindo
+  só do cadastro local sem saber que não foi confirmado, e nunca consegue confirmar em
+  cima dele sem autorização.
+- **`finalize()`** ganhou o mesmo guard replicado (`if(precisaAutorizarSaldo ||
+  saldoAguardandoConfirmacao) return;`) e **`confirmEnderecoManual()`** também
+  (`if(precisaAutorizarEndereco || enderecoAguardandoConfirmacao) return;`) — defesa
+  extra contra qualquer caminho que tentasse confirmar programaticamente, não só o botão
+  desabilitado na UI.
+
+### Achado interessante durante o teste: `RecountFlow` remonta `CountStep` ao trocar de armazém, mesmo sem `key` explícito
+
+Investigando se uma autorização já dada sobreviveria à troca do seletor de armazém
+(item sem armazém conhecido, recontagem de item vindo do histórico — ver "Item com
+saldo real em 1 armazém aparecia zerado na recontagem" no histórico acima), confirmei
+que **não sobrevive — e isso é o comportamento correto, não um bug**: mesmo sem nenhum
+`key` explícito em `<CountStep>`, o `useEffect` de `produtoBase` (`RecountFlow`) chama
+`setProdutoBase(null)` de forma síncrona antes de rebuscar o produto no armazém novo, e
+o JSX (`{produtoBase===null ? <div className="empty-state">...</div> : (<CountStep
+.../>)}`) troca o TIPO de elemento na mesma posição da árvore — isso força o React a
+desmontar e remontar todo o subtree, mesmo sem `key`. Uma autorização dada pro Armazém
+01 não deveria mesmo valer pro Armazém 04 — é um saldo local DIFERENTE, igualmente sem
+confirmação ao vivo.
+
+### Verificação
+
+Testado via harnesses dedicados (jsdom + react-dom/client + `act()`, mesma técnica
+rigorosa de sempre — carrega o `index.html` inteiro transpilado numa `vm.Script`):
+cobertura direta do bloqueio (endereço só-cadastro, saldo só-cadastro, os dois com
+consulta falhando, "Tentar novamente" refazendo a consulta, autorização por
+líder/admin liberando a confirmação, operador nunca vendo o botão de autorizar, e a
+troca de armazém em `RecountFlow` exigindo autorização nova) — mais o reteste completo
+do cenário original de corrida ("Sem registro de movimentação" pra item com Kardex
+real, `harness_ultima_saida_race.js`, reajustado pra usar um item sem NENHUM saldo
+local em cache, já que o novo bloqueio por si só já impede o clique prematuro pra
+qualquer item COM saldo em cache — um efeito colateral bom da correção nova, que só
+deixou a corrida original genuinamente alcançável via botão pro caso "sem cache algum").
+
+Sistematicamente revisados e corrigidos todos os harnesses pré-existentes do
+scratchpad que passaram a exercitar esse bloqueio sem intenção (o novo gate intercepta
+qualquer cenário de teste que tivesse cadastro local + consulta ao vivo mockada sem
+sucesso, mesmo quando o teste em si não tinha nada a ver com esse bloqueio) —
+`harness_saldo_ambiguo_zero_noise.js`, `harness_elimina_tela_qrcode_endereco.js`,
+`harness_inventario_ciclico_relatorio.js`, `harness_classify_divergence_binario.js`,
+`harness_consulta_selgron_endereco_prefill.js`,
+`harness_consulta_selgron_ultima_movimentacao.js`,
+`harness_countstep_proposta_divergente.js` — todos ajustados pra autorizar
+explicitamente (clique no botão "Autorizar cadastro local mesmo assim", perfil
+líder/admin) antes do ponto do teste que dependia de passar da etapa bloqueada, nunca
+mudando a asserção que o teste de fato verifica. Rodada a suíte COMPLETA do scratchpad
+(83 harnesses) depois de todos os ajustes — **0 falhas em nenhum arquivo**. Transpile
+Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos (669/669, sem
+mudança de contagem — só JS, nenhuma classe CSS nova). **Verificação visual/funcional
+de ponta a ponta em produção fica a cargo do cliente** — mesma limitação de sempre
+(login exige Supabase Auth real, não simulável no sandbox sem rede) — mas como a
+correção não depende de nenhuma migração de SQL nem de redeploy de Edge Function (só
+`index.html` mudou), já deve valer assim que o deploy publicar.
+
+## Bug real: consulta ao vivo escolhia bloco do PRODUTO ERRADO — busca da
+## Selgron é por prefixo, não por código exato
+
+Continuação direta do bug corrigido antes ("saldo do sistema vinha do
+ARMAZÉM ERRADO") — o cliente reportou outro item com o mesmo sintoma
+(campos sempre `null`), e ao investigar junto com ele qual código dava pra
+achar na consulta real, a resposta revelou uma causa mais funda: **"aparece
+só um armazem do código 000.26627 os outros são 000.26627.1 e
+000.26627.2"** — ou seja, buscar "000.26627" na Selgron
+(`consulta.selgron.com.br/produto.consulta.php`, campo `busca=`) devolve 3
+resultados, mas só 1 deles é de fato o código pedido; os outros 2 são
+**produtos genuinamente diferentes** (`000.26627.1`/`000.26627.2`, ambos
+formatos válidos de código da SB2 — 8 e 9 dígitos — que só por coincidência
+compartilham o mesmo prefixo). A busca é por PREFIXO/SUBSTRING, não por
+código exato.
+
+- **Causa raiz**: `dividirEmBlocos` já separava a resposta em blocos, um por
+  resultado (criado na correção anterior, pra não misturar saldo de
+  armazéns diferentes do MESMO código) — mas a escolha de qual bloco usar
+  (`escolhido`) SÓ filtrava por ARMAZÉM, nunca verificava se o
+  `codigo` de cada bloco batia com o código PEDIDO. Com uma busca por
+  prefixo devolvendo blocos de produtos diferentes, dois problemas reais:
+  (1) se nenhum bloco (entre os 3, produtos misturados) batesse
+  unicamente com o armazém pedido, tudo saía `null` mesmo havendo 1
+  resultado certo e sem ambiguidade nenhuma pra esse código específico;
+  (2) pior — se por acaso o armazém pedido batesse com o bloco de um
+  PRODUTO DIFERENTE (ex.: `000.26627.1` também no armazém "01"), a function
+  devolvia silenciosamente saldo/endereço/descrição de **outro item**,
+  como se fossem do código pedido — o tipo de bug mais grave possível aqui
+  (mostrar dado de um produto errado durante uma contagem).
+- **`normalizarCodigo(v)`** (função nova, Edge Function) — normaliza só pra
+  COMPARAÇÃO (trim + maiúsculo), mesmo espírito de `normalizarArmazem`
+  já existente.
+- **Correção**: antes de qualquer desambiguação por armazém, os blocos
+  passam por um filtro de CÓDIGO EXATO
+  (`blocosBrutos.filter(b => normalizarCodigo(b.codigo) === codigoNormalizado)`)
+  — só blocos do produto genuinamente pedido entram na disputa. A partir
+  daí, a lógica de sempre continua igual: 1 bloco só (depois do filtro) →
+  usa direto, sem precisar de armazém pra desambiguar (mesmo critério já
+  usado por `fetchProdutosByCodigos`/`searchSupabaseCatalog` no resto do
+  app: "código sem ambiguidade real, resolve mesmo se o armazém pedido não
+  bater"); mais de 1 (o produto certo existe em mais de 1 armazém de
+  verdade) → só resolve quando o armazém pedido bate com exatamente 1
+  desses blocos, senão fica `null` (nunca adivinha). O check de "formato da
+  página mudou" (bloco único sem saldo legível) também passou a rodar
+  sobre os blocos JÁ filtrados por código, não mais sobre a contagem bruta
+  — evita disparar esse erro por causa de um produto "vizinho" de prefixo
+  sem saldo, quando o código pedido em si já tinha um resultado válido.
+- **`ambiguo` (campo informativo da resposta)** também passou a refletir
+  os blocos filtrados por código (`blocos.length > 1 && !escolhido`),
+  mais preciso — antes contava qualquer resultado da busca por prefixo
+  como "ambiguidade", mesmo quando só 1 deles de fato era o produto
+  pedido.
+- Testado via harness Node isolado (mesma técnica de sempre — réplica das
+  funções puras da Edge Function, sem depender do runtime Deno, já
+  type-checado à parte via `tsc --strict`): reproduzido o cenário EXATO do
+  cliente (000.26627/000.26627.1/000.26627.2, 3 blocos, códigos
+  distintos) — confirmado que filtrar por código exato primeiro resolve
+  direto pro produto certo mesmo SEM informar armazém (só 1 bloco de
+  verdade é esse produto), que informar um armazém que também bate com o
+  produto ERRADO nunca mistura os dois, e que buscar por um dos "vizinhos"
+  de prefixo (`000.26627.2`) isola esse produto corretamente também — nos
+  dois sentidos. Uma réplica da versão SEM a correção, no mesmo cenário,
+  confirma que ela de fato devolveria o produto ERRADO (999 de saldo, do
+  código `000.26627.1`) quando o armazém pedido batesse por coincidência —
+  prova de que o teste pega a regressão de verdade, não só o caminho feliz.
+  Rodei de novo toda a suíte de regressão do scratchpad (83 harnesses,
+  1267 asserções) — 0 falhas. Type-check da Edge Function via `tsc
+  --strict` (mesmo shim de sempre pros globais do Deno) sem erro.
+  **Nenhuma migração de SQL necessária** — correção só de parsing/leitura.
+  **Falta o cliente rodar o deploy da Edge Function atualizada**
+  (`npx supabase functions deploy consultar-produto-selgron`, mesmo
+  comando de sempre) — até lá, a function publicada continua com o
+  comportamento antigo (bug presente). **Verificação de ponta a ponta com
+  o item real (000.26627) fica a cargo do cliente** — mesma limitação de
+  sempre (sandbox sem acesso de rede ao domínio interno da Selgron).
+
+
+## Bug real: armazém pedido descartado em `fetchProdutosByCodigos` — bloqueava
+## a recontagem com "não confirmou o saldo do sistema"
+
+Cliente mandou 2 screenshots durante o teste da correção anterior (bug do
+prefixo de código na consulta ao vivo, já resolvido e publicado): a tela
+"Recontar Item" (Módulo 7) pro código `000.53871`/"CREMALHEIRA M.1 15X15X300"
+travada com o painel de bloqueio "🔒 A consulta ao vivo respondeu, mas não
+confirmou o saldo do sistema para este item/armazém... Continuar usando só o
+cadastro local (planilha SB2) sem confirmação ao vivo não é seguro — a
+contagem não pode seguir até isso ser resolvido." — com o mini-card mostrando
+"ALMOX: —" (vazio), mesmo o endereço (`010-H-6`) e o Kardex (última
+movimentação/valor unitário) aparecendo certos ao lado. Pergunta do cliente:
+"porque não está puxando o saldo??"
+
+- **Causa raiz**: `fetchProdutosByCodigos(codigos, almoxarifado)` — quando
+  quem chama a função JÁ SABE/pede um armazém específico (aqui, `RecountFlow`
+  passando `original.almoxarifado`, o armazém já conhecido da 1ª contagem ao
+  vivo), mas o cache local (`estoque_saldo`) não tem NENHUMA linha pra esse
+  código+armazém exato (`linhasDoArmazem.length===0`, então `s` vira `{}` e
+  `s.almoxarifado` é `undefined`), a linha
+  `almoxarifado: s.almoxarifado || (linhasDoArmazem.length>1 ? ... : '—')`
+  caía direto no `'—'` — descartando o armazém que o CHAMADOR já sabia, sem
+  nenhuma ambiguidade de verdade (não é "vários armazéns pra escolher", só
+  falta cache local pra esse armazém específico). Esse `'—'` virava
+  `product.almoxarifado` (por isso o mini-card mostrava "ALMOX: —") e era
+  mandado como armazém pra `fetchSaldoConsultaSelgron(codigo, armazem)` — que
+  nunca bate com nenhum bloco real da consulta ao vivo (não existe armazém
+  chamado "—" na Selgron), fazendo a consulta responder sem confirmar nada e
+  disparando o bloqueio de segurança "não confirmou o saldo" à toa, mesmo o
+  operador genuinamente contando um armazém válido. Mesma categoria de bug
+  silencioso já vista várias vezes neste projeto — nenhum erro, só um valor
+  errado (aqui, o placeholder de debug em vez do armazém real).
+- **Correção**: `almoxarifado: almoxarifado || s.almoxarifado || (...)` — o
+  armazém PEDIDO pelo chamador (o parâmetro da própria função) passou a ter
+  prioridade sempre que existe; só cai pro valor resolvido do cache/
+  ambiguidade quando ninguém pediu um armazém específico (chamada sem esse
+  parâmetro, ex.: busca livre sem contexto de contagem). **Não é a mesma
+  "adivinhação" já revertida antes neste projeto** (aquela tentava ESCOLHER
+  entre 2 armazéns reais por qual tinha saldo não-zero — corrigida depois do
+  cliente apontar "SE EU ESTOU CONTANDO O ARMAZEM 01, O SALDO QUE TEM QUE
+  MOSTRA É O DO ARMAZEM 01") — aqui não existe escolha nenhuma entre
+  candidatos, é só respeitar o armazém que o próprio chamador já informou,
+  em vez de descartá-lo por falta de cache local.
+- **Deploy**: correção só em `index.html` (JS puro, `fetchProdutosByCodigos`)
+  — **diferente das 2 correções anteriores desta mesma sessão** (que viviam
+  na Edge Function `consultar-produto-selgron` e exigiam redeploy manual pelo
+  cliente), esta publica sozinha via o deploy normal do GitHub Pages, sem
+  nenhum passo extra do lado do Supabase.
+- Testado via harness dedicado (`harness_fetchprodutos_armazem_pedido.js`,
+  jsdom + react-dom/client + `act()`, mesma técnica rigorosa de sempre —
+  carrega o `index.html` inteiro transpilado numa `vm.Script`, Supabase
+  mockado): **o bug foi reproduzido de verdade** rodando o mesmo cenário
+  contra o código do commit ANTERIOR (`git show HEAD:index.html`, antes desta
+  correção) — confirmando `almoxarifado==='—'` no código antigo, prova de que
+  o harness pega a regressão e não só confirma o caminho feliz; a correção
+  confirma `almoxarifado==='1'` (o armazém pedido, preservado) no mesmo
+  cenário exato do print (000.53871, cache só com uma linha de outro
+  armazém); os 4 casos preservados (armazém pedido com linha local
+  correspondente; sem armazém pedido com 1 linha só, inequívoco; sem armazém
+  pedido sem nenhuma linha, cai em "—"; sem armazém pedido com ambiguidade
+  genuína entre 2 armazéns reais, nunca adivinha, mantém o texto concatenado
+  "1/99") continuam batendo, sem regressão; e um teste de ponta a ponta via
+  `RecountFlow` renderizado de verdade confirma que o mini-card passa a
+  mostrar "Almox 1" (não mais "—") e que a chamada à consulta ao vivo recebe
+  `armazem:'1'` (não mais "—"). 16 asserções, todas passando. Rodei de novo
+  toda a suíte completa de regressão do scratchpad (84 harnesses) — 0
+  falhas. Transpile Babel do arquivo inteiro conferido. **Nenhuma migração
+  de SQL nem redeploy de Edge Function necessários desta vez** — só o
+  `index.html` mudou, publica sozinho via GitHub Pages. **Verificação de
+  ponta a ponta com o item real (000.53871) fica a cargo do cliente** —
+  mesma limitação de sempre (login exige Supabase Auth real, não simulável
+  no sandbox sem rede) — mas basta recarregar a página (F5) depois do
+  deploy publicar, sem precisar redeployar nenhuma Edge Function desta vez.
+
+
+## "Aguardando Aprovação" exporta Excel no formato real de SA da Selgron
+
+Cliente mandou print de uma planilha real — a "Solicitação ao Almoxarifado" (SA) que
+ele já usa fora do app — e pediu: "Em aguardando aprovação, quero que ao gerar o excel
+venha neste formato". Até aqui, o botão "Baixar (.xlsx)" dessa tela (o mesmo
+`ModuloDownloadButton`/`baixarRelatorioModulo` já usado por outras 4 telas de listagem
+de contagem — Recontagens/Itens Divergentes/Analisados/Contagens Concluídas) sempre
+exportava no formato genérico `buildCountRows` (vocabulário interno do app, alinhado
+com `BD_Contagens`) — nunca no formato da planilha real de SA, com colunas bem
+diferentes (Numero/Solicitante/Emissao/Iten/Cod Produto/Descricao/Quant/Saldo SA/
+Vlr. Unitário/Total/Saldo Estoque/Alm/Obs/OP/Cod. C.Custo/C. Custo).
+
+- **`baixarRelatorioModulo(counts, sheetName, nomeArquivo, buildRows)`** ganhou um 4º
+  parâmetro OPCIONAL — `(buildRows || buildCountRows)(counts)` — quando nenhuma função
+  de linha é passada, cai no formato genérico de sempre (as outras 4 telas nunca
+  passam esse argumento, sem nenhuma mudança de comportamento nelas). `ModuloDownloadButton`
+  virou um repasse fino (`buildRows` como prop opcional, encaminhada direto pra
+  `baixarRelatorioModulo`).
+- **`buildSaAprovacaoRows(counts)`** (função nova) — só o `DiretoriaApprovalPanel`
+  ("Aguardando Aprovação") passa essa função (`<ModuloDownloadButton ...
+  buildRows={buildSaAprovacaoRows} />`); os outros 4 painéis continuam sem passar
+  nada, no formato genérico de sempre. Mapeamento a partir do que a contagem já grava,
+  sem inventar nenhum dado novo (mesmo critério de honestidade de sempre neste
+  projeto):
+  - **"Iten" é sempre 1** — cada SA no app cobre exatamente 1 material (`contagens` é
+    denormalizada, sem lista de itens própria, mesma decisão já documentada pra essa
+    tabela), nunca uma SA com várias linhas.
+  - **"Quant"/"Saldo SA" usam o mesmo valor** (`|diferença|`) — uma SA aguardando
+    aprovação da Diretoria nunca foi parcialmente atendida ainda (é justamente o que
+    está pendente de decidir), então o saldo em aberto é sempre a quantidade inteira
+    pedida, igual o "Saldo SA" real de uma SA ainda não atendida.
+  - **"Vlr. Unitário"/"Total" vêm de `custoUnit`/`valorDivergente`** — os mesmos dois
+    campos que já alimentam "Valor divergente" no card desta mesma tela
+    (`valorDivergente = |diferença| × custoUnit`, identidade já estabelecida em outro
+    lugar do código) — por isso os dois batem matematicamente com Quant×Vlr. Unitário,
+    igual no exemplo real do cliente (1×R$13,42=R$13,42).
+  - **"Saldo Estoque" é `saldoSistema`** — o saldo que o sistema já mostrava no
+    momento da contagem, mesmo conceito de "saldo em estoque" da SA real.
+  - **"Emissao"** extrai só a data (regex `\d{2}\/\d{2}\/\d{4}`) de `saGeradaEm` —
+    esse campo é uma STRING já formatada via `toLocaleString('pt-BR')` (data+hora
+    completos, não uma coluna `timestamptz`), então precisa desse recorte pra bater
+    com o formato "DD/MM/AAAA" (sem hora) que a planilha real usa; sem match
+    reconhecível, cai no valor cru sem quebrar.
+  - **"Obs" junta `motivo`+`observacao`** com travessão quando os dois existem
+    (`[c.motivo, c.observacao].filter(Boolean).join(' — ')`) — nunca deixa um
+    travessão sobrando quando só um dos dois está presente; bate com o estilo de nota
+    curta do exemplo real ("SUCATA-DOBRA ERRADA").
+  - **"OP"/"Cod. C.Custo"/"C. Custo" saem SEMPRE em branco** — o app não captura
+    nenhum dos três em lugar nenhum do fluxo de contagem/aprovação hoje, mesmo
+    critério já usado pra "Classe"/"Dias S/ Mov." em `buildCountRows` (nunca fabricar
+    dado que não existe).
+  - **Nomes de coluna sem acento** ("Numero", "Emissao", "Descricao") — mesma
+    convenção "estilo Protheus" já usada noutras planilhas reais deste projeto (SB2,
+    `BD_Contagens`), pra bater byte a byte com o que o cliente já sabe ler/colar.
+- Testado via harness dedicado (`harness_sa_aprovacao_excel.js`, jsdom +
+  react-dom/client + `act()`, mesma técnica rigorosa de sempre — carrega o
+  `index.html` inteiro transpilado numa `vm.Script`): `buildSaAprovacaoRows` isolada
+  reproduzindo o exemplo EXATO do print do cliente (SA 73020, `000.66697`, R$13,42×1)
+  com todas as 16 colunas conferidas uma a uma, incluindo a identidade matemática
+  Quant×Vlr.Unitário=Total; casos de borda (Obs com só motivo/só observação/nenhum
+  dos dois; diferença/saldo exatamente 0 nunca virando string vazia; todos os campos
+  `null` nunca fabricando 0; `saGeradaEm` ausente ou em formato inesperado nunca
+  quebrando o regex; arredondamento de custo com muitas casas decimais); regressão de
+  `baixarRelatorioModulo` confirmando que SEM `buildRows` continua no formato
+  genérico (`'Código'`/`'ID Contagem'` presentes, `'Numero'` ausente) e COM
+  `buildRows=buildSaAprovacaoRows` sai no formato SA (`'Numero'`/`'Iten'` presentes,
+  `'Código'`/`'ID Contagem'` ausentes); e de ponta a ponta, `DiretoriaApprovalPanel`
+  renderizado de verdade clicando o botão real confirma a linha exportada batendo
+  com o exemplo do cliente, enquanto `RecountsPanel` (outro painel, sem passar
+  `buildRows`) continua exportando no formato genérico, sem nenhuma regressão. 54
+  asserções, todas passando. Rodei de novo toda a suíte completa de regressão do
+  scratchpad (85 harnesses, 1.474 asserções) — só a mesma falha já pré-existente e
+  documentada antes (`harness_fetchprodutos_armazem_pedido.js`, um artefato de design
+  do próprio harness — usa `git show HEAD:index.html` pra capturar "o código de
+  antes" da correção que ele testa, e HEAD já avançou muitos commits desde então; não
+  tem nenhuma relação com esta mudança, confirmado que `fetchProdutosByCodigos` não
+  foi tocado aqui). Transpile Babel do arquivo inteiro e balanceamento de chaves do
+  CSS conferidos (669/669, sem mudança — esta feature não tocou em CSS nenhum, só
+  JS/JSX). **Nenhuma migração de SQL nem redeploy de Edge Function necessários** —
+  publica sozinho via GitHub Pages assim que o deploy processar. **Verificação
+  visual/funcional de ponta a ponta fica a cargo do cliente** — mesma limitação de
+  sempre (login exige Supabase Auth real, não simulável no sandbox sem rede).
+
+
+## "Aguardando Aprovação": modelo REAL de SA (arquivo .xlsx anexado) — corrige e
+## substitui a versão anterior baseada só num print
+
+Logo depois da rodada anterior (SA exportada como planilha genérica, "Iten" sempre 1,
+baseada só num PRINT da planilha real), o cliente anexou o **arquivo `.xlsx` de
+verdade** e foi direto: **"na verdade, este é o modelo final, seguir fielmente."** —
+instrução clara de que o print anterior não bastava, e que agora a estrutura exata
+(nomes de coluna, agrupamento, formatação visual) do arquivo real precisa ser
+replicada, não só aproximada.
+
+**Inspeção do arquivo real via `openpyxl`** (não estava pré-instalado no sandbox,
+precisou de `pip install`) revelou que a suposição da rodada anterior estava errada: a
+planilha real de SA não tem 1 linha por SA — **uma SA pode pedir vários materiais
+diferentes**, cada um numa linha própria, numerada pela coluna **"Item"** (1, 2, 3...
+dentro da MESMA SA, na ordem em que aparecem na planilha — não necessariamente a ordem
+de "Item"), seguida de uma **linha "Total"** somando a coluna "Total" só daquele grupo.
+A tabela em si é uma **Tabela do Excel de verdade** ("Tabela1", com `totalsRowCount=1`
+e uma fórmula `SUBTOTAL(109, Tabela1[Total])` autogerada na linha de Total, zebra-
+striping nativo via estilo de Tabela) — um recurso que nenhuma biblioteca JS pura
+consegue replicar sem manipular o XML OOXML bruto, fora de alcance aqui (documentado
+como limitação honesta, não escondida).
+
+Confirmado com o cliente via `AskUserQuestion` (3 perguntas) antes de reimplementar,
+dado o tamanho da correção:
+
+1. **Fidelidade visual**: "Replicar cores e formatação (Recomendado)" — exige uma
+   biblioteca XLSX com suporte a estilo de célula, que o SheetJS puro (`xlsx.full.
+   min.js`, já usado em todo o resto do app) não tem.
+2. **2ª tabela/texto livre** ("Análise de Materiais Parados 180+", blocos Motivo/Ação):
+   "Não incluir por enquanto" — só a tabela principal de SA é exportada nesta rodada.
+3. **Mais de uma SA no mesmo arquivo**: "Indiferente, único arquivo pode uma ser ou
+   várias SAs" — resolvido como um cabeçalho único no topo da aba, com cada SA virando
+   o próprio bloco (linhas de dado + linha Total), empilhados, separados por 1 linha
+   em branco.
+
+### `xlsx-js-style` — 2ª biblioteca XLSX, isolada sob nome próprio, sem tocar em nada
+### já em produção
+
+O SheetJS puro (`xlsx.full.min.js`, cdnjs) nunca teve suporte a estilo de célula
+(`.s`) — é usado por TODO import/upload já existente (`parseSB2Rows`/
+`parseImportedListRows`/`parseHistoricoContagensRows`/`parseDescricaoProdutosRows`) e
+todo export já existente (`generateReportWorkbook`/`buildInventarioCiclicoWorkbook`/
+`buildImportTemplateWorkbook`/`baixarRelatorioModulo`) — trocar `window.XLSX` global
+por um fork com suporte a estilo arriscaria quebrar algo que nunca foi testado contra
+esse fork.
+
+- **`xlsx-js-style@1.2.0`** (jsdelivr, versão fixada — mesmo critério de segurança já
+  aplicado ao supabase-js/JsBarcode) é carregado LOGO DEPOIS do SheetJS puro no
+  `<head>` — como os dois expõem o MESMO nome global `window.XLSX`, um `<script>`
+  inline logo antes captura o SheetJS puro sob `window.__XLSX_BASE__`, e outro logo
+  depois captura o fork recém-carregado sob um nome PRÓPRIO
+  (`window.XLSXStyled = window.XLSX`) e restaura `window.XLSX` de volta pro original
+  (`window.XLSX = window.__XLSX_BASE__`). Resultado: **zero risco pra qualquer
+  caminho já em produção** — só a função nova (`buildSaAprovacaoWorkbook`) enxerga
+  `window.XLSXStyled`, todo o resto do app continua vendo exatamente o mesmo
+  `window.XLSX` de sempre.
+- **API de estilo confirmada via `WebFetch` do README real do projeto** (o
+  `cdn.jsdelivr.net` está bloqueado pro proxy de rede do sandbox, `raw.
+  githubusercontent.com` não): `.s.font{name,sz,bold,color:{rgb}}`,
+  `.s.fill{patternType,fgColor:{rgb}}`, `.s.alignment{horizontal,vertical,wrapText}`,
+  `.s.border{top/bottom/left/right:{style,color:{rgb}}}`, `.s.numFmt`. **Cores em RGB
+  puro de 6 dígitos, sem prefixo de alpha** — diferente do ARGB de 8 dígitos que o
+  `openpyxl` usa pra ler o arquivo real; precisou remover o "FF" inicial de cada cor
+  copiada da inspeção antes de escrever no código (ex.: `FFF6A200`→`F6A200`).
+- **Fallback gracioso**: `buildSaAprovacaoWorkbook` usa `window.XLSXStyled ||
+  window.XLSX` — se o CDN do fork falhar (rede), cai pro SheetJS puro sem travar a
+  exportação; a propriedade `.s` extra que sobraria nos objetos de célula é
+  simplesmente ignorada pelo SheetJS puro na hora de escrever o arquivo, nunca quebra.
+
+### `buildSaAprovacaoWorkbook(counts)` — substitui por completo `buildSaAprovacaoRows`/
+### o parâmetro `buildRows` da rodada anterior
+
+`baixarRelatorioModulo`/`ModuloDownloadButton` **voltaram exatamente à forma simples de
+antes da rodada anterior** (sem o 4º parâmetro `buildRows`) — "Aguardando Aprovação"
+ganhou um exportador **totalmente próprio** (`buildSaAprovacaoWorkbook`/
+`SaAprovacaoDownloadButton`), já que o formato real (agrupado, com linha de Total,
+formatação visual, múltiplas SAs por arquivo) não cabe no molde genérico "1 linha por
+item, sem estilo" que os outros 4 painéis (Recontagens/Itens Divergentes/Analisados/
+Contagens Concluídas) continuam usando sem nenhuma mudança.
+
+- **Colunas exatas do arquivo real** (confirmadas via `openpyxl`, não mais adivinhadas
+  a partir de um print): `Numero/Solicitante/Emissao/Item/Cod Produto/Descricao/Quant/
+  Saldo SA/Vlr. Unitário/Total/Saldo Estoque/Almox/Obs/OP/Cod. C.Custo/C. Custo` — sem
+  acento, **"Almox"** (não "Alm") e **"Item"** (não "Iten") — os 2 erros de nome de
+  coluna da versão baseada só no print, corrigidos agora que o arquivo real confirma.
+- **Agrupamento por SA** (`c.solicitacaoAjuste`, ou `'(Devolução)'`/`'(sem SA)'` quando
+  ausente — mesmo critério de honestidade da rodada anterior, nunca esconde o item nem
+  quebra num grupo "undefined"), preservando a ORDEM de 1ª aparição na lista já
+  filtrada pela tela — nunca reordena o que o líder já está vendo.
+- **"Item" agora é sequencial DENTRO de cada grupo** (`i+1`, reinicia em 1 a cada SA
+  nova) — não mais fixo em 1.
+- **Linha "Total" por grupo**: soma só o "Total" (`valorDivergente`) dos itens daquele
+  grupo, com a MESMA formatação visual do arquivo real (célula de soma com moldura fina
+  em cima/embaixo + moldura média nos lados, preenchimento amarelo-claro, fonte negrito
+  cinza-escuro, formato de moeda — só nessa 1 célula, igual o arquivo real, que também
+  não estiliza a linha inteira).
+- **Colunas "Vlr. Unitário"/"Total" destacadas em laranja** (`#F6A200`, o mesmo
+  `--safety` da marca, batendo exatamente com o preenchimento do cabeçalho dessas 2
+  colunas no arquivo real) — os únicos 2 campos calculados da planilha.
+- **Múltiplas SAs no mesmo arquivo**: um cabeçalho só no topo da aba, cada SA virando
+  seu próprio bloco (linhas de dado + linha Total), separado do próximo por 1 linha em
+  branco — resolve a pergunta 3 confirmada com o cliente.
+- **Mapeamento de campo, mesmo critério de honestidade já usado desde a rodada
+  anterior**: "Quant"/"Saldo SA" = `|diferença|`; "Vlr. Unitário"/"Total" =
+  `custoUnit`/`valorDivergente` (mesma identidade Quant×Vlr.Unitário=Total já
+  estabelecida); "Saldo Estoque" = `saldoSistema`; "Almox" = `almoxarifado`; "Obs" =
+  `motivo`+`observacao` unidos por travessão quando os dois existem; "Emissao" extrai
+  só a data (regex) de `saGeradaEm`, que é uma string já formatada em pt-BR completa
+  (data+hora), não uma coluna `timestamptz`; **"OP"/"Cod. C.Custo"/"C. Custo" saem
+  SEMPRE em branco** — o app não captura nenhum dos três em lugar nenhum do fluxo de
+  contagem/aprovação hoje, mesmo critério já usado pra "Classe"/"Dias S/ Mov." em
+  `buildCountRows`.
+- **FORA de escopo nesta rodada, confirmado**: a 2ª tabela "Análise de Materiais
+  Parados 180+" e os blocos de texto livre Motivo/Ação do arquivo real; e, fora do
+  alcance de uma lib JS pura sem motor de Tabela nativa do Excel, o zebra-striping
+  automático e o toggle de "ocultar linhas de grade" — nenhum dos dois muda o dado, só
+  polimento visual que exigiria manipular XML OOXML bruto, risco não justificado.
+
+### Verificação
+
+O harness anterior (`harness_sa_aprovacao_excel.js`, que testava `buildSaAprovacaoRows`/
+o parâmetro `buildRows`) foi **reescrito por completo** — os dois não existem mais.
+Testado (jsdom + react-dom/client + `act()`, mesma técnica rigorosa de sempre — carrega
+o `index.html` inteiro transpilado numa `vm.Script`, com um mock razoavelmente fiel do
+SheetJS/xlsx-js-style que constrói objetos de célula endereçados de verdade via
+`aoa_to_sheet`): (1) 1 SA/1 material, réplica do exemplo real anterior; (2) estilo —
+cabeçalho negrito centralizado, laranja da marca só nas 2 colunas calculadas, a célula
+de soma do Total com moldura/preenchimento/negrito/cor certos; (3) múltiplos materiais
+na MESMA SA — Item sequencial (1,2,3...), Total somando só o grupo; (4) múltiplas SAs —
+cada uma vira bloco próprio, separado por linha em branco, Item REINICIA em 1 a cada
+SA nova; (5) item sem número de SA (devolução/sem SA) agrupa sob rótulo textual, sem
+quebrar; (6) casos de borda — campos nulos nunca fabricam 0, arredondamento, largura de
+coluna/altura de linha, sem contagem nenhuma, sem nenhuma biblioteca disponível; (7)
+fallback pra `window.XLSX` puro quando `window.XLSXStyled` não existe, sem travar a
+exportação; (8) regressão — `baixarRelatorioModulo`/`ModuloDownloadButton` (as outras 4
+telas) NUNCA tocam em `window.XLSXStyled`, mesmo quando ele existe disponível; (9) de
+ponta a ponta, `DiretoriaApprovalPanel` renderizado de verdade confirma que usa
+`SaAprovacaoDownloadButton` (não mais `ModuloDownloadButton`) exportando no formato SA
+completo, enquanto `RecountsPanel` (outro painel) continua com `ModuloDownloadButton`
+no formato genérico, sem regressão nenhuma. 78 asserções, todas passando. Rodei de novo
+toda a suíte completa de regressão do scratchpad (85 harnesses) — sem quebrar nenhum
+outro caminho (nenhum outro import/export do app toca em `window.XLSXStyled`,
+confirmado pela isolação de nome). Transpile Babel do arquivo inteiro conferido.
+**Nenhuma migração de SQL necessária.** **Verificação visual/funcional de ponta a
+ponta (abrir o arquivo gerado num Excel/LibreOffice de verdade e comparar lado a lado
+com o modelo real, incluindo se `xlsx-js-style` de fato produz o visual esperado — nunca
+testável neste sandbox por causa do bloqueio de rede pro CDN) fica a cargo do cliente**
+— mesma limitação de sempre (login exige Supabase Auth real, e agora também uma
+biblioteca externa nunca exercitada de verdade neste ambiente, não simuláveis no
+sandbox sem rede).
+
+- **`harness_modulo_download_button.js` ficou desatualizado por causa desta mudança**
+  (testava `DiretoriaApprovalPanel` via `ModuloDownloadButton` com o mock simples de
+  `XLSX`, esperando a aba "Aguardando Aprovação" no formato genérico — comportamento
+  que não existe mais desde que esse painel passou a usar `SaAprovacaoDownloadButton`,
+  que exige `XLSX.utils.encode_cell`, ausente nesse mock) — corrigido removendo o
+  bloco de asserções duplicadas (a cobertura de ponta a ponta de `DiretoriaApprovalPanel`
+  já mora inteira em `harness_sa_aprovacao_excel.js`, seção 9), mantendo só a checagem
+  de que o botão de download existe ali (sem clicar, sem depender do mock certo pra
+  isso). Rodada a suíte completa de novo depois do ajuste — só a mesma falha
+  pré-existente e já documentada (`harness_fetchprodutos_armazem_pedido.js`, artefato
+  de teste sem relação com esta mudança) continua, confirmada de novo.
+
+
+## "Aguardando Aprovação": Excel de SA corrigido — Total único, não por grupo, e cor
+## certa da moldura (2ª correção do cliente sobre o mesmo export)
+
+Logo depois de publicar a versão "seguir fielmente" do export de SA (ver seção
+anterior), o cliente mandou uma correção curta e direta em cima do mesmo arquivo:
+**"Não separei total, o total vai ser sempre de tudo que eu extrair, e revise a
+formatação de cor."**
+
+A versão anterior tinha uma suposição NUNCA confirmada: como o arquivo real anexado
+só mostrava 1 SA (73005, 9 materiais), e a pergunta feita ao cliente via
+`AskUserQuestion` só confirmava que MÚLTIPLAS SAs distintas PODIAM entrar no mesmo
+arquivo (sem nunca perguntar se cada uma ganharia seu próprio subtotal), a
+implementação tinha extrapolado — errado — que cada grupo de SA deveria fechar com
+sua própria linha "Total". O cliente corrigiu: existe **uma única linha "Total" no
+fim da planilha inteira**, somando TODOS os itens extraídos, não importa quantas SAs
+diferentes entraram no export.
+
+- **Reconferido o arquivo real via `openpyxl`, célula a célula, de novo** (mesma
+  técnica já usada na rodada anterior) — confirmado que a tabela do arquivo real
+  (`A1:P11`, `Tabela1`, `headerRowCount=1`, `totalsRowCount=1`) tem exatamente 1
+  cabeçalho + 9 linhas de dado (todas com "Numero"=73005, a MESMA SA) + 1 linha de
+  Total — nunca mostra mais de um grupo, então a suposição de "Total por grupo" da
+  1ª versão nunca tinha sido de fato validada contra o arquivo, só extrapolada.
+- **Achado junto, na mesma reconferência**: a moldura da célula de soma do Total
+  (`J11` no arquivo real) usa `top`/`bottom` finos em **cinza-claro (`#CCCCCC`)** e
+  `left`/`right` médios em **laranja da marca (`#F6A200`)** — a 1ª versão tinha
+  codificado os 4 lados em preto (`#000000`), por suposição, sem ter conferido ainda.
+- **`buildSaAprovacaoWorkbook` (`index.html`)**: `totalGrupo` (somado e resetado
+  dentro do laço de grupos, gerando uma linha "Total" a cada SA) virou `totalGeral`
+  — declarado ANTES do laço de grupos, incrementado a cada item de QUALQUER grupo, e
+  usado numa ÚNICA linha "Total" escrita só DEPOIS de todo o laço de grupos terminar
+  (sem linha em branco antes dela, igual ao arquivo real). O agrupamento por SA em si
+  (blocos separados por linha em branco, "Item" reiniciando em 1 a cada SA nova) não
+  mudou — só a lógica de ONDE/QUANTAS vezes a linha "Total" é escrita. A moldura da
+  célula de soma corrigida pra `top`/`bottom:{style:'thin',color:{rgb:'CCCCCC'}}`,
+  `left`/`right:{style:'medium',color:{rgb:'F6A200'}}`.
+- Testado via `harness_sa_aprovacao_excel.js` (reescrito nas seções 2 e 4): a seção
+  2 ganhou asserções checando `.s.border.{top,bottom}.color.rgb==='CCCCCC'` e
+  `.s.border.{left,right}.color.rgb==='F6A200'` na célula de soma (antes só
+  `.style`/`'thin'`/`'medium'` eram checados, nunca a cor — por isso o erro de preto
+  nunca tinha sido pego); a seção 4 (múltiplas SAs) foi reescrita por completo —
+  confirma que os 2 blocos de SA (2+1 itens) não têm mais nenhuma linha "Total"
+  própria no meio, que a linha em branco separadora continua no lugar certo, e que a
+  ÚNICA linha "Total" da planilha inteira vem só depois do último item do ÚLTIMO
+  grupo, somando os 3 itens de AMBOS os grupos (10+5+7=22), não só o último (7).
+  79 asserções, todas passando. Rodei de novo toda a suíte completa de regressão do
+  scratchpad (86 harnesses) — só a mesma falha pré-existente e já documentada
+  (`harness_fetchprodutos_armazem_pedido.js`, artefato de teste sem relação com esta
+  mudança) continua, confirmada de novo. Transpile Babel do arquivo inteiro
+  conferido. **Nenhuma migração de SQL necessária.** **Verificação visual/funcional
+  de ponta a ponta (abrir o arquivo gerado num Excel/LibreOffice de verdade e
+  conferir que a cor da moldura e o Total único batem com o modelo real) fica a
+  cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth real, e
+  a biblioteca `xlsx-js-style` nunca é exercitada de verdade neste sandbox por causa
+  do bloqueio de rede pro CDN).
+
+
+## Etiquetas: remove os 2 avisos textuais ("Consultando ao vivo no Armazém X" e
+## "O rolo tem 2 colunas...") — mantém o seletor de armazém, funcional
+
+Cliente mandou print da tela "Etiquetas" com 2 setas vermelhas marcando: o texto
+"Consultando ao vivo no Armazém 01" (logo abaixo das abas Produto/Endereço, numa
+faixa `.role-note` destacada) e o aviso "O rolo tem 2 colunas — ao imprimir, cada
+folha sai com este item e o próximo pendente lado a lado, pra não desperdiçar a
+coluna direita." (acima da lista da "Fila de impressão") — pedido direto:
+**"Remover essas informações, não tem necessidade."**
+
+- **"O rolo tem 2 colunas..." — removido por completo**, sem substituto. É texto
+  puro, sem controle nenhum atrelado — o mecanismo de PAREAMENTO em si (imprimir o
+  item clicado junto do próximo pendente, lado a lado, quando existe mais de 1 na
+  fila — pedido de uma rodada bem anterior, "se tiver mais de uma etiqueta na fila
+  imprimir uma em cada, não desperdiçar etiqueta") não mudou nada, só o aviso que
+  descrevia esse comportamento na tela.
+- **"Consultando ao vivo no Armazém X" — só o texto saiu, o `<select>` continua**:
+  diferente do aviso da fila, esse bloco tinha um `<span>` explicativo E um
+  `<select>` funcional lado a lado (`justifyContent:'space-between'`, dentro do
+  mesmo `.role-note`) — o seletor é o que resolve a ambiguidade de saldo/endereço
+  entre armazéns pro mesmo código na consulta ao vivo Selgron/Protheus
+  (`armazemEtiqueta`/`liveConsultaEtiqueta`), corrigindo um bug real já documentado
+  antes ("consulta ao vivo nunca informava o armazém" — sem informar, a Edge
+  Function `consultar-produto-selgron` não consegue desambiguar entre blocos de
+  resultado de armazéns diferentes pro mesmo código). Remover o `<select>` junto
+  reabriria esse bug — "informação" (o texto explicativo) e "controle" (o seletor)
+  são coisas diferentes, e o pedido do cliente foi só sobre a primeira. Trocado
+  pra um bloco compacto, sem a faixa `.role-note` destacada nem o texto — só um
+  rótulo pequeno "Armazém" (cinza, discreto, não mais um "aviso") ao lado do
+  `<select>`, alinhado à direita, sem chamar tanta atenção quanto a faixa
+  colorida de antes.
+- Testado via `harness_etiqueta_duas_colunas.js` (1 asserção invertida — antes
+  checava que o texto "cada folha sai com este item e o" APARECIA com 2+ itens na
+  fila, agora checa que ele NUNCA aparece, comportamento de pareamento em si
+  continuando coberto pelas asserções seguintes — 1 folha impressa, 2 colunas
+  preenchidas, os 2 itens marcados "impressa") e rodei de novo toda a suíte de
+  Etiquetas (16 harnesses) + a suíte completa do scratchpad — só a mesma falha
+  pré-existente e já documentada (`harness_fetchprodutos_armazem_pedido.js`,
+  artefato de teste sem relação com esta mudança) continua, confirmada de novo.
+  Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos
+  (669/669, sem mudança — nenhuma classe CSS nova/removida, só JSX). **Nenhuma
+  migração de SQL nem redeploy de Edge Function necessários** — publica sozinho
+  via GitHub Pages. **Verificação visual de ponta a ponta fica a cargo do
+  cliente** — mesma limitação de sempre (login exige Supabase Auth real, não
+  simulável no sandbox sem rede).
+
+
+## "Analisados": botões renomeados, reordenados e com cores invertidas
+
+Cliente mandou print com um retângulo vermelho nos 2 botões de decisão da tela
+"Analisados" (`SolicitacaoArmazemPanel`) e pediu 3 ajustes juntos: renomear
+"Registrar como Ajuste" → "Gerar SA" e "Registrar como Devolução" → "Devolução";
+trocar a ordem (Devolução em cima); e inverter as cores entre os dois.
+
+- **Só texto/ordem/cor mudaram** — nenhuma mudança de comportamento:
+  `handleEnviar(c, false)` (Gerar SA) continua exigindo o número da SA
+  preenchido antes de habilitar (item com falta, depende do Armazém devolver
+  o número), `handleEnviar(c, true)` (Devolução) continua sem exigir nada
+  (item com sobra) — mesma regra de negócio já documentada em "3ª correção
+  do fluxo de SA"/"Devolução deixa de exigir número de SA", intocada aqui.
+- **Ordem**: "Devolução" virou o 1º botão do `.count-card-actions-col`,
+  "Gerar SA" o 2º — antes era o inverso.
+- **Cores invertidas**: "Devolução" (que era `.btn-primary`, laranja) virou
+  `.btn-secondary`; "Gerar SA" (que era `.btn-secondary`) virou
+  `.btn-primary`, laranja — literalmente uma troca de classe entre os dois
+  botões, sem introduzir nenhuma cor nova.
+- Testado via `harness_devolucao_sem_sa.js` (atualizado — os seletores de
+  botão passaram a procurar pelo texto novo, mais 3 asserções novas
+  confirmando a ordem no DOM e as classes de cor certas em cada um) — 12/12
+  passando. Rodei de novo toda a suíte completa de regressão do scratchpad
+  (85 harnesses) — só a mesma falha pré-existente e já documentada
+  (`harness_fetchprodutos_armazem_pedido.js`, artefato de teste sem relação
+  com esta mudança) continua, confirmada de novo. Transpile Babel do arquivo
+  inteiro e balanceamento de chaves do CSS conferidos (669/669, sem mudança
+  — só JSX/classe, nenhum CSS novo). **Nenhuma migração de SQL necessária.**
+  **Verificação visual de ponta a ponta fica a cargo do cliente** — mesma
+  limitação de sempre (login exige Supabase Auth real, não simulável no
+  sandbox sem rede).
+
+
+## "Endereços Pendentes de Cadastro" oculta itens já confirmados/rejeitados
+
+Cliente pediu: "Em Endereços Pendentes, os itens já confirmados ou rejeitados
+ocultar" — a tela (`AddressValidationPanel`) sempre listou TODAS as propostas
+de endereço já feitas, não só as pendentes: um item já `confirmado`/
+`rejeitado` continuava aparecendo na lista pra sempre, só trocando o par de
+botões "Rejeitar"/"Confirmar" por um chip `StatusTag` ("Confirmado"/
+"Rejeitado") — nunca saía da tela.
+
+- **`enderecosPropostos.map(...)` virou `pendentes.map(...)`** — a variável
+  `pendentes` (`enderecosPropostos.filter(e=>e.status==='pendente')`) já
+  existia (usada só pro número do badge do título) e passou a ser a fonte da
+  própria lista renderizada. Como só sobra item `status==='pendente'`, o
+  ramo condicional que trocava entre botões de ação e `StatusTag` virou
+  código morto — removido, sempre renderiza os botões "Rejeitar"/"Confirmar"
+  agora (nunca mais chega um item já resolvido nessa lista).
+- **2 empty-states diferentes, não 1 só**: o texto original ("Nenhum endereço
+  informado ainda...") continua exatamente igual quando NUNCA existiu
+  nenhuma proposta (`enderecosPropostos.length===0`) — mas um segundo caso
+  novo, "Nenhum endereço pendente no momento — todos já foram confirmados ou
+  rejeitados.", cobre quando já existiu proposta mas todas já foram
+  resolvidas (`pendentes.length===0` com `enderecosPropostos.length>0`) —
+  sem isso, esse cenário cairia silenciosamente numa lista vazia sem
+  nenhuma explicação.
+- **Nenhum dado é apagado** — as propostas já resolvidas continuam gravadas
+  normalmente em `enderecos_propostos` (Supabase), só deixaram de aparecer
+  NESTA tela — é puramente uma mudança de exibição/filtro, sem nenhuma
+  migração de SQL envolvida.
+- Testado via harness novo (`harness_enderecos_pendentes_oculta_resolvidos.js`,
+  jsdom + react-dom/client + `act()`, mesma técnica rigorosa de sempre —
+  carrega o `index.html` inteiro transpilado numa `vm.Script`): confirma os
+  3 cenários — nunca teve proposta (mensagem original); só propostas
+  resolvidas (somem da lista, sem badge, mensagem nova); mistura de
+  resolvida+pendente (só a pendente aparece, com os botões funcionando
+  normalmente — `onResolve` chamado com o id/status certos). 13 asserções,
+  todas passando. Rodei de novo toda a suíte completa de regressão do
+  scratchpad — só a mesma falha pré-existente e já documentada
+  (`harness_fetchprodutos_armazem_pedido.js`, artefato de teste sem relação
+  com esta mudança) continua, confirmada de novo. Transpile Babel do arquivo
+  inteiro e balanceamento de chaves do CSS conferidos (669/669, sem mudança
+  — só JSX, nenhuma classe CSS nova/removida). **Nenhuma migração de SQL
+  necessária.** **Verificação visual de ponta a ponta fica a cargo do
+  cliente** — mesma limitação de sempre (login exige Supabase Auth real, não
+  simulável no sandbox sem rede).
+
+## "Endereços Pendentes de Cadastro" ganha "Ver histórico" — busca quem pediu um
+## endereço já confirmado/rejeitado
+
+Continuação direta do pedido anterior (ocultar da lista principal os itens já
+confirmados/rejeitados) — o cliente perguntou em seguida: **"aparece a onde agora? caso
+eu precise pesquisar quem pediu alteração do endereço"** — depois de esconder os itens
+resolvidos, não sobrava NENHUM lugar no app pra consultar quem propôs um endereço já
+confirmado/rejeitado (confirmado via busca no código inteiro por `enderecosPropostos` —
+só o badge da Home e o próprio painel liam esse dado, e o painel agora só mostrava
+pendente). Perguntado via `AskUserQuestion` entre um botão "Ver histórico" (escondido
+por padrão, revela busca+lista ao clicar) ou uma 2ª seção sempre visível abaixo da
+lista principal — o cliente escolheu **"Botão 'Ver histórico' na mesma tela
+(Recomendado)"**.
+
+- **`EnderecoPropostoLinha({e})`** (componente novo, extraído antes de
+  `AddressValidationPanel`) — a linha "código · cadastrado como X, encontrado em Y (ou
+  'informado como Y' pra 1ª captura) por Fulano em DD/MM" que já existia inline no card
+  pendente, virou compartilhada entre o card pendente (com botões de ação) e o novo
+  card de histórico (com só o chip de status) — evita duplicar o mesmo JSX/ternário de
+  `enderecoAnterior` nos dois lugares.
+- **`resolvidos`** (`enderecosPropostos.filter(e=>e.status!=='pendente')`) + estado novo
+  `historicoAberto`/`buscaHistorico` — mesmo padrão de toggle+busca já usado em
+  Recontagens/Itens Divergentes/Contagens Concluídas (`busca`/`SearchWithScanner`), só
+  que aqui a SEÇÃO INTEIRA também começa escondida (não só o campo de busca), já que o
+  pedido era "esconder por padrão".
+- **Botão "Ver histórico (N)"/"Ocultar histórico"** (`.btn.btn-outline.btn-sm`, mesma
+  classe combinada já usada em outros toggles do app) — só aparece quando existe pelo
+  menos 1 item resolvido (`resolvidos.length>0`); sem nenhum resolvido ainda, a seção
+  inteira nem entra no DOM (nada pra "ver histórico" de verdade).
+- **Sem paginação** — mesmo critério já aceito em `MyCounts` (lista sem volume grande o
+  bastante pra justificar), diferente de Recontagens/Itens Divergentes/Concluídas (que
+  ganharam paginação numa rodada bem anterior, mas lidam com volume bem maior).
+- Testado via harness estendido (`harness_enderecos_pendentes_oculta_resolvidos.js`,
+  jsdom + react-dom/client + `act()`, mesma técnica rigorosa de sempre): botão "Ver
+  histórico" nasce escondido (nenhum item resolvido visível, nenhum campo de busca no
+  DOM); mostra a contagem certa no rótulo; clicar revela os 2 itens resolvidos com o
+  chip certo (Confirmado/Rejeitado) e o nome de quem pediu cada um; buscar por nome de
+  operador filtra corretamente, mantendo só o item daquele operador; limpar a busca e
+  clicar "Ocultar histórico" esconde tudo de novo; o item ainda PENDENTE nunca aparece
+  na lista de histórico (continua só na lista principal, com o botão de ação); e sem
+  nenhum item resolvido, o botão "Ver histórico" nem existe. 32/32 asserções passando
+  (as 13 da rodada anterior + 19 novas). Rodei de novo toda a suíte completa de
+  regressão do scratchpad (89 harnesses, 1.533 asserções) — só a mesma falha
+  pré-existente e já documentada (`harness_fetchprodutos_armazem_pedido.js`, artefato de
+  teste sem relação com esta mudança) continua, confirmada de novo. Transpile Babel do
+  arquivo inteiro e balanceamento de chaves do CSS conferidos (669/669, sem mudança —
+  nenhuma classe CSS nova, reaproveita `.btn-outline`/`.btn-sm`/`.list-row`/`.lr-title`/
+  `.empty-state`/`StatusTag`/`SearchWithScanner` já existentes). **Nenhuma migração de
+  SQL necessária** — a correção é só de exibição, sobre o mesmo dado local
+  (`enderecosPropostos`) já carregado. **Verificação visual/funcional de ponta a ponta
+  fica a cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth real,
+  não simulável no sandbox sem rede).
+
+
+## "Etiquetas": cabeçalho compactado numa linha só — menos rolagem em telas menores
+
+Cliente mandou print da tela "Etiquetas" (aba Produto) com um retângulo vermelho ao
+redor da região do topo inteira — abas Produto/Endereço, ícone "?", ícone de paleta
+(admin), botão "Calibrar etiquetas", rótulo "Armazém" + `<select>`, e o campo de busca —
+e pediu, direto: "pode otimizar este espaço, botar tudo em uma linha, tem muito
+espaçamento aqui, fica ruim para trabalhar em telas menores, tem que ficar subindo e
+descendo a tela a todo momento".
+
+- **Causa do espaço excessivo**: a região tinha 4 blocos empilhados, cada um com
+  `marginBottom:14` próprio (a fileira de ícones de ajuda/calibrar, a fileira de abas
+  Produto/Endereço — que ainda tinha `marginTop:14` — a fileira condicional do
+  `<select>` de Armazém com um `<label>Armazém</label>` solto ao lado, e o painel de
+  calibração quando aberto) — mais o `margin-bottom:16px` padrão da classe global
+  `.field` no campo de busca logo depois. Somado, dava bem mais respiro vertical do que
+  o conteúdo real precisava, obrigando rolar a tela num aparelho menor só pra ver os
+  resultados da busca.
+- **Correção**: as 3 primeiras fileiras (ícones/abas/seletor de armazém) viraram UMA
+  fileira só, `display:flex;justifyContent:'space-between';flexWrap:'wrap';gap:8;
+  marginBottom:10` — abas Produto/Endereço à esquerda, `<select>` de Armazém + ícone
+  "?" + ícone de paleta (admin) + botão "Calibrar etiquetas" à direita. Só quebra em 2
+  linhas em telas bem estreitas (`flexWrap`), nunca mais em 3-4 fixas como antes.
+  Removido o `<label>Armazém</label>` solto — o próprio `<select>` já mostra "Armazém
+  01" dentro da opção escolhida, repetir a palavra do lado era redundante. O painel de
+  calibração (quando aberto) teve o `marginBottom` reduzido de 14 pra 10, sem nenhuma
+  mudança no conteúdo interno (os 4 campos de mm, o botão "Restaurar as duas (0,0)",
+  tudo intocado). O campo de busca ganhou `style={{marginBottom:8}}` no próprio wrapper
+  `.field` (override local, sem tocar na classe CSS global `.field`, compartilhada por
+  todo o resto do app — mesmo cuidado de escopo já seguido em outras compactações deste
+  projeto).
+- **Nenhuma mudança de comportamento** — todo `onClick`/`onChange`/`title` continua
+  exatamente igual, só a disposição visual mudou. `armazemEtiqueta`/
+  `liveConsultaEtiqueta` (a desambiguação de saldo/endereço por armazém na consulta ao
+  vivo Selgron/Protheus) não foi tocada — o `<select>` só mudou de posição na tela.
+- Testado via transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  (669/669, sem mudança — nenhuma classe CSS nova, só JSX/`style` inline). Rodei de
+  novo toda a suíte de Etiquetas (16 harnesses) — nenhum precisou de ajuste, nenhum
+  assumia a estrutura antiga em 3-4 fileiras separadas — e a suíte completa do
+  scratchpad (86 harnesses, ~1.533 asserções) — só a mesma falha pré-existente e já
+  documentada (`harness_fetchprodutos_armazem_pedido.js`, artefato de teste sem relação
+  com esta mudança) continua, confirmada de novo. **Nenhuma migração de SQL nem
+  redeploy de Edge Function necessários** — publica sozinho via GitHub Pages.
+  **Verificação visual de ponta a ponta (o quanto isso reduz a rolagem de verdade num
+  tablet/celular real) fica a cargo do cliente** — mesma limitação de sempre (login
+  exige Supabase Auth real, não simulável no sandbox sem rede).
+
+
+## Bug real: "Acuracidade Semanal" ainda ficava "amontoado" perto do eixo Y — colisão
+## vertical, não só horizontal
+
+Cliente mandou print de "Acuracidade Semanal (%)" marcando (retângulo vermelho) o
+canto superior esquerdo do gráfico — o rótulo "85%" do 1º ponto (Sem 26) coladinho no
+"100%" do eixo — com a mensagem: "corrigir, ficou amontoado".
+
+- **Causa**: uma rodada anterior já tinha corrigido a colisão HORIZONTAL entre o
+  rótulo do eixo Y ("100%", ancorado "end" em `x=padL-8`) e o rótulo do 1º ponto
+  (trocando `textAnchor` de "middle" pra "start", ver "Bug real: rótulo do 1º ponto de
+  'Acuracidade Semanal' colidia com '100%' do eixo Y" no histórico acima) — mas isso só
+  resolvia a metade do problema. Quando o valor do 1º ponto é alto (85%, perto de
+  100%), o PONTO em si já nasce perto da linha "100%" — e o rótulo, 11 unidades acima
+  do ponto, ficava só ~7 unidades de distância VERTICAL do texto do eixo (baseline a
+  baseline) — com fontes de 10-11px, as duas caixas de texto colidem de verdade nessa
+  faixa, mesmo sem colidir mais na horizontal. O retângulo do cliente mostrava
+  exatamente essa mancha — os dois textos praticamente empilhados.
+- **Correção, duas partes, só pro 1º/último ponto** (`WeeklyLineChart`): (1) o rótulo
+  do 1º ponto ganhou um deslocamento horizontal extra de +5 unidades (o último, -5) —
+  além do `textAnchor` certo, agora fica visivelmente mais pra dentro do gráfico, longe
+  da coluna de rótulos do eixo; (2) nenhum rótulo de ponto (não só o 1º — qualquer
+  semana com valor alto) pode subir além de `padT+14` — um teto de segurança que
+  garante uma folga mínima abaixo da linha/rótulo "100%", mesmo que o valor da semana
+  seja 100% redondo. Pro cenário exato do print (Sem 26, 85%), isso empurra o rótulo de
+  y=44,9 pra y=48 — folga vertical de ~10,5 unidades em vez de ~7,4.
+- Testado via harness dedicado (`harness_weekly_line_chart_amontoado.js`) — **desta
+  vez com Playwright de verdade** (jsdom não calcula layout real de SVG/
+  `getBoundingClientRect`, mesma limitação de sempre pra esse tipo de bug geométrico),
+  usando o dataset EXATO do print do cliente (Sem 26-34, 85/86/71/54/66/85/88/71/58%):
+  confirmado que os bounding boxes de "100%" (eixo) e "85%" (1º ponto) não colidem mais
+  (folga horizontal real de 12,6px, contra 7,5px antes da correção), que o rótulo nunca
+  sobe além do teto `padT+14=48` (confirmado em unidades de viewBox via o atributo `y`
+  do próprio `<text>`), e que o deslocamento horizontal de +5 está aplicado. **Confirmado
+  que o harness pega a regressão de verdade**: rodado contra o código de ANTES desta
+  correção (`git stash`), 2 das 6 asserções falharam exatamente como esperado (rótulo
+  nascendo em y=44,9/x=34, sem o teto nem o deslocamento) — só com a correção aplicada é
+  que passa 6/6. Rodei de novo os 2 harnesses já existentes de `WeeklyLineChart`
+  (`harness_weekly_line_chart_label_anchor.js`/`harness_weekly_pie_bate.js`, 18
+  asserções) sem quebrar nada — a correção é aditiva em cima do fix anterior de anchor,
+  não muda o comportamento que esses dois já verificavam. Rodei de novo toda a suíte
+  completa de regressão do scratchpad (87 harnesses, 1.401 asserções) — só a mesma
+  falha pré-existente e já documentada (`harness_fetchprodutos_armazem_pedido.js`,
+  artefato de teste sem relação com esta mudança) continua, confirmada de novo.
+  Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos
+  (669/669, sem mudança — só JS/JSX dentro de `WeeklyLineChart`, nenhuma classe CSS
+  tocada). **Nenhuma migração de SQL nem redeploy de Edge Function necessários** —
+  publica sozinho via GitHub Pages. **Verificação visual de ponta a ponta fica a cargo
+  do cliente** — mesma limitação de sempre (login exige Supabase Auth real, não
+  simulável no sandbox sem rede) — mas desta vez a melhoria geométrica já foi medida de
+  verdade num navegador (Chromium via Playwright), não só verificada por leitura de
+  código.
+
+## Bug real: "Grupo PC" no indicador "Divergência por Família/Grupo" — mesmo
+## desalinhamento de coluna já corrigido pra `unidade`, agora vazando pro grupo
+
+Cliente mandou print de "Divergência por Família/Grupo (Top 7)" (Indicadores)
+mostrando "Grupo PC" como a maior barra (98, nitidamente maior que as demais,
+todas com nome real — "CALDEIRARIA C/ ST.", "FERRAMENTAS" etc.) e perguntou:
+"Grupo PC está correto? da onde vem essa informação?"
+
+- **Diagnóstico**: "Grupo PC" é o FALLBACK de `describeGrupo(grupo)` — usado
+  quando o código de grupo não bate com nenhuma das 248 entradas conhecidas
+  de `GRUPO_DESCRICOES` (confirmado por script à parte que todas as 248 chaves
+  são strings 100% numéricas, nunca letra). Ou seja: pra 98 itens, o valor CRU
+  gravado em `produtos.grupo` no Supabase é literalmente o texto **"PC"**, não
+  um código numérico da SB2. Levantei a hipótese, antes de qualquer mudança,
+  de que fosse a MESMA classe de bug já corrigida antes pra `unidade`
+  (`unidadeCadastroValida`, ver "Bug real: 'Unidade' mostrando valor no
+  formato de endereço" no histórico acima) — só que na direção oposta: "PC" é
+  a abreviação clássica de "peça", batendo exatamente com o valor que a
+  coluna **Unidade** normalmente traz — sugerindo que o valor de Unidade
+  vazou pra dentro da coluna Grupo pra essas linhas, na planilha "Descrição de
+  Produtos" (`parseDescricaoProdutosRows`, que lê `grupo`/`unidade` por
+  POSIÇÃO fixa de coluna — índice 2/3 — mesma fragilidade estrutural já
+  documentada quando o bug de `unidade` foi corrigido).
+- **Pedi um item real pra confirmar** — o cliente mandou um print da própria
+  consulta ao vivo da Selgron (`consulta.selgron.com.br`) pro código
+  **000.18407** ("EIXO EXPANSIVEL"): **Grupo: 0071-MATERIAIS TECNICOS** e,
+  logo abaixo, **Unidade medida: PC** — confirmando a hipótese byte a byte:
+  o grupo REAL é o código 71 (já mapeado corretamente em `GRUPO_DESCRICOES`
+  como "MATERIAIS TECNICOS" — o MAPA nunca foi o problema, só o dado bruto
+  gravado errado em `produtos.grupo`), e "PC" é de fato a Unidade, não o
+  Grupo. Mensagem exata do cliente confirmando: "esta puxando errado mesmo".
+- **`grupoCadastroValido(bruto)`** (função nova, logo depois de
+  `unidadeCadastroValida`, mesmo padrão de proteção na LEITURA) — rejeita
+  qualquer valor de grupo que não seja 100% dígitos (vira `null`) — nenhum
+  dos 248 grupos reais tem letra no código, então um valor com letra é
+  garantidamente dado corrompido, nunca um código legítimo ainda não
+  mapeado (esse caso continua caindo no fallback antigo "Grupo N", só que
+  agora só pra código genuinamente NUMÉRICO desconhecido).
+- **2 dos 3 pontos que calculam `product.familia` corrigidos** — os dois que
+  alimentam tanto a exibição na tela quanto o valor persistido em
+  `contagens.familia` (`CountStep.finalize()`, que é o que o indicador de
+  fato lê): `estoqueRowToProduct` (usada por `fetchContagemItensPrioritarios`/
+  `fetchItensPorEnderecoCompleto`/`fetchProdutosByCodigos` — cobre Aleatória/
+  Curva ABC/Grupo/Rota/Lista Importada/Itens Específicos/Recontagem) e
+  `searchSupabaseCatalog` (Nova Contagem Manual) — os dois trocaram
+  `familia: describeGrupo(row.grupo)` por `familia: grupoCadastroValido
+  (row.grupo) ? describeGrupo(row.grupo) : null`. Um `familia` nulo já é
+  automaticamente excluído do indicador (`if(c.familia) porFamiliaObj[...]
+  =...`, regra "nunca fabricar dado" já existente) — nunca mais aparece como
+  "Grupo PC" nem como qualquer outro rótulo fabricado a partir de lixo.
+- **3º ponto deliberadamente NÃO tocado**: a função que monta a lista de
+  seleção de grupo pra "Contagem por Grupo"/"Grupos Excluídos da Contagem
+  Automática" (`fetchGruposComEstoque`, perto de `formatGrupoLabel`) continua
+  chamando `describeGrupo(row.grupo)` direto, sem o gate novo — mesmo
+  critério de escopo de sempre neste projeto (só corrigir exatamente o que
+  foi diagnosticado/pedido, sem generalizar sem necessidade). Isso significa
+  que um "Grupo PC" ainda pode aparecer como OPÇÃO nesse seletor específico
+  — sinalizado ao cliente, não corrigido nesta rodada.
+- **Escopo real desta correção: só a LEITURA, não retroativo** — os 98
+  registros JÁ SALVOS em `contagens.familia = 'Grupo PC'` continuam exatamente
+  assim no banco; a correção só evita que uma contagem NOVA grave/exiba esse
+  valor fabricado daqui pra frente. Passei ao cliente duas ações de
+  acompanhamento, nenhuma delas aplicada por mim (fora do escopo do pedido —
+  ele só perguntou "de onde vem" e confirmou "tá errado mesmo", sem pedir
+  correção retroativa):
+  1. **Limpeza retroativa opcional** — um `UPDATE` que ele pode rodar no SQL
+     Editor pra nular só os registros com esse tipo de valor fabricado, sem
+     tocar em nenhum "Grupo N" legítimo de código numérico não mapeado:
+     `update contagens set familia = null where familia ~ '^Grupo [^0-9]';`
+  2. **Correção na origem** — o dado errado em `produtos.grupo` só se
+     corrige reimportando a planilha "Descrição de Produtos" com o
+     desalinhamento de coluna já corrigido pro conjunto de linhas afetado
+     (mesma orientação já dada quando o bug irmão de `unidade` foi achado).
+- Testado via harness Node isolado (mesma técnica de sempre — carrega o
+  `index.html` inteiro transpilado numa `vm.Script`, mockando
+  `window.supabase.createClient`/React/ReactDOM só o suficiente pra deixar
+  o bootstrap do script rodar sem lançar antes de `GRUPO_DESCRICOES`
+  inicializar): `grupoCadastroValido` isolada (rejeita "PC"/"KG"/misturas
+  dígito+letra, aceita código numérico puro com/sem zero à esquerda, trim,
+  `null`/vazio → `null`); `describeGrupo('71')` confirmando que o MAPA já
+  tinha "MATERIAIS TECNICOS" certo (prova de que o mapa nunca foi o
+  problema); ponta a ponta via `estoqueRowToProduct` com o cenário EXATO do
+  print do cliente (código 000.18407, `grupo:'PC'`, `unidade:'PC'`) —
+  confirma `familia: null` (não mais "Grupo PC") e `unidade: 'PC'` intacta
+  (a unidade É legítima, só o grupo que vazou); regressão de item com grupo
+  numérico válido continuando a resolver a descrição certa, sem mudança de
+  comportamento. 18 asserções, todas passando. Rodei de novo toda a suíte
+  completa de regressão do scratchpad (88 harnesses) — só a mesma falha
+  pré-existente e já documentada antes (`harness_fetchprodutos_armazem_
+  pedido.js`, artefato do próprio harness usando `git show HEAD:index.html`
+  pra capturar "o código de antes" de uma correção anterior, sem nenhuma
+  relação com esta mudança — confirmado rodando o mesmo harness via `git
+  stash` que a falha já existia idêntica sem esta mudança) continua,
+  reconfirmada de novo. Transpile Babel do arquivo inteiro e balanceamento de
+  chaves do CSS conferidos (669/669, sem mudança — esta correção não tocou em
+  CSS nenhum, só JS). **Nenhuma migração de SQL nem redeploy de Edge Function
+  necessários** — publica sozinho via GitHub Pages assim que o deploy
+  processar. **Verificação visual do indicador em produção fica a cargo do
+  cliente** — mesma limitação de sempre (login exige Supabase Auth real, não
+  simulável no sandbox sem rede) — mas como a correção é só de LEITURA, já
+  deve valer pro próximo item contado assim que o deploy publicar; os 98
+  registros já divergentes continuam mostrando "Grupo PC" até uma das duas
+  ações de acompanhamento acima ser aplicada.
+
+
+## Fecha o gap do "Grupo PC": seletor de grupo também para de oferecer opção fantasma
+
+Complemento direto da rodada anterior ("Bug real: 'Grupo PC' no indicador
+'Divergência por Família/Grupo'"), onde eu tinha corrigido 2 dos 3 pontos que
+montam rótulo de grupo e sinalizado o 3º como gap conhecido, deixado de fora por
+disciplina de escopo (o cliente tinha perguntado sobre o INDICADOR, não sobre o
+seletor). Ao relatar o deploy, mencionei que ainda dava pra estender — cliente
+respondeu **"Pode corrigir"**.
+
+- **`fetchGruposComEstoque`** (a função que alimenta o `<select>` de grupo em
+  "Contagem por Grupo" — tanto na criação de inventário quanto na contagem
+  avulsa — e a lista de "Grupos Excluídos da Contagem Automática" em
+  Configurações) ganhou o MESMO gate já usado em `estoqueRowToProduct`/
+  `searchSupabaseCatalog`: `data.filter(row => grupoCadastroValido(row.grupo))`
+  antes do `.map(...)` que monta `{grupo, descricao, label, qtdItens}`. Um código
+  de grupo não-numérico (dado corrompido pelo desalinhamento de coluna da
+  planilha "Descrição de Produtos" — a Unidade "PC" vazando pra coluna Grupo)
+  deixa de aparecer como opção selecionável.
+- **Por que era um problema de verdade, não só cosmético**: escolher "Grupo PC"
+  no seletor geraria um inventário/contagem que nunca casaria com item nenhum
+  (a RPC `contagem_itens_prioritarios` filtra por `produtos.grupo`, e o grupo
+  REAL desses itens é numérico — "PC" só existe como lixo na coluna) — o
+  operador cairia numa fila vazia sem entender por quê. E, em "Grupos
+  Excluídos", excluir "Grupo PC" também não excluiria nada de verdade.
+- **O filtro de `gruposExcluidos` já existente continua funcionando igual**,
+  aplicado depois (nenhuma mudança nessa parte).
+- **Continua sendo correção só de LEITURA, não retroativa** — o dado bruto
+  errado em `produtos.grupo` só se corrige reimportando a planilha "Descrição de
+  Produtos" com as colunas alinhadas (mesma ação de acompanhamento já registrada
+  na rodada anterior, junto do `UPDATE` opcional de limpeza de
+  `contagens.familia`).
+- Testado estendendo o harness já existente da rodada anterior
+  (`harness_grupo_cadastro_valido.js`, +9 asserções, 27/27 passando): a RPC
+  mockada devolvendo 3 grupos (2 numéricos + 1 "PC") produz uma lista de 2, sem
+  nenhum "Grupo PC"; grupo numérico válido continua com a descrição certa
+  ("MATERIAIS TECNICOS" pro 71, o mesmo código real do print do cliente);
+  `gruposExcluidos` continua filtrando junto, sem regressão; e uma RPC que só
+  devolve lixo ("PC"/"KG") produz lista vazia, nunca uma opção fantasma.
+  **Confirmado que o harness pega a regressão de verdade**: rodado contra o
+  código de ANTES desta correção (`git stash`), as 4 asserções novas de
+  `fetchGruposComEstoque` falharam exatamente como esperado. Rodei de novo toda
+  a suíte completa de regressão do scratchpad — só a mesma falha pré-existente e
+  já documentada (`harness_fetchprodutos_armazem_pedido.js`, artefato do próprio
+  harness, sem relação com esta mudança) continua. Transpile Babel do arquivo
+  inteiro e balanceamento de chaves do CSS conferidos (669/669, sem mudança — só
+  JS, nenhuma classe CSS tocada). **Nenhuma migração de SQL nem redeploy de Edge
+  Function necessários** — publica sozinho via GitHub Pages. **Verificação
+  visual do seletor em produção fica a cargo do cliente** — mesma limitação de
+  sempre (login exige Supabase Auth real, não simulável no sandbox sem rede).
