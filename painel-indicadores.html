@@ -136,6 +136,17 @@ const supabaseClient = window.supabase
     })
   : null;
 
+// Realtime só entrega evento pra quem RECEBE se o socket estiver
+// autenticado (RLS de `contagens` exige auth.role()='authenticated') — sem
+// isso a conexão do Realtime fica anônima por padrão. Mesmo helper/mesmo
+// motivo já usados em index.html (sincronizarAuthRealtime, perto de
+// `App()`) — chamado sempre que a sessão é confirmada/atualiza.
+function sincronizarAuthRealtime(session){
+  if(supabaseClient && supabaseClient.realtime && typeof supabaseClient.realtime.setAuth==='function'){
+    supabaseClient.realtime.setAuth(session ? session.access_token : null);
+  }
+}
+
 // Logo Selgron (mesmo PNG embutido em base64 usado no TopBar de index.html,
 // ver SELGRON_LOGO_URL) — duplicado aqui pelo mesmo motivo do resto deste
 // arquivo: página estática à parte, sem módulo compartilhado com o app.
@@ -582,6 +593,7 @@ function PainelIndicadores(){
         setStatus('sem-sessao');
         return;
       }
+      sincronizarAuthRealtime(sessionData.session);
       const [countsData, historicoData] = await Promise.all([
         fetchContagensParaPainel(),
         fetchHistoricoParaTendencia(),
@@ -600,9 +612,36 @@ function PainelIndicadores(){
     carregarDados();
     // Atualização automática a cada 5 minutos — pedido do cliente pra TV
     // do almoxarifado ficar sempre com dado recente, sem precisar de
-    // ninguém dar F5 manualmente.
+    // ninguém dar F5 manualmente. Continua existindo como rede de
+    // segurança mesmo com o Realtime abaixo (cobre qualquer evento
+    // perdido enquanto o canal estava desconectado, e também
+    // `contagens_historico`, que não tem Realtime habilitado).
     const id = setInterval(carregarDados, 5*60*1000);
     return ()=>clearInterval(id);
+  }, []);
+
+  // Realtime: qualquer contagem lançada em qualquer aparelho já reflete
+  // aqui na hora, sem esperar o próximo ciclo de 5 min — mesma tabela/
+  // canal já usados pelo app principal (index.html, `realtime:contagens`),
+  // já habilitada na publicação `supabase_realtime` — nenhuma migração de
+  // SQL nova é necessária pra isto funcionar. `contagens_historico` fica
+  // de fora de propósito: só muda quando alguém reimporta a planilha
+  // manualmente em Configurações, o poll de 5 min acima já cobre esse caso.
+  useEffect(()=>{
+    if(!supabaseClient) return;
+    const { data: authListener } = supabaseClient.auth.onAuthStateChange((_event, session)=>{
+      sincronizarAuthRealtime(session);
+    });
+    const canal = supabaseClient
+      .channel('realtime:contagens')
+      .on('postgres_changes', {event:'*', schema:'public', table:'contagens'}, ()=>{
+        carregarDados();
+      })
+      .subscribe();
+    return ()=>{
+      authListener.subscription.unsubscribe();
+      supabaseClient.removeChannel(canal);
+    };
   }, []);
 
   const dadosAoVivo = status==='ok';
