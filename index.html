@@ -6809,6 +6809,7 @@ function App(){
         {view==='todasDivergencias' && <AllDivergencesPanel counts={counts} historicoConcluidas={historicoConcluidas} goto={goto} />}
         {view==='concluidas' && hasAccess(currentUser,'concluidas') && <ConcludedCountsPanel counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} onDeleteCount={role==='admin' ? deleteCount : undefined} onReprovarAjusteHistorico={role==='admin' ? reprovarAjusteHistorico : undefined} onRefresh={refreshHistoricoConcluidas} onEditarMotivoObservacao={role==='admin' ? editarMotivoObservacaoContagem : undefined} />}
         {view==='contagensHoje' && <TodayCountsPanel counts={counts} inventories={inventories} />}
+        {view==='programacaoSeparacao' && hasAccess(currentUser,'programacaoSeparacao') && <ProgramacaoSeparacaoPanel currentUser={currentUser} role={role} />}
         {view==='recount' && flowState && <RecountFlow original={flowState} user={currentUser} onAddressProposed={addAddressProposal} onFinish={(c)=>{registerFinishedCount(c); goto('recounts');}} operadorVeSaldo={operadorVeSaldo} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
         {view==='dashboard' && hasAccess(currentUser,'dashboard') && <Dashboard counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} historicoParaTendencia={historicoParaTendencia} goto={goto} />}
         {view==='relatorios' && hasAccess(currentUser,'relatorios') && <ReportsScreen counts={counts} historicoTudo={historicoTudo} inventories={inventories} currentUser={currentUser} sendHistory={reportSendHistory} onLogSend={logReportSend} role={role} onHistoricoImportado={refreshHistoricoConcluidas} />}
@@ -6984,6 +6985,9 @@ const DICON_PATHS = {
   // abre painel-indicadores.html (página estática à parte, pensada pra
   // ficar ligada numa TV do almoxarifado) numa aba nova, ver buildSidebarGroups.
   monitor: <><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></>,
+  // Ícone do item de menu "Programação" (Gestão de Separação) — lista
+  // numerada/ordenada, representando a sequência de separação.
+  listOrdered: <><path d="M10 6h11"/><path d="M10 12h11"/><path d="M10 18h11"/><path d="M4 6h1v4"/><path d="M4 10h2"/><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"/></>,
 };
 
 function DIcon({name, size=18, strokeWidth=1.8, style}){
@@ -7270,6 +7274,12 @@ const ACESSOS_RESTRITOS = {
   // grupo de "Indicadores"/"Relatórios" (análise gerencial, não operação
   // do operador por padrão).
   sasAberto: ['lider','admin'],
+  // "Programação" (Gestão de Separação) — o líder monta a sequência de
+  // separação que os operadores vão seguir; operador não participa dessa
+  // etapa de planejamento por padrão (mesmo critério das outras telas de
+  // gestão/análise acima), mas o admin pode conceder a exceção como
+  // qualquer outra tela.
+  programacaoSeparacao: ['lider','admin'],
 };
 
 // TODAS as telas do menu principal que podem ser ligadas/desligadas por
@@ -7291,6 +7301,7 @@ const TODOS_OS_MENUS = [
   {id:'solicitacaoArmazem', label:'Analisados'},
   {id:'aprovacaoDiretoria', label:'Aguardando Aprovação'},
   {id:'concluidas', label:'Contagens Concluídas'},
+  {id:'programacaoSeparacao', label:'Programação'},
   {id:'usuarios', label:'Usuários'},
   {id:'enderecos', label:'Endereços Pendentes'},
   {id:'etiquetas', label:'Etiquetas'},
@@ -7369,6 +7380,7 @@ const VIEW_TITLES = {
   todasDivergencias:'Todas as Divergências',
   concluidas:'Contagens Concluídas',
   contagensHoje:'Contagens de Hoje',
+  programacaoSeparacao:'Programação',
   enderecos:'Endereços Pendentes',
   etiquetas:'Etiquetas',
   usuarios:'Usuários',
@@ -7386,6 +7398,7 @@ const VIEW_SUBTITLES = {
   home: 'Resumo operacional do inventário',
   usuarios: 'Gerencie os usuários do sistema, permissões e redefinições de senha.',
   sasAberto: 'Desempenho do almoxarifado no atendimento de Solicitações (SA)',
+  programacaoSeparacao: 'Sequência de separação — ordenada por prioridade/urgência do pedido',
 };
 
 // Telas que renderizam o motor de contagem (CountStep) direto na tela —
@@ -7452,6 +7465,17 @@ function buildSidebarGroups(user){
     ...(podeVer('aprovacaoDiretoria') ? [{id:'aprovacaoDiretoria', ic:'clipboardList', label:'Aguardando Aprovação'}] : []),
     ...(podeVer('concluidas') ? [{id:'concluidas', ic:'checkCircle', label:'Contagens Concluídas'}] : []),
   ];
+  // "Gestão de Separação" — grupo novo, paralelo a "Gestão de Inventário",
+  // pedido do cliente: "crie uma pagina chamada programação, ali vou
+  // incluir a sequencia de separação". Por enquanto só tem essa 1 página
+  // (o líder monta a fila, o operador só consulta/marca como separado
+  // dentro da própria tela — não tem ponto de entrada por fluxo de
+  // contagem, é uma tela de gestão dedicada, mesmo padrão de extração já
+  // usado antes neste projeto pra "Endereços Pendentes"/"Itens
+  // Divergentes"/etc.).
+  const separacaoItems = [
+    ...(podeVer('programacaoSeparacao') ? [{id:'programacaoSeparacao', ic:'listOrdered', label:'Programação'}] : []),
+  ];
   const cadastrosItems = [
     ...(podeVer('usuarios') ? [{id:'usuarios', ic:'user', label:'Usuários'}] : []),
     ...(podeVer('enderecos') ? [{id:'enderecos', ic:'mapPin', label:'Endereços Pendentes'}] : []),
@@ -7468,6 +7492,7 @@ function buildSidebarGroups(user){
   return [
     ...(homeItems.length>0 ? [{ label: null, items: homeItems }] : []),
     ...(contagemItems.length>0 ? [{ label: 'Gestão de Inventário', items: contagemItems }] : []),
+    ...(separacaoItems.length>0 ? [{ label: 'Gestão de Separação', items: separacaoItems }] : []),
     ...(cadastrosItems.length>0 ? [{ label: 'Cadastros', items: cadastrosItems }] : []),
     ...(analiseItems.length>0 ? [{ label: 'Análise', items: analiseItems }] : []),
     ...(sistemaItems.length>0 ? [{ label: 'Sistema', items: sistemaItems }] : []),
@@ -15510,6 +15535,107 @@ async function marcarEtiquetaImpressa(id, nomeUsuario){
   }
 }
 
+/* ---------------- PROGRAMAÇÃO (Gestão de Separação) ---------------- */
+// Pedido do cliente: "Temos Gestão de inventário agora crie Gestão de
+// separação, em gestão de separação crie uma pagina chamada programação,
+// ali vou incluir a sequencia de separação" — grupo novo na Sidebar,
+// paralelo a "Gestão de Inventário", com 1 página onde o líder monta a fila
+// de itens a separar.
+//
+// Escopo de v1, decidido sem pausar pra perguntar (conforme instrução do
+// cliente pra prosseguir sem mais perguntas), seguindo os padrões já
+// estabelecidos no resto do projeto:
+// - Ordenação da fila por PRIORIDADE/URGÊNCIA do pedido (alta > média >
+//   baixa, já confirmado explicitamente com o cliente como o critério de
+//   ordenação de sequência de separação — não é endereço físico), com
+//   `criadoEm` como desempate dentro da mesma prioridade.
+// - Busca de item via `searchSupabaseCatalog` sem armazém informado (mesmo
+//   critério já usado por "Itens Específicos") — v1 não tenta desambiguar
+//   por armazém nem consulta o Kardex/consulta ao vivo da Selgron, mesma
+//   simplicidade da 1ª versão de outras telas de gestão deste projeto.
+// - Tabela denormalizada, sem FK pra usuarios/produtos — mesmo padrão de
+//   sempre (contagens/inventarios/etiquetas_fila).
+// - RLS via `tem_acesso_tela(auth.uid(), 'programacaoSeparacao')`, mesmo
+//   padrão já hardened usado por etiquetas_fila/enderecos_propostos.
+function sequenciaSeparacaoRowToLocal(row){
+  return {
+    id: row.id,
+    codigo: row.codigo,
+    descricao: row.descricao,
+    quantidade: row.quantidade,
+    prioridade: row.prioridade || 'media',
+    observacao: row.observacao,
+    status: row.status,
+    criadoPor: row.criado_por,
+    criadoEm: row.criado_em,
+    separadoPor: row.separado_por,
+    separadoEm: row.separado_em,
+  };
+}
+
+async function fetchSequenciaSeparacao(){
+  if(!supabaseClient) return [];
+  try{
+    // Busca pendente E separado de uma vez (diferente da fila de etiquetas,
+    // que só busca pendente) — aqui a tela já mostra as duas listas
+    // (principal + "Ver histórico"), então uma única leitura evita 2
+    // consultas separadas.
+    const { data, error } = await supabaseClient
+      .from('sequencia_separacao')
+      .select('*')
+      .order('criado_em', {ascending:true});
+    if(error) throw error;
+    return (data||[]).map(sequenciaSeparacaoRowToLocal);
+  }catch(err){
+    console.warn('Falha ao buscar sequência de separação:', err);
+    return [];
+  }
+}
+
+async function adicionarItemSequenciaSeparacao(item){
+  if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
+  try{
+    const { error } = await supabaseClient.from('sequencia_separacao').insert({
+      codigo: item.codigo,
+      descricao: item.descricao || null,
+      quantidade: item.quantidade || null,
+      prioridade: item.prioridade || 'media',
+      observacao: item.observacao || null,
+      status: 'pendente',
+      criado_por: item.criadoPor || null,
+    });
+    if(error) throw error;
+    return {ok:true};
+  }catch(err){
+    return {ok:false, erro:(err && err.message) || 'Não foi possível adicionar à fila.'};
+  }
+}
+
+async function marcarItemSeparado(id, nomeUsuario){
+  if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
+  try{
+    const { error } = await supabaseClient
+      .from('sequencia_separacao')
+      .update({status:'separado', separado_por: nomeUsuario || null, separado_em: new Date().toISOString()})
+      .eq('id', id);
+    if(error) throw error;
+    return {ok:true};
+  }catch(err){
+    return {ok:false, erro:(err && err.message) || 'Não foi possível marcar como separado.'};
+  }
+}
+
+async function excluirItemSequenciaSeparacao(id){
+  if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
+  try{
+    const { error } = await supabaseClient.from('sequencia_separacao').delete().eq('id', id);
+    if(error) throw error;
+    return {ok:true};
+  }catch(err){
+    return {ok:false, erro:(err && err.message) || 'Não foi possível excluir.'};
+  }
+}
+
 /* ---------------- SAs EM ABERTO (desempenho do almoxarifado) ---------------- */
 // Pedido do cliente: acompanhar automaticamente quanto tempo o almoxarifado
 // leva pra atender uma "Solicitação ao Almoxarifado" (SA) — hoje ele visita
@@ -16722,6 +16848,276 @@ function AddressValidationPanel({enderecosPropostos=[], onResolve}){
                       <EnderecoPropostoLinha e={e} />
                     </div>
                     <StatusTag status={e.status==='confirmado'?'ok':'danger'} text={e.status==='confirmado'?'Confirmado':'Rejeitado'} />
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// "Programação" (Gestão de Separação) — pedido do cliente: "crie uma pagina
+// chamada programação, ali vou incluir a sequencia de separação". Mesmo
+// shell visual/estrutural de `AddressValidationPanel` (lista principal +
+// "Ver histórico" colapsável) — busca/adiciona via `searchSupabaseCatalog`
+// (sem armazém, mesma simplicidade já aceita em "Itens Específicos"),
+// ordena por PRIORIDADE (confirmado com o cliente como o critério de
+// sequência de separação, não endereço físico) com `criadoEm` como
+// desempate, e usa `StatusTag` pra mostrar a prioridade de cada item (mesma
+// paleta ok/warn/danger já usada em qualquer outro chip de severidade deste
+// app). Operador (perfil padrão sem exceção concedida) nunca alcança esta
+// tela — `ACESSOS_RESTRITOS.programacaoSeparacao` já barra no nível de
+// rota/menu — então não precisa de nenhum modo "somente leitura" aqui.
+const PRIORIDADE_ORDEM = {alta:0, media:1, baixa:2};
+const PRIORIDADE_LABEL = {alta:'Alta', media:'Média', baixa:'Baixa'};
+const PRIORIDADE_STATUS = {alta:'danger', media:'warn', baixa:'ok'};
+
+function ProgramacaoSeparacaoPanel({currentUser, role}){
+  const [itens, setItens] = useState([]);
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState([]);
+  const [buscando, setBuscando] = useState(false);
+  const [selecionado, setSelecionado] = useState(null);
+  const [quantidade, setQuantidade] = useState('');
+  const [prioridade, setPrioridade] = useState('media');
+  const [observacao, setObservacao] = useState('');
+  const [adicionando, setAdicionando] = useState(false);
+  const [erroAdicionar, setErroAdicionar] = useState(null);
+
+  const [busyId, setBusyId] = useState(null);
+  const [erros, setErros] = useState({});
+  const [confirmExcluirId, setConfirmExcluirId] = useState(null);
+
+  const [historicoAberto, setHistoricoAberto] = useState(false);
+  const [buscaHistorico, setBuscaHistorico] = useState('');
+
+  const canManage = role==='lider' || role==='admin';
+
+  // Fila em tempo real — escopado a esta tela (mesmo padrão já usado por
+  // EtiquetasPanel: só ela lê esse dado, não vale manter um canal aberto
+  // pro app inteiro). Fetch-ao-montar + reconciliação-ao-conectar/
+  // reconectar (`status==='SUBSCRIBED'`), mesmo mecanismo de sempre.
+  useEffect(()=>{
+    if(!supabaseClient) return;
+    let cancelado = false;
+    fetchSequenciaSeparacao().then(rows=>{ if(!cancelado) setItens(rows); });
+
+    const canal = supabaseClient
+      .channel('realtime:sequencia_separacao')
+      .on('postgres_changes', {event:'*', schema:'public', table:'sequencia_separacao'}, payload=>{
+        if(payload.eventType==='DELETE'){
+          setItens(prev=>prev.filter(i=>i.id!==payload.old.id));
+          return;
+        }
+        const row = sequenciaSeparacaoRowToLocal(payload.new);
+        setItens(prev=>[...prev.filter(i=>i.id!==row.id), row]);
+      })
+      .subscribe(status=>{
+        if(status!=='SUBSCRIBED') return;
+        fetchSequenciaSeparacao().then(rows=>{ if(!cancelado) setItens(rows); });
+      });
+
+    return ()=>{ cancelado = true; supabaseClient.removeChannel(canal); };
+  }, []);
+
+  // Busca no catálogo com debounce de 350ms — mesmo padrão já usado em
+  // ManualCountFlow/EtiquetasPanel.
+  useEffect(()=>{
+    if(query.trim().length<2){ setResults([]); return; }
+    let cancelado = false;
+    setBuscando(true);
+    const t = setTimeout(()=>{
+      searchSupabaseCatalog(query).then(rows=>{
+        if(!cancelado){ setResults(rows); setBuscando(false); }
+      });
+    }, 350);
+    return ()=>{ cancelado = true; clearTimeout(t); };
+  }, [query]);
+
+  function selecionarResultado(p){
+    setSelecionado(p);
+    setResults([]);
+    setQuery('');
+    setQuantidade('');
+    setPrioridade('media');
+    setObservacao('');
+    setErroAdicionar(null);
+  }
+
+  async function handleAdicionar(){
+    if(!selecionado) return;
+    setAdicionando(true);
+    setErroAdicionar(null);
+    const res = await adicionarItemSequenciaSeparacao({
+      codigo: selecionado.codigo,
+      descricao: selecionado.descricao,
+      quantidade,
+      prioridade,
+      observacao,
+      criadoPor: currentUser ? currentUser.nome : null,
+    });
+    setAdicionando(false);
+    if(!res.ok){ setErroAdicionar(res.erro); return; }
+    setSelecionado(null);
+    setQuantidade('');
+    setPrioridade('media');
+    setObservacao('');
+  }
+
+  async function handleMarcarSeparado(id){
+    setBusyId(id);
+    setErros(prev=>({...prev, [id]:null}));
+    const res = await marcarItemSeparado(id, currentUser ? currentUser.nome : null);
+    setBusyId(null);
+    if(!res.ok) setErros(prev=>({...prev, [id]: res.erro || 'Não foi possível salvar — tente novamente.'}));
+  }
+
+  async function handleExcluir(id){
+    setBusyId(id);
+    setErros(prev=>({...prev, [id]:null}));
+    const res = await excluirItemSequenciaSeparacao(id);
+    setBusyId(null);
+    setConfirmExcluirId(null);
+    if(!res.ok) setErros(prev=>({...prev, [id]: res.erro || 'Não foi possível excluir — tente novamente.'}));
+  }
+
+  const pendentes = itens.filter(i=>i.status==='pendente').sort((a,b)=>{
+    const pa = PRIORIDADE_ORDEM[a.prioridade] ?? 1;
+    const pb = PRIORIDADE_ORDEM[b.prioridade] ?? 1;
+    if(pa!==pb) return pa-pb;
+    return String(a.criadoEm||'').localeCompare(String(b.criadoEm||''));
+  });
+  const separados = itens.filter(i=>i.status==='separado');
+  const buscaNorm = buscaHistorico.trim().toLowerCase();
+  const separadosFiltrados = !buscaNorm ? separados : separados.filter(i=>
+    (i.descricao||'').toLowerCase().includes(buscaNorm) ||
+    (i.codigo||'').toLowerCase().includes(buscaNorm)
+  );
+
+  return (
+    <div className="panel">
+      <div className="section-title" style={{marginTop:0}}>
+        Sequência de separação
+        {pendentes.length>0 && <span className="badge" style={{position:'static',marginLeft:8}}>{pendentes.length}</span>}
+      </div>
+      <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)',marginBottom:14,lineHeight:1.6}}>
+        Ordenada por prioridade/urgência do pedido — itens "Alta" sempre aparecem
+        primeiro, depois "Média", depois "Baixa"; dentro da mesma prioridade, o mais
+        antigo vem primeiro.
+      </div>
+
+      {canManage && (
+        <div style={{marginBottom:18,paddingBottom:14,borderBottom:'1px solid var(--line)'}}>
+          <SearchWithScanner value={query} onChange={setQuery} placeholder="Código ou descrição do item" />
+          {buscando && <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:-8,marginBottom:12}}>Buscando…</div>}
+          {results.length>0 && (
+            <div style={{marginBottom:14}}>
+              {results.map(p=>(
+                <div key={p.codigo} className="list-row" style={{cursor:'pointer'}} onClick={()=>selecionarResultado(p)}>
+                  <div>
+                    <div className="lr-title">{p.codigo}</div>
+                    <div className="lr-sub">{p.descricao}</div>
+                  </div>
+                  <button type="button" className="btn btn-outline btn-sm">Selecionar</button>
+                </div>
+              ))}
+            </div>
+          )}
+          {selecionado && (
+            <div className="list-row" style={{flexWrap:'wrap',flexDirection:'column',alignItems:'stretch',gap:10}}>
+              <div>
+                <div className="lr-title">{selecionado.codigo}</div>
+                <div className="lr-sub">{selecionado.descricao}</div>
+              </div>
+              <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
+                <div className="field" style={{flex:1,minWidth:120,marginBottom:0}}>
+                  <label>Quantidade</label>
+                  <input type="text" value={quantidade} onChange={e=>setQuantidade(e.target.value)} placeholder="Ex: 10" />
+                </div>
+                <div className="field" style={{flex:1,minWidth:140,marginBottom:0}}>
+                  <label>Prioridade</label>
+                  <select value={prioridade} onChange={e=>setPrioridade(e.target.value)}>
+                    <option value="alta">Alta</option>
+                    <option value="media">Média</option>
+                    <option value="baixa">Baixa</option>
+                  </select>
+                </div>
+              </div>
+              <div className="field" style={{marginBottom:0}}>
+                <label>Observação (opcional)</label>
+                <input type="text" value={observacao} onChange={e=>setObservacao(e.target.value)} placeholder="Ex: pedido urgente do cliente X" />
+              </div>
+              {erroAdicionar && <div style={{fontSize:'var(--text-xs)',color:'var(--danger)'}}>{erroAdicionar}</div>}
+              <div className="btn-row" style={{width:'auto'}}>
+                <button type="button" className="btn btn-secondary" onClick={()=>setSelecionado(null)}>Cancelar</button>
+                <button type="button" className="btn btn-primary" disabled={adicionando} onClick={handleAdicionar}>{adicionando ? 'Adicionando…' : 'Adicionar à fila'}</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {pendentes.length===0 ? (
+        <div className="empty-state">
+          {canManage
+            ? 'Nenhum item na fila de separação ainda — busque um item acima pra adicionar.'
+            : 'Nenhum item pendente na fila de separação no momento.'}
+        </div>
+      ) : (
+        pendentes.map(i=>(
+          <div key={i.id} className="list-row" style={{flexWrap:'wrap'}}>
+            <div>
+              <div className="lr-title">{i.codigo} — {i.descricao}</div>
+              <div className="lr-sub">
+                {i.quantidade ? `Qtd: ${i.quantidade}` : ''}
+                {i.quantidade && i.observacao ? ' · ' : ''}
+                {i.observacao || ''}
+              </div>
+              {erros[i.id] && <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginTop:4}}>{erros[i.id]}</div>}
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+              <StatusTag status={PRIORIDADE_STATUS[i.prioridade]||'warn'} text={PRIORIDADE_LABEL[i.prioridade]||'Média'} />
+              {canManage && (
+                <div className="btn-row" style={{width:'auto'}}>
+                  <button type="button" className="btn btn-primary" style={{padding:'8px 12px',fontSize:'var(--text-xs)'}} disabled={busyId===i.id} onClick={()=>handleMarcarSeparado(i.id)}>{busyId===i.id ? 'Salvando…' : 'Marcar separado'}</button>
+                  {role==='admin' && (confirmExcluirId===i.id ? (
+                    <>
+                      <button type="button" className="btn btn-secondary" style={{padding:'8px 12px',fontSize:'var(--text-xs)'}} onClick={()=>setConfirmExcluirId(null)}>Cancelar</button>
+                      <button type="button" className="btn btn-danger" style={{padding:'8px 12px',fontSize:'var(--text-xs)'}} disabled={busyId===i.id} onClick={()=>handleExcluir(i.id)}>Confirmar exclusão</button>
+                    </>
+                  ) : (
+                    <button type="button" className="btn btn-outline" style={{padding:'8px 12px',fontSize:'var(--text-xs)'}} onClick={()=>setConfirmExcluirId(i.id)}>Excluir</button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        ))
+      )}
+
+      {separados.length>0 && (
+        <div style={{marginTop:18,paddingTop:14,borderTop:'1px solid var(--line)'}}>
+          <button type="button" className="btn btn-outline btn-sm" onClick={()=>setHistoricoAberto(v=>!v)}>
+            {historicoAberto ? 'Ocultar histórico' : `Ver histórico (${separados.length})`}
+          </button>
+          {historicoAberto && (
+            <div style={{marginTop:12}}>
+              <SearchWithScanner value={buscaHistorico} onChange={setBuscaHistorico} placeholder="Código ou descrição" />
+              {separadosFiltrados.length===0 ? (
+                <div className="empty-state">Nenhum resultado para essa busca.</div>
+              ) : (
+                separadosFiltrados.map(i=>(
+                  <div key={i.id} className="list-row" style={{flexWrap:'wrap'}}>
+                    <div>
+                      <div className="lr-title">{i.codigo} — {i.descricao}</div>
+                      <div className="lr-sub">
+                        {i.quantidade ? `Qtd: ${i.quantidade} · ` : ''}Separado por {i.separadoPor || '—'}
+                      </div>
+                    </div>
+                    <StatusTag status="ok" text="Separado" />
                   </div>
                 ))
               )}

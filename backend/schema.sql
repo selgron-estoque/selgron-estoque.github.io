@@ -2053,3 +2053,61 @@ create policy "atualização líder ou admin" on etiquetas_fila for update
 -- não reflete isso. Se quiser fechar também, o mesmo padrão desta seção
 -- (`eh_admin`/`eh_lider_ou_admin`) se aplica igual.
 -- -----------------------------------------------------------------------
+
+-- =============================================================================
+-- GESTÃO DE SEPARAÇÃO — "Programação". Pedido do cliente: "Temos Gestão de
+-- inventário agora crie Gestão de separação em gestão de separação crie uma
+-- pagina chamada programação, ali vou incluir a sequencia de separação." O
+-- líder monta a fila de itens que precisam ser separados (busca no catálogo,
+-- escolhe prioridade/urgência do pedido — Alta/Média/Baixa, confirmada com o
+-- cliente como o critério de ordenação, não endereço físico), o operador
+-- percorre a fila JÁ ORDENADA por prioridade e marca "Separado" conforme
+-- avança. Espelha o mesmo desenho já usado em `etiquetas_fila` (mesma
+-- tela/painel de gestão, mesmo estilo): tabela denormalizada, sem FK pra
+-- usuarios/produtos (`criado_por`/`separado_por` gravam o NOME em texto
+-- puro, mesmo padrão de sempre nesse app).
+--
+-- Diferente de `etiquetas_fila` (nunca deletada) — aqui existe uma ação
+-- "Excluir" (só admin, no front-end) que remove a linha de vez, então a RLS
+-- já nasce com policy de delete também, seguindo direto o padrão hardened
+-- (`tem_acesso_tela`, não o `auth.role()='authenticated'` intermediário que
+-- outras tabelas mais antigas deste arquivo passaram antes de serem
+-- endurecidas — este projeto já está pós essa migração, uma tabela nova
+-- hoje já nasce no padrão final).
+-- =============================================================================
+create table if not exists sequencia_separacao (
+  id uuid primary key default gen_random_uuid(),
+  codigo text not null,
+  descricao text,
+  quantidade text,
+  prioridade text not null default 'media',   -- 'alta' | 'media' | 'baixa'
+  observacao text,
+  status text not null default 'pendente',    -- 'pendente' | 'separado'
+  criado_por text,
+  criado_em timestamptz not null default now(),
+  separado_por text,
+  separado_em timestamptz
+);
+
+alter table sequencia_separacao enable row level security;
+drop policy if exists "leitura líder ou admin" on sequencia_separacao;
+drop policy if exists "inserção líder ou admin" on sequencia_separacao;
+drop policy if exists "atualização líder ou admin" on sequencia_separacao;
+drop policy if exists "exclusão líder ou admin" on sequencia_separacao;
+create policy "leitura líder ou admin" on sequencia_separacao for select
+  using (public.tem_acesso_tela(auth.uid(), 'programacaoSeparacao'));
+create policy "inserção líder ou admin" on sequencia_separacao for insert
+  with check (public.tem_acesso_tela(auth.uid(), 'programacaoSeparacao'));
+create policy "atualização líder ou admin" on sequencia_separacao for update
+  using (public.tem_acesso_tela(auth.uid(), 'programacaoSeparacao'))
+  with check (public.tem_acesso_tela(auth.uid(), 'programacaoSeparacao'));
+create policy "exclusão líder ou admin" on sequencia_separacao for delete
+  using (public.tem_acesso_tela(auth.uid(), 'programacaoSeparacao'));
+
+-- Realtime — outro aparelho (o operador no chão de fábrica) vê a fila
+-- mudar/um item novo aparecer sem precisar recarregar, mesmo mecanismo já
+-- usado em contagens/inventarios/usuarios/app_config/etiquetas_fila.
+-- Introspecção antes, mesmo motivo de sempre (evita erro de "already
+-- member of publication"):
+--   select schemaname, tablename from pg_publication_tables where pubname = 'supabase_realtime';
+alter publication supabase_realtime add table sequencia_separacao;

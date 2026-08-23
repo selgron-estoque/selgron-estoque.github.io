@@ -20714,3 +20714,132 @@ respondeu **"Pode corrigir"**.
   Function necessários** — publica sozinho via GitHub Pages. **Verificação
   visual do seletor em produção fica a cargo do cliente** — mesma limitação de
   sempre (login exige Supabase Auth real, não simulável no sandbox sem rede).
+
+## "Gestão de Separação" — nova tela "Programação" (sequência de separação)
+
+Cliente pediu: "Temos Gestão de inventário agora crie Gestão de separação em
+gestão de separação crie uma pagina chamada programação, ali vou incluir a
+sequencia de separação" — um grupo novo na Sidebar, paralelo a "Gestão de
+Inventário", com uma única tela dentro ("Programação") onde o líder monta a
+fila de itens que precisam ser separados no almoxarifado. Perguntado o
+critério de ordenação dessa fila (endereço físico, como as filas de contagem
+já usam, ou prioridade/urgência do pedido) — o cliente confirmou
+explicitamente **prioridade/urgência**, não endereço.
+
+- **Mesmo padrão de extração de tela já usado várias vezes neste projeto**
+  ("Endereços Pendentes"/"Itens Divergentes"/"SAs em Aberto"/etc.):
+  `ACESSOS_RESTRITOS.programacaoSeparacao = ['lider','admin']` (mesmo grupo
+  de gestão/planejamento das outras telas — operador não participa por
+  padrão, mas o admin pode conceder a exceção via "Acesso por tela" como
+  qualquer outra); entrada em `TODOS_OS_MENUS` (rótulo "Programação", pro
+  dual-list de "Editar Usuário"); `VIEW_TITLES.programacaoSeparacao =
+  'Programação'`; `VIEW_SUBTITLES.programacaoSeparacao = 'Sequência de
+  separação — ordenada por prioridade/urgência do pedido'`; ícone novo
+  `listOrdered` em `DICON_PATHS` (lista numerada, mesmo estilo Lucide-ish já
+  usado nos outros ~30 ícones); guard de rota em `App()`.
+- **`buildSidebarGroups`** ganhou um grupo próprio, `'Gestão de Separação'`,
+  logo depois de `'Gestão de Inventário'` — hoje com 1 item só
+  (`programacaoSeparacao`), mesmo padrão condicional de sempre (`items.
+  length>0` decide se o grupo aparece, `podeVer(id)` decide cada item).
+- **Tabela nova, `sequencia_separacao`** (`backend/schema.sql`) — denormalizada,
+  sem FK pra `usuarios`/`produtos` (mesmo padrão de sempre neste app —
+  `criado_por`/`separado_por` gravam o NOME em texto puro, não o id): `codigo`/
+  `descricao`/`quantidade`/`prioridade` (`'alta'|'media'|'baixa'`, default
+  `'media'`)/`observacao`/`status` (`'pendente'|'separado'`)/`criado_por`/
+  `criado_em`/`separado_por`/`separado_em`. RLS já nasce no padrão hardened
+  atual do projeto (`tem_acesso_tela(auth.uid(), 'programacaoSeparacao')`
+  pras 4 operações — select/insert/update/delete), sem passar pelo estágio
+  intermediário `auth.role()='authenticated'` que tabelas mais antigas deste
+  arquivo tiveram que atravessar antes de serem endurecidas depois — o
+  projeto já está pós essa migração, então uma tabela nova hoje entra direto
+  no padrão final. Diferente de `etiquetas_fila` (nunca deletada),
+  `sequencia_separacao` tem uma ação "Excluir" (só admin) que apaga a linha
+  de vez — por isso já nasce com policy de delete também, coisa que
+  `etiquetas_fila` nunca precisou. Realtime habilitado
+  (`alter publication supabase_realtime add table sequencia_separacao`), pro
+  operador ver a fila atualizar sem recarregar.
+- **Funções Supabase novas** (`index.html`, mesmo bloco de sempre —
+  `sequenciaSeparacaoRowToLocal`/`fetchSequenciaSeparacao`/
+  `adicionarItemSequenciaSeparacao`/`marcarItemSeparado`/
+  `excluirItemSequenciaSeparacao`): `fetchSequenciaSeparacao` busca
+  `status='pendente'` E `'separado'` de uma vez só (`select('*')` sem
+  filtro) — diferente de `fetchFilaEtiquetasPendentes` (que só busca
+  pendente) — porque esta tela já mostra as duas listas (fila principal +
+  "Ver histórico" colapsável) na mesma tela, então uma leitura só evita duas
+  consultas separadas.
+- **`ProgramacaoSeparacaoPanel({currentUser, role})`** (componente novo, view
+  `programacaoSeparacao`) — mesmo shell visual do resto do app (`.panel`/
+  `.section-title`, `SearchWithScanner` pra buscar no catálogo via
+  `searchSupabaseCatalog`, `.list-row`/`.lr-title`/`.lr-sub`, `StatusTag`,
+  padrão `busyId`/erro inline pra ação assíncrona) — sem nenhuma classe CSS
+  nova, tudo reaproveitado.
+  - **Fluxo**: busca (debounce 350ms) → seleciona um resultado → card de
+    confirmação com `<select>` de prioridade (Alta/Média/Baixa, padrão
+    Média) + campo de quantidade opcional → "Adicionar à fila" grava via
+    `adicionarItemSequenciaSeparacao`.
+  - **Ordenação da fila principal por PRIORIDADE, não data nem endereço**:
+    `PRIORIDADE_ORDEM = {alta:0, media:1, baixa:2}`, com `criadoEm` como
+    desempate (mais antigo primeiro) só DENTRO do mesmo nível de
+    prioridade — um item "Baixa" criado há semanas continua atrás de um
+    "Alta" recém-adicionado, exatamente o critério confirmado com o
+    cliente.
+  - **"Marcar separado"** (`marcarItemSeparado`) grava `status`/
+    `separado_por` (nome de quem clicou)/`separado_em` — o item some da
+    lista principal e passa a aparecer só dentro de "Ver histórico"
+    (colapsável, com `StatusTag` "Separado" e o mesmo padrão de busca
+    filtrada já usado noutras telas de histórico deste app).
+  - **"Excluir"** — só admin (`role==='admin'`), com confirmação inline
+    (mesmo padrão de confirmação já usado em outras telas de exclusão do
+    app) — apaga a linha de vez via `excluirItemSequenciaSeparacao`.
+  - **Modo leitura pro operador com exceção concedida** (`canManage =
+    role==='lider' || role==='admin'`) — mesmo critério já estabelecido
+    noutra tela deste projeto (`DivergentItemsPanel`): um operador que
+    ganhou acesso a esta tela via `acessosExtras` vê a fila normalmente
+    (busca por status/prioridade, itens pendentes visíveis), mas o campo de
+    busca+adicionar e o botão "Marcar separado" ficam escondidos — só
+    consulta, sem gerir a fila.
+- **Fora de escopo desta rodada, decisão consciente**: nenhuma integração
+  com `painel-indicadores.html` (a tela "Tracking Picking" de lá é uma coisa
+  separada, não amarrada a esta fila nova); nenhuma desambiguação de
+  armazém na busca (`searchSupabaseCatalog` chamada sem o parâmetro
+  `almoxarifado`, mesmo comportamento simples já aceito nesta 1ª versão de
+  outras telas de gestão do app); nenhum ponto de entrada a partir de
+  fluxo de contagem — é uma tela de gestão dedicada, acessada só pela
+  Sidebar.
+- Testado via harness dedicado (`harness_programacao_separacao.js`, jsdom +
+  react-dom/client + `act()`, mesma técnica rigorosa de sempre — carrega o
+  `index.html` inteiro transpilado numa `vm.Script`, Supabase mockado com
+  uma "tabela" mutável em memória): wiring (`ACESSOS_RESTRITOS`/
+  `TODOS_OS_MENUS`/`VIEW_TITLES`), `hasAccess` nos 5 cenários de perfil/
+  exceção, `buildSidebarGroups` mostrando/escondendo o grupo certo pra
+  líder/operador-sem-exceção/operador-com-exceção, e de ponta a ponta em
+  `ProgramacaoSeparacaoPanel`: estado vazio, busca, seleção, adicionar com
+  prioridade Alta, adicionar um 2º com prioridade Média (padrão), inserir um
+  3º item Baixa prioridade diretamente "no banco" simulando outro aparelho
+  (mais antigo que os outros 2), confirmando que a ordenação por prioridade
+  (Alta > Média > Baixa) vence o desempate por data mesmo com o item Baixa
+  sendo o mais antigo; "Marcar separado" persistindo status/separado_por, o
+  item saindo da lista principal e entrando no histórico colapsável com o
+  `StatusTag` certo; exclusão admin-only com confirmação de fato removendo a
+  linha; líder (não-admin) não vendo o botão de excluir; e o modo leitura do
+  operador (sem busca, sem "Marcar separado", mas ainda vendo os itens
+  pendentes). 38 asserções, todas passando. **Achado de teste, não bug do
+  app**: `jsdom` não implementa `scrollIntoView` — como o script inteiro do
+  `index.html` sempre automonta o `<App/>` real em `#root` no fim do
+  arquivo (`ReactDOM.createRoot(document.getElementById('root')).render
+  (<App/>)`, o mesmo em toda avaliação via `vm`), o `LoginScreen` real
+  (`autoFocus` no campo de usuário) agenda um `scrollIntoView` 300ms depois
+  do mount — sem um stub (`HTMLElement.prototype.scrollIntoView = function
+  (){}`) e sem usar um `<div>` PRÓPRIO (nunca `#root`) pros testes do
+  componente isolado, o harness derrubava o processo inteiro com uma
+  exceção não capturada dentro do timer, ou colidia o `createRoot()` com o
+  mount automático do app real — mesma lição já registrada antes neste
+  projeto ("nunca usar `#root`, criar um `<div>` solto") aplicada de novo
+  aqui. Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  conferidos (669/669, sem mudança — nenhuma classe CSS nova, tudo
+  reaproveitado). **Falta o cliente rodar o SQL novo** (o bloco
+  `sequencia_separacao` inteiro de `backend/schema.sql`, tabela + RLS +
+  publicação Realtime) no projeto Supabase real antes de usar em produção.
+  **Verificação visual/funcional de ponta a ponta fica a cargo do cliente**
+  — mesma limitação de sempre (login exige Supabase Auth real, não
+  simulável no sandbox sem rede).
