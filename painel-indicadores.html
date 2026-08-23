@@ -866,6 +866,18 @@ function TrackingPicking({tela, onChange}){
 
 function App(){
   const [tela, setTela] = useState('indicadores');
+
+  // TV sem ninguém mexendo — alterna sozinho entre as duas telas a cada
+  // minuto, pra dar tempo de ler cada uma sem precisar de clique manual.
+  // Clicar numa aba continua trocando na hora (onChange abaixo); o timer
+  // não reseta por causa disso, só segue no próprio ciclo de 60s.
+  useEffect(() => {
+    const id = setInterval(() => {
+      setTela(t => t === 'indicadores' ? 'picking' : 'indicadores');
+    }, 60000);
+    return () => clearInterval(id);
+  }, []);
+
   return tela==='indicadores'
     ? <PainelIndicadores tela={tela} onChange={setTela} />
     : <TrackingPicking tela={tela} onChange={setTela} />;
