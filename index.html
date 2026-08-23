@@ -14857,13 +14857,15 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
           {Object.keys(porOperador).length>0 && (
             <div>
               <div className="section-title">Produtividade por Operador</div>
-              <div className="panel">
-                {Object.entries(porOperador).map(([nome,n])=>(
-                  <div key={nome} className="bar-row">
-                    <div className="bl">{nome}</div>
-                    <div className="bar-track"><div className="bar-fill" style={{width:(n/maxOp*100)+'%'}}><span>{n}</span></div></div>
-                  </div>
-                ))}
+              <div className="panel" style={{margin:0,display:'flex',flexDirection:'column'}}>
+                <div style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'center'}}>
+                  {Object.entries(porOperador).slice(0,7).map(([nome,n])=>(
+                    <div key={nome} className="bar-row">
+                      <div className="bl">{nome}</div>
+                      <div className="bar-track"><div className="bar-fill" style={{width:(n/maxOp*100)+'%'}}><span>{n}</span></div></div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           )}
@@ -14871,13 +14873,15 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
           {Object.keys(porMotivo).length>0 && (
             <div>
               <div className="section-title">Principais Causas de Erro</div>
-              <div className="panel">
-                {Object.entries(porMotivo).map(([m,n])=>(
-                  <div key={m} className="bar-row">
-                    <div className="bl" style={{width:160}}>{m}</div>
-                    <div className="bar-track"><div className="bar-fill" style={{width:(n/maxMotivo*100)+'%', background:'var(--danger)'}}><span style={{color:'#fff'}}>{n}</span></div></div>
-                  </div>
-                ))}
+              <div className="panel" style={{margin:0,display:'flex',flexDirection:'column'}}>
+                <div style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'center'}}>
+                  {Object.entries(porMotivo).slice(0,7).map(([m,n])=>(
+                    <div key={m} className="bar-row">
+                      <div className="bl" style={{width:160}}>{m}</div>
+                      <div className="bar-track"><div className="bar-fill" style={{width:(n/maxMotivo*100)+'%', background:'var(--danger)'}}><span style={{color:'#fff'}}>{n}</span></div></div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           )}
