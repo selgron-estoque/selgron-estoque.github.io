@@ -6974,6 +6974,10 @@ const DICON_PATHS = {
   target: <><circle cx="12" cy="12" r="9.5"/><circle cx="12" cy="12" r="5.5"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/></>,
   printer: <><path d="M6 9V3h12v6"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="7"/></>,
   palette: <><path d="M12 3a9 9 0 1 0 9 9c0-1-1-1.5-2-1.5h-2.5a2 2 0 0 1-2-2 2 2 0 0 1 .5-1.3A2 2 0 0 0 14 5.5C14 4 13 3 12 3Z"/><circle cx="7.5" cy="10.5" r="1" fill="currentColor" stroke="none"/><circle cx="8.5" cy="15" r="1" fill="currentColor" stroke="none"/><circle cx="13" cy="17" r="1" fill="currentColor" stroke="none"/></>,
+  // Ícone do item de menu "Painel Indicadores" (monitor/TV) — atalho que
+  // abre painel-indicadores.html (página estática à parte, pensada pra
+  // ficar ligada numa TV do almoxarifado) numa aba nova, ver buildSidebarGroups.
+  monitor: <><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></>,
 };
 
 function DIcon({name, size=18, strokeWidth=1.8, style}){
@@ -7424,7 +7428,15 @@ function buildSidebarGroups(user){
   // a opção de eu selecionar por operador se ele pode ter acesso ou não".
   // "Início" também entrou nessa regra (ver TODOS_OS_MENUS) — some da
   // Sidebar igual qualquer outro item quando removido.
-  const homeItems = podeVer('home') ? [{id:'home', ic:'home', label:'Início'}] : [];
+  const homeItems = [
+    ...(podeVer('home') ? [{id:'home', ic:'home', label:'Início'}] : []),
+    // "Painel Indicadores" — página ESTÁTICA separada (painel-indicadores.html),
+    // pensada pra ficar aberta numa TV do almoxarifado. Não é uma `view` da
+    // SPA (não passa por `goto`/`hasAccess`/ACESSOS_RESTRITOS de propósito,
+    // pedido do cliente era só um atalho no menu) — abre em aba nova, ver
+    // tratamento especial do onClick em Sidebar/MobileHomeMenu.
+    {id:'painelIndicadores', ic:'monitor', label:'Painel Indicadores', external:'painel-indicadores.html'},
+  ];
   const contagemItems = [
     ...(podeVer('inventories') ? [{id:'inventories', ic:'box', label:'Em Execução'}] : []),
     ...(podeVer('pickCountType') ? [{id:'pickCountType', ic:'plus', label:'Nova Contagem'}] : []),
@@ -7470,7 +7482,7 @@ function Sidebar({view, goto, role, user, collapsed, pendingSync=0}){
           <div key={gi} className="sidebar-group">
             {g.label && <div className="sidebar-group-title">{g.label}</div>}
             {g.items.map(it=>(
-              <button key={it.id} className={"sidebar-nav-item"+(view===it.id?' active':'')} onClick={()=>goto(it.id)}>
+              <button key={it.id} className={"sidebar-nav-item"+(view===it.id?' active':'')} onClick={()=>it.external ? window.open(it.external, '_blank') : goto(it.id)}>
                 <span className="ic"><DIcon name={it.ic} size={16} /></span>{it.label}
               </button>
             ))}
@@ -7586,7 +7598,7 @@ function MobileHomeMenu({user, goto, badges={}}){
         <div key={gi} className="mhm-group">
           {g.label && <div className="mhm-group-title">{g.label}</div>}
           {g.items.filter(it=>it.id!=='home').map(it=>(
-            <button key={it.id} className="mhm-item" onClick={()=>goto(it.id)}>
+            <button key={it.id} className="mhm-item" onClick={()=>it.external ? window.open(it.external, '_blank') : goto(it.id)}>
               <span className="mhm-ic"><DIcon name={it.ic} size={18} /></span>
               <span className="mhm-label">{it.label}</span>
               {badges[it.id]>0 && <span className="mhm-badge">{badges[it.id]}</span>}
