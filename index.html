@@ -14158,7 +14158,14 @@ function MonthlyAccuracyBarChart({months, meta=META_ACURACIDADE_SEMANAL}){
 // rótulo "Sem N" em cima da data, sem % grande em cada ponto) — pensado pra
 // caber dentro do card "Saúde do Inventário", não como painel próprio.
 function HealthSparkline({pontos, color}){
-  const W = 320, H = 92, padL = 30, padR = 8, padT = 8, padB = 18;
+  // W/H eram 320/92 (proporção ~3,5:1) — largura do card cresceu bastante
+  // (ver .health-chart, flex:3 sem teto de largura), e como o SVG escala
+  // width:100%/height:auto MANTENDO a proporção do viewBox, a altura
+  // crescia junto na mesma razão e ficava desproporcional/"gigante"
+  // (cliente reportou com print). Proporção bem mais alongada agora
+  // (~5,8:1) — pra uma largura renderizada equivalente, a altura fica bem
+  // mais baixa, sem precisar limitar a largura de novo.
+  const W = 760, H = 130, padL = 38, padR = 12, padT = 12, padB = 24;
   const chartW = W-padL-padR, chartH = H-padT-padB;
   const n = pontos.length;
   const x = i => padL + (n>1 ? (i/(n-1))*chartW : chartW/2);
@@ -14167,11 +14174,11 @@ function HealthSparkline({pontos, color}){
   return (
     <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'auto',display:'block'}} role="img" aria-label="Tendência recente de acuracidade">
       {[0,25,50,75,100].map(t=>(
-        <text key={t} x={padL-6} y={y(t)+3} textAnchor="end" fontSize={9} fill="var(--ink-dim)" fontFamily="var(--font-mono)">{t}%</text>
+        <text key={t} x={padL-6} y={y(t)+4} textAnchor="end" fontSize={12} fill="var(--ink-dim)" fontFamily="var(--font-mono)">{t}%</text>
       ))}
-      <polyline points={pts} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+      <polyline points={pts} fill="none" stroke={color} strokeWidth={3} strokeLinejoin="round" strokeLinecap="round" />
       {pontos.map((p,i)=>(
-        <circle key={p.key} cx={x(i)} cy={y(p.acuracidade)} r={3.5} fill={color} stroke="#fff" strokeWidth={1.5}>
+        <circle key={p.key} cx={x(i)} cy={y(p.acuracidade)} r={5} fill={color} stroke="#fff" strokeWidth={2}>
           <title>{p.sublabel}: {p.acuracidade.toFixed(1)}%</title>
         </circle>
       ))}
@@ -14184,7 +14191,7 @@ function HealthSparkline({pontos, color}){
         // centralizados, onde não há risco de estourar a borda.
         const anchor = i===0 ? 'start' : (i===pontos.length-1 ? 'end' : 'middle');
         return (
-          <text key={p.key+'-lbl'} x={x(i)} y={H-4} textAnchor={anchor} fontSize={9} fill="var(--ink-dim)" fontFamily="var(--font-mono)">{p.sublabel}</text>
+          <text key={p.key+'-lbl'} x={x(i)} y={H-6} textAnchor={anchor} fontSize={12} fill="var(--ink-dim)" fontFamily="var(--font-mono)">{p.sublabel}</text>
         );
       })}
     </svg>
