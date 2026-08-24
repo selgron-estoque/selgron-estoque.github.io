@@ -98,6 +98,39 @@ function extrairCampo(texto: string, rotulos: string[]): string | null {
   return null;
 }
 
+// Interpreta um valor numérico como a página real da Selgron pode exibir —
+// mais tolerante que o antigo `.replace(',', '.')` isolado, que só trocava
+// UMA vírgula por ponto e quebrava (virava NaN, tratado como "formato da
+// página mudou") em qualquer valor com separador de milhar ("1.234,0") ou
+// com uma unidade colada logo depois do número ("3.0 UN"/"3,0 PC" — comum
+// nessa mesma tabela, ver `unidade` ao lado). Descoberto investigando um
+// saldo que sumia pra um item real (000.25086, "FUNDO REF BR TNS 8").
+// Regra pra separador de milhar vs. decimal: todo exemplo real já
+// confirmado neste projeto ("82,9099"/"0,942"/"3,0"/"7,0"/"13,42") usa
+// VÍRGULA pra fração, nunca ponto — então, com vírgula presente, qualquer
+// ponto antes dela é sempre milhar. SEM vírgula nenhuma, um ponto seguido
+// de grupo(s) de EXATAMENTE 3 dígitos até o fim ("1.234", "12.345.678") é
+// tratado como milhar (não um decimal de 3 casas); um ponto seguido de 1-2
+// dígitos ("3.0"/"12.34") continua decimal de verdade, sem mudança nenhuma
+// no caso comum de sempre. Extrai só a PONTA numérica do início da string
+// (ignora qualquer texto/unidade depois) — `null` só quando não há NENHUM
+// dígito reconhecível, nunca inventa um número.
+function parseNumeroBR(raw: string | null | undefined): number | null {
+  if (raw == null) return null;
+  const s = String(raw).trim();
+  if (!s) return null;
+  const m = /^-?[\d.,]+/.exec(s);
+  if (!m) return null;
+  let n = m[0];
+  if (n.includes(",")) {
+    n = n.replace(/\./g, "").replace(",", ".");
+  } else if (/\.\d{3}(\.\d{3})*$/.test(n)) {
+    n = n.replace(/\./g, "");
+  }
+  const num = Number(n);
+  return Number.isFinite(num) ? num : null;
+}
+
 // Normaliza um código de armazém pra COMPARAÇÃO (não pra exibição) — "01" e
 // "1" precisam bater como o mesmo armazém (a consulta Selgron mostra com
 // zero à esquerda, "Armazem: 01"; o app internamente usa "1", mesmo valor
@@ -164,6 +197,12 @@ interface BlocoResultado {
   codigo: string | null;
   descricao: string | null;
   saldo: number | null;
+  // Texto CRU do campo "Quantidade em estoque", antes de `parseNumeroBR` —
+  // guardado só pra diagnóstico: se mesmo assim `saldo` sair `null` (nenhum
+  // dígito reconhecível), o erro devolvido pro front-end pode citar esse
+  // texto exato, poupando o cliente de precisar mandar o HTML da página
+  // real pra eu conseguir calibrar o parser na próxima vez.
+  saldoTextoBruto: string | null;
   endereco: string | null;
   armazem: string | null;
   unidade: string | null;
@@ -173,11 +212,11 @@ interface BlocoResultado {
 // sempre, só que aplicados ao texto do bloco isolado, não à página inteira.
 function extrairBloco(blocoTexto: string): BlocoResultado {
   const saldoTexto = extrairCampo(blocoTexto, ["Quantidade em estoque"]);
-  const saldoNum = saldoTexto != null ? Number(String(saldoTexto).replace(",", ".")) : null;
   return {
     codigo: extrairCampo(blocoTexto, ["Código do Produto"]),
     descricao: extrairCampo(blocoTexto, ["Descrição", "Descricao"]),
-    saldo: saldoNum != null && Number.isFinite(saldoNum) ? saldoNum : null,
+    saldo: parseNumeroBR(saldoTexto),
+    saldoTextoBruto: saldoTexto,
     endereco: extrairCampo(blocoTexto, ["Endereço", "Endereco"]),
     armazem: extrairCampo(blocoTexto, ["Armazem", "Armazém"]),
     unidade: extrairCampo(blocoTexto, ["Unidade medida"]),
@@ -240,8 +279,7 @@ function extrairDadosKardex(html: string): { ultimaMovimentacao: string | null; 
       maiorUnix = v;
       const celulas = celulasDaLinha(linha);
       const bruto = celulas[KARDEX_COL_VALOR_UNITARIO];
-      const num = bruto != null && bruto !== "" ? Number(String(bruto).replace(",", ".")) : NaN;
-      custoUnitario = Number.isFinite(num) ? num : null;
+      custoUnitario = parseNumeroBR(bruto);
     }
   }
   const ultimaMovimentacao = maiorUnix === 0 ? null : new Date(maiorUnix * 1000).toISOString().slice(0, 10);
@@ -340,14 +378,21 @@ Deno.serve(async (req: Request) => {
 
     if (blocos.length === 1 && blocos[0].saldo == null) {
       // Achou a página (não é "0 resultados") e achou o produto certo, mas
-      // não achou o rótulo do saldo no único resultado dele — sinal de que
-      // o formato da página mudou do lado de lá. Melhor devolver erro claro
-      // do que fingir um saldo errado (preserva o comportamento de sempre
-      // pro caso comum, 1 resultado só pro código pedido — a lógica de
-      // múltiplos blocos abaixo nunca entra nesse caminho).
+      // não deu pra resolver um saldo numérico no único resultado dele —
+      // sinal de que o formato da página mudou do lado de lá, ou de um
+      // formato de número que `parseNumeroBR` ainda não cobre. Melhor
+      // devolver erro claro do que fingir um saldo errado (preserva o
+      // comportamento de sempre pro caso comum, 1 resultado só pro código
+      // pedido — a lógica de múltiplos blocos abaixo nunca entra nesse
+      // caminho). Quando o RÓTULO foi achado mas o VALOR não converteu pra
+      // número, a mensagem cita o texto exato visto — poupa o cliente de
+      // precisar mandar o HTML da página real pra eu recalibrar de novo.
+      const bruto = blocos[0].saldoTextoBruto;
       return resposta(200, {
         ok: false,
-        erro: "Não consegui ler o saldo na resposta da consulta Selgron (formato da página pode ter mudado).",
+        erro: bruto
+          ? `Não consegui interpretar o valor do saldo na consulta Selgron ("${bruto}") — avise pra recalibrar.`
+          : "Não encontrei o campo \"Quantidade em estoque\" na resposta da consulta Selgron (formato da página pode ter mudado).",
       });
     }
 

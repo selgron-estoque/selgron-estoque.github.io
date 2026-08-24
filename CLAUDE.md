@@ -21033,3 +21033,101 @@ existe no projeto real). **Verificação visual/funcional de ponta a ponta
 contra o Kardex/consulta real da Selgron fica a cargo do cliente** — mesma
 limitação de sempre (login exige Supabase Auth real, e o sandbox tampouco
 tem acesso à consulta interna da Selgron).
+
+## Bug real: saldo "ao vivo" travava com "formato da página pode ter mudado"
+## pra item que a Selgron mostrava normalmente — parser de número frágil
+
+Cliente mandou print da tela "Recontar Item" (operador Leandro Oliane, item
+`000.25086`/"FUNDO REF BR TNS 8") mostrando o painel de bloqueio de segurança
+🔒 ("Não foi possível confirmar isso ao vivo na Selgron (Não consegui ler o
+saldo na resposta da consulta Selgron (formato da página pode ter mudado).)
+Continuar usando só o cadastro local... não é seguro") e perguntou "porque
+este erro?". Expliquei o mecanismo: a Edge Function
+`consultar-produto-selgron` já tinha achado exatamente **1** bloco de
+resultado pro código pedido (sem ambiguidade de armazém nem de produto
+vizinho de prefixo — as duas classes de bug já corrigidas antes, ver seções
+acima) — só que não conseguiu converter o texto do campo "Quantidade em
+estoque" desse bloco pra um número, e por isso zerou tudo (`saldo:null`),
+disparando o mesmo bloqueio de segurança criado pra impedir a contagem de
+seguir usando só o cadastro local (SB2) sem confirmação ao vivo (ver "Item
+não pode seguir usando dado só do cadastro local... sem confirmação ao
+vivo" no histórico acima). O cliente respondeu, direto: **"corrigir para não
+acontecer com mais nenhum item"**.
+
+- **Tensão real, resolvida com escopo deliberado**: esse pedido, ao pé da
+  letra, pediria uma garantia que não dá pra dar sem ver o HTML de verdade
+  da página real (poderia ser QUALQUER coisa do lado de lá — rótulo mudou de
+  texto, célula ficou vazia, um `<br>` a mais quebrando a linha). Mas
+  investigando o próprio parser de número (`Number(String(x).replace(",",
+  "."))`, usado tanto pro saldo do produto quanto pro "Valor Unitário" do
+  Kardex), achei uma classe de bug REAL e concreta, sem precisar de HTML
+  novo nenhum: essa troca ingênua de vírgula por ponto quebra (`NaN`) em
+  qualquer valor com separador de milhar (ex. "1.234,0") ou com uma unidade
+  colada direto no número (ex. "3.0 UN" — plausível, já que a mesma tabela
+  tem uma coluna "Unidade medida" logo ao lado, e cópia/paste de célula
+  adjacente já causou bug parecido antes neste projeto, ver "Bug real: código
+  do produto sem formatação..."). Mesma categoria de bug (parser de número
+  frágil quebrando silenciosamente em vez de crescer) já vista várias vezes
+  neste histórico (a coluna "Sld.Atu." com espaço no cabeçalho da SB2, por
+  exemplo) — reconhecida o bastante pra justificar corrigir por princípio,
+  sem exigir reproduzir o HTML exato deste item específico.
+- **`parseNumeroBR(raw)`** (função nova, Edge Function, logo antes de
+  `normalizarArmazem`) — mais tolerante que o `.replace(',', '.')` isolado
+  de antes. Regra pra decidir separador de milhar vs. decimal: todo exemplo
+  REAL já confirmado neste projeto contra essa mesma consulta Selgron
+  ("82,9099"/"0,942"/"3,0"/"7,0"/"13,42") usa VÍRGULA pra fração, nunca
+  ponto — então, com vírgula presente, qualquer ponto ANTES dela é sempre
+  milhar (remove todos, troca a vírgula por ponto). Sem vírgula nenhuma, um
+  ponto seguido de grupo(s) de EXATAMENTE 3 dígitos até o fim (ex. "1.234",
+  "12.345.678") é tratado como milhar; um ponto seguido de 1-2 dígitos (ex.
+  "3.0"/"12.34") continua decimal de verdade, sem mudar o comportamento já
+  correto de sempre. Extrai só a PONTA numérica do início da string (ignora
+  qualquer unidade/texto colado depois) — `null` só quando não sobra nenhum
+  dígito reconhecível, nunca inventa um número.
+- **Aplicada nos 2 pontos que já tinham o mesmo parser frágil**:
+  `extrairBloco` (saldo do produto — o campo que travou pro cliente) e
+  `extrairDadosKardex` ("Valor Unitário", usado pra `custoUnitario`) — mesma
+  correção nos dois de uma vez, não só no que o cliente notou primeiro.
+- **Diagnóstico melhorado pra qualquer ocorrência FUTURA**: `BlocoResultado`
+  ganhou `saldoTextoBruto` (o texto CRU do campo, antes de `parseNumeroBR`)
+  — se mesmo assim `saldo` sair `null` (nenhum dígito reconhecível de
+  jeito nenhum), a mensagem de erro devolvida ao front-end passou a citar
+  esse texto exato ("Não consegui interpretar o valor do saldo na consulta
+  Selgron (\"{texto}\") — avise pra recalibrar.") em vez do texto genérico
+  de sempre — poupa o cliente de precisar mandar o HTML da página real da
+  próxima vez, já que o próprio erro já mostra o que a página respondeu.
+- **Limitação honesta, não escondida**: esta correção resolve a classe
+  "formato de NÚMERO que o parser não sabia ler" — não garante cobrir uma
+  falha estrutural/de marcação da página (um rótulo renomeado, uma célula
+  genuinamente vazia, HTML reorganizado de um jeito que `extrairCampo`/
+  `dividirEmBlocos` não reconheçam mais) — mesmo critério de sempre neste
+  projeto de nunca prometer mais do que o que foi de fato verificado. Se o
+  item `000.25086` (ou outro) travar de novo DEPOIS deste deploy, o próximo
+  passo continua sendo pedir o HTML real da página (Ctrl+U/"Ver código-fonte")
+  pra recalibrar — só que agora, com `saldoTextoBruto` na mensagem de erro,
+  já dá pra saber de cara se é o mesmo tipo de problema (o texto aparece,
+  só não bate com nenhum formato numérico ainda coberto) ou algo estrutural
+  novo (o texto nem aparece, rótulo não foi achado).
+- Testado via harness Node isolado (`parseNumeroBR` copiada, mesma técnica
+  de sempre — sem depender de Deno instalado): 21 asserções — os casos que
+  já funcionavam antes e não podem regredir (decimal com ponto simples,
+  inteiro puro, os 4 exemplos reais já confirmados neste projeto com
+  vírgula, negativo, vazio/`null`/`undefined`, texto sem número nenhum); os
+  casos NOVOS que o bug antigo quebrava (milhar com ponto + decimal com
+  vírgula, milhar puro sem vírgula com 1 e 2 grupos de 3 dígitos, valor com
+  unidade colada nos 2 formatos — ponto e vírgula — e com milhar); e os
+  casos-limite provando que um decimal comum de 1-2 casas ("12.34"/"12.3")
+  nunca é confundido com separador de milhar. 21/21 passando. Type-check da
+  Edge Function via `tsc --strict --noEmit --lib es2020,dom` (mesmo shim de
+  sempre pros globais do Deno, sandbox sem Deno instalado) sem erro.
+  Nenhum outro harness do scratchpad referenciava `parseNumeroBR`/
+  `extrairBloco`/`extrairDadosKardex` diretamente (os harnesses de
+  front-end que mockam essa Edge Function via `functions.invoke` não
+  exercitam a lógica de parsing dela, só o contrato de chamada — nenhuma
+  regressão possível ali). **Falta o cliente rodar o deploy da Edge
+  Function atualizada** (`npx supabase functions deploy
+  consultar-produto-selgron`, mesmo comando de sempre) — até lá, a function
+  publicada continua com o comportamento antigo (bug presente).
+  **Verificação de ponta a ponta com o item real (000.25086) fica a cargo
+  do cliente** — mesma limitação de sempre (sandbox sem acesso de rede ao
+  domínio interno da Selgron).
