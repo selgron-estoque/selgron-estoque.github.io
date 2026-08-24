@@ -2086,7 +2086,15 @@ create table if not exists sequencia_separacao (
   criado_por text,
   criado_em timestamptz not null default now(),
   separado_por text,
-  separado_em timestamptz
+  separado_em timestamptz,
+  -- etp/op/local/unidade: preenchidos só quando o item entra na fila via
+  -- busca por ETP (ver seção "Busca de itens faltantes por ETP" mais
+  -- abaixo) — sempre null pro fluxo antigo de busca manual no catálogo,
+  -- que não tem nenhum desses 4 conceitos.
+  etp text,
+  op text,
+  local text,
+  unidade text
 );
 
 alter table sequencia_separacao enable row level security;
@@ -2111,3 +2119,37 @@ create policy "exclusão líder ou admin" on sequencia_separacao for delete
 -- member of publication"):
 --   select schemaname, tablename from pg_publication_tables where pubname = 'supabase_realtime';
 alter publication supabase_realtime add table sequencia_separacao;
+
+-- =============================================================================
+-- BUSCA DE ITENS FALTANTES POR ETP (Gestão de Separação → Programação)
+-- =============================================================================
+-- Pedido do cliente: "Neste link eu vou digitar o código da ETP e ele
+-- pesquisa a OP e quantidade de itens dentro da OP, na tela de programação
+-- eu adiciono o número da ETP." — uma nova Edge Function,
+-- `consultar-itens-faltantes` (ver
+-- supabase/functions/consultar-itens-faltantes/index.ts), consulta
+-- https://consulta.selgron.com.br/itensfaltantes.php pelo código da ETP e
+-- devolve a lista de itens faltantes daquela ETP (uma ETP pode abranger
+-- mais de uma OP e mais de um item — por isso a busca sempre devolve uma
+-- LISTA). Mesmo desenho de `consultar-produto-selgron`: proxy sob demanda,
+-- sem nenhuma escrita no Supabase — quem grava em `sequencia_separacao` é
+-- o front-end, só depois que o líder revisa a lista (checkbox por item,
+-- nada entra sozinho — decisão confirmada via AskUserQuestion: "Mostrar
+-- lista, eu escolho quais entram") e escolhe uma prioridade única pro
+-- lote inteiro (2ª decisão confirmada: "Eu escolho uma prioridade pro
+-- lote inteiro", não item a item).
+--
+-- Os 4 campos novos abaixo (etp/op/local/unidade, já incluídos na
+-- definição da tabela acima pra quem aplicar o schema do zero) só são
+-- preenchidos por esse fluxo novo — pra quem já tem `sequencia_separacao`
+-- aplicada (o líder já rodou o SQL da seção anterior em produção), rodar
+-- este bloco de migração:
+alter table sequencia_separacao add column if not exists etp text;
+alter table sequencia_separacao add column if not exists op text;
+alter table sequencia_separacao add column if not exists local text;
+alter table sequencia_separacao add column if not exists unidade text;
+
+-- Nenhuma mudança de RLS/Realtime necessária — a tabela já está com o
+-- padrão hardened (`tem_acesso_tela`) e já publica pro Realtime desde que
+-- foi criada; colunas novas só nullable não exigem nada além do
+-- `add column` acima.

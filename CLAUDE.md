@@ -20843,3 +20843,193 @@ explicitamente **prioridade/urgência**, não endereço.
   **Verificação visual/funcional de ponta a ponta fica a cargo do cliente**
   — mesma limitação de sempre (login exige Supabase Auth real, não
   simulável no sandbox sem rede).
+
+## "Programação" ganha busca por ETP — pesquisa itens faltantes na Selgron
+## e adiciona em lote à fila de separação
+
+Cliente mandou um print da própria página interna "Lista de Itens Faltantes"
+(`consulta.selgron.com.br/itensfaltantes.php`), junto de um exemplo real de
+URL já usado por ele (`?C2_NTEP=6220-26&D4_TRT=&DATA_EMISSAO_DE=&
+DATA_EMISSAO_ATE=&SALDO=SEM_SALDO&B1_GRUPO=0044,0090,0088,9900,9910,9930,
+9940,0016,1016&btn-confirmar=`), e pediu, direto: "Neste link eu vou digitar
+o código da ETP e ele pesquisa a OP e quantidade de itens dentro da OP, na
+tela de programação eu adiciono o número da ETP." Ou seja: na tela
+"Programação" (Gestão de Separação, ver seção anterior), digitar um código
+de ETP deveria consultar essa página real da Selgron e trazer de volta os
+itens faltantes daquela ETP — que pode abranger mais de uma OP e mais de um
+item — pra adicionar em lote na fila de separação (`sequencia_separacao`).
+
+Confirmado com o cliente via `AskUserQuestion` (2 perguntas) antes de
+implementar:
+
+1. **O que a tela faz com os itens encontrados**: **"Mostrar lista, eu
+   escolho quais entram (Recomendado)"** — uma PRÉVIA com checkbox por
+   item; nada é gravado no Supabase até o líder confirmar explicitamente.
+2. **Prioridade dos itens adicionados via ETP**: **"Eu escolho uma
+   prioridade pro lote inteiro (Recomendado)"** — um único seletor Alta/
+   Média/Baixa aplicado a todo o lote confirmado de uma vez, não escolhido
+   item a item nem preenchido com um padrão silencioso.
+
+### `supabase/functions/consultar-itens-faltantes/index.ts` — mesmo desenho
+### de proxy sob demanda já usado em `consultar-produto-selgron`
+
+Diferente de `sync-sa-almoxarifado` (que roda num cron e RECONCILIA/grava
+direto no banco), esta function é só um PROXY: recebe `{etp}`, devolve
+`{ok:true, etp, itens, total}` (ou `{ok:false, erro}`), **sem nenhuma
+escrita no Supabase** — quem grava em `sequencia_separacao` é o front-end,
+só depois que o líder revisa a lista e confirma.
+
+- **Filtros fixos** (`SALDO=SEM_SALDO` + o mesmo conjunto de `B1_GRUPO` do
+  exemplo real mandado pelo cliente) — só o `C2_NTEP` (código da ETP) muda
+  a cada busca. Se o cliente pedir pra tornar esses filtros configuráveis
+  no futuro, é um pedido separado.
+- **Mesma técnica de classificação de linha por CONTEÚDO de célula** (`<th>`
+  = cabeçalho, `<td>` = dado) já usada em `sync-sa-almoxarifado`, pro mesmo
+  tipo de tabela DataTables (thead+tfoot duplicando o cabeçalho, tbody com
+  o dado de verdade) — mais simples e resistente do que tentar diferenciar
+  thead/tfoot/tbody via regex. A tabela é escolhida por heurística (a que
+  tem mais `<tr>`), já que não há um `id` conhecido pra ela (diferente de
+  `tbemp` em `sa_aberto.php`, já confirmado antes contra o HTML real).
+- **`mapearColunas` faz 2 passadas** — igualdade EXATA primeiro, substring
+  só como fallback — pra nunca deixar um cabeçalho curto ("OP") casar por
+  acidente com outro que o contém como substring ("Descrição OP"), mesma
+  categoria de bug já vista antes neste projeto (a keyword solta "sa"
+  colidindo com "Saldo SA" em `sync-sa-almoxarifado`, corrigida na época).
+- **Coluna "Produto" não separa código de descrição** (confirmado pela
+  lista de colunas do screenshot do cliente — não existe uma coluna
+  própria de descrição) — a descrição vem embutida na própria célula
+  ("021.030.00023 - PARAFUSO..."), reconstruída via os mesmos 3 formatos de
+  código válidos já usados em toda a SB2 deste app (8/9/11 dígitos com
+  pontuação). **Sem bater com nenhum desses formatos, o código sai `null`,
+  nunca inventado** — a linha continua aparecendo na prévia (com o texto
+  original, `produtoBruto`), mas o front-end nunca deixa selecionar/
+  adicionar um item sem código reconhecido.
+- **Só 6 dos 14 campos reais da tabela são capturados** (op/etp/produto/
+  local/quantidade/unidade — via a coluna "Qtd Empenho"/"U.M.") — os outros
+  8 (Descrição OP/Dt. Emp./NTE/Grupo/Saldo Estoque/SCs/PCs/Terc) não são
+  usados pela fila de separação, mesmo critério de "não guardar dado que a
+  tela não precisa" já seguido noutras integrações deste projeto (ex.:
+  Classe/SA em branco no export de `BD_Contagens`).
+- **Devolve `null` (não `[]`) quando o parser não reconhece a tabela** —
+  distinto de "0 itens de verdade" — pra nunca confundir "esta ETP não tem
+  item faltante" (resultado honesto) com "a página mudou de formato"
+  (falha de parser). **PARSER NUNCA testado contra o HTML real desta
+  página** (só o print/lista de colunas visível no screenshot do cliente)
+  — mesma ressalva de sempre neste projeto: se não reconhecer nada, o
+  próximo passo é o cliente mandar o HTML real (`Ctrl+U`) pra recalibrar,
+  ajuste rápido de fazer.
+
+### `backend/schema.sql` — 4 colunas novas em `sequencia_separacao`
+
+`etp text`/`op text`/`local text`/`unidade text`, todas nullable — só
+preenchidas quando o item entra na fila via busca por ETP; sempre `null`
+pro fluxo antigo de busca manual no catálogo, que não tem nenhum desses 4
+conceitos. Bloco de migração (`alter table ... add column if not exists`)
+pro projeto já aplicado. Nenhuma mudança de RLS/Realtime necessária — a
+tabela já estava no padrão hardened (`tem_acesso_tela`) e já publicava pro
+Realtime desde que foi criada.
+
+### `index.html` — `fetchItensFaltantesPorEtp` + prévia com checkbox em
+### `ProgramacaoSeparacaoPanel`
+
+- **`fetchItensFaltantesPorEtp(etp)`** (perto de `fetchSaldoConsultaSelgron`)
+  — mesmo padrão exato: `supabaseClient.functions.invoke(...)`, com o mesmo
+  truque de recuperar a mensagem de erro REAL via `error.context.json()`
+  (o `supabase-js` descarta o corpo de qualquer resposta não-2xx por
+  padrão) — sem essa recuperação, um erro configurado no `resposta(500,
+  ...)` da Edge Function (credenciais ausentes) apareceria só como um texto
+  genérico.
+- **`adicionarItemSequenciaSeparacao`** ganhou os 4 campos novos no
+  `insert` (`etp`/`op`/`local`/`unidade`, sempre `null` quando o item vem do
+  fluxo manual de busca no catálogo).
+- **Bloco novo "Buscar por ETP"** em `ProgramacaoSeparacaoPanel` (só
+  `canManage`, mesmo grupo líder/admin do resto da tela) — campo de texto +
+  botão "Buscar" (Enter também dispara), e conforme a resposta:
+  - Erro da Edge Function → mensagem em vermelho, sem quebrar a tela.
+  - Sucesso com 0 itens → `.empty-state` honesto ("Nenhum item faltante
+    encontrado para essa ETP."), nunca confundido com erro.
+  - Sucesso com itens → **prévia com checkbox por item**, cada linha
+    mostrando código (ou "(código não reconhecido)")/descrição/OP/ETP/
+    Local/Qtd+unidade — item **sem código reconhecido nasce DESMARCADO e
+    com o checkbox DESABILITADO** (nunca pode ser selecionado, mesmo que o
+    líder tente marcar tudo), com um aviso vermelho mostrando o texto
+    original da célula (`produtoBruto`) pra decidir manualmente depois; item
+    COM código nasce marcado por padrão (pode desmarcar o que não quiser).
+  - **Um `<select>` de Prioridade (Alta/Média/Baixa) pro LOTE INTEIRO** —
+    escolhido uma vez, aplicado a todos os itens confirmados juntos — e um
+    botão "Adicionar selecionados à fila (N)" (N = contagem ao vivo dos
+    itens marcados E com código válido), desabilitado quando N=0.
+  - **Confirmar grava sequencialmente, parando no 1º erro** (mesmo padrão
+    já usado noutros lotes deste app — ex. `handleImprimirTodos` de
+    Etiquetas) — mostra quantos já tinham entrado antes de uma falha no
+    meio do lote, sem fingir que o lote inteiro foi salvo.
+  - Depois de confirmar com sucesso, a prévia se limpa sozinha (campo de
+    ETP, resultado, seleção — tudo resetado) e uma mensagem verde de
+    sucesso aparece ("N itens adicionados à fila.").
+- **Cards da lista pendente** ganharam uma linha extra condicional
+  ("ETP: X · OP: Y · Local: Z") só quando o item veio desse fluxo — e a
+  linha de quantidade passou a mostrar a unidade junto ("Qtd: 10 PC"), não
+  só o número cru.
+
+### Verificação
+
+Testado via 3 camadas, mesmo rigor de sempre neste projeto:
+
+- **Type-check da Edge Function** via `tsc --strict` (shim dos globais do
+  Deno, mesma técnica já usada nas outras Edge Functions deste projeto,
+  sandbox sem Deno instalado) — sem erro.
+- **`harness_itens_faltantes_parser.js`** (Node puro, réplica da lógica de
+  parsing da Edge Function) — 26/26 passando: `mapearColunas` com
+  igualdade exata vs. substring (incluindo o caso "OP" vs. "Descrição OP");
+  `separarCodigoDescricao` nos 3 formatos válidos de código + texto sem
+  formato reconhecível (`codigo:null`, `descricao` = o texto inteiro);
+  `extrairItensFaltantes` com uma tabela sintética fiel ao padrão
+  DataTables (thead+tfoot duplicados), incluindo o caso de 0 linhas de
+  dado (`[]`, não confundido com `null`) e cabeçalho não reconhecido
+  (`null`, não confundido com `[]`).
+- **`harness_etp_busca_separacao.js`** (jsdom + react-dom/client + `act()`,
+  mesma técnica rigorosa de sempre — carrega o `index.html` inteiro
+  transpilado numa `vm.Script`, Supabase mockado incluindo
+  `functions.invoke`) — 31/31 passando: `fetchItensFaltantesPorEtp`
+  isolada (corpo de sucesso, sem etp não chama a function, recuperação de
+  erro via `error.context.json()`); `sequenciaSeparacaoRowToLocal` mapeando
+  os 4 campos novos; e de ponta a ponta em `ProgramacaoSeparacaoPanel` —
+  busca disparando com o ETP certo, prévia mostrando os itens certos
+  (incluindo o aviso de `produtoBruto` pro item sem código), os 2
+  checkboxes nascendo no estado certo (válido marcado/habilitado, inválido
+  desmarcado/desabilitado), o botão de confirmar habilitando/desabilitando
+  conforme a seleção muda, gravação em lote só do item válido (nunca o sem
+  código) com a prioridade do LOTE (não um padrão silencioso) e o
+  `criado_por` certo, mensagem de sucesso, prévia se limpando sozinha, o
+  item aparecendo na lista pendente com ETP/OP/Local/unidade certos, ETP
+  sem nenhum item mostrando o `.empty-state` honesto (não erro), erro da
+  Edge Function aparecendo sem quebrar a tela (sem nenhum checkbox
+  renderizado), e operador (modo leitura) nunca vendo o bloco "Buscar por
+  ETP" em lugar nenhum.
+  - **Achado de teste, corrigido no próprio harness, não no app**: a 1ª
+    versão do teste alternava o checkbox via
+    `checkbox.dispatchEvent(new dom.window.Event('click', {bubbles:
+    true}))` — um `Event` genérico dispatchado à mão não passa pela
+    "activation behavior" nativa que o jsdom implementa pra alternar
+    `.checked`/disparar `change` de verdade (diferente de um botão comum,
+    onde disparar um `click` sintético já é suficiente) — o clique nunca
+    alternava o estado de fato, mascarado porque o teste seguinte
+    (marcar de novo) só reconfirmava um valor que nunca tinha mudado.
+    Corrigido trocando pra `checkbox.click()` (o método nativo do DOM, que
+    o jsdom processa corretamente) — primeira vez que este projeto testa
+    alternância de checkbox via harness, então essa lição fica registrada
+    aqui pra próximas vezes.
+- Rodada de novo `harness_programacao_separacao.js` (38/38, sem regressão
+  no fluxo manual de busca/prioridade/marcar separado/excluir/histórico já
+  existente) e `check_transpile_separacao.js` (transpile OK, CSS 669/669
+  balanceado — sem mudança de contagem, esta rodada só tocou JS/JSX).
+
+**Falta o cliente**: rodar o SQL novo (`alter table sequencia_separacao add
+column if not exists etp/op/local/unidade`) no projeto Supabase real, e
+publicar a Edge Function nova (`npx supabase functions deploy
+consultar-itens-faltantes`) — sem isso, o botão "Buscar" da tela mostra o
+erro "Edge Function returned a non-2xx status code" (function ainda não
+existe no projeto real). **Verificação visual/funcional de ponta a ponta
+contra o Kardex/consulta real da Selgron fica a cargo do cliente** — mesma
+limitação de sempre (login exige Supabase Auth real, e o sandbox tampouco
+tem acesso à consulta interna da Selgron).

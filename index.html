@@ -2561,6 +2561,32 @@ async function fetchSaldoConsultaSelgron(codigo, armazem){
   }
 }
 
+// Busca "Lista de Itens Faltantes" por ETP (Gestão de Separação → Programação)
+// — mesmo padrão de proxy on-demand de `fetchSaldoConsultaSelgron` acima
+// (nenhuma gravação no Supabase, só chama a Edge Function e devolve o corpo
+// já pronto: {ok, etp, itens, total} em sucesso, {ok:false, erro} em falha).
+async function fetchItensFaltantesPorEtp(etp){
+  if(!supabaseClient || !etp) return {ok:false, erro:'Não configurado.'};
+  try{
+    const { data, error } = await supabaseClient.functions.invoke('consultar-itens-faltantes', {
+      body: {etp},
+    });
+    if(error){
+      let erro = error.message;
+      if(error.context && typeof error.context.json==='function'){
+        try{
+          const corpo = await error.context.json();
+          if(corpo && corpo.erro) erro = corpo.erro;
+        }catch(_e){ /* corpo não era JSON — mantém a mensagem genérica */ }
+      }
+      return {ok:false, erro};
+    }
+    return data;
+  }catch(err){
+    return {ok:false, erro:String(err && err.message || err)};
+  }
+}
+
 // `patch` usa nomes de campo em camelCase (mesmo formato do objeto local) —
 // convertido pra snake_case aqui dentro. Único uso real que sobra hoje:
 // gravar `ultimoAcesso` (ver attemptLogin) — a coluna é a única liberada
@@ -15570,6 +15596,14 @@ function sequenciaSeparacaoRowToLocal(row){
     criadoEm: row.criado_em,
     separadoPor: row.separado_por,
     separadoEm: row.separado_em,
+    // Só preenchidos pra item que entrou via busca por ETP (ver
+    // `fetchItensFaltantesPorEtp`/`AdicionarPorEtpPanel` mais abaixo) —
+    // sempre null pro fluxo de busca manual no catálogo, que não tem
+    // nenhum desses 4 conceitos.
+    etp: row.etp,
+    op: row.op,
+    local: row.local,
+    unidade: row.unidade,
   };
 }
 
@@ -15603,6 +15637,13 @@ async function adicionarItemSequenciaSeparacao(item){
       observacao: item.observacao || null,
       status: 'pendente',
       criado_por: item.criadoPor || null,
+      // etp/op/local/unidade: só preenchidos quando o item entra na fila via
+      // busca por ETP (fetchItensFaltantesPorEtp) — sempre null pro fluxo
+      // manual de busca no catálogo, que não tem nenhum desses 4 conceitos.
+      etp: item.etp || null,
+      op: item.op || null,
+      local: item.local || null,
+      unidade: item.unidade || null,
     });
     if(error) throw error;
     return {ok:true};
@@ -16894,6 +16935,23 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
   const [historicoAberto, setHistoricoAberto] = useState(false);
   const [buscaHistorico, setBuscaHistorico] = useState('');
 
+  // Busca por ETP (Gestão de Separação → Programação) — pedido do cliente:
+  // "Neste link eu vou digitar o código da ETP e ele pesquisa a OP e
+  // quantidade de itens dentro da OP, na tela de programação eu adiciono o
+  // número da ETP." Confirmado via AskUserQuestion (2 perguntas): a busca
+  // só MOSTRA uma prévia com checkbox por item, nada é gravado até o líder
+  // confirmar explicitamente ("Mostrar lista, eu escolho quais entram"); e
+  // a prioridade é escolhida UMA VEZ pro lote inteiro confirmado, não por
+  // item ("Eu escolho uma prioridade pro lote inteiro").
+  const [etpCodigo, setEtpCodigo] = useState('');
+  const [buscandoEtp, setBuscandoEtp] = useState(false);
+  const [etpResultado, setEtpResultado] = useState(null); // {ok, etp, itens} | {ok:false, erro} | null
+  const [selecaoEtp, setSelecaoEtp] = useState({}); // índice do item → true/false
+  const [prioridadeEtp, setPrioridadeEtp] = useState('media');
+  const [adicionandoEtp, setAdicionandoEtp] = useState(false);
+  const [erroAdicionarEtp, setErroAdicionarEtp] = useState(null);
+  const [resultadoAdicaoEtp, setResultadoAdicaoEtp] = useState(null);
+
   const canManage = role==='lider' || role==='admin';
 
   // Fila em tempo real — escopado a esta tela (mesmo padrão já usado por
@@ -16965,6 +17023,66 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
     setQuantidade('');
     setPrioridade('media');
     setObservacao('');
+  }
+
+  async function handleBuscarEtp(){
+    const etpLimpo = etpCodigo.trim();
+    if(!etpLimpo) return;
+    setBuscandoEtp(true);
+    setErroAdicionarEtp(null);
+    setResultadoAdicaoEtp(null);
+    setEtpResultado(null);
+    const res = await fetchItensFaltantesPorEtp(etpLimpo);
+    setBuscandoEtp(false);
+    setEtpResultado(res);
+    if(res && res.ok && Array.isArray(res.itens)){
+      // Item com código não reconhecido nasce DESMARCADO e não pode ser
+      // marcado (checkbox desabilitado no JSX) — nunca entra na fila sem
+      // um código válido, mesmo se o líder tentar selecionar tudo.
+      const sel = {};
+      res.itens.forEach((it, idx)=>{ sel[idx] = !!it.codigo; });
+      setSelecaoEtp(sel);
+    }else{
+      setSelecaoEtp({});
+    }
+    setPrioridadeEtp('media');
+  }
+
+  function toggleSelecaoEtp(idx){
+    setSelecaoEtp(prev=>({...prev, [idx]: !prev[idx]}));
+  }
+
+  async function handleAdicionarLoteEtp(){
+    if(!etpResultado || !etpResultado.ok || !Array.isArray(etpResultado.itens)) return;
+    const selecionados = etpResultado.itens.filter((it, idx)=> selecaoEtp[idx] && it.codigo);
+    if(selecionados.length===0) return;
+    setAdicionandoEtp(true);
+    setErroAdicionarEtp(null);
+    let adicionados = 0;
+    for(const it of selecionados){
+      const res = await adicionarItemSequenciaSeparacao({
+        codigo: it.codigo,
+        descricao: it.descricao,
+        quantidade: it.quantidade,
+        prioridade: prioridadeEtp,
+        criadoPor: currentUser ? currentUser.nome : null,
+        etp: it.etp,
+        op: it.op,
+        local: it.local,
+        unidade: it.unidade,
+      });
+      if(!res.ok){
+        setErroAdicionarEtp(`Falhou ao adicionar ${it.codigo}: ${res.erro || 'erro desconhecido'} (${adicionados} de ${selecionados.length} já tinham sido adicionados antes)`);
+        setAdicionandoEtp(false);
+        return;
+      }
+      adicionados++;
+    }
+    setAdicionandoEtp(false);
+    setResultadoAdicaoEtp(`${adicionados} ${adicionados===1 ? 'item adicionado' : 'itens adicionados'} à fila.`);
+    setEtpResultado(null);
+    setSelecaoEtp({});
+    setEtpCodigo('');
   }
 
   async function handleMarcarSeparado(id){
@@ -17060,6 +17178,93 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
         </div>
       )}
 
+      {canManage && (
+        <div style={{marginBottom:18,paddingBottom:14,borderBottom:'1px solid var(--line)'}}>
+          <div style={{fontSize:'var(--text-sm)',fontWeight:600,marginBottom:8}}>Buscar por ETP</div>
+          <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginBottom:10,lineHeight:1.5}}>
+            Digite o código da ETP — busca a(s) OP(s) e os itens faltantes dela na
+            consulta da Selgron. Nada é adicionado à fila ainda: revise a lista e
+            escolha quais itens entram antes de confirmar.
+          </div>
+          <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'flex-end'}}>
+            <div className="field" style={{flex:1,minWidth:160,marginBottom:0}}>
+              <label>Código da ETP</label>
+              <input
+                type="text"
+                value={etpCodigo}
+                onChange={e=>setEtpCodigo(e.target.value)}
+                onKeyDown={e=>{ if(e.key==='Enter') handleBuscarEtp(); }}
+                placeholder="Ex: 6220-26"
+              />
+            </div>
+            <button type="button" className="btn btn-primary" style={{width:'auto'}} disabled={buscandoEtp || !etpCodigo.trim()} onClick={handleBuscarEtp}>
+              {buscandoEtp ? 'Buscando…' : 'Buscar'}
+            </button>
+          </div>
+
+          {etpResultado && !etpResultado.ok && (
+            <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginTop:10}}>{etpResultado.erro}</div>
+          )}
+
+          {etpResultado && etpResultado.ok && Array.isArray(etpResultado.itens) && (
+            etpResultado.itens.length===0 ? (
+              <div className="empty-state" style={{marginTop:10}}>Nenhum item faltante encontrado para essa ETP.</div>
+            ) : (
+              <div style={{marginTop:12}}>
+                <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginBottom:8}}>
+                  {etpResultado.itens.length} {etpResultado.itens.length===1 ? 'item encontrado' : 'itens encontrados'} — desmarque o que não quiser adicionar.
+                </div>
+                {etpResultado.itens.map((it, idx)=>(
+                  <label key={idx} className="list-row" style={{flexWrap:'wrap', cursor: it.codigo ? 'pointer' : 'default', opacity: it.codigo ? 1 : 0.6}}>
+                    <div style={{display:'flex',alignItems:'flex-start',gap:10}}>
+                      <input
+                        type="checkbox"
+                        style={{marginTop:4}}
+                        disabled={!it.codigo}
+                        checked={!!selecaoEtp[idx]}
+                        onChange={()=>toggleSelecaoEtp(idx)}
+                      />
+                      <div>
+                        <div className="lr-title">{it.codigo || '(código não reconhecido)'}{it.descricao ? ' — '+it.descricao : ''}</div>
+                        <div className="lr-sub">
+                          OP: {it.op||'—'} · ETP: {it.etp||'—'} · Local: {it.local||'—'} · Qtd: {it.quantidade||'—'}{it.unidade ? ' '+it.unidade : ''}
+                        </div>
+                        {!it.codigo && it.produtoBruto && (
+                          <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginTop:2}}>
+                            Não foi possível reconhecer o código do produto nesta linha — não pode ser adicionado. Texto original: "{it.produtoBruto}"
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </label>
+                ))}
+                <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'flex-end',marginTop:12}}>
+                  <div className="field" style={{flex:1,minWidth:140,marginBottom:0}}>
+                    <label>Prioridade (pro lote inteiro)</label>
+                    <select value={prioridadeEtp} onChange={e=>setPrioridadeEtp(e.target.value)}>
+                      <option value="alta">Alta</option>
+                      <option value="media">Média</option>
+                      <option value="baixa">Baixa</option>
+                    </select>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    style={{width:'auto'}}
+                    disabled={adicionandoEtp || etpResultado.itens.filter((it,idx)=>selecaoEtp[idx] && it.codigo).length===0}
+                    onClick={handleAdicionarLoteEtp}
+                  >
+                    {adicionandoEtp ? 'Adicionando…' : `Adicionar selecionados à fila (${etpResultado.itens.filter((it,idx)=>selecaoEtp[idx] && it.codigo).length})`}
+                  </button>
+                </div>
+                {erroAdicionarEtp && <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginTop:8}}>{erroAdicionarEtp}</div>}
+              </div>
+            )
+          )}
+          {resultadoAdicaoEtp && <div style={{fontSize:'var(--text-xs)',color:'var(--ok)',marginTop:10}}>{resultadoAdicaoEtp}</div>}
+        </div>
+      )}
+
       {pendentes.length===0 ? (
         <div className="empty-state">
           {canManage
@@ -17072,10 +17277,19 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
             <div>
               <div className="lr-title">{i.codigo} — {i.descricao}</div>
               <div className="lr-sub">
-                {i.quantidade ? `Qtd: ${i.quantidade}` : ''}
+                {i.quantidade ? `Qtd: ${i.quantidade}${i.unidade ? ' '+i.unidade : ''}` : ''}
                 {i.quantidade && i.observacao ? ' · ' : ''}
                 {i.observacao || ''}
               </div>
+              {(i.etp || i.op || i.local) && (
+                <div className="lr-sub" style={{marginTop:2}}>
+                  {i.etp ? `ETP: ${i.etp}` : ''}
+                  {i.etp && i.op ? ' · ' : ''}
+                  {i.op ? `OP: ${i.op}` : ''}
+                  {(i.etp || i.op) && i.local ? ' · ' : ''}
+                  {i.local ? `Local: ${i.local}` : ''}
+                </div>
+              )}
               {erros[i.id] && <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginTop:4}}>{erros[i.id]}</div>}
             </div>
             <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
