@@ -21131,3 +21131,85 @@ acontecer com mais nenhum item"**.
   **Verificação de ponta a ponta com o item real (000.25086) fica a cargo
   do cliente** — mesma limitação de sempre (sandbox sem acesso de rede ao
   domínio interno da Selgron).
+
+## "Nova Contagem" (Manual): busca ao vivo na Selgron quando o item é recém-cadastrado
+
+Cliente mandou print da tela "Nova Contagem" → Manual, "Contando no Armazém 01",
+buscando `000.69543`, com o resultado "Nenhum item encontrado." — e já veio com o
+próprio diagnóstico certo: **"não está encontrando, deve ser porque é item recém
+cadastrado."**
+
+- **Causa confirmada**: `ManualCountFlow` (a busca avulsa de "Nova Contagem") só
+  consultava `searchSupabaseCatalog` — que só lê o catálogo LOCAL (`produtos` no
+  Supabase, populado por reimportação manual e periódica da planilha "Descrição de
+  Produtos" em Configurações). Um item genuinamente já cadastrado no Protheus, mas
+  ainda não reimportado pra esse cache local, sempre batia em "Nenhum item
+  encontrado." — mesmo existindo de verdade e já aparecendo na consulta ao vivo da
+  Selgron (`consultar-produto-selgron`, a mesma Edge Function já usada em
+  `CountStep`/`EtiquetasPanel`/`Dashboard`, que consulta `consulta.selgron.com.br`
+  direto, sem nenhum passo de importação no meio).
+- **`pareceCodigoProduto(q)`** (função nova, logo antes de `ManualCountFlow`) —
+  decide quando vale a pena tentar a consulta ao vivo: só quando a busca local não
+  achou NADA (evita queimar uma requisição a cada busca por descrição livre, tipo
+  "parafuso"/"tinta", que a consulta Selgron nunca resolveria mesmo — ela busca por
+  código, não por texto) **e** a query, depois de tirar pontuação, sobra só dígito,
+  num tamanho plausível de código real (6-13 dígitos — folga em cima dos 3 formatos
+  já documentados da SB2, 8/9/11 dígitos com pontuação, cobrindo tanto digitação sem
+  pontuação quanto código de barras colado).
+- **`useEffect` de busca reescrito** — depois da busca local (`searchSupabaseCatalog`)
+  voltar vazia E a query parecer um código de verdade, dispara
+  `fetchSaldoConsultaSelgron(query, armazem)` (mesma função já usada em
+  `CountStep`/`EtiquetasPanel`, com o MESMO cuidado de informar o armazém —
+  ver "Bug real: saldo do sistema vinha do ARMAZÉM ERRADO" mais acima, pra não
+  reabrir a mesma ambiguidade já corrigida lá) — sem bloquear a tela, mostrando
+  "Não achei no catálogo local — consultando ao vivo na Selgron (pode ser um item
+  recém-cadastrado)…" enquanto espera.
+- **Resultado da consulta ao vivo vira um item SINTÉTICO, mesmo padrão
+  `foraDoCacheLocal:true` já usado em `ImportedListCountFlow`/`RecountFlow`** — saldo
+  ausente vira `0` (regra já estabelecida: "sem saldo carregado = saldo real 0, nunca
+  `null`"), unidade passa por `unidadeCadastroValida` (mesma proteção contra a
+  Unidade vazando com formato de endereço, já corrigida antes nesta feature),
+  `familia:null` (a consulta não traz grupo, não inventa). Aparece na lista com um
+  rótulo VISUALMENTE DISTINTO ("Encontrado ao vivo na Selgron — ainda não está no
+  catálogo local", em laranja) — nunca se disfarça de resultado do catálogo comum.
+- **`CountStep` já reconsulta ao vivo por conta própria** (mecanismo já existente,
+  por `product.codigo`/`product.almoxarifado`) — o item sintético só precisa ser bom
+  o bastante pra deixar o operador SELECIONAR o resultado certo; saldo/descrição/
+  endereço/unidade/custo/última movimentação definitivos continuam vindo da consulta
+  ao vivo de dentro do próprio `CountStep`, como já acontecia pra qualquer item.
+- **Trocar de armazém ou limpar a busca reseta o resultado ao vivo** — mesmo
+  `useEffect` reage a `[query, armazem]`, então qualquer um dos dois relança a busca
+  do zero, sem deixar um resultado de armazém/busca anterior "grudado" na tela.
+- **Escopo deliberadamente restrito a "Nova Contagem" (Manual)** — os outros pontos
+  de busca no catálogo (`NewInventory.addItemEspecifico`/"Colar lista de vários
+  códigos", e a resolução via RPC de `RandomCountFlow`/`RouteCountFlow`) não foram
+  tocados; se o cliente notar o mesmo sintoma em algum desses fluxos, é um pedido
+  separado — cada um tem um jeito próprio de resolver item (RPC batched, não busca
+  por texto), não dá pra generalizar a mesma correção sem repensar caso a caso.
+- Testado via harness dedicado (jsdom + react-dom/client + `act()`, mesma técnica
+  rigorosa de sempre — extrai o `<script type="text/babel">`, transpila via Babel,
+  roda numa `vm.runInThisContext`, Supabase mockado incluindo `functions.invoke`
+  resolvendo com um delay real de 80ms — necessário pra conseguir observar de
+  verdade o estado transitório "consultando ao vivo…", já que um mock que resolve
+  instantâneo via `Promise.resolve` deixa a cadeia inteira de `await`s correr dentro
+  do mesmo tick de microtasks, sem nenhuma janela real pra um teste baseado em
+  `setTimeout` flagrar o estado intermediário): confirmado que busca local com
+  resultado NUNCA aciona a consulta ao vivo; busca por descrição livre sem
+  resultado local também nunca aciona (não parece código); busca por código sem
+  resultado local aciona a consulta com o código+armazém certos, mostra o aviso de
+  "consultando ao vivo" enquanto espera, e o resultado com o rótulo distinto assim
+  que resolve — selecionável, entrando no `CountStep` normalmente; falha da consulta
+  (`ok:false`) e exceção de rede caem em "Nenhum item encontrado." sem quebrar a
+  tela; trocar de armazém e limpar a busca resetam o resultado ao vivo anterior.
+  28/28 asserções passando. Rodei de novo os 6 outros harnesses do scratchpad que
+  não dependem desta função (`harness_etp_busca_separacao.js`/
+  `harness_itens_faltantes_parser.js`/`harness_painel_realtime.js`/
+  `harness_parse_numero_br.js`/`harness_programacao_separacao.js`/
+  `harness_tracking_picking.js`) — 141/141 asserções, 0 falhas, nenhuma regressão.
+  Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos
+  (669/669, sem mudança — nenhuma classe CSS nova, só JS/JSX dentro de
+  `ManualCountFlow`). **Nenhuma migração de SQL nem redeploy de Edge Function
+  necessários** — é só JS de front-end, publica sozinho via GitHub Pages assim que o
+  deploy processar. **Verificação de ponta a ponta com o item real (000.69543) fica
+  a cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth real,
+  não simulável no sandbox sem rede).

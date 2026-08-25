@@ -10562,6 +10562,21 @@ function parseCodigosColados(texto){
   return unicos;
 }
 
+// Só chamada quando a busca local (searchSupabaseCatalog) não achou NADA —
+// evita queimar uma requisição de consulta ao vivo pra toda busca por
+// descrição livre ("parafuso", "tinta"...), que a consulta Selgron nunca
+// resolveria mesmo (ela busca por código, não por texto). Exige que a
+// query, depois de tirar pontuação, sobre só dígito — e num tamanho
+// plausível de código real (8/9/11 dígitos, formatos já documentados da
+// SB2: XXX.XXXXX / XXX.XXXXX.X / XXX.XXX.XXXXX), com folga pra digitação
+// sem pontuação ou um código de barras colado.
+function pareceCodigoProduto(q){
+  const s = String(q||'').trim();
+  if(!s || !/^[0-9.]+$/.test(s)) return false;
+  const semPontuacao = s.replace(/[^0-9]/g,'');
+  return semPontuacao.length>=6 && semPontuacao.length<=13;
+}
+
 function ManualCountFlow({user, onRegisterCount, onAddressProposed, counts, operadorVeSaldo, onReservarItem, onLiberarItemReserva, inventories}){
   // Armazém já nasce pré-selecionado em "1" (Armazém 01, disparado sozinho
   // na esmagadora maioria dos casos reais — ver CLAUDE.md "Cards de estoque
@@ -10577,6 +10592,17 @@ function ManualCountFlow({user, onRegisterCount, onAddressProposed, counts, oper
   const [scanning, setScanning] = useState(false);
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
+  // Item achado só na consulta ao vivo da Selgron, nunca no catálogo local
+  // (`produtos`, populado por importação manual da planilha "Descrição de
+  // Produtos") — cobre o caso "item recém cadastrado no Protheus, ainda não
+  // reimportado no app", que antes desta correção sempre caía em "Nenhum
+  // item encontrado" mesmo o item existindo de verdade. `null` = não
+  // tentou/não achou; `buscandoAoVivo` distingue essa 2ª etapa da busca
+  // local de sempre, só pra mostrar uma mensagem mais precisa enquanto
+  // dura (pode levar até 8s, mesmo timeout já usado pela consulta em
+  // CountStep/Etiquetas).
+  const [liveFallback, setLiveFallback] = useState(null);
+  const [buscandoAoVivo, setBuscandoAoVivo] = useState(false);
 
   // Lista de armazéns com saldo carregado, pro <select> — mesma fonte que
   // `ArmazemGate` já usava. Roda uma vez, em paralelo com o resto da tela
@@ -10598,12 +10624,62 @@ function ManualCountFlow({user, onRegisterCount, onAddressProposed, counts, oper
   // Supabase é a única fonte agora. Debounce de 350ms pra não disparar uma
   // requisição a cada tecla.
   useEffect(()=>{
-    if(!armazem || !query){ setResults([]); setLoading(false); return; }
+    if(!armazem || !query){ setResults([]); setLoading(false); setLiveFallback(null); setBuscandoAoVivo(false); return; }
     let cancelado = false;
     setLoading(true);
+    setLiveFallback(null);
     const timer = setTimeout(async ()=>{
       const found = await searchSupabaseCatalog(query, armazem);
-      if(!cancelado){ setResults(found); setLoading(false); }
+      if(cancelado) return;
+      if(found.length>0 || !pareceCodigoProduto(query)){
+        // Achou no catálogo local, ou a query não parece um código de
+        // produto (busca por descrição livre) — a consulta ao vivo da
+        // Selgron nunca resolveria isso mesmo, não vale a pena tentar.
+        setResults(found);
+        setLoading(false);
+        return;
+      }
+      // Nada no catálogo local, mas a query parece um código real —
+      // tenta a consulta ao vivo antes de desistir. Cobre o item que já
+      // existe no Protheus mas ainda não chegou no cache local (só entra
+      // ali via reimportação manual da planilha "Descrição de Produtos"
+      // em Configurações — pode ficar dias/semanas desatualizado).
+      setResults([]);
+      setBuscandoAoVivo(true);
+      const resp = await fetchSaldoConsultaSelgron(query.trim(), armazem);
+      if(cancelado) return;
+      setBuscandoAoVivo(false);
+      setLoading(false);
+      if(resp && resp.ok){
+        // Produto sintético, mesmo formato/convenção já usada em outros
+        // fallbacks deste app (ImportedListCountFlow/RecountFlow) pra item
+        // fora do catálogo local — `foraDoCacheLocal:true`. Saldo ausente
+        // vira 0 (tratado como saldo real, mesmo critério já usado no
+        // resto do app — nunca `null`, que travaria a contagem exigindo
+        // autorização de líder/admin à toa pra um valor que a própria
+        // consulta ao vivo já confirmou existir, só sem saldo carregado).
+        // `enderecoCadastrado` só reflete se a consulta trouxe algo — o
+        // `CountStep` faz sua PRÓPRIA consulta ao vivo de novo ao montar
+        // (por código+armazém) e já prioriza esse resultado sobre
+        // qualquer coisa passada aqui, então não precisa ficar 100% fiel.
+        setLiveFallback({
+          codigo: resp.codigo || query.trim(),
+          descricao: resp.descricao || query.trim(),
+          unidade: unidadeCadastroValida(resp.unidade),
+          familia: null,
+          endereco: resp.endereco || null,
+          enderecoCadastrado: !!resp.endereco,
+          almoxarifado: armazem,
+          corredor: null,
+          rua: null,
+          saldoSistema: typeof resp.saldo==='number' ? resp.saldo : 0,
+          custoUnit: typeof resp.custoUnitario==='number' ? resp.custoUnitario : 0,
+          valorFinanceiro: 0,
+          semMovimentoRecente: false,
+          ultimaSaida: resp.ultimaMovimentacao || null,
+          foraDoCacheLocal: true,
+        });
+      }
     }, 350);
     return ()=>{ cancelado = true; clearTimeout(timer); };
   }, [query, armazem]);
@@ -10673,8 +10749,9 @@ function ManualCountFlow({user, onRegisterCount, onAddressProposed, counts, oper
         <label>Ou buscar por código, descrição ou código de barras</label>
         <input type="text" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Ex: 000.35310 ou parafuso" />
       </div>
-      {loading && <div className="empty-state">Buscando no catálogo…</div>}
-      {!loading && results.length===0 && query && <div className="empty-state">Nenhum item encontrado.</div>}
+      {loading && !buscandoAoVivo && <div className="empty-state">Buscando no catálogo…</div>}
+      {buscandoAoVivo && <div className="empty-state">Não achei no catálogo local — consultando ao vivo na Selgron (pode ser um item recém-cadastrado)…</div>}
+      {!loading && results.length===0 && !liveFallback && query && <div className="empty-state">Nenhum item encontrado.</div>}
       {results.map(p=>(
         <div key={p.codigo} className="list-row" onClick={()=>setSelected(p)}>
           <div>
@@ -10684,6 +10761,18 @@ function ManualCountFlow({user, onRegisterCount, onAddressProposed, counts, oper
           <span className="chevron"><Ic>›</Ic></span>
         </div>
       ))}
+      {!loading && liveFallback && (
+        <div key={liveFallback.codigo} className="list-row" onClick={()=>{ setSelected(liveFallback); setLiveFallback(null); }}>
+          <div>
+            <div className="lr-title">{liveFallback.descricao}</div>
+            <div className="lr-sub">
+              {liveFallback.codigo}{liveFallback.enderecoCadastrado ? ' · '+liveFallback.endereco : ''}
+              <br/><span style={{color:'var(--safety)'}}>Encontrado ao vivo na Selgron — ainda não está no catálogo local</span>
+            </div>
+          </div>
+          <span className="chevron"><Ic>›</Ic></span>
+        </div>
+      )}
     </div>
   );
 }
