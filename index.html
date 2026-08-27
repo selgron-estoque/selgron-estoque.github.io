@@ -14089,6 +14089,83 @@ function acuracidadeGeralAte(counts, historicoParaTendencia, dataLimiteStr){
   return meses.length>0 ? (meses.reduce((s,m)=>s+m.acuracidade,0)/meses.length) : 100;
 }
 
+// "Efeito dos Ajustes Aprovados" (Indicadores) — pedido de um coordenador
+// de almoxarifado: "a acuracidade de itens que já tiveram contagens... está
+// tendo resultado os ajustes aprovados?". Não basta olhar a tendência geral
+// (isso o resto da seção "Tendência" já mostra) — a pergunta é sobre CADA
+// item que passou por um ajuste (SA de Ajuste ou Devolução, ambos via
+// `classificarStatusConcluido`): o problema físico que gerou aquele ajuste
+// foi resolvido de verdade? A única forma honesta de responder isso é
+// comparar a contagem que gerou o ajuste contra a PRÓXIMA vez que esse
+// MESMO código foi contado (em qualquer documento/inventário futuro, não só
+// dentro da mesma cadeia de recontagem — `contagemAnteriorId`/
+// `numeroContagem` só encadeiam recontagens de UM documento, nunca duas
+// contagens independentes do mesmo item ao longo do tempo).
+// `pool` já deve vir deduplicado por documento (mesmo `todasParaQualidade`
+// já usado por "Resumo da Operação"/"Itens Divergentes") — cada entrada
+// representa o veredito final de uma contagem, não uma rodada intermediária
+// já superada. `dataInicioStr`/`dataFimStr` filtram só a DATA DO AJUSTE
+// (mesmo período do painel "Filtros" já usado no resto desta seção) — a
+// busca pela "próxima contagem" sempre olha o pool inteiro, sem limite de
+// data, já que o resultado do ajuste pode só aparecer bem depois do período
+// escolhido.
+function computeEfeitoAjustes(pool, dataInicioStr, dataFimStr){
+  const porCodigo = {};
+  pool.forEach(c=>{
+    if(!c.data || !c.productCode) return;
+    (porCodigo[c.productCode] = porCodigo[c.productCode] || []).push(c);
+  });
+  Object.values(porCodigo).forEach(arr=>arr.sort((a,b)=> a.data===b.data ? 0 : (a.data<b.data ? -1 : 1)));
+
+  const itens = [];
+  Object.values(porCodigo).forEach(arr=>{
+    arr.forEach((c, i)=>{
+      const status = classificarStatusConcluido(c);
+      if(status!=='ajustado' && status!=='devolucao') return;
+      if(c.data<dataInicioStr || c.data>dataFimStr) return; // ajuste fora do período escolhido em "Filtros"
+      const prox = arr[i+1] || null;
+      const accAntes = itemAcuracidade(c);
+      const accDepois = prox ? itemAcuracidade(prox) : null;
+      let resultado;
+      if(!prox) resultado = 'aguardando';
+      else if(accAntes==null || accDepois==null) resultado = 'sem_dado';
+      else {
+        const diff = accDepois - accAntes;
+        resultado = diff>0.001 ? 'melhorou' : diff<-0.001 ? 'piorou' : 'manteve';
+      }
+      itens.push({
+        productCode: c.productCode,
+        descricao: c.descricao,
+        tipo: status==='devolucao' ? 'Devolução' : 'Ajuste (SA)',
+        dataAjuste: c.data,
+        accAntes,
+        dataProxima: prox ? prox.data : null,
+        accDepois,
+        resultado,
+      });
+    });
+  });
+
+  const comparaveis = itens.filter(i=>i.resultado==='melhorou'||i.resultado==='piorou'||i.resultado==='manteve');
+  const melhoraram = itens.filter(i=>i.resultado==='melhorou').length;
+  const pioraram = itens.filter(i=>i.resultado==='piorou').length;
+  const mantiveram = itens.filter(i=>i.resultado==='manteve').length;
+  const aguardando = itens.filter(i=>i.resultado==='aguardando').length;
+  const semDado = itens.filter(i=>i.resultado==='sem_dado').length;
+
+  // Ordena pra chamar atenção primeiro pro que piorou/manteve (o que precisa
+  // de olhar de novo), depois o que melhorou, deixando aguardando/sem-dado
+  // por último — dentro do mesmo resultado, o ajuste mais recente primeiro.
+  const ORDEM_RESULTADO = {piorou:0, manteve:1, melhorou:2, sem_dado:3, aguardando:4};
+  itens.sort((a,b)=>{
+    const ra = ORDEM_RESULTADO[a.resultado], rb = ORDEM_RESULTADO[b.resultado];
+    if(ra!==rb) return ra-rb;
+    return b.dataAjuste.localeCompare(a.dataAjuste);
+  });
+
+  return {itens, total: itens.length, comparaveis: comparaveis.length, melhoraram, pioraram, mantiveram, aguardando, semDado};
+}
+
 // Gera ticks "redondos" (passo de 1/2/5 × potência de 10) pro eixo Y —
 // evita um eixo tipo "0, 13, 25, 38, 50" e mostra "0, 15, 30, 45, 60" (ou
 // similar) em vez disso. O último tick vira o teto do eixo.
@@ -14809,6 +14886,13 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   const todasParaQualidadeNoPeriodo = todasParaQualidade.filter(c=>c.data && c.data>=dataInicioStr && c.data<=dataFimStr);
   const topDivergentes = [...todasParaQualidadeNoPeriodo].sort((a,b)=>Math.abs(b.diferenca||0)-Math.abs(a.diferenca||0)).slice(0,5);
 
+  // "Efeito dos Ajustes Aprovados" — pedido de um coordenador de
+  // almoxarifado ("está tendo resultado os ajustes aprovados?"), ver
+  // comentário completo em `computeEfeitoAjustes`. Reaproveita o mesmo pool
+  // deduplicado (`todasParaQualidade`) e o mesmo intervalo de data do
+  // painel "Filtros" já usado no resto desta seção — sem nenhum filtro novo.
+  const efeitoAjustes = computeEfeitoAjustes(todasParaQualidade, dataInicioStr, dataFimStr);
+
   return (
     <div>
       <div className="section-title">Resumo da Operação</div>
@@ -15078,6 +15162,81 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
             </table>
             <button className="pnl-section-link" style={{marginTop:14}} onClick={()=>goto('todasDivergencias')}>Ver todas as divergências <DIcon name="chevronRight" size={13} /></button>
           </>
+        )}
+      </div>
+
+      <div className="section-title">Efeito dos Ajustes Aprovados</div>
+      <div className="panel">
+        <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginBottom:16,maxWidth:640}}>
+          Para cada item com SA de Ajuste ou Devolução aprovada dentro do período selecionado em
+          "Filtros" acima, compara a acuracidade da contagem que gerou o ajuste contra a acuracidade
+          da PRÓXIMA vez que esse mesmo código foi contado — mostra se o problema físico foi
+          resolvido de verdade, não só se o ajuste foi aprovado.
+        </div>
+        <div className="ops-kpi-row">
+          <div className="ops-kpi-card">
+            <div className="ops-kpi-head">
+              <span className="ops-kpi-label">Ajustes no Período</span>
+              <span className="ops-kpi-icon" style={{background:'var(--purple-bg)', color:'var(--purple)'}}><DIcon name="checkCircle" size={15} /></span>
+            </div>
+            <div className="ops-kpi-value">{efeitoAjustes.total}</div>
+            <div className="ops-kpi-meta">{efeitoAjustes.comparaveis} com contagem posterior pra comparar</div>
+          </div>
+          <div className="ops-kpi-card">
+            <div className="ops-kpi-head">
+              <span className="ops-kpi-label">Melhoraram</span>
+              <span className="ops-kpi-icon" style={{background:'var(--ok-bg)', color:'var(--ok)'}}><DIcon name="trendingUp" size={15} /></span>
+            </div>
+            <div className="ops-kpi-value">{efeitoAjustes.melhoraram}</div>
+            <div className="ops-kpi-meta">{efeitoAjustes.comparaveis>0 ? (efeitoAjustes.melhoraram/efeitoAjustes.comparaveis*100).toFixed(0) : '0'}% dos comparáveis</div>
+          </div>
+          <div className="ops-kpi-card">
+            <div className="ops-kpi-head">
+              <span className="ops-kpi-label">Pioraram</span>
+              <span className="ops-kpi-icon" style={{background:'var(--danger-bg)', color:'var(--danger)'}}><DIcon name="alertTriangle" size={15} /></span>
+            </div>
+            <div className="ops-kpi-value">{efeitoAjustes.pioraram}</div>
+            <div className="ops-kpi-meta danger">{efeitoAjustes.comparaveis>0 ? (efeitoAjustes.pioraram/efeitoAjustes.comparaveis*100).toFixed(0) : '0'}% dos comparáveis</div>
+          </div>
+          <div className="ops-kpi-card">
+            <div className="ops-kpi-head">
+              <span className="ops-kpi-label">Aguardando Confirmação</span>
+              <span className="ops-kpi-icon" style={{background:'var(--warn-bg)', color:'var(--warn)'}}><DIcon name="clock" size={15} /></span>
+            </div>
+            <div className="ops-kpi-value">{efeitoAjustes.aguardando}</div>
+            <div className="ops-kpi-meta">ainda sem contagem posterior desse código</div>
+          </div>
+        </div>
+        {efeitoAjustes.itens.length===0 ? (
+          <div style={{color:'var(--ink-dim)',fontSize:'var(--text-sm)'}}>Nenhum ajuste aprovado no período selecionado.</div>
+        ) : (
+          <div style={{overflowX:'auto'}}>
+            <table className="rank-table">
+              <thead><tr><th>Produto</th><th>Tipo</th><th>Ajuste em</th><th className="num">Acuracidade antes</th><th>Próxima contagem</th><th className="num">Acuracidade depois</th><th>Resultado</th></tr></thead>
+              <tbody>
+                {efeitoAjustes.itens.map((it,idx)=>{
+                  const RESULTADO_TAG = {
+                    melhorou: {status:'ok', text:'Melhorou'},
+                    piorou: {status:'danger', text:'Piorou'},
+                    manteve: {status:'warn', text:'Manteve'},
+                    sem_dado: {status:'warn', text:'Sem dado p/ comparar'},
+                    aguardando: {status:'warn', text:'Aguardando confirmação'},
+                  }[it.resultado];
+                  return (
+                    <tr key={it.productCode+'-'+it.dataAjuste+'-'+idx}>
+                      <td><div style={{fontSize:'var(--text-xs)',fontWeight:700,color:'var(--ink-dim)'}}>{reconstructNumericCode(it.productCode)}</div><div>{it.descricao}</div></td>
+                      <td>{it.tipo}</td>
+                      <td>{fmtDataBR(it.dataAjuste)}</td>
+                      <td className="num">{it.accAntes==null ? '—' : Math.round(it.accAntes*100)+'%'}</td>
+                      <td>{it.dataProxima ? fmtDataBR(it.dataProxima) : '—'}</td>
+                      <td className="num">{it.accDepois==null ? '—' : Math.round(it.accDepois*100)+'%'}</td>
+                      <td><StatusTag status={RESULTADO_TAG.status} text={RESULTADO_TAG.text} /></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 

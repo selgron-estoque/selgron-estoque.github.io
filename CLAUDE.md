@@ -21327,3 +21327,121 @@ publicada; é só JS de front-end, publica sozinho via GitHub Pages assim que
 o deploy processar. **Verificação de ponta a ponta em produção fica a cargo
 do cliente** — mesma limitação de sempre (login exige Supabase Auth real,
 não simulável no sandbox sem rede).
+
+## "Efeito dos Ajustes Aprovados" — novo indicador em Indicadores (pedido de coordenador de almoxarifado)
+
+Um coordenador de almoxarifado pediu, com uma pergunta bem específica: "preciso de
+um indicador que me mostre como está a acuracidade de itens que já tiveram
+contagens, exemplo todos os itens que já foram contados no ano, como que está a
+acuracidade? melhorou ou piorou? está tendo resultado os ajustes aprovados?" —
+não uma tendência genérica (isso o resto da seção "Tendência" já mostra), mas
+especificamente se os ajustes/devoluções já APROVADOS estão de fato resolvendo o
+problema físico que os gerou.
+
+Confirmado com o cliente via `AskUserQuestion` (2 perguntas) antes de implementar:
+
+1. **Onde morar**: **"Seção nova dentro de Indicadores"** — não uma tela dedicada
+   (opção que eu tinha recomendado). Por isso: sem nova entrada na Sidebar, sem
+   `ACESSOS_RESTRITOS`/`TODOS_OS_MENUS`/roteamento novo em `App()` — só um bloco a
+   mais dentro do `Dashboard({counts, inventories, historicoConcluidas,
+   historicoParaTendencia, goto})` já existente.
+2. **Como medir "está dando resultado"**: **"Compara cada item vs. sua próxima
+   contagem"** (opção recomendada) — pra cada contagem que gerou uma SA de Ajuste
+   ou Devolução aprovada, encontrar a PRÓXIMA vez que aquele MESMO código foi
+   contado (em qualquer inventário/documento futuro — não só dentro da mesma
+   cadeia de recontagem, que só encadeia rodadas de UM documento via
+   `contagemAnteriorId`) e comparar a acuracidade antes vs. depois. Item sem
+   nenhuma contagem posterior ainda fica de fora do cálculo de "melhorou/piorou"
+   (mostrado à parte como "aguardando confirmação") — mesmo critério de sempre
+   deste projeto, nunca fabricar um resultado que ainda não existe.
+
+### `computeEfeitoAjustes(pool, dataInicioStr, dataFimStr)` — função nova, perto de
+### `acuracidadeGeralAte`
+
+Agrupa o `pool` por `productCode`, ordena cada grupo por data, e para cada
+contagem cujo `classificarStatusConcluido(...)` retorna `'ajustado'` ou
+`'devolucao'` (a MESMA função já usada pelos badges de "Contagens Concluídas" —
+nenhuma classificação nova inventada) — se a data do ajuste cai dentro do período
+escolhido no painel "Filtros" (`dataInicioStr`/`dataFimStr`, o MESMO intervalo já
+usado pelo resto da seção "Tendência", sem filtro próprio novo) — procura a
+PRÓXIMA entrada do mesmo grupo (`arr[i+1]`, o item logo depois na ordenação por
+data, seja qual for o documento) e compara `itemAcuracidade(c)` (antes) contra
+`itemAcuracidade(prox)` (depois).
+
+- **Só a data do AJUSTE é filtrada pelo período** — a busca pela "próxima
+  contagem" nunca é limitada por esse mesmo intervalo, já que o resultado do
+  ajuste pode só aparecer bem depois do período escolhido (testado
+  explicitamente: um ajuste em 15/01 com filtro "Este mês" ainda encontra a
+  contagem seguinte em junho, fora do filtro).
+- **5 resultados possíveis por item**: `melhorou`/`piorou`/`manteve` (diferença de
+  acuracidade acima/abaixo/dentro de uma tolerância de 0,001 — evita "piorou" por
+  ruído de ponto flutuante), `aguardando` (sem nenhuma contagem posterior ainda —
+  `accDepois:null`, `dataProxima:null`), `sem_dado` (existe uma contagem
+  posterior, mas `itemAcuracidade` não conseguiu calcular de um dos dois lados —
+  ex. item sem saldo pra comparar — nunca fabrica um "melhorou"/"piorou" sem base
+  real).
+- **Mesmo código pode gerar mais de uma linha na lista** — se o mesmo produto
+  tiver 2 ajustes ao longo do tempo, cada um vira sua PRÓPRIA linha, comparando
+  contra a contagem que vem logo depois DELE (não contra a mesma "última
+  contagem" pros dois) — testado explicitamente com 2 ajustes seguidos do mesmo
+  código: o 1º compara contra o 2º ajuste (não pula direto pra uma contagem bem
+  posterior), o 2º compara contra a contagem seguinte de verdade.
+- **Ordenação da lista**: `piorou`/`manteve` primeiro (o que precisa de atenção),
+  depois `melhorou`, com `aguardando`/`sem_dado` por último — dentro do mesmo
+  resultado, ajuste mais recente primeiro.
+- Devolve `{itens, total, comparaveis, melhoraram, pioraram, mantiveram,
+  aguardando, semDado}` — `comparaveis` é só `melhorou+piorou+manteve` (nunca
+  inclui `aguardando`/`sem_dado` no denominador de "% dos comparáveis").
+
+### `Dashboard` — invocação + JSX, logo depois de "Top 5 Maiores Divergências"
+
+`const efeitoAjustes = computeEfeitoAjustes(todasParaQualidade, dataInicioStr,
+dataFimStr);` — reaproveita o MESMO pool já deduplicado por documento
+(`todasParaQualidade`, já usado por "Resumo da Operação"/"Itens Divergentes"/"Top
+5 Maiores Divergências") e o mesmo intervalo de data do painel "Filtros" — nenhum
+pool novo, nenhum filtro novo.
+
+Nova seção "Efeito dos Ajustes Aprovados" (`.section-title`+`.panel`, inserida
+logo depois do painel "Top 5 Maiores Divergências", último bloco de antes) — 4
+cards `.ops-kpi-card` (mesma família de CSS já usada em "Resumo da Operação"/
+`SAsAbertoPanel`, nenhuma classe CSS nova): "Ajustes no Período" (roxo,
+`checkCircle`), "Melhoraram" (verde, `trendingUp`, com % dos comparáveis),
+"Pioraram" (vermelho, `alertTriangle`, com % dos comparáveis, `.ops-kpi-meta
+danger`), "Aguardando Confirmação" (âmbar, `clock`) — seguidos de uma tabela
+`.rank-table` (mesma classe já usada por "Top 5 Maiores Divergências") com
+Produto/Tipo/Ajuste em/Acuracidade antes/Próxima contagem/Acuracidade depois/
+Resultado, esse último via `<StatusTag status="..." text="..." />` (a prop é
+`text`, não `label` — confirmado lendo `function StatusTag({status, text})`
+antes de escrever o JSX). Empty-state honesto ("Nenhum ajuste aprovado no
+período selecionado.") quando não há nenhum item — nunca uma tabela vazia sem
+explicação.
+
+Testado via 2 harnesses novos (jsdom + react-dom/client + `act()` real via
+timers, mesma técnica rigorosa de sempre — extrai o `<script type="text/babel">`
+do `index.html`, transpila via Babel, roda numa `vm.runInThisContext`):
+`harness_efeito_ajustes_isolado.js` (38 asserções — os 5 resultados possíveis,
+inclusive `manteve`/`sem_dado`; devolução vs. ajuste via
+`classificarStatusConcluido`; linha de histórico importado
+`_fromHistorico`+`_statusOriginal==='Ajustado'` reconhecida igual, mesmo sem
+`statusAprovacao`, que a planilha antiga nunca preenche; filtro de período só na
+data do ajuste, nunca na busca da próxima contagem; 2 ajustes do mesmo código
+comparando contra a contagem certa cada um; item sem `data`/`productCode` nunca
+quebra; ordenação da lista) e `harness_efeito_ajustes_dashboard.js` (20
+asserções, `Dashboard` renderizado de verdade — os 4 KPIs e a tabela aparecendo
+certos pra um pool misto de melhorou/piorou/aguardando, incluindo o
+`className` real de `StatusTag` — `status-danger`/`status-ok` — confirmando a
+cor certa por resultado; empty-state honesto sem nenhum ajuste; e mudar o
+preset do painel "Filtros" de "Todos os períodos" pra "Este mês" removendo da
+lista um ajuste de 2020 fora da janela). Rodei de novo toda a suíte de
+regressão disponível no scratchpad (10 harnesses, incluindo os 2 novos) — 0
+falhas (`harness_auto_rotate.js`, já documentado como travando por motivo
+não relacionado a nenhuma rodada recente, seguiu fora do escopo, sem
+investigar). Transpile Babel do arquivo inteiro e balanceamento de chaves do
+CSS conferidos (669/669, sem mudança — nenhuma classe CSS nova, tudo
+reaproveitado via `.section-title`/`.panel`/`.ops-kpi-row`/`.ops-kpi-card`/
+`.rank-table`/`StatusTag` já existentes). **Nenhuma migração de SQL nem
+redeploy de Edge Function necessários** — é cálculo 100% em memória sobre dado
+já carregado (`counts`/`historicoConcluidas`), publica sozinho via GitHub Pages
+assim que o deploy processar. **Verificação visual/funcional de ponta a ponta
+em produção fica a cargo do cliente** — mesma limitação de sempre (login exige
+Supabase Auth real, não simulável no sandbox sem rede).
