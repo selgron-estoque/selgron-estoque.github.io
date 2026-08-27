@@ -21213,3 +21213,117 @@ cadastrado."**
   deploy processar. **Verificação de ponta a ponta com o item real (000.69543) fica
   a cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth real,
   não simulável no sandbox sem rede).
+
+## Etiquetas: mesmo fallback pra consulta ao vivo, agora na busca de "Etiquetas"
+
+Logo depois do fix acima ("Nova Contagem" Manual), o cliente reportou o MESMO
+sintoma num 2º ponto de busca: **"para gerar etiqueta ainda não encontra"** — a
+tela "Etiquetas" (`EtiquetasPanel`, aba "Produto") também só consultava o
+catálogo LOCAL (`searchSupabaseCatalog`, populado por import manual e periódico
+da planilha "Descrição de Produtos" em Configurações) — um item real, já
+cadastrado no Protheus mas ainda não reimportado pra esse cache, batia em
+"Nenhum resultado encontrado." mesmo existindo de verdade e já aparecendo na
+consulta ao vivo da Selgron.
+
+- **Mesmo padrão exato já aplicado em `ManualCountFlow`** — reaproveita
+  `pareceCodigoProduto(q)` (decide se a query, depois de tirar pontuação, sobra
+  só dígito num tamanho plausível de código real — 6-13 dígitos) e
+  `fetchSaldoConsultaSelgron(codigo, armazem)` (a mesma Edge Function
+  `consultar-produto-selgron`, já usada em `CountStep`/`Dashboard`), sem
+  nenhuma dependência nova.
+- **O `useEffect` de busca de `EtiquetasPanel`** — depois da busca local
+  (`searchSupabaseCatalog`, aba "Produto") voltar vazia E a query parecer um
+  código de verdade, dispara a consulta ao vivo com o armazém escolhido no
+  `<select>` já existente (`armazemEtiqueta` — mesmo cuidado de sempre pra
+  não reabrir a ambiguidade de saldo por armazém já corrigida antes nesta
+  feature), mostrando "Não achei no catálogo local — consultando ao vivo na
+  Selgron (pode ser um item recém-cadastrado)…" enquanto espera. **Só a aba
+  "Produto"** — "Endereço" busca em `searchEnderecosCatalogo`, uma tabela/
+  conceito diferente, sem consulta ao vivo equivalente, e nunca tenta esse
+  fallback.
+- **`armazemEtiqueta`/`armazensEtiqueta` (estado + efeito de buscar as
+  opções do `<select>`) precisaram ficar declarados ANTES do novo estado
+  `resultadoAoVivo`/`buscandoAoVivo` e do `useEffect` de busca** — mesmo
+  cuidado de ordem de declaração já registrado antes neste projeto ("Bug
+  crítico real: site inteiro em branco depois do deploy de 'Itens
+  Específicos'") pra nunca cair na mesma classe de erro "Cannot access
+  before initialization" (TDZ) — o `useEffect` de busca referencia
+  `armazemEtiqueta` tanto no corpo quanto no array de dependências.
+- **Resultado da consulta ao vivo vira o mesmo tipo de item SINTÉTICO**
+  (`foraDoCacheLocal:true`, unidade passando por `unidadeCadastroValida`,
+  endereço só quando a consulta confirma) — só os campos que esta tela
+  precisa pra exibir na lista e deixar selecionar (`codigo`/`descricao`/
+  `unidade`/`endereco`/`almoxarifado`); o efeito `liveConsultaEtiqueta`
+  (já existente, dispara de novo assim que o item é SELECIONADO) refaz a
+  mesma consulta por conta própria depois, então o item sintético da busca
+  não precisa vir 100% completo.
+- **Trocar de armazém ou limpar a busca reseta o resultado ao vivo** — o
+  `useEffect` de busca reage a `[query, aba, armazemEtiqueta]`, então
+  qualquer um dos três relança a busca do zero.
+- **Escopo restrito a esta tela** — os outros pontos de resolução de
+  produto (`RandomCountFlow`/`RouteCountFlow` via RPC batched,
+  `NewInventory.addItemEspecifico`/"Colar lista de vários códigos") não
+  foram tocados, mesmo critério de escopo já usado no fix irmão.
+
+### Verificação — bug real do teste, não da aplicação
+
+O harness dedicado (`harness_etiquetas_live_fallback.js`, 25 asserções,
+mesma técnica rigorosa de sempre — jsdom+react-dom/client+`act()`, extrai o
+`<script type="text/babel">`, transpila via Babel, roda numa
+`vm.runInThisContext`, Supabase mockado incluindo `functions.invoke`)
+confirmou a lógica da aplicação correta desde a 1ª versão — mas ficou
+FLAKY por 2 razões, as duas do PRÓPRIO teste, nunca do `index.html`:
+
+1. **Margem de espera insuficiente** (`waitDebounce`, 500ms) — o debounce
+   real de 350ms + a cadeia de promises (`searchSupabaseCatalog` →
+   `fetchSaldoConsultaSelgron`) resolvendo sob jitter do event loop deste
+   sandbox às vezes ultrapassava 500ms — confirmado rodando o harness (sem
+   nenhuma mudança) 5 vezes seguidas e vendo falha em ~40% delas, sempre na
+   mesma asserção, nunca em nenhuma lógica de negócio. Corrigido subindo pra
+   900ms.
+2. **`campoBusca` travado num placeholder fixo** (`'000.35310'`, só da aba
+   "Produto") — ao trocar pra aba "Endereço" (placeholder `'Ex: 035-A-1'`),
+   a função retornava `undefined`, e `setNativeValue(undefined, ...)`
+   derrubava o processo inteiro com `TypeError: Cannot convert undefined or
+   null to object`, antes dos cenários seguintes rodarem. Corrigido trocando
+   pra `i.placeholder.startsWith('Ex:')` (prefixo comum aos dois).
+3. **Achado nesta rodada, num 3º passe de reforço**: mesmo com os 2 fixes
+   acima, uma asserção ainda falhava ~1 em 6-8 execuções — sempre a MESMA,
+   a 1ª do arquivo ("busca local com resultado mostra o item do catálogo").
+   Causa: o script compilado sempre automonta um `<App/>` real em `#root`
+   (convenção deste projeto), disparando vários efeitos próprios dele
+   (checagem de sessão, canais Realtime) na MESMA fila de timers/microtasks
+   que o cenário 1 usa logo em seguida — como é o 1º cenário a rodar, fica
+   mais exposto a essa contenção de "ruído" de montagem inicial ainda
+   drenando. Corrigido com uma folga curta (300ms) logo depois de avaliar o
+   script compilado, ANTES de qualquer cenário começar — deixa esse trabalho
+   de fundo assentar sozinho, sem precisar inflar o `waitDebounce` global de
+   novo (que já tinha folga de sobra pra qualquer cenário depois do 1º).
+4. **Mock de `enderecos` incompleto** (`createEnderecosMock`) — resolvia a
+   promise direto em `.order()`, mas `searchEnderecosCatalogo` encadeia
+   `.order(...).limit(20)` de verdade — gerava um `TypeError: ...limit is
+   not a function`, pego pelo try/catch da própria função (nunca quebrava
+   nenhuma asserção, só sujava o console). Corrigido adicionando `.limit()`
+   como o método que resolve.
+
+Depois dos 4 ajustes, rodei o harness **20+ vezes seguidas, todas 25/25
+passando, sem nenhuma falha** — confiança muito mais alta que as 6 rodadas
+da vez anterior. Rodei de novo o harness irmão desta mesma feature
+(`harness_manual_count_live_fallback.js`, Part 1) — 28/28, sem regressão —
+e mais 6 harnesses não relacionados do scratchpad
+(`harness_etp_busca_separacao.js`/`harness_itens_faltantes_parser.js`/
+`harness_painel_realtime.js`/`harness_parse_numero_br.js`/
+`harness_programacao_separacao.js`/`harness_tracking_picking.js`) — todos
+passando nas mesmas contagens já documentadas antes, sem nenhuma regressão
+(`harness_auto_rotate.js`, um harness antigo e não relacionado, trava/não
+termina — já era assim antes desta rodada, não investigado por estar fora
+do escopo deste fix). Transpile Babel do arquivo inteiro e balanceamento de
+chaves do CSS conferidos (669/669, sem mudança — **`index.html` não foi
+tocado nesta rodada**, só o harness de teste — o fix de aplicação em si já
+tinha sido aplicado numa rodada anterior e só precisava desta verificação
+mais rigorosa). **Nenhuma migração de SQL nem redeploy de Edge Function
+necessários** — reaproveita a mesma `consultar-produto-selgron` já
+publicada; é só JS de front-end, publica sozinho via GitHub Pages assim que
+o deploy processar. **Verificação de ponta a ponta em produção fica a cargo
+do cliente** — mesma limitação de sempre (login exige Supabase Auth real,
+não simulável no sandbox sem rede).

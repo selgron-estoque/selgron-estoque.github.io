@@ -16380,32 +16380,6 @@ function EtiquetasPanel({currentUser}){
     return ()=>{ cancelado = true; supabaseClient.removeChannel(canal); };
   }, []);
 
-  // Trocar de aba limpa a busca/seleção — endereço e produto são catálogos
-  // diferentes, não faz sentido manter resultado de um enquanto troca pro
-  // outro.
-  useEffect(()=>{
-    setResults([]);
-    setSelecionado(null);
-    setQuery('');
-    setQuantidade('');
-    setQuantidadeEtiquetas('1');
-    setDataDesbloqueada(false);
-    setModeloEtiqueta('recebimento');
-  }, [aba]);
-
-  // Debounce de 350ms, mesmo padrão já usado em ManualCountFlow/
-  // NewInventory pra busca no catálogo Supabase.
-  useEffect(()=>{
-    if(!query || query.trim().length<2){ setResults([]); setLoading(false); return; }
-    let cancelado = false;
-    setLoading(true);
-    const timer = setTimeout(async ()=>{
-      const found = aba==='endereco' ? await searchEnderecosCatalogo(query) : await searchSupabaseCatalog(query);
-      if(!cancelado){ setResults(found); setLoading(false); }
-    }, 350);
-    return ()=>{ cancelado = true; clearTimeout(timer); };
-  }, [query, aba]);
-
   // Armazém usado pra DESAMBIGUAR a consulta ao vivo (Selgron/Protheus) —
   // mesmo bug já corrigido antes em CountStep pro SALDO ("Bug real: saldo
   // do sistema vinha do ARMAZÉM ERRADO", CLAUDE.md): quando o código existe
@@ -16422,6 +16396,13 @@ function EtiquetasPanel({currentUser}){
   // multi-armazém. Mesmo padrão de fábrica já usado em `ManualCountFlow`
   // (nasce em "1"/Armazém 01, `<select>` populado por
   // `fetchEstoqueValorPorAlmoxarifado()`, trocável sem sair da tela).
+  //
+  // Declarado aqui (antes do efeito de busca logo abaixo, que já reaproveita
+  // este armazém pra também tentar a consulta ao vivo) em vez de ficar perto
+  // do próprio efeito que carrega a LISTA de opções (mais abaixo) — só a
+  // ORDEM das duas `useState` importa aqui, pra não cair no mesmo bug de
+  // "referenciar antes de declarar" (TDZ) já visto antes neste projeto
+  // (ver CLAUDE.md, "Bug crítico real: site inteiro em branco...").
   const [armazemEtiqueta, setArmazemEtiqueta] = useState('1');
   const [armazensEtiqueta, setArmazensEtiqueta] = useState(null); // null = carregando a lista de opções
   useEffect(()=>{
@@ -16433,6 +16414,87 @@ function EtiquetasPanel({currentUser}){
     });
     return ()=>{ cancelado = true; };
   }, []);
+
+  // Item achado só na consulta ao vivo da Selgron, nunca no catálogo local
+  // (`produtos`, populado por importação manual da planilha "Descrição de
+  // Produtos") — mesmo mecanismo já corrigido em `ManualCountFlow` ("Nova
+  // Contagem" Manual: busca ao vivo na Selgron quando o item é recém-
+  // cadastrado", CLAUDE.md). Cliente reportou o MESMO sintoma aqui, na tela
+  // de Etiquetas: "para gerar etiqueta ainda não encontra" — item que já
+  // existe no Protheus mas ainda não foi reimportado no cache local (só
+  // atualiza via reimportação manual da planilha, pode ficar dias/semanas
+  // desatualizado). `null` = não tentou/não achou; `buscandoAoVivo`
+  // distingue essa 2ª etapa da busca local de sempre, só pra mostrar uma
+  // mensagem mais precisa enquanto dura.
+  const [resultadoAoVivo, setResultadoAoVivo] = useState(null);
+  const [buscandoAoVivo, setBuscandoAoVivo] = useState(false);
+
+  // Trocar de aba limpa a busca/seleção — endereço e produto são catálogos
+  // diferentes, não faz sentido manter resultado de um enquanto troca pro
+  // outro.
+  useEffect(()=>{
+    setResults([]);
+    setSelecionado(null);
+    setQuery('');
+    setQuantidade('');
+    setQuantidadeEtiquetas('1');
+    setDataDesbloqueada(false);
+    setModeloEtiqueta('recebimento');
+    setResultadoAoVivo(null);
+    setBuscandoAoVivo(false);
+  }, [aba]);
+
+  // Debounce de 350ms, mesmo padrão já usado em ManualCountFlow/
+  // NewInventory pra busca no catálogo Supabase. Só a aba "Produto" tenta a
+  // consulta ao vivo como fallback (mesmo critério de `liveConsultaEtiqueta`
+  // mais abaixo — "Endereço" busca em `searchEnderecosCatalogo`, uma tabela/
+  // conceito diferente, sem consulta ao vivo equivalente) — e só quando a
+  // busca local não achou NADA e a query parece um código de produto de
+  // verdade (`pareceCodigoProduto`, já usado em `ManualCountFlow`), nunca
+  // pra busca por descrição livre, que a consulta ao vivo nunca resolveria
+  // mesmo.
+  useEffect(()=>{
+    if(!query || query.trim().length<2){ setResults([]); setLoading(false); setResultadoAoVivo(null); setBuscandoAoVivo(false); return; }
+    let cancelado = false;
+    setLoading(true);
+    setResultadoAoVivo(null);
+    const timer = setTimeout(async ()=>{
+      const found = aba==='endereco' ? await searchEnderecosCatalogo(query) : await searchSupabaseCatalog(query);
+      if(cancelado) return;
+      if(found.length>0 || aba!=='produto' || !pareceCodigoProduto(query)){
+        setResults(found);
+        setLoading(false);
+        return;
+      }
+      // Nada no catálogo local, aba "Produto", e a query parece um código
+      // real — tenta a consulta ao vivo antes de desistir.
+      setResults([]);
+      setBuscandoAoVivo(true);
+      const resp = await fetchSaldoConsultaSelgron(query.trim(), armazemEtiqueta);
+      if(cancelado) return;
+      setBuscandoAoVivo(false);
+      setLoading(false);
+      if(resp && resp.ok){
+        // Produto sintético — mesmo formato/convenção já usada em
+        // `ManualCountFlow`/outros fallbacks deste app pra item fora do
+        // catálogo local (`foraDoCacheLocal:true`). Só os campos que esta
+        // tela de fato lê (`codigo`/`descricao`/`unidade`/`endereco`/
+        // `almoxarifado`) — `liveConsultaEtiqueta` (efeito logo abaixo) já
+        // refaz a MESMA consulta ao vivo de novo assim que este item for
+        // selecionado, então não precisa ficar 100% completo aqui.
+        setResultadoAoVivo({
+          codigo: resp.codigo || query.trim(),
+          descricao: resp.descricao || query.trim(),
+          unidade: unidadeCadastroValida(resp.unidade),
+          endereco: resp.endereco || null,
+          enderecoCadastrado: !!resp.endereco,
+          almoxarifado: armazemEtiqueta,
+          foraDoCacheLocal: true,
+        });
+      }
+    }, 350);
+    return ()=>{ cancelado = true; clearTimeout(timer); };
+  }, [query, aba, armazemEtiqueta]);
 
   // Consulta ao vivo (Selgron/Protheus) pro item selecionado — MESMO padrão
   // já usado em `CountStep` (`liveConsulta`/`unidadeEfetiva`/`descricaoEfetiva`,
@@ -16717,8 +16779,9 @@ function EtiquetasPanel({currentUser}){
         <input type="text" value={query} onChange={e=>{ setQuery(e.target.value); setSelecionado(null); setSucessoImpressao(false); }} placeholder={aba==='endereco' ? 'Ex: 035-A-1' : 'Ex: 000.35310 ou parafuso'} />
       </div>
 
-      {loading && <div className="empty-state">Buscando…</div>}
-      {!loading && query && results.length===0 && <div className="empty-state">Nenhum resultado encontrado.</div>}
+      {loading && !buscandoAoVivo && <div className="empty-state">Buscando…</div>}
+      {buscandoAoVivo && <div className="empty-state">Não achei no catálogo local — consultando ao vivo na Selgron (pode ser um item recém-cadastrado)…</div>}
+      {!loading && query && results.length===0 && !resultadoAoVivo && <div className="empty-state">Nenhum resultado encontrado.</div>}
 
       {!selecionado && results.map(item=>(
         <div key={item.codigo || item.id} className="list-row" onClick={()=>{ setSelecionado(item); setSucessoImpressao(false); setErroImpressao(null); setQuantidade(''); setQuantidadeEtiquetas('1'); setDataDesbloqueada(false); setModeloEtiqueta('recebimento'); }}>
@@ -16730,6 +16793,23 @@ function EtiquetasPanel({currentUser}){
           <span className="chevron"><Ic>›</Ic></span>
         </div>
       ))}
+
+      {/* Item achado só na consulta ao vivo (Selgron/Protheus), nunca no
+          catálogo local — mesmo padrão visual já usado em `ManualCountFlow`,
+          bem distinto da lista normal pra deixar claro que o dado ainda não
+          está no cache local do app. */}
+      {!selecionado && !loading && resultadoAoVivo && (
+        <div key={resultadoAoVivo.codigo} className="list-row" onClick={()=>{ setSelecionado(resultadoAoVivo); setResultadoAoVivo(null); setSucessoImpressao(false); setErroImpressao(null); setQuantidade(''); setQuantidadeEtiquetas('1'); setDataDesbloqueada(false); setModeloEtiqueta('recebimento'); }}>
+          <div>
+            <div className="lr-title">{resultadoAoVivo.descricao}</div>
+            <div className="lr-sub">
+              {resultadoAoVivo.codigo}{resultadoAoVivo.enderecoCadastrado ? ' · '+resultadoAoVivo.endereco : ''}
+              <br/><span style={{color:'var(--safety)'}}>Encontrado ao vivo na Selgron — ainda não está no catálogo local</span>
+            </div>
+          </div>
+          <span className="chevron"><Ic>›</Ic></span>
+        </div>
+      )}
 
       {selecionado && (
         <div style={{background:'var(--panel)',border:'1px solid var(--line)',borderRadius:'var(--radius)',padding:16,marginTop:4}}>
