@@ -21445,3 +21445,86 @@ já carregado (`counts`/`historicoConcluidas`), publica sozinho via GitHub Pages
 assim que o deploy processar. **Verificação visual/funcional de ponta a ponta
 em produção fica a cargo do cliente** — mesma limitação de sempre (login exige
 Supabase Auth real, não simulável no sandbox sem rede).
+
+## "Acuracidade dos Itens Contados" — 2º indicador, separado de "Acuracidade Geral do Estoque"
+
+Logo depois de "Efeito dos Ajustes Aprovados" ir ao ar, o cliente pediu, começando com um
+pedido de "indicador de colunas" que depois ele mesmo reformulou por completo, direto:
+
+> "Ajuste o indicador de Acuracidade de Estoque. O indicador atual deve continuar
+> utilizando a mesma lógica de cálculo. Porém, como o estoque ainda não passou por
+> contagem completa, precisamos separar a informação para que o indicador não seja
+> distorcido por itens que nunca foram inventariados. Crie dois indicadores distintos:
+> 1. Acuracidade Geral do Estoque — considerar todos os itens do estoque, conforme a
+>    regra atual do indicador. Manter a lógica de cálculo existente.
+> 2. Acuracidade dos Itens Contados — considerar somente os itens que já passaram por
+>    contagem física. Incluir itens que tiveram contagem e, quando aplicável, ajuste de
+>    estoque. Desconsiderar itens que nunca foram contados... Importante: não alterar a
+>    regra atual de cálculo da acuracidade. Apenas criar essa nova segmentação."
+
+Investigado antes de escrever qualquer código: a fórmula atual (`acuracidadeGeralAte`/
+o card "Acuracidade Geral" do Dashboard) já só considera itens que de fato passaram por
+`counts`/histórico — um item nunca contado JAMAIS entra nesse pool, matematicamente não
+tem como "distorcer" o número hoje. A distorção real, encontrada ao ler o código de
+`poolTendencia`/`todasParaQualidade`: `poolTendencia` (o pool que já alimentava
+"Acuracidade Geral"/"Acuracidade Mensal") conta CADA RODADA registrada, sem deduplicar —
+um item recontado 2x soma as DUAS rodadas na média (pesa por VOLUME DE TRABALHO, não por
+ITEM) — enquanto `todasParaQualidade` (já existente, usado por "Resumo da Operação"/
+"Itens Divergentes"/"Top 5 Maiores Divergências") já deduplica por documento via
+`ultimaContagemPorDocumento` — uma linha por item, sempre a rodada FINAL (que já reflete
+o resultado de um ajuste/devolução aprovado, quando aplicável). Essa é a segmentação real
+que bate com "itens que tiveram contagem e, quando aplicável, ajuste de estoque" — item
+nunca contado fica fora dos DOIS pools por construção (nunca existiu em `counts`), então a
+diferença de verdade entre os dois indicadores é "conta cada rodada" (Geral) vs. "conta
+cada item, uma vez só, pela rodada final" (Contados) — não "itens nunca inventariados",
+que já era impossível vazar pra dentro da fórmula antes desta mudança.
+
+- **"Acuracidade Geral do Estoque" (Dashboard, "Resumo da Operação") permaneceu 100%
+  intocada na fórmula/pool** — só o RÓTULO do card mudou de "Acuracidade Geral" pra
+  "Acuracidade Geral do Estoque" (nome exato pedido pelo cliente para o indicador #1),
+  sem tocar em `acuracidade`/`monthlyStats`/`poolTendencia`. Satisfaz literalmente "manter
+  a lógica de cálculo existente" pro indicador #1 — nenhuma linha da fórmula foi alterada.
+  **Home ("Acuracidade do Estoque", KPI da tela inicial) não foi tocada nesta rodada** —
+  decisão consciente, já que o pedido do cliente não citou Home explicitamente e a fileira
+  de KPIs ali já é apertada (6 cards fixos); se o cliente quiser a mesma segmentação
+  também na Home, é um pedido separado, sinalizado a ele.
+- **"Acuracidade dos Itens Contados" (novo, 2º card, logo ao lado do primeiro)** —
+  MESMA regra de cálculo (`computeMonthlyStats(pool, anoAtualStr, hojeStr)` seguido de
+  média das médias mensais não-nulas, exatamente o mesmo código já usado pro card #1, só
+  chamado uma 2ª vez com um pool diferente) — reaproveita `todasParaQualidade` (já
+  calculado mais acima na mesma função, para "Resumo da Operação"), sem nenhuma
+  duplicação de lógica de acuracidade nova. Meta mostrada é a mesma constante
+  `META_ACURACIDADE_SEMANAL` (95%) já usada no card #1 — não é um número novo inventado.
+  Subtítulo do card mostra `{todasParaQualidade.length} item(ns) já contado(s)` — dado
+  real já calculado, não fabricado, dá transparência sobre o tamanho da amostra (parte do
+  motivo original do cliente — "o estoque ainda não passou por contagem completa").
+- **Efeito colateral aceito, sem mudar CSS**: `.ops-kpi-row` é um grid FIXO de 4 colunas
+  (`repeat(4,1fr)`, `@media 1360px→2 col`, `@media 640px→1 col`) — com o 5º card
+  adicionado, ele cai sozinho numa 2ª linha em telas largas, mesmo trade-off já aceito
+  antes neste projeto pra outros painéis que ganharam mais um item do que a grade fixa
+  previa (ex.: "Divergência por Família/Grupo" no grid de 2 colunas de "Tendência"). Não
+  mexi na grade CSS pra não arriscar quebrar o layout dos outros 4 cards já existentes.
+- Testado via harness novo (`harness_acuracidade_itens_contados.js`, jsdom +
+  react-dom/client + `act()` real via timers, mesma técnica rigorosa de sempre — carrega
+  o `index.html` inteiro transpilado numa `vm.Script`): os 2 rótulos aparecem, o rótulo
+  antigo "Acuracidade Geral" (sem "do Estoque") não sobra sozinho em lugar nenhum, a meta
+  "N item(ns) já contado(s)" bate com o total certo; **sem nenhuma cadeia de
+  recontagem** (nada pra deduplicar), os dois cards mostram EXATAMENTE o mesmo número
+  (`poolTendencia` e `todasParaQualidade` coincidem quando não há rodada superada por
+  outra); **com uma cadeia de recontagem** (1ª contagem errada, 2ª corrige) — cenário
+  desenhado especificamente pra PROVAR que a segmentação tem efeito real, não é só um
+  card duplicado — "Acuracidade Geral do Estoque" reflete as 2 rodadas (75%, pesando a
+  rodada errada) enquanto "Acuracidade dos Itens Contados" reflete só a rodada final já
+  corrigida (100%) — os dois números DIVERGEM de propósito nesse caso, confirmando que o
+  novo indicador filtra de verdade. 10/10 asserções passando. Rodei de novo toda a suíte
+  de regressão disponível no scratchpad (`harness_efeito_ajustes_dashboard.js` — a seção
+  logo abaixo desta na mesma tela — mais 8 outros harnesses não relacionados) — 0
+  falhas, nenhuma regressão. Transpile Babel do arquivo inteiro e balanceamento de chaves
+  do CSS conferidos (669/669, sem mudança — nenhuma classe CSS nova, tudo reaproveitado
+  via `.ops-kpi-row`/`.ops-kpi-card`/`.ops-kpi-head`/`.ops-kpi-label`/`.ops-kpi-icon`/
+  `.ops-kpi-value`/`.ops-kpi-meta`/`.ops-kpi-bar-track`/`.ops-kpi-bar-fill` já
+  existentes). **Nenhuma migração de SQL nem redeploy de Edge Function necessários** — é
+  cálculo 100% em memória sobre dado já carregado, publica sozinho via GitHub Pages assim
+  que o deploy processar. **Verificação visual/funcional de ponta a ponta em produção
+  fica a cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth real,
+  não simulável no sandbox sem rede).

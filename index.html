@@ -14810,6 +14810,30 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   const mesesComAcuracidade = monthlyStats.filter(m=>m.acuracidade!=null);
   const acuracidade = (mesesComAcuracidade.length>0 ? (mesesComAcuracidade.reduce((s,m)=>s+m.acuracidade,0)/mesesComAcuracidade.length) : 100).toFixed(1);
 
+  // "Acuracidade dos Itens Contados" — pedido de um coordenador de
+  // almoxarifado: "como o estoque ainda não passou por contagem completa,
+  // precisamos separar a informação para que o indicador não seja
+  // distorcido por itens que nunca foram inventariados... crie dois
+  // indicadores distintos". Pedido explícito de NÃO alterar a regra atual
+  // de cálculo — "Acuracidade Geral do Estoque" (acima) continua 100%
+  // intocada, mesmo pool/mesma fórmula de sempre. Este é um indicador NOVO
+  // e ADICIONAL, mesma regra de cálculo (média das médias mensais, ano
+  // corrente até hoje — reaproveita `computeMonthlyStats`, a MESMA função
+  // que já monta `monthlyStats` acima), só trocando a POPULAÇÃO: em vez de
+  // `poolTendencia` (toda rodada registrada, sem deduplicar — uma
+  // recontagem soma separado da 1ª contagem, pesando por VOLUME de
+  // trabalho), usa `todasParaQualidade` (já deduplicado por documento, uma
+  // linha por item — sempre a rodada FINAL, refletindo o resultado de um
+  // ajuste/devolução quando aplicável) — "itens que tiveram contagem e,
+  // quando aplicável, ajuste de estoque", exatamente como pedido. Item
+  // nunca contado não aparece em `counts`/histórico de jeito nenhum, então
+  // já fica fora dos dois pools por construção — a diferença real entre os
+  // dois indicadores é "conta cada RODADA" (Geral) vs. "conta cada ITEM,
+  // uma vez só" (Contados).
+  const monthlyStatsItensContados = computeMonthlyStats(todasParaQualidade, anoAtualStr, hojeStr);
+  const mesesComAcuracidadeItensContados = monthlyStatsItensContados.filter(m=>m.acuracidade!=null);
+  const acuracidadeItensContados = (mesesComAcuracidadeItensContados.length>0 ? (mesesComAcuracidadeItensContados.reduce((s,m)=>s+m.acuracidade,0)/mesesComAcuracidadeItensContados.length) : 100).toFixed(1);
+
   // "Contados × Divergências" (pizza) — pedido do cliente: "indicador que
   // me mostra quantidade contada X divergências", "gráfico de pizza de
   // acordo com o período selecionado". Mesmo pool dos outros gráficos
@@ -14899,12 +14923,21 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
       <div className="ops-kpi-row">
         <div className="ops-kpi-card">
           <div className="ops-kpi-head">
-            <span className="ops-kpi-label">Acuracidade Geral</span>
+            <span className="ops-kpi-label">Acuracidade Geral do Estoque</span>
             <span className="ops-kpi-icon" style={{background:'var(--purple-bg)', color:'var(--purple)'}}><DIcon name="percent" size={15} /></span>
           </div>
           <div className="ops-kpi-value">{acuracidade}%</div>
           <div className="ops-kpi-meta">Meta: {META_ACURACIDADE_SEMANAL}%</div>
           <div className="ops-kpi-bar-track"><div className="ops-kpi-bar-fill" style={{width:Math.min(100, Number(acuracidade))+'%'}}></div></div>
+        </div>
+        <div className="ops-kpi-card">
+          <div className="ops-kpi-head">
+            <span className="ops-kpi-label">Acuracidade dos Itens Contados</span>
+            <span className="ops-kpi-icon" style={{background:'var(--purple-bg)', color:'var(--purple)'}}><DIcon name="checkCircle" size={15} /></span>
+          </div>
+          <div className="ops-kpi-value">{acuracidadeItensContados}%</div>
+          <div className="ops-kpi-meta">Meta: {META_ACURACIDADE_SEMANAL}% · {todasParaQualidade.length} item(ns) já contado(s)</div>
+          <div className="ops-kpi-bar-track"><div className="ops-kpi-bar-fill" style={{width:Math.min(100, Number(acuracidadeItensContados))+'%'}}></div></div>
         </div>
         <div className="ops-kpi-card">
           <div className="ops-kpi-head">
