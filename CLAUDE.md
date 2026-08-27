@@ -21528,3 +21528,67 @@ que já era impossível vazar pra dentro da fórmula antes desta mudança.
   que o deploy processar. **Verificação visual/funcional de ponta a ponta em produção
   fica a cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth real,
   não simulável no sandbox sem rede).
+
+## "Resumo da Operação" volta a caber numa linha só + Acuracidade vira gráfico de colunas
+
+Reação direta a um print mostrando o "Resumo da Operação" com 5 cards (o 2º indicador de
+acuracidade, "Acuracidade dos Itens Contados", criado na rodada anterior) quebrando pra uma
+2ª linha. Pedido completo do cliente, com um mockup ASCII de referência:
+
+> "1. Manter os cards em uma única linha... Não criar uma segunda linha para os
+> indicadores principais... 2. Transformar a acuracidade em um indicador visual de
+> colunas... Criar um gráfico de colunas para a Acuracidade... Adicionar uma linha de
+> referência da meta de 95%... 3. O gráfico deve deixar evidente: Percentual atual de cada
+> indicador; Meta de 95%; Diferença entre o resultado atual e a meta; Quantidade de itens
+> já contados, quando aplicável... Importante: não alterar os demais indicadores sem
+> necessidade."
+
+- **Causa do "quebra de linha"**: `.ops-kpi-row` sempre foi um grid FIXO de 4 colunas — com
+  5 cards (os 2 de acuracidade da rodada anterior + Valor Divergente/Itens Divergentes/Valor
+  em Estoque), o 5º sempre ia sozinho pra uma 2ª linha, mesmo trade-off já aceito antes
+  neste projeto pra outros painéis que ganharam mais itens do que a grade previa.
+- **A acuracidade saiu do card e virou `AccuracyComparisonBarChart`** (componente novo,
+  perto de `MonthlyAccuracyBarChart`, reaproveitando o mesmo eixo Y fixo 0-100% + linha de
+  meta tracejada) — 2 colunas fixas ("Geral"/"Contados"), cada uma mostrando: o valor grande
+  acima da barra, o rótulo da categoria abaixo, e a diferença em pontos percentuais pra meta
+  (verde quando já bate 95%, vermelho quando ainda falta) — a cor da própria barra também
+  reflete isso (`var(--ok)` verde vs. `WEEKLY_CHART_COLOR` teal). **Nenhuma fórmula nova**:
+  os 2 valores continuam sendo exatamente `acuracidade`/`acuracidadeItensContados`, os mesmos
+  números que os 2 cards antigos já mostravam — só a apresentação virou gráfico, satisfazendo
+  o "não alterar a regra atual de cálculo" já confirmado na rodada anterior. Meta é a mesma
+  constante `META_ACURACIDADE_SEMANAL` (95) de sempre, sem número novo inventado. O subtítulo
+  da coluna "Contados" e um rodapé abaixo do gráfico mostram `todasParaQualidade.length`
+  ("N item(ns) já contado(s)") — o "quando aplicável" pedido, dado real já calculado.
+- **Com só 3 cards sobrando em "Resumo da Operação"**, a fileira já cabe numa linha só no
+  grid fixo de 4 colunas de sempre — mas pra "ocupar horizontalmente o espaço disponível"
+  (não deixar 1/4 de vão vazio), `.ops-kpi-row` ganhou um MODIFICADOR escopado,
+  `.ops-kpi-row.ops-kpi-row-auto{grid-template-columns:repeat(auto-fit,minmax(200px,1fr));}`
+  — aplicado só via `className` na fileira de "Resumo da Operação" (`ops-kpi-row
+  ops-kpi-row-auto`), sem tocar na classe base `.ops-kpi-row` nem nos 2 `@media` que ela já
+  tinha — as outras 2 fileiras que usam essa classe ("Efeito dos Ajustes Aprovados",
+  `SAsAbertoPanel`) continuam com o grid fixo de 4 colunas de sempre, intocadas. `auto-fit`+
+  `minmax` é auto-responsivo por natureza (recolhe sozinho em tela estreita, sem precisar de
+  nenhum breakpoint extra) — satisfaz "único, ocupando o espaço" em qualquer largura.
+- Testado em 2 camadas: **estrutural** (harness jsdom+react-dom/client, atualizado a partir
+  do já existente — trocou as asserções de `.ops-kpi-value`/labels longas por checagem do
+  `<svg aria-label="Gráfico comparativo de acuracidade">`, seus 2 `<rect>`, o texto grande
+  dentro do SVG via `text[font-size="16"]`, e a contagem de 3 cards restantes com a classe
+  `ops-kpi-row-auto`) — confirmando inclusive que "Geral"/"Contados" batem exatamente quando
+  não há recontagem, e DIVERGEM (75% vs. 100%) quando há uma cadeia de recontagem corrigindo
+  o resultado, prova de que a segmentação por trás do gráfico continua funcionando igual a
+  antes; e **geométrico real via Playwright** (JSDOM não calcula layout de CSS Grid) — uma
+  página HTML standalone replicando a estrutura exata (CSS real extraído do `index.html`),
+  medida em 4 larguras (1600/1400/1024/768px): os 3 cards sempre na MESMA linha (mesmo
+  `top`), sempre ocupando ≥98% da largura do container (na prática 100% nas 4 larguras
+  testadas), nunca ultrapassando a viewport — confirma geometricamente, não só
+  estruturalmente, os dois requisitos centrais do pedido. Rodei de novo toda a suíte de
+  regressão do scratchpad (10 harnesses) — 0 falhas, nenhuma regressão em "Efeito dos
+  Ajustes Aprovados" nem em nenhum outro painel que compartilha `.ops-kpi-row`/
+  `MonthlyAccuracyBarChart`/`META_ACURACIDADE_SEMANAL`. Transpile Babel do arquivo inteiro e
+  balanceamento de chaves do CSS conferidos (670/670, +1 pela única regra CSS nova).
+  **Nenhuma migração de SQL nem redeploy de Edge Function necessários** — mudança 100% de
+  front-end (CSS+JSX), publica sozinho via GitHub Pages assim que o deploy processar.
+  **Verificação visual de ponta a ponta em produção fica a cargo do cliente** — mesma
+  limitação de sempre (login exige Supabase Auth real, não simulável no sandbox sem rede) —
+  mas desta vez a geometria do layout (não só a estrutura do DOM) já foi confirmada de
+  verdade via um navegador real (Chromium/Playwright), não só inferida por leitura de CSS.
