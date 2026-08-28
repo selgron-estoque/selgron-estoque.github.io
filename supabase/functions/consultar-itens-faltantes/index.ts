@@ -30,19 +30,29 @@
 //   B1_GRUPO=0044%2C0090%2C0088%2C9900%2C9910%2C9930%2C9940%2C0016%2C1016&
 //   btn-confirmar=
 //
-// PARSER — NUNCA testado contra o HTML real desta página específica (só a
-// lista de colunas visível no screenshot que o cliente mandou: OP/Descrição
-// OP/ETP/Dt. Emp./Produto/NTE/Grupo/Local/Saldo Estoque/Qtd Empenho/U.M./
-// SCs/PCs/Terc) — mesma ressalva de sempre neste projeto (ver
-// consultar-produto-selgron/sync-sa-almoxarifado): se o parser não
-// reconhecer nada, o próximo passo é o cliente mandar o HTML real (Ctrl+U)
-// pra recalibrar, calibração rápida de fazer.
+// PARSER — já calibrado contra o HTML real da página (o cliente mandou via
+// Ctrl+U, ETP 6220-26, 20 linhas de dado) — a lista de colunas do 1º
+// screenshot batia certinho (OP/Descrição OP/ETP/Dt. Emp./Produto/NTE/
+// Grupo/Local/Saldo Estoque/Qtd Empenho/U.M./SCs/PCs/Terc), mas a 1ª versão
+// não achava NENHUM item, sempre caindo em "não foi possível reconhecer a
+// tabela" — mesmo com a ETP existindo e a tabela vindo cheia de linhas.
 //
-// Mesma técnica de classificação de linha por CONTEÚDO de célula (<th> =
-// cabeçalho, <td> = dado) já usada em sync-sa-almoxarifado, pro mesmo tipo
-// de tabela DataTables (thead+tfoot duplicando o cabeçalho, tbody com o
-// dado de verdade) — mais simples e resistente do que tentar diferenciar
-// thead/tfoot/tbody via regex.
+// Causa real: diferente de sync-sa-almoxarifado (onde <thead>/<tfoot>
+// SEMPRE envolvem os <th> duplicados dentro de um <tr>), esta página monta
+// <thead>/<tfoot> com os <th> SOLTOS, sem NENHUM <tr> ao redor — HTML
+// tecnicamente malformado (navegador tolera e insere um <tr> implícito na
+// hora de renderizar, mas o parser aqui procurava literalmente por
+// "<tr>...<th>...</tr>" pra achar o cabeçalho, e nunca achava nenhum, já
+// que não existe esse <tr> no HTML de verdade). Corrigido: `extrairBlocoTag`
+// isola o conteúdo de dentro de <thead>...</thead> primeiro, e
+// `extrairCelulas` lê os <th> de dentro dele direto, sem depender de <tr>
+// nenhum — funciona pros dois formatos (com ou sem <tr> ao redor do
+// cabeçalho), sem regredir sync-sa-almoxarifado (que continua caindo no
+// mesmo resultado de sempre, só chegando lá por um caminho mais direto).
+//
+// Linhas de DADO continuam vindo só de <tr> com pelo menos um <td> (mesma
+// técnica de sempre) — nesta página elas nunca tiveram problema, o <tbody>
+// já envolve cada linha num <tr> normal; só o cabeçalho é que vinha solto.
 //
 // `mapearColunas` aqui faz 2 passadas — igualdade EXATA primeiro, substring
 // só como fallback — pra nunca deixar um cabeçalho curto ("OP") casar por
@@ -175,6 +185,20 @@ interface ItemFaltante {
   produtoBruto: string | null; // sempre a célula "Produto" crua — front-end usa pra exibir/editar quando `codigo` sai null
 }
 
+// Extrai o conteúdo de DENTRO da primeira ocorrência de uma tag (ex.:
+// "thead") — usado pra achar o cabeçalho independente de ele vir envolvido
+// por um <tr> ou não (ver comentário do topo do arquivo).
+function extrairBlocoTag(html: string, tag: string): string | null {
+  const re = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i");
+  const m = re.exec(html);
+  return m ? m[1] : null;
+}
+
+function extrairCelulas(html: string, tagCelula: "th" | "td"): string[] {
+  const re = new RegExp(`<${tagCelula}[^>]*>[\\s\\S]*?<\\/${tagCelula}>`, "gi");
+  return (html.match(re) || []).map((c) => textoDaCelula(c));
+}
+
 // Devolve `null` quando a tabela/cabeçalho não é reconhecida (sinal de que
 // o formato da página mudou, ou a ETP não existe e a página nem monta a
 // tabela) — DIFERENTE de devolver `[]` (tabela reconhecida, cabeçalho bate,
@@ -183,9 +207,9 @@ interface ItemFaltante {
 // 1º caso, sem confundir com "esta ETP não tem item faltante".
 function extrairItensFaltantes(html: string): ItemFaltante[] | null {
   // Escolhe a tabela com mais linhas <tr> — heurística simples, suficiente
-  // aqui: a página não tem outra tabela grande visível no screenshot do
-  // cliente. Sem `id` conhecido pra esta tabela específica (diferente de
-  // `tbemp` em sa_aberto.php, já confirmado contra o HTML real).
+  // aqui: a página não tem outra tabela grande visível no HTML confirmado.
+  // Sem `id` conhecido pra esta tabela específica (diferente de `tbemp` em
+  // sa_aberto.php, já confirmado contra o HTML real).
   const tabelasCandidatas = html.match(/<table[\s\S]*?<\/table>/gi) || [];
   let tabela = "";
   let maisLinhas = -1;
@@ -198,9 +222,16 @@ function extrairItensFaltantes(html: string): ItemFaltante[] | null {
   }
   if (!tabela) return null;
 
+  // Cabeçalho — tenta primeiro um <thead> explícito, lendo os <th> de
+  // dentro dele DIRETO (funciona com ou sem <tr> ao redor — ver comentário
+  // do topo do arquivo). Sem <thead> reconhecível, cai no formato antigo
+  // (1ª linha <tr> que contém <th>, no loop abaixo).
+  const theadBloco = extrairBlocoTag(tabela, "thead");
+  let cabecalhos: string[] | null = theadBloco ? extrairCelulas(theadBloco, "th") : null;
+  if (cabecalhos && cabecalhos.length === 0) cabecalhos = null;
+
   const linhas = tabela.match(/<tr[^>]*>[\s\S]*?<\/tr>/gi) || [];
 
-  let cabecalhos: string[] | null = null;
   const linhasDado: string[] = [];
   for (const linha of linhas) {
     const celulasTh = linha.match(/<th[^>]*>[\s\S]*?<\/th>/gi);
