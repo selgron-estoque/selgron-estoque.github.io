@@ -2115,10 +2115,21 @@ create policy "exclusão líder ou admin" on sequencia_separacao for delete
 -- Realtime — outro aparelho (o operador no chão de fábrica) vê a fila
 -- mudar/um item novo aparecer sem precisar recarregar, mesmo mecanismo já
 -- usado em contagens/inventarios/usuarios/app_config/etiquetas_fila.
--- Introspecção antes, mesmo motivo de sempre (evita erro de "already
--- member of publication"):
---   select schemaname, tablename from pg_publication_tables where pubname = 'supabase_realtime';
-alter publication supabase_realtime add table sequencia_separacao;
+-- Guardado num DO block (em vez do `alter publication` cru usado nas
+-- tabelas anteriores) — um cliente real bateu em "already member of
+-- publication" já na 1ª tentativa de aplicar este bloco (o Supabase SQL
+-- Editor pode reexecutar/reenviar a mesma instrução mais de uma vez
+-- dependendo de como o "Run" é acionado), então esta forma é segura de
+-- rodar quantas vezes precisar, sem erro:
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and tablename = 'sequencia_separacao'
+  ) then
+    alter publication supabase_realtime add table sequencia_separacao;
+  end if;
+end $$;
 
 -- =============================================================================
 -- BUSCA DE ITENS FALTANTES POR ETP (Gestão de Separação → Programação)
