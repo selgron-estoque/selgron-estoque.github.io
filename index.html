@@ -6848,6 +6848,7 @@ function App(){
         {view==='programacaoSeparacao' && hasAccess(currentUser,'programacaoSeparacao') && <ProgramacaoSeparacaoPanel currentUser={currentUser} role={role} />}
         {view==='recount' && flowState && <RecountFlow original={flowState} user={currentUser} onAddressProposed={addAddressProposal} onFinish={(c)=>{registerFinishedCount(c); goto('recounts');}} operadorVeSaldo={operadorVeSaldo} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
         {view==='dashboard' && hasAccess(currentUser,'dashboard') && <Dashboard counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} historicoParaTendencia={historicoParaTendencia} goto={goto} />}
+        {view==='acuracidade' && hasAccess(currentUser,'acuracidade') && <AcuracidadePanel counts={counts} historicoConcluidas={historicoConcluidas} historicoParaTendencia={historicoParaTendencia} />}
         {view==='relatorios' && hasAccess(currentUser,'relatorios') && <ReportsScreen counts={counts} historicoTudo={historicoTudo} inventories={inventories} currentUser={currentUser} sendHistory={reportSendHistory} onLogSend={logReportSend} role={role} onHistoricoImportado={refreshHistoricoConcluidas} />}
         {view==='sasAberto' && hasAccess(currentUser,'sasAberto') && <SAsAbertoPanel currentUser={currentUser} role={role} />}
         {view==='settings' && hasAccess(currentUser,'settings') && <Settings role={role} currentUser={currentUser} operadorVeSaldo={operadorVeSaldo} onSetOperadorVeSaldo={updateOperadorVeSaldo} operadorVeValoresRecontagem={operadorVeValoresRecontagem} onSetOperadorVeValoresRecontagem={updateOperadorVeValoresRecontagem} gruposExcluidos={gruposExcluidos} onSetGruposExcluidos={updateGruposExcluidos} sessionTimeoutMin={sessionTimeoutMin} onSetSessionTimeoutMin={updateSessionTimeoutMin} />}
@@ -7316,6 +7317,10 @@ const ACESSOS_RESTRITOS = {
   // gestão/análise acima), mas o admin pode conceder a exceção como
   // qualquer outra tela.
   programacaoSeparacao: ['lider','admin'],
+  // "Acuracidade" — página nova (grupo Análise), mesmo critério de
+  // Indicadores/Relatórios/SAs em Aberto: análise gerencial, não operação
+  // do operador por padrão.
+  acuracidade: ['lider','admin'],
 };
 
 // TODAS as telas do menu principal que podem ser ligadas/desligadas por
@@ -7342,6 +7347,7 @@ const TODOS_OS_MENUS = [
   {id:'enderecos', label:'Endereços Pendentes'},
   {id:'etiquetas', label:'Etiquetas'},
   {id:'dashboard', label:'Indicadores'},
+  {id:'acuracidade', label:'Acuracidade'},
   {id:'relatorios', label:'Relatórios'},
   {id:'sasAberto', label:'SAs em Aberto'},
   {id:'settings', label:'Configurações'},
@@ -7422,6 +7428,7 @@ const VIEW_TITLES = {
   usuarios:'Usuários',
   recount:'Recontar Item',
   dashboard:'Indicadores',
+  acuracidade:'Acuracidade',
   relatorios:'Relatórios',
   sasAberto:'SAs em Aberto',
   settings:'Configurações',
@@ -7435,6 +7442,7 @@ const VIEW_SUBTITLES = {
   usuarios: 'Gerencie os usuários do sistema, permissões e redefinições de senha.',
   sasAberto: 'Desempenho do almoxarifado no atendimento de Solicitações (SA)',
   programacaoSeparacao: 'Sequência de separação — ordenada por prioridade/urgência do pedido',
+  acuracidade: 'Geral do estoque vs. itens contados, e o efeito dos ajustes já aprovados',
 };
 
 // Telas que renderizam o motor de contagem (CountStep) direto na tela —
@@ -7519,6 +7527,7 @@ function buildSidebarGroups(user){
   ];
   const analiseItems = [
     ...(podeVer('dashboard') ? [{id:'dashboard', ic:'barChart', label:'Indicadores'}] : []),
+    ...(podeVer('acuracidade') ? [{id:'acuracidade', ic:'percent', label:'Acuracidade'}] : []),
     ...(podeVer('relatorios') ? [{id:'relatorios', ic:'fileText', label:'Relatórios'}] : []),
     ...(podeVer('sasAberto') ? [{id:'sasAberto', ic:'clock', label:'SAs em Aberto'}] : []),
   ];
@@ -14719,21 +14728,15 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   // diferentes.
   const divergentes = todasParaQualidade.filter(c=>c.diferenca!==0 && c.diferenca!==null);
   // `divergentes` continua binário de propósito — ainda alimenta o card
-  // "Itens Divergentes" (ao lado de "Acuracidade Geral"), que é uma
-  // pergunta diferente ("quantos itens tiveram QUALQUER divergência", não
-  // "qual a nota média").
+  // "Itens Divergentes", que é uma pergunta diferente ("quantos itens
+  // tiveram QUALQUER divergência", não "qual a nota média").
   //
-  // "Acuracidade Geral" NÃO é calculada aqui — o cliente esclareceu, depois
-  // de reportar que este card não batia com a média visível no gráfico
-  // "Acuracidade Mensal" (69,1% x médias tipo 91/89/77/87/70%): "eu quero
-  // que a acuracidade mensal seja referente as contagens e a acuracidade
-  // geral seja referente a média mensal" — ou seja, "Acuracidade Geral"
-  // precisa ser a média das barras do próprio gráfico "Acuracidade
-  // Mensal", não um número calculado à parte sobre `todasParaQualidade`
-  // (pool deduplicado/só-concluído, diferente do pool do gráfico). Ver
-  // `const acuracidade = ...` mais abaixo, logo depois de `monthlyStats`
-  // ser calculado — reaproveita literalmente o mesmo array que já
-  // alimenta as barras, garantindo que os dois números batem sempre.
+  // "Acuracidade Geral"/"Acuracidade dos Itens Contados" (o gráfico
+  // comparativo) NÃO são calculadas aqui — moraram nesta tela até virarem
+  // a página própria "Acuracidade" (ver `AcuracidadePanel`, logo depois do
+  // fim deste componente), a pedido do cliente. `monthlyStats` (usado pelo
+  // gráfico "Acuracidade Mensal", que continua aqui) ainda é calculado
+  // mais abaixo, sem mudança.
   const valorDivergente = todasParaQualidade.reduce((s,c)=>s+Number(c.valorDivergente||0),0);
   // Card "Itens Divergentes" (Resumo da Operação) — "itens"/"documentos" e
   // "códigos distintos" voltaram a ser números potencialmente diferentes
@@ -14862,41 +14865,14 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   // gráfico sempre mostra o ano corrente inteiro até hoje.
   const anoAtualStr = String(new Date().getFullYear()) + '-01-01';
   const monthlyStats = computeMonthlyStats(poolTendencia, anoAtualStr, hojeStr);
-  // "Acuracidade Geral" (o card, "Resumo da Operação") = média das barras
-  // deste MESMO gráfico — pedido explícito do cliente ("a acuracidade
-  // geral seja referente a média mensal"), depois de reportar que o card
-  // não batia com a média visível aqui. Reaproveita `monthlyStats` direto
-  // (o array que já alimenta as barras), sem recalcular por conta própria
-  // — garante que os dois números são sempre o mesmo, por construção. Mês
-  // sem nenhum item com acuracidade calculável (`acuracidade:null`) fica
-  // de fora da média, mesmo critério de sempre ("sem dado, não conta nem a
-  // favor nem contra").
-  const mesesComAcuracidade = monthlyStats.filter(m=>m.acuracidade!=null);
-  const acuracidade = (mesesComAcuracidade.length>0 ? (mesesComAcuracidade.reduce((s,m)=>s+m.acuracidade,0)/mesesComAcuracidade.length) : 100).toFixed(1);
-
-  // "Acuracidade dos Itens Contados" — pedido de um coordenador de
-  // almoxarifado: "como o estoque ainda não passou por contagem completa,
-  // precisamos separar a informação para que o indicador não seja
-  // distorcido por itens que nunca foram inventariados... crie dois
-  // indicadores distintos". Pedido explícito de NÃO alterar a regra atual
-  // de cálculo — "Acuracidade Geral do Estoque" (acima) continua 100%
-  // intocada, mesmo pool/mesma fórmula de sempre. Este é um indicador NOVO
-  // e ADICIONAL, mesma regra de cálculo (média das médias mensais, ano
-  // corrente até hoje — reaproveita `computeMonthlyStats`, a MESMA função
-  // que já monta `monthlyStats` acima), só trocando a POPULAÇÃO: em vez de
-  // `poolTendencia` (toda rodada registrada, sem deduplicar — uma
-  // recontagem soma separado da 1ª contagem, pesando por VOLUME de
-  // trabalho), usa `todasParaQualidade` (já deduplicado por documento, uma
-  // linha por item — sempre a rodada FINAL, refletindo o resultado de um
-  // ajuste/devolução quando aplicável) — "itens que tiveram contagem e,
-  // quando aplicável, ajuste de estoque", exatamente como pedido. Item
-  // nunca contado não aparece em `counts`/histórico de jeito nenhum, então
-  // já fica fora dos dois pools por construção — a diferença real entre os
-  // dois indicadores é "conta cada RODADA" (Geral) vs. "conta cada ITEM,
-  // uma vez só" (Contados).
-  const monthlyStatsItensContados = computeMonthlyStats(todasParaQualidade, anoAtualStr, hojeStr);
-  const mesesComAcuracidadeItensContados = monthlyStatsItensContados.filter(m=>m.acuracidade!=null);
-  const acuracidadeItensContados = (mesesComAcuracidadeItensContados.length>0 ? (mesesComAcuracidadeItensContados.reduce((s,m)=>s+m.acuracidade,0)/mesesComAcuracidadeItensContados.length) : 100).toFixed(1);
+  // "Acuracidade Geral"/"Acuracidade dos Itens Contados" (o gráfico
+  // comparativo, `AccuracyComparisonBarChart`) e "Efeito dos Ajustes
+  // Aprovados" saíram daqui — moram na página "Acuracidade" agora (ver
+  // `AcuracidadePanel`), que recalcula `monthlyStatsItensContados`/
+  // `acuracidadeItensContados`/`efeitoAjustes` de forma independente, com
+  // as MESMAS fórmulas de sempre (nenhuma mudança de regra de cálculo,
+  // só de página). `monthlyStats` continua aqui, intocado, só pra
+  // "Acuracidade Mensal".
 
   // "Contados × Divergências" (pizza) — pedido do cliente: "indicador que
   // me mostra quantidade contada X divergências", "gráfico de pizza de
@@ -14974,13 +14950,6 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   const todasParaQualidadeNoPeriodo = todasParaQualidade.filter(c=>c.data && c.data>=dataInicioStr && c.data<=dataFimStr);
   const topDivergentes = [...todasParaQualidadeNoPeriodo].sort((a,b)=>Math.abs(b.diferenca||0)-Math.abs(a.diferenca||0)).slice(0,5);
 
-  // "Efeito dos Ajustes Aprovados" — pedido de um coordenador de
-  // almoxarifado ("está tendo resultado os ajustes aprovados?"), ver
-  // comentário completo em `computeEfeitoAjustes`. Reaproveita o mesmo pool
-  // deduplicado (`todasParaQualidade`) e o mesmo intervalo de data do
-  // painel "Filtros" já usado no resto desta seção — sem nenhum filtro novo.
-  const efeitoAjustes = computeEfeitoAjustes(todasParaQualidade, dataInicioStr, dataFimStr);
-
   return (
     <div>
       <div className="section-title">Resumo da Operação</div>
@@ -15052,32 +15021,15 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
         </div>
       </div>
 
-      {/* Acuracidade em colunas — pedido do cliente: "não quero que a
-          acuracidade seja apresentada apenas como um número dentro de um
-          card... criar um gráfico de colunas". Reaproveita EXATAMENTE os
-          mesmos 2 números que os cards antigos já mostravam (`acuracidade`/
-          `acuracidadeItensContados`, calculados mais acima, sem nenhuma
-          mudança de fórmula) — só a apresentação virou gráfico. */}
-      <div className="panel" style={{marginBottom:24}}>
-        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:4}}>
-          <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Acuracidade (%)</div>
-          <span className="chart-meta-badge">Meta: {META_ACURACIDADE_SEMANAL}%</span>
-        </div>
-        <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginBottom:16}}>
-          Geral do estoque vs. só os itens que já passaram por contagem física.
-        </div>
-        <AccuracyComparisonBarChart
-          itens={[
-            {key:'geral', label:'Geral', valor:acuracidade, subtitulo:'todo o estoque'},
-            {key:'contados', label:'Contados', valor:acuracidadeItensContados, subtitulo:todasParaQualidade.length+' item(ns) já contado(s)'},
-          ]}
-          meta={META_ACURACIDADE_SEMANAL}
-        />
-        <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:10}}>
-          <strong>Contados:</strong> baseado em {todasParaQualidade.length} item(ns) já contado(s).
-        </div>
-      </div>
-
+      {/* O painel "Acuracidade (%)" (gráfico Geral vs. Contados) e a seção
+          "Efeito dos Ajustes Aprovados" saíram daqui — viraram a página
+          própria "Acuracidade" (Sidebar → Análise), pedido do cliente:
+          "Esses novos indicadores pode criar uma nova página chamada
+          Acuracidade e coloque lá dentro" (confirmado via AskUserQuestion:
+          "Gráfico novo + Efeito dos Ajustes" — "Acuracidade Semanal"/
+          "Acuracidade Mensal", mais abaixo nesta mesma tela, continuam
+          aqui em Indicadores). Ver função `AcuracidadePanel`, logo depois
+          do fim deste componente. */}
       <InventoryHealthCard weeklyStats={weeklyStats} />
 
       <TrendFilterBar
@@ -15276,6 +15228,95 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
           </>
         )}
       </div>
+
+    </div>
+  );
+}
+
+// "Acuracidade" (view `acuracidade`, Sidebar → Análise) — página nova,
+// pedido do cliente: "Esses novos indicadores pode criar uma nova página
+// chamada Acuracidade e coloque lá dentro", confirmado via AskUserQuestion
+// como "Gráfico novo + Efeito dos Ajustes" — ou seja, só o gráfico
+// comparativo Geral vs. Contados (`AccuracyComparisonBarChart`) e a seção
+// "Efeito dos Ajustes Aprovados" mudam de lugar; "Acuracidade Semanal"/
+// "Acuracidade Mensal" continuam em Indicadores (`Dashboard`, seção
+// "Tendência"), sem nenhuma mudança.
+//
+// Recalcula, de forma independente (este componente não recebe nem
+// compartilha nenhum estado local de `Dashboard`), EXATAMENTE as mesmas
+// fórmulas já usadas lá antes desta extração — nenhuma regra de cálculo
+// foi alterada, só a localização. Tem seu próprio filtro de período
+// (`usePersistedState('acuracidadeTrendFilter', ...)`, chave diferente de
+// `'dashboardTrendFilter'`) — as duas páginas guardam a própria escolha de
+// período sem interferir uma na outra.
+function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendencia=[]}){
+  const [trendFilter, setTrendFilter] = usePersistedState('acuracidadeTrendFilter', {tipo:'30d', from:'', to:''});
+
+  const historicoComoContagem = historicoConcluidas.map(historicoRowToCountLike).filter(Boolean);
+  // Mesmo dedup por documento já usado em Indicadores/Home — só a rodada
+  // FINAL de cada item conta (ver comentário completo em `Dashboard`,
+  // perto de `ultimaContagemPorDocumento`).
+  const todasParaQualidade = ultimaContagemPorDocumento([...counts, ...historicoComoContagem]);
+
+  const hojeStr = hojeLocalStr();
+  const trendRange = computeTrendRange(trendFilter.tipo, hojeStr, trendFilter.from, trendFilter.to);
+  let dataInicioStr = trendRange.from, dataFimStr = trendRange.to;
+  if(dataInicioStr > dataFimStr) dataInicioStr = dataFimStr;
+
+  // "Acuracidade Geral do Estoque" — mesmo pool/fórmula de sempre
+  // (`poolTendencia`, sem deduplicar — cada rodada registrada conta,
+  // pesando por volume de trabalho), SEMPRE ano corrente até hoje,
+  // independente do filtro de período desta página (mesmo critério já
+  // usado em Indicadores).
+  const poolTendencia = buildPoolTendencia(counts, historicoParaTendencia);
+  const anoAtualStr = String(new Date().getFullYear()) + '-01-01';
+  const monthlyStats = computeMonthlyStats(poolTendencia, anoAtualStr, hojeStr);
+  const mesesComAcuracidade = monthlyStats.filter(m=>m.acuracidade!=null);
+  const acuracidade = (mesesComAcuracidade.length>0 ? (mesesComAcuracidade.reduce((s,m)=>s+m.acuracidade,0)/mesesComAcuracidade.length) : 100).toFixed(1);
+
+  // "Acuracidade dos Itens Contados" — mesmo pool/fórmula de sempre
+  // (`todasParaQualidade`, deduplicado por documento — só a rodada final
+  // de cada item, refletindo ajuste/devolução quando aplicável).
+  const monthlyStatsItensContados = computeMonthlyStats(todasParaQualidade, anoAtualStr, hojeStr);
+  const mesesComAcuracidadeItensContados = monthlyStatsItensContados.filter(m=>m.acuracidade!=null);
+  const acuracidadeItensContados = (mesesComAcuracidadeItensContados.length>0 ? (mesesComAcuracidadeItensContados.reduce((s,m)=>s+m.acuracidade,0)/mesesComAcuracidadeItensContados.length) : 100).toFixed(1);
+
+  // "Efeito dos Ajustes Aprovados" — mesmo pool deduplicado
+  // (`todasParaQualidade`) e o mesmo intervalo de data do filtro desta
+  // página (`dataInicioStr`/`dataFimStr`).
+  const efeitoAjustes = computeEfeitoAjustes(todasParaQualidade, dataInicioStr, dataFimStr);
+
+  return (
+    <div>
+      <div className="section-title">Acuracidade</div>
+      <div className="panel" style={{marginBottom:24}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:4}}>
+          <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Acuracidade (%)</div>
+          <span className="chart-meta-badge">Meta: {META_ACURACIDADE_SEMANAL}%</span>
+        </div>
+        <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginBottom:16}}>
+          Geral do estoque vs. só os itens que já passaram por contagem física.
+        </div>
+        <AccuracyComparisonBarChart
+          itens={[
+            {key:'geral', label:'Geral', valor:acuracidade, subtitulo:'todo o estoque'},
+            {key:'contados', label:'Contados', valor:acuracidadeItensContados, subtitulo:todasParaQualidade.length+' item(ns) já contado(s)'},
+          ]}
+          meta={META_ACURACIDADE_SEMANAL}
+        />
+        <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:10}}>
+          <strong>Contados:</strong> baseado em {todasParaQualidade.length} item(ns) já contado(s).
+        </div>
+      </div>
+
+      <TrendFilterBar
+        trendFilter={trendFilter}
+        setTrendFilter={setTrendFilter}
+        dataInicioStr={dataInicioStr}
+        dataFimStr={dataFimStr}
+        hojeStr={hojeStr}
+        subtitle="Período usado por 'Efeito dos Ajustes Aprovados' abaixo"
+      />
 
       <div className="section-title">Efeito dos Ajustes Aprovados</div>
       <div className="panel">

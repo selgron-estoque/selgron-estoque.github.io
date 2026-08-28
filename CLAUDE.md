@@ -21592,3 +21592,97 @@ acuracidade, "Acuracidade dos Itens Contados", criado na rodada anterior) quebra
   limitação de sempre (login exige Supabase Auth real, não simulável no sandbox sem rede) —
   mas desta vez a geometria do layout (não só a estrutura do DOM) já foi confirmada de
   verdade via um navegador real (Chromium/Playwright), não só inferida por leitura de CSS.
+
+## "Acuracidade" vira página própria (Sidebar → Análise) — sai de dentro de Indicadores
+
+Depois das 3 rodadas anteriores (2º indicador, gráfico de colunas Geral vs. Contados,
+"Efeito dos Ajustes Aprovados"), o cliente pediu, direto:
+
+> "Esses novos indicadores pode criar uma nova página chamada Acuracidade e coloque lá
+> dentro"
+
+Perguntado via `AskUserQuestion` o escopo exato — já que "Indicadores" tem VÁRIOS blocos
+com "acuracidade" no nome ("Acuracidade Semanal"/"Acuracidade Mensal", dentro de
+"Tendência", existem desde muito antes destas 3 rodadas) — o cliente confirmou
+explicitamente **"Gráfico novo + Efeito dos Ajustes"**: só o gráfico comparativo
+(`AccuracyComparisonBarChart`, Geral vs. Contados) e a seção inteira "Efeito dos Ajustes
+Aprovados" migram pra página nova; "Acuracidade Semanal"/"Acuracidade Mensal" CONTINUAM em
+Indicadores, sem nenhuma mudança.
+
+- **Mesmo padrão de extração de tela já usado várias vezes neste projeto** ("Endereços
+  Pendentes"/"Itens Divergentes"/"SAs em Aberto"/"Programação"/etc.):
+  `ACESSOS_RESTRITOS.acuracidade = ['lider','admin']` (mesmo grupo de "Indicadores"/
+  "Relatórios" — análise gerencial, operador não participa por padrão, mas o admin pode
+  conceder a exceção via "Acesso por tela" como qualquer outra); entrada em
+  `TODOS_OS_MENUS` (rótulo "Acuracidade", pro dual-list de "Editar Usuário");
+  `VIEW_TITLES.acuracidade`/`VIEW_SUBTITLES.acuracidade`; item novo em
+  `buildSidebarGroups`, dentro do grupo **"Análise"** (o mesmo grupo de "Indicadores"/
+  "Relatórios"/"SAs em Aberto"), ícone `percent` (já existia em `DICON_PATHS`, reaproveitado
+  — nenhum ícone novo); guard de rota em `App()`.
+- **`AcuracidadePanel({counts, historicoConcluidas, historicoParaTendencia})`** (função
+  nova, logo depois do fim de `Dashboard`) — recebe as MESMAS 3 props que `App()` já
+  passava pra `Dashboard`, sem nenhum estado novo compartilhado entre as duas telas.
+  Recalcula, **de forma independente e sem alterar NENHUMA fórmula**, exatamente o que
+  antes vivia dentro de `Dashboard`:
+  - `todasParaQualidade` (dedup por documento, mesma função `ultimaContagemPorDocumento`
+    de sempre) e `poolTendencia` (`buildPoolTendencia`, sem dedup) — os dois pools que já
+    alimentavam esses indicadores lá dentro, agora recomputados aqui.
+  - `monthlyStats`/`acuracidade` ("Acuracidade Geral do Estoque") e
+    `monthlyStatsItensContados`/`acuracidadeItensContados` ("Acuracidade dos Itens
+    Contados") — literalmente a mesma conta de antes (`computeMonthlyStats` + média das
+    médias mensais não-nulas), só chamada aqui em vez de em `Dashboard`.
+  - `efeitoAjustes = computeEfeitoAjustes(todasParaQualidade, dataInicioStr, dataFimStr)`
+    — mesma função pura de sempre, sem nenhuma mudança.
+  - **Filtro de período próprio**: `usePersistedState('acuracidadeTrendFilter', {tipo:
+    '30d', from:'', to:''})` — chave DIFERENTE de `'dashboardTrendFilter'` (o filtro que
+    "Efeito dos Ajustes Aprovados" já usava dentro de Indicadores) — as duas páginas
+    guardam a própria escolha de período sem interferir uma na outra. Só afeta "Efeito dos
+    Ajustes Aprovados" (a data do AJUSTE, nunca a busca pela próxima contagem, mesmo
+    critério já documentado quando essa seção foi criada) — o gráfico "Acuracidade (%)"
+    continua fixo em "ano corrente até hoje", independente desse filtro, mesmo padrão de
+    sempre pros indicadores de acuracidade geral.
+- **`Dashboard` (Indicadores) perdeu, por completo**: o painel "Acuracidade (%)"/
+  `AccuracyComparisonBarChart` e toda a seção "Efeito dos Ajustes Aprovados" (JSX +
+  as variáveis que só existiam pra alimentar os dois — `mesesComAcuracidade`/
+  `acuracidade`, `monthlyStatsItensContados`/`mesesComAcuracidadeItensContados`/
+  `acuracidadeItensContados`, `efeitoAjustes`). **`monthlyStats` em si continua em
+  `Dashboard`, sem mudança** — ainda alimenta o gráfico "Acuracidade Mensal", que não
+  migrou; só os cálculos DERIVADOS dele que só serviam ao card/gráfico movido saíram
+  junto. `todasParaQualidade`/`poolTendencia`/`anoAtualStr`/`hojeStr` (usados por outras
+  seções de Indicadores que não mudaram — "Resumo da Operação", a pizza, "Top 5 Maiores
+  Divergências", etc.) continuam intocados em `Dashboard`.
+- Testado em 2 camadas: (1) harness novo (`harness_acuracidade_pagina.js`) confirmando
+  que `Dashboard` renderizado sozinho NÃO mostra mais "Acuracidade (%)" nem "Efeito dos
+  Ajustes Aprovados" (nenhum `svg[aria-label="Gráfico comparativo de acuracidade"]`,
+  nenhum texto "Ajustes no Período"), enquanto CONTINUA mostrando "Acuracidade Semanal
+  (%)"/"Acuracidade Mensal (%)" e o "Resumo da Operação" com 3 cards
+  (`.ops-kpi-row-auto`, da rodada anterior) — e que `AcuracidadePanel` renderizado
+  sozinho MOSTRA os dois blocos, com as MESMAS provas de fórmula já usadas antes (sem
+  recontagem, Geral=Contados; com uma cadeia de recontagem, Geral considera as 2
+  rodadas/Contados só a final — os dois DIVERGEM, 75% vs. 100%, confirmando que a
+  segmentação sobreviveu à mudança de página) e um cenário próprio de "Efeito dos
+  Ajustes Aprovados" (2 códigos com ajuste aprovado, um com contagem posterior já
+  corrigida → "Melhorou", outro ainda sem nenhuma contagem posterior → "Aguardando
+  confirmação"); (2) o harness já existente `harness_efeito_ajustes_dashboard.js` foi
+  ATUALIZADO (não descartado) pra renderizar `AcuracidadePanel` em vez de `Dashboard` —
+  os 3 cenários completos que já existiam (4 KPIs + tabela com melhorou/piorou/
+  aguardando/devolução; empty-state honesto sem nenhum ajuste; filtro de período
+  removendo um ajuste antigo de 2020 ao trocar pra "Este mês") continuam passando
+  intactos, só na página nova. `harness_efeito_ajustes_isolado.js` (testa
+  `computeEfeitoAjustes` isoladamente, sem renderizar nenhum componente) não precisou de
+  nenhuma mudança — a função em si nunca foi tocada. `harness_acuracidade_itens_
+  contados.js` (o harness da rodada anterior, que renderizava `Dashboard` esperando
+  encontrar o gráfico/painel LÁ) virou puro duplicado depois desta migração — **removido**
+  do scratchpad, já que suas 3 checagens relevantes (painel some de Dashboard; sem
+  recontagem os 2 valores batem; com recontagem eles divergem) já estão cobertas, e
+  corretamente, pelos harnesses acima. Rodei de novo toda a suíte de regressão do
+  scratchpad (11 harnesses, ~301 asserções) — 0 falhas, nenhuma regressão em nenhuma
+  outra tela (Etiquetas, Programação/ETP, SAs em Aberto, Realtime, Nova Contagem Manual,
+  parser de número BR, Tracking Picking). Transpile Babel do arquivo inteiro e
+  balanceamento de chaves do CSS conferidos (670/670, sem mudança — esta migração não
+  tocou em CSS nenhum, só JS/JSX). **Nenhuma migração de SQL nem redeploy de Edge
+  Function necessários** — mudança 100% de front-end (relocação de JSX/JS + wiring de
+  rota já estabelecido neste projeto), publica sozinha via GitHub Pages assim que o
+  deploy processar. **Verificação visual/funcional de ponta a ponta em produção fica a
+  cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth real, não
+  simulável no sandbox sem rede).
