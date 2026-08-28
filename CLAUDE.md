@@ -21686,3 +21686,60 @@ Indicadores, sem nenhuma mudança.
   deploy processar. **Verificação visual/funcional de ponta a ponta em produção fica a
   cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth real, não
   simulável no sandbox sem rede).
+
+## Bug real: parser de "Itens Faltantes" (Programação) nunca reconhecia a tabela real —
+## thead/tfoot sem `<tr>` ao redor dos `<th>`
+
+Depois de publicar a Edge Function `consultar-itens-faltantes` (ver seção "'Programação'
+ganha busca por ETP" mais acima), o cliente testou de verdade em produção — busca por
+ETP na tela "Gestão de Separação" → "Programação" — e bateu sempre no mesmo erro,
+mesmo com a ETP existindo e a página real trazendo a tabela cheia de linhas: "Não foi
+possível reconhecer a tabela de itens faltantes — a página pode ter mudado de formato,
+ou a ETP não existe."
+
+Pedi o HTML real da página de resultado (Ctrl+U/"Ver código-fonte da página", mesmo
+processo já estabelecido neste projeto pra calibrar qualquer parser de página interna
+da Selgron contra dado real) — o cliente mandou o HTML de verdade pra uma ETP real
+(6220-26, 20 linhas de dado).
+
+- **Causa raiz**: o parser (`extrairItensFaltantes`) sempre assumiu que cabeçalho de
+  tabela vem como `<tr>...<th>...</tr>` — a mesma forma já confirmada contra o HTML real
+  de `sa_aberto.php` (a página do `sync-sa-almoxarifado`, ver seção "'SAs em Aberto'" mais
+  acima), onde `<thead>`/`<tfoot>` sempre envolvem os `<th>` duplicados dentro de um
+  `<tr>` de verdade. A página `itensfaltantes.php` é diferente: monta `<thead>`/
+  `<tfoot>` com os `<th>` **soltos, sem nenhum `<tr>` ao redor** — HTML tecnicamente
+  malformado que o navegador tolera (insere um `<tr>` implícito na hora de renderizar,
+  por isso a página aparecia normal pro cliente), mas que a busca por `<tr>...<th>...
+  </tr>` nunca encontrava — o parser sempre concluía "cabeçalho não reconhecido" e
+  devolvia `null` antes mesmo de tentar processar as linhas de dado do `<tbody>`, que
+  em si estavam perfeitamente bem formadas. Mesma categoria de bug silencioso já vista
+  várias vezes neste projeto — nenhum erro visível na origem, só um parser assumindo um
+  formato que não bate com o real.
+- **`extrairBlocoTag(html, tag)`/`extrairCelulas(html, tagCelula)`** (funções novas,
+  Edge Function) — isolam o conteúdo de dentro de `<thead>...</thead>` primeiro, e leem
+  os `<th>` de dentro dele DIRETO, sem depender de `<tr>` nenhum ao redor — funciona
+  pros dois formatos de marcação (com ou sem `<tr>` envolvendo o cabeçalho), usado como
+  método PRIMÁRIO de detecção de cabeçalho, com fallback pro método antigo (`<tr>`-based)
+  só se nenhum bloco `<thead>` for encontrado ou vier vazio — garante que
+  `sync-sa-almoxarifado` (que nunca teve esse problema) continua caindo no mesmo
+  resultado de sempre, só chegando lá por um caminho mais direto agora.
+- **Linhas de DADO não precisaram de nenhuma mudança** — nesta página elas sempre
+  vieram bem formadas, cada uma dentro de um `<tr>` normal no `<tbody>` — só o cabeçalho
+  é que vinha solto.
+- Testado via script Node isolado (mesma técnica de sempre — réplica fiel da lógica da
+  Edge Function, sem depender de Deno instalado) rodado contra o HTML REAL enviado pelo
+  cliente (não um HTML sintético): confirmado que os 14 cabeçalhos reais da tabela são
+  reconhecidos (OP/Descrição OP/ETP/Dt. Emp./Produto/NTE/Grupo/Local/Saldo Estoque/Qtd
+  Empenho/U.M./SCs/PCs/Terc), que o mapeamento das 6 colunas usadas bate nas posições
+  certas (`op:0, etp:2, produto:4, local:7, quantidade:9, unidade:10`), que as 20
+  linhas de dado são extraídas (confirmado por contagem direta de `<tr>` dentro do
+  `<tbody>` do HTML real, batendo exatamente), com **0 códigos de produto não
+  reconhecidos** — e conferência campo a campo da 1ª e da última linha contra o HTML de
+  origem, todas batendo. Type-check da Edge Function via `tsc` (mesmo shim de sempre
+  pros globais do Deno) sem erro.
+- **Falta o cliente rodar o deploy da Edge Function atualizada**
+  (`npx supabase functions deploy consultar-itens-faltantes`, mesmo comando de sempre)
+  — até lá, a function publicada continua com o comportamento antigo (bug presente).
+  **Verificação de ponta a ponta com a mesma ETP real (6220-26) ou outra fica a cargo
+  do cliente** — mesma limitação de sempre (sandbox sem acesso de rede ao domínio
+  interno da Selgron).
