@@ -1,0 +1,3 @@
+# Cache local do Supabase CLI (gerado ao rodar `npx supabase ...`) — não é
+# conteúdo do app, não deve ser versionado.
+supabase/.temp/
