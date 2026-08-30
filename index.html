@@ -15995,8 +15995,12 @@ function sequenciaSeparacaoRowToLocal(row){
     status: row.status,
     criadoPor: row.criado_por,
     criadoEm: row.criado_em,
+    iniciadoPor: row.iniciado_por,
+    iniciadoEm: row.iniciado_em,
     separadoPor: row.separado_por,
     separadoEm: row.separado_em,
+    entreguePor: row.entregue_por,
+    entregueEm: row.entregue_em,
     // Só preenchidos pra item que entrou via busca por ETP (ver
     // `fetchItensFaltantesPorEtp`/`AdicionarPorEtpPanel` mais abaixo) —
     // sempre null pro fluxo de busca manual no catálogo, que não tem
@@ -16036,7 +16040,7 @@ async function adicionarItemSequenciaSeparacao(item){
       quantidade: item.quantidade || null,
       prioridade: item.prioridade || 'media',
       observacao: item.observacao || null,
-      status: 'pendente',
+      status: 'aguardando',
       criado_por: item.criadoPor || null,
       // etp/op/local/unidade: só preenchidos quando o item entra na fila via
       // busca por ETP (fetchItensFaltantesPorEtp) — sempre null pro fluxo
@@ -16053,17 +16057,28 @@ async function adicionarItemSequenciaSeparacao(item){
   }
 }
 
-async function marcarItemSeparado(id, nomeUsuario){
+// Generaliza o antigo marcarItemSeparado (só sabia ir pra 'separado') — agora
+// cobre as 3 transições reais do pipeline de 4 etapas (aguardando →
+// em_separacao → separada → entregue), gravando o par nome+timestamp certo
+// conforme o status de DESTINO. 'aguardando' nunca é destino de nenhuma
+// dessas ações (é só o estado inicial do item, ao ser criado), por isso não
+// tem par de auditoria próprio pra gravar aqui.
+async function atualizarStatusSequenciaSeparacao(id, novoStatus, nomeUsuario){
   if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
   try{
+    const patch = {status: novoStatus};
+    const agora = new Date().toISOString();
+    if(novoStatus==='em_separacao'){ patch.iniciado_por = nomeUsuario || null; patch.iniciado_em = agora; }
+    else if(novoStatus==='separada'){ patch.separado_por = nomeUsuario || null; patch.separado_em = agora; }
+    else if(novoStatus==='entregue'){ patch.entregue_por = nomeUsuario || null; patch.entregue_em = agora; }
     const { error } = await supabaseClient
       .from('sequencia_separacao')
-      .update({status:'separado', separado_por: nomeUsuario || null, separado_em: new Date().toISOString()})
+      .update(patch)
       .eq('id', id);
     if(error) throw error;
     return {ok:true};
   }catch(err){
-    return {ok:false, erro:(err && err.message) || 'Não foi possível marcar como separado.'};
+    return {ok:false, erro:(err && err.message) || 'Não foi possível atualizar o status.'};
   }
 }
 
@@ -17397,6 +17412,95 @@ const PRIORIDADE_ORDEM = {alta:0, media:1, baixa:2};
 const PRIORIDADE_LABEL = {alta:'Alta', media:'Média', baixa:'Baixa'};
 const PRIORIDADE_STATUS = {alta:'danger', media:'warn', baixa:'ok'};
 
+// Pipeline de 4 etapas da Programação de Separação (evolução do binário
+// 'pendente'/'separado' original — ver `backend/schema.sql`, seção
+// "Programação de Separação ganha pipeline de 4 etapas", pro mapeamento do
+// dado já existente): aguardando → em_separacao → separada → entregue.
+const SEPARACAO_STATUS_ORDEM = {aguardando:0, em_separacao:1, separada:2, entregue:3};
+const SEPARACAO_STATUS_LABEL = {aguardando:'Aguardando', em_separacao:'Em Separação', separada:'Separada', entregue:'Entregue'};
+const SEPARACAO_STATUS_ICON = {aguardando:'clock', em_separacao:'repeat', separada:'box', entregue:'checkCircle'};
+// Próximo estágio de cada status — usado pelo botão de avançar no card do
+// item; 'entregue' não tem entrada (é o estágio final, sem próximo).
+const SEPARACAO_STATUS_PROXIMO = {aguardando:'em_separacao', em_separacao:'separada', separada:'entregue'};
+const SEPARACAO_STATUS_ACAO_LABEL = {aguardando:'Iniciar separação', em_separacao:'Marcar separada', separada:'Confirmar entrega'};
+
+// Badge de status do pipeline — reaproveita `StatusTag` (mesma paleta ok/
+// warn já usada em qualquer chip deste app) pros 2 estágios que já cabem
+// nessa paleta (aguardando/separada); pros outros 2 (em_separacao/entregue),
+// mesmo padrão já usado em outros pontos deste app pra um 4º/5º/6º estado
+// além de ok/warn/danger — classe base `.status-tag` (só forma, sem cor)
+// com `style` inline reaproveitando tokens de design já existentes
+// (`--teal`/`--blue`), nunca uma cor nova.
+function SeparacaoStatusTag({status}){
+  const label = SEPARACAO_STATUS_LABEL[status] || status;
+  if(status==='aguardando') return <StatusTag status="warn" text={label} />;
+  if(status==='separada') return <StatusTag status="ok" text={label} />;
+  if(status==='em_separacao') return <span className="status-tag" style={{background:'var(--teal-bg)',color:'var(--teal)'}}><span className="status-dot"></span>{label}</span>;
+  if(status==='entregue') return <span className="status-tag" style={{background:'var(--blue-bg)',color:'var(--blue)'}}><span className="status-dot"></span>{label}</span>;
+  return <StatusTag status="warn" text={label} />;
+}
+
+// Painel/TV — visualização somente-leitura em Kanban, alternável a partir da
+// tela de gestão de sempre (toggle `modoPainel`, sem mudar rota/URL). Mesmo
+// padrão de "N cards de KPI numa fileira" já usado em `SAsAbertoPanel`
+// (`.ops-kpi-row.ops-kpi-row-auto`), seguido de 4 colunas (uma por estágio)
+// com os itens daquele estágio — nenhuma classe CSS nova, tudo reaproveitado.
+function SeparacaoPainelBoard({itens}){
+  const ordem = ['aguardando','em_separacao','separada','entregue'];
+  const porStatus = {aguardando:[], em_separacao:[], separada:[], entregue:[]};
+  itens.forEach(i=>{ (porStatus[i.status] || porStatus.aguardando).push(i); });
+  ['aguardando','em_separacao','separada'].forEach(st=>{
+    porStatus[st].sort((a,b)=>{
+      const pa = PRIORIDADE_ORDEM[a.prioridade] ?? 1;
+      const pb = PRIORIDADE_ORDEM[b.prioridade] ?? 1;
+      if(pa!==pb) return pa-pb;
+      return String(a.criadoEm||'').localeCompare(String(b.criadoEm||''));
+    });
+  });
+  // Entregue não tem mais prioridade relevante (ciclo já fechou) — ordenado
+  // pela entrega mais recente primeiro, mesmo critério de "recência" já
+  // usado noutras listas de histórico deste app.
+  porStatus.entregue.sort((a,b)=> String(b.entregueEm||'').localeCompare(String(a.entregueEm||'')));
+
+  return (
+    <div>
+      <div className="ops-kpi-row ops-kpi-row-auto" style={{marginBottom:18}}>
+        {ordem.map(st=>(
+          <div key={st} className="ops-kpi-card">
+            <div className="ops-kpi-head">
+              <span className="ops-kpi-label">{SEPARACAO_STATUS_LABEL[st]}</span>
+              <span className="ops-kpi-icon"><DIcon name={SEPARACAO_STATUS_ICON[st]} size={15} /></span>
+            </div>
+            <div className="ops-kpi-value">{porStatus[st].length}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(240px,1fr))',gap:14}}>
+        {ordem.map(st=>(
+          <div key={st} style={{background:'var(--panel-raised)',border:'1px solid var(--line)',borderRadius:'var(--radius)',padding:12}}>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10,fontWeight:600,fontSize:'var(--text-sm)'}}>
+              <DIcon name={SEPARACAO_STATUS_ICON[st]} size={16} />
+              <span>{SEPARACAO_STATUS_LABEL[st]}</span>
+              <span className="badge" style={{position:'static',marginLeft:'auto'}}>{porStatus[st].length}</span>
+            </div>
+            {porStatus[st].length===0 ? (
+              <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)'}}>Nenhum item.</div>
+            ) : (
+              porStatus[st].map(i=>(
+                <div key={i.id} style={{background:'var(--panel)',border:'1px solid var(--line)',borderRadius:8,padding:'8px 10px',marginBottom:8}}>
+                  <div style={{fontSize:'var(--text-sm)',fontWeight:600}}>{i.codigo}</div>
+                  <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)'}}>{i.descricao}</div>
+                  <div style={{marginTop:4}}><StatusTag status={PRIORIDADE_STATUS[i.prioridade]||'warn'} text={PRIORIDADE_LABEL[i.prioridade]||'Média'} /></div>
+                </div>
+              ))
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ProgramacaoSeparacaoPanel({currentUser, role}){
   const [itens, setItens] = useState([]);
   const [query, setQuery] = useState('');
@@ -17415,6 +17519,12 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
 
   const [historicoAberto, setHistoricoAberto] = useState(false);
   const [buscaHistorico, setBuscaHistorico] = useState('');
+
+  // Painel/TV — visualização somente-leitura em Kanban (SeparacaoPainelBoard),
+  // alternável a partir do mesmo toggle simples já usado noutras telas deste
+  // app (ex. "Ver histórico"/"Calibrar etiquetas") — substitui o bloco de
+  // gestão inteiro enquanto ativo, não fica lado a lado com ele.
+  const [modoPainel, setModoPainel] = useState(false);
 
   // Busca por ETP (Gestão de Separação → Programação) — pedido do cliente:
   // "Neste link eu vou digitar o código da ETP e ele pesquisa a OP e
@@ -17566,10 +17676,10 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
     setEtpCodigo('');
   }
 
-  async function handleMarcarSeparado(id){
+  async function handleAvancarStatus(id, novoStatus){
     setBusyId(id);
     setErros(prev=>({...prev, [id]:null}));
-    const res = await marcarItemSeparado(id, currentUser ? currentUser.nome : null);
+    const res = await atualizarStatusSequenciaSeparacao(id, novoStatus, currentUser ? currentUser.nome : null);
     setBusyId(null);
     if(!res.ok) setErros(prev=>({...prev, [id]: res.erro || 'Não foi possível salvar — tente novamente.'}));
   }
@@ -17583,24 +17693,32 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
     if(!res.ok) setErros(prev=>({...prev, [id]: res.erro || 'Não foi possível excluir — tente novamente.'}));
   }
 
-  const pendentes = itens.filter(i=>i.status==='pendente').sort((a,b)=>{
+  // Ativos = qualquer item ainda não entregue (aguardando/em_separacao/
+  // separada) — mesmo critério de ordenação de sempre (só por prioridade,
+  // sem agrupar por estágio aqui: quem agrupa por estágio é o painel/TV
+  // novo, SeparacaoPainelBoard; esta lista de gestão continua exatamente
+  // como já era, só a fila de "pendente" virou "não entregue ainda").
+  const ativos = itens.filter(i=>i.status!=='entregue').sort((a,b)=>{
     const pa = PRIORIDADE_ORDEM[a.prioridade] ?? 1;
     const pb = PRIORIDADE_ORDEM[b.prioridade] ?? 1;
     if(pa!==pb) return pa-pb;
     return String(a.criadoEm||'').localeCompare(String(b.criadoEm||''));
   });
-  const separados = itens.filter(i=>i.status==='separado');
+  const entregues = itens.filter(i=>i.status==='entregue');
   const buscaNorm = buscaHistorico.trim().toLowerCase();
-  const separadosFiltrados = !buscaNorm ? separados : separados.filter(i=>
+  const entreguesFiltrados = !buscaNorm ? entregues : entregues.filter(i=>
     (i.descricao||'').toLowerCase().includes(buscaNorm) ||
     (i.codigo||'').toLowerCase().includes(buscaNorm)
   );
 
   return (
     <div className="panel">
-      <div className="section-title" style={{marginTop:0}}>
-        Sequência de separação
-        {pendentes.length>0 && <span className="badge" style={{position:'static',marginLeft:8}}>{pendentes.length}</span>}
+      <div className="section-title" style={{marginTop:0, display:'flex', alignItems:'center', flexWrap:'wrap', gap:8}}>
+        <span>Sequência de separação</span>
+        {ativos.length>0 && <span className="badge" style={{position:'static'}}>{ativos.length}</span>}
+        <button type="button" className="btn btn-outline btn-sm" style={{marginLeft:'auto'}} onClick={()=>setModoPainel(v=>!v)}>
+          {modoPainel ? 'Ver lista' : 'Ver painel'}
+        </button>
       </div>
       <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)',marginBottom:14,lineHeight:1.6}}>
         Ordenada por prioridade/urgência do pedido — itens "Alta" sempre aparecem
@@ -17608,6 +17726,10 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
         antigo vem primeiro.
       </div>
 
+      {modoPainel ? (
+        <SeparacaoPainelBoard itens={itens} />
+      ) : (
+      <>
       {canManage && (
         <div style={{marginBottom:18,paddingBottom:14,borderBottom:'1px solid var(--line)'}}>
           <SearchWithScanner value={query} onChange={setQuery} placeholder="Código ou descrição do item" />
@@ -17746,14 +17868,14 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
         </div>
       )}
 
-      {pendentes.length===0 ? (
+      {ativos.length===0 ? (
         <div className="empty-state">
           {canManage
             ? 'Nenhum item na fila de separação ainda — busque um item acima pra adicionar.'
             : 'Nenhum item pendente na fila de separação no momento.'}
         </div>
       ) : (
-        pendentes.map(i=>(
+        ativos.map(i=>(
           <div key={i.id} className="list-row" style={{flexWrap:'wrap'}}>
             <div>
               <div className="lr-title">{i.codigo} — {i.descricao}</div>
@@ -17774,10 +17896,13 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
               {erros[i.id] && <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginTop:4}}>{erros[i.id]}</div>}
             </div>
             <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+              <SeparacaoStatusTag status={i.status} />
               <StatusTag status={PRIORIDADE_STATUS[i.prioridade]||'warn'} text={PRIORIDADE_LABEL[i.prioridade]||'Média'} />
               {canManage && (
                 <div className="btn-row" style={{width:'auto'}}>
-                  <button type="button" className="btn btn-primary" style={{padding:'8px 12px',fontSize:'var(--text-xs)'}} disabled={busyId===i.id} onClick={()=>handleMarcarSeparado(i.id)}>{busyId===i.id ? 'Salvando…' : 'Marcar separado'}</button>
+                  {SEPARACAO_STATUS_PROXIMO[i.status] && (
+                    <button type="button" className="btn btn-primary" style={{padding:'8px 12px',fontSize:'var(--text-xs)'}} disabled={busyId===i.id} onClick={()=>handleAvancarStatus(i.id, SEPARACAO_STATUS_PROXIMO[i.status])}>{busyId===i.id ? 'Salvando…' : SEPARACAO_STATUS_ACAO_LABEL[i.status]}</button>
+                  )}
                   {role==='admin' && (confirmExcluirId===i.id ? (
                     <>
                       <button type="button" className="btn btn-secondary" style={{padding:'8px 12px',fontSize:'var(--text-xs)'}} onClick={()=>setConfirmExcluirId(null)}>Cancelar</button>
@@ -17793,32 +17918,34 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
         ))
       )}
 
-      {separados.length>0 && (
+      {entregues.length>0 && (
         <div style={{marginTop:18,paddingTop:14,borderTop:'1px solid var(--line)'}}>
           <button type="button" className="btn btn-outline btn-sm" onClick={()=>setHistoricoAberto(v=>!v)}>
-            {historicoAberto ? 'Ocultar histórico' : `Ver histórico (${separados.length})`}
+            {historicoAberto ? 'Ocultar histórico' : `Ver histórico (${entregues.length})`}
           </button>
           {historicoAberto && (
             <div style={{marginTop:12}}>
               <SearchWithScanner value={buscaHistorico} onChange={setBuscaHistorico} placeholder="Código ou descrição" />
-              {separadosFiltrados.length===0 ? (
+              {entreguesFiltrados.length===0 ? (
                 <div className="empty-state">Nenhum resultado para essa busca.</div>
               ) : (
-                separadosFiltrados.map(i=>(
+                entreguesFiltrados.map(i=>(
                   <div key={i.id} className="list-row" style={{flexWrap:'wrap'}}>
                     <div>
                       <div className="lr-title">{i.codigo} — {i.descricao}</div>
                       <div className="lr-sub">
-                        {i.quantidade ? `Qtd: ${i.quantidade} · ` : ''}Separado por {i.separadoPor || '—'}
+                        {i.quantidade ? `Qtd: ${i.quantidade} · ` : ''}Entregue por {i.entreguePor || '—'}
                       </div>
                     </div>
-                    <StatusTag status="ok" text="Separado" />
+                    <SeparacaoStatusTag status="entregue" />
                   </div>
                 ))
               )}
             </div>
           )}
         </div>
+      )}
+      </>
       )}
     </div>
   );
