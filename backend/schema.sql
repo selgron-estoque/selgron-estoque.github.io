@@ -2082,11 +2082,24 @@ create table if not exists sequencia_separacao (
   quantidade text,
   prioridade text not null default 'media',   -- 'alta' | 'media' | 'baixa'
   observacao text,
-  status text not null default 'pendente',    -- 'pendente' | 'separado'
+  -- pipeline de 4 etapas (evolução do binário 'pendente'/'separado' original
+  -- — ver seção "Programação de Separação ganha pipeline de 4 etapas" mais
+  -- abaixo pro mapeamento do dado já existente):
+  status text not null default 'aguardando'
+    check (status in ('aguardando','em_separacao','separada','entregue')),
   criado_por text,
   criado_em timestamptz not null default now(),
+  -- iniciado_*: quando o líder de fato começa a separar (status vira
+  -- 'em_separacao'); separado_*: quando fica pronto/separado, aguardando
+  -- expedição (status vira 'separada'); entregue_*: quando a entrega/
+  -- expedição é confirmada (status vira 'entregue') — mesmo padrão de
+  -- auditoria por par nome+timestamp já usado em criado_por/criado_em.
+  iniciado_por text,
+  iniciado_em timestamptz,
   separado_por text,
   separado_em timestamptz,
+  entregue_por text,
+  entregue_em timestamptz,
   -- etp/op/local/unidade: preenchidos só quando o item entra na fila via
   -- busca por ETP (ver seção "Busca de itens faltantes por ETP" mais
   -- abaixo) — sempre null pro fluxo antigo de busca manual no catálogo,
@@ -2164,3 +2177,65 @@ alter table sequencia_separacao add column if not exists unidade text;
 -- padrão hardened (`tem_acesso_tela`) e já publica pro Realtime desde que
 -- foi criada; colunas novas só nullable não exigem nada além do
 -- `add column` acima.
+
+-- =============================================================================
+-- PROGRAMAÇÃO DE SEPARAÇÃO GANHA PIPELINE DE 4 ETAPAS (Gestão de Separação)
+-- =============================================================================
+-- O binário original ('pendente'/'separado' — só "ainda não"/"já") não
+-- refletia o fluxo físico real do almoxarifado: existe um momento em que o
+-- líder de fato PEGA o item pra separar (não é mais só "aguardando" a
+-- ninguém, mas também ainda não terminou), e existe um momento de ENTREGA/
+-- expedição, distinto de "já separado, esperando alguém buscar". Virou um
+-- ciclo de vida de 4 etapas:
+--   aguardando → em_separacao → separada → entregue
+--
+-- Mapeamento do dado JÁ EXISTENTE em produção (migração de domínio, nenhum
+-- dado é perdido):
+--   'pendente' → 'aguardando'  (mesmo estado inicial, só renomeado — nada
+--                                muda de significado aqui)
+--   'separado' → 'separada'    (NÃO virou 'entregue' — a coluna
+--                                `separado_em`, desde que essa tabela foi
+--                                criada, sempre registrou só o momento em
+--                                que o líder marcava o item como
+--                                fisicamente separado/pronto — nunca
+--                                existiu, em nenhum ponto do fluxo antigo,
+--                                nenhum registro de ENTREGA/expedição de
+--                                fato. Promover esse dado silenciosamente
+--                                pra 'entregue' inventaria um evento que
+--                                nunca foi confirmado por ninguém — contra
+--                                a regra de sempre deste projeto de nunca
+--                                fabricar dado que não existe. 'entregue' é
+--                                um estado novo, sem histórico nenhum pra
+--                                herdar: todo item já marcado 'separado'
+--                                fica corretamente parado em 'separada',
+--                                aguardando alguém confirmar a entrega de
+--                                verdade a partir de agora, com o pipeline
+--                                novo)
+--
+-- Colunas novas (`iniciado_por`/`iniciado_em`/`entregue_por`/`entregue_em`)
+-- já estão na definição da tabela acima pra quem aplicar o schema do zero;
+-- pra quem já tem `sequencia_separacao` aplicada, rodar este bloco:
+alter table sequencia_separacao add column if not exists iniciado_por text;
+alter table sequencia_separacao add column if not exists iniciado_em timestamptz;
+alter table sequencia_separacao add column if not exists entregue_por text;
+alter table sequencia_separacao add column if not exists entregue_em timestamptz;
+
+-- A migração de dado em si — idempotente por natureza (rodar de novo depois
+-- que já rodou uma vez não muda mais nada, já que não sobra nenhuma linha
+-- com os valores antigos):
+update sequencia_separacao set status = 'aguardando' where status = 'pendente';
+update sequencia_separacao set status = 'separada' where status = 'separado';
+
+alter table sequencia_separacao alter column status set default 'aguardando';
+
+-- Domínio agora é final (4 valores, sem mais mudança prevista) — vale travar
+-- com CHECK, mesmo padrão já usado em `usuarios.status`/`enderecos_
+-- propostos.status` (constraint nomeada, dropada antes de recriar —
+-- idempotente, seguro rodar quantas vezes precisar):
+alter table sequencia_separacao drop constraint if exists sequencia_separacao_status_check;
+alter table sequencia_separacao add constraint sequencia_separacao_status_check
+  check (status in ('aguardando','em_separacao','separada','entregue'));
+
+-- Nenhuma mudança de RLS/Realtime necessária — as 4 policies já cobrem
+-- update (troca de status) e as 4 colunas novas são só texto/timestamp
+-- nullable, cobertas pela mesma policy de update já existente.
