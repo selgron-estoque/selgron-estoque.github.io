@@ -2597,6 +2597,33 @@ async function fetchItensFaltantesPorEtp(etp){
   }
 }
 
+// Busca "Empenho Aberto" por ETP (mesma tela, card de cabeçalho ACIMA da
+// lista de itens faltantes) — 2ª consulta independente da de cima, mesmo
+// padrão de proxy on-demand, sem nenhuma gravação no Supabase. Devolve
+// {ok:true, etp, resultados, total} (resultados pode ter mais de 1 máquina/
+// OP pra mesma ETP) ou {ok:false, erro}.
+async function fetchEmpenhoAbertoPorEtp(etp){
+  if(!supabaseClient || !etp) return {ok:false, erro:'Não configurado.'};
+  try{
+    const { data, error } = await supabaseClient.functions.invoke('consultar-empenho-aberto', {
+      body: {etp},
+    });
+    if(error){
+      let erro = error.message;
+      if(error.context && typeof error.context.json==='function'){
+        try{
+          const corpo = await error.context.json();
+          if(corpo && corpo.erro) erro = corpo.erro;
+        }catch(_e){ /* corpo não era JSON — mantém a mensagem genérica */ }
+      }
+      return {ok:false, erro};
+    }
+    return data;
+  }catch(err){
+    return {ok:false, erro:String(err && err.message || err)};
+  }
+}
+
 // `patch` usa nomes de campo em camelCase (mesmo formato do objeto local) —
 // convertido pra snake_case aqui dentro. Único uso real que sobra hoje:
 // gravar `ultimoAcesso` (ver attemptLogin) — a coluna é a única liberada
@@ -17537,6 +17564,10 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
   const [etpCodigo, setEtpCodigo] = useState('');
   const [buscandoEtp, setBuscandoEtp] = useState(false);
   const [etpResultado, setEtpResultado] = useState(null); // {ok, etp, itens} | {ok:false, erro} | null
+  // Card de "Empenho Aberto" (máquina/OP), mostrado como cabeçalho ACIMA da
+  // lista de itens faltantes acima — busca independente, disparada junto
+  // (ver handleBuscarEtp); uma falhando nunca esconde/bloqueia a outra.
+  const [empenhoAbertoResultado, setEmpenhoAbertoResultado] = useState(null); // {ok, resultados} | {ok:false, erro} | null
   const [selecaoEtp, setSelecaoEtp] = useState({}); // índice do item → true/false
   const [prioridadeEtp, setPrioridadeEtp] = useState('media');
   const [adicionandoEtp, setAdicionandoEtp] = useState(false);
@@ -17623,9 +17654,17 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
     setErroAdicionarEtp(null);
     setResultadoAdicaoEtp(null);
     setEtpResultado(null);
-    const res = await fetchItensFaltantesPorEtp(etpLimpo);
+    setEmpenhoAbertoResultado(null);
+    // As duas buscas são independentes, disparadas juntas — uma falhando
+    // nunca esconde/bloqueia a outra (Promise.all só espera as duas
+    // terminarem; cada uma já devolve seu próprio {ok,...}/{ok:false,erro}).
+    const [res, resEmpenho] = await Promise.all([
+      fetchItensFaltantesPorEtp(etpLimpo),
+      fetchEmpenhoAbertoPorEtp(etpLimpo),
+    ]);
     setBuscandoEtp(false);
     setEtpResultado(res);
+    setEmpenhoAbertoResultado(resEmpenho);
     if(res && res.ok && Array.isArray(res.itens)){
       // Item com código não reconhecido nasce DESMARCADO e não pode ser
       // marcado (checkbox desabilitado no JSX) — nunca entra na fila sem
@@ -17804,6 +17843,44 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
               {buscandoEtp ? 'Buscando…' : 'Buscar'}
             </button>
           </div>
+
+          {/* Card de "Empenho Aberto" (máquina/OP) — cabeçalho ACIMA da lista
+              de itens faltantes abaixo, busca independente disparada junto em
+              handleBuscarEtp. Nunca bloqueia nem esconde a lista de itens
+              faltantes (que já funcionava antes desta consulta existir) — se
+              essa 2ª busca falhar, só mostra um aviso discreto, sem impedir
+              nada do fluxo já existente. Sem resultado nenhum, não mostra o
+              card nem erro visível (mesmo critério já usado pra "0 itens
+              faltantes" logo abaixo). */}
+          {empenhoAbertoResultado && empenhoAbertoResultado.ok && Array.isArray(empenhoAbertoResultado.resultados) && empenhoAbertoResultado.resultados.length>0 && (
+            <div style={{marginTop:10}}>
+              {empenhoAbertoResultado.resultados.map((m, idx)=>(
+                <div key={idx} className="list-row" style={{flexDirection:'column',alignItems:'stretch',cursor:'default'}}>
+                  <div className="lr-title">
+                    {m.nomeFantasia || m.cliente || 'Máquina/OP'}
+                    {empenhoAbertoResultado.resultados.length>1 ? ` (${idx+1}/${empenhoAbertoResultado.resultados.length})` : ''}
+                  </div>
+                  {m.cliente && <div className="lr-sub">Cliente: {m.cliente}</div>}
+                  {m.descricao && <div className="lr-sub">{m.descricao}</div>}
+                  <div className="result-grid result-grid-4col" style={{gridTemplateColumns:'repeat(4,1fr)'}}>
+                    <div className="rg"><div className="k">OP</div><div className="v">{m.op || '—'}</div></div>
+                    <div className="rg"><div className="k">ETP</div><div className="v">{m.etp || '—'}</div></div>
+                    <div className="rg"><div className="k">Chassi</div><div className="v">{m.chassi || '—'}</div></div>
+                    <div className="rg"><div className="k">Cód. Produto</div><div className="v">{m.codigoProduto || '—'}</div></div>
+                    <div className="rg"><div className="k">Separação</div><div className="v">{m.separacao || 'Não definida'}</div></div>
+                    <div className="rg"><div className="k">Montagem</div><div className="v">{m.montagem || 'Não definida'}</div></div>
+                    <div className="rg"><div className="k">Entrega PCP</div><div className="v">{m.entregaPcp || 'Não definida'}</div></div>
+                    <div className="rg"><div className="k">Entrega Com.</div><div className="v">{m.entregaComercial || 'Não definida'}</div></div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {empenhoAbertoResultado && !empenhoAbertoResultado.ok && (
+            <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:8}}>
+              Empenho Aberto (máquina/OP) não disponível: {empenhoAbertoResultado.erro}
+            </div>
+          )}
 
           {etpResultado && !etpResultado.ok && (
             <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginTop:10}}>{etpResultado.erro}</div>
