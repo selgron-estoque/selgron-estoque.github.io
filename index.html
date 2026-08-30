@@ -17517,6 +17517,13 @@ function SeparacaoPainelBoard({itens}){
                 <div key={i.id} style={{background:'var(--panel)',border:'1px solid var(--line)',borderRadius:8,padding:'8px 10px',marginBottom:8}}>
                   <div style={{fontSize:'var(--text-sm)',fontWeight:600}}>{i.codigo}</div>
                   <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)'}}>{i.descricao}</div>
+                  {(i.etp || i.op) && (
+                    <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',fontFamily:'var(--font-mono)',marginTop:2}}>
+                      {i.etp ? `ETP: ${i.etp}` : ''}
+                      {i.etp && i.op ? ' · ' : ''}
+                      {i.op ? `OP: ${i.op}` : ''}
+                    </div>
+                  )}
                   <div style={{marginTop:4}}><StatusTag status={PRIORIDADE_STATUS[i.prioridade]||'warn'} text={PRIORIDADE_LABEL[i.prioridade]||'Média'} /></div>
                 </div>
               ))
