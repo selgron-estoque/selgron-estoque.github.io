@@ -1364,6 +1364,41 @@
   .etq-valor-desc{overflow:hidden;line-height:1.22;max-height:5.2mm;}
   .etq-valor-data{font-weight:700;font-size:7pt;}
   .etq-rodape{border-top:0.25mm solid #000;margin-top:0.3mm;padding-top:0.3mm;display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;min-height:0;}
+
+  /* Modal genérico (backdrop + caixa) — não existia nenhum componente de
+     modal reutilizável neste app até aqui (conferido por busca no arquivo
+     inteiro); autorado do zero pro fluxo "+ Adicionar ETP" da Programação
+     de Separação (ver AdicionarEtpModal), seguindo o estilo visual mais
+     próximo já existente pra uma "superfície flutuante"
+     (.desktop-notif-menu/.desktop-user-menu — mesmo raio/sombra).
+     z-index:200, acima de qualquer outro elemento fixo/posicionado do app
+     (o mais alto até aqui era .mobile-nav-bar, em 120). */
+  .modal-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:200;display:flex;align-items:center;justify-content:center;padding:20px;}
+  .modal-box{background:var(--panel);border-radius:var(--radius);box-shadow:0 8px 24px rgba(15,23,42,.12);max-width:640px;width:100%;max-height:88vh;overflow-y:auto;padding:22px;}
+  .modal-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px;}
+  .modal-title{font-size:var(--text-lg);font-weight:700;color:var(--ink);}
+  .modal-subtitle{font-size:var(--text-xs);color:var(--ink-dim);margin-top:4px;line-height:1.5;}
+  .modal-close-btn{background:none;border:none;cursor:pointer;color:var(--ink-dim);padding:4px;border-radius:6px;display:flex;flex-shrink:0;}
+  .modal-close-btn:hover{background:var(--gray-100);color:var(--ink);}
+
+  /* Painel/TV de separação — linha da máquina "Em Separação" (destacada) e
+     chip "Urgente" (mesma cor/ícone já usados em .count-card.urgente pra
+     contagem — reaproveita o vocabulário visual já estabelecido nesse app
+     pra "isso precisa de atenção primeiro", em vez de inventar uma cor
+     nova só pra este painel). */
+  .sep-maquina-atual{border:2px solid var(--teal);background:var(--teal-bg);}
+  /* Urgente sempre vence visualmente sobre "destaque" (Em Separação) quando os
+     dois se aplicam à mesma máquina — mesmo box-shadow já usado em
+     .item-card.urgente/.count-card.urgente, só que não escopado a essas 2
+     classes (o painel usa .list-row como base, não .count-card). */
+  .sep-urgente-maquina{box-shadow:0 0 0 3px var(--danger), 0 1px 3px rgba(0,0,0,.04);}
+  .sep-urgente-chip{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:999px;background:var(--danger-bg);color:var(--danger);font-size:var(--text-xs);font-weight:700;}
+  .sep-ordem-num{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:var(--gray-100);color:var(--ink-dim);font-weight:700;font-size:var(--text-sm);flex-shrink:0;}
+  .sep-reorder-btns{display:flex;flex-direction:column;gap:2px;}
+  .sep-reorder-btns button{background:var(--gray-100);border:none;border-radius:6px;width:26px;height:22px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--ink-dim);}
+  .sep-reorder-btns button:hover:not(:disabled){background:var(--gray-200);color:var(--ink);}
+  .sep-reorder-btns button:disabled{opacity:.35;cursor:default;}
+
   /* Etiqueta de PRATELEIRA/CAIXA (tipo 'prateleira') — ver EM
      TRABALHO/AJUSTE, ainda não publicada. Diferente da de PRODUTO
      (recebimento): sem QTD/Data (batch-específico) e sem endereço
@@ -16109,6 +16144,12 @@ async function atualizarStatusSequenciaSeparacao(id, novoStatus, nomeUsuario){
   }
 }
 
+// Continua definida (RLS/policy de delete já existem pra ela — ver
+// backend/schema.sql), mas intencionalmente NUNCA chamada por nenhuma UI
+// desde que a tela "Lista" (gestão item-a-item) foi removida por completo
+// do Painel de Separação — excluir um ITEM individual não tem mais
+// nenhum ponto de entrada; a única unidade que o Painel manipula é a
+// MÁQUINA (ver `SeparacaoPainelBoard`/`computeMaquinasPainel`).
 async function excluirItemSequenciaSeparacao(id){
   if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
   try{
@@ -16136,6 +16177,16 @@ function maquinaEtpRowToLocal(row){
     dataSeparacao: row.data_separacao,
     dataEntregaPcp: row.data_entrega_pcp,
     dataEntregaComercial: row.data_entrega_comercial,
+    // status/ordem/urgente: ver seção "PAINEL DE SEPARAÇÃO: 'LISTA' REMOVIDA
+    // ... + FILA MANUAL POR MÁQUINA + PRIORIDADE URGENTE" no schema.sql —
+    // status é um CACHE persistido (o painel some com "Lista", então o botão
+    // de avançar do Painel precisa de um destino único pra gravar o veredito
+    // da ação em lote); ordem é a fila manual (setas ↑/↓, substitui
+    // dataSeparacao como critério de ordenação); urgente é só destaque
+    // visual, nunca reordena sozinho.
+    status: row.status || 'aguardando',
+    ordem: (row.ordem===null || row.ordem===undefined) ? null : Number(row.ordem),
+    urgente: !!row.urgente,
     atualizadoEm: row.atualizado_em,
   };
 }
@@ -16159,10 +16210,20 @@ async function fetchMaquinasEtp(){
 // o Empenho Aberto não achou nada/deu erro pra essa ETP, quem chama
 // simplesmente não chama esta função (a confirmação dos itens nunca é
 // bloqueada por isso, o painel só mostra "—" nos campos da máquina).
-async function upsertMaquinaEtp(m){
+// `extra` é opcional e só deve ser passado pra uma máquina GENUINAMENTE NOVA
+// (o chamador já checou que essa ETP ainda não existe em `maquinasEtp`) —
+// `{ordem, urgente}`. De propósito, quando `extra` não é passado (o caso
+// comum: já existe uma máquina com essa ETP e o líder só está adicionando
+// mais itens a ela), `status`/`ordem`/`urgente` NUNCA entram no objeto
+// gravado — o upsert do supabase-js só altera, no conflito, as colunas
+// presentes no payload; omitidas ficam intocadas. É assim que uma
+// re-confirmação rotineira (mais itens pra uma ETP que já está em
+// 'em_separacao', já reordenada pelo líder, ou já marcada urgente) nunca
+// reseta nada disso de volta pro padrão sem querer.
+async function upsertMaquinaEtp(m, extra){
   if(!supabaseClient || !m || !m.etp) return {ok:false, erro:'Sem dado de máquina pra salvar.'};
   try{
-    const { error } = await supabaseClient.from('maquinas_etp').upsert({
+    const patch = {
       etp: m.etp,
       cliente: m.cliente || null,
       nome_fantasia: m.nomeFantasia || null,
@@ -16172,12 +16233,61 @@ async function upsertMaquinaEtp(m){
       data_entrega_pcp: parseDataHistorico(m.entregaPcp),
       data_entrega_comercial: parseDataHistorico(m.entregaComercial),
       atualizado_em: new Date().toISOString(),
-    }, {onConflict:'etp'});
+    };
+    if(extra && typeof extra.ordem==='number') patch.ordem = extra.ordem;
+    if(extra && typeof extra.urgente==='boolean') patch.urgente = extra.urgente;
+    const { error } = await supabaseClient.from('maquinas_etp').upsert(patch, {onConflict:'etp'});
     if(error) throw error;
     return {ok:true};
   }catch(err){
     console.warn('Falha ao salvar cache de máquina (ETP):', err);
     return {ok:false, erro:(err && err.message) || 'Não foi possível salvar a máquina.'};
+  }
+}
+
+// As 3 funções abaixo (status/urgente/ordem) usam `.upsert()`, não
+// `.update()` — de propósito: se a máquina agindo sobre ainda não tem linha
+// em `maquinas_etp` (item com `etp` preenchido mas cujo cache nunca foi
+// criado, ex. uma busca por Empenho Aberto que falhou no momento de
+// adicionar), `.update()` simplesmente não acharia nenhuma linha pra
+// atualizar e a ação pareceria "não fazer nada", sem erro nenhum — mesma
+// categoria de bug silencioso já documentada várias vezes neste projeto.
+// `.upsert()` sana isso sozinho: cria a linha que faltava, com os campos
+// descritivos vazios (o painel já lida com "—" pra máquina sem esses
+// dados) e só o campo que a ação pediu preenchido.
+async function atualizarStatusMaquina(etp, status){
+  if(!supabaseClient || !etp) return {ok:false, erro:'ETP não informada.'};
+  try{
+    const { error } = await supabaseClient.from('maquinas_etp')
+      .upsert({etp, status, atualizado_em: new Date().toISOString()}, {onConflict:'etp'});
+    if(error) throw error;
+    return {ok:true};
+  }catch(err){
+    return {ok:false, erro:(err && err.message) || 'Não foi possível atualizar o status da máquina.'};
+  }
+}
+
+async function atualizarUrgenteMaquina(etp, urgente){
+  if(!supabaseClient || !etp) return {ok:false, erro:'ETP não informada.'};
+  try{
+    const { error } = await supabaseClient.from('maquinas_etp')
+      .upsert({etp, urgente, atualizado_em: new Date().toISOString()}, {onConflict:'etp'});
+    if(error) throw error;
+    return {ok:true};
+  }catch(err){
+    return {ok:false, erro:(err && err.message) || 'Não foi possível atualizar a prioridade.'};
+  }
+}
+
+async function atualizarOrdemMaquina(etp, ordem){
+  if(!supabaseClient || !etp) return {ok:false, erro:'ETP não informada.'};
+  try{
+    const { error } = await supabaseClient.from('maquinas_etp')
+      .upsert({etp, ordem, atualizado_em: new Date().toISOString()}, {onConflict:'etp'});
+    if(error) throw error;
+    return {ok:true};
+  }catch(err){
+    return {ok:false, erro:(err && err.message) || 'Não foi possível reordenar.'};
   }
 }
 
@@ -17551,12 +17661,27 @@ function statusAgregadoMaquina(itensDaMaquina){
 }
 
 // Agrega os itens de `sequencia_separacao` por ETP (1 linha = 1 máquina) e
-// junta com o cache descritivo de `maquinas_etp` (nome fantasia/chassi/data
-// prevista). Item SEM `etp` (entrou via busca manual no catálogo, não
-// representa nenhuma máquina rastreada) fica de fora do painel — mas nunca
-// some do sistema, continua normalmente na lista de gestão item-a-item, que
-// não usa esta função. Campo da máquina não capturado sai `null` (a UI
-// mostra "—"), nunca um valor inventado.
+// junta com o cache de `maquinas_etp` (nome fantasia/chassi/data prevista +
+// status/ordem/urgente, ver "PAINEL DE SEPARAÇÃO: 'LISTA' REMOVIDA..." no
+// schema.sql). Item SEM `etp` (entrou via busca manual no catálogo, não
+// representa nenhuma máquina rastreada) fica de fora do painel. Campo não
+// capturado sai `null` (a UI mostra "—"), nunca um valor inventado.
+//
+// `status`: o CACHE (`maquina.status`) é a fonte de verdade sempre que a
+// máquina já existe em `maquinas_etp` — `statusAgregadoMaquina` vira só um
+// FALLBACK pra máquina órfã (itens com `etp` preenchido cujo cache nunca
+// chegou a ser criado, ex. Empenho Aberto que falhou no momento do
+// "Adicionar"). Antes desta rodada (com a tela "Lista" ainda existindo), o
+// status agregado sempre recalculava na hora, porque não tinha pra onde
+// gravar um veredito de ação em lote — agora que "Lista" foi removida, o
+// Painel É o único lugar que avança o pipeline, então o status PRECISA ser
+// persistido pra sobreviver a um reload/aparelho diferente.
+//
+// O antigo badge único "Próxima" (`etpProxima`, calculado só a partir de
+// `dataSeparacao`) saiu por completo — a numeração da zona "Próximas" (ver
+// SeparacaoPainelBoard) já comunica "o que vem primeiro" de forma mais
+// direta que um badge solto, e `dataSeparacao` deixou de ser o critério de
+// prioridade (virou `ordem`, a fila manual reordenável por botão ↑/↓).
 function computeMaquinasPainel(itens, maquinasEtp, hojeStr){
   const porEtp = {};
   itens.forEach(i=>{
@@ -17567,115 +17692,181 @@ function computeMaquinasPainel(itens, maquinasEtp, hojeStr){
   const maquinaPorEtp = {};
   maquinasEtp.forEach(m=>{ maquinaPorEtp[m.etp] = m; });
 
-  // "Próxima" — badge único no painel inteiro (não por linha): entre as
-  // máquinas com status agregado 'aguardando', a de `dataSeparacao` mais
-  // próxima (a mais atrasada, se já passou; a mais cedo no futuro, senão —
-  // comparação simples de string ISO já cobre os dois casos). Calculado à
-  // parte, antes de montar a lista final, porque depende de olhar todas as
-  // máquinas aguardando de uma vez, não uma a uma.
-  let etpProxima = null;
-  let menorData = null;
-  Object.keys(porEtp).forEach(etp=>{
-    if(statusAgregadoMaquina(porEtp[etp])!=='aguardando') return;
-    const data = (maquinaPorEtp[etp] && maquinaPorEtp[etp].dataSeparacao) || null;
-    if(!data) return;
-    if(menorData===null || data<menorData){ menorData = data; etpProxima = etp; }
-  });
-
   const lista = Object.keys(porEtp).map(etp=>{
     const itensDaMaquina = porEtp[etp];
-    const status = statusAgregadoMaquina(itensDaMaquina);
     const maquina = maquinaPorEtp[etp] || null;
+    const status = maquina ? maquina.status : statusAgregadoMaquina(itensDaMaquina);
     const dataSeparacao = maquina ? maquina.dataSeparacao : null;
     // Atrasada: a data prevista já passou E a máquina ainda não terminou o
-    // ciclo (nunca marca como atrasada algo já separado/entregue).
+    // ciclo (nunca marca como atrasada algo já separado/entregue) — dado
+    // só informativo agora, não decide mais ordenação nenhuma.
     const atrasada = !!(dataSeparacao && dataSeparacao<hojeStr && status!=='separada' && status!=='entregue');
     return {
       etp,
       status,
+      urgente: maquina ? maquina.urgente : false,
+      ordem: maquina ? maquina.ordem : null,
       totalItens: itensDaMaquina.length,
       nomeFantasia: maquina ? maquina.nomeFantasia : null,
       chassi: maquina ? maquina.chassi : null,
       dataSeparacao,
       atrasada,
-      proxima: etp===etpProxima,
     };
   });
 
-  // Ordem por urgência: atrasadas primeiro, depois data_separacao
-  // ascendente — máquina sem data conhecida vai pro fim (não é possível
-  // saber se é urgente sem essa informação).
+  // Ordena por `ordem` ascendente — máquina sem `ordem` conhecida
+  // (recém-adicionada, ainda não passou por nenhuma reordenação manual) vai
+  // pro fim; ETP como desempate final, só pra manter uma ordem estável
+  // entre duas máquinas com `ordem` igual ou as duas nula.
   lista.sort((a,b)=>{
-    if(a.atrasada!==b.atrasada) return a.atrasada ? -1 : 1;
-    if(!a.dataSeparacao && !b.dataSeparacao) return a.etp.localeCompare(b.etp);
-    if(!a.dataSeparacao) return 1;
-    if(!b.dataSeparacao) return -1;
-    return a.dataSeparacao.localeCompare(b.dataSeparacao);
+    if(a.ordem==null && b.ordem==null) return a.etp.localeCompare(b.etp);
+    if(a.ordem==null) return 1;
+    if(b.ordem==null) return -1;
+    if(a.ordem!==b.ordem) return a.ordem-b.ordem;
+    return a.etp.localeCompare(b.etp);
   });
 
   return lista;
 }
 
-// Painel/TV — visualização somente-leitura, alternável a partir da tela de
-// gestão de sempre (toggle `modoPainel`, sem mudar rota/URL). A unidade de
-// acompanhamento é a MÁQUINA (1 linha por ETP), não o item — uma máquina
-// pode ter centenas de componentes na mesma ETP, e o painel nunca deveria
-// virar uma lista de centenas de cartões só pra dizer se UMA máquina já foi
-// separada (ver `computeMaquinasPainel`/`statusAgregadoMaquina` acima). A
-// lista de gestão item-a-item (fora do modo painel) continua exatamente
-// como sempre foi — esta reescrita afeta só esta visualização.
-function SeparacaoPainelBoard({itens, maquinasEtp}){
-  const ordem = ['aguardando','em_separacao','separada','entregue'];
-  const hojeStr = hojeLocalStr();
-  const maquinas = computeMaquinasPainel(itens, maquinasEtp, hojeStr);
-  const totalPorStatus = {aguardando:0, em_separacao:0, separada:0, entregue:0};
-  maquinas.forEach(m=>{ totalPorStatus[m.status] = (totalPorStatus[m.status]||0) + 1; });
+// Botões ↑/↓ (não drag-and-drop — decisão explícita: menos dependência,
+// mais confiável em tablet/TV) — reordena só dentro da zona "Próximas"
+// (status==='aguardando'); máquina já em separação/concluída não participa
+// da fila manual. `maquinasPainel` já vem ordenado por `ordem` (mesmo
+// critério de `computeMaquinasPainel`).
+//
+// Normaliza `ordem` nula pro índice+1 dela DENTRO da fila 'aguardando' no
+// momento da troca (não antes) — como `computeMaquinasPainel` já ordena
+// nulos por último, o índice atual de uma máquina sem `ordem` já reflete
+// onde ela "realmente está" nessa fila; dar um valor concreto a ela não
+// muda nada visualmente, só formaliza o que já era implícito. Só as DUAS
+// máquinas envolvidas na troca são persistidas (`atualizarOrdemMaquina`,
+// chamado pelo componente) — as demais continuam nulas até serem tocadas
+// por sua vez, sem precisar de nenhuma renumeração em massa.
+function moverOrdemAguardando(maquinasPainel, etp, direcao){
+  const fila = maquinasPainel.filter(m=>m.status==='aguardando');
+  const idx = fila.findIndex(m=>m.etp===etp);
+  if(idx===-1) return null;
+  const alvo = direcao==='up' ? idx-1 : idx+1;
+  if(alvo<0 || alvo>=fila.length) return null;
+  const ordemNormalizada = fila.map((m,i)=> m.ordem==null ? i+1 : m.ordem);
+  return {
+    etpA: fila[idx].etp, ordemA: ordemNormalizada[alvo],
+    etpB: fila[alvo].etp, ordemB: ordemNormalizada[idx],
+  };
+}
 
+// Decisão de arquitetura (registrada aqui por instrução explícita): a tela
+// "Lista" (gestão item-a-item) foi removida por completo — o Painel virou
+// o ÚNICO lugar que avança o pipeline. Em vez de criar uma RPC nova só pra
+// isso, o botão de avançar de cada linha do Painel reaproveita a MESMA
+// função item-a-item que já existia (`atualizarStatusSequenciaSeparacao`),
+// chamada em sequência pra cada item da ETP que ainda não alcançou o
+// próximo estágio — sem inventar nenhum endpoint em lote no banco. Mesmo
+// padrão de "loop sequencial, para no 1º erro, relata progresso parcial"
+// já usado por outros lotes deste app (ex. handleAdicionarLoteEtp).
+//
+// "que ainda não alcançou o próximo estágio": um item já num estágio MAIS
+// avançado que o alvo (ex. alguém confirmou a entrega dele à mão antes)
+// nunca regride — só os itens "atrasados" em relação ao avanço em lote são
+// tocados. Isso também deixa itens em estágios diferentes dentro da mesma
+// máquina "alcançarem" o próximo nível juntos.
+async function avancarStatusMaquinaEmLote(maquina, itensDaMaquina, nomeUsuario){
+  const proximo = SEPARACAO_STATUS_PROXIMO[maquina.status];
+  if(!proximo) return {ok:false, erro:'Esta máquina já está no estágio final.'};
+  const alvoOrdem = SEPARACAO_STATUS_ORDEM[proximo];
+  const pendentes = itensDaMaquina.filter(i=>SEPARACAO_STATUS_ORDEM[i.status]<alvoOrdem);
+  let avancados = 0;
+  for(const item of pendentes){
+    const res = await atualizarStatusSequenciaSeparacao(item.id, proximo, nomeUsuario);
+    if(!res.ok){
+      return {
+        ok:false,
+        erro:`Falhou ao avançar ${item.codigo}: ${res.erro || 'erro desconhecido'} (${avancados} de ${pendentes.length} itens já tinham avançado antes)`,
+        avancados, total: pendentes.length,
+      };
+    }
+    avancados++;
+  }
+  // Só grava o veredito da MÁQUINA depois que TODOS os itens avançaram com
+  // sucesso — nunca marca a máquina como avançada se algum item ficou pra
+  // trás (o painel mostraria um status inconsistente com a realidade).
+  const resStatus = await atualizarStatusMaquina(maquina.etp, proximo);
+  if(!resStatus.ok){
+    return {ok:false, erro:`Itens avançados, mas não foi possível salvar o status da máquina: ${resStatus.erro}`, avancados, total: pendentes.length};
+  }
+  return {ok:true, avancados, total: pendentes.length};
+}
+
+// Painel/TV — ÚNICA visualização desta tela agora: a "Lista" de gestão
+// item-a-item foi removida por completo (decisão de arquitetura registrada
+// em `avancarStatusMaquinaEmLote` acima). A unidade de acompanhamento é
+// sempre a MÁQUINA (1 linha por ETP), nunca o item — uma máquina pode ter
+// centenas de componentes na mesma ETP, e o painel nunca deveria virar uma
+// lista de centenas de cartões só pra dizer se UMA máquina já foi separada
+// (ver `computeMaquinasPainel`/`statusAgregadoMaquina` acima). Pensado pra
+// TV/tablet fixo no chão de fábrica: 3 zonas fixas — "Em Separação"
+// (destaque visual), "Próximas" (fila manual reordenável por botão ↑/↓,
+// nunca drag-and-drop — ver `moverOrdemAguardando`) e "Separadas e
+// Entregues" (histórico, recolhido por padrão, mesmo padrão "Ver
+// histórico" já usado em outras telas deste app).
+
+// Card de 1 máquina — reaproveitado pelas 3 zonas de `SeparacaoPainelBoard`
+// (só variando `destaque`/`mostrarReordenar`/os handlers de reordenar, que
+// só fazem sentido na zona "Próximas"). O botão de avançar SEMPRE age sobre
+// TODOS os itens da ETP de uma vez (ver `avancarStatusMaquinaEmLote`) — o
+// rótulo já deixa isso explícito ("Iniciar separação (12 item(ns))").
+function MaquinaCard({m, canManage, destaque, mostrarReordenar, podeSubir, podeDescer, busy, erro, onAvancar, onMoverCima, onMoverBaixo, onToggleUrgente}){
+  const classes = ['list-row'];
+  // Urgente sempre vence visualmente sobre "destaque" (Em Separação) — os
+  // dois nunca competem pela mesma borda/sombra ao mesmo tempo.
+  if(m.urgente) classes.push('sep-urgente-maquina');
+  else if(destaque) classes.push('sep-maquina-atual');
+  const acaoLabel = SEPARACAO_STATUS_ACAO_LABEL[m.status];
+  const temProximo = !!SEPARACAO_STATUS_PROXIMO[m.status];
   return (
-    <div>
-      <div className="ops-kpi-row ops-kpi-row-auto" style={{marginBottom:18}}>
-        {ordem.map(st=>(
-          <div key={st} className="ops-kpi-card">
-            <div className="ops-kpi-head">
-              <span className="ops-kpi-label">{SEPARACAO_STATUS_LABEL[st]}</span>
-              <span className="ops-kpi-icon"><DIcon name={SEPARACAO_STATUS_ICON[st]} size={15} /></span>
-            </div>
-            <div className="ops-kpi-value">{totalPorStatus[st]}</div>
+    <div className={classes.join(' ')} style={{flexWrap:'wrap',alignItems:'flex-start',marginBottom:10}}>
+      <div style={{display:'flex',alignItems:'flex-start',gap:10,flex:1,minWidth:200}}>
+        {mostrarReordenar && (
+          <div className="sep-reorder-btns" style={{marginTop:2}}>
+            <button type="button" disabled={!podeSubir || busy} onClick={onMoverCima} title="Mover pra cima na fila"><DIcon name="arrowUp" size={14} /></button>
+            <button type="button" disabled={!podeDescer || busy} onClick={onMoverBaixo} title="Mover pra baixo na fila"><DIcon name="arrowDown" size={14} /></button>
           </div>
-        ))}
+        )}
+        <div>
+          <div className="lr-title" style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+            {m.etp}
+            {m.urgente && <span className="sep-urgente-chip"><DIcon name="flame" size={11} /> Urgente</span>}
+          </div>
+          <div className="lr-sub">{m.nomeFantasia || 'Nome fantasia não informado'}{m.chassi ? ` · Chassi: ${m.chassi}` : ''}</div>
+          <div className="lr-sub">{m.totalItens} item(ns)</div>
+          {erro && <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginTop:4}}>{erro}</div>}
+        </div>
       </div>
-      <div className="panel">
-        {maquinas.length===0 ? (
-          <div className="empty-state">Nenhuma máquina (ETP) na fila de separação no momento.</div>
-        ) : (
-          <div style={{overflowX:'auto'}}>
-            <table className="rank-table">
-              <thead>
-                <tr>
-                  <th>ETP</th><th>Nome Fantasia</th><th>Chassi</th><th>Data de Separação</th><th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {maquinas.map(m=>(
-                  <tr key={m.etp}>
-                    <td style={{fontFamily:'var(--font-mono)'}}>
-                      {m.etp}
-                      <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',fontFamily:'var(--font-body)'}}>{m.totalItens} item(ns)</div>
-                    </td>
-                    <td>{m.nomeFantasia || '—'}</td>
-                    <td>{m.chassi || '—'}</td>
-                    <td>{m.dataSeparacao ? new Date(m.dataSeparacao+'T00:00:00').toLocaleDateString('pt-BR') : '—'}</td>
-                    <td>
-                      <div style={{display:'flex',flexWrap:'wrap',alignItems:'center',gap:6}}>
-                        <SeparacaoStatusTag status={m.status} />
-                        {m.atrasada && <StatusTag status="danger" text="Atrasada" />}
-                        {m.proxima && <span className="status-tag" style={{background:'rgba(246,162,0,0.14)',color:'var(--safety)'}}><span className="status-dot"></span>Próxima</span>}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+        <SeparacaoStatusTag status={m.status} />
+        {m.atrasada && <StatusTag status="danger" text="Atrasada" />}
+        {m.dataSeparacao && (
+          <span style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)'}}>
+            Previsto: {new Date(m.dataSeparacao+'T00:00:00').toLocaleDateString('pt-BR')}
+          </span>
+        )}
+        {canManage && (
+          <div className="btn-row" style={{width:'auto'}}>
+            <button
+              type="button"
+              className={m.urgente ? 'btn btn-outline' : 'btn btn-secondary'}
+              style={{padding:'8px 12px',fontSize:'var(--text-xs)'}}
+              disabled={busy}
+              onClick={onToggleUrgente}
+            >
+              {m.urgente ? 'Remover urgência' : 'Marcar urgente'}
+            </button>
+            {temProximo && (
+              <button type="button" className="btn btn-primary" style={{padding:'8px 12px',fontSize:'var(--text-xs)'}} disabled={busy} onClick={onAvancar}>
+                {busy ? 'Salvando…' : `${acaoLabel} (${m.totalItens} item(ns))`}
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -17683,155 +17874,174 @@ function SeparacaoPainelBoard({itens, maquinasEtp}){
   );
 }
 
-function ProgramacaoSeparacaoPanel({currentUser, role}){
-  const [itens, setItens] = useState([]);
-  // Cache de dado da MÁQUINA (nome fantasia/chassi/data prevista), usado só
-  // pelo painel/TV pra agrupar os itens por ETP — ver `maquinas_etp`/
-  // `upsertMaquinaEtp` e `SeparacaoPainelBoard`/`computeMaquinasPainel`.
-  const [maquinasEtp, setMaquinasEtp] = useState([]);
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState([]);
-  const [buscando, setBuscando] = useState(false);
-  const [selecionado, setSelecionado] = useState(null);
-  const [quantidade, setQuantidade] = useState('');
-  const [prioridade, setPrioridade] = useState('media');
-  const [observacao, setObservacao] = useState('');
-  const [adicionando, setAdicionando] = useState(false);
-  const [erroAdicionar, setErroAdicionar] = useState(null);
+function SeparacaoPainelBoard({itens, maquinasEtp, canManage, onAvancarStatus, onMoverOrdem, onToggleUrgente, onAdicionarEtpClick}){
+  const [modoReordenar, setModoReordenar] = useState(false);
+  const [mostrarConcluidas, setMostrarConcluidas] = useState(false);
+  const [somenteUrgentes, setSomenteUrgentes] = useState(false);
+  const [busyEtp, setBusyEtp] = useState(null);
+  const [errosEtp, setErrosEtp] = useState({});
 
-  const [busyId, setBusyId] = useState(null);
-  const [erros, setErros] = useState({});
-  const [confirmExcluirId, setConfirmExcluirId] = useState(null);
+  const hojeStr = hojeLocalStr();
+  const maquinas = computeMaquinasPainel(itens, maquinasEtp, hojeStr);
+  const porEtpItens = {};
+  itens.forEach(i=>{ if(!i.etp) return; if(!porEtpItens[i.etp]) porEtpItens[i.etp] = []; porEtpItens[i.etp].push(i); });
 
-  const [historicoAberto, setHistoricoAberto] = useState(false);
-  const [buscaHistorico, setBuscaHistorico] = useState('');
+  const emSeparacao = maquinas.filter(m=>m.status==='em_separacao');
+  const proximas = maquinas.filter(m=>m.status==='aguardando'); // já vem ordenada por `ordem`
+  const concluidas = maquinas.filter(m=>m.status==='separada' || m.status==='entregue');
 
-  // Painel/TV — visualização somente-leitura em Kanban (SeparacaoPainelBoard),
-  // alternável a partir do mesmo toggle simples já usado noutras telas deste
-  // app (ex. "Ver histórico"/"Calibrar etiquetas") — substitui o bloco de
-  // gestão inteiro enquanto ativo, não fica lado a lado com ele.
-  const [modoPainel, setModoPainel] = useState(false);
+  // Filtro "Somente Urgentes" — de propósito, o modo reordenar fica
+  // desabilitado enquanto ele está ativo: `moverOrdemAguardando` sempre
+  // opera sobre a fila `proximas` INTEIRA (não filtrada), então deixar os
+  // botões ↑/↓ ativos em cima de uma lista visualmente recortada
+  // confundiria o que "pra cima"/"pra baixo" de fato move.
+  const emSeparacaoView = somenteUrgentes ? emSeparacao.filter(m=>m.urgente) : emSeparacao;
+  const proximasView = somenteUrgentes ? proximas.filter(m=>m.urgente) : proximas;
+  const concluidasView = somenteUrgentes ? concluidas.filter(m=>m.urgente) : concluidas;
+  const reordenarAtivo = modoReordenar && !somenteUrgentes;
 
-  // Busca por ETP (Gestão de Separação → Programação) — pedido do cliente:
-  // "Neste link eu vou digitar o código da ETP e ele pesquisa a OP e
-  // quantidade de itens dentro da OP, na tela de programação eu adiciono o
-  // número da ETP." Confirmado via AskUserQuestion (2 perguntas): a busca
-  // só MOSTRA uma prévia com checkbox por item, nada é gravado até o líder
-  // confirmar explicitamente ("Mostrar lista, eu escolho quais entram"); e
-  // a prioridade é escolhida UMA VEZ pro lote inteiro confirmado, não por
-  // item ("Eu escolho uma prioridade pro lote inteiro").
+  async function handleAvancar(m){
+    setBusyEtp(m.etp);
+    setErrosEtp(prev=>({...prev, [m.etp]:null}));
+    const res = await onAvancarStatus(m, porEtpItens[m.etp] || []);
+    setBusyEtp(null);
+    if(!res.ok) setErrosEtp(prev=>({...prev, [m.etp]: res.erro || 'Não foi possível avançar — tente novamente.'}));
+  }
+
+  async function handleMover(etp, direcao){
+    setBusyEtp(etp);
+    setErrosEtp(prev=>({...prev, [etp]:null}));
+    const res = await onMoverOrdem(proximas, etp, direcao);
+    setBusyEtp(null);
+    if(!res.ok) setErrosEtp(prev=>({...prev, [etp]: res.erro || 'Não foi possível reordenar — tente novamente.'}));
+  }
+
+  async function handleToggleUrgente(m){
+    setBusyEtp(m.etp);
+    setErrosEtp(prev=>({...prev, [m.etp]:null}));
+    const res = await onToggleUrgente(m.etp, !m.urgente);
+    setBusyEtp(null);
+    if(!res.ok) setErrosEtp(prev=>({...prev, [m.etp]: res.erro || 'Não foi possível salvar — tente novamente.'}));
+  }
+
+  return (
+    <div>
+      <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',marginBottom:18}}>
+        {canManage && (
+          <button type="button" className="btn btn-primary" style={{width:'auto'}} onClick={onAdicionarEtpClick}>
+            <DIcon name="plus" size={15} /> Adicionar ETP
+          </button>
+        )}
+        {proximas.length>1 && (
+          <button type="button" className="btn btn-outline btn-sm" disabled={somenteUrgentes} onClick={()=>setModoReordenar(v=>!v)}>
+            {modoReordenar ? 'Concluir reordenação' : 'Reordenar fila'}
+          </button>
+        )}
+        <button
+          type="button"
+          className={somenteUrgentes ? 'btn btn-primary btn-sm' : 'btn btn-outline btn-sm'}
+          onClick={()=>setSomenteUrgentes(v=>!v)}
+        >
+          <DIcon name="flame" size={13} /> Somente urgentes
+        </button>
+      </div>
+
+      <div className="section-title" style={{marginTop:0}}>
+        <span>Em Separação</span>
+        {emSeparacao.length>0 && <span className="badge" style={{position:'static'}}>{emSeparacao.length}</span>}
+      </div>
+      {emSeparacaoView.length===0 ? (
+        <div className="empty-state">Nenhuma máquina em separação no momento.</div>
+      ) : (
+        emSeparacaoView.map(m=>(
+          <MaquinaCard
+            key={m.etp} m={m} canManage={canManage} destaque
+            busy={busyEtp===m.etp} erro={errosEtp[m.etp]}
+            onAvancar={()=>handleAvancar(m)}
+            onToggleUrgente={()=>handleToggleUrgente(m)}
+          />
+        ))
+      )}
+
+      <div className="section-title">
+        <span>Próximas</span>
+        {proximas.length>0 && <span className="badge" style={{position:'static'}}>{proximas.length}</span>}
+      </div>
+      {proximasView.length===0 ? (
+        <div className="empty-state">Nenhuma máquina aguardando na fila.</div>
+      ) : (
+        proximasView.map((m, idx)=>(
+          <div key={m.etp} style={{display:'flex',alignItems:'flex-start',gap:10}}>
+            <span className="sep-ordem-num" style={{marginTop:14}}>{idx+1}</span>
+            <div style={{flex:1}}>
+              <MaquinaCard
+                m={m} canManage={canManage}
+                mostrarReordenar={reordenarAtivo}
+                podeSubir={idx>0} podeDescer={idx<proximasView.length-1}
+                busy={busyEtp===m.etp} erro={errosEtp[m.etp]}
+                onAvancar={()=>handleAvancar(m)}
+                onMoverCima={()=>handleMover(m.etp,'up')}
+                onMoverBaixo={()=>handleMover(m.etp,'down')}
+                onToggleUrgente={()=>handleToggleUrgente(m)}
+              />
+            </div>
+          </div>
+        ))
+      )}
+
+      <div style={{marginTop:18,paddingTop:14,borderTop:'1px solid var(--line)'}}>
+        <button type="button" className="btn btn-outline btn-sm" onClick={()=>setMostrarConcluidas(v=>!v)}>
+          {mostrarConcluidas ? 'Ocultar separadas/entregues' : `Ver separadas e entregues (${concluidas.length})`}
+        </button>
+        {mostrarConcluidas && (
+          concluidasView.length===0 ? (
+            <div className="empty-state" style={{marginTop:12}}>Nenhuma máquina separada/entregue ainda.</div>
+          ) : (
+            <div style={{marginTop:12}}>
+              {concluidasView.map(m=>(
+                <MaquinaCard
+                  key={m.etp} m={m} canManage={canManage}
+                  busy={busyEtp===m.etp} erro={errosEtp[m.etp]}
+                  onAvancar={()=>handleAvancar(m)}
+                  onToggleUrgente={()=>handleToggleUrgente(m)}
+                />
+              ))}
+            </div>
+          )
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Modal "+ Adicionar ETP" — mesmo fluxo de busca por ETP que já existia
+// solto na tela (documentado no CLAUDE.md, "'Programação' ganha busca por
+// ETP"), agora dentro de uma superfície flutuante (.modal-*, CSS autorado
+// do zero pra este uso — não existia nenhum modal genérico neste app
+// antes). `maquinasEtp` só é usada pra decidir se a ETP confirmada é uma
+// máquina GENUINAMENTE NOVA (pra só então gravar `ordem`/`urgente`
+// iniciais — ver comentário em `upsertMaquinaEtp`; máquina já existente
+// nunca tem esses 2 campos resetados aqui).
+function AdicionarEtpModal({open, currentUser, maquinasEtp, onClose, onSucesso}){
   const [etpCodigo, setEtpCodigo] = useState('');
   const [buscandoEtp, setBuscandoEtp] = useState(false);
   const [etpResultado, setEtpResultado] = useState(null); // {ok, etp, itens} | {ok:false, erro} | null
-  // Card de "Empenho Aberto" (máquina/OP), mostrado como cabeçalho ACIMA da
-  // lista de itens faltantes acima — busca independente, disparada junto
-  // (ver handleBuscarEtp); uma falhando nunca esconde/bloqueia a outra.
   const [empenhoAbertoResultado, setEmpenhoAbertoResultado] = useState(null); // {ok, resultados} | {ok:false, erro} | null
   const [selecaoEtp, setSelecaoEtp] = useState({}); // índice do item → true/false
   const [prioridadeEtp, setPrioridadeEtp] = useState('media');
   const [adicionandoEtp, setAdicionandoEtp] = useState(false);
   const [erroAdicionarEtp, setErroAdicionarEtp] = useState(null);
-  const [resultadoAdicaoEtp, setResultadoAdicaoEtp] = useState(null);
 
-  const canManage = role==='lider' || role==='admin';
-
-  // Fila em tempo real — escopado a esta tela (mesmo padrão já usado por
-  // EtiquetasPanel: só ela lê esse dado, não vale manter um canal aberto
-  // pro app inteiro). Fetch-ao-montar + reconciliação-ao-conectar/
-  // reconectar (`status==='SUBSCRIBED'`), mesmo mecanismo de sempre.
-  useEffect(()=>{
-    if(!supabaseClient) return;
-    let cancelado = false;
-    fetchSequenciaSeparacao().then(rows=>{ if(!cancelado) setItens(rows); });
-
-    const canal = supabaseClient
-      .channel('realtime:sequencia_separacao')
-      .on('postgres_changes', {event:'*', schema:'public', table:'sequencia_separacao'}, payload=>{
-        if(payload.eventType==='DELETE'){
-          setItens(prev=>prev.filter(i=>i.id!==payload.old.id));
-          return;
-        }
-        const row = sequenciaSeparacaoRowToLocal(payload.new);
-        setItens(prev=>[...prev.filter(i=>i.id!==row.id), row]);
-      })
-      .subscribe(status=>{
-        if(status!=='SUBSCRIBED') return;
-        fetchSequenciaSeparacao().then(rows=>{ if(!cancelado) setItens(rows); });
-      });
-
-    return ()=>{ cancelado = true; supabaseClient.removeChannel(canal); };
-  }, []);
-
-  // Mesmo padrão de fetch-ao-montar + reconciliação-ao-conectar/reconectar
-  // já usado acima pra `itens`, agora pra `maquinas_etp` — o painel/TV
-  // normalmente fica aberto num aparelho fixo sem ninguém interagindo, e
-  // precisa atualizar sozinho assim que outro líder confirma uma ETP nova
-  // em outro aparelho.
-  useEffect(()=>{
-    if(!supabaseClient) return;
-    let cancelado = false;
-    fetchMaquinasEtp().then(rows=>{ if(!cancelado) setMaquinasEtp(rows); });
-
-    const canal = supabaseClient
-      .channel('realtime:maquinas_etp')
-      .on('postgres_changes', {event:'*', schema:'public', table:'maquinas_etp'}, payload=>{
-        if(payload.eventType==='DELETE'){
-          setMaquinasEtp(prev=>prev.filter(m=>m.etp!==payload.old.etp));
-          return;
-        }
-        const row = maquinaEtpRowToLocal(payload.new);
-        setMaquinasEtp(prev=>[...prev.filter(m=>m.etp!==row.etp), row]);
-      })
-      .subscribe(status=>{
-        if(status!=='SUBSCRIBED') return;
-        fetchMaquinasEtp().then(rows=>{ if(!cancelado) setMaquinasEtp(rows); });
-      });
-
-    return ()=>{ cancelado = true; supabaseClient.removeChannel(canal); };
-  }, []);
-
-  // Busca no catálogo com debounce de 350ms — mesmo padrão já usado em
-  // ManualCountFlow/EtiquetasPanel.
-  useEffect(()=>{
-    if(query.trim().length<2){ setResults([]); return; }
-    let cancelado = false;
-    setBuscando(true);
-    const t = setTimeout(()=>{
-      searchSupabaseCatalog(query).then(rows=>{
-        if(!cancelado){ setResults(rows); setBuscando(false); }
-      });
-    }, 350);
-    return ()=>{ cancelado = true; clearTimeout(t); };
-  }, [query]);
-
-  function selecionarResultado(p){
-    setSelecionado(p);
-    setResults([]);
-    setQuery('');
-    setQuantidade('');
-    setPrioridade('media');
-    setObservacao('');
-    setErroAdicionar(null);
-  }
-
-  async function handleAdicionar(){
-    if(!selecionado) return;
-    setAdicionando(true);
-    setErroAdicionar(null);
-    const res = await adicionarItemSequenciaSeparacao({
-      codigo: selecionado.codigo,
-      descricao: selecionado.descricao,
-      quantidade,
-      prioridade,
-      observacao,
-      criadoPor: currentUser ? currentUser.nome : null,
-    });
-    setAdicionando(false);
-    if(!res.ok){ setErroAdicionar(res.erro); return; }
-    setSelecionado(null);
-    setQuantidade('');
-    setPrioridade('media');
-    setObservacao('');
+  function fecharELimpar(){
+    setEtpCodigo('');
+    setBuscandoEtp(false);
+    setEtpResultado(null);
+    setEmpenhoAbertoResultado(null);
+    setSelecaoEtp({});
+    setPrioridadeEtp('media');
+    setAdicionandoEtp(false);
+    setErroAdicionarEtp(null);
+    onClose();
   }
 
   async function handleBuscarEtp(){
@@ -17839,7 +18049,6 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
     if(!etpLimpo) return;
     setBuscandoEtp(true);
     setErroAdicionarEtp(null);
-    setResultadoAdicaoEtp(null);
     setEtpResultado(null);
     setEmpenhoAbertoResultado(null);
     // As duas buscas são independentes, disparadas juntas — uma falhando
@@ -17897,201 +18106,121 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
     }
     // Cache de dado da máquina pro painel/TV — reaproveita a resposta do
     // Empenho Aberto que a própria busca já trouxe (nunca uma chamada nova
-    // só pra isso). Se a busca não achou nada/deu erro pra essa ETP, ou se
-    // o upsert falhar, isso NUNCA desfaz/bloqueia a confirmação dos itens
-    // que já foram adicionados acima — o painel só mostra "—" nos campos
-    // da máquina até essa informação existir. Mais de 1 resultado pra
-    // mesma ETP → usa sempre o primeiro (mesma decisão já usada no card
-    // que mostra esse resultado, logo acima na tela).
-    if(empenhoAbertoResultado && empenhoAbertoResultado.ok && Array.isArray(empenhoAbertoResultado.resultados) && empenhoAbertoResultado.resultados.length>0){
-      upsertMaquinaEtp(empenhoAbertoResultado.resultados[0]);
+    // só pra isso). `etpAlvo` é sempre o MESMO valor usado na chamada de
+    // upsert logo abaixo (o ETP do card de Empenho Aberto quando existe,
+    // senão o do 1º item selecionado) — nunca uma suposição solta que possa
+    // divergir do que de fato é gravado. Máquina GENUINAMENTE NOVA (ainda
+    // não existe em `maquinasEtp`) ganha `ordem` (próxima livre, max+1) e
+    // `urgente:false` de fábrica; máquina já existente nunca tem esses 2
+    // campos tocados aqui (ver comentário em `upsertMaquinaEtp` — o upsert
+    // só altera, no conflito, as colunas presentes no payload).
+    const temEmpenho = empenhoAbertoResultado && empenhoAbertoResultado.ok && Array.isArray(empenhoAbertoResultado.resultados) && empenhoAbertoResultado.resultados.length>0;
+    const etpAlvo = temEmpenho ? empenhoAbertoResultado.resultados[0].etp : selecionados[0].etp;
+    const etpEhNova = !!etpAlvo && !maquinasEtp.some(m=>m.etp===etpAlvo);
+    const extra = etpEhNova ? {
+      ordem: maquinasEtp.reduce((max,m)=> (m.ordem!=null && m.ordem>max) ? m.ordem : max, 0) + 1,
+      urgente: false,
+    } : undefined;
+    if(temEmpenho){
+      await upsertMaquinaEtp(empenhoAbertoResultado.resultados[0], extra);
+    }else if(etpAlvo){
+      // Sem card de Empenho Aberto (busca falhou/não achou nada pra essa
+      // ETP) — fallback mínimo, só pra uma máquina NOVA já nascer com
+      // ordem/urgente definidos; `parseDataHistorico(undefined)` (chamado
+      // dentro de `upsertMaquinaEtp` pros campos de data ausentes aqui)
+      // devolve `null` com segurança, sem lançar erro.
+      await upsertMaquinaEtp({etp: etpAlvo}, extra);
     }
     setAdicionandoEtp(false);
-    setResultadoAdicaoEtp(`${adicionados} ${adicionados===1 ? 'item adicionado' : 'itens adicionados'} à fila.`);
-    setEtpResultado(null);
-    setSelecaoEtp({});
-    setEtpCodigo('');
+    onSucesso(`${adicionados} ${adicionados===1 ? 'item adicionado' : 'itens adicionados'} à fila.`);
+    fecharELimpar();
   }
 
-  async function handleAvancarStatus(id, novoStatus){
-    setBusyId(id);
-    setErros(prev=>({...prev, [id]:null}));
-    const res = await atualizarStatusSequenciaSeparacao(id, novoStatus, currentUser ? currentUser.nome : null);
-    setBusyId(null);
-    if(!res.ok) setErros(prev=>({...prev, [id]: res.erro || 'Não foi possível salvar — tente novamente.'}));
-  }
-
-  async function handleExcluir(id){
-    setBusyId(id);
-    setErros(prev=>({...prev, [id]:null}));
-    const res = await excluirItemSequenciaSeparacao(id);
-    setBusyId(null);
-    setConfirmExcluirId(null);
-    if(!res.ok) setErros(prev=>({...prev, [id]: res.erro || 'Não foi possível excluir — tente novamente.'}));
-  }
-
-  // Ativos = qualquer item ainda não entregue (aguardando/em_separacao/
-  // separada) — mesmo critério de ordenação de sempre (só por prioridade,
-  // sem agrupar por estágio aqui: quem agrupa por estágio é o painel/TV
-  // novo, SeparacaoPainelBoard; esta lista de gestão continua exatamente
-  // como já era, só a fila de "pendente" virou "não entregue ainda").
-  const ativos = itens.filter(i=>i.status!=='entregue').sort((a,b)=>{
-    const pa = PRIORIDADE_ORDEM[a.prioridade] ?? 1;
-    const pb = PRIORIDADE_ORDEM[b.prioridade] ?? 1;
-    if(pa!==pb) return pa-pb;
-    return String(a.criadoEm||'').localeCompare(String(b.criadoEm||''));
-  });
-  const entregues = itens.filter(i=>i.status==='entregue');
-  const buscaNorm = buscaHistorico.trim().toLowerCase();
-  const entreguesFiltrados = !buscaNorm ? entregues : entregues.filter(i=>
-    (i.descricao||'').toLowerCase().includes(buscaNorm) ||
-    (i.codigo||'').toLowerCase().includes(buscaNorm)
-  );
+  if(!open) return null;
 
   return (
-    <div className="panel">
-      <div className="section-title" style={{marginTop:0, display:'flex', alignItems:'center', flexWrap:'wrap', gap:8}}>
-        <span>Sequência de separação</span>
-        {ativos.length>0 && <span className="badge" style={{position:'static'}}>{ativos.length}</span>}
-        <button type="button" className="btn btn-outline btn-sm" style={{marginLeft:'auto'}} onClick={()=>setModoPainel(v=>!v)}>
-          {modoPainel ? 'Ver lista' : 'Ver painel'}
-        </button>
-      </div>
-      <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)',marginBottom:14,lineHeight:1.6}}>
-        Ordenada por prioridade/urgência do pedido — itens "Alta" sempre aparecem
-        primeiro, depois "Média", depois "Baixa"; dentro da mesma prioridade, o mais
-        antigo vem primeiro.
-      </div>
-
-      {modoPainel ? (
-        <SeparacaoPainelBoard itens={itens} maquinasEtp={maquinasEtp} />
-      ) : (
-      <>
-      {canManage && (
-        <div style={{marginBottom:18,paddingBottom:14,borderBottom:'1px solid var(--line)'}}>
-          <SearchWithScanner value={query} onChange={setQuery} placeholder="Código ou descrição do item" />
-          {buscando && <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:-8,marginBottom:12}}>Buscando…</div>}
-          {results.length>0 && (
-            <div style={{marginBottom:14}}>
-              {results.map(p=>(
-                <div key={p.codigo} className="list-row" style={{cursor:'pointer'}} onClick={()=>selecionarResultado(p)}>
-                  <div>
-                    <div className="lr-title">{p.codigo}</div>
-                    <div className="lr-sub">{p.descricao}</div>
-                  </div>
-                  <button type="button" className="btn btn-outline btn-sm">Selecionar</button>
-                </div>
-              ))}
+    <div className="modal-backdrop" onClick={fecharELimpar}>
+      <div className="modal-box" onClick={e=>e.stopPropagation()}>
+        <div className="modal-header">
+          <div>
+            <div className="modal-title">Adicionar ETP</div>
+            <div className="modal-subtitle">
+              Digite o código da ETP — busca a(s) OP(s) e os itens faltantes dela na
+              consulta da Selgron. Nada é adicionado à fila ainda: revise a lista e
+              escolha quais itens entram antes de confirmar.
             </div>
-          )}
-          {selecionado && (
-            <div className="list-row" style={{flexWrap:'wrap',flexDirection:'column',alignItems:'stretch',gap:10}}>
-              <div>
-                <div className="lr-title">{selecionado.codigo}</div>
-                <div className="lr-sub">{selecionado.descricao}</div>
-              </div>
-              <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
-                <div className="field" style={{flex:1,minWidth:120,marginBottom:0}}>
-                  <label>Quantidade</label>
-                  <input type="text" value={quantidade} onChange={e=>setQuantidade(e.target.value)} placeholder="Ex: 10" />
-                </div>
-                <div className="field" style={{flex:1,minWidth:140,marginBottom:0}}>
-                  <label>Prioridade</label>
-                  <select value={prioridade} onChange={e=>setPrioridade(e.target.value)}>
-                    <option value="alta">Alta</option>
-                    <option value="media">Média</option>
-                    <option value="baixa">Baixa</option>
-                  </select>
-                </div>
-              </div>
-              <div className="field" style={{marginBottom:0}}>
-                <label>Observação (opcional)</label>
-                <input type="text" value={observacao} onChange={e=>setObservacao(e.target.value)} placeholder="Ex: pedido urgente do cliente X" />
-              </div>
-              {erroAdicionar && <div style={{fontSize:'var(--text-xs)',color:'var(--danger)'}}>{erroAdicionar}</div>}
-              <div className="btn-row" style={{width:'auto'}}>
-                <button type="button" className="btn btn-secondary" onClick={()=>setSelecionado(null)}>Cancelar</button>
-                <button type="button" className="btn btn-primary" disabled={adicionando} onClick={handleAdicionar}>{adicionando ? 'Adicionando…' : 'Adicionar à fila'}</button>
-              </div>
-            </div>
-          )}
+          </div>
+          <button type="button" className="modal-close-btn" onClick={fecharELimpar}><DIcon name="x" size={18} /></button>
         </div>
-      )}
 
-      {canManage && (
-        <div style={{marginBottom:18,paddingBottom:14,borderBottom:'1px solid var(--line)'}}>
-          <div style={{fontSize:'var(--text-sm)',fontWeight:600,marginBottom:8}}>Buscar por ETP</div>
-          <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginBottom:10,lineHeight:1.5}}>
-            Digite o código da ETP — busca a(s) OP(s) e os itens faltantes dela na
-            consulta da Selgron. Nada é adicionado à fila ainda: revise a lista e
-            escolha quais itens entram antes de confirmar.
+        <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'flex-end',marginBottom:14}}>
+          <div className="field" style={{flex:1,minWidth:160,marginBottom:0}}>
+            <label>Código da ETP</label>
+            <input
+              type="text"
+              value={etpCodigo}
+              onChange={e=>setEtpCodigo(e.target.value)}
+              onKeyDown={e=>{ if(e.key==='Enter') handleBuscarEtp(); }}
+              placeholder="Ex: 6220-26"
+              autoFocus
+            />
           </div>
-          <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'flex-end'}}>
-            <div className="field" style={{flex:1,minWidth:160,marginBottom:0}}>
-              <label>Código da ETP</label>
-              <input
-                type="text"
-                value={etpCodigo}
-                onChange={e=>setEtpCodigo(e.target.value)}
-                onKeyDown={e=>{ if(e.key==='Enter') handleBuscarEtp(); }}
-                placeholder="Ex: 6220-26"
-              />
-            </div>
-            <button type="button" className="btn btn-primary" style={{width:'auto'}} disabled={buscandoEtp || !etpCodigo.trim()} onClick={handleBuscarEtp}>
-              {buscandoEtp ? 'Buscando…' : 'Buscar'}
-            </button>
+          <button type="button" className="btn btn-primary" style={{width:'auto'}} disabled={buscandoEtp || !etpCodigo.trim()} onClick={handleBuscarEtp}>
+            {buscandoEtp ? 'Buscando…' : 'Buscar'}
+          </button>
+        </div>
+
+        {/* Card de "Empenho Aberto" (máquina/OP) — cabeçalho ACIMA da lista
+            de itens faltantes abaixo, busca independente disparada junto em
+            handleBuscarEtp. Nunca bloqueia nem esconde a lista de itens
+            faltantes (que já funcionava antes desta consulta existir) — se
+            essa 2ª busca falhar, só mostra um aviso discreto, sem impedir
+            nada do fluxo já existente. Sem resultado nenhum, não mostra o
+            card nem erro visível (mesmo critério já usado pra "0 itens
+            faltantes" logo abaixo). */}
+        {empenhoAbertoResultado && empenhoAbertoResultado.ok && Array.isArray(empenhoAbertoResultado.resultados) && empenhoAbertoResultado.resultados.length>0 && (
+          <div style={{marginBottom:10}}>
+            {empenhoAbertoResultado.resultados.map((m, idx)=>(
+              <div key={idx} className="list-row" style={{flexDirection:'column',alignItems:'stretch',cursor:'default'}}>
+                <div className="lr-title">
+                  {m.nomeFantasia || m.cliente || 'Máquina/OP'}
+                  {empenhoAbertoResultado.resultados.length>1 ? ` (${idx+1}/${empenhoAbertoResultado.resultados.length})` : ''}
+                </div>
+                {m.cliente && <div className="lr-sub">Cliente: {m.cliente}</div>}
+                {m.descricao && <div className="lr-sub">{m.descricao}</div>}
+                <div className="result-grid result-grid-4col" style={{gridTemplateColumns:'repeat(4,1fr)'}}>
+                  <div className="rg"><div className="k">OP</div><div className="v">{m.op || '—'}</div></div>
+                  <div className="rg"><div className="k">ETP</div><div className="v">{m.etp || '—'}</div></div>
+                  <div className="rg"><div className="k">Chassi</div><div className="v">{m.chassi || '—'}</div></div>
+                  <div className="rg"><div className="k">Cód. Produto</div><div className="v">{m.codigoProduto || '—'}</div></div>
+                  <div className="rg"><div className="k">Separação</div><div className="v">{m.separacao || 'Não definida'}</div></div>
+                  <div className="rg"><div className="k">Montagem</div><div className="v">{m.montagem || 'Não definida'}</div></div>
+                  <div className="rg"><div className="k">Entrega PCP</div><div className="v">{m.entregaPcp || 'Não definida'}</div></div>
+                  <div className="rg"><div className="k">Entrega Com.</div><div className="v">{m.entregaComercial || 'Não definida'}</div></div>
+                </div>
+              </div>
+            ))}
           </div>
+        )}
+        {empenhoAbertoResultado && !empenhoAbertoResultado.ok && (
+          <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginBottom:10}}>
+            Empenho Aberto (máquina/OP) não disponível: {empenhoAbertoResultado.erro}
+          </div>
+        )}
 
-          {/* Card de "Empenho Aberto" (máquina/OP) — cabeçalho ACIMA da lista
-              de itens faltantes abaixo, busca independente disparada junto em
-              handleBuscarEtp. Nunca bloqueia nem esconde a lista de itens
-              faltantes (que já funcionava antes desta consulta existir) — se
-              essa 2ª busca falhar, só mostra um aviso discreto, sem impedir
-              nada do fluxo já existente. Sem resultado nenhum, não mostra o
-              card nem erro visível (mesmo critério já usado pra "0 itens
-              faltantes" logo abaixo). */}
-          {empenhoAbertoResultado && empenhoAbertoResultado.ok && Array.isArray(empenhoAbertoResultado.resultados) && empenhoAbertoResultado.resultados.length>0 && (
-            <div style={{marginTop:10}}>
-              {empenhoAbertoResultado.resultados.map((m, idx)=>(
-                <div key={idx} className="list-row" style={{flexDirection:'column',alignItems:'stretch',cursor:'default'}}>
-                  <div className="lr-title">
-                    {m.nomeFantasia || m.cliente || 'Máquina/OP'}
-                    {empenhoAbertoResultado.resultados.length>1 ? ` (${idx+1}/${empenhoAbertoResultado.resultados.length})` : ''}
-                  </div>
-                  {m.cliente && <div className="lr-sub">Cliente: {m.cliente}</div>}
-                  {m.descricao && <div className="lr-sub">{m.descricao}</div>}
-                  <div className="result-grid result-grid-4col" style={{gridTemplateColumns:'repeat(4,1fr)'}}>
-                    <div className="rg"><div className="k">OP</div><div className="v">{m.op || '—'}</div></div>
-                    <div className="rg"><div className="k">ETP</div><div className="v">{m.etp || '—'}</div></div>
-                    <div className="rg"><div className="k">Chassi</div><div className="v">{m.chassi || '—'}</div></div>
-                    <div className="rg"><div className="k">Cód. Produto</div><div className="v">{m.codigoProduto || '—'}</div></div>
-                    <div className="rg"><div className="k">Separação</div><div className="v">{m.separacao || 'Não definida'}</div></div>
-                    <div className="rg"><div className="k">Montagem</div><div className="v">{m.montagem || 'Não definida'}</div></div>
-                    <div className="rg"><div className="k">Entrega PCP</div><div className="v">{m.entregaPcp || 'Não definida'}</div></div>
-                    <div className="rg"><div className="k">Entrega Com.</div><div className="v">{m.entregaComercial || 'Não definida'}</div></div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-          {empenhoAbertoResultado && !empenhoAbertoResultado.ok && (
-            <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:8}}>
-              Empenho Aberto (máquina/OP) não disponível: {empenhoAbertoResultado.erro}
-            </div>
-          )}
+        {etpResultado && !etpResultado.ok && (
+          <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginBottom:10}}>{etpResultado.erro}</div>
+        )}
 
-          {etpResultado && !etpResultado.ok && (
-            <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginTop:10}}>{etpResultado.erro}</div>
-          )}
-
-          {etpResultado && etpResultado.ok && Array.isArray(etpResultado.itens) && (
-            etpResultado.itens.length===0 ? (
-              <div className="empty-state" style={{marginTop:10}}>Nenhum item faltante encontrado para essa ETP.</div>
-            ) : (
-              <div style={{marginTop:12}}>
-                <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginBottom:8}}>
-                  {etpResultado.itens.length} {etpResultado.itens.length===1 ? 'item encontrado' : 'itens encontrados'} — desmarque o que não quiser adicionar.
-                </div>
+        {etpResultado && etpResultado.ok && Array.isArray(etpResultado.itens) && (
+          etpResultado.itens.length===0 ? (
+            <div className="empty-state">Nenhum item faltante encontrado para essa ETP.</div>
+          ) : (
+            <div>
+              <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginBottom:8}}>
+                {etpResultado.itens.length} {etpResultado.itens.length===1 ? 'item encontrado' : 'itens encontrados'} — desmarque o que não quiser adicionar.
+              </div>
+              <div style={{maxHeight:280,overflowY:'auto',marginBottom:12}}>
                 {etpResultado.itens.map((it, idx)=>(
                   <label key={idx} className="list-row" style={{flexWrap:'wrap', cursor: it.codigo ? 'pointer' : 'default', opacity: it.codigo ? 1 : 0.6}}>
                     <div style={{display:'flex',alignItems:'flex-start',gap:10}}>
@@ -18116,112 +18245,173 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
                     </div>
                   </label>
                 ))}
-                <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'flex-end',marginTop:12}}>
-                  <div className="field" style={{flex:1,minWidth:140,marginBottom:0}}>
-                    <label>Prioridade (pro lote inteiro)</label>
-                    <select value={prioridadeEtp} onChange={e=>setPrioridadeEtp(e.target.value)}>
-                      <option value="alta">Alta</option>
-                      <option value="media">Média</option>
-                      <option value="baixa">Baixa</option>
-                    </select>
-                  </div>
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    style={{width:'auto'}}
-                    disabled={adicionandoEtp || etpResultado.itens.filter((it,idx)=>selecaoEtp[idx] && it.codigo).length===0}
-                    onClick={handleAdicionarLoteEtp}
-                  >
-                    {adicionandoEtp ? 'Adicionando…' : `Adicionar selecionados à fila (${etpResultado.itens.filter((it,idx)=>selecaoEtp[idx] && it.codigo).length})`}
-                  </button>
-                </div>
-                {erroAdicionarEtp && <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginTop:8}}>{erroAdicionarEtp}</div>}
               </div>
-            )
-          )}
-          {resultadoAdicaoEtp && <div style={{fontSize:'var(--text-xs)',color:'var(--ok)',marginTop:10}}>{resultadoAdicaoEtp}</div>}
-        </div>
-      )}
-
-      {ativos.length===0 ? (
-        <div className="empty-state">
-          {canManage
-            ? 'Nenhum item na fila de separação ainda — busque um item acima pra adicionar.'
-            : 'Nenhum item pendente na fila de separação no momento.'}
-        </div>
-      ) : (
-        ativos.map(i=>(
-          <div key={i.id} className="list-row" style={{flexWrap:'wrap'}}>
-            <div>
-              <div className="lr-title">{i.codigo} — {i.descricao}</div>
-              <div className="lr-sub">
-                {i.quantidade ? `Qtd: ${i.quantidade}${i.unidade ? ' '+i.unidade : ''}` : ''}
-                {i.quantidade && i.observacao ? ' · ' : ''}
-                {i.observacao || ''}
+              <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'flex-end'}}>
+                <div className="field" style={{flex:1,minWidth:140,marginBottom:0}}>
+                  <label>Prioridade (pro lote inteiro)</label>
+                  <select value={prioridadeEtp} onChange={e=>setPrioridadeEtp(e.target.value)}>
+                    <option value="alta">Alta</option>
+                    <option value="media">Média</option>
+                    <option value="baixa">Baixa</option>
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  style={{width:'auto'}}
+                  disabled={adicionandoEtp || etpResultado.itens.filter((it,idx)=>selecaoEtp[idx] && it.codigo).length===0}
+                  onClick={handleAdicionarLoteEtp}
+                >
+                  {adicionandoEtp ? 'Adicionando…' : `Adicionar selecionados à fila (${etpResultado.itens.filter((it,idx)=>selecaoEtp[idx] && it.codigo).length})`}
+                </button>
               </div>
-              {(i.etp || i.op || i.local) && (
-                <div className="lr-sub" style={{marginTop:2}}>
-                  {i.etp ? `ETP: ${i.etp}` : ''}
-                  {i.etp && i.op ? ' · ' : ''}
-                  {i.op ? `OP: ${i.op}` : ''}
-                  {(i.etp || i.op) && i.local ? ' · ' : ''}
-                  {i.local ? `Local: ${i.local}` : ''}
-                </div>
-              )}
-              {erros[i.id] && <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginTop:4}}>{erros[i.id]}</div>}
+              {erroAdicionarEtp && <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginTop:8}}>{erroAdicionarEtp}</div>}
             </div>
-            <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
-              <SeparacaoStatusTag status={i.status} />
-              <StatusTag status={PRIORIDADE_STATUS[i.prioridade]||'warn'} text={PRIORIDADE_LABEL[i.prioridade]||'Média'} />
-              {canManage && (
-                <div className="btn-row" style={{width:'auto'}}>
-                  {SEPARACAO_STATUS_PROXIMO[i.status] && (
-                    <button type="button" className="btn btn-primary" style={{padding:'8px 12px',fontSize:'var(--text-xs)'}} disabled={busyId===i.id} onClick={()=>handleAvancarStatus(i.id, SEPARACAO_STATUS_PROXIMO[i.status])}>{busyId===i.id ? 'Salvando…' : SEPARACAO_STATUS_ACAO_LABEL[i.status]}</button>
-                  )}
-                  {role==='admin' && (confirmExcluirId===i.id ? (
-                    <>
-                      <button type="button" className="btn btn-secondary" style={{padding:'8px 12px',fontSize:'var(--text-xs)'}} onClick={()=>setConfirmExcluirId(null)}>Cancelar</button>
-                      <button type="button" className="btn btn-danger" style={{padding:'8px 12px',fontSize:'var(--text-xs)'}} disabled={busyId===i.id} onClick={()=>handleExcluir(i.id)}>Confirmar exclusão</button>
-                    </>
-                  ) : (
-                    <button type="button" className="btn btn-outline" style={{padding:'8px 12px',fontSize:'var(--text-xs)'}} onClick={()=>setConfirmExcluirId(i.id)}>Excluir</button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        ))
-      )}
+          )
+        )}
+      </div>
+    </div>
+  );
+}
 
-      {entregues.length>0 && (
-        <div style={{marginTop:18,paddingTop:14,borderTop:'1px solid var(--line)'}}>
-          <button type="button" className="btn btn-outline btn-sm" onClick={()=>setHistoricoAberto(v=>!v)}>
-            {historicoAberto ? 'Ocultar histórico' : `Ver histórico (${entregues.length})`}
-          </button>
-          {historicoAberto && (
-            <div style={{marginTop:12}}>
-              <SearchWithScanner value={buscaHistorico} onChange={setBuscaHistorico} placeholder="Código ou descrição" />
-              {entreguesFiltrados.length===0 ? (
-                <div className="empty-state">Nenhum resultado para essa busca.</div>
-              ) : (
-                entreguesFiltrados.map(i=>(
-                  <div key={i.id} className="list-row" style={{flexWrap:'wrap'}}>
-                    <div>
-                      <div className="lr-title">{i.codigo} — {i.descricao}</div>
-                      <div className="lr-sub">
-                        {i.quantidade ? `Qtd: ${i.quantidade} · ` : ''}Entregue por {i.entreguePor || '—'}
-                      </div>
-                    </div>
-                    <SeparacaoStatusTag status="entregue" />
-                  </div>
-                ))
-              )}
-            </div>
-          )}
-        </div>
-      )}
-      </>
-      )}
+function ProgramacaoSeparacaoPanel({currentUser, role}){
+  const [itens, setItens] = useState([]);
+  // Cache de dado da MÁQUINA (nome fantasia/chassi/data prevista/status/
+  // ordem/urgente), usado pelo painel/TV pra agrupar os itens por ETP — ver
+  // `maquinas_etp`/`upsertMaquinaEtp` e `SeparacaoPainelBoard`/
+  // `computeMaquinasPainel`.
+  const [maquinasEtp, setMaquinasEtp] = useState([]);
+
+  // "Lista" (gestão item-a-item) foi removida por completo — o Painel
+  // (SeparacaoPainelBoard) é a ÚNICA visualização desta tela agora, sempre
+  // agrupada por MÁQUINA/ETP, nunca por item avulso. Adicionar uma ETP nova
+  // virou um modal (AdicionarEtpModal), controlado por este único estado.
+  const [modalAdicionarAberto, setModalAdicionarAberto] = useState(false);
+  const [mensagemSucesso, setMensagemSucesso] = useState(null);
+
+  const canManage = role==='lider' || role==='admin';
+
+  // Fila em tempo real — escopado a esta tela (mesmo padrão já usado por
+  // EtiquetasPanel: só ela lê esse dado, não vale manter um canal aberto
+  // pro app inteiro). Fetch-ao-montar + reconciliação-ao-conectar/
+  // reconectar (`status==='SUBSCRIBED'`), mesmo mecanismo de sempre.
+  useEffect(()=>{
+    if(!supabaseClient) return;
+    let cancelado = false;
+    fetchSequenciaSeparacao().then(rows=>{ if(!cancelado) setItens(rows); });
+
+    const canal = supabaseClient
+      .channel('realtime:sequencia_separacao')
+      .on('postgres_changes', {event:'*', schema:'public', table:'sequencia_separacao'}, payload=>{
+        if(payload.eventType==='DELETE'){
+          setItens(prev=>prev.filter(i=>i.id!==payload.old.id));
+          return;
+        }
+        const row = sequenciaSeparacaoRowToLocal(payload.new);
+        setItens(prev=>[...prev.filter(i=>i.id!==row.id), row]);
+      })
+      .subscribe(status=>{
+        if(status!=='SUBSCRIBED') return;
+        fetchSequenciaSeparacao().then(rows=>{ if(!cancelado) setItens(rows); });
+      });
+
+    return ()=>{ cancelado = true; supabaseClient.removeChannel(canal); };
+  }, []);
+
+  // Mesmo padrão de fetch-ao-montar + reconciliação-ao-conectar/reconectar
+  // já usado acima pra `itens`, agora pra `maquinas_etp` — o painel/TV
+  // normalmente fica aberto num aparelho fixo sem ninguém interagindo, e
+  // precisa atualizar sozinho assim que outro líder confirma uma ETP nova,
+  // reordena a fila ou marca urgente em outro aparelho.
+  useEffect(()=>{
+    if(!supabaseClient) return;
+    let cancelado = false;
+    fetchMaquinasEtp().then(rows=>{ if(!cancelado) setMaquinasEtp(rows); });
+
+    const canal = supabaseClient
+      .channel('realtime:maquinas_etp')
+      .on('postgres_changes', {event:'*', schema:'public', table:'maquinas_etp'}, payload=>{
+        if(payload.eventType==='DELETE'){
+          setMaquinasEtp(prev=>prev.filter(m=>m.etp!==payload.old.etp));
+          return;
+        }
+        const row = maquinaEtpRowToLocal(payload.new);
+        setMaquinasEtp(prev=>[...prev.filter(m=>m.etp!==row.etp), row]);
+      })
+      .subscribe(status=>{
+        if(status!=='SUBSCRIBED') return;
+        fetchMaquinasEtp().then(rows=>{ if(!cancelado) setMaquinasEtp(rows); });
+      });
+
+    return ()=>{ cancelado = true; supabaseClient.removeChannel(canal); };
+  }, []);
+
+  function mostrarSucesso(msg){
+    setMensagemSucesso(msg);
+    setTimeout(()=>setMensagemSucesso(null), 2500);
+  }
+
+  // Avançar status de uma MÁQUINA inteira, não item por item — decisão
+  // deliberada, documentada aqui (não só no comentário de
+  // `avancarStatusMaquinaEmLote`): com a tela "Lista" removida, não sobrou
+  // nenhum jeito de avançar item a item mesmo — o único botão de ação do
+  // Painel já opera na unidade que ele sempre rastreou de verdade (a
+  // MÁQUINA/ETP), avançando de uma vez todo item daquela ETP que ainda não
+  // chegou no próximo estágio. Reaproveita `atualizarStatusSequenciaSeparacao`
+  // em loop (dentro de `avancarStatusMaquinaEmLote`), não uma RPC de lote
+  // nova — volume por ETP é sempre pequeno (poucos itens faltantes por
+  // máquina), não justificava a complexidade extra de uma função SQL só
+  // pra isso.
+  async function handleAvancarStatusMaquina(maquina, itensDaMaquina){
+    return await avancarStatusMaquinaEmLote(maquina, itensDaMaquina, currentUser ? currentUser.nome : null);
+  }
+
+  // Reordenar manualmente (botões ↑/↓, sem drag-and-drop — decisão
+  // deliberada, simplicidade/confiabilidade sem dependência nova) — troca a
+  // `ordem` da máquina com a vizinha na direção pedida, persistindo os 2
+  // valores junto (`atualizarOrdemMaquina`), sempre em cima da fila
+  // "Próximas" (aguardando) inteira, nunca de uma view já filtrada — ver
+  // `moverOrdemAguardando`.
+  async function handleMoverOrdem(maquinasPainelSubset, etp, direcao){
+    const res = moverOrdemAguardando(maquinasPainelSubset, etp, direcao);
+    if(!res) return {ok:true};
+    const [resA, resB] = await Promise.all([
+      atualizarOrdemMaquina(res.etpA, res.ordemA),
+      atualizarOrdemMaquina(res.etpB, res.ordemB),
+    ]);
+    if(!resA.ok) return resA;
+    if(!resB.ok) return resB;
+    return {ok:true};
+  }
+
+  return (
+    <div className="panel">
+      <div className="section-title" style={{marginTop:0, display:'flex', alignItems:'center', flexWrap:'wrap', gap:8}}>
+        <span>Sequência de separação</span>
+      </div>
+      <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)',marginBottom:14,lineHeight:1.6}}>
+        Ordenada manualmente (botões ↑/↓ na fila "Próximas") — a prioridade
+        Urgente só destaca o card visualmente, nunca reordena a fila sozinha.
+      </div>
+      {mensagemSucesso && <div style={{fontSize:'var(--text-xs)',color:'var(--ok)',marginBottom:14}}>{mensagemSucesso}</div>}
+
+      <SeparacaoPainelBoard
+        itens={itens}
+        maquinasEtp={maquinasEtp}
+        canManage={canManage}
+        onAvancarStatus={handleAvancarStatusMaquina}
+        onMoverOrdem={handleMoverOrdem}
+        onToggleUrgente={atualizarUrgenteMaquina}
+        onAdicionarEtpClick={()=>setModalAdicionarAberto(true)}
+      />
+
+      <AdicionarEtpModal
+        open={modalAdicionarAberto}
+        currentUser={currentUser}
+        maquinasEtp={maquinasEtp}
+        onClose={()=>setModalAdicionarAberto(false)}
+        onSucesso={mostrarSucesso}
+      />
     </div>
   );
 }
