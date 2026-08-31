@@ -2320,3 +2320,102 @@ begin
     alter publication supabase_realtime add table maquinas_etp;
   end if;
 end $$;
+
+-- =============================================================================
+-- PAINEL DE SEPARAÇÃO: "LISTA" REMOVIDA (SÓ PAINEL/TV) + FILA MANUAL POR
+-- MÁQUINA + PRIORIDADE URGENTE
+-- =============================================================================
+-- Pedido do cliente: eliminar a visão "Lista" (gestão item a item) por
+-- completo — o Painel/TV vira a ÚNICA tela de "Programação". Isso muda o que
+-- `maquinas_etp` precisa guardar: até aqui essa tabela era só um CACHE
+-- descritivo (nome fantasia/chassi/datas, ver seção acima) — o STATUS de
+-- cada máquina era sempre CALCULADO na hora, agregando os itens de
+-- `sequencia_separacao` daquela ETP (`statusAgregadoMaquina`, index.html).
+-- Isso continua existindo como fallback (ver `computeMaquinasPainel`), mas
+-- passou a existir também um valor CACHEADO/PERSISTIDO de `status` — o
+-- botão de avançar do Painel agora avança a MÁQUINA inteira de uma vez
+-- (todos os itens daquela ETP que ainda não chegaram na etapa seguinte, em
+-- lote — ver `handleAvancarStatusMaquina` no index.html; decisão deliberada
+-- de reaproveitar `atualizarStatusSequenciaSeparacao` (já existente) num
+-- laço/`Promise.all`, em vez de criar uma RPC nova só pra isso), e persistir
+-- o resultado dá um lugar único e estável pra gravar o veredito dessa ação
+-- em lote, em vez de recalcular a agregação a cada render.
+--
+-- `ordem` substitui `data_separacao` como critério de fila — o cliente quer
+-- reordenar manualmente (setas ↑/↓ no Painel, sem drag-and-drop — decisão
+-- explícita, sem dependência nova), e isso não convive com "ordenar por
+-- data prevista" (os dois decidiriam a sequência ao mesmo tempo, de forma
+-- conflitante). `data_separacao` continua existindo/exibida, só deixou de
+-- ser critério de ORDENAÇÃO — quem ordena agora é só `ordem`, editável à
+-- mão.
+--
+-- `urgente` é um destaque visual/de prioridade, INDEPENDENTE da ordem
+-- manual — marcar uma máquina como urgente NUNCA reordena a fila sozinho
+-- (pedido explícito do cliente), só destaca ela na tela; se o líder também
+-- quiser priorizar a posição, usa as setas de reordenar separadamente.
+alter table maquinas_etp add column if not exists status text not null default 'aguardando';
+alter table maquinas_etp add column if not exists ordem integer;
+alter table maquinas_etp add column if not exists urgente boolean not null default false;
+
+-- Backfill de `status` — reproduz, uma única vez, a MESMA agregação que
+-- `statusAgregadoMaquina` já calculava em memória (todos os itens
+-- 'entregue' → 'entregue'; todos 'separada' ou 'entregue' → 'separada';
+-- todos 'aguardando' → 'aguardando'; qualquer mistura — inclusive algum
+-- item já 'em_separacao' — → 'em_separacao', o mesmo "estado intermediário"
+-- que o cálculo em memória já usava como fallback). ETP sem nenhum item em
+-- `sequencia_separacao` (cache órfão) fica no default 'aguardando' da
+-- própria coluna — não é um caso real esperado, só uma proteção.
+update maquinas_etp m
+set status = coalesce((
+  select case
+    when bool_and(s.status = 'entregue') then 'entregue'
+    when bool_and(s.status in ('separada','entregue')) then 'separada'
+    when bool_and(s.status = 'aguardando') then 'aguardando'
+    else 'em_separacao'
+  end
+  from sequencia_separacao s
+  where s.etp = m.etp
+), 'aguardando');
+
+-- Backfill de `ordem` — reproduz a ordenação que o Painel já usava ANTES
+-- desta migração (atrasada primeiro, depois por data prevista mais
+-- próxima, sem data prevista por último, ETP como desempate final),
+-- transformada num inteiro sequencial — a partir de agora editável à mão
+-- pelas setas ↑/↓, sem mudar a ordem visível no momento em que esta
+-- migração roda (a fila continua exatamente como estava, só passa a ser
+-- editável).
+with ordenado as (
+  select
+    etp,
+    row_number() over (
+      order by
+        (data_separacao is not null and data_separacao < current_date) desc,
+        (data_separacao is null) asc,
+        data_separacao asc,
+        etp asc
+    ) as rn
+  from maquinas_etp
+)
+update maquinas_etp m
+set ordem = ordenado.rn
+from ordenado
+where ordenado.etp = m.etp and m.ordem is null;
+
+-- `urgente` fica no default `false` pra toda linha já existente — não dá
+-- pra reconstruir retroativamente qual máquina "era" urgente antes desta
+-- coluna existir, então nenhuma é marcada como tal (mesmo critério de
+-- sempre neste projeto: nunca fabricar dado histórico que não existe).
+
+alter table maquinas_etp drop constraint if exists maquinas_etp_status_check;
+alter table maquinas_etp add constraint maquinas_etp_status_check
+  check (status in ('aguardando','em_separacao','separada','entregue'));
+
+-- RLS: nenhuma policy nova necessária — a policy de UPDATE já existente
+-- ("atualizacao por tela", acima) é incondicional por coluna
+-- (`using/with check tem_acesso_tela(...)`, sem checar quais colunas estão
+-- sendo alteradas), então já cobre `status`/`ordem`/`urgente` sem precisar
+-- de nenhum ajuste. A policy de INSERT idem, pro caso de upsert criar uma
+-- linha nova pra uma ETP órfã (item com `etp` preenchido mas sem cache
+-- ainda — ver `atualizarStatusMaquina`/`atualizarUrgenteMaquina`/
+-- `atualizarOrdemMaquina` no index.html, todos via `.upsert()` por esse
+-- motivo — auto-curam um cache ausente em vez de falhar).
