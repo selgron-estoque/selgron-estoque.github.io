@@ -2239,3 +2239,84 @@ alter table sequencia_separacao add constraint sequencia_separacao_status_check
 -- Nenhuma mudança de RLS/Realtime necessária — as 4 policies já cobrem
 -- update (troca de status) e as 4 colunas novas são só texto/timestamp
 -- nullable, cobertas pela mesma policy de update já existente.
+
+-- =============================================================================
+-- PAINEL DE SEPARAÇÃO PASSA A SER POR MÁQUINA (ETP), NÃO POR ITEM
+-- =============================================================================
+-- O painel/TV de "Gestão de Separação" (Kanban) sempre mostrou um cartão por
+-- ITEM de `sequencia_separacao` — errado como unidade de acompanhamento pro
+-- almoxarifado: uma máquina real pode ter centenas de itens/componentes na
+-- mesma ETP, e ninguém quer rolar um painel com 300 cartões pra saber se UMA
+-- máquina já foi separada. O painel passou a agregar por ETP (1 linha =
+-- 1 máquina, status calculado a partir do conjunto de itens daquela ETP,
+-- ver `statusAgregadoMaquina` no index.html) — mas a tabela `sequencia_
+-- separacao` (que continua existindo, sem nenhuma mudança de estrutura) não
+-- tem nenhum dado descritivo da MÁQUINA em si (nome fantasia, chassi, data
+-- prevista de separação) — só do item (código/descrição/quantidade). Esses
+-- campos só existem na resposta do Empenho Aberto (Edge Function
+-- `consultar-empenho-aberto`, já em produção, usada quando o líder busca uma
+-- ETP pra montar a fila).
+--
+-- `maquinas_etp` é um CACHE desse dado, não uma tabela operacional nova —
+-- populada no exato momento em que o líder confirma adicionar os itens de
+-- uma ETP à fila (reaproveitando a resposta do Empenho Aberto que a busca já
+-- trouxe, nunca uma chamada nova só pra isso). Sem FK pra `sequencia_
+-- separacao` (mesmo padrão denormalizado de sempre neste projeto — ver
+-- `contagens`/`etiquetas_fila`/`sa_almoxarifado`) — o vínculo com os itens é
+-- só pelo valor de `etp`, resolvido no client.
+create table if not exists maquinas_etp (
+  etp text primary key,
+  cliente text,
+  nome_fantasia text,
+  descricao text,
+  chassi text,
+  data_separacao date,          -- data PREVISTA de separação, vinda do campo
+                                 -- "Separação" do Empenho Aberto — não
+                                 -- confundir com nenhum timestamp de item
+                                 -- (iniciado_em/separado_em/entregue_em), que
+                                 -- são registros de quando o líder de fato
+                                 -- agiu sobre um item, não uma previsão
+  data_entrega_pcp date,
+  data_entrega_comercial date,
+  atualizado_em timestamptz not null default now()
+);
+
+alter table maquinas_etp enable row level security;
+
+-- Mesmo padrão de RLS já usado em `sequencia_separacao`/`etiquetas_fila`:
+-- gate único por `tem_acesso_tela`, já que só a mesma tela ("Gestão de
+-- Separação" → "Programação") lê e escreve aqui. Sem policy de delete —
+-- diferente de `sequencia_separacao` (que tem "Excluir item", admin-only),
+-- o cache de máquina nunca precisa ser apagado manualmente: um `upsert`
+-- novo pra mesma ETP já atualiza os campos, e uma ETP sem nenhum item mais
+-- em `sequencia_separacao` simplesmente para de aparecer no painel (o
+-- agrupamento é feito a partir dos itens, não da tabela `maquinas_etp` em
+-- si) sem precisar apagar a linha.
+drop policy if exists "leitura por tela" on maquinas_etp;
+create policy "leitura por tela" on maquinas_etp for select
+  using (tem_acesso_tela(auth.uid(), 'programacaoSeparacao'));
+
+drop policy if exists "insercao por tela" on maquinas_etp;
+create policy "insercao por tela" on maquinas_etp for insert
+  with check (tem_acesso_tela(auth.uid(), 'programacaoSeparacao'));
+
+drop policy if exists "atualizacao por tela" on maquinas_etp;
+create policy "atualizacao por tela" on maquinas_etp for update
+  using (tem_acesso_tela(auth.uid(), 'programacaoSeparacao'))
+  with check (tem_acesso_tela(auth.uid(), 'programacaoSeparacao'));
+
+-- Realtime — pra o painel/TV (normalmente aberto num aparelho fixo, sem
+-- ninguém interagindo) atualizar sozinho nome fantasia/chassi/data assim
+-- que outro líder confirma uma ETP nova em outro aparelho, sem precisar
+-- recarregar a página. Bloco guardado (idempotente) — mesmo padrão já usado
+-- pras outras tabelas deste projeto, evita erro de "already member of
+-- publication" se rodado mais de uma vez.
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and tablename = 'maquinas_etp'
+  ) then
+    alter publication supabase_realtime add table maquinas_etp;
+  end if;
+end $$;
