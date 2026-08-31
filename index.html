@@ -16120,6 +16120,67 @@ async function excluirItemSequenciaSeparacao(id){
   }
 }
 
+// `maquinas_etp` — cache de dado da MÁQUINA (nome fantasia/chassi/data
+// prevista de separação), usado só pelo painel/TV pra agrupar os itens de
+// `sequencia_separacao` por ETP em 1 linha por máquina (ver
+// `statusAgregadoMaquina`/`computeMaquinasPainel` mais abaixo). Populado a
+// partir da resposta do Empenho Aberto já buscada em `handleBuscarEtp` — não
+// existe nenhuma consulta própria pra essa tabela ir buscar dado sozinha.
+function maquinaEtpRowToLocal(row){
+  return {
+    etp: row.etp,
+    cliente: row.cliente,
+    nomeFantasia: row.nome_fantasia,
+    descricao: row.descricao,
+    chassi: row.chassi,
+    dataSeparacao: row.data_separacao,
+    dataEntregaPcp: row.data_entrega_pcp,
+    dataEntregaComercial: row.data_entrega_comercial,
+    atualizadoEm: row.atualizado_em,
+  };
+}
+
+async function fetchMaquinasEtp(){
+  if(!supabaseClient) return [];
+  try{
+    const { data, error } = await supabaseClient.from('maquinas_etp').select('*');
+    if(error) throw error;
+    return (data||[]).map(maquinaEtpRowToLocal);
+  }catch(err){
+    console.warn('Falha ao buscar máquinas (ETP):', err);
+    return [];
+  }
+}
+
+// Chamada só no momento em que o líder confirma adicionar os itens de uma
+// ETP à fila (handleAdicionarLoteEtp) — nunca sozinha, nunca dispara uma
+// nova busca ao Empenho Aberto. `m` é sempre `empenhoAbertoResultado.
+// resultados[0]` (o líder já viu esse card na tela antes de confirmar) — se
+// o Empenho Aberto não achou nada/deu erro pra essa ETP, quem chama
+// simplesmente não chama esta função (a confirmação dos itens nunca é
+// bloqueada por isso, o painel só mostra "—" nos campos da máquina).
+async function upsertMaquinaEtp(m){
+  if(!supabaseClient || !m || !m.etp) return {ok:false, erro:'Sem dado de máquina pra salvar.'};
+  try{
+    const { error } = await supabaseClient.from('maquinas_etp').upsert({
+      etp: m.etp,
+      cliente: m.cliente || null,
+      nome_fantasia: m.nomeFantasia || null,
+      descricao: m.descricao || null,
+      chassi: m.chassi || null,
+      data_separacao: parseDataHistorico(m.separacao),
+      data_entrega_pcp: parseDataHistorico(m.entregaPcp),
+      data_entrega_comercial: parseDataHistorico(m.entregaComercial),
+      atualizado_em: new Date().toISOString(),
+    }, {onConflict:'etp'});
+    if(error) throw error;
+    return {ok:true};
+  }catch(err){
+    console.warn('Falha ao salvar cache de máquina (ETP):', err);
+    return {ok:false, erro:(err && err.message) || 'Não foi possível salvar a máquina.'};
+  }
+}
+
 /* ---------------- SAs EM ABERTO (desempenho do almoxarifado) ---------------- */
 // Pedido do cliente: acompanhar automaticamente quanto tempo o almoxarifado
 // leva pra atender uma "Solicitação ao Almoxarifado" (SA) — hoje ele visita
@@ -17467,27 +17528,108 @@ function SeparacaoStatusTag({status}){
   return <StatusTag status="warn" text={label} />;
 }
 
-// Painel/TV — visualização somente-leitura em Kanban, alternável a partir da
-// tela de gestão de sempre (toggle `modoPainel`, sem mudar rota/URL). Mesmo
-// padrão de "N cards de KPI numa fileira" já usado em `SAsAbertoPanel`
-// (`.ops-kpi-row.ops-kpi-row-auto`), seguido de 4 colunas (uma por estágio)
-// com os itens daquele estágio — nenhuma classe CSS nova, tudo reaproveitado.
-function SeparacaoPainelBoard({itens}){
-  const ordem = ['aguardando','em_separacao','separada','entregue'];
-  const porStatus = {aguardando:[], em_separacao:[], separada:[], entregue:[]};
-  itens.forEach(i=>{ (porStatus[i.status] || porStatus.aguardando).push(i); });
-  ['aguardando','em_separacao','separada'].forEach(st=>{
-    porStatus[st].sort((a,b)=>{
-      const pa = PRIORIDADE_ORDEM[a.prioridade] ?? 1;
-      const pb = PRIORIDADE_ORDEM[b.prioridade] ?? 1;
-      if(pa!==pb) return pa-pb;
-      return String(a.criadoEm||'').localeCompare(String(b.criadoEm||''));
-    });
+// Regra de agregação do status da MÁQUINA a partir do conjunto de itens da
+// mesma ETP — decisão de produto confirmada com o cliente (o painel/TV
+// acompanha MÁQUINAS, não itens: uma máquina com 300 componentes tem que
+// aparecer como 1 linha, nunca 300), documentada aqui pra não se perder:
+//   'entregue'      → TODOS os itens da ETP estão 'entregue'
+//   'separada'      → TODOS estão 'separada' OU 'entregue' (mas nem todos
+//                      'entregue' — senão já teria caído no caso acima)
+//   'em_separacao'  → pelo menos 1 item já saiu de 'aguardando', mas nem
+//                      todos chegaram em 'separada' ainda
+//   'aguardando'    → TODOS os itens ainda em 'aguardando'
+function statusAgregadoMaquina(itensDaMaquina){
+  const total = itensDaMaquina.length;
+  if(total===0) return 'aguardando';
+  const entregues = itensDaMaquina.filter(i=>i.status==='entregue').length;
+  if(entregues===total) return 'entregue';
+  const separadasOuEntregues = itensDaMaquina.filter(i=>i.status==='separada'||i.status==='entregue').length;
+  if(separadasOuEntregues===total) return 'separada';
+  const aguardando = itensDaMaquina.filter(i=>i.status==='aguardando').length;
+  if(aguardando===total) return 'aguardando';
+  return 'em_separacao';
+}
+
+// Agrega os itens de `sequencia_separacao` por ETP (1 linha = 1 máquina) e
+// junta com o cache descritivo de `maquinas_etp` (nome fantasia/chassi/data
+// prevista). Item SEM `etp` (entrou via busca manual no catálogo, não
+// representa nenhuma máquina rastreada) fica de fora do painel — mas nunca
+// some do sistema, continua normalmente na lista de gestão item-a-item, que
+// não usa esta função. Campo da máquina não capturado sai `null` (a UI
+// mostra "—"), nunca um valor inventado.
+function computeMaquinasPainel(itens, maquinasEtp, hojeStr){
+  const porEtp = {};
+  itens.forEach(i=>{
+    if(!i.etp) return;
+    if(!porEtp[i.etp]) porEtp[i.etp] = [];
+    porEtp[i.etp].push(i);
   });
-  // Entregue não tem mais prioridade relevante (ciclo já fechou) — ordenado
-  // pela entrega mais recente primeiro, mesmo critério de "recência" já
-  // usado noutras listas de histórico deste app.
-  porStatus.entregue.sort((a,b)=> String(b.entregueEm||'').localeCompare(String(a.entregueEm||'')));
+  const maquinaPorEtp = {};
+  maquinasEtp.forEach(m=>{ maquinaPorEtp[m.etp] = m; });
+
+  // "Próxima" — badge único no painel inteiro (não por linha): entre as
+  // máquinas com status agregado 'aguardando', a de `dataSeparacao` mais
+  // próxima (a mais atrasada, se já passou; a mais cedo no futuro, senão —
+  // comparação simples de string ISO já cobre os dois casos). Calculado à
+  // parte, antes de montar a lista final, porque depende de olhar todas as
+  // máquinas aguardando de uma vez, não uma a uma.
+  let etpProxima = null;
+  let menorData = null;
+  Object.keys(porEtp).forEach(etp=>{
+    if(statusAgregadoMaquina(porEtp[etp])!=='aguardando') return;
+    const data = (maquinaPorEtp[etp] && maquinaPorEtp[etp].dataSeparacao) || null;
+    if(!data) return;
+    if(menorData===null || data<menorData){ menorData = data; etpProxima = etp; }
+  });
+
+  const lista = Object.keys(porEtp).map(etp=>{
+    const itensDaMaquina = porEtp[etp];
+    const status = statusAgregadoMaquina(itensDaMaquina);
+    const maquina = maquinaPorEtp[etp] || null;
+    const dataSeparacao = maquina ? maquina.dataSeparacao : null;
+    // Atrasada: a data prevista já passou E a máquina ainda não terminou o
+    // ciclo (nunca marca como atrasada algo já separado/entregue).
+    const atrasada = !!(dataSeparacao && dataSeparacao<hojeStr && status!=='separada' && status!=='entregue');
+    return {
+      etp,
+      status,
+      totalItens: itensDaMaquina.length,
+      nomeFantasia: maquina ? maquina.nomeFantasia : null,
+      chassi: maquina ? maquina.chassi : null,
+      dataSeparacao,
+      atrasada,
+      proxima: etp===etpProxima,
+    };
+  });
+
+  // Ordem por urgência: atrasadas primeiro, depois data_separacao
+  // ascendente — máquina sem data conhecida vai pro fim (não é possível
+  // saber se é urgente sem essa informação).
+  lista.sort((a,b)=>{
+    if(a.atrasada!==b.atrasada) return a.atrasada ? -1 : 1;
+    if(!a.dataSeparacao && !b.dataSeparacao) return a.etp.localeCompare(b.etp);
+    if(!a.dataSeparacao) return 1;
+    if(!b.dataSeparacao) return -1;
+    return a.dataSeparacao.localeCompare(b.dataSeparacao);
+  });
+
+  return lista;
+}
+
+// Painel/TV — visualização somente-leitura, alternável a partir da tela de
+// gestão de sempre (toggle `modoPainel`, sem mudar rota/URL). A unidade de
+// acompanhamento é a MÁQUINA (1 linha por ETP), não o item — uma máquina
+// pode ter centenas de componentes na mesma ETP, e o painel nunca deveria
+// virar uma lista de centenas de cartões só pra dizer se UMA máquina já foi
+// separada (ver `computeMaquinasPainel`/`statusAgregadoMaquina` acima). A
+// lista de gestão item-a-item (fora do modo painel) continua exatamente
+// como sempre foi — esta reescrita afeta só esta visualização.
+function SeparacaoPainelBoard({itens, maquinasEtp}){
+  const ordem = ['aguardando','em_separacao','separada','entregue'];
+  const hojeStr = hojeLocalStr();
+  const maquinas = computeMaquinasPainel(itens, maquinasEtp, hojeStr);
+  const totalPorStatus = {aguardando:0, em_separacao:0, separada:0, entregue:0};
+  maquinas.forEach(m=>{ totalPorStatus[m.status] = (totalPorStatus[m.status]||0) + 1; });
 
   return (
     <div>
@@ -17498,38 +17640,44 @@ function SeparacaoPainelBoard({itens}){
               <span className="ops-kpi-label">{SEPARACAO_STATUS_LABEL[st]}</span>
               <span className="ops-kpi-icon"><DIcon name={SEPARACAO_STATUS_ICON[st]} size={15} /></span>
             </div>
-            <div className="ops-kpi-value">{porStatus[st].length}</div>
+            <div className="ops-kpi-value">{totalPorStatus[st]}</div>
           </div>
         ))}
       </div>
-      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(240px,1fr))',gap:14}}>
-        {ordem.map(st=>(
-          <div key={st} style={{background:'var(--panel-raised)',border:'1px solid var(--line)',borderRadius:'var(--radius)',padding:12}}>
-            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10,fontWeight:600,fontSize:'var(--text-sm)'}}>
-              <DIcon name={SEPARACAO_STATUS_ICON[st]} size={16} />
-              <span>{SEPARACAO_STATUS_LABEL[st]}</span>
-              <span className="badge" style={{position:'static',marginLeft:'auto'}}>{porStatus[st].length}</span>
-            </div>
-            {porStatus[st].length===0 ? (
-              <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)'}}>Nenhum item.</div>
-            ) : (
-              porStatus[st].map(i=>(
-                <div key={i.id} style={{background:'var(--panel)',border:'1px solid var(--line)',borderRadius:8,padding:'8px 10px',marginBottom:8}}>
-                  <div style={{fontSize:'var(--text-sm)',fontWeight:600}}>{i.codigo}</div>
-                  <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)'}}>{i.descricao}</div>
-                  {(i.etp || i.op) && (
-                    <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',fontFamily:'var(--font-mono)',marginTop:2}}>
-                      {i.etp ? `ETP: ${i.etp}` : ''}
-                      {i.etp && i.op ? ' · ' : ''}
-                      {i.op ? `OP: ${i.op}` : ''}
-                    </div>
-                  )}
-                  <div style={{marginTop:4}}><StatusTag status={PRIORIDADE_STATUS[i.prioridade]||'warn'} text={PRIORIDADE_LABEL[i.prioridade]||'Média'} /></div>
-                </div>
-              ))
-            )}
+      <div className="panel">
+        {maquinas.length===0 ? (
+          <div className="empty-state">Nenhuma máquina (ETP) na fila de separação no momento.</div>
+        ) : (
+          <div style={{overflowX:'auto'}}>
+            <table className="rank-table">
+              <thead>
+                <tr>
+                  <th>ETP</th><th>Nome Fantasia</th><th>Chassi</th><th>Data de Separação</th><th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {maquinas.map(m=>(
+                  <tr key={m.etp}>
+                    <td style={{fontFamily:'var(--font-mono)'}}>
+                      {m.etp}
+                      <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',fontFamily:'var(--font-body)'}}>{m.totalItens} item(ns)</div>
+                    </td>
+                    <td>{m.nomeFantasia || '—'}</td>
+                    <td>{m.chassi || '—'}</td>
+                    <td>{m.dataSeparacao ? new Date(m.dataSeparacao+'T00:00:00').toLocaleDateString('pt-BR') : '—'}</td>
+                    <td>
+                      <div style={{display:'flex',flexWrap:'wrap',alignItems:'center',gap:6}}>
+                        <SeparacaoStatusTag status={m.status} />
+                        {m.atrasada && <StatusTag status="danger" text="Atrasada" />}
+                        {m.proxima && <span className="status-tag" style={{background:'rgba(246,162,0,0.14)',color:'var(--safety)'}}><span className="status-dot"></span>Próxima</span>}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        ))}
+        )}
       </div>
     </div>
   );
@@ -17537,6 +17685,10 @@ function SeparacaoPainelBoard({itens}){
 
 function ProgramacaoSeparacaoPanel({currentUser, role}){
   const [itens, setItens] = useState([]);
+  // Cache de dado da MÁQUINA (nome fantasia/chassi/data prevista), usado só
+  // pelo painel/TV pra agrupar os itens por ETP — ver `maquinas_etp`/
+  // `upsertMaquinaEtp` e `SeparacaoPainelBoard`/`computeMaquinasPainel`.
+  const [maquinasEtp, setMaquinasEtp] = useState([]);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [buscando, setBuscando] = useState(false);
@@ -17605,6 +17757,34 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
       .subscribe(status=>{
         if(status!=='SUBSCRIBED') return;
         fetchSequenciaSeparacao().then(rows=>{ if(!cancelado) setItens(rows); });
+      });
+
+    return ()=>{ cancelado = true; supabaseClient.removeChannel(canal); };
+  }, []);
+
+  // Mesmo padrão de fetch-ao-montar + reconciliação-ao-conectar/reconectar
+  // já usado acima pra `itens`, agora pra `maquinas_etp` — o painel/TV
+  // normalmente fica aberto num aparelho fixo sem ninguém interagindo, e
+  // precisa atualizar sozinho assim que outro líder confirma uma ETP nova
+  // em outro aparelho.
+  useEffect(()=>{
+    if(!supabaseClient) return;
+    let cancelado = false;
+    fetchMaquinasEtp().then(rows=>{ if(!cancelado) setMaquinasEtp(rows); });
+
+    const canal = supabaseClient
+      .channel('realtime:maquinas_etp')
+      .on('postgres_changes', {event:'*', schema:'public', table:'maquinas_etp'}, payload=>{
+        if(payload.eventType==='DELETE'){
+          setMaquinasEtp(prev=>prev.filter(m=>m.etp!==payload.old.etp));
+          return;
+        }
+        const row = maquinaEtpRowToLocal(payload.new);
+        setMaquinasEtp(prev=>[...prev.filter(m=>m.etp!==row.etp), row]);
+      })
+      .subscribe(status=>{
+        if(status!=='SUBSCRIBED') return;
+        fetchMaquinasEtp().then(rows=>{ if(!cancelado) setMaquinasEtp(rows); });
       });
 
     return ()=>{ cancelado = true; supabaseClient.removeChannel(canal); };
@@ -17715,6 +17895,17 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
       }
       adicionados++;
     }
+    // Cache de dado da máquina pro painel/TV — reaproveita a resposta do
+    // Empenho Aberto que a própria busca já trouxe (nunca uma chamada nova
+    // só pra isso). Se a busca não achou nada/deu erro pra essa ETP, ou se
+    // o upsert falhar, isso NUNCA desfaz/bloqueia a confirmação dos itens
+    // que já foram adicionados acima — o painel só mostra "—" nos campos
+    // da máquina até essa informação existir. Mais de 1 resultado pra
+    // mesma ETP → usa sempre o primeiro (mesma decisão já usada no card
+    // que mostra esse resultado, logo acima na tela).
+    if(empenhoAbertoResultado && empenhoAbertoResultado.ok && Array.isArray(empenhoAbertoResultado.resultados) && empenhoAbertoResultado.resultados.length>0){
+      upsertMaquinaEtp(empenhoAbertoResultado.resultados[0]);
+    }
     setAdicionandoEtp(false);
     setResultadoAdicaoEtp(`${adicionados} ${adicionados===1 ? 'item adicionado' : 'itens adicionados'} à fila.`);
     setEtpResultado(null);
@@ -17773,7 +17964,7 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
       </div>
 
       {modoPainel ? (
-        <SeparacaoPainelBoard itens={itens} />
+        <SeparacaoPainelBoard itens={itens} maquinasEtp={maquinasEtp} />
       ) : (
       <>
       {canManage && (
