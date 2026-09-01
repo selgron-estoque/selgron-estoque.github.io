@@ -376,7 +376,29 @@ Deno.serve(async (req: Request) => {
     const codigoNormalizado = normalizarCodigo(codigo);
     const blocos = blocosBrutos.filter((b) => normalizarCodigo(b.codigo) === codigoNormalizado);
 
-    if (blocos.length === 1 && blocos[0].saldo == null) {
+    // Dedup blocos "idênticos" — a página da Selgron pode repetir o MESMO
+    // resultado mais de uma vez no HTML bruto (ex.: marcação duplicada pra
+    // versão mobile/impressão da mesma linha), o que fazia este parser
+    // tratar como se fossem armazéns DIFERENTES e cair em "ambíguo" mesmo
+    // quando a busca manual no navegador mostra só 1 resultado pro código
+    // (bug real: item com exatamente 1 armazém saindo `ambiguo:true`, todo
+    // campo `null`, só porque o mesmo resultado apareceu 2x no HTML). Dois
+    // blocos com o MESMO armazém+saldo+endereço são o mesmo resultado,
+    // nunca produtos/armazéns genuinamente distintos — colapsa pra 1 ANTES
+    // de decidir ambiguidade. Blocos com armazém/saldo/endereço diferentes
+    // continuam intactos (ambiguidade real continua exigindo `armazem`).
+    const blocosUnicos: BlocoResultado[] = [];
+    for (const b of blocos) {
+      const jaExiste = blocosUnicos.some(
+        (x) =>
+          normalizarArmazem(x.armazem) === normalizarArmazem(b.armazem) &&
+          x.saldo === b.saldo &&
+          x.endereco === b.endereco,
+      );
+      if (!jaExiste) blocosUnicos.push(b);
+    }
+
+    if (blocosUnicos.length === 1 && blocosUnicos[0].saldo == null) {
       // Achou a página (não é "0 resultados") e achou o produto certo, mas
       // não deu pra resolver um saldo numérico no único resultado dele —
       // sinal de que o formato da página mudou do lado de lá, ou de um
@@ -387,7 +409,7 @@ Deno.serve(async (req: Request) => {
       // caminho). Quando o RÓTULO foi achado mas o VALOR não converteu pra
       // número, a mensagem cita o texto exato visto — poupa o cliente de
       // precisar mandar o HTML da página real pra eu recalibrar de novo.
-      const bruto = blocos[0].saldoTextoBruto;
+      const bruto = blocosUnicos[0].saldoTextoBruto;
       return resposta(200, {
         ok: false,
         erro: bruto
@@ -408,10 +430,10 @@ Deno.serve(async (req: Request) => {
     // Zero blocos (o código pedido não bateu com nenhum resultado exato —
     // só variações de prefixo) também cai aqui, com `escolhido:null`.
     let escolhido: BlocoResultado | null = null;
-    if (blocos.length <= 1) {
-      escolhido = blocos[0] || null;
+    if (blocosUnicos.length <= 1) {
+      escolhido = blocosUnicos[0] || null;
     } else if (armazemPedido) {
-      const candidatos = blocos.filter((b) => normalizarArmazem(b.armazem) === armazemPedido);
+      const candidatos = blocosUnicos.filter((b) => normalizarArmazem(b.armazem) === armazemPedido);
       escolhido = candidatos.length === 1 ? candidatos[0] : null;
     }
 
@@ -456,7 +478,7 @@ Deno.serve(async (req: Request) => {
       // Informativo só — o front-end não lê isto quando ok:true (cada campo
       // acima já reflete `null` sozinho quando não deu pra resolver), mas
       // ajuda a diagnosticar um "saldo sumiu" via log/DevTools no futuro.
-      ambiguo: blocos.length > 1 && !escolhido,
+      ambiguo: blocosUnicos.length > 1 && !escolhido,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
