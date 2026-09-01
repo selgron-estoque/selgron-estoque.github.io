@@ -9809,7 +9809,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
     });
     return ()=>{ cancelado = true; };
   }, [product.codigo, product.almoxarifado, liveConsultaTentativa]);
-  const saldoSistemaEfetivo = (liveConsulta && liveConsulta.saldo!=null) ? liveConsulta.saldo : product.saldoSistema;
+  const saldoSistemaEfetivo = (liveConsulta && liveConsulta.saldo!=null) ? liveConsulta.saldo : null;
   // Mesmo critério do saldo: descrição/unidade vindas da consulta ao vivo
   // (mais atuais que o catálogo local, que só é atualizado quando alguém
   // reimporta a planilha "Descrição de Produtos" manualmente) SOBRESCREVEM
@@ -9946,7 +9946,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   // (a tela já mostraria "sem saldo" nos dois casos).
   const saldoAguardandoConfirmacao = !liveConsulta && !liveConsultaErro && saldoTemFallbackLocal;
   const saldoNaoEncontrado = !!(liveConsulta && !saldoConfirmadoAoVivo && !saldoTemFallbackLocal);
-  const precisaAutorizarSaldo = saldoNaoEncontrado && !autorizouSaldoLocal;
+  const precisaAutorizarSaldo = false; // saldo local nao e mais usado - nunca ha dado nao confirmado pra autorizar
 
   const hasSaldoLocal = typeof saldoSistemaEfetivo === 'number';
   // Controla só o que aparece NA TELA (referência antes de digitar, card de
