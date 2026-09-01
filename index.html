@@ -9945,7 +9945,8 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   // antes da resposta chegar; sem fallback nenhum, esperar não muda nada
   // (a tela já mostraria "sem saldo" nos dois casos).
   const saldoAguardandoConfirmacao = !liveConsulta && !liveConsultaErro && saldoTemFallbackLocal;
-  const precisaAutorizarSaldo = (!saldoConfirmadoAoVivo && !saldoAguardandoConfirmacao && saldoTemFallbackLocal) && !autorizouSaldoLocal;
+  const saldoNaoEncontrado = !!(liveConsulta && !saldoConfirmadoAoVivo && !saldoTemFallbackLocal);
+  const precisaAutorizarSaldo = saldoNaoEncontrado && !autorizouSaldoLocal;
 
   const hasSaldoLocal = typeof saldoSistemaEfetivo === 'number';
   // Controla só o que aparece NA TELA (referência antes de digitar, card de
