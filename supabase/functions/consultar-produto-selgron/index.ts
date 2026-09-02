@@ -398,6 +398,26 @@ Deno.serve(async (req: Request) => {
       if (!jaExiste) blocosUnicos.push(b);
     }
 
+    // Quando a Selgron declara "1 resultado" mas o parser mesmo assim
+    // separou em mais de um bloco (variaÁ„o de marcaÁ„o na p·gina) ó
+    // funde os blocos num sÛ, pegando o primeiro valor n„o-nulo de cada
+    // campo, em vez de descartar tudo como ambÌguo.
+    if (totalDeclarado === 1 && blocosUnicos.length > 1) {
+      const acha = <K extends keyof BlocoResultado>(campo: K): BlocoResultado[K] | null =>
+        blocosUnicos.find((b) => b[campo] != null && b[campo] !== "")?.[campo] ?? null;
+      const combinado: BlocoResultado = {
+        codigo: acha("codigo"),
+        descricao: acha("descricao"),
+        saldo: acha("saldo"),
+        saldoTextoBruto: acha("saldoTextoBruto"),
+        endereco: acha("endereco"),
+        armazem: acha("armazem"),
+        unidade: acha("unidade"),
+      };
+      blocosUnicos.length = 0;
+      blocosUnicos.push(combinado);
+    }
+
     if (blocosUnicos.length === 1 && blocosUnicos[0].saldo == null) {
       // Achou a p√°gina (n√£o √© "0 resultados") e achou o produto certo, mas
       // n√£o deu pra resolver um saldo num√©rico no √∫nico resultado dele ‚Äî
