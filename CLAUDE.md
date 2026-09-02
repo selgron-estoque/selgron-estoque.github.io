@@ -21842,3 +21842,124 @@ opção".
   contexto (mesmo critério de sempre neste histórico), caso o cliente confirme depois
   que os dois tablets tinham o MESMO perfil (o que reabriria a investigação por um
   ângulo diferente).
+
+## 6 commits diretos do cliente no "bloqueio real"/consulta ao vivo — bug real de
+## inversão achado e corrigido num deles
+
+O cliente passou a editar `index.html`/a Edge Function `consultar-produto-selgron`
+**direto no GitHub**, sem passar por mim — primeira vez que isso acontece de verdade
+neste projeto pra lógica de negócio (fora do caso já documentado de
+`preview-etiqueta.html`/CSS de etiqueta, onde essa autonomia já tinha sido dada de
+propósito). Antes de continuar qualquer trabalho novo, revisei os 6 commits que ele
+fez em sequência (2/set, todos em cima do fluxo de "consulta ao vivo"/"bloqueio real"
+já documentado antes neste arquivo — ver "Item não pode seguir usando dado só do
+cadastro local... sem confirmação ao vivo"):
+
+- **`c86f038` "remover bloqueio de endereço quando cadastro local existe"** e
+  **`2c09d60` "remover bloqueio de saldo quando cadastro local existe"** — as duas
+  tentam a mesma coisa, cada uma no seu campo: afrouxar o "bloqueio real" pra não
+  travar contagem em cima de um item que já tem cadastro local, mesmo sem a consulta
+  ao vivo ter confirmado nada nesta sessão.
+- **`68a47e3` "saldo passa a usar apenas consulta ao vivo, sem fallback local"** — o
+  cliente foi além do que `2c09d60` tinha feito: em vez de só afrouxar o bloqueio do
+  saldo, ele **removeu o fallback local do saldo por completo**
+  (`saldoSistemaEfetivo = (liveConsulta && liveConsulta.saldo!=null) ? liveConsulta.saldo
+  : null`, antes caía pra `product.saldoSistema`) e travou
+  `precisaAutorizarSaldo = false` com o próprio comentário explicando o motivo ("saldo
+  local nao e mais usado - nunca ha dado nao confirmado pra autorizar"). Isso torna
+  `2c09d60` sem efeito prático (o saldo local que ela tentava desbloquear já não é mais
+  usado em lugar nenhum) — **conferido e confirmado coerente por desenho, não um bug**:
+  sem fallback nenhum, não existe mais "dado não confirmado" pra autorizar do lado do
+  saldo, então nunca mais bloqueia — decisão consciente do cliente, sem nada a corrigir
+  aqui.
+- **`0754a4a`/`be90381`/`8f3cf32`** (Edge Function, `consultar-produto-selgron`) — três
+  correções seguidas no parser de blocos de resultado da consulta Selgron:
+  `0754a4a` deduplica blocos IDÊNTICOS (mesmo armazém+saldo+endereço) antes de decidir
+  ambiguidade — a página pode repetir o mesmo resultado 2x no HTML bruto (marcação
+  duplicada pra versão mobile/impressão), o que fazia o parser achar "2 armazéns
+  diferentes" e devolver tudo `null` só por causa da duplicata, mesmo o item tendo 1
+  resultado só de verdade; `be90381` acrescenta um 2º recurso — quando a PRÓPRIA página
+  já declara "retornou 1 resultado(s)" (`totalDeclarado`, extraído via regex do texto da
+  página) mas o parser ainda assim separou em mais de 1 bloco (alguma variação de
+  marcação que o `dividirEmBlocos` não previa), FUNDE os blocos num só em vez de tratar
+  como ambíguo — resgata um dado real e inequívoco que o parser só não soube juntar
+  sozinho; `8f3cf32` corrige só o ENCODING dos comentários que `be90381` tinha deixado
+  com mojibake (`varia��o`/`�` no lugar de acento) e adiciona um comentário mais
+  detalhado explicando a regra — sem mudança de comportamento além disso.
+
+### Bug real achado em `c86f038`: condição de bloqueio de endereço estava INVERTIDA
+
+Diferente do saldo (`68a47e3`, coerente por desenho — sem fallback local, não tem mais
+o que autorizar), a mudança de `c86f038` no lado do ENDEREÇO não removeu o fallback
+local — o cadastro (SB2) continua sendo usado como valor exibido/confirmável quando a
+consulta ao vivo não confirma nada. Só que a condição que decide quando isso exige
+autorização explícita do líder/admin ficou **trocada pra variável errada**:
+
+```js
+// c86f038 (ERRADO — o cliente trocou pra isso):
+const precisaAutorizarEndereco = enderecoNaoEncontrado && !autorizouEnderecoLocal;
+```
+
+`enderecoNaoEncontrado` é o caso **1ª captura** — item que NUNCA teve cadastro local
+nenhum, a consulta não confirmou nada, e por isso o campo fica vazio de verdade (nada
+de SB2 envolvido, nada pra "autorizar", o app já tratava esse caso normalmente antes de
+qualquer bloqueio existir). `enderecoSoCadastro` — a variável que a condição deveria
+ter continuado usando — é o caso oposto e genuinamente perigoso: item **COM** cadastro
+local, mas a consulta ao vivo não confirmou (ou falhou de verdade) nesta sessão —
+exatamente "usando dado só da SB2 sem confirmação ao vivo", o cenário que o próprio
+comentário do código, logo acima dessa linha, descreve como o motivo de o bloqueio
+existir ("Esse erro é grave, não mostrar a quantidade ao vivo ele não deveria nem
+seguir a contagem. Não pode puxar da planilha SB2 sem autorização."). A troca invertia
+os dois: **destravava** o caso perigoso (item com cadastro, sem confirmação — não batia
+mais com `enderecoNaoEncontrado`, que exige `!product.enderecoCadastrado`) e passava a
+**bloquear à toa** o caso inofensivo (1ª captura, sem nenhum dado de SB2 em risco).
+
+- **Corrigido em duas etapas, a 1ª incompleta, corrigida antes de eu considerar o fix
+  pronto**: a 1ª tentativa só trocou `enderecoNaoEncontrado` por `enderecoSoCadastro` —
+  já resolvia a direção errada, mas eu mesmo desconfiei de estar incompleta e conferi
+  contra `git show c86f038` pra ver exatamente o que a condição original (antes do
+  cliente mexer) tinha — achei uma 2ª cláusula que a 1ª tentativa tinha deixado de fora:
+  o caso de a consulta ao vivo **falhar de verdade** (rede/credencial, `liveConsultaErro`)
+  pra um item que TEM cadastro local — esse caso nunca bate com `enderecoSoCadastro`
+  sozinha, porque essa variável exige `liveConsulta` truthy (resposta bem-sucedida) — sem
+  essa 2ª cláusula, uma falha de rede genuína pra item com cadastro passaria batida, sem
+  bloqueio nenhum. Restaurada a condição completa, byte a byte igual à original:
+  ```js
+  const precisaAutorizarEndereco = (enderecoSoCadastro || (!!liveConsultaErro && product.enderecoCadastrado)) && !autorizouEnderecoLocal;
+  ```
+- Testado via harness dedicado (`harness_endereco_bloqueio_invertido.js`, jsdom +
+  react-dom/client + `act()`, mesma técnica rigorosa de sempre — carrega o `CountStep`
+  real, transpilado via Babel, com `window.supabase.createClient().functions.invoke`
+  mockado e ROTEADO por código de produto, pra simular 3 cenários distintos ao mesmo
+  tempo): **Cenário A** (`enderecoSoCadastro` — item com cadastro, consulta responde mas
+  não confirma nada) — confirma painel de bloqueio presente e "Confirmar e continuar"
+  desabilitado; **Cenário B** (`enderecoNaoEncontrado` — item sem cadastro nenhum, 1ª
+  captura) — confirma NENHUM painel de bloqueio, e que digitar um endereço válido já
+  habilita o botão normalmente (sem nenhuma autorização exigida); **Cenário C**
+  (adicionado por mim, sem pedido, especificamente pra exercitar a cláusula restaurada —
+  item com cadastro, consulta FALHANDO de verdade, `liveConsultaErro` setado) — confirma
+  painel de bloqueio presente e botão desabilitado, provando que a falha de rede
+  continua protegida mesmo sem `liveConsulta` nunca ter sido setado. 6/6 asserções
+  passando (rodado contra o código já corrigido; rodado também contra o `c86f038`
+  puro, sem nenhuma correção, pra confirmar que o harness de fato PEGA a regressão —
+  falhou exatamente nos cenários A e C, como esperado). **Lição de técnica de teste
+  nova, registrada aqui**: digitar num `<input>` controlado por React via o setter
+  nativo de `value` + `dispatchEvent(new Event('input', {bubbles:true}))` não propagou
+  pro estado do React neste harness (o valor no DOM mudava, o estado/`disabled`
+  calculado não); trocar pra `Simulate.change(input, {target:{value:'...'}})` (de
+  `react-dom/test-utils`, dentro de `act()`) resolveu de forma confiável.
+- **`0754a4a`/`be90381`/`8f3cf32` (Edge Function) verificados sem precisar de nenhuma
+  mudança** — o harness já existente `harness_consulta_selgron_merge_dedup.js` (Node
+  puro, sem DOM, testa a lógica de dedupe/merge isolada) continua 18/18 passando contra
+  o código atual — a lógica de "dedup + merge quando a página declara 1 resultado" está
+  sólida.
+- Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos
+  (685/685, sem mudança — esta correção não tocou em CSS nenhum, 1 linha de JS só).
+  **Nenhuma migração de SQL nem redeploy de Edge Function necessários** — a correção é
+  só no `index.html` (front-end), publica sozinha via GitHub Pages assim que o deploy
+  processar; as 3 correções da Edge Function (`0754a4a`/`be90381`/`8f3cf32`) já tinham
+  sido publicadas pelo próprio cliente junto do commit. **Verificação de ponta a ponta
+  em produção (o bloqueio real voltando a proteger o item com cadastro sem confirmação,
+  sem travar à toa a 1ª captura) fica a cargo do cliente** — mesma limitação de sempre
+  (login exige Supabase Auth real, e a consulta ao vivo depende do domínio interno da
+  Selgron, nenhum dos dois acessível deste sandbox).
