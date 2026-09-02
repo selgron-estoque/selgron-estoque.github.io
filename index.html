@@ -9809,7 +9809,33 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
     });
     return ()=>{ cancelado = true; };
   }, [product.codigo, product.almoxarifado, liveConsultaTentativa]);
-  const saldoSistemaEfetivo = (liveConsulta && liveConsulta.saldo!=null) ? liveConsulta.saldo : null;
+  // Regra de sempre deste projeto ("Item sem saldo passa a ser tratado como
+  // saldo real 0", ver CLAUDE.md): item sem saldo confirmado em lugar
+  // nenhum deve contar como 0, nunca como "sem dado" — senão ele sai do
+  // fluxo normal de classificação de divergência e vira "warn"/análise do
+  // líder pra sempre, mesmo contando exatamente 0. Essa regra sempre foi
+  // respeitada nas funções que resolvem produto a partir do cache local
+  // (estoqueRowToProduct/searchSupabaseCatalog/fetchProdutosByCodigos/etc.
+  // — todas defaultam pra 0), mas foi perdida bem aqui: um commit anterior
+  // (removendo o bloqueio de segurança do saldo, já que o cadastro local
+  // não é mais usado como fallback) trocou o fallback de `product.
+  // saldoSistema` por `null` fixo, sem repor o "0" — cliente reportou o
+  // sintoma exato ("Item sem saldo voltou aparecer -- invés de 0, por
+  // causa disso da divergência nas contagens"), e confirmou que acontece
+  // mais no celular que no PC ("fiz duas contagens, no celular ficou assim
+  // e no pc deu certo") — bate com a causa: rede pior no celular deixa a
+  // consulta ao vivo (timeout de ~8s do lado da Edge Function) mais
+  // sujeita a nunca confirmar nada dentro da janela, caindo sempre no lado
+  // "sem saldo" quando isso acontece. `saldoConsultaResolvida` só vira
+  // `true` depois que o CICLO da consulta termina (sucesso sem achar saldo
+  // OU erro de verdade) — antes disso, `saldoSistemaEfetivo` continua
+  // `null` de propósito, é o estado transitório real de "ainda carregando"
+  // (`saldoAguardandoConfirmacao` já cobre a mensagem de espera pra esse
+  // caso, sem mudança).
+  const saldoConsultaResolvida = !!(liveConsulta || liveConsultaErro);
+  const saldoSistemaEfetivo = (liveConsulta && liveConsulta.saldo!=null)
+    ? liveConsulta.saldo
+    : (saldoConsultaResolvida ? 0 : null);
   // Mesmo critério do saldo: descrição/unidade vindas da consulta ao vivo
   // (mais atuais que o catálogo local, que só é atualizado quando alguém
   // reimporta a planilha "Descrição de Produtos" manualmente) SOBRESCREVEM
