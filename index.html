@@ -9816,26 +9816,41 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   // líder pra sempre, mesmo contando exatamente 0. Essa regra sempre foi
   // respeitada nas funções que resolvem produto a partir do cache local
   // (estoqueRowToProduct/searchSupabaseCatalog/fetchProdutosByCodigos/etc.
-  // — todas defaultam pra 0), mas foi perdida bem aqui: um commit anterior
-  // (removendo o bloqueio de segurança do saldo, já que o cadastro local
-  // não é mais usado como fallback) trocou o fallback de `product.
-  // saldoSistema` por `null` fixo, sem repor o "0" — cliente reportou o
-  // sintoma exato ("Item sem saldo voltou aparecer -- invés de 0, por
-  // causa disso da divergência nas contagens"), e confirmou que acontece
-  // mais no celular que no PC ("fiz duas contagens, no celular ficou assim
-  // e no pc deu certo") — bate com a causa: rede pior no celular deixa a
-  // consulta ao vivo (timeout de ~8s do lado da Edge Function) mais
-  // sujeita a nunca confirmar nada dentro da janela, caindo sempre no lado
-  // "sem saldo" quando isso acontece. `saldoConsultaResolvida` só vira
-  // `true` depois que o CICLO da consulta termina (sucesso sem achar saldo
-  // OU erro de verdade) — antes disso, `saldoSistemaEfetivo` continua
-  // `null` de propósito, é o estado transitório real de "ainda carregando"
-  // (`saldoAguardandoConfirmacao` já cobre a mensagem de espera pra esse
-  // caso, sem mudança).
-  const saldoConsultaResolvida = !!(liveConsulta || liveConsultaErro);
-  const saldoSistemaEfetivo = (liveConsulta && liveConsulta.saldo!=null)
+  // — todas defaultam pra 0).
+  //
+  // MAS essa regra só é segura quando o item genuinamente NÃO EXISTE pra
+  // aquele código/armazém — nunca quando ele existe, só que a Edge Function
+  // não conseguiu confirmar QUAL valor usar por AMBIGUIDADE (mesmo código
+  // batendo com mais de um bloco de resultado — vários armazéns, ou produto
+  // "vizinho" de prefixo — sem conseguir desambiguar pelo armazém pedido,
+  // ver `ambiguo` em `consultar-produto-selgron`). Uma correção anterior
+  // (pensada só pra resolver "—" aparecendo em vez de 0 quando a consulta
+  // simplesmente não confirmava nada) tratava os dois casos do mesmo jeito
+  // — qualquer consulta terminada sem saldo confirmado virava 0, ambígua ou
+  // não — e isso reabriu o bug na direção oposta: item com saldo REAL (só
+  // que ambíguo/impossível de resolver com segurança) passava a mostrar
+  // "0", mascarando saldo de verdade. Cliente reportou os dois sintomas em
+  // sequência, no mesmo dia: primeiro "Item sem saldo voltou aparecer --
+  // invés de 0" (a correção anterior, certa); depois "porque diabos está
+  // puxando zerado se tem saldo?????" (este bug, a mesma correção sendo
+  // grande demais). Mesmo raciocínio já aplicado ao ENDEREÇO
+  // (`enderecoSoCadastro`/`precisaAutorizarEndereco`, mais abaixo) — nunca
+  // "adivinhar"/fabricar valor pra um dado que existe mas está ambíguo.
+  const saldoConfirmadoAoVivo = !!(liveConsulta && liveConsulta.saldo!=null);
+  // Consulta respondeu (ok:true) sem confirmar saldo nenhum, e SEM
+  // ambiguidade — o código genuinamente não bate com nenhum resultado pro
+  // armazém pedido. Único caso seguro pra assumir saldo real 0.
+  const saldoGenuinamenteAusente = !!(liveConsulta && !saldoConfirmadoAoVivo && !liveConsulta.ambiguo);
+  // Consulta respondeu mas ficou ambígua (item existe, só não deu pra saber
+  // QUAL valor é o certo), OU a consulta falhou de verdade (rede/
+  // credencial/timeout — sem essa checagem, um erro de rede também caía
+  // silenciosamente em "0", mascarando saldo real do mesmo jeito). Nunca
+  // finge 0 aqui — precisa travar a confirmação (`precisaAutorizarSaldo`
+  // mais abaixo), a menos que um líder/admin autorize.
+  const saldoIndisponivelAoVivo = !!(liveConsulta && !saldoConfirmadoAoVivo && liveConsulta.ambiguo) || !!liveConsultaErro;
+  const saldoSistemaEfetivo = saldoConfirmadoAoVivo
     ? liveConsulta.saldo
-    : (saldoConsultaResolvida ? 0 : null);
+    : (saldoGenuinamenteAusente ? 0 : null);
   // Mesmo critério do saldo: descrição/unidade vindas da consulta ao vivo
   // (mais atuais que o catálogo local, que só é atualizado quando alguém
   // reimporta a planilha "Descrição de Produtos" manualmente) SOBRESCREVEM
@@ -9958,21 +9973,16 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   const [autorizouSaldoLocal, setAutorizouSaldoLocal] = useState(false);
   const precisaAutorizarEndereco = (enderecoSoCadastro || (!!liveConsultaErro && product.enderecoCadastrado)) && !autorizouEnderecoLocal;
 
-  // Mesmo bloqueio de cima, agora pro SALDO — decide se o "Sistema" que a
-  // tela vai mostrar/usar pra classificar a contagem é de fato confirmado
-  // ao vivo, ou só o cadastro local (SB2) sem checagem nenhuma nesta
-  // sessão. Calculado ANTES de `hasSaldoLocal`/`mostrarSaldo` porque essas
-  // duas variáveis já misturam as duas fontes — o bloqueio precisa
-  // distinguir uma da outra pra decidir se trava a confirmação.
-  const saldoConfirmadoAoVivo = !!(liveConsulta && liveConsulta.saldo!=null);
-  const saldoTemFallbackLocal = typeof product.saldoSistema === 'number';
-  // Consulta ainda não respondeu (nem sucesso nem erro) — só importa
-  // esperar se existe um valor local que poderia ser usado por engano
-  // antes da resposta chegar; sem fallback nenhum, esperar não muda nada
-  // (a tela já mostraria "sem saldo" nos dois casos).
-  const saldoAguardandoConfirmacao = !liveConsulta && !liveConsultaErro && saldoTemFallbackLocal;
-  const saldoNaoEncontrado = !!(liveConsulta && !saldoConfirmadoAoVivo && !saldoTemFallbackLocal);
-  const precisaAutorizarSaldo = false; // saldo local nao e mais usado - nunca ha dado nao confirmado pra autorizar
+  // Mesmo bloqueio de cima, agora pro SALDO — `saldoConfirmadoAoVivo`/
+  // `saldoGenuinamenteAusente`/`saldoIndisponivelAoVivo` já foram calculados
+  // mais acima (junto de `saldoSistemaEfetivo`, ver o comentário grande lá em
+  // cima) — não existe mais nenhum fallback local pra saldo (`product.
+  // saldoSistema` nunca é usado dentro de `CountStep`), então só falta
+  // esperar a consulta terminar (sucesso ou erro) antes de decidir se trava:
+  // ambíguo ou com erro de rede/credencial, trava (`precisaAutorizarSaldo`);
+  // genuinamente ausente, já virou saldo real 0 lá em cima, sem travar nada.
+  const saldoAguardandoConfirmacao = !liveConsulta && !liveConsultaErro;
+  const precisaAutorizarSaldo = saldoIndisponivelAoVivo && !autorizouSaldoLocal;
 
   const hasSaldoLocal = typeof saldoSistemaEfetivo === 'number';
   // Controla só o que aparece NA TELA (referência antes de digitar, card de
@@ -10178,7 +10188,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   // `CountStep`). `onAutorizar` só é passado quando `podeAutorizarDadosLocais`
   // é true — líder/admin autoriza usando o cadastro local mesmo sem
   // confirmação ao vivo; operador só vê a opção de tentar de novo.
-  function painelBloqueioConsultaAoVivo(mensagemSemConfirmar, onAutorizar){
+  function painelBloqueioConsultaAoVivo(mensagemSemConfirmar, onAutorizar, mensagemFinal, botaoLabel){
     return (
       <div className="divergence-alert" style={{marginTop:6,marginBottom:14,flexDirection:'column',alignItems:'stretch',gap:10}}>
         <div style={{display:'flex',gap:8,alignItems:'flex-start'}}>
@@ -10187,8 +10197,8 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
             {liveConsultaErro
               ? <>Não foi possível confirmar isso ao vivo na Selgron ({liveConsultaErro}).</>
               : <>A consulta ao vivo respondeu, mas {mensagemSemConfirmar}.</>
-            }{' '}Continuar usando só o cadastro local (planilha SB2) sem confirmação ao vivo não é seguro — a
-            contagem não pode seguir até isso ser resolvido.
+            }{' '}{mensagemFinal || <>Continuar usando só o cadastro local (planilha SB2) sem confirmação ao vivo não é
+            seguro — a contagem não pode seguir até isso ser resolvido.</>}
           </span>
         </div>
         <div className="btn-row">
@@ -10196,7 +10206,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
             <Ic>🔄</Ic> Tentar novamente
           </button>
           {podeAutorizarDadosLocais && (
-            <button type="button" className="btn btn-danger" onClick={onAutorizar}>Autorizar cadastro local mesmo assim</button>
+            <button type="button" className="btn btn-danger" onClick={onAutorizar}>{botaoLabel || 'Autorizar cadastro local mesmo assim'}</button>
           )}
         </div>
         {!podeAutorizarDadosLocais && (
@@ -10356,7 +10366,10 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
           )}
           {precisaAutorizarSaldo && painelBloqueioConsultaAoVivo(
             'não confirmou o saldo do sistema para este item/armazém',
-            ()=>setAutorizouSaldoLocal(true)
+            ()=>setAutorizouSaldoLocal(true),
+            <>Prosseguir sem o saldo confirmado ao vivo não é seguro — a contagem não pode seguir até isso ser
+            resolvido. Autorizando, o item segue sem saldo pra comparar (vai direto pra análise do líder).</>,
+            'Autorizar sem saldo confirmado'
           )}
           <div className="cs-qty-label-row">
             <div className="cs-qty-label">{mostrarSaldo ? 'Informe a quantidade' : 'Quantidade encontrada'}</div>

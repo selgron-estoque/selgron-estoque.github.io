@@ -21880,3 +21880,107 @@ quantidade, eu preciso de correção imediatamente."
   especificamente, e a diferença celular vs. PC) fica a cargo do cliente** — mesma
   limitação de sempre (login exige Supabase Auth real, não simulável no sandbox sem
   rede, e o sandbox tampouco tem acesso à consulta interna da Selgron).
+
+## Bug real (mesmo dia, correção anterior grande demais): saldo mostrando 0 mesmo
+## quando o item tem saldo real, ambíguo ou com erro de rede
+
+No MESMO dia da correção acima ("Saldo voltou aparecer -- invés de 0"), o cliente
+reportou o problema inverso, com urgência: **"porque diabos está puxando zerado se
+tem saldo????? já solicitei a correção disso e nada."** — itens que genuinamente TÊM
+saldo real no sistema da Selgron passaram a mostrar "0" na tela de contagem.
+
+- **Causa raiz**: a correção anterior (`saldoConsultaResolvida = !!(liveConsulta ||
+  liveConsultaErro)`, seguida de `saldoSistemaEfetivo = saldoConsultaResolvida ? 0 :
+  null`) resolvia certo o caso "consulta terminou sem confirmar nada, e o item
+  GENUINAMENTE não existe pra esse código/armazém" (vira 0, regra de sempre deste
+  projeto — "Item sem saldo passa a ser tratado como saldo real 0"). Mas tratava
+  esse caso EXATAMENTE IGUAL a dois outros, bem diferentes: (1) a consulta respondeu
+  `ambiguo:true` (o item EXISTE de verdade — código bate com mais de um armazém, ou
+  com um produto "vizinho" de prefixo — só não deu pra saber com segurança QUAL
+  valor é o certo, mesmo caso já tratado com "nunca adivinha" em outras correções
+  deste projeto, ex. saldo por armazém/prefixo de código); e (2) a consulta FALHOU de
+  verdade (`liveConsultaErro`, timeout/rede/credencial). Nos dois casos, o saldo real
+  continua existindo — só não foi possível CONFIRMAR — e a correção anterior
+  mascarava isso como "0", exatamente o sintoma reportado. Bate com a pista que o
+  próprio cliente deu ("fiz duas contagens, no celular ficou assim e no pc deu
+  certo") — rede pior no celular deixa a consulta ao vivo (timeout de ~8s do lado da
+  Edge Function) mais sujeita a nunca confirmar nada dentro da janela, seja por
+  ambiguidade ou por erro de conexão de verdade.
+- **Correção, em `CountStep`**: `saldoConsultaResolvida` foi substituída por três
+  variáveis que distinguem os três casos de verdade —
+  - `saldoConfirmadoAoVivo = !!(liveConsulta && liveConsulta.saldo!=null)` — a
+    consulta confirmou um valor de verdade (inclusive `0` genuíno).
+  - `saldoGenuinamenteAusente = !!(liveConsulta && !saldoConfirmadoAoVivo &&
+    !liveConsulta.ambiguo)` — consulta respondeu `ok:true`, sem confirmar saldo, e
+    **sem** ambiguidade (o código não bate com nenhum resultado pro armazém pedido)
+    — o único caso seguro pra assumir saldo real 0.
+  - `saldoIndisponivelAoVivo = !!(liveConsulta && !saldoConfirmadoAoVivo &&
+    liveConsulta.ambiguo) || !!liveConsultaErro` — consulta ambígua (item existe,
+    valor incerto) OU erro de rede/credencial de verdade — nos dois casos, NUNCA
+    vira 0; precisa travar a confirmação.
+  - `saldoSistemaEfetivo = saldoConfirmadoAoVivo ? liveConsulta.saldo :
+    (saldoGenuinamenteAusente ? 0 : null)` — só cai em `0` no caso seguro; fica
+    `null` (sem inventar nada) nos casos ambíguo/erro.
+  - `precisaAutorizarSaldo` (que a correção anterior tinha deixado hardcoded em
+    `false`, comentado "saldo local não é mais usado") voltou a ser calculado de
+    verdade: `saldoIndisponivelAoVivo && !autorizouSaldoLocal` — reabre o mesmo
+    bloqueio de segurança já usado pro endereço (`painelBloqueioConsultaAoVivo`,
+    exige "Tentar novamente" ou autorização explícita de líder/admin
+    `podeAutorizarDadosLocais`) pro caso de saldo ambíguo/erro, que tinha ficado sem
+    proteção nenhuma depois da correção anterior remover o fallback de cadastro
+    local.
+  - **Semântica importante de "autorizar"**: diferente do endereço (onde autorizar
+    passa a usar o valor do cadastro local como fallback), pra saldo não existe mais
+    NENHUM fallback local em `CountStep` — autorizar só libera a confirmação
+    mantendo `saldoSistemaEfetivo:null`, ou seja, o item segue **sem saldo pra
+    comparar**, indo direto pra análise do líder (mesmo caminho de sempre pra item
+    sem dado confiável). O texto do painel de bloqueio no ponto de chamada do saldo
+    foi ajustado pra deixar isso explícito ("Prosseguir sem o saldo confirmado ao
+    vivo não é seguro... Autorizando, o item segue sem saldo pra comparar (vai
+    direto pra análise do líder)." / botão "Autorizar sem saldo confirmado") — texto
+    diferente do genérico "cadastro local (planilha SB2)" que o endereço usa, já que
+    esse fallback não existe mais aqui. `painelBloqueioConsultaAoVivo` ganhou 2
+    parâmetros opcionais (`mensagemFinal`/`botaoLabel`) só pra isso — o ponto de
+    chamada do endereço continua sem passar nenhum dos dois, preservando o texto
+    genérico de sempre, sem nenhuma mudança lá.
+  - Variáveis órfãs da correção anterior (`saldoTemFallbackLocal`/
+    `saldoNaoEncontrado`) removidas — sem nenhuma referência restante.
+- **Risco real evitado no meio do caminho**: a 1ª versão desta correção, ao limpar o
+  bloco antigo de `precisaAutorizarSaldo`, teria deixado uma 2ª declaração `const
+  saldoConfirmadoAoVivo` duplicada no mesmo escopo — exatamente o tipo de
+  `SyntaxError` que já derrubou o app inteiro numa rodada bem anterior deste projeto
+  ("site inteiro em branco"). Corrigido antes de qualquer teste, confirmado via
+  `grep` que sobra só 1 ocorrência de cada `const` relevante.
+- Testado via 2 scripts Node isolados no scratchpad (mesma técnica de sempre —
+  extrai as expressões `const X = ...;` direto do `index.html`, `eval`a contra
+  cenário sintético, sem precisar de jsdom pra lógica pura): `verify_bloqueio_
+  endereco.js` (já existente, 8 asserções, confirma ZERO regressão no bloqueio
+  irmão de endereço) e `verify_saldo_ambiguo.js` (novo, 21 asserções em 8 cenários —
+  consulta ainda em andamento continua `null`/não bloqueia; saldo real confirmado
+  (inclusive `0` genuíno) nunca bloqueia; genuinamente ausente vira `0` sem
+  bloquear; **o cenário exato do bug** — ambíguo, ou erro de rede — nunca vira `0`,
+  sempre bloqueia até autorização; autorizado, libera sem inventar valor).
+  **Confirmado que o teste pega a regressão de verdade**: extraí a fórmula ANTIGA
+  via `git show HEAD:index.html` e rodei os dois cenários do bug contra ela —
+  reproduz exatamente o sintoma relatado (`saldoSistemaEfetivo=0` tanto pro caso
+  ambíguo quanto pro erro de rede), confirmando que o teste novo teria pego essa
+  regressão antes de publicar. `verify_saldo_zero.js` (o script da correção
+  anterior, testando a fórmula agora removida) foi removido do scratchpad — mesmo
+  critério de sempre pra harness totalmente superado por um mais completo. Transpile
+  Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos (685/685, sem
+  mudança — só JS dentro de `CountStep`, nenhuma classe CSS tocada). **Nenhuma
+  migração de SQL necessária** — a correção é só de leitura/lógica em `index.html`,
+  publica sozinha via GitHub Pages assim que o deploy processar.
+- **Falta o cliente rodar o deploy da Edge Function `consultar-produto-selgron`
+  de novo** (`npx supabase functions deploy consultar-produto-selgron`, mesmo
+  comando de sempre) — por precaução: o campo `ambiguo` (do qual esta correção
+  depende) já existe no código-fonte da function há algumas rodadas, mas as
+  confirmações explícitas de deploy em produção documentadas neste arquivo param no
+  1º deploy dessa function, bem atrás — não há confirmação registrada de que as
+  mudanças mais recentes (incluindo `ambiguo`) já estão de fato publicadas.
+  Redeployar uma versão que já está atualizada não tem custo nenhum (é um no-op),
+  então vale rodar o comando de novo só por segurança antes de considerar este fix
+  resolvido de ponta a ponta. **Verificação de ponta a ponta em produção fica a
+  cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth real,
+  não simulável no sandbox sem rede, e o sandbox tampouco tem acesso à consulta
+  interna da Selgron).
