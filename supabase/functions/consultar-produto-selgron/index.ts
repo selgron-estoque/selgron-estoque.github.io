@@ -362,6 +362,17 @@ Deno.serve(async (req: Request) => {
       return resposta(200, { ok: false, erro: "Código não encontrado na consulta Selgron.", naoEncontrado: true });
     }
 
+    // A PRÓPRIA página da Selgron declara quantos resultados encontrou
+    // ("Sua busca por X retornou N resultado(s)") — usamos isso como fonte
+    // da verdade sobre quantos resultados DISTINTOS existem de verdade,
+    // independente de quantos "blocos" nosso `dividirEmBlocos` (que
+    // depende só da repetição do rótulo "Código do Produto:" no HTML)
+    // conseguir separar. `null` quando o texto não bate com o padrão
+    // esperado (formato mudou) — nesse caso cai no comportamento de sempre
+    // mais abaixo, sem essa fonte extra de verdade.
+    const matchTotal = texto.match(/retornou\s+(\d+)\s+resultado/i);
+    const totalDeclarado = matchTotal ? Number(matchTotal[1]) : null;
+
     // Divide a página em blocos (1 por resultado) ANTES de extrair qualquer
     // campo — ver `dividirEmBlocos` pro motivo (mesmo código pode aparecer
     // em mais de um armazém, cada um com seu próprio bloco/saldo).
@@ -398,10 +409,17 @@ Deno.serve(async (req: Request) => {
       if (!jaExiste) blocosUnicos.push(b);
     }
 
-    // Quando a Selgron declara "1 resultado" mas o parser mesmo assim
-    // separou em mais de um bloco (varia��o de marca��o na p�gina) �
-    // funde os blocos num s�, pegando o primeiro valor n�o-nulo de cada
-    // campo, em vez de descartar tudo como amb�guo.
+    // Quando a Selgron declara "retornou 1 resultado(s)" mas o parser (por
+    // alguma variação de marcação na página — dropdown/menu junto na mesma
+    // linha, célula de tabela sem quebra reconhecida etc.) mesmo assim
+    // separou em mais de um bloco pro MESMO código: em vez de tratar como
+    // ambíguo e devolver tudo `null` (perder um dado que existe e é
+    // inequívoco, só porque nosso parser tropeçou), FUNDE os blocos num só,
+    // pegando o primeiro valor não-nulo de cada campo entre eles — resgata
+    // o resultado real sem arriscar misturar armazéns quando eles
+    // genuinamente existem (só entra aqui quando a PRÓPRIA página confirma
+    // que é 1 resultado só; com 2+ resultados declarados, a ambiguidade é
+    // real e continua exigindo `armazem` pra desempatar, como sempre).
     if (totalDeclarado === 1 && blocosUnicos.length > 1) {
       const acha = <K extends keyof BlocoResultado>(campo: K): BlocoResultado[K] | null =>
         blocosUnicos.find((b) => b[campo] != null && b[campo] !== "")?.[campo] ?? null;
