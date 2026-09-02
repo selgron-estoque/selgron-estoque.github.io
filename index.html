@@ -9930,7 +9930,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   const podeAutorizarDadosLocais = user.perfil==='lider' || user.perfil==='admin';
   const [autorizouEnderecoLocal, setAutorizouEnderecoLocal] = useState(false);
   const [autorizouSaldoLocal, setAutorizouSaldoLocal] = useState(false);
-  const precisaAutorizarEndereco = enderecoNaoEncontrado && !autorizouEnderecoLocal;
+  const precisaAutorizarEndereco = (enderecoSoCadastro || (!!liveConsultaErro && product.enderecoCadastrado)) && !autorizouEnderecoLocal;
 
   // Mesmo bloqueio de cima, agora pro SALDO — decide se o "Sistema" que a
   // tela vai mostrar/usar pra classificar a contagem é de fato confirmado

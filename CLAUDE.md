@@ -21743,3 +21743,70 @@ da Selgron contra dado real) — o cliente mandou o HTML de verdade pra uma ETP 
   **Verificação de ponta a ponta com a mesma ETP real (6220-26) ou outra fica a cargo
   do cliente** — mesma limitação de sempre (sandbox sem acesso de rede ao domínio
   interno da Selgron).
+
+## Bug real (urgente, mesmo dia): item SEM endereço cadastrado ficava bloqueado pra
+## contar — condição de bloqueio invertida entre duas rodadas do mesmo dia
+
+Cliente reportou, direto: "Porque diabos eu não consigo lançar contagem de itens sem
+endereço?? Se eu já estou cadastrando o endereço na contagem" — investigado a fundo,
+não achado nenhum mal-entendido do lado dele: era um bug real, introduzido no MESMO
+dia, em cima do bloqueio de segurança "não pode seguir usando só cadastro local sem
+confirmação ao vivo" (ver "Bloqueio real: contagem não pode seguir usando dado só do
+cadastro local... com autorização/retry", mais acima).
+
+- **Causa raiz, confirmada via `git log -S`/diff**: uma correção anterior no mesmo dia
+  (`c86f038`, "remover bloqueio de endereço quando cadastro local existe") tinha trocado
+  `precisaAutorizarEndereco` de `enderecoSoCadastro || (liveConsultaErro &&
+  product.enderecoCadastrado)` pra `enderecoNaoEncontrado` — **exatamente a variável
+  errada**. `enderecoSoCadastro` significa "item TEM cadastro local, mas a consulta ao
+  vivo não confirmou" (o caso que de fato precisa de autorização, pra não deixar a
+  contagem seguir com SB2 desatualizada sem checar). `enderecoNaoEncontrado` significa o
+  OPOSTO — "item NÃO tem cadastro nenhum" (1ª captura, o operador está informando o
+  endereço pela primeira vez) — um caso que o próprio comentário do código, logo acima da
+  linha alterada, já dizia explicitamente que NUNCA deveria bloquear ("não há 'SB2 sendo
+  usada sem autorização', só falta dado mesmo"). A correção anterior inverteu o efeito:
+  passou a bloquear justamente quem não tinha nenhum cadastro (a maioria dos casos reais,
+  já que a Selgron tem só ~12% de cobertura de endereço no catálogo local), e parou de
+  bloquear quem tinha cadastro desatualizado (o caso que o bloqueio existia pra proteger).
+- **Mesmo bug, mesma correção, já tinha sido devidamente resolvido pro SALDO** — duas
+  outras correções no mesmo dia (`2c09d60`, mesmo erro de inversão; `68a47e3`, correção
+  definitiva removendo o fallback local do saldo por completo — `saldoSistemaEfetivo`
+  passou a vir só da consulta ao vivo, nunca mais do cadastro, e `precisaAutorizarSaldo`
+  virou uma constante `false` fixa, comentada "saldo local não é mais usado") — só o
+  ENDEREÇO tinha ficado pra trás, ainda preso no formato antigo (com fallback local +
+  bloqueio condicional), mas com a condição de bloqueio errada.
+- **Correção**: revertida a linha pra fórmula original e correta —
+  `precisaAutorizarEndereco = (enderecoSoCadastro || (!!liveConsultaErro &&
+  product.enderecoCadastrado)) && !autorizouEnderecoLocal` — cobre os dois sub-casos que
+  de fato precisam de autorização (consulta respondeu sem confirmar nada, OU consulta
+  falhou de verdade) só quando existe cadastro local que poderia "vazar" sem checagem.
+  Item sem nenhum cadastro (1ª captura) nunca mais bloqueia, exatamente como o comentário
+  do próprio código já documentava.
+- **Diferente do saldo, o fallback local do ENDEREÇO não foi removido nesta correção** —
+  decisão consciente de escopo: o pedido do cliente era especificamente sobre o bloqueio
+  incorreto, não sobre redesenhar a fonte de dado do endereço (que continua pré-
+  preenchendo o campo a partir do cadastro quando a consulta não confirma nada,
+  documentado desde "Endereço da consulta ao vivo passa a ter prioridade sobre o
+  cadastro local"). Se o cliente quiser a mesma simplificação já aplicada ao saldo
+  (endereço só via consulta ao vivo, sem fallback nenhum), é uma decisão separada.
+- Testado extraindo as 3 expressões (`enderecoNaoEncontrado`/`enderecoSoCadastro`/
+  `precisaAutorizarEndereco`) DIRETO do `index.html` real (não uma reimplementação que
+  pudesse divergir) e avaliando contra 8 cenários sintéticos: item sem cadastro com
+  consulta OK sem confirmar (não bloqueia mais — o cenário exato do relato do cliente);
+  o mesmo cenário mostrando que o aviso vermelho "✗ Endereço não encontrado." continua
+  aparecendo (informativo, não bloqueia); item COM cadastro sem confirmação (bloqueia,
+  como sempre foi a intenção); mesmo caso já autorizado por líder/admin (libera); item
+  COM cadastro com a consulta genuinamente FALHANDO (bloqueia — sub-caso que a versão
+  quebrada tinha perdido por completo, mais permissivo do que devia); item SEM cadastro
+  com a consulta falhando (não bloqueia, nada local pra vazar); consulta CONFIRMANDO um
+  endereço de verdade, com e sem cadastro local (nunca bloqueia nos dois casos). 8/8
+  passando. **Confirmado que o teste pega a regressão de verdade**: rodei a mesma
+  extração contra a fórmula ANTIGA (com bug) no cenário do relato do cliente — confirma
+  `true` (bloqueado), reproduzindo o sintoma exato antes da correção. Transpile Babel do
+  arquivo inteiro e balanceamento de chaves do CSS conferidos (685/685, sem mudança — só
+  1 linha de JS, nenhuma classe CSS tocada). **Nenhuma migração de SQL nem redeploy de
+  Edge Function necessários** — é só JS de front-end, publica sozinho via GitHub Pages
+  assim que o deploy processar. **Verificação de ponta a ponta em produção fica a cargo
+  do cliente** — mesma limitação de sempre (login exige Supabase Auth real, não
+  simulável no sandbox sem rede) — mas como a correção reverte pra um estado já usado em
+  produção antes desse mesmo dia, a confiança é alta.
