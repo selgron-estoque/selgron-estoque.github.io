@@ -3585,9 +3585,19 @@ async function fetchContagensHistoricoConcluidas(){
 async function fetchContagensHistoricoParaTendencia(){
   if(!supabaseClient) return [];
   try{
+    // select('*') — antes só trazia as colunas mínimas pra alimentar os
+    // gráficos semanal/mensal (bucket por mês/semana, sem precisar de
+    // produto_codigo/descrição/etc). A tela "Acuracidade" passou a
+    // reaproveitar este MESMO pool (via historicoRowToCountLike, que
+    // precisa de bem mais colunas — descricao/endereco/qtd_contada/
+    // valor_divergente/causa/observacao/classe/solicitacao_ajuste/
+    // documento/dias_sem_movimento/semana) pra incluir item "Pendente"
+    // (contado mas ainda sem decisão de ajuste) no cálculo de acuracidade
+    // dos itens já contados — sem o select completo, esses campos
+    // sairiam undefined e o mapeamento silenciosamente perderia dado.
     const data = await fetchTodasPaginado(() => supabaseClient
       .from('contagens_historico')
-      .select('id, produto_codigo, data, diferenca, saldo_sistema, acuracidade, status')
+      .select('*')
       .order('data', {ascending:false})
       .order('id', {ascending:true}));
     return data.filter(row => !['Recontar','Ajustar'].includes(String(row.status||'').trim()));
@@ -6910,7 +6920,7 @@ function App(){
         {view==='programacaoSeparacao' && hasAccess(currentUser,'programacaoSeparacao') && <ProgramacaoSeparacaoPanel currentUser={currentUser} role={role} />}
         {view==='recount' && flowState && <RecountFlow original={flowState} user={currentUser} onAddressProposed={addAddressProposal} onFinish={(c)=>{registerFinishedCount(c); goto('recounts');}} operadorVeSaldo={operadorVeSaldo} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
         {view==='dashboard' && hasAccess(currentUser,'dashboard') && <Dashboard counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} historicoParaTendencia={historicoParaTendencia} goto={goto} />}
-        {view==='acuracidade' && hasAccess(currentUser,'acuracidade') && <AcuracidadePanel counts={counts} historicoConcluidas={historicoConcluidas} historicoParaTendencia={historicoParaTendencia} />}
+        {view==='acuracidade' && hasAccess(currentUser,'acuracidade') && <AcuracidadePanel counts={counts} historicoParaTendencia={historicoParaTendencia} />}
         {view==='relatorios' && hasAccess(currentUser,'relatorios') && <ReportsScreen counts={counts} historicoTudo={historicoTudo} inventories={inventories} currentUser={currentUser} sendHistory={reportSendHistory} onLogSend={logReportSend} role={role} onHistoricoImportado={refreshHistoricoConcluidas} />}
         {view==='sasAberto' && hasAccess(currentUser,'sasAberto') && <SAsAbertoPanel currentUser={currentUser} role={role} />}
         {view==='settings' && hasAccess(currentUser,'settings') && <Settings role={role} currentUser={currentUser} operadorVeSaldo={operadorVeSaldo} onSetOperadorVeSaldo={updateOperadorVeSaldo} operadorVeValoresRecontagem={operadorVeValoresRecontagem} onSetOperadorVeValoresRecontagem={updateOperadorVeValoresRecontagem} gruposExcluidos={gruposExcluidos} onSetGruposExcluidos={updateGruposExcluidos} sessionTimeoutMin={sessionTimeoutMin} onSetSessionTimeoutMin={updateSessionTimeoutMin} />}
@@ -15312,10 +15322,20 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
 // (`usePersistedState('acuracidadeTrendFilter', ...)`, chave diferente de
 // `'dashboardTrendFilter'`) — as duas páginas guardam a própria escolha de
 // período sem interferir uma na outra.
-function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendencia=[]}){
+function AcuracidadePanel({counts, historicoParaTendencia=[]}){
   const [trendFilter, setTrendFilter] = usePersistedState('acuracidadeTrendFilter', {tipo:'30d', from:'', to:''});
 
-  const historicoComoContagem = historicoConcluidas.map(historicoRowToCountLike).filter(Boolean);
+  // Nesta aba, indiferente se o item já teve ajuste decidido ou não — se
+  // teve ao menos uma contagem, precisa entrar no cálculo (pedido explícito
+  // do cliente). Por isso a fonte histórica aqui é `historicoParaTendencia`
+  // (exclui só 'Recontar'/'Ajustar', que já viram documento próprio em
+  // `counts` via seed — incluir de novo aqui duplicaria), não mais
+  // `historicoConcluidas` (que excluía também 'Pendente' — item contado na
+  // planilha antiga mas ainda sem decisão de ajuste registrada, um caso
+  // real e comum que não devia ficar de fora só por não ter destino final
+  // ainda). `historicoRowToCountLike` já traz `acuracidade` pré-calculada
+  // quando a planilha original trouxe, e cai pro cálculo normal quando não.
+  const historicoComoContagem = historicoParaTendencia.map(historicoRowToCountLike).filter(Boolean);
   // Mesmo dedup por documento já usado em Indicadores/Home — só a rodada
   // FINAL de cada item conta (ver comentário completo em `Dashboard`,
   // perto de `ultimaContagemPorDocumento`).

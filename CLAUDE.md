@@ -21743,3 +21743,102 @@ da Selgron contra dado real) — o cliente mandou o HTML de verdade pra uma ETP 
   **Verificação de ponta a ponta com a mesma ETP real (6220-26) ou outra fica a cargo
   do cliente** — mesma limitação de sempre (sandbox sem acesso de rede ao domínio
   interno da Selgron).
+
+## Bug real: "Acuracidade" excluía item do histórico ainda "Pendente" — contado, mas
+## sem decisão de ajuste registrada
+
+Cliente perguntou "a aba de Acuracidade está funcionando corretamente os indicadores?"
+— revisão de código confirmou que tudo estava consistente com o design já documentado
+(os 2 cards, "Geral do Estoque" vs. "Contados", mostrando números DIFERENTES de
+propósito — pools/regras de dedup diferentes — e o bug histórico de `historicoRowToCountLike`
+não copiar `.acuracidade`, já corrigido antes, continuava corrigido). Na sequência, o
+cliente apontou um caso real e específico: **"Nesta aba indiferente se já teve ajuste
+ou não, se teve ao menos uma contagem, precisa entrar no calculo"** — ou seja, nesta
+aba (só ali, não generalizado a mais nada), um item da planilha antiga (`contagens_
+historico`) já CONTADO mas ainda sem nenhuma decisão de ajuste registrada (Status
+`'Pendente'` na planilha original) estava sendo excluído do cálculo de "Acuracidade dos
+Itens Contados"/"Efeito dos Ajustes Aprovados" — só por não ter destino final ainda,
+não por falta de contagem de verdade.
+
+- **Causa raiz**: `AcuracidadePanel` montava seu pool histórico a partir de
+  `historicoConcluidas` (alimentado por `fetchContagensHistoricoConcluidas`, filtrado
+  a `HISTORICO_STATUS_CONCLUIDOS = ['OK', 'Sem Ajuste', 'Ajustado']`) — o MESMO pool que
+  o Dashboard já usava pra "Resumo da Operação"/"Itens Divergentes" (onde essa exclusão
+  sempre fez sentido: só interessa lá o resultado JÁ resolvido). Um item ainda
+  `'Pendente'` nunca entrava nesse conjunto, mesmo já tendo uma contagem física real
+  registrada — mesma categoria de exclusão silenciosa já vista antes neste projeto
+  (nenhum erro, só um item que devia contar ficando de fora da média).
+- **Correção, escopada só à aba Acuracidade** (não tocou no Dashboard, que continua
+  usando `historicoConcluidas` exatamente como antes): `AcuracidadePanel` passou a
+  montar `historicoComoContagem` a partir de `historicoParaTendencia` (já buscado por
+  `App()`, e já usado por essa mesma tela pra `poolTendencia`) em vez de
+  `historicoConcluidas` — esse pool exclui só `['Recontar','Ajustar']` (status que já
+  viram documento próprio em `contagens` via seed, incluir de novo aqui duplicaria),
+  então inclui `'Pendente'` normalmente, junto de `'OK'`/`'Sem Ajuste'`/`'Ajustado'`.
+  `historicoRowToCountLike` (o mapeador completo, já usado pelo Dashboard) é o mesmo de
+  sempre — só passou a ser aplicado num conjunto mais amplo de linhas.
+- **`fetchContagensHistoricoParaTendencia`** tinha um `select` ESTREITO
+  (`'id, produto_codigo, data, diferenca, saldo_sistema, acuracidade, status'`) —
+  suficiente pra alimentar só `buildPoolTendencia` (que só lê esses 4 campos), mas
+  insuficiente pra `historicoRowToCountLike`, que precisa de bem mais colunas
+  (descricao/endereco/qtd_contada/valor_divergente/causa/observacao/classe/
+  solicitacao_ajuste/documento/dias_sem_movimento/semana) — sem isso, o mapeamento
+  silenciosamente perderia dado real. Corrigido pra `select('*')` — mudança
+  **puramente aditiva** pros consumidores já existentes (`buildPoolTendencia` só
+  destructura os 4 campos que já tinha, ignora o resto sem quebrar).
+- **`AcuracidadePanel` perdeu o parâmetro `historicoConcluidas`** (não usado mais) — e
+  o call site em `App()` (`view==='acuracidade'`) foi atualizado junto, sem esse prop.
+- **Nada de "Efeito dos Ajustes Aprovados" foi afetado por engano**: um item ainda
+  `'Pendente'` (sem decisão registrada) continua classificado como `'outros'` por
+  `classificarStatusConcluido` — nunca aparece nessa seção (que é só pra item já
+  ajustado/devolvido), só passou a contar na média de "Acuracidade dos Itens Contados"
+  em si, exatamente o pedido do cliente.
+- Testado via harness dedicado (jsdom + react-dom/client, mesma técnica rigorosa de
+  sempre — carrega o `index.html` inteiro transpilado numa `vm.Script`): confirmado
+  que uma linha `'Pendente'` sintética (com `diferenca`/`saldo_sistema`/`acuracidade`
+  pré-calculada) é mapeada corretamente por `historicoRowToCountLike`, classificada
+  como `'outros'` por `classificarStatusConcluido` (nunca vaza pra "Efeito dos Ajustes
+  Aprovados"), e entra na média mensal de acuracidade junto com um item `'Ajustado'`
+  do mesmo mês (média calculada bate exatamente com a esperada); confirmado que
+  `HISTORICO_STATUS_CONCLUIDOS` continua intocado no código-fonte (Dashboard não foi
+  afetado); e que a assinatura de `AcuracidadePanel` não recebe mais `historicoConcluidas`,
+  só `historicoParaTendencia`. Transpile Babel do arquivo inteiro e balanceamento de
+  chaves do CSS conferidos (685/685, sem mudança — esta correção não tocou em CSS
+  nenhum). **Nenhuma migração de SQL necessária** — a correção é só de LEITURA, sobre
+  dado que já era buscado do Supabase (só o `select` ficou mais amplo). **Verificação
+  visual dos números reais em produção fica a cargo do cliente** — mesma limitação de
+  sempre (login exige Supabase Auth real, não simulável no sandbox sem rede) — mas
+  como não depende de nenhuma migração, já deve refletir no próximo carregamento da
+  página.
+
+## Investigação: "Contagem Manual" aparecia em posição diferente entre usuários — não
+## era bug
+
+Cliente mandou print de "Nova Contagem" (perfil admin, 7 tipos, "Contagem Manual"
+listado 1º) e reportou: "conferir para que em todos os usuários sigam está mesma
+sequencia, já abri em tablet de outro usuario que contagem manual era a segunda
+opção".
+
+- **Investigado**: `PickCountType` (a tela "Nova Contagem") sempre teve DOIS caminhos
+  diferentes por role — `podeGerir` (`role==='lider'||'admin'`) renderiza
+  `<NewInventory/>` direto, cujo array `tipos` (linha ~8862, `const tipos = [...]`,
+  estático, sem `.filter`/`.sort`/nenhuma dependência de usuário — confirmado só
+  `tipos.map(...)` renderizando na ordem literal do código) sempre lista "Contagem
+  Manual" **1º de 7**, pra QUALQUER líder/admin, sem exceção. Já um OPERADOR
+  (`!podeGerir`) nunca vê esse array — `PickCountType` renderiza sua PRÓPRIA lista
+  estática, mais curta (4 botões, JSX hardcoded): "Contagem Aleatória/por Rota Gerada"
+  1º, **"Contagem Manual" 2º**, "Contagem por Rota" 3º, "Contagem por Grupo" 4º — por
+  DESIGN, não um array compartilhado com o de líder/admin.
+- **Conclusão**: não é bug — a ordem é 100% determinística e idêntica pra qualquer
+  usuário do MESMO perfil (líder/admin sempre veem Manual 1º de 7; operador sempre vê
+  Manual 2º de 4, numa tela com menos opções). O sintoma relatado ("no tablet do outro
+  usuário, Manual era a 2ª opção") bate exatamente com o comportamento esperado de um
+  usuário com perfil **operador** — não uma inconsistência entre aparelhos do mesmo
+  perfil. Repassado ao cliente pra confirmar o perfil logado nesse outro tablet antes
+  de investigar mais — se for operador, o comportamento já está correto por design;
+  se for líder/admin mostrando uma ordem diferente de "Manual 1º de 7", aí sim seria
+  um bug novo e ainda não reproduzido.
+- Nenhuma mudança de código nesta investigação — registrado aqui só pra não perder o
+  contexto (mesmo critério de sempre neste histórico), caso o cliente confirme depois
+  que os dois tablets tinham o MESMO perfil (o que reabriria a investigação por um
+  ângulo diferente).
