@@ -21810,3 +21810,73 @@ cadastro local... com autorização/retry", mais acima).
   do cliente** — mesma limitação de sempre (login exige Supabase Auth real, não
   simulável no sandbox sem rede) — mas como a correção reverte pra um estado já usado em
   produção antes desse mesmo dia, a confiança é alta.
+
+## Bug real (urgente, mesmo dia): item sem saldo confirmado ao vivo voltou a virar
+## "—" em vez de 0 — mesma correção do endereço, faltando no saldo
+
+No mesmo dia da correção acima (endereço bloqueado incorretamente), o cliente reportou,
+com print, um sintoma parecido só que no SALDO: item `000.05154` ("FUSO CONE BOBINA C1",
+inventário "ITENS ESPECÍFICOS") mostrando "—" pra "Sistema" em vez de "0" — "Item sem
+saldo voltou aparecer -- invés de 0, por causa disso da divergência nas contagens." Ele
+completou com uma pista importante: "fiz duas contagens, no celular ficou assim e no pc
+deu certo" — e, horas depois, urgente, um 2º item (`000.65761`/"SUPORTE GUIA LATERAL", em
+recontagem) com o mesmo "— SEM SALDO PARA COMPARAR": "tem itens que não está puxando a
+quantidade, eu preciso de correção imediatamente."
+
+- **Causa raiz, mesma classe de bug do endereço, mas na direção oposta**: a regra de
+  sempre deste projeto ("Item sem saldo passa a ser tratado como saldo real 0", ver seção
+  homônima no histórico acima) sempre garantiu que item sem NENHUM saldo confirmado conta
+  como 0, nunca como "sem dado" — senão ele sai do fluxo normal de classificação de
+  divergência (`classifyDivergence`/`computeStatus`) e trava pra sempre em "warn"/análise
+  do líder, mesmo contando exatamente 0. Essa regra sempre foi respeitada nas funções que
+  resolvem produto a partir do cache local (`estoqueRowToProduct`/`searchSupabaseCatalog`/
+  `fetchProdutosByCodigos`/etc., todas defaultam pra 0) — mas tinha sido perdida bem
+  dentro de `CountStep`: um commit anterior no MESMO dia (removendo o bloqueio de
+  segurança do saldo, já que o cadastro local deixou de ser usado como fallback —
+  `precisaAutorizarSaldo` virou `const false` fixo) trocou o fallback de
+  `saldoSistemaEfetivo` de `product.saldoSistema` (cache local) direto pra `null` fixo,
+  sem repor o "0" que a regra do projeto sempre exigiu. Bate exatamente com a pista do
+  cliente: rede pior no celular deixa a consulta ao vivo (timeout de ~8s do lado da Edge
+  Function `consultar-produto-selgron`) mais sujeita a nunca CONFIRMAR nada dentro da
+  janela — seja por resposta de sucesso sem match (código/armazém ambíguo, item não
+  encontrado nesse armazém) ou por erro de rede de verdade — e, nos dois casos, o app
+  caía sempre no lado "sem saldo" em vez de assumir 0.
+- **Correção**: `saldoSistemaEfetivo` ganhou um estado intermediário explícito,
+  `saldoConsultaResolvida = !!(liveConsulta || liveConsultaErro)` — só vira `true` depois
+  que o CICLO da consulta termina de verdade (sucesso, mesmo sem confirmar saldo nenhum,
+  OU erro de verdade) — antes disso, continua `null` de propósito (é o estado transitório
+  real de "ainda carregando", já coberto pela mensagem "Consultando saldo ao vivo na
+  Selgron…" via `saldoAguardandoConfirmacao`, sem mudança). Com a consulta resolvida sem
+  ter confirmado nenhum saldo, `saldoSistemaEfetivo` agora cai em `0` (não mais `null`) —
+  `hasSaldoLocal = typeof saldoSistemaEfetivo === 'number'` volta a `true` nesse caso,
+  reabrindo o fluxo normal de classificação/status pro item, exatamente como a regra de
+  sempre do projeto exige.
+- **Nenhum outro consumidor de `saldoSistemaEfetivo` precisou de mudança** — conferido
+  via grep no arquivo inteiro que `hasSaldoLocal`/`mostrarSaldo`/`diffAbs`/`diffPct`/
+  `classification`/`statusAprovacao`/os campos persistidos em `finalize()`
+  (`saldoSistema`/`diferenca`/`percentual`/`valorDivergente`/`custoUnit`) e a exibição no
+  card de comparação já reagem corretamente ao `saldoSistemaEfetivo` virar `0` mais cedo
+  — nenhum deles tinha nenhuma suposição escondida de que esse valor só existiria vindo
+  de um saldo real positivo.
+- Testado via harness dedicado (mesma técnica de sempre — extrai as expressões
+  `saldoConsultaResolvida`/`saldoSistemaEfetivo` DIRETO do `index.html` real via regex e
+  reproduz contra 5 cenários sintéticos, sem precisar renderizar `CountStep` inteiro):
+  consulta ainda em andamento continua `null` (não vira 0 cedo demais, preserva o estado
+  de "carregando"); consulta confirmando saldo real (82,9099) usa o valor confirmado;
+  saldo genuinamente 0 continua 0 (sem regressão); **o cenário exato do bug reportado**
+  (consulta OK mas sem confirmar saldo nenhum) vira 0, não mais null/"—"; e a **variante
+  mobile** (erro de rede de verdade, batendo com "no celular ficou assim") também vira 0.
+  8/8 asserções passando. **Confirmado que o harness pega a regressão de verdade**:
+  rodado contra o código de ANTES desta correção (`git stash`), a extração de
+  `saldoConsultaResolvida` sequer é encontrada (a variável não existia ainda) — e,
+  avaliando a fórmula antiga isolada (`(liveConsulta && liveConsulta.saldo!=null) ?
+  liveConsulta.saldo : null`) contra o cenário exato do bug (`{ok:true, saldo:null}`),
+  confirma `null` — reproduzindo byte a byte o sintoma relatado ("—" em vez de "0").
+  Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS conferidos
+  (685/685, sem mudança — só JS dentro de `CountStep`, nenhuma classe CSS tocada).
+  **Nenhuma migração de SQL nem redeploy de Edge Function necessários** — é só JS de
+  front-end, publica sozinho via GitHub Pages assim que o deploy processar.
+  **Verificação de ponta a ponta em produção (os itens 000.05154 e 000.65761
+  especificamente, e a diferença celular vs. PC) fica a cargo do cliente** — mesma
+  limitação de sempre (login exige Supabase Auth real, não simulável no sandbox sem
+  rede, e o sandbox tampouco tem acesso à consulta interna da Selgron).
