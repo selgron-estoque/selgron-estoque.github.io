@@ -21984,3 +21984,71 @@ saldo real no sistema da Selgron passaram a mostrar "0" na tela de contagem.
   cargo do cliente** — mesma limitação de sempre (login exige Supabase Auth real,
   não simulável no sandbox sem rede, e o sandbox tampouco tem acesso à consulta
   interna da Selgron).
+
+## Bug real: placeholder de ambiguidade de armazém ("1/90") virava armazém "conhecido" pra sempre — travava recontagem mesmo com saldo real na Selgron
+
+Cliente mandou 2 prints: a tela "Recontar Item" bloqueada pro código `000.65761`
+("🔒 A consulta ao vivo respondeu, mas não confirmou o saldo do sistema para
+este item/armazém... a contagem não pode seguir") e a página real de
+`consulta.selgron.com.br` pro mesmo código, mostrando saldo/endereço reais sem
+nenhuma ambiguidade — reagindo, direto: "mas porque diabos você ainda não
+corrigiu isso? continua sem puxar o endereço ao vivo e quantidade". Investigado
+a fundo: o ENDEREÇO já estava correto nos dois prints (038-D-2 batendo nos
+dois) — o problema real era só o SALDO/QUANTIDADE, travado pelo bloqueio de
+segurança já existente ("não pode seguir usando dado não confirmado ao vivo",
+ver seção "Bloqueio real..." mais acima).
+
+- **Causa raiz**: `fetchProdutosByCodigos(codigos, almoxarifado)`, quando
+  chamada SEM armazém informado e o código existe em mais de 1 linha de
+  `estoque_saldo` no cache local, grava um placeholder de ambiguidade só pra
+  EXIBIÇÃO — `linhasDoArmazem.map(l=>l.almoxarifado).join('/')`, ex. `"1/90"`
+  — nunca um armazém de verdade. Esse valor, uma vez gravado em
+  `contagens.almoxarifado` na 1ª contagem de um item (ex. adicionado via
+  "Itens Específicos"/"Lista Importada" sem armazém pedido), era TRUTHY — e
+  `RecountFlow.precisaEscolherArmazem = !original.almoxarifado` achava, a
+  cada recontagem seguinte, que já "sabia" o armazém, nunca oferecendo o
+  seletor pra corrigir. Pior: dentro de `CountStep`, o mesmo valor lixo
+  (`product.almoxarifado`) era mandado direto como parâmetro `armazem` pra
+  `fetchSaldoConsultaSelgron` — que nunca bate com nenhum resultado real da
+  consulta Selgron (não existe armazém chamado "1/90") — fazendo a consulta
+  responder sem confirmar nada e disparar o bloqueio de segurança à toa,
+  mesmo o item tendo saldo real e sem ambiguidade nenhuma pro armazém certo.
+  Mesma categoria de bug silencioso já vista várias vezes neste projeto — um
+  valor de DEBUG/exibição vazando pra dentro de um campo tratado como dado
+  confiável.
+- **`armazemCadastroValido(bruto)`** (função nova, mesmo padrão de proteção
+  na LEITURA já usado por `unidadeCadastroValida`/`grupoCadastroValido`) —
+  rejeita vazio, `"—"` (o outro placeholder já usado pra "sem armazém") e
+  qualquer valor contendo `"/"` (a assinatura do placeholder de ambiguidade,
+  já que nenhum código de armazém real da SB2 tem barra) — devolve `null`
+  nesses casos, nunca finge que é um armazém de verdade.
+- **2 pontos corrigidos**: `RecountFlow.precisaEscolherArmazem` passou a usar
+  `!armazemCadastroValido(original.almoxarifado)` — um item com o
+  placeholder herdado volta a mostrar o seletor de armazém, exatamente como
+  se nunca tivesse "conhecido" nenhum armazém; e `CountStep` (o motor
+  compartilhado pelos 5 fluxos de contagem, defesa em profundidade — não só
+  `RecountFlow` produz esse placeholder, `fetchProdutosByCodigos` é chamada
+  em mais 3 outros pontos do app) passou a validar `product.almoxarifado`
+  antes de mandar pra `fetchSaldoConsultaSelgron` — com valor inválido, manda
+  a busca SEM armazém (`undefined`), deixando a Edge Function resolver
+  sozinha quando só existe 1 resultado real pro código (mesmo critério de
+  sempre: nunca adivinha entre 2+ resultados genuinamente ambíguos, mas
+  também nunca trava por causa de um valor que nunca foi um armazém de
+  verdade).
+- **`estoqueRowToProduct`/a lógica que GERA o placeholder em
+  `fetchProdutosByCodigos` não foram tocadas** — continuam produzindo
+  `"1/90"` pra exibição (ainda útil como dica visual — "Almox: 1/90" no
+  mini-card — de que o cache local tem esse código em mais de um armazém),
+  só deixaram de ser CONFIADAS como armazém real nos 2 pontos corrigidos.
+- Testado via harness Node isolado (`verify_armazem_ambiguo.js`, mesma
+  técnica de sempre — extrai `armazemCadastroValido` literal do
+  `index.html` real): o cenário exato do bug ("1/90" → inválido) e mais 5
+  variações de placeholder/vazio, mais 4 casos de regressão (armazém real
+  "1"/"01"/"EX"/com espaço em volta → continuam válidos). 10/10 passando.
+  Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+  conferidos, sem quebrar. **Nenhuma migração de SQL nem redeploy de Edge
+  Function necessários** — é só JS de front-end, publica sozinho via GitHub
+  Pages assim que o deploy processar. **Verificação de ponta a ponta com o
+  item real (000.65761) fica a cargo do cliente** — mesma limitação de
+  sempre (login exige Supabase Auth real, não simulável no sandbox sem rede,
+  e o sandbox tampouco tem acesso à consulta interna da Selgron).

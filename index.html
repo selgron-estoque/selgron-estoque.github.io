@@ -1522,6 +1522,30 @@ function grupoCadastroValido(bruto){
   return v;
 }
 
+// Mesmo tipo de proteção, agora pro ARMAZÉM: `fetchProdutosByCodigos`
+// (chamada sem armazém pedido) grava um placeholder de AMBIGUIDADE
+// ("1/90", concatenando os códigos de TODOS os armazéns em que o produto
+// existe no cache local) só pra exibição na tela — nunca deveria ser
+// tratado como um armazém de verdade. Bug real reportado pelo cliente: esse
+// placeholder era salvo em `contagens.almoxarifado` na 1ª contagem (item
+// adicionado via "Itens Específicos"/"Lista Importada" sem armazém
+// informado) e reaparecia como `original.almoxarifado` — TRUTHY! — em toda
+// recontagem seguinte, fazendo `RecountFlow` achar que já "sabia" o
+// armazém (nunca oferecendo o seletor) e mandando "1/90" direto pra
+// consulta ao vivo da Selgron como se fosse um código de armazém real —
+// nunca batendo com nenhum resultado, travando a contagem com "não
+// confirmou o saldo do sistema para este item/armazém" mesmo o item tendo
+// saldo real na Selgron. Proteção na LEITURA, usada tanto pra decidir se
+// vale a pena perguntar o armazém (RecountFlow) quanto antes de mandar
+// `product.almoxarifado` pra consulta ao vivo (CountStep) — nunca manda um
+// valor ambíguo/vazio como se fosse um armazém confiável.
+function armazemCadastroValido(bruto){
+  const v = String(bruto==null ? '' : bruto).trim();
+  if(!v || v==='—') return null;
+  if(v.includes('/')) return null;
+  return v;
+}
+
 // Busca no catálogo real (85 mil+ produtos) por código ou descrição — única
 // fonte de busca do app (o cache local de 300 SKUs foi removido, ver
 // CLAUDE.md "Remoção do cache local de 300 SKUs"). Enriquece com saldo
@@ -9796,7 +9820,17 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
     let cancelado = false;
     setLiveConsulta(null);
     setLiveConsultaErro(null);
-    const p = fetchSaldoConsultaSelgron(product.codigo, product.almoxarifado);
+    // `armazemCadastroValido` — nunca manda um placeholder de ambiguidade
+    // (ex.: "1/90", herdado de `fetchProdutosByCodigos` chamada sem armazém
+    // — ver comentário da função) como se fosse um armazém real: isso nunca
+    // bate com nenhum resultado da consulta Selgron e trava a contagem à
+    // toa. Sem armazém válido, manda a busca SEM armazém (`undefined`) — a
+    // Edge Function já sabe resolver sozinha quando só existe 1 resultado
+    // pro código, sem precisar adivinhar (mesmo critério de sempre: nunca
+    // adivinha entre 2+ resultados, mas não trava por causa de um valor que
+    // nunca foi um armazém de verdade).
+    const armazemConsultaValido = armazemCadastroValido(product.almoxarifado);
+    const p = fetchSaldoConsultaSelgron(product.codigo, armazemConsultaValido || undefined);
     liveConsultaPromiseRef.current = p;
     p.then(res=>{
       if(cancelado) return;
@@ -11255,7 +11289,12 @@ function RecountFlow({original, user, onFinish, onAddressProposed, operadorVeSal
   // ver CLAUDE.md). Em vez de adivinhar, pergunta explicitamente ao
   // operador — mesmo padrão inline já usado em "Nova Contagem Manual"
   // (sempre visível, editável sem sair da tela, nunca bloqueia o fluxo).
-  const precisaEscolherArmazem = !original.almoxarifado;
+  // `!armazemCadastroValido(...)` em vez de só `!original.almoxarifado` —
+  // um placeholder de ambiguidade ("1/90", herdado de uma contagem anterior
+  // que resolveu o produto sem armazém pedido) é TRUTHY, então o check
+  // antigo nunca oferecia o seletor pra esse caso (bug real, ver comentário
+  // de `armazemCadastroValido`).
+  const precisaEscolherArmazem = !armazemCadastroValido(original.almoxarifado);
   const [armazemEscolhido, setArmazemEscolhido] = useState('1');
   const [armazensDisponiveis, setArmazensDisponiveis] = useState(null);
   useEffect(()=>{
