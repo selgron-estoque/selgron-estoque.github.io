@@ -22165,3 +22165,86 @@ Acuracidade recém-corrigida, pro que é nominalmente "a mesma métrica", até o
 se quer alinhar os dois também; (2) a separação nunca-contados/"Estoque não validado" vs.
 "validado", o indicador de recorrência entre documentos diferentes, e o layout de 4 seções
 do pedido original continuam fora de escopo, aguardando uma rodada futura.
+
+## "sim, alinhe" — Home e o export Excel passam a usar a mesma dedup por documento
+
+Continuação direta da rodada anterior — o cliente respondeu **"sim, alinhe"** à pendência já
+sinalizada ali ("`acuracidadeGeralAte` (Home) e `buildSummaryRows`/`acuracidadeMediaMensal`
+(export Excel) compartilham o mesmo defeito... até o cliente decidir se quer alinhar os dois
+também"). Confirma explicitamente: aplicar a MESMA correção (Opção 1 — dedup por documento
+via `ultimaContagemPorDocumento`, "se houve uma contagem errada na primeira vez e na
+recontagem foi contado e bateu, então a acuracidade não pode ser afetada por um erro
+operacional") nos dois lugares que faltavam, sem tocar em mais nada.
+
+### Tensão encontrada e resolvida antes de mexer em código
+
+Uma decisão do cliente BEM anterior a esta ("'Acuracidade Geral' vira a média das barras de
+'Acuracidade Mensal'") já tinha exigido que "Acuracidade do Estoque" (Home) batesse EXATO
+com a média das barras do gráfico "Acuracidade Mensal" (Dashboard) — que usa de propósito
+`poolTendencia`/`buildPoolTendencia` (sem dedup, cada rodada de recontagem pesa separado),
+com a justificativa na época: *"eu quero que a acuracidade mensal seja referente as
+contagens e a acuracidade geral seja referente a média mensal"*. Aplicar a Opção 1 aqui
+FAZ Home parar de bater com essa média — decisão consciente de deixar essa exigência mais
+antiga ser SUPERADA pela auditoria mais recente, no mesmo raciocínio já aceito quando
+"Geral" (`AcuracidadePanel`) foi corrigido antes (ele também parou de bater com a mesma
+média de "Acuracidade Mensal" na rodada anterior, sem o cliente reclamar) — "sim, alinhe"
+é a confirmação de que essa mesma prioridade vale pros outros dois pontos também.
+
+### O que mudou
+
+- **`acuracidadeGeralAte(pool, dataLimiteStr)`** — assinatura mudou (era `(counts,
+  historicoParaTendencia, dataLimiteStr)`) — passou a receber um pool JÁ DEDUPLICADO por
+  documento em vez de montar o próprio pool via `buildPoolTendencia` internamente. Único
+  call site: `Home.acumuladoAte`, que já calculava `relevantes` (dedup por documento +
+  corte por `dataLimite`, usado até então só por `total`/`divergentes`) — só passou a
+  reaproveitar essa MESMA variável pra `acuracidade` também, sem precisar montar nenhum
+  pool novo.
+  - Como `historicoParaTendencia` deixou de ter qualquer uso dentro de `Home` depois disso
+    (confirmado por busca restrita ao corpo da função), a prop foi removida da assinatura
+    de `Home` e do ponto de instanciação em `App()` — código morto de verdade, não uma
+    limpeza especulativa. **`AcuracidadePanel` continua com a mesma prop, hoje igualmente
+    sem uso** — deixada de propósito fora de escopo (pré-existente, de antes desta rodada,
+    "sim, alinhe" não pediu essa limpeza ali).
+- **`buildSummaryRows(counts, inventories)`** (export Excel, linha "Acuracidade do estoque
+  (%)") — `acuracidadeMediaMensal(counts)` virou `acuracidadeMediaMensal(ultimaContagemPorDocumento(counts))`.
+  **Só esta linha muda** — `contados` (Itens contados), `divergentes.length` (Divergências)
+  e `valorDivergente` (Valor total divergente) continuam somando o `counts` CRU, sem
+  deduplicar — decisão já tomada antes e sem relação com este pedido ("todas as contagens,
+  sem exceção", ver seção "Relatório Semanal (Diretoria)"/`ReportsScreen` no histórico
+  acima) — confirmado lendo os dois call sites de `generateReportWorkbook`
+  (`ReportsScreen.downloadWorkbook`/`InventoryList.handleDownload`), nenhum dos dois muda.
+
+### Verificação
+
+Testado via harness novo (`harness_home_excel_alinhamento.js`, jsdom + react-dom/client +
+`act()`, mesma técnica rigorosa de sempre — carrega o `index.html` inteiro transpilado
+numa `vm`): os MESMOS 3 cenários já usados pra provar o fix de `AcuracidadePanel`, agora
+contra `Home` (lendo o card "Acuracidade do Estoque" via `.pnl-kpi-label`/`.pnl-kpi-value`
+no DOM) e `buildSummaryRows` (função pura) — (1) sem cadeia, ambos mostram 100%, sem
+regressão; (2) **a prova** — cadeia de recontagem (1ª contagem 40%, recontagem 100%) — os
+dois mostram 100%, não mais 70% (a média das duas rodadas); (3) 2 documentos independentes
+do mesmo código continuam contando os dois (70%), confirmando que o dedup respeita a Opção 1
+(só por documento). Mais 4 asserções de "alinhamento cruzado" confirmando que Home e
+`buildSummaryRows` batem EXATAMENTE entre si nos 3 cenários — os 3 surfaces (página
+Acuracidade, Home, Excel) agora calculam a métrica de forma idêntica. E, no export Excel,
+confirmado que "Itens contados" (2, não 1) / "Divergências" (1) / "Valor total divergente"
+(60) continuam refletindo o `counts` CRU — só a linha de acuracidade foi tocada. 18
+asserções, todas passando. **Confirmado que o harness pega a regressão de verdade**: rodado
+contra o código de ANTES desta correção (`git stash`), 4 das 18 asserções falham exatamente
+como esperado — cenário 2 mostrando 70% em vez de 100% tanto em Home quanto em
+`buildSummaryRows` — só com a correção aplicada é que passa 18/18. Rodei de novo o harness
+já existente de `AcuracidadePanel` (`harness_acuracidade_dedup.js`) — continua passando
+sem nenhuma regressão. Transpile Babel do arquivo inteiro e balanceamento de chaves do CSS
+conferidos (685/685, sem mudança de contagem — só JS dentro de `Home`/`buildSummaryRows`/
+`App()`, nenhuma classe CSS tocada). **Nenhuma migração de SQL nem redeploy de Edge
+Function necessários** — é só JS de front-end, publica sozinho via GitHub Pages assim que
+o deploy processar. **Verificação visual em produção fica a cargo do cliente** — mesma
+limitação de sempre (login exige Supabase Auth real, não simulável no sandbox sem rede) —
+mas como a correção é só de leitura/agregação em memória, já deve valer assim que o deploy
+publicar.
+
+**Ainda fora de escopo, sem mudança**: a separação nunca-contados/"Estoque não validado" vs.
+"validado" contra a meta de 95%, o indicador de recorrência entre documentos diferentes, e
+o layout de 4 seções do pedido original de auditoria — nenhum dos três foi pedido nesta
+rodada ("sim, alinhe" só cobriu a dedup), continuam aguardando uma decisão futura do
+cliente.

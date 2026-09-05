@@ -4941,13 +4941,20 @@ function buildSummaryRows(counts, inventories){
   // só alimenta a linha "Divergências" (contagem de itens com QUALQUER
   // erro), não mais o cálculo de acuracidade em si (ver abaixo).
   const divergentes = counts.filter(c=>c.diferenca!==0 && c.diferenca!==null);
-  // Acuracidade GERAL, mesma fórmula padronizada em TODO o app agora
-  // (Home, Dashboard e aqui): média das médias mensais, via
-  // `acuracidadeMediaMensal` — cada mês com dado pesa igual, não importa o
-  // volume de contagens que teve. Pedido do cliente: "tudo tem que ser
-  // padronizado". Item sem saldo pra comparar (itemAcuracidade retorna
-  // null) continua de fora da média.
-  const acuracidade = acuracidadeMediaMensal(counts).toFixed(1);
+  // Acuracidade GERAL — média das médias mensais, via `acuracidadeMediaMensal`
+  // (cada mês com dado pesa igual, não importa o volume de contagens que
+  // teve; item sem saldo pra comparar continua de fora da média). Alinhado
+  // com "Acuracidade Geral do Estoque" (página Acuracidade) e "Acuracidade
+  // do Estoque" (Home) a pedido do cliente ("sim, alinhe") — os três
+  // deduplicam por documento (`ultimaContagemPorDocumento`) antes de
+  // calcular, mesma correção da auditoria (Opção 1: uma recontagem que já
+  // resolveu a divergência não pode continuar pesando a média junto com a
+  // 1ª contagem que errou). **Só esta linha muda** — `contados`/
+  // `divergentes`/`valorDivergente` (abaixo) continuam somando o `counts`
+  // CRU, sem deduplicar — decisão já tomada antes ("todas as contagens, sem
+  // exceção", ver ReportsScreen), sem relação com o que este alinhamento
+  // pediu mexer.
+  const acuracidade = acuracidadeMediaMensal(ultimaContagemPorDocumento(counts)).toFixed(1);
   const valorDivergente = counts.reduce((s,c)=>s+Number(c.valorDivergente||0),0);
   return [
     {Indicador:'Data do relatório', Valor: new Date().toLocaleString('pt-BR')},
@@ -6913,7 +6920,7 @@ function App(){
       )}
       {view!=='home' && !COUNT_SCREEN_VIEWS.includes(view) && <SubBar view={view} goto={goto} />}
       <div className="content">
-        {view==='home' && hasAccess(currentUser,'home') && <Home role={role} user={currentUser} inventories={inventories} counts={counts} historicoConcluidas={historicoConcluidas} historicoParaTendencia={historicoParaTendencia} enderecosPropostos={enderecosPropostos} goto={goto} />}
+        {view==='home' && hasAccess(currentUser,'home') && <Home role={role} user={currentUser} inventories={inventories} counts={counts} historicoConcluidas={historicoConcluidas} enderecosPropostos={enderecosPropostos} goto={goto} />}
         {view==='inventories' && hasAccess(currentUser,'inventories') && <InventoryList inventories={inventories} goto={goto} role={role} counts={counts} users={users} currentUser={currentUser} onDelete={deleteInventory} onCancel={cancelInventory} onToggleUrgente={toggleInventarioUrgente} onRemoverItemPendente={role==='admin' ? removerItemPendenteDaLista : undefined} onAtribuir={atribuirInventario} />}
         {view==='pickCountType' && hasAccess(currentUser,'pickCountType') && <PickCountType role={role} goto={goto} inventories={inventories} gruposExcluidos={gruposExcluidos} onCreate={async(inv)=>{
           const res = await saveInventarioToSupabase(inv);
@@ -7830,7 +7837,7 @@ function saudacaoPorHorario(){
   return 'Boa noite';
 }
 
-function Home({role, user, inventories, counts, historicoConcluidas=[], historicoParaTendencia=[], enderecosPropostos=[], goto}){
+function Home({role, user, inventories, counts, historicoConcluidas=[], enderecosPropostos=[], goto}){
   // Bug real corrigido aqui: `i.status` é gravado como 'pendente' na criação
   // do inventário e nunca é atualizado depois — nunca vira 'concluido' de
   // verdade. Deriva de `contados`/`qtdItens` via `inventarioConcluido`
@@ -7938,18 +7945,26 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], historic
     const relevantesBruto = [...counts, ...historicoComoContagem].filter(c=>!c.data || c.data<=dataLimite);
     const relevantes = ultimaContagemPorDocumento(relevantesBruto);
     const divergentes = relevantes.filter(c=>c.diferenca!==0 && c.diferenca!==null);
-    // "Acuracidade do Estoque" precisa ser EXATAMENTE a média das barras do
-    // gráfico "Acuracidade Mensal" (Dashboard) — pedido explícito do
-    // cliente depois de reportar que os dois não batiam: "eu quero que a
-    // acuracidade mensal seja referente as contagens e a acuracidade geral
-    // seja referente a média mensal". `acuracidadeGeralAte` usa o mesmo
-    // pool "Tendência" (toda contagem/rodada registrada, incluindo
-    // pendente, sem deduplicar) e o mesmo recorte (ano corrente até
-    // `dataLimite`) que a Dashboard usa pra montar aquele gráfico — troca a
-    // fórmula anterior (`acuracidadeMediaMensal(relevantes)`, sobre o pool
-    // deduplicado/só-concluído acima), que não representava as mesmas
-    // contagens mostradas no gráfico.
-    const acuracidade = acuracidadeGeralAte(counts, historicoParaTendencia, dataLimite);
+    // ATUALIZADO — supera a nota anterior deste comentário (que pedia bater
+    // EXATO com a média das barras de "Acuracidade Mensal", via o pool
+    // "Tendência" sem deduplicar, `buildPoolTendencia`). A auditoria da
+    // página "Acuracidade" (Sidebar → Análise) achou que esse pool inflava
+    // (ou desinflava) o resultado contando CADA RODADA de uma recontagem
+    // como ponto separado — um item que errou na 1ª contagem e bateu na
+    // recontagem pesava as duas vezes. O cliente escolheu explicitamente
+    // deduplicar por documento (Opção 1, mesma que "Contados" já usava):
+    // "se houve uma contagem errada na primeira vez e na recontagem foi
+    // contado e bateu, então a acuracidade não pode ser afetada por um erro
+    // operacional" — corrigido primeiro só no card "Geral" de
+    // AcuracidadePanel; confirmado depois ("sim, alinhe") que "Acuracidade
+    // do Estoque" (aqui) e a linha "Acuracidade do estoque (%)" do Excel
+    // devem usar a MESMA correção. `relevantes` (acima) já é esse pool —
+    // deduplicado por documento E cortado até `dataLimite` — não precisa
+    // mais montar um pool à parte. Efeito aceito: este número deixa de
+    // bater com a média das barras de "Acuracidade Mensal" (que continua
+    // de propósito sem deduplicar, ver `Dashboard`/`poolTendencia`) — o
+    // mesmo trade-off já aceito quando "Geral" foi corrigido.
+    const acuracidade = acuracidadeGeralAte(relevantes, dataLimite);
     return {total:relevantes.length, divergentes:divergentes.length, acuracidade};
   }
   const hoje = acumuladoAte(hojeStr);
@@ -14241,9 +14256,17 @@ function buildPoolTendencia(counts, historicoParaTendencia){
 // Mesmo recorte que o gráfico já usa: ano corrente até `dataLimiteStr`
 // (permite comparar "hoje" vs. "ontem" pro indicador de tendência do card,
 // sem quebrar esse recurso já existente).
-function acuracidadeGeralAte(counts, historicoParaTendencia, dataLimiteStr){
+// Recebe um pool JÁ DEDUPLICADO por documento (ultimaContagemPorDocumento) —
+// antes recebia (counts, historicoParaTendencia) e montava o pool por conta
+// própria via buildPoolTendencia (sem dedup, cada rodada de uma recontagem
+// contava separado). Alinhado com AcuracidadePanel ("Acuracidade Geral do
+// Estoque") a pedido do cliente ("sim, alinhe") — mesma decisão já tomada
+// e justificada lá: "se houve uma contagem errada na primeira vez e na
+// recontagem foi contado e bateu, então a acuracidade não pode ser afetada
+// por um erro operacional" (Opção 1 — dedup só dentro do mesmo documento,
+// nunca entre documentos/inventários independentes do mesmo código).
+function acuracidadeGeralAte(pool, dataLimiteStr){
   const anoStr = String(new Date(dataLimiteStr+'T00:00:00').getFullYear()) + '-01-01';
-  const pool = buildPoolTendencia(counts, historicoParaTendencia);
   const monthly = computeMonthlyStats(pool, anoStr, dataLimiteStr);
   const meses = monthly.filter(m=>m.acuracidade!=null);
   return meses.length>0 ? (meses.reduce((s,m)=>s+m.acuracidade,0)/meses.length) : 100;
