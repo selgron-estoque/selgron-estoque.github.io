@@ -9274,13 +9274,13 @@ function PickCountType({role, goto, onCreate, inventories, gruposExcluidos}){
   return (
     <div>
       <div className="radio-group">
-        <button className="item-card" style={{padding:18,textAlign:'left',border:'1px solid var(--line)',background:'var(--panel)'}} onClick={()=>goto('randomCount')}>
-          <div className="opt-title" style={{fontSize:'var(--text-lg)'}}><Ic>🎲</Ic>&nbsp; Contagem Aleatória / por Rota Gerada</div>
-          <div className="opt-desc">O sistema indica o próximo item e endereço a contar</div>
-        </button>
         <button className="item-card" style={{padding:18,textAlign:'left',border:'1px solid var(--line)',background:'var(--panel)'}} onClick={()=>goto('manualCount')}>
           <div className="opt-title" style={{fontSize:'var(--text-lg)'}}><Ic>⌨</Ic>&nbsp; Contagem Manual</div>
           <div className="opt-desc">Buscar item por código, descrição ou código de barras</div>
+        </button>
+        <button className="item-card" style={{padding:18,textAlign:'left',border:'1px solid var(--line)',background:'var(--panel)'}} onClick={()=>goto('randomCount')}>
+          <div className="opt-title" style={{fontSize:'var(--text-lg)'}}><Ic>🎲</Ic>&nbsp; Contagem Aleatória / por Rota Gerada</div>
+          <div className="opt-desc">O sistema indica o próximo item e endereço a contar</div>
         </button>
         <button
           className="item-card"
