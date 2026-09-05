@@ -22052,3 +22052,5 @@ ver seção "Bloqueio real..." mais acima).
   item real (000.65761) fica a cargo do cliente** — mesma limitação de
   sempre (login exige Supabase Auth real, não simulável no sandbox sem rede,
   e o sandbox tampouco tem acesso à consulta interna da Selgron).
+
+**Confirmado em produção pelo cliente** — a correção foi mesclada ([PR #12](https://github.com/selgron-estoque/selgron-estoque.github.io/pull/12)) e o deploy do GitHub Pages concluiu com sucesso; o cliente testou de verdade em produção e confirmou que o recurso funciona.
