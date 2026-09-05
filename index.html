@@ -15404,20 +15404,36 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
   let dataInicioStr = trendRange.from, dataFimStr = trendRange.to;
   if(dataInicioStr > dataFimStr) dataInicioStr = dataFimStr;
 
-  // "Acuracidade Geral do Estoque" — mesmo pool/fórmula de sempre
-  // (`poolTendencia`, sem deduplicar — cada rodada registrada conta,
-  // pesando por volume de trabalho), SEMPRE ano corrente até hoje,
-  // independente do filtro de período desta página (mesmo critério já
-  // usado em Indicadores).
-  const poolTendencia = buildPoolTendencia(counts, historicoParaTendencia);
+  // "Acuracidade Geral do Estoque" — ATUALIZADO nesta rodada, pedido
+  // explícito do cliente: antes usava `poolTendencia` (sem deduplicar —
+  // cada RODADA registrada contava como um ponto separado), o que fazia
+  // uma 1ª contagem errada (ex.: 40%) continuar arrastando a média pra
+  // baixo mesmo depois de uma recontagem já ter corrigido o item (100%) —
+  // um erro operacional já resolvido não pode continuar penalizando a
+  // acuracidade. Passou a usar `todasParaQualidade` — o MESMO pool
+  // deduplicado por documento (via `ultimaContagemPorDocumento`) que
+  // "Acuracidade dos Itens Contados" já usava — só a rodada FINAL de cada
+  // documento conta. Cliente confirmou explicitamente que o dedup deve
+  // ser só POR DOCUMENTO (a cadeia 1ª contagem→recontagem de um mesmo
+  // inventário), não por código ao longo de documentos DIFERENTES — dois
+  // documentos independentes do mesmo código continuam contando duas
+  // vezes, decisão já tomada antes e mantida aqui.
+  // Efeito colateral esperado e já comunicado ao cliente: como os dois
+  // cards agora leem do MESMO pool, "Geral" e "Contados" ficam
+  // numericamente idênticos até uma rodada futura diferenciar "Geral"
+  // incluindo itens NUNCA contados (fora do escopo desta correção,
+  // combinado explicitamente com o cliente como "só o fix da
+  // deduplicação" — a separação nunca-contados/recorrência/layout de 4
+  // seções do pedido original fica pra depois).
   const anoAtualStr = String(new Date().getFullYear()) + '-01-01';
-  const monthlyStats = computeMonthlyStats(poolTendencia, anoAtualStr, hojeStr);
+  const monthlyStats = computeMonthlyStats(todasParaQualidade, anoAtualStr, hojeStr);
   const mesesComAcuracidade = monthlyStats.filter(m=>m.acuracidade!=null);
   const acuracidade = (mesesComAcuracidade.length>0 ? (mesesComAcuracidade.reduce((s,m)=>s+m.acuracidade,0)/mesesComAcuracidade.length) : 100).toFixed(1);
 
   // "Acuracidade dos Itens Contados" — mesmo pool/fórmula de sempre
   // (`todasParaQualidade`, deduplicado por documento — só a rodada final
-  // de cada item, refletindo ajuste/devolução quando aplicável).
+  // de cada item, refletindo ajuste/devolução quando aplicável). Continua
+  // igual — é o card que já fazia certo antes desta correção.
   const monthlyStatsItensContados = computeMonthlyStats(todasParaQualidade, anoAtualStr, hojeStr);
   const mesesComAcuracidadeItensContados = monthlyStatsItensContados.filter(m=>m.acuracidade!=null);
   const acuracidadeItensContados = (mesesComAcuracidadeItensContados.length>0 ? (mesesComAcuracidadeItensContados.reduce((s,m)=>s+m.acuracidade,0)/mesesComAcuracidadeItensContados.length) : 100).toFixed(1);
