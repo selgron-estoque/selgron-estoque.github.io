@@ -1504,16 +1504,13 @@
   .acc-detail-block-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:9px;font-size:var(--text-2xs);color:var(--ink-dim);}
   .acc-detail-block-motivo{font-size:var(--text-2xs);color:var(--ink-dim);margin-top:6px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 
-  /* Painel/TV de separação — linha da máquina "Em Separação" (destacada) e
-     chip "Urgente" (mesma cor/ícone já usados em .count-card.urgente pra
-     contagem — reaproveita o vocabulário visual já estabelecido nesse app
-     pra "isso precisa de atenção primeiro", em vez de inventar uma cor
-     nova só pra este painel). */
-  .sep-maquina-atual{border:2px solid var(--teal);background:var(--teal-bg);}
-  /* Urgente sempre vence visualmente sobre "destaque" (Em Separação) quando os
-     dois se aplicam à mesma máquina — mesmo box-shadow já usado em
-     .item-card.urgente/.count-card.urgente, só que não escopado a essas 2
-     classes (o painel usa .list-row como base, não .count-card). */
+  /* Painel/TV de separação — chip "Urgente" (mesma cor/ícone já usados em
+     .count-card.urgente pra contagem — reaproveita o vocabulário visual já
+     estabelecido nesse app pra "isso precisa de atenção primeiro", em vez
+     de inventar uma cor nova só pra este painel). O antigo destaque de
+     "máquina atual" (.sep-maquina-atual, borda/fundo teal) foi removido —
+     no layout Kanban, a COLUNA em si (Em Separação) já comunica isso, um
+     destaque a mais no card seria redundante. */
   .sep-urgente-maquina{box-shadow:0 0 0 3px var(--danger), 0 1px 3px rgba(0,0,0,.04);}
   .sep-urgente-chip{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:999px;background:var(--danger-bg);color:var(--danger);font-size:var(--text-xs);font-weight:700;}
   .sep-ordem-num{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:var(--gray-100);color:var(--ink-dim);font-weight:700;font-size:var(--text-sm);flex-shrink:0;}
@@ -1521,6 +1518,27 @@
   .sep-reorder-btns button{background:var(--gray-100);border:none;border-radius:6px;width:26px;height:22px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--ink-dim);}
   .sep-reorder-btns button:hover:not(:disabled){background:var(--gray-200);color:var(--ink);}
   .sep-reorder-btns button:disabled{opacity:.35;cursor:default;}
+
+  /* Kanban de "Programação" (Gestão de Separação) — 5 colunas sempre
+     visíveis, pensado pra ficar numa TV vista de longe (fonte grande no
+     essencial — ETP/Nome Fantasia —, respiro generoso, sem precisar de
+     scroll vertical dentro de cada coluna até acumular muitas máquinas).
+     Em tela estreita (tablet/notebook), o board rola na HORIZONTAL — cada
+     coluna sempre com a largura mínima de leitura confortável, nunca
+     espremida — em vez de empilhar as 5 colunas em coluna única, que
+     quebraria a leitura "olhar e entender na hora" pedida pelo cliente. */
+  .sep-kanban-board{display:flex;gap:14px;overflow-x:auto;padding-bottom:8px;align-items:flex-start;}
+  .sep-kanban-col{flex:1 1 0;min-width:260px;max-width:340px;background:var(--panel-raised);border:1px solid var(--line);border-radius:var(--radius);display:flex;flex-direction:column;max-height:calc(100vh - 260px);}
+  .sep-kanban-col-head{display:flex;align-items:center;gap:8px;padding:12px 14px;border-radius:var(--radius) var(--radius) 0 0;font-family:var(--font-mono);font-size:var(--text-sm);font-weight:700;text-transform:uppercase;letter-spacing:0.4px;}
+  .sep-kanban-col-count{margin-left:auto;background:rgba(0,0,0,.08);color:inherit;font-size:var(--text-xs);font-weight:800;padding:2px 9px;border-radius:20px;}
+  .sep-kanban-col-body{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:10px;}
+  .sep-kanban-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;box-shadow:0 1px 2px rgba(0,0,0,.04);}
+  .sep-kanban-card-head{display:flex;align-items:center;gap:8px;margin-bottom:4px;}
+  .sep-kanban-etp{font-family:var(--font-mono);font-weight:800;font-size:var(--text-md);color:var(--ink);}
+  .sep-kanban-nome{font-size:16px;font-weight:700;color:var(--ink);line-height:1.25;margin-bottom:4px;}
+  .sep-kanban-meta-line{font-size:var(--text-sm);color:var(--ink-dim);margin-bottom:2px;display:flex;align-items:center;gap:5px;}
+  .sep-kanban-data-atrasada{color:var(--danger);font-weight:700;}
+  .sep-kanban-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line);}
 
   /* Etiqueta de PRATELEIRA/CAIXA (tipo 'prateleira') — ver EM
      TRABALHO/AJUSTE, ainda não publicada. Diferente da de PRODUTO
@@ -18178,10 +18196,11 @@ function statusAgregadoMaquina(itensDaMaquina){
 // persistido pra sobreviver a um reload/aparelho diferente.
 //
 // O antigo badge único "Próxima" (`etpProxima`, calculado só a partir de
-// `dataSeparacao`) saiu por completo — a numeração da zona "Próximas" (ver
-// SeparacaoPainelBoard) já comunica "o que vem primeiro" de forma mais
-// direta que um badge solto, e `dataSeparacao` deixou de ser o critério de
-// prioridade (virou `ordem`, a fila manual reordenável por botão ↑/↓).
+// `dataSeparacao`) saiu por completo — a numeração da coluna AGUARDANDO
+// SEPARAÇÃO do Kanban (ver SeparacaoPainelBoard) já comunica "o que vem
+// primeiro" de forma mais direta que um badge solto, e `dataSeparacao`
+// deixou de ser o critério de prioridade (virou `ordem`, a fila manual
+// reordenável por botão ↑/↓).
 function computeMaquinasPainel(itens, maquinasEtp, hojeStr){
   const porEtp = {};
   itens.forEach(i=>{
@@ -18229,11 +18248,36 @@ function computeMaquinasPainel(itens, maquinasEtp, hojeStr){
   return lista;
 }
 
+// Agrupa a lista já ordenada (por `ordem`) de `computeMaquinasPainel` nos 5
+// "buckets" visuais do Kanban — chamado 1x por render de
+// `SeparacaoPainelBoard`, nunca recalcula nada de `computeMaquinasPainel`
+// em si (só reparte o mesmo resultado em colunas). `atrasada` sempre
+// "rouba" a máquina da coluna que seu `status` indicaria (aguardando ou
+// em_separacao — nunca separada/entregue, já que `atrasada` já exige
+// `status!=='separada' && status!=='entregue'` na origem, ver
+// `computeMaquinasPainel`) — cada máquina aparece em EXATAMENTE 1 coluna,
+// nunca duas. Ordem relativa dentro de cada bucket preserva a ordem de
+// entrada (já vem ordenada por `ordem`/ETP).
+function bucketizeKanban(maquinas){
+  const buckets = {aguardando:[], emSeparacao:[], separada:[], atrasada:[], entregue:[]};
+  maquinas.forEach(m=>{
+    if(m.atrasada){ buckets.atrasada.push(m); return; }
+    if(m.status==='aguardando') buckets.aguardando.push(m);
+    else if(m.status==='em_separacao') buckets.emSeparacao.push(m);
+    else if(m.status==='separada') buckets.separada.push(m);
+    else if(m.status==='entregue') buckets.entregue.push(m);
+  });
+  return buckets;
+}
+
 // Botões ↑/↓ (não drag-and-drop — decisão explícita: menos dependência,
-// mais confiável em tablet/TV) — reordena só dentro da zona "Próximas"
-// (status==='aguardando'); máquina já em separação/concluída não participa
-// da fila manual. `maquinasPainel` já vem ordenado por `ordem` (mesmo
-// critério de `computeMaquinasPainel`).
+// mais confiável em tablet/TV) — reordena só dentro da coluna AGUARDANDO
+// SEPARAÇÃO do Kanban (status==='aguardando'); máquina já em separação/
+// concluída/atrasada não participa da fila manual. `maquinasPainel` (o
+// parâmetro recebido) já precisa vir só com essa mesma coluna — quem chama
+// (`SeparacaoPainelBoard.handleMover`) passa `buckets.aguardando`, nunca a
+// lista bruta inteira, senão o índice ↑/↓ não bateria com o que está
+// visualmente na tela.
 //
 // Normaliza `ordem` nula pro índice+1 dela DENTRO da fila 'aguardando' no
 // momento da troca (não antes) — como `computeMaquinasPainel` já ordena
@@ -18298,85 +18342,103 @@ async function avancarStatusMaquinaEmLote(maquina, itensDaMaquina, nomeUsuario){
   return {ok:true, avancados, total: pendentes.length};
 }
 
-// Painel/TV — ÚNICA visualização desta tela agora: a "Lista" de gestão
-// item-a-item foi removida por completo (decisão de arquitetura registrada
-// em `avancarStatusMaquinaEmLote` acima). A unidade de acompanhamento é
-// sempre a MÁQUINA (1 linha por ETP), nunca o item — uma máquina pode ter
-// centenas de componentes na mesma ETP, e o painel nunca deveria virar uma
-// lista de centenas de cartões só pra dizer se UMA máquina já foi separada
-// (ver `computeMaquinasPainel`/`statusAgregadoMaquina` acima). Pensado pra
-// TV/tablet fixo no chão de fábrica: 3 zonas fixas — "Em Separação"
-// (destaque visual), "Próximas" (fila manual reordenável por botão ↑/↓,
-// nunca drag-and-drop — ver `moverOrdemAguardando`) e "Separadas e
-// Entregues" (histórico, recolhido por padrão, mesmo padrão "Ver
-// histórico" já usado em outras telas deste app).
+// Painel/TV — ÚNICA visualização desta tela (a "Lista" de gestão item-a-item
+// foi removida por completo, decisão de arquitetura registrada em
+// `avancarStatusMaquinaEmLote` acima). A unidade de acompanhamento é sempre
+// a MÁQUINA (1 linha por ETP), nunca o item — uma máquina pode ter centenas
+// de componentes na mesma ETP, e o painel nunca deveria virar uma lista de
+// centenas de cartões só pra dizer se UMA máquina já foi separada (ver
+// `computeMaquinasPainel`/`statusAgregadoMaquina` acima).
+//
+// Layout Kanban (pedido explícito do cliente — "quero que as máquinas sejam
+// organizadas visualmente em colunas de acordo com o status do processo,
+// permitindo que qualquer pessoa consiga olhar para a TV e entender
+// imediatamente onde cada máquina está"): 5 colunas SEMPRE visíveis —
+// Aguardando Separação / Em Separação / Separada / Atrasada / Entregue
+// (`SEP_KANBAN_COLUNAS`/`bucketizeKanban` acima) — cada máquina aparece em
+// EXATAMENTE 1 coluna, nunca em duas. ATRASADA nunca é um botão de avanço,
+// é sempre DERIVADA (`m.atrasada`, calculada em `computeMaquinasPainel`) —
+// por isso só pode "roubar" máquina das colunas Aguardando/Em Separação,
+// nunca de Separada/Entregue (ver o comentário de `atrasada` lá). Substitui
+// as antigas 3 zonas fixas ("Em Separação" com destaque, "Próximas"
+// numerada, "Ver separadas e entregues" recolhido por padrão) — Separada e
+// Entregue agora ficam sempre visíveis, sem precisar de nenhum toggle.
 
-// Card de 1 máquina — reaproveitado pelas 3 zonas de `SeparacaoPainelBoard`
-// (só variando `destaque`/`mostrarReordenar`/os handlers de reordenar, que
-// só fazem sentido na zona "Próximas"). O botão de avançar SEMPRE age sobre
-// TODOS os itens da ETP de uma vez (ver `avancarStatusMaquinaEmLote`) — o
-// rótulo já deixa isso explícito ("Iniciar separação (12 item(ns))").
-function MaquinaCard({m, canManage, destaque, mostrarReordenar, podeSubir, podeDescer, busy, erro, onAvancar, onMoverCima, onMoverBaixo, onToggleUrgente}){
-  const classes = ['list-row'];
-  // Urgente sempre vence visualmente sobre "destaque" (Em Separação) — os
-  // dois nunca competem pela mesma borda/sombra ao mesmo tempo.
+// Card de 1 máquina — reaproveitado pelas 5 colunas de `SeparacaoPainelBoard`
+// (só variando `ordinal`/`mostrarReordenar`/os handlers de reordenar, que só
+// fazem sentido na coluna AGUARDANDO SEPARAÇÃO). Mostra só o essencial
+// pedido pelo cliente — ETP, Nome Fantasia, Chassi, Data de Separação — a
+// lista de itens da máquina nunca aparece aqui, só a contagem (mesma
+// decisão já confirmada: "Não preciso mais rastrear item nenhum"). O botão
+// de avançar SEMPRE age sobre TODOS os itens da ETP de uma vez (ver
+// `avancarStatusMaquinaEmLote`).
+function MaquinaCard({m, canManage, ordinal, mostrarReordenar, podeSubir, podeDescer, busy, erro, onAvancar, onMoverCima, onMoverBaixo, onToggleUrgente}){
+  const classes = ['sep-kanban-card'];
   if(m.urgente) classes.push('sep-urgente-maquina');
-  else if(destaque) classes.push('sep-maquina-atual');
   const acaoLabel = SEPARACAO_STATUS_ACAO_LABEL[m.status];
   const temProximo = !!SEPARACAO_STATUS_PROXIMO[m.status];
   return (
-    <div className={classes.join(' ')} style={{flexWrap:'wrap',alignItems:'flex-start',marginBottom:10}}>
-      <div style={{display:'flex',alignItems:'flex-start',gap:10,flex:1,minWidth:200}}>
-        {mostrarReordenar && (
-          <div className="sep-reorder-btns" style={{marginTop:2}}>
-            <button type="button" disabled={!podeSubir || busy} onClick={onMoverCima} title="Mover pra cima na fila"><DIcon name="arrowUp" size={14} /></button>
-            <button type="button" disabled={!podeDescer || busy} onClick={onMoverBaixo} title="Mover pra baixo na fila"><DIcon name="arrowDown" size={14} /></button>
-          </div>
-        )}
-        <div>
-          <div className="lr-title" style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-            {m.etp}
-            {m.urgente && <span className="sep-urgente-chip"><DIcon name="flame" size={11} /> Urgente</span>}
-          </div>
-          <div className="lr-sub">{m.nomeFantasia || 'Nome fantasia não informado'}{m.chassi ? ` · Chassi: ${m.chassi}` : ''}</div>
-          <div className="lr-sub">{m.totalItens} item(ns)</div>
-          {erro && <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginTop:4}}>{erro}</div>}
+    <div className={classes.join(' ')}>
+      <div className="sep-kanban-card-head">
+        {ordinal!=null && <span className="sep-ordem-num">{ordinal}</span>}
+        <span className="sep-kanban-etp">{m.etp}</span>
+        {m.urgente && <span className="sep-urgente-chip"><DIcon name="flame" size={11} /> Urgente</span>}
+      </div>
+      <div className="sep-kanban-nome">{m.nomeFantasia || 'Nome fantasia não informado'}</div>
+      {m.chassi && <div className="sep-kanban-meta-line">Chassi: {m.chassi}</div>}
+      {m.dataSeparacao && (
+        <div className={m.atrasada ? 'sep-kanban-meta-line sep-kanban-data-atrasada' : 'sep-kanban-meta-line'}>
+          {m.atrasada && <DIcon name="alertTriangle" size={12} />} Data de Separação: {new Date(m.dataSeparacao+'T00:00:00').toLocaleDateString('pt-BR')}
         </div>
-      </div>
-      <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+      )}
+      <div className="sep-kanban-foot">
         <SeparacaoStatusTag status={m.status} />
-        {m.atrasada && <StatusTag status="danger" text="Atrasada" />}
-        {m.dataSeparacao && (
-          <span style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)'}}>
-            Previsto: {new Date(m.dataSeparacao+'T00:00:00').toLocaleDateString('pt-BR')}
-          </span>
-        )}
-        {canManage && (
-          <div className="btn-row" style={{width:'auto'}}>
-            <button
-              type="button"
-              className={m.urgente ? 'btn btn-outline' : 'btn btn-secondary'}
-              style={{padding:'8px 12px',fontSize:'var(--text-xs)'}}
-              disabled={busy}
-              onClick={onToggleUrgente}
-            >
-              {m.urgente ? 'Remover urgência' : 'Marcar urgente'}
-            </button>
-            {temProximo && (
-              <button type="button" className="btn btn-primary" style={{padding:'8px 12px',fontSize:'var(--text-xs)'}} disabled={busy} onClick={onAvancar}>
-                {busy ? 'Salvando…' : `${acaoLabel} (${m.totalItens} item(ns))`}
-              </button>
-            )}
-          </div>
-        )}
+        <span className="lr-sub">{m.totalItens} item(ns)</span>
       </div>
+      {erro && <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginTop:6}}>{erro}</div>}
+      {mostrarReordenar && (
+        <div className="sep-reorder-btns" style={{marginTop:8}}>
+          <button type="button" disabled={!podeSubir || busy} onClick={onMoverCima} title="Mover pra cima na fila"><DIcon name="arrowUp" size={14} /></button>
+          <button type="button" disabled={!podeDescer || busy} onClick={onMoverBaixo} title="Mover pra baixo na fila"><DIcon name="arrowDown" size={14} /></button>
+        </div>
+      )}
+      {canManage && (
+        <div className="btn-row" style={{width:'auto',marginTop:8,flexWrap:'wrap'}}>
+          <button
+            type="button"
+            className={m.urgente ? 'btn btn-outline' : 'btn btn-secondary'}
+            style={{padding:'8px 12px',fontSize:'var(--text-xs)'}}
+            disabled={busy}
+            onClick={onToggleUrgente}
+          >
+            {m.urgente ? 'Remover urgência' : 'Marcar urgente'}
+          </button>
+          {temProximo && (
+            <button type="button" className="btn btn-primary" style={{padding:'8px 12px',fontSize:'var(--text-xs)'}} disabled={busy} onClick={onAvancar}>
+              {busy ? 'Salvando…' : acaoLabel}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
+// Metadado de cada coluna do Kanban, na ordem exata pedida pelo cliente —
+// reaproveita tokens de cor já existentes no design system (`--warn`/
+// `--teal`/`--ok`/`--danger`/`--blue`, a mesma paleta que `SeparacaoStatusTag`
+// já usa pros 4 estágios reais), nunca uma cor nova. `chave` bate com as
+// chaves devolvidas por `bucketizeKanban`.
+const SEP_KANBAN_COLUNAS = [
+  {chave:'aguardando', titulo:'Aguardando Separação', icone:'clock', cor:'--warn', corBg:'--warn-bg', vazio:'Nenhuma máquina aguardando.'},
+  {chave:'emSeparacao', titulo:'Em Separação', icone:'repeat', cor:'--teal', corBg:'--teal-bg', vazio:'Nenhuma máquina em separação no momento.'},
+  {chave:'separada', titulo:'Separada', icone:'box', cor:'--ok', corBg:'--ok-bg', vazio:'Nenhuma máquina separada ainda.'},
+  {chave:'atrasada', titulo:'Atrasada', icone:'alertTriangle', cor:'--danger', corBg:'--danger-bg', vazio:'Nenhuma máquina atrasada — tudo em dia.'},
+  {chave:'entregue', titulo:'Entregue', icone:'checkCircle', cor:'--blue', corBg:'--blue-bg', vazio:'Nenhuma máquina entregue ainda.'},
+];
+
 function SeparacaoPainelBoard({itens, maquinasEtp, canManage, onAvancarStatus, onMoverOrdem, onToggleUrgente, onAdicionarEtpClick}){
   const [modoReordenar, setModoReordenar] = useState(false);
-  const [mostrarConcluidas, setMostrarConcluidas] = useState(false);
   const [somenteUrgentes, setSomenteUrgentes] = useState(false);
   const [busyEtp, setBusyEtp] = useState(null);
   const [errosEtp, setErrosEtp] = useState({});
@@ -18386,19 +18448,18 @@ function SeparacaoPainelBoard({itens, maquinasEtp, canManage, onAvancarStatus, o
   const porEtpItens = {};
   itens.forEach(i=>{ if(!i.etp) return; if(!porEtpItens[i.etp]) porEtpItens[i.etp] = []; porEtpItens[i.etp].push(i); });
 
-  const emSeparacao = maquinas.filter(m=>m.status==='em_separacao');
-  const proximas = maquinas.filter(m=>m.status==='aguardando'); // já vem ordenada por `ordem`
-  const concluidas = maquinas.filter(m=>m.status==='separada' || m.status==='entregue');
+  const buckets = bucketizeKanban(maquinas);
 
   // Filtro "Somente Urgentes" — de propósito, o modo reordenar fica
   // desabilitado enquanto ele está ativo: `moverOrdemAguardando` sempre
-  // opera sobre a fila `proximas` INTEIRA (não filtrada), então deixar os
-  // botões ↑/↓ ativos em cima de uma lista visualmente recortada
-  // confundiria o que "pra cima"/"pra baixo" de fato move.
-  const emSeparacaoView = somenteUrgentes ? emSeparacao.filter(m=>m.urgente) : emSeparacao;
-  const proximasView = somenteUrgentes ? proximas.filter(m=>m.urgente) : proximas;
-  const concluidasView = somenteUrgentes ? concluidas.filter(m=>m.urgente) : concluidas;
+  // opera sobre a coluna AGUARDANDO SEPARAÇÃO já visível (`buckets.
+  // aguardando`, ver `handleMover` abaixo — nunca a lista bruta antes do
+  // bucketing) — deixar os botões ↑/↓ ativos em cima de uma lista
+  // visualmente recortada por este filtro confundiria o que "pra cima"/
+  // "pra baixo" de fato move.
+  function aplicarFiltro(lista){ return somenteUrgentes ? lista.filter(m=>m.urgente) : lista; }
   const reordenarAtivo = modoReordenar && !somenteUrgentes;
+  const aguardandoView = aplicarFiltro(buckets.aguardando);
 
   async function handleAvancar(m){
     setBusyEtp(m.etp);
@@ -18411,7 +18472,7 @@ function SeparacaoPainelBoard({itens, maquinasEtp, canManage, onAvancarStatus, o
   async function handleMover(etp, direcao){
     setBusyEtp(etp);
     setErrosEtp(prev=>({...prev, [etp]:null}));
-    const res = await onMoverOrdem(proximas, etp, direcao);
+    const res = await onMoverOrdem(buckets.aguardando, etp, direcao);
     setBusyEtp(null);
     if(!res.ok) setErrosEtp(prev=>({...prev, [etp]: res.erro || 'Não foi possível reordenar — tente novamente.'}));
   }
@@ -18432,7 +18493,7 @@ function SeparacaoPainelBoard({itens, maquinasEtp, canManage, onAvancarStatus, o
             <DIcon name="plus" size={15} /> Adicionar ETP
           </button>
         )}
-        {proximas.length>1 && (
+        {buckets.aguardando.length>1 && (
           <button type="button" className="btn btn-outline btn-sm" disabled={somenteUrgentes} onClick={()=>setModoReordenar(v=>!v)}>
             {modoReordenar ? 'Concluir reordenação' : 'Reordenar fila'}
           </button>
@@ -18446,69 +18507,39 @@ function SeparacaoPainelBoard({itens, maquinasEtp, canManage, onAvancarStatus, o
         </button>
       </div>
 
-      <div className="section-title" style={{marginTop:0}}>
-        <span>Em Separação</span>
-        {emSeparacao.length>0 && <span className="badge" style={{position:'static'}}>{emSeparacao.length}</span>}
-      </div>
-      {emSeparacaoView.length===0 ? (
-        <div className="empty-state">Nenhuma máquina em separação no momento.</div>
-      ) : (
-        emSeparacaoView.map(m=>(
-          <MaquinaCard
-            key={m.etp} m={m} canManage={canManage} destaque
-            busy={busyEtp===m.etp} erro={errosEtp[m.etp]}
-            onAvancar={()=>handleAvancar(m)}
-            onToggleUrgente={()=>handleToggleUrgente(m)}
-          />
-        ))
-      )}
-
-      <div className="section-title">
-        <span>Próximas</span>
-        {proximas.length>0 && <span className="badge" style={{position:'static'}}>{proximas.length}</span>}
-      </div>
-      {proximasView.length===0 ? (
-        <div className="empty-state">Nenhuma máquina aguardando na fila.</div>
-      ) : (
-        proximasView.map((m, idx)=>(
-          <div key={m.etp} style={{display:'flex',alignItems:'flex-start',gap:10}}>
-            <span className="sep-ordem-num" style={{marginTop:14}}>{idx+1}</span>
-            <div style={{flex:1}}>
-              <MaquinaCard
-                m={m} canManage={canManage}
-                mostrarReordenar={reordenarAtivo}
-                podeSubir={idx>0} podeDescer={idx<proximasView.length-1}
-                busy={busyEtp===m.etp} erro={errosEtp[m.etp]}
-                onAvancar={()=>handleAvancar(m)}
-                onMoverCima={()=>handleMover(m.etp,'up')}
-                onMoverBaixo={()=>handleMover(m.etp,'down')}
-                onToggleUrgente={()=>handleToggleUrgente(m)}
-              />
+      <div className="sep-kanban-board">
+        {SEP_KANBAN_COLUNAS.map(col=>{
+          const listaBruta = buckets[col.chave];
+          const lista = col.chave==='aguardando' ? aguardandoView : aplicarFiltro(listaBruta);
+          return (
+            <div key={col.chave} className="sep-kanban-col">
+              <div className="sep-kanban-col-head" style={{color:`var(${col.cor})`,background:`var(${col.corBg})`}}>
+                <DIcon name={col.icone} size={16} />
+                <span>{col.titulo}</span>
+                <span className="sep-kanban-col-count">{listaBruta.length}</span>
+              </div>
+              <div className="sep-kanban-col-body">
+                {lista.length===0 ? (
+                  <div className="empty-state" style={{margin:0}}>{col.vazio}</div>
+                ) : (
+                  lista.map((m, idx)=>(
+                    <MaquinaCard
+                      key={m.etp} m={m} canManage={canManage}
+                      ordinal={col.chave==='aguardando' ? idx+1 : null}
+                      mostrarReordenar={col.chave==='aguardando' && reordenarAtivo}
+                      podeSubir={idx>0} podeDescer={idx<lista.length-1}
+                      busy={busyEtp===m.etp} erro={errosEtp[m.etp]}
+                      onAvancar={()=>handleAvancar(m)}
+                      onMoverCima={()=>handleMover(m.etp,'up')}
+                      onMoverBaixo={()=>handleMover(m.etp,'down')}
+                      onToggleUrgente={()=>handleToggleUrgente(m)}
+                    />
+                  ))
+                )}
+              </div>
             </div>
-          </div>
-        ))
-      )}
-
-      <div style={{marginTop:18,paddingTop:14,borderTop:'1px solid var(--line)'}}>
-        <button type="button" className="btn btn-outline btn-sm" onClick={()=>setMostrarConcluidas(v=>!v)}>
-          {mostrarConcluidas ? 'Ocultar separadas/entregues' : `Ver separadas e entregues (${concluidas.length})`}
-        </button>
-        {mostrarConcluidas && (
-          concluidasView.length===0 ? (
-            <div className="empty-state" style={{marginTop:12}}>Nenhuma máquina separada/entregue ainda.</div>
-          ) : (
-            <div style={{marginTop:12}}>
-              {concluidasView.map(m=>(
-                <MaquinaCard
-                  key={m.etp} m={m} canManage={canManage}
-                  busy={busyEtp===m.etp} erro={errosEtp[m.etp]}
-                  onAvancar={()=>handleAvancar(m)}
-                  onToggleUrgente={()=>handleToggleUrgente(m)}
-                />
-              ))}
-            </div>
-          )
-        )}
+          );
+        })}
       </div>
     </div>
   );
@@ -18869,9 +18900,12 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
   // Reordenar manualmente (botões ↑/↓, sem drag-and-drop — decisão
   // deliberada, simplicidade/confiabilidade sem dependência nova) — troca a
   // `ordem` da máquina com a vizinha na direção pedida, persistindo os 2
-  // valores junto (`atualizarOrdemMaquina`), sempre em cima da fila
-  // "Próximas" (aguardando) inteira, nunca de uma view já filtrada — ver
-  // `moverOrdemAguardando`.
+  // valores junto (`atualizarOrdemMaquina`). Recebe `maquinasPainelSubset`
+  // pronto de quem chama (`SeparacaoPainelBoard.handleMover`, que passa
+  // `buckets.aguardando` — a coluna AGUARDANDO SEPARAÇÃO já visível na
+  // tela, com qualquer máquina atrasada já excluída) — o índice ↑/↓ dentro
+  // de `moverOrdemAguardando` precisa bater exatamente com a ordem
+  // renderizada, nunca com a lista bruta antes do bucketing do Kanban.
   async function handleMoverOrdem(maquinasPainelSubset, etp, direcao){
     const res = moverOrdemAguardando(maquinasPainelSubset, etp, direcao);
     if(!res) return {ok:true};
@@ -18890,8 +18924,9 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
         <span>Sequência de separação</span>
       </div>
       <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)',marginBottom:14,lineHeight:1.6}}>
-        Ordenada manualmente (botões ↑/↓ na fila "Próximas") — a prioridade
-        Urgente só destaca o card visualmente, nunca reordena a fila sozinha.
+        Ordenada manualmente (botões ↑/↓ na coluna Aguardando Separação) — a
+        prioridade Urgente só destaca o card visualmente, nunca reordena a
+        fila sozinha.
       </div>
       {mensagemSucesso && <div style={{fontSize:'var(--text-xs)',color:'var(--ok)',marginBottom:14}}>{mensagemSucesso}</div>}
 
