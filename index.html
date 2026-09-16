@@ -16809,6 +16809,36 @@ async function atualizarOrdemMaquina(etp, ordem){
   }
 }
 
+// Excluir uma MÁQUINA/ETP inteira do painel — pedido do cliente pra reverter
+// uma ETP adicionada por engano ("Adicionar ETP"), com uma restrição
+// explícita: "apenas perfil de admin pode excluir". Apaga os dois lados:
+// todo item de `sequencia_separacao` daquela ETP (senão os itens ficariam
+// órfãos, sem máquina nenhuma pra agrupá-los, e reapareceriam via
+// `computeMaquinasPainel` assim que o cache local recarregasse) e a própria
+// linha de cache em `maquinas_etp`. Restrito a admin em DOIS níveis: na UI
+// (`isAdmin` em `ProgramacaoSeparacaoPanel`/`MaquinaCard`, esconde o botão
+// pra quem não é admin) E no banco (policy `"exclusao admin"` em
+// `maquinas_etp`, `eh_admin(auth.uid())`, backend/schema.sql — diferente de
+// toda outra policy desta tabela/de `sequencia_separacao`, que usam
+// `tem_acesso_tela` e por isso liberam qualquer perfil com acesso à tela,
+// não só admin). O delete de `sequencia_separacao` acima ainda passa pela
+// policy por TELA de sempre (não por perfil) — só a linha de `maquinas_etp`
+// tem a trava de admin de verdade; como o app já bloqueia isso na UI antes
+// de chamar esta função, na prática as duas linhas só rodam juntas quando
+// quem clicou já é admin.
+async function excluirMaquinaCompleta(etp){
+  if(!supabaseClient || !etp) return {ok:false, erro:'ETP não informada.'};
+  try{
+    const { error: errItens } = await supabaseClient.from('sequencia_separacao').delete().eq('etp', etp);
+    if(errItens) throw errItens;
+    const { error: errMaquina } = await supabaseClient.from('maquinas_etp').delete().eq('etp', etp);
+    if(errMaquina) throw errMaquina;
+    return {ok:true};
+  }catch(err){
+    return {ok:false, erro:(err && err.message) || 'Não foi possível excluir a máquina.'};
+  }
+}
+
 /* ---------------- SAs EM ABERTO (desempenho do almoxarifado) ---------------- */
 // Pedido do cliente: acompanhar automaticamente quanto tempo o almoxarifado
 // leva pra atender uma "Solicitação ao Almoxarifado" (SA) — hoje ele visita
@@ -18372,7 +18402,8 @@ async function avancarStatusMaquinaEmLote(maquina, itensDaMaquina, nomeUsuario){
 // decisão já confirmada: "Não preciso mais rastrear item nenhum"). O botão
 // de avançar SEMPRE age sobre TODOS os itens da ETP de uma vez (ver
 // `avancarStatusMaquinaEmLote`).
-function MaquinaCard({m, canManage, ordinal, mostrarReordenar, podeSubir, podeDescer, busy, erro, onAvancar, onMoverCima, onMoverBaixo, onToggleUrgente}){
+function MaquinaCard({m, canManage, isAdmin, ordinal, mostrarReordenar, podeSubir, podeDescer, busy, erro, onAvancar, onMoverCima, onMoverBaixo, onToggleUrgente, onExcluir}){
+  const [confirmandoExcluir, setConfirmandoExcluir] = useState(false);
   const classes = ['sep-kanban-card'];
   if(m.urgente) classes.push('sep-urgente-maquina');
   const acaoLabel = SEPARACAO_STATUS_ACAO_LABEL[m.status];
@@ -18420,6 +18451,32 @@ function MaquinaCard({m, canManage, ordinal, mostrarReordenar, podeSubir, podeDe
           )}
         </div>
       )}
+      {isAdmin && !confirmandoExcluir && (
+        <button
+          type="button"
+          className="btn btn-outline"
+          style={{width:'auto',marginTop:8,padding:'8px 12px',fontSize:'var(--text-xs)',color:'var(--danger)',borderColor:'var(--danger)'}}
+          disabled={busy}
+          onClick={()=>setConfirmandoExcluir(true)}
+        >
+          <Ic>🗑</Ic> Excluir máquina
+        </button>
+      )}
+      {isAdmin && confirmandoExcluir && (
+        <div style={{marginTop:8,padding:8,background:'var(--danger-bg)',borderRadius:8}}>
+          <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginBottom:6}}>
+            Excluir a ETP {m.etp} e todos os {m.totalItens} item(ns) dela? Não pode ser desfeito.
+          </div>
+          <div className="btn-row" style={{width:'auto',flexWrap:'wrap'}}>
+            <button type="button" className="btn btn-outline" style={{padding:'8px 12px',fontSize:'var(--text-xs)'}} disabled={busy} onClick={()=>setConfirmandoExcluir(false)}>
+              Cancelar
+            </button>
+            <button type="button" className="btn btn-danger" style={{padding:'8px 12px',fontSize:'var(--text-xs)'}} disabled={busy} onClick={onExcluir}>
+              {busy ? 'Excluindo…' : 'Confirmar exclusão'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -18437,7 +18494,7 @@ const SEP_KANBAN_COLUNAS = [
   {chave:'entregue', titulo:'Entregue', icone:'checkCircle', cor:'--blue', corBg:'--blue-bg', vazio:'Nenhuma máquina entregue ainda.'},
 ];
 
-function SeparacaoPainelBoard({itens, maquinasEtp, canManage, onAvancarStatus, onMoverOrdem, onToggleUrgente, onAdicionarEtpClick}){
+function SeparacaoPainelBoard({itens, maquinasEtp, canManage, isAdmin, onAvancarStatus, onMoverOrdem, onToggleUrgente, onExcluirMaquina, onAdicionarEtpClick}){
   const [modoReordenar, setModoReordenar] = useState(false);
   const [somenteUrgentes, setSomenteUrgentes] = useState(false);
   const [busyEtp, setBusyEtp] = useState(null);
@@ -18485,6 +18542,14 @@ function SeparacaoPainelBoard({itens, maquinasEtp, canManage, onAvancarStatus, o
     if(!res.ok) setErrosEtp(prev=>({...prev, [m.etp]: res.erro || 'Não foi possível salvar — tente novamente.'}));
   }
 
+  async function handleExcluir(m){
+    setBusyEtp(m.etp);
+    setErrosEtp(prev=>({...prev, [m.etp]:null}));
+    const res = await onExcluirMaquina(m.etp);
+    setBusyEtp(null);
+    if(!res.ok) setErrosEtp(prev=>({...prev, [m.etp]: res.erro || 'Não foi possível excluir — tente novamente.'}));
+  }
+
   return (
     <div>
       <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',marginBottom:18}}>
@@ -18524,7 +18589,7 @@ function SeparacaoPainelBoard({itens, maquinasEtp, canManage, onAvancarStatus, o
                 ) : (
                   lista.map((m, idx)=>(
                     <MaquinaCard
-                      key={m.etp} m={m} canManage={canManage}
+                      key={m.etp} m={m} canManage={canManage} isAdmin={isAdmin}
                       ordinal={col.chave==='aguardando' ? idx+1 : null}
                       mostrarReordenar={col.chave==='aguardando' && reordenarAtivo}
                       podeSubir={idx>0} podeDescer={idx<lista.length-1}
@@ -18533,6 +18598,7 @@ function SeparacaoPainelBoard({itens, maquinasEtp, canManage, onAvancarStatus, o
                       onMoverCima={()=>handleMover(m.etp,'up')}
                       onMoverBaixo={()=>handleMover(m.etp,'down')}
                       onToggleUrgente={()=>handleToggleUrgente(m)}
+                      onExcluir={()=>handleExcluir(m)}
                     />
                   ))
                 )}
@@ -18821,6 +18887,7 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
   const [mensagemSucesso, setMensagemSucesso] = useState(null);
 
   const canManage = role==='lider' || role==='admin';
+  const isAdmin = role==='admin';
 
   // Fila em tempo real — escopado a esta tela (mesmo padrão já usado por
   // EtiquetasPanel: só ela lê esse dado, não vale manter um canal aberto
@@ -18934,9 +19001,11 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
         itens={itens}
         maquinasEtp={maquinasEtp}
         canManage={canManage}
+        isAdmin={isAdmin}
         onAvancarStatus={handleAvancarStatusMaquina}
         onMoverOrdem={handleMoverOrdem}
         onToggleUrgente={atualizarUrgenteMaquina}
+        onExcluirMaquina={excluirMaquinaCompleta}
         onAdicionarEtpClick={()=>setModalAdicionarAberto(true)}
       />
 

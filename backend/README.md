@@ -949,3 +949,53 @@ reaproveitável — bastaria adicionar 2 controles novos: um operador SEM
 (regressão não introduzida), e um operador COM `acessos_extras` contendo
 a tela certa consegue escrever (o caso que estava quebrado, agora
 corrigido).
+
+### 14.13 — Botão "Excluir máquina" (Programação de Separação): policy de
+### delete admin-only em `maquinas_etp`
+
+Pedido do cliente: um jeito de reverter uma ETP adicionada por engano no
+Kanban de "Programação", com uma restrição explícita — "apenas perfil de
+admin pode excluir". Diferente de toda outra policy tocada nas seções
+acima (`tem_acesso_tela`, que libera qualquer perfil com acesso à TELA,
+inclusive operador com a exceção via "Acesso por tela"), esta é uma
+restrição de PERFIL de verdade — só quem tem `perfil='admin'` em
+`usuarios` pode excluir.
+
+**Nova policy em `maquinas_etp`** (`schema.sql`, logo depois das 3
+policies já existentes de leitura/inserção/atualização por tela):
+
+```sql
+create policy "exclusao admin" on maquinas_etp for delete
+  using (eh_admin(auth.uid()));
+```
+
+Reaproveita a função `eh_admin(p_uid)` já existente desde a migração pro
+Supabase Auth (checa `perfil='admin' and status<>'bloqueado'`) — não
+precisou de nenhuma função nova. `sequencia_separacao` (a tabela de itens
+dentro de cada ETP) **não mudou** — a policy de delete dela continua
+`tem_acesso_tela(...)` (o nome da policy, "exclusão líder ou admin", é
+enganoso — sugere restrição de perfil, mas não é: qualquer um com acesso
+à tela pode excluir um item lá). O botão "Excluir máquina" apaga as duas
+tabelas juntas (`excluirMaquinaCompleta`, `index.html`) — como o app já
+esconde o botão da UI pra quem não é admin antes mesmo de chamar essa
+função, na prática as duas exclusões só acontecem juntas quando quem
+clicou já é admin; a policy nova em `maquinas_etp` é a garantia de
+verdade no banco, não só a UI escondendo o botão.
+
+**Aplicar**: como o bloco de `maquinas_etp` inteiro (seção acima, tabela
++ 3 policies antigas + Realtime) já é idempotente, basta rodar de novo
+esse bloco completo do `schema.sql` — o `drop policy if exists "exclusao
+admin"` protege contra erro de "already exists" numa 2ª execução.
+
+**Verificação**: harness (jsdom + `react-dom/client` + `act()`, extraindo
+e transpilando via Babel o `<script type="text/babel">` real do
+`index.html`, mesma técnica de sempre neste projeto) confirmando que o
+botão "Excluir máquina" só aparece pra `role==='admin'` — nunca pra
+`lider`/`operador`, nem pro operador com a exceção `'programacaoSeparacao'`
+concedida via `acessos_extras` — e que o fluxo de confirmação (clique
+abre "Confirmar exclusão"/"Cancelar", confirmar chama
+`excluirMaquinaCompleta` com a ETP certa) funciona corretamente pra
+admin. **Não testado contra Postgres real** (mesma limitação de sempre,
+sandbox sem acesso de rede ao Supabase) — a policy em si é de 1 linha só,
+reaproveitando uma função (`eh_admin`) já testada e em produção há
+tempos nas outras tabelas deste projeto.

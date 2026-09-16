@@ -2285,13 +2285,16 @@ alter table maquinas_etp enable row level security;
 
 -- Mesmo padrão de RLS já usado em `sequencia_separacao`/`etiquetas_fila`:
 -- gate único por `tem_acesso_tela`, já que só a mesma tela ("Gestão de
--- Separação" → "Programação") lê e escreve aqui. Sem policy de delete —
--- diferente de `sequencia_separacao` (que tem "Excluir item", admin-only),
--- o cache de máquina nunca precisa ser apagado manualmente: um `upsert`
--- novo pra mesma ETP já atualiza os campos, e uma ETP sem nenhum item mais
--- em `sequencia_separacao` simplesmente para de aparecer no painel (o
--- agrupamento é feito a partir dos itens, não da tabela `maquinas_etp` em
--- si) sem precisar apagar a linha.
+-- Separação" → "Programação") lê e escreve aqui — leitura/inserção/
+-- atualização continuam liberadas pra qualquer um com acesso à tela (líder/
+-- admin/operador com a exceção concedida), não só admin.
+--
+-- ATENÇÃO, achado ao adicionar a policy de delete abaixo: o NOME da policy
+-- de delete de `sequencia_separacao` ("exclusão líder ou admin") sugere
+-- restrição de perfil, mas o `using` dela é `tem_acesso_tela(...)` — o
+-- MESMO gate por tela das outras, não uma restrição de perfil de verdade
+-- (um operador com a exceção também pode excluir lá). O nome é só
+-- enganoso, não documentar isso como "admin-only" de novo.
 drop policy if exists "leitura por tela" on maquinas_etp;
 create policy "leitura por tela" on maquinas_etp for select
   using (tem_acesso_tela(auth.uid(), 'programacaoSeparacao'));
@@ -2304,6 +2307,18 @@ drop policy if exists "atualizacao por tela" on maquinas_etp;
 create policy "atualizacao por tela" on maquinas_etp for update
   using (tem_acesso_tela(auth.uid(), 'programacaoSeparacao'))
   with check (tem_acesso_tela(auth.uid(), 'programacaoSeparacao'));
+
+-- Excluir uma ETP inteira (botão "Excluir máquina", index.html) — pedido
+-- explícito do cliente foi "apenas perfil de admin pode excluir", uma
+-- restrição de PERFIL, não de tela — diferente de todas as outras policies
+-- desta tabela (e da de delete de `sequencia_separacao`, ver nota acima),
+-- que usam `tem_acesso_tela`. Por isso esta é a ÚNICA policy deste projeto
+-- em `maquinas_etp` que usa `eh_admin(...)` em vez do gate por tela — dá
+-- garantia de verdade no banco, não só esconder o botão na UI
+-- (`isAdmin` em `ProgramacaoSeparacaoPanel`/`MaquinaCard`, index.html).
+drop policy if exists "exclusao admin" on maquinas_etp;
+create policy "exclusao admin" on maquinas_etp for delete
+  using (eh_admin(auth.uid()));
 
 -- Realtime — pra o painel/TV (normalmente aberto num aparelho fixo, sem
 -- ninguém interagindo) atualizar sozinho nome fantasia/chassi/data assim
