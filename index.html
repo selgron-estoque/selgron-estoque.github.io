@@ -18425,8 +18425,8 @@ function MaquinaCard({m, canManage, isAdmin, ordinal, mostrarReordenar, podeSubi
           <button type="button" disabled={!podeDescer || busy} onClick={onMoverBaixo} title="Mover pra baixo na fila"><DIcon name="arrowDown" size={14} /></button>
         </div>
       )}
-      {canManage && (
-        <div className="btn-row" style={{width:'auto',marginTop:8,flexWrap:'wrap'}}>
+      {canManage && !confirmandoExcluir && (
+        <div className="btn-row" style={{width:'auto',marginTop:8,gap:'8px',flexWrap:'nowrap'}}>
           <button
             type="button"
             className={m.urgente ? 'btn btn-outline' : 'btn btn-secondary'}
@@ -18436,23 +18436,34 @@ function MaquinaCard({m, canManage, isAdmin, ordinal, mostrarReordenar, podeSubi
           >
             {m.urgente ? 'Remover urgência' : 'Marcar urgente'}
           </button>
+          <button
+            type="button"
+            className="btn btn-outline"
+            style={{padding:'8px 12px',fontSize:'var(--text-xs)'}}
+            disabled={busy}
+            onClick={()=>{/* placeholder for edit action */}}
+            title="Editar máquina"
+          >
+            ✏️ Editar
+          </button>
           {temProximo && (
             <button type="button" className="btn btn-primary" style={{padding:'8px 12px',fontSize:'var(--text-xs)'}} disabled={busy} onClick={onAvancar}>
               {busy ? 'Salvando…' : acaoLabel}
             </button>
           )}
+          {isAdmin && (
+            <button
+              type="button"
+              className="btn btn-outline"
+              style={{padding:'8px 12px',fontSize:'var(--text-xs)',color:'var(--danger)',borderColor:'var(--danger)'}}
+              disabled={busy}
+              onClick={()=>setConfirmandoExcluir(true)}
+              title="Excluir máquina"
+            >
+              🗑️
+            </button>
+          )}
         </div>
-      )}
-      {isAdmin && !confirmandoExcluir && (
-        <button
-          type="button"
-          className="btn btn-outline"
-          style={{width:'auto',marginTop:8,padding:'8px 12px',fontSize:'var(--text-xs)',color:'var(--danger)',borderColor:'var(--danger)'}}
-          disabled={busy}
-          onClick={()=>setConfirmandoExcluir(true)}
-        >
-          <Ic>🗑</Ic> Excluir máquina
-        </button>
       )}
       {isAdmin && confirmandoExcluir && (
         <div style={{marginTop:8,padding:8,background:'var(--danger-bg)',borderRadius:8}}>
