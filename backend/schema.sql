@@ -2459,3 +2459,27 @@ alter table maquinas_etp add column if not exists montagem date;
 -- RLS: nenhuma policy nova necessária — as policies de INSERT/UPDATE já
 -- existentes ("insercao por tela"/"atualizacao por tela", acima) são
 -- incondicionais por coluna, cobrem os 3 campos novos sem nenhum ajuste.
+
+-- =============================================================================
+-- "PROGRAMAÇÃO": ABAS PARA OUTRAS LINHAS DE PRODUÇÃO (ELÉTRICA/SEM/SSE/SEP)
+-- =============================================================================
+-- Pedido do cliente: o Kanban de "Programação" (index.html,
+-- `ProgramacaoSeparacaoPanel`/`SeparacaoPainelBoard`) sempre mostrou todas as
+-- ETPs juntas, misturadas — mas cada ETP pertence de fato a uma linha de
+-- produção diferente dentro do almoxarifado (a linha já em uso até aqui, mais
+-- Elétrica/SEM/SSE/SEP). Vira uma coluna nova, `linha`, pra cada ETP dizer a
+-- que linha pertence — a tela ganhou uma barra de abas (uma por linha) que
+-- filtra o Kanban pra mostrar só as ETPs da linha selecionada.
+--
+-- `linha` é sempre um texto livre curto (o rótulo da linha, ex. "Geral"/
+-- "Elétrica"/"SEM"/"SSE"/"SEP") — não um enum/FK: o Empenho Aberto (a consulta
+-- ao vivo à Selgron que já preenche o resto do cabeçalho da ETP) nunca traz
+-- esse dado, então é sempre escolhido manualmente pelo líder no formulário de
+-- "Adicionar ETP", igual aos outros campos que já viraram editáveis na seção
+-- anterior. Uma ETP sem `linha` definida (nula) cai na linha padrão "Geral" —
+-- decisão do `index.html`, não deste schema, pra nunca esconder silenciosamente
+-- uma ETP mais antiga (de antes desta coluna existir) de todas as abas.
+alter table maquinas_etp add column if not exists linha text;
+
+-- RLS: nenhuma policy nova necessária — mesmo raciocínio da coluna anterior,
+-- as policies de INSERT/UPDATE já existentes são incondicionais por coluna.
