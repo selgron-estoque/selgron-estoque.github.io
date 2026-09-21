@@ -5686,16 +5686,16 @@ async function computeImportSummaryExtras(itens){
 // Emoji sem entrada mapeada cai pro comportamento antigo (span cru) —
 // rede de segurança, nunca quebra por um emoji esquecido no mapeamento.
 const EMOJI_TO_DICON = {
-  '⚠':'alertTriangle', '📍':'mapPin', '🔁':'repeat', '📷':'camera',
-  '📄':'fileText', '🗑':'trash', '📦':'box', '⬇':'arrowDown',
-  '✅':'checkCircle', '←':'chevronLeft', 'ℹ':'info', '🗺':'map',
-  '📅':'calendar', '🎉':'checkCircle', '⬆':'arrowUp', '⏳':'clock',
-  '›':'chevronRight', '🔒':'lock', '🔍':'search', '🔄':'repeat',
-  '📤':'upload', '📋':'clipboardList', '📊':'barChart', '👤':'user',
-  '🏷':'tag', '🎲':'shuffle', '➕':'plus', '✉':'mail', '⛔':'ban',
+  '⚠':'alertTriangle', '◉':'mapPin', '↻':'repeat', '◫':'camera',
+  '▭':'fileText', '⌫':'trash', '▣':'box', '⬇':'arrowDown',
+  '✓':'checkCircle', '←':'chevronLeft', 'ℹ':'info', '▧':'map',
+  '▦':'calendar', '✦':'checkCircle', '⬆':'arrowUp', '◷':'clock',
+  '›':'chevronRight', '⚿':'lock', '⌕':'search', '↻':'repeat',
+  '↥':'upload', '▤':'clipboardList', '▥':'barChart', '◔':'user',
+  '◈':'tag', '◆':'shuffle', '+':'plus', '✉':'mail', '⊘':'ban',
   '⚙':'settings', '⏻':'logOut', '⌨':'keyboard', '⌂':'home',
-  '🏢':'building', '🏭':'building', '✓':'checkCircle', '—':'minus',
-  '!':'alertTriangle', '🔥':'flame', '🎯':'target',
+  '▢':'building', '▨':'building', '✓':'checkCircle', '—':'minus',
+  '!':'alertTriangle', '※':'flame', '◎':'target',
 };
 const Ic = ({children, size=16}) => {
   const name = EMOJI_TO_DICON[children];
@@ -7633,7 +7633,7 @@ function TopBar({user, role, onHome, onLogout, theme, onToggleTheme}){
       </div>
       <div style={{display:'flex',alignItems:'center',gap:8}}>
         <div className="role-pill" style={{cursor:'default'}}>
-          <Ic>👤</Ic>
+          <Ic>◔</Ic>
           <span>{user.nome} · {ROLE_LABELS[role]}</span>
         </div>
         {onToggleTheme && (
@@ -7810,7 +7810,7 @@ function Sidebar({view, goto, role, user, collapsed, pendingSync=0}){
         <div>Versão 1.0.0</div>
         {pendingSync>0 && (
           <div style={{color:'var(--warn)'}}>
-            <Ic>⏳</Ic> {pendingSync} {pendingSync===1?'contagem':'contagens'} aguardando conexão
+            <Ic>◷</Ic> {pendingSync} {pendingSync===1?'contagem':'contagens'} aguardando conexão
           </div>
         )}
         <div className="sf-user"><DIcon name="user" size={12} />{user.nome} · {ROLE_LABELS[role]}</div>
@@ -7892,10 +7892,10 @@ function MobileNavBar({onHome, onVoltar, podeVoltar}){
 function BottomNav({view, goto, role}){
   const items = [
     {id:'home', ic:'⌂', label:'Início'},
-    {id:'inventories', ic:'📦', label:'Inventários'},
-    {id:'pickCountType', ic:'🔍', label:'Contar'},
-    {id:'concluidas', ic:'✅', label:'Concluídas'},
-    {id:'dashboard', ic:'📊', label:'Dash'},
+    {id:'inventories', ic:'▣', label:'Inventários'},
+    {id:'pickCountType', ic:'⌕', label:'Contar'},
+    {id:'concluidas', ic:'✓', label:'Concluídas'},
+    {id:'dashboard', ic:'▥', label:'Dash'},
   ];
   return (
     <div className="bottom-nav">
@@ -8325,38 +8325,38 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
       <div className="grid-cards">
         <div className="home-card" onClick={()=>goto('inventories')}>
           {pendentes>0 && <span className="badge">{pendentes}</span>}
-          <span className="icon"><Ic size={26}>📦</Ic></span>
+          <span className="icon"><Ic size={26}>▣</Ic></span>
           <span className="label">Inventários Pendentes</span>
         </div>
         <div className="home-card" onClick={()=>goto('pickCountType')}>
-          <span className="icon"><Ic size={26}>🔍</Ic></span>
+          <span className="icon"><Ic size={26}>⌕</Ic></span>
           <span className="label">Nova Contagem</span>
         </div>
         <div className="home-card" onClick={()=>goto('concluidas')}>
-          <span className="icon"><Ic size={26}>✅</Ic></span>
+          <span className="icon"><Ic size={26}>✓</Ic></span>
           <span className="label">Contagens Concluídas</span>
         </div>
         <div className="home-card" onClick={()=>goto('recounts')}>
           {pendentesRecontagem>0 && <span className="badge">{pendentesRecontagem}</span>}
-          <span className="icon"><Ic size={26}>🔁</Ic></span>
+          <span className="icon"><Ic size={26}>↻</Ic></span>
           <span className="label">Recontagens Pendentes</span>
         </div>
         {podeGerir && (
           <div className="home-card" onClick={()=>goto('enderecos')}>
             {pendentesEnderecos>0 && <span className="badge">{pendentesEnderecos}</span>}
-            <span className="icon"><Ic size={26}>📍</Ic></span>
+            <span className="icon"><Ic size={26}>◉</Ic></span>
             <span className="label">Endereços Pendentes</span>
           </div>
         )}
         {hasAccess(user,'dashboard') && (
           <div className="home-card" onClick={()=>goto('dashboard')}>
-            <span className="icon"><Ic size={26}>📊</Ic></span>
+            <span className="icon"><Ic size={26}>▥</Ic></span>
             <span className="label">Indicadores</span>
           </div>
         )}
         {hasAccess(user,'relatorios') && (
           <div className="home-card" onClick={()=>goto('relatorios')}>
-            <span className="icon"><Ic size={26}>📄</Ic></span>
+            <span className="icon"><Ic size={26}>▭</Ic></span>
             <span className="label">Relatórios</span>
           </div>
         )}
@@ -8564,7 +8564,7 @@ function InventoryList({inventories, goto, role, counts, users, currentUser, onD
   }
 
   if(inventories.length===0){
-    return <div className="empty-state"><div className="ic"><Ic size={40}>📦</Ic></div>Nenhum inventário programado.</div>;
+    return <div className="empty-state"><div className="ic"><Ic size={40}>▣</Ic></div>Nenhum inventário programado.</div>;
   }
 
   function handleDownload(inv){
@@ -8634,7 +8634,7 @@ function InventoryList({inventories, goto, role, counts, users, currentUser, onD
             <div className="item-desc" style={{fontSize:16}}>{inv.nome}</div>
           </div>
           <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:6}}>
-            {inv.urgente && <span className="urgente-chip"><Ic>🔥</Ic> Urgente</span>}
+            {inv.urgente && <span className="urgente-chip"><Ic>※</Ic> Urgente</span>}
             <div style={{display:'flex',alignItems:'center',gap:8}}>
               <StatusTag status={concluido ? 'ok' : 'warn'} text={concluido ? 'Concluído' : (inv.contados>0 ? 'Em andamento' : 'Pendente')} />
               {canMark && (
@@ -8642,15 +8642,15 @@ function InventoryList({inventories, goto, role, counts, users, currentUser, onD
                   <button type="button" className="count-card-menu-btn" onClick={()=>setMenuAbertoId(menuAbertoId===inv.id ? null : inv.id)}>⋮</button>
                   {menuAbertoId===inv.id && (
                     <div className="count-card-menu-dropdown">
-                      <button type="button" disabled={urgenteBusyId===inv.id} onClick={()=>{ handleToggleUrgente(inv); setMenuAbertoId(null); }}><Ic>🔥</Ic> {urgenteBusyId===inv.id ? 'Salvando…' : (inv.urgente ? 'Remover urgência' : 'Marcar urgente')}</button>
+                      <button type="button" disabled={urgenteBusyId===inv.id} onClick={()=>{ handleToggleUrgente(inv); setMenuAbertoId(null); }}><Ic>※</Ic> {urgenteBusyId===inv.id ? 'Salvando…' : (inv.urgente ? 'Remover urgência' : 'Marcar urgente')}</button>
                       {!concluido && operadores.length>0 && (
-                        <button type="button" onClick={()=>{ setAtribuirValor(inv.atribuidoA || ''); setAtribuirAbertoId(inv.id); setMenuAbertoId(null); }}><Ic>🎯</Ic> {inv.atribuidoA ? 'Trocar atribuição' : 'Atribuir a...'}</button>
+                        <button type="button" onClick={()=>{ setAtribuirValor(inv.atribuidoA || ''); setAtribuirAbertoId(inv.id); setMenuAbertoId(null); }}><Ic>◎</Ic> {inv.atribuidoA ? 'Trocar atribuição' : 'Atribuir a...'}</button>
                       )}
                       {role==='admin' && (
                         <>
                           <button type="button" onClick={()=>{ handleDownload(inv); setMenuAbertoId(null); }}><Ic>⬇</Ic> Baixar</button>
-                          {!concluido && <button type="button" onClick={()=>{ setConfirmCancelId(inv.id); setMenuAbertoId(null); }}><Ic>⛔</Ic> Cancelar</button>}
-                          <button type="button" className="menu-item-danger" onClick={()=>{ setConfirmDeleteId(inv.id); setMenuAbertoId(null); }}><Ic>🗑</Ic> Excluir</button>
+                          {!concluido && <button type="button" onClick={()=>{ setConfirmCancelId(inv.id); setMenuAbertoId(null); }}><Ic>⊘</Ic> Cancelar</button>}
+                          <button type="button" className="menu-item-danger" onClick={()=>{ setConfirmDeleteId(inv.id); setMenuAbertoId(null); }}><Ic>⌫</Ic> Excluir</button>
                         </>
                       )}
                     </div>
@@ -8663,7 +8663,7 @@ function InventoryList({inventories, goto, role, counts, users, currentUser, onD
         <div style={{padding:'14px 18px'}}>
           {urgenteErro[inv.id] && <div className="divergence-alert" style={{marginBottom:10}} onClick={e=>e.stopPropagation()}><Ic>⚠</Ic><span>{urgenteErro[inv.id]}</span></div>}
           {inv.atribuidoA && (
-            <div style={{fontSize:'var(--text-xs)',color:'var(--safety)',fontWeight:700,marginBottom:6}}><Ic>🎯</Ic> Atribuído a: {inv.atribuidoA}</div>
+            <div style={{fontSize:'var(--text-xs)',color:'var(--safety)',fontWeight:700,marginBottom:6}}><Ic>◎</Ic> Atribuído a: {inv.atribuidoA}</div>
           )}
           <div style={{display:'flex',justifyContent:'space-between',fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>
             <span>{inv.tipo}</span>
@@ -8675,7 +8675,7 @@ function InventoryList({inventories, goto, role, counts, users, currentUser, onD
         {temListaItens && (
           <div style={{padding:'0 18px 14px'}} onClick={e=>e.stopPropagation()}>
             <button type="button" className="btn btn-outline" style={{width:'auto',padding:'6px 14px',fontSize:'var(--text-sm)'}} onClick={()=>toggleItens(inv.id)}>
-              <Ic>📋</Ic> {itensAberto ? 'Ocultar itens' : `Itens (${inv.itensImportados.length})`}
+              <Ic>▤</Ic> {itensAberto ? 'Ocultar itens' : `Itens (${inv.itensImportados.length})`}
             </button>
             {itensAberto && (() => {
               // Um item pode ter mais de uma rodada (recontagem) dentro do mesmo
@@ -8708,7 +8708,7 @@ function InventoryList({inventories, goto, role, counts, users, currentUser, onD
                             />
                             {onRemoverItemPendente && !contado && !confirmandoEsse && (
                               <button type="button" className="btn btn-outline" style={{width:'auto',padding:'4px 8px',fontSize:'var(--text-2xs)'}} title="Remover este item da lista — pra item que não existe fisicamente/nunca vai ser contado" onClick={()=>{setConfirmRemoverItem({invId:inv.id, codigo:it.codigo}); setErroRemoverItem('');}}>
-                                <Ic>🗑</Ic> Remover
+                                <Ic>⌫</Ic> Remover
                               </button>
                             )}
                           </div>
@@ -8788,12 +8788,12 @@ function InventoryList({inventories, goto, role, counts, users, currentUser, onD
     <div>
       {(role==='lider'||role==='admin') && (
         <button className="btn btn-primary" style={{marginBottom:16}} onClick={()=>goto('pickCountType')}>
-          <Ic>➕</Ic> Criar Inventário
+          <Ic>+</Ic> Criar Inventário
         </button>
       )}
       {modoRestrito && (
         <div className="role-note" style={{marginBottom:14}}>
-          <Ic>🎯</Ic> Você tem {pendentes.length===1 ? 'um inventário atribuído' : `${pendentes.length} inventários atribuídos`} especificamente a você — os demais inventários pendentes ficam ocultos até você concluir {pendentes.length===1 ? 'este' : 'estes'}.
+          <Ic>◎</Ic> Você tem {pendentes.length===1 ? 'um inventário atribuído' : `${pendentes.length} inventários atribuídos`} especificamente a você — os demais inventários pendentes ficam ocultos até você concluir {pendentes.length===1 ? 'este' : 'estes'}.
         </div>
       )}
       {pendentes.length===0 ? (
@@ -9282,7 +9282,7 @@ function NewInventory({onCreate, goto, inventories, gruposExcluidos}){
             <div style={{display:'flex',flexDirection:'column',gap:10}}>
               <button type="button" className="btn btn-outline" onClick={handleDownloadTemplate}><Ic>⬇</Ic> Baixar modelo padrão (.xlsx)</button>
               <button type="button" className="btn btn-secondary" onClick={()=>fileRef.current.click()}>
-                <Ic>📤</Ic> {arquivoNome ? 'Trocar arquivo (' + arquivoNome + ')' : 'Selecionar planilha preenchida (.xlsx)'}
+                <Ic>↥</Ic> {arquivoNome ? 'Trocar arquivo (' + arquivoNome + ')' : 'Selecionar planilha preenchida (.xlsx)'}
               </button>
               <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{display:'none'}} onChange={handleFileUpload} />
             </div>
@@ -9315,7 +9315,7 @@ function NewInventory({onCreate, goto, inventories, gruposExcluidos}){
 
             <div style={{marginTop:16}}>
               <button type="button" className="btn btn-outline btn-sm" onClick={()=>setEspecColarAberto(v=>!v)}>
-                <Ic>📋</Ic> {especColarAberto ? 'Ocultar' : 'Colar lista de vários códigos'}
+                <Ic>▤</Ic> {especColarAberto ? 'Ocultar' : 'Colar lista de vários códigos'}
               </button>
               {especColarAberto && (
                 <div className="field" style={{marginTop:10}}>
@@ -9362,7 +9362,7 @@ function NewInventory({onCreate, goto, inventories, gruposExcluidos}){
                   <div className="lr-title">{it.descricao || it.codigo}</div>
                   <div className="lr-sub">{it.codigo}{it.endereco ? ' · '+it.endereco : ''}</div>
                 </div>
-                <button type="button" className="btn btn-danger" style={{width:'auto',padding:'10px 14px'}} onClick={()=>removeItemEspecifico(it.codigo)}><Ic>🗑</Ic></button>
+                <button type="button" className="btn btn-danger" style={{width:'auto',padding:'10px 14px'}} onClick={()=>removeItemEspecifico(it.codigo)}><Ic>⌫</Ic></button>
               </div>
             ))}
           </div>
@@ -9453,7 +9453,7 @@ function PickCountType({role, goto, onCreate, inventories, gruposExcluidos}){
           <div className="opt-desc">Buscar item por código, descrição ou código de barras</div>
         </button>
         <button className="item-card" style={{padding:18,textAlign:'left',border:'1px solid var(--line)',background:'var(--panel)'}} onClick={()=>goto('randomCount')}>
-          <div className="opt-title" style={{fontSize:'var(--text-lg)'}}><Ic>🎲</Ic>&nbsp; Contagem Aleatória / por Rota Gerada</div>
+          <div className="opt-title" style={{fontSize:'var(--text-lg)'}}><Ic>◆</Ic>&nbsp; Contagem Aleatória / por Rota Gerada</div>
           <div className="opt-desc">O sistema indica o próximo item e endereço a contar</div>
         </button>
         <button
@@ -9462,11 +9462,11 @@ function PickCountType({role, goto, onCreate, inventories, gruposExcluidos}){
           disabled={!anyAddress}
           onClick={()=>{ if(anyAddress) goto('routeCount'); }}
         >
-          <div className="opt-title" style={{fontSize:'var(--text-lg)'}}><Ic>🗺</Ic>&nbsp; Contagem por Rota</div>
+          <div className="opt-title" style={{fontSize:'var(--text-lg)'}}><Ic>▧</Ic>&nbsp; Contagem por Rota</div>
           <div className="opt-desc">{anyAddress ? 'Sequência otimizada por corredor e rua, menor deslocamento' : 'Indisponível — nenhum endereço cadastrado ainda neste almoxarifado'}</div>
         </button>
         <button className="item-card" style={{padding:18,textAlign:'left',border:'1px solid var(--line)',background:'var(--panel)'}} onClick={()=>setGrupoAvulsoAberto(v=>!v)}>
-          <div className="opt-title" style={{fontSize:'var(--text-lg)'}}><Ic>🏷</Ic>&nbsp; Contagem por Grupo</div>
+          <div className="opt-title" style={{fontSize:'var(--text-lg)'}}><Ic>◈</Ic>&nbsp; Contagem por Grupo</div>
           <div className="opt-desc">Contar só os itens de um grupo/família específico</div>
         </button>
         {grupoAvulsoAberto && (
@@ -9670,7 +9670,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
     const info = STATUS_INFO[openDoc.statusAprovacao] || {};
     return (
       <div className="empty-state">
-        <div className="ic"><Ic size={40}>🔒</Ic></div>
+        <div className="ic"><Ic size={40}>⚿</Ic></div>
         <div style={{fontWeight:700,marginBottom:6}}>{product.codigo} já tem uma contagem em aberto</div>
         <div style={{maxWidth:420,margin:'0 auto'}}>
           {openDoc.recontagemSolicitadaPeloLider
@@ -9694,7 +9694,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   if(conflitoInventario){
     return (
       <div className="empty-state">
-        <div className="ic"><Ic size={40}>🔒</Ic></div>
+        <div className="ic"><Ic size={40}>⚿</Ic></div>
         <div style={{fontWeight:700,marginBottom:6}}>{product.codigo} já está em outro inventário pendente</div>
         <div style={{maxWidth:420,margin:'0 auto'}}>
           Este item já faz parte de "{conflitoInventario.nome}" ({conflitoInventario.id}), que ainda está
@@ -9789,7 +9789,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
 
   const [scanning, setScanning] = useState(false);
   // Verificação opcional do item por câmera dentro da própria tela de
-  // contagem (botão 📷 ao lado do código) — só CONFIRMA que o código
+  // contagem (botão ◫ ao lado do código) — só CONFIRMA que o código
   // escaneado bate com o item já carregado nesta tela (protege contra
   // contar o item errado por engano); não troca o item em exibição, isso
   // exigiria plumbing de re-busca/fila em cada um dos 5 fluxos que usam
@@ -10400,7 +10400,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
     return (
       <div className="divergence-alert" style={{marginTop:6,marginBottom:14,flexDirection:'column',alignItems:'stretch',gap:10}}>
         <div style={{display:'flex',gap:8,alignItems:'flex-start'}}>
-          <Ic>🔒</Ic>
+          <Ic>⚿</Ic>
           <span>
             {liveConsultaErro
               ? <>Não foi possível confirmar isso ao vivo na Selgron ({liveConsultaErro}).</>
@@ -10411,7 +10411,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
         </div>
         <div className="btn-row">
           <button type="button" className="btn btn-outline" onClick={()=>setLiveConsultaTentativa(t=>t+1)}>
-            <Ic>🔄</Ic> Tentar novamente
+            <Ic>↻</Ic> Tentar novamente
           </button>
           {podeAutorizarDadosLocais && (
             <button type="button" className="btn btn-danger" onClick={onAutorizar}>{botaoLabel || 'Autorizar cadastro local mesmo assim'}</button>
@@ -10440,7 +10440,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
     const expiraStr = reservaInfo && reservaInfo.expiraEm ? new Date(reservaInfo.expiraEm).toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'}) : null;
     return (
       <div className="empty-state">
-        <div className="ic"><Ic size={40}>🔒</Ic></div>
+        <div className="ic"><Ic size={40}>⚿</Ic></div>
         <div style={{fontWeight:700,marginBottom:6}}>{product.codigo} está sendo contado agora</div>
         <div style={{maxWidth:420,margin:'0 auto'}}>
           {reservaInfo && reservaInfo.usuario ? <>{reservaInfo.usuario} abriu este item pra contar</> : 'Outro operador abriu este item pra contar'}
@@ -10516,7 +10516,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
             <div style={{display:'flex',gap:8}}>
               <button className="btn btn-primary" style={{flex:1}} disabled={!ENDERECO_REGEX.test(enderecoInformado) || enderecoAguardandoConfirmacao || precisaAutorizarEndereco} onClick={confirmEnderecoManual}>Confirmar e continuar</button>
               <button type="button" className="btn btn-primary" style={{flex:'0 0 auto',width:56,padding:0}} title="Escanear código do endereço" aria-label="Escanear código do endereço" onClick={()=>setScanning(true)}>
-                <Ic size={20}>📷</Ic>
+                <Ic size={20}>◫</Ic>
               </button>
             </div>
           )}
@@ -10785,7 +10785,7 @@ function RandomCountFlow({inv, user, onRegisterCount, onFinish, onAddressPropose
   if(q.done){
     return (
       <div className="empty-state">
-        <div className="ic"><Ic size={40}>🎉</Ic></div>
+        <div className="ic"><Ic size={40}>✦</Ic></div>
         Fila de contagem concluída.
         <div style={{marginTop:16}}><button className="btn btn-primary" onClick={onFinish}>Voltar aos inventários</button></div>
       </div>
@@ -11072,7 +11072,7 @@ function ManualCountFlow({user, onRegisterCount, onAddressProposed, counts, oper
       {scanning ? (
         <CameraScanner onDetected={handleScanDetected} onCancel={()=>setScanning(false)} />
       ) : (
-        <button className="btn btn-primary" style={{marginBottom:14}} onClick={()=>setScanning(true)}><Ic>📷</Ic> Escanear código de barras / QR do item</button>
+        <button className="btn btn-primary" style={{marginBottom:14}} onClick={()=>setScanning(true)}><Ic>◫</Ic> Escanear código de barras / QR do item</button>
       )}
       <div className="field">
         <label>Ou buscar por código, descrição ou código de barras</label>
@@ -11197,7 +11197,7 @@ function RouteCountFlow({inv, user, onRegisterCount, onFinish, onAddressProposed
   if(!anyAddress || !grouped){
     return (
       <div className="empty-state">
-        <div className="ic"><Ic size={40}>🗺</Ic></div>
+        <div className="ic"><Ic size={40}>▧</Ic></div>
         Nenhum endereço cadastrado ainda neste almoxarifado.<br/>
         A contagem por rota é liberada assim que o líder validar os primeiros endereços informados pelos operadores (veja "Endereços Pendentes" em Configurações).
       </div>
@@ -11233,7 +11233,7 @@ function RouteCountFlow({inv, user, onRegisterCount, onFinish, onAddressProposed
   if(q.done){
     return (
       <div className="empty-state">
-        <div className="ic"><Ic size={40}>🎉</Ic></div>
+        <div className="ic"><Ic size={40}>✦</Ic></div>
         Corredor {corredorEscolhido.padStart(3,'0')} concluído.
         <div className="btn-row" style={{marginTop:16,justifyContent:'center'}}>
           <button className="btn btn-secondary" onClick={()=>setCorredorEscolhido(null)}>Escolher outro corredor</button>
@@ -11397,13 +11397,13 @@ function ImportedListCountFlow({inv, user, onRegisterCount, onFinish, onAddressP
   }
 
   if(allItems.length===0){
-    return <div className="empty-state"><div className="ic"><Ic size={40}>📄</Ic></div>Esta lista importada não tem itens válidos.</div>;
+    return <div className="empty-state"><div className="ic"><Ic size={40}>▭</Ic></div>Esta lista importada não tem itens válidos.</div>;
   }
 
   if(q.done){
     return (
       <div className="empty-state">
-        <div className="ic"><Ic size={40}>🎉</Ic></div>
+        <div className="ic"><Ic size={40}>✦</Ic></div>
         {inv && inv.tipo==='Itens Específicos' ? 'Fila concluída' : 'Lista importada concluída'} — todos os {allItems.length} itens foram contados.
         <div style={{marginTop:16}}><button className="btn btn-primary" onClick={onFinish}>Voltar aos inventários</button></div>
       </div>
@@ -11960,7 +11960,7 @@ function RecountsPanel({counts, inventories, role, currentUser, users, goto, onD
     <div>
       {modoRestritoAtribuicao && (
         <div className="role-note" style={{marginBottom:14}}>
-          <Ic>🎯</Ic> Você tem {aguardandoSegunda.length===1 ? 'uma recontagem atribuída' : `${aguardandoSegunda.length} recontagens atribuídas`} especificamente a você — as demais ficam ocultas até você concluir {aguardandoSegunda.length===1 ? 'esta' : 'estas'}.
+          <Ic>◎</Ic> Você tem {aguardandoSegunda.length===1 ? 'uma recontagem atribuída' : `${aguardandoSegunda.length} recontagens atribuídas`} especificamente a você — as demais ficam ocultas até você concluir {aguardandoSegunda.length===1 ? 'esta' : 'estas'}.
         </div>
       )}
       <TrendFilterBar
@@ -12007,9 +12007,9 @@ function RecountsPanel({counts, inventories, role, currentUser, users, goto, onD
           <div className="count-card-body">
             <div className="count-card-head">
               <div className="count-card-badges">
-                {c.urgente && <span className="urgente-chip"><Ic>🔥</Ic> Urgente</span>}
+                {c.urgente && <span className="urgente-chip"><Ic>※</Ic> Urgente</span>}
                 {c.reprovadoPelaDiretoria
-                  ? <span className="severity-chip" style={{background:'var(--purple-bg)',color:'var(--purple)'}}><Ic>⛔</Ic> Ajuste Reprovado</span>
+                  ? <span className="severity-chip" style={{background:'var(--purple-bg)',color:'var(--purple)'}}><Ic>⊘</Ic> Ajuste Reprovado</span>
                   : c.recontagemSolicitadaPeloLider
                   ? <span className="severity-chip" style={{background:'var(--danger-bg)',color:'var(--danger)'}}><Ic>⚠</Ic> Rejeitada</span>
                   : <span className="severity-chip" style={{background:sev.bg,color:sev.color}}><Ic>{sev.icon}</Ic> {sev.label}</span>}
@@ -12024,7 +12024,7 @@ function RecountsPanel({counts, inventories, role, currentUser, users, goto, onD
                     {menuAbertoId===c.id && (
                       <div className="count-card-menu-dropdown">
                         {canMark && (
-                          <button type="button" disabled={urgenteBusyId===c.id} onClick={()=>{ handleToggleUrgente(c); setMenuAbertoId(null); }}><Ic>🔥</Ic> {urgenteBusyId===c.id ? 'Salvando…' : (c.urgente ? 'Remover urgência' : 'Marcar urgente')}</button>
+                          <button type="button" disabled={urgenteBusyId===c.id} onClick={()=>{ handleToggleUrgente(c); setMenuAbertoId(null); }}><Ic>※</Ic> {urgenteBusyId===c.id ? 'Salvando…' : (c.urgente ? 'Remover urgência' : 'Marcar urgente')}</button>
                         )}
                         {canMark && (
                           <button type="button" disabled={liberarBusyId===c.id} onClick={()=>{ handleToggleLiberar(c); setMenuAbertoId(null); }}><DIcon name="lock" size={16}/> {liberarBusyId===c.id ? 'Salvando…' : (c.recontagemLiberadaParaOriginal ? 'Bloquear para o mesmo operador' : 'Liberar para o mesmo operador')}</button>
@@ -12033,10 +12033,10 @@ function RecountsPanel({counts, inventories, role, currentUser, users, goto, onD
                           <button type="button" onClick={()=>abrirEdicaoMotivo(c)}><DIcon name="edit" size={16}/> Editar motivo/observação</button>
                         )}
                         {canMark && operadores.length>0 && (
-                          <button type="button" onClick={()=>{ setAtribuirValor(c.atribuidoA || ''); setAtribuirAbertoId(c.id); setMenuAbertoId(null); }}><Ic>🎯</Ic> {c.atribuidoA ? 'Trocar atribuição' : 'Atribuir a...'}</button>
+                          <button type="button" onClick={()=>{ setAtribuirValor(c.atribuidoA || ''); setAtribuirAbertoId(c.id); setMenuAbertoId(null); }}><Ic>◎</Ic> {c.atribuidoA ? 'Trocar atribuição' : 'Atribuir a...'}</button>
                         )}
                         {onDeleteCount && (
-                          <button type="button" className="menu-item-danger" onClick={()=>{ setConfirmDeleteId(c.id); setMenuAbertoId(null); }}><Ic>🗑</Ic> Excluir contagem</button>
+                          <button type="button" className="menu-item-danger" onClick={()=>{ setConfirmDeleteId(c.id); setMenuAbertoId(null); }}><Ic>⌫</Ic> Excluir contagem</button>
                         )}
                       </div>
                     )}
@@ -12045,7 +12045,7 @@ function RecountsPanel({counts, inventories, role, currentUser, users, goto, onD
               </div>
             </div>
             {c.atribuidoA && (
-              <div style={{fontSize:'var(--text-xs)',color:'var(--safety)',fontWeight:700,marginBottom:6}}><Ic>🎯</Ic> Atribuído a: {c.atribuidoA}</div>
+              <div style={{fontSize:'var(--text-xs)',color:'var(--safety)',fontWeight:700,marginBottom:6}}><Ic>◎</Ic> Atribuído a: {c.atribuidoA}</div>
             )}
             <div className="count-card-toprow">
               <div className="count-card-title">
@@ -12056,7 +12056,7 @@ function RecountsPanel({counts, inventories, role, currentUser, users, goto, onD
             </div>
             {c.reprovadoPelaDiretoria && (
               <div className="divergence-alert" style={{background:'var(--purple-bg)',borderColor:'var(--purple)',color:'var(--purple)'}}>
-                <Ic>⛔</Ic><span>A Diretoria reprovou {c.ehDevolucao ? 'a devolução' : (c.solicitacaoAjuste ? ('a SA '+c.solicitacaoAjuste) : 'o ajuste')} em {c.reprovadoEm} — reenviado para nova análise.{c.motivoReprovacaoDiretoria && <><br/><strong>Motivo da reprovação:</strong> <span style={{color:'var(--danger)'}}>{c.motivoReprovacaoDiretoria}</span></>}</span>
+                <Ic>⊘</Ic><span>A Diretoria reprovou {c.ehDevolucao ? 'a devolução' : (c.solicitacaoAjuste ? ('a SA '+c.solicitacaoAjuste) : 'o ajuste')} em {c.reprovadoEm} — reenviado para nova análise.{c.motivoReprovacaoDiretoria && <><br/><strong>Motivo da reprovação:</strong> <span style={{color:'var(--danger)'}}>{c.motivoReprovacaoDiretoria}</span></>}</span>
               </div>
             )}
             {/* Motivo de um ajuste reprovado — pedido do cliente: vermelho só
@@ -12142,8 +12142,8 @@ function RecountsPanel({counts, inventories, role, currentUser, users, goto, onD
                   )}
                 </div>
                 <div className="count-card-actions-col">
-                  <button className="btn btn-primary" onClick={()=>goto('recount', c)}><Ic>🔁</Ic> Recontar</button>
-                  <button className="btn btn-outline" onClick={()=>toggleDetalhes(c.id)}><Ic>📋</Ic> {detalhesOcultosIds.has(c.id) ? 'Detalhes' : 'Ocultar'}</button>
+                  <button className="btn btn-primary" onClick={()=>goto('recount', c)}><Ic>↻</Ic> Recontar</button>
+                  <button className="btn btn-outline" onClick={()=>toggleDetalhes(c.id)}><Ic>▤</Ic> {detalhesOcultosIds.has(c.id) ? 'Detalhes' : 'Ocultar'}</button>
                 </div>
               </div>
             )}
@@ -12338,9 +12338,9 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onEnvi
             <div className="count-card-body">
               <div className="count-card-head">
                 <div className="count-card-badges">
-                  {c.urgente && <span className="urgente-chip"><Ic>🔥</Ic> Urgente</span>}
+                  {c.urgente && <span className="urgente-chip"><Ic>※</Ic> Urgente</span>}
                   {c.reprovadoPelaDiretoria
-                    ? <span className="severity-chip" style={{background:'var(--purple-bg)',color:'var(--purple)'}}><Ic>⛔</Ic> Ajuste Reprovado</span>
+                    ? <span className="severity-chip" style={{background:'var(--purple-bg)',color:'var(--purple)'}}><Ic>⊘</Ic> Ajuste Reprovado</span>
                     : <span className="severity-chip" style={{background:sev.bg,color:sev.color}}><Ic>{sev.icon}</Ic> {sev.label}</span>}
                   <span className="category-chip">{categoriaDoInventario(c, inventories)}</span>
                   {c.numeroContagem>1 && <span className="category-chip">{c.numeroContagem}ª contagem</span>}
@@ -12352,10 +12352,10 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onEnvi
                       <button type="button" className="count-card-menu-btn" onClick={()=>setMenuAbertoId(menuAbertoId===c.id ? null : c.id)}>⋮</button>
                       {menuAbertoId===c.id && (
                         <div className="count-card-menu-dropdown">
-                          <button type="button" disabled={busyId===c.id} onClick={()=>{ handleToggleUrgente(c); setMenuAbertoId(null); }}><Ic>🔥</Ic> {busyId===c.id ? 'Salvando…' : (c.urgente ? 'Remover urgência' : 'Marcar urgente')}</button>
+                          <button type="button" disabled={busyId===c.id} onClick={()=>{ handleToggleUrgente(c); setMenuAbertoId(null); }}><Ic>※</Ic> {busyId===c.id ? 'Salvando…' : (c.urgente ? 'Remover urgência' : 'Marcar urgente')}</button>
                           <button type="button" onClick={()=>abrirEdicaoMotivo(c)}><DIcon name="edit" size={16}/> Editar motivo/observação</button>
                           {onDeleteCount && (
-                            <button type="button" className="menu-item-danger" onClick={()=>{ setConfirmDeleteId(c.id); setMenuAbertoId(null); }}><Ic>🗑</Ic> Excluir contagem</button>
+                            <button type="button" className="menu-item-danger" onClick={()=>{ setConfirmDeleteId(c.id); setMenuAbertoId(null); }}><Ic>⌫</Ic> Excluir contagem</button>
                           )}
                         </div>
                       )}
@@ -12442,7 +12442,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onEnvi
                   {limparObservacaoExibicao(c.observacao) && <div style={{padding:'6px 16px 0',fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>Observação: {limparObservacaoExibicao(c.observacao)}</div>}
                   {c.reprovadoPelaDiretoria && (
                     <div className="divergence-alert" style={{margin:'10px 16px 0',background:'var(--purple-bg)',borderColor:'var(--purple)',color:'var(--purple)'}}>
-                      <Ic>⛔</Ic><span>A Diretoria reprovou {c.ehDevolucao ? 'a devolução' : (c.solicitacaoAjuste ? ('a SA '+c.solicitacaoAjuste) : 'o ajuste')} em {c.reprovadoEm} — reenviado para nova análise.{c.motivoReprovacaoDiretoria && <><br/><strong>Motivo da reprovação:</strong> <span style={{color:'var(--danger)'}}>{c.motivoReprovacaoDiretoria}</span></>}</span>
+                      <Ic>⊘</Ic><span>A Diretoria reprovou {c.ehDevolucao ? 'a devolução' : (c.solicitacaoAjuste ? ('a SA '+c.solicitacaoAjuste) : 'o ajuste')} em {c.reprovadoEm} — reenviado para nova análise.{c.motivoReprovacaoDiretoria && <><br/><strong>Motivo da reprovação:</strong> <span style={{color:'var(--danger)'}}>{c.motivoReprovacaoDiretoria}</span></>}</span>
                     </div>
                   )}
                   {/* Motivo de um ajuste reprovado — vermelho só aqui, não no
@@ -12468,14 +12468,14 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onEnvi
                 {canApprove && editandoMotivoId!==c.id && confirmDeleteId!==c.id && (
                   <div className="count-card-actions-col">
                     <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>handleRequestRecount(c.id)}>{busyId===c.id ? 'Enviando…' : 'Solicitar nova contagem'}</button>
-                    <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>goto('recount', c)}><Ic>🔁</Ic> Recontar</button>
+                    <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>goto('recount', c)}><Ic>↻</Ic> Recontar</button>
                     <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>handleApprove(c.id)}>{busyId===c.id ? 'Enviando…' : 'Sem Ajuste Necessário'}</button>
                     {/* Análise finalizada, mas ainda precisa de SA — a decisão
                         entre Ajuste/Devolução só acontece depois, junto com o
                         número da SA, na tela "Analisados" (pedido do
                         cliente: "só quando tiver o número da SA que eu faço a
                         decisão de ajuste ou devolução"). */}
-                    <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>handleEnviarParaArmazem(c.id)}><Ic>📋</Ic> {busyId===c.id ? 'Enviando…' : 'Ajustar'}</button>
+                    <button className="btn btn-primary" disabled={busyId===c.id} onClick={()=>handleEnviarParaArmazem(c.id)}><Ic>▤</Ic> {busyId===c.id ? 'Enviando…' : 'Ajustar'}</button>
                   </div>
                 )}
               </div>
@@ -12658,8 +12658,8 @@ function SolicitacaoArmazemPanel({counts, inventories, role, onEnviarParaDiretor
             <div className="count-card-body">
               <div className="count-card-head">
                 <div className="count-card-badges">
-                  {c.urgente && <span className="urgente-chip"><Ic>🔥</Ic> Urgente</span>}
-                  <span className="severity-chip" style={{background:'var(--purple-bg)',color:'var(--purple)'}}><Ic>📋</Ic> {c.solicitacaoAjuste ? ('SA '+c.solicitacaoAjuste) : 'Aguardando número da SA'}</span>
+                  {c.urgente && <span className="urgente-chip"><Ic>※</Ic> Urgente</span>}
+                  <span className="severity-chip" style={{background:'var(--purple-bg)',color:'var(--purple)'}}><Ic>▤</Ic> {c.solicitacaoAjuste ? ('SA '+c.solicitacaoAjuste) : 'Aguardando número da SA'}</span>
                   <span className="category-chip">{categoriaDoInventario(c, inventories)}</span>
                 </div>
                 <div className="count-card-head-right">
@@ -12670,13 +12670,13 @@ function SolicitacaoArmazemPanel({counts, inventories, role, onEnviarParaDiretor
                       {menuAbertoId===c.id && (
                         <div className="count-card-menu-dropdown">
                           {canDecide && (
-                            <button type="button" disabled={busyId===c.id} onClick={()=>{ handleToggleUrgente(c); setMenuAbertoId(null); }}><Ic>🔥</Ic> {busyId===c.id ? 'Salvando…' : (c.urgente ? 'Remover urgência' : 'Marcar urgente')}</button>
+                            <button type="button" disabled={busyId===c.id} onClick={()=>{ handleToggleUrgente(c); setMenuAbertoId(null); }}><Ic>※</Ic> {busyId===c.id ? 'Salvando…' : (c.urgente ? 'Remover urgência' : 'Marcar urgente')}</button>
                           )}
                           {canDecide && onVoltarParaAnaliseLider && (
                             <button type="button" disabled={busyId===c.id} onClick={()=>{ handleVoltarAnaliseLider(c); setMenuAbertoId(null); }}><Ic>←</Ic> {busyId===c.id ? 'Voltando…' : 'Voltar para Itens Divergentes'}</button>
                           )}
                           {onDeleteCount && (
-                            <button type="button" className="menu-item-danger" onClick={()=>{ setConfirmDeleteId(c.id); setMenuAbertoId(null); }}><Ic>🗑</Ic> Excluir contagem</button>
+                            <button type="button" className="menu-item-danger" onClick={()=>{ setConfirmDeleteId(c.id); setMenuAbertoId(null); }}><Ic>⌫</Ic> Excluir contagem</button>
                           )}
                         </div>
                       )}
@@ -12732,8 +12732,8 @@ function SolicitacaoArmazemPanel({counts, inventories, role, onEnviarParaDiretor
                         cores invertidas entre os dois botões (Devolução era
                         primário/laranja, virou secundário; Gerar SA era
                         secundário, virou primário/laranja). */}
-                    <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>handleEnviar(c, true)}><Ic>📦</Ic> {busyId===c.id ? 'Enviando…' : 'Devolução'}</button>
-                    <button className="btn btn-primary" disabled={busyId===c.id || !saInputValue(c).trim()} onClick={()=>handleEnviar(c, false)}><Ic>📋</Ic> {busyId===c.id ? 'Enviando…' : 'Gerar SA'}</button>
+                    <button className="btn btn-secondary" disabled={busyId===c.id} onClick={()=>handleEnviar(c, true)}><Ic>▣</Ic> {busyId===c.id ? 'Enviando…' : 'Devolução'}</button>
+                    <button className="btn btn-primary" disabled={busyId===c.id || !saInputValue(c).trim()} onClick={()=>handleEnviar(c, false)}><Ic>▤</Ic> {busyId===c.id ? 'Enviando…' : 'Gerar SA'}</button>
                   </div>
                 )}
               </div>
@@ -12887,8 +12887,8 @@ function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejec
             <div className="count-card-body">
               <div className="count-card-head">
                 <div className="count-card-badges">
-                  {c.urgente && <span className="urgente-chip"><Ic>🔥</Ic> Urgente</span>}
-                  <span className="severity-chip" style={{background:'var(--purple-bg)',color:'var(--purple)'}}><Ic>📋</Ic> {c.ehDevolucao ? ('Devolução'+(c.solicitacaoAjuste ? (' · SA '+c.solicitacaoAjuste) : '')) : (c.solicitacaoAjuste ? ('SA '+c.solicitacaoAjuste) : 'SA pendente')}</span>
+                  {c.urgente && <span className="urgente-chip"><Ic>※</Ic> Urgente</span>}
+                  <span className="severity-chip" style={{background:'var(--purple-bg)',color:'var(--purple)'}}><Ic>▤</Ic> {c.ehDevolucao ? ('Devolução'+(c.solicitacaoAjuste ? (' · SA '+c.solicitacaoAjuste) : '')) : (c.solicitacaoAjuste ? ('SA '+c.solicitacaoAjuste) : 'SA pendente')}</span>
                   <span className="category-chip">{categoriaDoInventario(c, inventories)}</span>
                 </div>
                 <div className="count-card-head-right">
@@ -12898,7 +12898,7 @@ function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejec
                       <button type="button" className="count-card-menu-btn" onClick={()=>setMenuAbertoId(menuAbertoId===c.id ? null : c.id)}>⋮</button>
                       {menuAbertoId===c.id && (
                         <div className="count-card-menu-dropdown">
-                          <button type="button" disabled={busyId===c.id} onClick={()=>{ handleToggleUrgente(c); setMenuAbertoId(null); }}><Ic>🔥</Ic> {busyId===c.id ? 'Salvando…' : (c.urgente ? 'Remover urgência' : 'Marcar urgente')}</button>
+                          <button type="button" disabled={busyId===c.id} onClick={()=>{ handleToggleUrgente(c); setMenuAbertoId(null); }}><Ic>※</Ic> {busyId===c.id ? 'Salvando…' : (c.urgente ? 'Remover urgência' : 'Marcar urgente')}</button>
                         </div>
                       )}
                     </div>
@@ -13470,7 +13470,7 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
                     <span className="category-chip" style={{background:'var(--ok-bg)',color:'var(--ok)'}}>Ajustado{tip.solicitacaoAjuste ? (' · SA '+tip.solicitacaoAjuste) : ''}</span>
                   )}
                   {ehDevolucao && (
-                    <span className="category-chip" style={{background:'var(--ok-bg)',color:'var(--ok)'}}><Ic>📦</Ic> Devolução{tip.solicitacaoAjuste ? (' · SA '+tip.solicitacaoAjuste) : ''}</span>
+                    <span className="category-chip" style={{background:'var(--ok-bg)',color:'var(--ok)'}}><Ic>▣</Ic> Devolução{tip.solicitacaoAjuste ? (' · SA '+tip.solicitacaoAjuste) : ''}</span>
                   )}
                   {ehSemAjuste && (
                     <span className="category-chip" style={{background:'var(--panel-raised)',color:'var(--ink-dim)'}}>Sem Ajuste</span>
@@ -13486,7 +13486,7 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
                       <button type="button" className="count-card-menu-btn" onClick={()=>setMenuAbertoId(menuAbertoId===cd.chaveId ? null : cd.chaveId)}>⋮</button>
                       {menuAbertoId===cd.chaveId && (
                         <div className="count-card-menu-dropdown">
-                          <button type="button" className="menu-item-danger" onClick={()=>{ setConfirmDeleteChaveId(cd.chaveId); setErroExclusao(''); setMenuAbertoId(null); }}><Ic>🗑</Ic> Excluir contagem</button>
+                          <button type="button" className="menu-item-danger" onClick={()=>{ setConfirmDeleteChaveId(cd.chaveId); setErroExclusao(''); setMenuAbertoId(null); }}><Ic>⌫</Ic> Excluir contagem</button>
                         </div>
                       )}
                     </div>
@@ -13543,9 +13543,9 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
                   )}
                 </div>
                 <div className="count-card-actions-col" style={{width:'auto'}}>
-                  <button className="btn btn-outline" onClick={()=>toggleDetalhes(cd.chaveId)}><Ic>📋</Ic> {aberto ? 'Ocultar' : 'Detalhes'}</button>
+                  <button className="btn btn-outline" onClick={()=>toggleDetalhes(cd.chaveId)}><Ic>▤</Ic> {aberto ? 'Ocultar' : 'Detalhes'}</button>
                   {onReprovarAjusteHistorico && tip._fromHistorico && tip._statusOriginal==='Ajustado' && (
-                    <button className="btn btn-danger" onClick={()=>{ setConfirmReprovarId(cd.chaveId); setErroReprovar(''); setMotivoReprovar(''); }}><Ic>⛔</Ic> Reprovar ajuste</button>
+                    <button className="btn btn-danger" onClick={()=>{ setConfirmReprovarId(cd.chaveId); setErroReprovar(''); setMotivoReprovar(''); }}><Ic>⊘</Ic> Reprovar ajuste</button>
                   )}
                 </div>
               </div>
@@ -14958,7 +14958,7 @@ function FilterIcon(){
 
 // Mesmo raciocínio do CalendarIcon/FilterIcon acima — Lucide-ish, desenhado
 // à mão — usado no botão "Scanner" das telas de Recontagens/Itens
-// Divergentes/Concluídas, substituindo o emoji de câmera (📷, destoava do
+// Divergentes/Concluídas, substituindo o emoji de câmera (◫, destoava do
 // resto do visual mais refinado desses cards).
 function ScanIcon(){
   return (
@@ -17946,13 +17946,13 @@ function EtiquetasPanel({currentUser}){
             <div className="divergence-alert" style={{margin:'10px 0'}}><Ic>⚠</Ic><span>{erroImpressao}</span></div>
           )}
           {sucessoImpressao && (
-            <div className="divergence-alert" style={{margin:'10px 0',background:'var(--ok-bg)',borderColor:'var(--ok)',color:'var(--ok)'}}><Ic>✅</Ic><span>Etiqueta enviada pra impressora.</span></div>
+            <div className="divergence-alert" style={{margin:'10px 0',background:'var(--ok-bg)',borderColor:'var(--ok)',color:'var(--ok)'}}><Ic>✓</Ic><span>Etiqueta enviada pra impressora.</span></div>
           )}
           {erroFilaEnvio && (
             <div className="divergence-alert" style={{margin:'10px 0'}}><Ic>⚠</Ic><span>{erroFilaEnvio}</span></div>
           )}
           {sucessoFilaEnvio && (
-            <div className="divergence-alert" style={{margin:'10px 0',background:'var(--ok-bg)',borderColor:'var(--ok)',color:'var(--ok)'}}><Ic>✅</Ic><span>Enviada para a fila — imprima do PC ligado na impressora.</span></div>
+            <div className="divergence-alert" style={{margin:'10px 0',background:'var(--ok-bg)',borderColor:'var(--ok)',color:'var(--ok)'}}><Ic>✓</Ic><span>Enviada para a fila — imprima do PC ligado na impressora.</span></div>
           )}
           <div className="btn-row" style={{marginTop:14}}>
             <button className="btn btn-secondary" onClick={()=>{ setSelecionado(null); setSucessoImpressao(false); setSucessoFilaEnvio(false); setErroFilaEnvio(null); }}>Voltar</button>
@@ -18443,7 +18443,7 @@ function MaquinaCard({m, canManage, isAdmin, ordinal, mostrarReordenar, podeSubi
                   <Ic>⊕</Ic> {m.urgente ? 'Remover urgência' : 'Marcar urgente'}
                 </button>
                 <button type="button" disabled={busy} onClick={()=>{/* placeholder for edit action */ setMenuAbertoId(null);}} title="Editar máquina">
-                  <Ic>✏</Ic> Editar
+                  <Ic>✎</Ic> Editar
                 </button>
                 {isAdmin && (
                   <button type="button" className="menu-item-danger" disabled={busy} onClick={()=>{setConfirmandoExcluir(true); setMenuAbertoId(null);}} title="Excluir máquina">
@@ -19100,7 +19100,7 @@ function StockSyncPanel(){
       </div>
       <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{display:'none'}} onChange={handleFile} />
       <button className="btn btn-secondary" onClick={()=>fileRef.current.click()}>
-        <Ic>📄</Ic> {arquivoNome || 'Selecionar planilha SB2 (.xlsx)'}
+        <Ic>▭</Ic> {arquivoNome || 'Selecionar planilha SB2 (.xlsx)'}
       </button>
 
       {erro && <div className="divergence-alert" style={{marginTop:14}}><Ic>⚠</Ic><span>{erro}</span></div>}
@@ -19218,7 +19218,7 @@ function CatalogoDescricaoSyncPanel(){
       </div>
       <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{display:'none'}} onChange={handleFile} />
       <button className="btn btn-secondary" onClick={()=>fileRef.current.click()}>
-        <Ic>📄</Ic> {arquivoNome || 'Selecionar planilha (.xlsx)'}
+        <Ic>▭</Ic> {arquivoNome || 'Selecionar planilha (.xlsx)'}
       </button>
 
       {erro && <div className="divergence-alert" style={{marginTop:14}}><Ic>⚠</Ic><span>{erro}</span></div>}
@@ -19384,11 +19384,11 @@ function HistoricoImportPanel({onImported}){
       </div>
       <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{display:'none'}} onChange={handleFile} />
       <button className="btn btn-secondary" onClick={()=>fileRef.current.click()} disabled={lendo}>
-        <Ic>📄</Ic> {arquivoNome || 'Selecionar planilha de análise (.xlsx)'}
+        <Ic>▭</Ic> {arquivoNome || 'Selecionar planilha de análise (.xlsx)'}
       </button>
       {lendo && (
         <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)',marginTop:10}}>
-          <Ic>⏳</Ic> Lendo planilha… (pode levar alguns segundos, arquivo grande)
+          <Ic>◷</Ic> Lendo planilha… (pode levar alguns segundos, arquivo grande)
         </div>
       )}
 
@@ -19403,7 +19403,7 @@ function HistoricoImportPanel({onImported}){
             {parseResult.resumo.duplicadas>0 && <> · {parseResult.resumo.duplicadas} duplicadas (mesmo código+data+endereço, mantida a mais recente)</>}
           </div>
           <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)',marginTop:4}}>
-            <Ic>🔁</Ic> {buildRecontarSeedsFromHistorico(parseResult.linhas).length} itens marcados "Recontar" vão entrar na fila de
+            <Ic>↻</Ic> {buildRecontarSeedsFromHistorico(parseResult.linhas).length} itens marcados "Recontar" vão entrar na fila de
             recontagem do app (tela "Recontagens" → Aguardando Segunda Contagem).
           </div>
           <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)',marginTop:4}}>
