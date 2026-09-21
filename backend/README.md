@@ -1050,3 +1050,48 @@ formato `date` dos outros 3 campos de data. **Não testado contra Postgres
 real** (mesma limitação de sempre, sandbox sem acesso de rede ao
 Supabase) — são 3 colunas simples, sem constraint nem policy nova, no
 mesmo padrão já aplicado e em produção pras outras colunas desta tabela.
+
+### 14.15 — "Programação": abas para as outras linhas de produção
+### (Elétrica/SEM/SSE/SEP) — 1 coluna nova em `maquinas_etp`
+
+Pedido do cliente, olhando o Kanban de "Programação" já em produção: "Aqui é
+uma linha de produção. precisa criar abas para as outras linhas: Elétrica SEM
+SSE SEP" — cada ETP passa a pertencer a uma linha de produção, e a tela ganha
+uma barra de abas (uma por linha) que filtra o Kanban.
+
+```sql
+alter table maquinas_etp add column if not exists linha text;
+```
+
+Texto livre, não enum/FK — o Empenho Aberto (a consulta ao vivo à Selgron que
+já preenche o resto do cabeçalho, ver seção 14.14) nunca traz esse dado, então
+é sempre escolhido manualmente no formulário "Adicionar ETP", num `<select>`
+novo ao lado dos outros campos já editáveis. `LINHAS_PRODUCAO` (`index.html`)
+é a lista fixa de abas: `['Geral', 'Elétrica', 'SEM', 'SSE', 'SEP']` —
+"Geral" é o rótulo escolhido pra linha que já existia antes desta mudança
+(o cliente só nomeou explicitamente as 4 linhas *novas*); qualquer ETP com
+`linha` nula (registrada antes desta coluna existir, ou nunca preenchida)
+cai nessa aba por padrão, tanto na exibição quanto no filtro — nunca some
+silenciosamente de todas as abas.
+
+**RLS: nenhuma policy nova necessária** — mesmo raciocínio já documentado na
+seção 14.14, as policies de INSERT/UPDATE existentes são incondicionais por
+coluna.
+
+**Aplicar**: `alter table add column if not exists` aditivo e idempotente,
+pode ser rodado isolado, sem precisar reexecutar o bloco inteiro de
+`maquinas_etp`.
+
+**Verificação**: harness (jsdom + `react-dom/client` + `act()`, mesma técnica
+de sempre) confirmando que `maquinaEtpRowToLocal`/`upsertMaquinaEtp` leem e
+gravam `linha` corretamente (inclusive o fallback pra "Geral" quando nula);
+que a barra de abas em `ProgramacaoSeparacaoPanel` filtra `itens`/
+`maquinasEtp` juntos pela mesma linha (uma ETP some do Kanban de uma aba e
+aparece na aba certa); que uma ETP órfã (presente em `sequencia_separacao`
+mas ausente do cache `maquinas_etp`) nunca desaparece de todas as abas —
+cai em "Geral" por padrão; e que o `<select>` de linha em "Adicionar ETP"
+nasce com o valor já cadastrado da máquina (se a ETP já existe) ou com a
+aba atualmente selecionada (se é uma ETP nova). **Não testado contra
+Postgres real** (mesma limitação de sempre, sandbox sem acesso de rede ao
+Supabase) — é 1 coluna simples, sem constraint nem policy nova, no mesmo
+padrão já aplicado e em produção pras outras colunas desta tabela.

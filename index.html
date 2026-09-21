@@ -16666,6 +16666,14 @@ function maquinaEtpRowToLocal(row){
     status: row.status || 'aguardando',
     ordem: (row.ordem===null || row.ordem===undefined) ? null : Number(row.ordem),
     urgente: !!row.urgente,
+    // linha: a que linha de produção esta ETP pertence (ver "Programação:
+    // abas para as outras linhas" no schema.sql) — texto livre, escolhido
+    // manualmente no formulário "Adicionar ETP" (o Empenho Aberto nunca traz
+    // isso). Nula (ETP registrada antes desta coluna existir, ou nunca
+    // preenchida) sempre cai na linha padrão LINHA_PADRAO ("Geral") — decisão
+    // tomada em quem CONSOME este campo (ProgramacaoSeparacaoPanel), não aqui,
+    // pra nunca esconder uma ETP mais antiga de todas as abas.
+    linha: row.linha || null,
     atualizadoEm: row.atualizado_em,
   };
 }
@@ -16711,6 +16719,7 @@ async function upsertMaquinaEtp(m, extra){
       chassi: m.chassi || null,
       op: m.op || null,
       codigo_produto: m.codigoProduto || null,
+      linha: m.linha || null,
       data_separacao: parseDataHistorico(m.separacao),
       montagem: parseDataHistorico(m.montagem),
       data_entrega_pcp: parseDataHistorico(m.entregaPcp),
@@ -18151,6 +18160,18 @@ function SeparacaoStatusTag({status}){
   return <StatusTag status="warn" text={label} />;
 }
 
+// Linhas de produção do Kanban de "Programação" (ver "Programação: abas
+// para as outras linhas" no schema.sql) — pedido do cliente: "Aqui é uma
+// linha de produção... precisa criar abas para as outras linhas: Elétrica
+// SEM SSE SEP". LINHA_PADRAO ("Geral") é o rótulo escolhido pra linha que
+// já existia antes desta mudança (o cliente só nomeou explicitamente as 4
+// linhas *novas*) — qualquer ETP sem `linha` definida (nula, seja por já
+// existir de antes desta coluna, seja por nunca ter sido preenchida) cai
+// nela por padrão, tanto na exibição quanto no filtro por aba, pra nunca
+// desaparecer silenciosamente de todas as linhas.
+const LINHA_PADRAO = 'Geral';
+const LINHAS_PRODUCAO = ['Geral', 'Elétrica', 'SEM', 'SSE', 'SEP'];
+
 // Regra de agregação do status da MÁQUINA a partir do conjunto de itens da
 // mesma ETP — decisão de produto confirmada com o cliente (o painel/TV
 // acompanha MÁQUINAS, não itens: uma máquina com 300 componentes tem que
@@ -18590,7 +18611,7 @@ function SeparacaoPainelBoard({itens, maquinasEtp, canManage, isAdmin, onAvancar
 // máquina GENUINAMENTE NOVA (pra só então gravar `ordem`/`urgente`
 // iniciais — ver comentário em `upsertMaquinaEtp`; máquina já existente
 // nunca tem esses 2 campos resetados aqui).
-function AdicionarEtpModal({open, currentUser, maquinasEtp, onClose, onSucesso}){
+function AdicionarEtpModal({open, currentUser, maquinasEtp, linhaPadrao, onClose, onSucesso}){
   const [etpCodigo, setEtpCodigo] = useState('');
   const [buscandoEtp, setBuscandoEtp] = useState(false);
   const [buscaResultado, setBuscaResultado] = useState(null); // {ok, resultados} | {ok:false, erro} | null
@@ -18633,6 +18654,12 @@ function AdicionarEtpModal({open, currentUser, maquinasEtp, onClose, onSucesso})
     // digitar/corrigir os dados manualmente, só a base muda: da 1ª máquina
     // encontrada (quando existe) ou de campos em branco + o próprio código
     // digitado (quando não).
+    // A `linha` (linha de produção) nunca vem do Empenho Aberto — cai pro
+    // valor já cadastrado da própria máquina, se essa ETP já existir na
+    // fila (edição), ou pra aba atualmente selecionada em "Programação"
+    // (ETP nova), sem nunca ficar em branco.
+    const maquinaJaExiste = maquinasEtp.find(mm=>mm.etp===etpLimpo);
+    const linhaBase = (maquinaJaExiste && maquinaJaExiste.linha) || linhaPadrao || LINHA_PADRAO;
     if(res && res.ok && Array.isArray(res.resultados) && res.resultados.length>0){
       const m = res.resultados[0];
       setCampoEtp({
@@ -18643,6 +18670,7 @@ function AdicionarEtpModal({open, currentUser, maquinasEtp, onClose, onSucesso})
         chassi: m.chassi || '',
         op: m.op || '',
         codigoProduto: m.codigoProduto || '',
+        linha: linhaBase,
         separacao: m.separacao || '',
         montagem: m.montagem || '',
         entregaPcp: m.entregaPcp || '',
@@ -18652,7 +18680,9 @@ function AdicionarEtpModal({open, currentUser, maquinasEtp, onClose, onSucesso})
       setCampoEtp({
         etp: etpLimpo,
         cliente: '', nomeFantasia: '', descricao: '', chassi: '', op: '',
-        codigoProduto: '', separacao: '', montagem: '', entregaPcp: '', entregaComercial: '',
+        codigoProduto: '',
+        linha: linhaBase,
+        separacao: '', montagem: '', entregaPcp: '', entregaComercial: '',
       });
     }
     setUrgenteEtp(false);
@@ -18766,6 +18796,12 @@ function AdicionarEtpModal({open, currentUser, maquinasEtp, onClose, onSucesso})
                 <input type="text" value={campoEtp.codigoProduto} onChange={e=>atualizarCampoEtp('codigoProduto', e.target.value)} />
               </div>
               <div className="field" style={{flex:'1 1 140px',marginBottom:0}}>
+                <label>Linha</label>
+                <select value={campoEtp.linha || LINHA_PADRAO} onChange={e=>atualizarCampoEtp('linha', e.target.value)}>
+                  {LINHAS_PRODUCAO.map(l=><option key={l} value={l}>{l}</option>)}
+                </select>
+              </div>
+              <div className="field" style={{flex:'1 1 140px',marginBottom:0}}>
                 <label>Separação</label>
                 <input type="text" placeholder="DD/MM/AAAA" value={campoEtp.separacao} onChange={e=>atualizarCampoEtp('separacao', e.target.value)} />
               </div>
@@ -18826,6 +18862,12 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
   // virou um modal (AdicionarEtpModal), controlado por este único estado.
   const [modalAdicionarAberto, setModalAdicionarAberto] = useState(false);
   const [mensagemSucesso, setMensagemSucesso] = useState(null);
+
+  // Aba (linha de produção) selecionada — preferência de sessão do
+  // aparelho, não dado compartilhado (cada painel/TV pode ficar aberto
+  // numa linha diferente), por isso `usePersistedState` e não estado no
+  // Supabase. Ver LINHA_PADRAO/LINHAS_PRODUCAO.
+  const [linhaSelecionada, setLinhaSelecionada] = usePersistedState('separacaoLinhaSelecionada', LINHA_PADRAO);
 
   const canManage = role==='lider' || role==='admin';
   const isAdmin = role==='admin';
@@ -18926,6 +18968,17 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
     return {ok:true};
   }
 
+  // Mapa etp→linha, derivado só de `maquinasEtp` — qualquer ETP sem `linha`
+  // definida (nula, seja por já existir de antes desta coluna, seja por
+  // nunca ter sido preenchida) cai em LINHA_PADRAO ("Geral") por padrão,
+  // nunca desaparecendo silenciosamente de todas as abas. Aplicado nos DOIS
+  // arrays (itens e maquinasEtp) antes de chegar no Painel — `computeMaquinasPainel`
+  // não muda, o filtro por linha acontece sempre aqui, um nível acima.
+  const linhaPorEtp = {};
+  maquinasEtp.forEach(m=>{ linhaPorEtp[m.etp] = m.linha || LINHA_PADRAO; });
+  const maquinasEtpDaLinha = maquinasEtp.filter(m=>(m.linha || LINHA_PADRAO)===linhaSelecionada);
+  const itensDaLinha = itens.filter(i=>(linhaPorEtp[i.etp] || LINHA_PADRAO)===linhaSelecionada);
+
   return (
     <div className="panel">
       <div className="section-title" style={{marginTop:0, display:'flex', alignItems:'center', flexWrap:'wrap', gap:8}}>
@@ -18936,11 +18989,25 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
         prioridade Urgente só destaca o card visualmente, nunca reordena a
         fila sozinha.
       </div>
+
+      <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:14}}>
+        {LINHAS_PRODUCAO.map(l=>(
+          <button
+            key={l}
+            type="button"
+            className={'btn '+(linhaSelecionada===l ? 'btn-primary' : 'btn-outline')+' btn-sm'}
+            onClick={()=>setLinhaSelecionada(l)}
+          >
+            {l}
+          </button>
+        ))}
+      </div>
+
       {mensagemSucesso && <div style={{fontSize:'var(--text-xs)',color:'var(--ok)',marginBottom:14}}>{mensagemSucesso}</div>}
 
       <SeparacaoPainelBoard
-        itens={itens}
-        maquinasEtp={maquinasEtp}
+        itens={itensDaLinha}
+        maquinasEtp={maquinasEtpDaLinha}
         canManage={canManage}
         isAdmin={isAdmin}
         onAvancarStatus={handleAvancarStatusMaquina}
@@ -18954,6 +19021,7 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
         open={modalAdicionarAberto}
         currentUser={currentUser}
         maquinasEtp={maquinasEtp}
+        linhaPadrao={linhaSelecionada}
         onClose={()=>setModalAdicionarAberto(false)}
         onSucesso={mostrarSucesso}
       />
