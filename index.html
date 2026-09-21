@@ -18396,6 +18396,7 @@ async function avancarStatusMaquinaEmLote(maquina, itensDaMaquina, nomeUsuario){
 // `avancarStatusMaquinaEmLote`).
 function MaquinaCard({m, canManage, isAdmin, ordinal, mostrarReordenar, podeSubir, podeDescer, busy, erro, onAvancar, onMoverCima, onMoverBaixo, onToggleUrgente, onExcluir}){
   const [confirmandoExcluir, setConfirmandoExcluir] = useState(false);
+  const [menuAbertoId, setMenuAbertoId] = useState(null);
   const classes = ['sep-kanban-card'];
   if(m.urgente) classes.push('sep-urgente-maquina');
   const acaoLabel = SEPARACAO_STATUS_ACAO_LABEL[m.status];
@@ -18426,43 +18427,30 @@ function MaquinaCard({m, canManage, isAdmin, ordinal, mostrarReordenar, podeSubi
         </div>
       )}
       {canManage && !confirmandoExcluir && (
-        <div className="btn-row" style={{width:'auto',marginTop:8,gap:'8px',flexWrap:'nowrap'}}>
-          <button
-            type="button"
-            className={m.urgente ? 'btn btn-outline' : 'btn btn-secondary'}
-            style={{padding:'8px 12px',fontSize:'var(--text-xs)'}}
-            disabled={busy}
-            onClick={onToggleUrgente}
-          >
-            {m.urgente ? 'Remover urgência' : 'Marcar urgente'}
-          </button>
-          <button
-            type="button"
-            className="btn btn-outline"
-            style={{padding:'8px 12px',fontSize:'var(--text-xs)'}}
-            disabled={busy}
-            onClick={()=>{/* placeholder for edit action */}}
-            title="Editar máquina"
-          >
-            ✏️ Editar
-          </button>
+        <div className="btn-row" style={{width:'auto',marginTop:8,gap:'8px',flexWrap:'nowrap',alignItems:'flex-start'}}>
           {temProximo && (
             <button type="button" className="btn btn-primary" style={{padding:'8px 12px',fontSize:'var(--text-xs)'}} disabled={busy} onClick={onAvancar}>
               {busy ? 'Salvando…' : acaoLabel}
             </button>
           )}
-          {isAdmin && (
-            <button
-              type="button"
-              className="btn btn-outline"
-              style={{padding:'8px 12px',fontSize:'var(--text-xs)',color:'var(--danger)',borderColor:'var(--danger)'}}
-              disabled={busy}
-              onClick={()=>setConfirmandoExcluir(true)}
-              title="Excluir máquina"
-            >
-              🗑️
-            </button>
-          )}
+          <div className="count-card-menu" style={{position:'relative'}}>
+            <button type="button" className="count-card-menu-btn" style={{padding:'8px 12px',fontSize:'var(--text-xs)'}} onClick={()=>setMenuAbertoId(menuAbertoId===m.etp ? null : m.etp)} title="Mais opções">⋯</button>
+            {menuAbertoId===m.etp && (
+              <div className="count-card-menu-dropdown" style={{minWidth:'180px'}}>
+                <button type="button" disabled={busy} onClick={()=>{ onToggleUrgente(); setMenuAbertoId(null); }}>
+                  <Ic>{m.urgente ? '🔥' : '⭐'}</Ic> {m.urgente ? 'Remover urgência' : 'Marcar urgente'}
+                </button>
+                <button type="button" disabled={busy} onClick={()=>{/* placeholder for edit action */ setMenuAbertoId(null);}} title="Editar máquina">
+                  <Ic>✏️</Ic> Editar
+                </button>
+                {isAdmin && (
+                  <button type="button" className="menu-item-danger" disabled={busy} onClick={()=>{setConfirmandoExcluir(true); setMenuAbertoId(null);}} title="Excluir máquina">
+                    <Ic>🗑️</Ic> Excluir
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
       {isAdmin && confirmandoExcluir && (
