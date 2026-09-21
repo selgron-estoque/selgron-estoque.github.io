@@ -2434,3 +2434,28 @@ alter table maquinas_etp add constraint maquinas_etp_status_check
 -- ainda — ver `atualizarStatusMaquina`/`atualizarUrgenteMaquina`/
 -- `atualizarOrdemMaquina` no index.html, todos via `.upsert()` por esse
 -- motivo — auto-curam um cache ausente em vez de falhar).
+
+-- =============================================================================
+-- "ADICIONAR ETP": CAMPOS DO CABEÇALHO VIRAM EDITÁVEIS — 3 COLUNAS NOVAS
+-- =============================================================================
+-- Pedido do cliente: a tela "Adicionar ETP" (index.html, `AdicionarEtpModal`)
+-- deixou de mostrar os dados do Empenho Aberto como texto somente-leitura —
+-- viraram campos editáveis, pra o líder corrigir manualmente antes de
+-- adicionar a ETP/máquina à fila (o dado vindo da consulta ao vivo à Selgron
+-- pode vir errado/incompleto). `maquinas_etp` já guardava 6 dos 9 campos
+-- pedidos (cliente/nome_fantasia/descricao/chassi/data_separacao/
+-- data_entrega_pcp/data_entrega_comercial) — faltavam 3: OP, Cód. Produto e
+-- Montagem, que a tela sempre mostrou mas nunca persistiu.
+--
+-- `montagem`, igual `data_separacao`/`data_entrega_pcp`/
+-- `data_entrega_comercial`, vem do mesmo campo de data do Empenho Aberto
+-- (string "DD/MM/AAAA", ou texto tipo "Não definido"/vazio quando a máquina
+-- ainda não tem data de montagem prevista) — mesmo tipo `date` e mesma
+-- conversão via `parseDataHistorico(...)` no index.html, não um texto livre.
+alter table maquinas_etp add column if not exists op text;
+alter table maquinas_etp add column if not exists codigo_produto text;
+alter table maquinas_etp add column if not exists montagem date;
+
+-- RLS: nenhuma policy nova necessária — as policies de INSERT/UPDATE já
+-- existentes ("insercao por tela"/"atualizacao por tela", acima) são
+-- incondicionais por coluna, cobrem os 3 campos novos sem nenhum ajuste.

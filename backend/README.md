@@ -999,3 +999,54 @@ admin. **Não testado contra Postgres real** (mesma limitação de sempre,
 sandbox sem acesso de rede ao Supabase) — a policy em si é de 1 linha só,
 reaproveitando uma função (`eh_admin`) já testada e em produção há
 tempos nas outras tabelas deste projeto.
+
+### 14.14 — "Adicionar ETP": campos do cabeçalho viram editáveis — 3
+### colunas novas em `maquinas_etp` (op, codigo_produto, montagem)
+
+Pedido do cliente: a tela "Adicionar ETP" (index.html, `AdicionarEtpModal`)
+mostrava os dados do Empenho Aberto (Cliente/OP/ETP/Chassi/Cód. Produto/
+Separação/Montagem/Entrega PCP/Entrega Comercial) como texto somente-
+leitura — se a consulta ao vivo à Selgron trouxesse algum campo errado ou
+incompleto, não tinha jeito de corrigir antes de adicionar a ETP/máquina à
+fila. Viraram campos editáveis, com o valor vindo da consulta só como
+ponto de partida.
+
+`maquinas_etp` já guardava 6 dos 9 campos pedidos (`cliente`/
+`nome_fantasia`/`descricao`/`chassi`/`data_separacao`/`data_entrega_pcp`/
+`data_entrega_comercial`) — faltavam 3, que a tela sempre exibiu mas nunca
+persistiu: OP, Cód. Produto e Montagem.
+
+```sql
+alter table maquinas_etp add column if not exists op text;
+alter table maquinas_etp add column if not exists codigo_produto text;
+alter table maquinas_etp add column if not exists montagem date;
+```
+
+`montagem` virou `date` (não `text`) — mesmo tipo e mesma conversão via
+`parseDataHistorico(...)` já usada pelos outros 3 campos de data desta
+mesma tabela (`data_separacao`/`data_entrega_pcp`/`data_entrega_comercial`):
+o Empenho Aberto devolve esse campo como string "DD/MM/AAAA", ou texto
+tipo "Não definido"/vazio quando a máquina ainda não tem data de montagem
+prevista — `parseDataHistorico` já sabe tratar os dois casos, devolvendo
+`null` pro que não é uma data de verdade, em vez de guardar um texto livre.
+
+**RLS: nenhuma policy nova necessária** — as policies de INSERT/UPDATE já
+existentes ("insercao por tela"/"atualizacao por tela", seção acima) são
+incondicionais por coluna, então já cobrem os 3 campos novos sem nenhum
+ajuste.
+
+**Aplicar**: as 3 linhas `alter table add column if not exists` acima são
+aditivas e idempotentes — podem ser rodadas isoladas, sem precisar
+reexecutar o bloco inteiro de `maquinas_etp` (tabela + policies +
+Realtime) de novo.
+
+**Verificação**: harness (jsdom + `react-dom/client` + `act()`, extraindo
+e transpilando via Babel o `<script type="text/babel">` real do
+`index.html`, mesma técnica de sempre neste projeto) confirmando que
+`maquinaEtpRowToLocal` lê os 3 campos novos de volta (snake_case→
+camelCase) e que `upsertMaquinaEtp` grava os 3 no `patch` do upsert,
+incluindo a conversão de `montagem` via `parseDataHistorico` pro mesmo
+formato `date` dos outros 3 campos de data. **Não testado contra Postgres
+real** (mesma limitação de sempre, sandbox sem acesso de rede ao
+Supabase) — são 3 colunas simples, sem constraint nem policy nova, no
+mesmo padrão já aplicado e em produção pras outras colunas desta tabela.
