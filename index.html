@@ -18440,14 +18440,14 @@ function MaquinaCard({m, canManage, isAdmin, ordinal, mostrarReordenar, podeSubi
             {menuAbertoId===m.etp && (
               <div className="count-card-menu-dropdown" style={{minWidth:'180px'}}>
                 <button type="button" disabled={busy} onClick={()=>{ onToggleUrgente(); setMenuAbertoId(null); }}>
-                  <Ic>{m.urgente ? '🔥' : '⭐'}</Ic> {m.urgente ? 'Remover urgência' : 'Marcar urgente'}
+                  <Ic>⊕</Ic> {m.urgente ? 'Remover urgência' : 'Marcar urgente'}
                 </button>
                 <button type="button" disabled={busy} onClick={()=>{/* placeholder for edit action */ setMenuAbertoId(null);}} title="Editar máquina">
-                  <Ic>✏️</Ic> Editar
+                  <Ic>✏</Ic> Editar
                 </button>
                 {isAdmin && (
                   <button type="button" className="menu-item-danger" disabled={busy} onClick={()=>{setConfirmandoExcluir(true); setMenuAbertoId(null);}} title="Excluir máquina">
-                    <Ic>🗑</Ic> Excluir
+                    <Ic>⊗</Ic> Excluir
                   </button>
                 )}
               </div>
