@@ -18473,12 +18473,8 @@ const SEP_KANBAN_COLUNAS = [
   {chave:'entregue', titulo:'Entregue', icone:'checkCircle', cor:'--blue', corBg:'--blue-bg', vazio:'Nenhuma máquina entregue ainda.'},
 ];
 
-// Colunas em que a fila ainda é "de trabalho" — participam da reordenação
-// manual (↑/↓). Separada/Entregue ficam de fora de propósito: são etapas já
-// encerradas, reordenar ali não tem efeito operacional nenhum.
-const SEP_KANBAN_COLUNAS_REORDENAVEIS = ['aguardando', 'emSeparacao', 'atrasada'];
-
 function SeparacaoPainelBoard({itens, maquinasEtp, canManage, isAdmin, onAvancarStatus, onMoverOrdem, onToggleUrgente, onExcluirMaquina, onAdicionarEtpClick, onEditarMaquina}){
+  const [modoReordenar, setModoReordenar] = useState(false);
   const [somenteUrgentes, setSomenteUrgentes] = useState(false);
   const [busyEtp, setBusyEtp] = useState(null);
   const [errosEtp, setErrosEtp] = useState({});
@@ -18490,13 +18486,14 @@ function SeparacaoPainelBoard({itens, maquinasEtp, canManage, isAdmin, onAvancar
 
   const buckets = bucketizeKanban(maquinas);
 
-  // Filtro "Somente Urgentes" — de propósito, as setas ↑/↓ somem enquanto
-  // ele está ativo: `moverOrdemNaColuna` sempre opera sobre a coluna já
-  // visível (`buckets[col.chave]`, ver `handleMover` abaixo — nunca a lista
-  // bruta antes do bucketing), e deixá-las ativas em cima de uma lista
-  // visualmente recortada por este filtro confundiria o que "pra cima"/
-  // "pra baixo" de fato move.
+  // Filtro "Somente Urgentes" — de propósito, o modo "Ordenar sequência"
+  // fica desabilitado enquanto ele está ativo: `moverOrdemNaColuna` sempre
+  // opera sobre a coluna já visível (`buckets[col.chave]`, ver `handleMover`
+  // abaixo — nunca a lista bruta antes do bucketing), e deixar as setas
+  // ativas em cima de uma lista visualmente recortada por este filtro
+  // confundiria o que "pra cima"/"pra baixo" de fato move.
   function aplicarFiltro(lista){ return somenteUrgentes ? lista.filter(m=>m.urgente) : lista; }
+  const reordenarAtivo = modoReordenar && !somenteUrgentes;
 
   async function handleAvancar(m){
     setBusyEtp(m.etp);
@@ -18538,6 +18535,9 @@ function SeparacaoPainelBoard({itens, maquinasEtp, canManage, isAdmin, onAvancar
             <DIcon name="plus" size={15} /> Adicionar ETP
           </button>
         )}
+        <button type="button" className={modoReordenar ? 'btn btn-primary btn-sm' : 'btn btn-outline btn-sm'} disabled={somenteUrgentes} onClick={()=>setModoReordenar(v=>!v)}>
+          <DIcon name="repeat" size={13} /> {modoReordenar ? 'Concluir ordenação' : 'Ordenar sequência'}
+        </button>
         <button
           type="button"
           className={somenteUrgentes ? 'btn btn-primary btn-sm' : 'btn btn-outline btn-sm'}
@@ -18551,7 +18551,6 @@ function SeparacaoPainelBoard({itens, maquinasEtp, canManage, isAdmin, onAvancar
         {SEP_KANBAN_COLUNAS.map(col=>{
           const listaBruta = buckets[col.chave];
           const lista = aplicarFiltro(listaBruta);
-          const reordenavel = SEP_KANBAN_COLUNAS_REORDENAVEIS.includes(col.chave) && !somenteUrgentes;
           return (
             <div key={col.chave} className="sep-kanban-col">
               <div className="sep-kanban-col-head" style={{color:`var(${col.cor})`,background:`var(${col.corBg})`}}>
@@ -18566,8 +18565,8 @@ function SeparacaoPainelBoard({itens, maquinasEtp, canManage, isAdmin, onAvancar
                   lista.map((m, idx)=>(
                     <MaquinaCard
                       key={m.etp} m={m} canManage={canManage} isAdmin={isAdmin}
-                      ordinal={reordenavel ? idx+1 : null}
-                      mostrarReordenar={reordenavel}
+                      ordinal={reordenarAtivo ? idx+1 : null}
+                      mostrarReordenar={reordenarAtivo}
                       podeSubir={idx>0} podeDescer={idx<lista.length-1}
                       busy={busyEtp===m.etp} erro={errosEtp[m.etp]}
                       onAvancar={()=>handleAvancar(m)}
