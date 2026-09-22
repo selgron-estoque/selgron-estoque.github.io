@@ -2773,39 +2773,6 @@ async function fetchSaldoConsultaSelgron(codigo, armazem){
   }
 }
 
-// Busca "Empenho Aberto" por ETP (Gestão de Separação → Programação → botão
-// "Adicionar ETP") — mesmo padrão de proxy on-demand de
-// `fetchSaldoConsultaSelgron` acima (nenhuma gravação no Supabase, só chama a
-// Edge Function e devolve o corpo já pronto). Devolve {ok:true, etp,
-// resultados, total} (resultados pode ter mais de 1 máquina/OP pra mesma
-// ETP — o modal usa sempre `resultados[0]` como base editável) ou
-// {ok:false, erro}. Única consulta usada por `AdicionarEtpModal` — a antiga
-// busca de "Lista de Itens Faltantes" (`fetchItensFaltantesPorEtp`) foi
-// removida junto com a lista de itens do modal (ver comentário em
-// `AdicionarEtpModal`: a tela trabalha com a ETP/MÁQUINA como unidade
-// principal, não com os itens que pertencem a ela).
-async function fetchEmpenhoAbertoPorEtp(etp){
-  if(!supabaseClient || !etp) return {ok:false, erro:'Não configurado.'};
-  try{
-    const { data, error } = await supabaseClient.functions.invoke('consultar-empenho-aberto', {
-      body: {etp},
-    });
-    if(error){
-      let erro = error.message;
-      if(error.context && typeof error.context.json==='function'){
-        try{
-          const corpo = await error.context.json();
-          if(corpo && corpo.erro) erro = corpo.erro;
-        }catch(_e){ /* corpo não era JSON — mantém a mensagem genérica */ }
-      }
-      return {ok:false, erro};
-    }
-    return data;
-  }catch(err){
-    return {ok:false, erro:String(err && err.message || err)};
-  }
-}
-
 // `patch` usa nomes de campo em camelCase (mesmo formato do objeto local) —
 // convertido pra snake_case aqui dentro. Único uso real que sobra hoje:
 // gravar `ultimoAcesso` (ver attemptLogin) — a coluna é a única liberada
@@ -16642,9 +16609,9 @@ async function excluirItemSequenciaSeparacao(id){
 // `maquinas_etp` — cache de dado da MÁQUINA (nome fantasia/chassi/data
 // prevista de separação), usado só pelo painel/TV pra agrupar os itens de
 // `sequencia_separacao` por ETP em 1 linha por máquina (ver
-// `statusAgregadoMaquina`/`computeMaquinasPainel` mais abaixo). Populado a
-// partir da resposta do Empenho Aberto já buscada em `handleBuscarEtp` — não
-// existe nenhuma consulta própria pra essa tabela ir buscar dado sozinha.
+// `statusAgregadoMaquina`/`computeMaquinasPainel` mais abaixo). Preenchido
+// 100% manualmente no modal "Adicionar ETP"/"Editar ETP" — não existe
+// nenhuma consulta própria pra essa tabela ir buscar dado sozinha.
 function maquinaEtpRowToLocal(row){
   return {
     etp: row.etp,
@@ -16654,6 +16621,7 @@ function maquinaEtpRowToLocal(row){
     chassi: row.chassi,
     op: row.op,
     codigoProduto: row.codigo_produto,
+    obs: row.obs,
     dataSeparacao: row.data_separacao,
     montagem: row.montagem,
     dataEntregaPcp: row.data_entrega_pcp,
@@ -16670,8 +16638,8 @@ function maquinaEtpRowToLocal(row){
     urgente: !!row.urgente,
     // linha: a que linha de produção esta ETP pertence (ver "Programação:
     // abas para as outras linhas" no schema.sql) — texto livre, escolhido
-    // manualmente no formulário "Adicionar ETP" (o Empenho Aberto nunca traz
-    // isso). Nula (ETP registrada antes desta coluna existir, ou nunca
+    // manualmente no formulário "Adicionar ETP". Nula (ETP registrada antes
+    // desta coluna existir, ou nunca
     // preenchida) sempre cai na linha padrão LINHA_PADRAO ("Geral") — decisão
     // tomada em quem CONSOME este campo (ProgramacaoSeparacaoPanel), não aqui,
     // pra nunca esconder uma ETP mais antiga de todas as abas.
@@ -16694,12 +16662,9 @@ async function fetchMaquinasEtp(){
 
 // Chamada pelo `AdicionarEtpModal` (Gestão de Separação → Programação →
 // botão "Adicionar ETP") ao confirmar o formulário — `m` é sempre
-// `{...campoEtp, etp: etpTrimmed}`, o estado EDITÁVEL do modal (o líder pode
-// ter corrigido manualmente qualquer campo, não precisa bater 1:1 com o que
-// o Empenho Aberto devolveu). Não depende de nenhuma busca ter tido
-// sucesso — se a consulta não achou nada/deu erro pra essa ETP, o modal
-// ainda deixa o líder preencher os campos à mão do zero (só `etp` já vem
-// preenchido, herdado do campo de busca).
+// `{...campoEtp, etp: etpTrimmed}`, o estado EDITÁVEL do modal, preenchido
+// 100% manualmente pelo líder (sem busca automática em nenhuma consulta
+// externa).
 // `extra` é opcional e só deve ser passado pra uma máquina GENUINAMENTE NOVA
 // (o chamador já checou que essa ETP ainda não existe em `maquinasEtp`) —
 // `{ordem, urgente}`. De propósito, quando `extra` não é passado (o caso
@@ -16722,6 +16687,7 @@ async function upsertMaquinaEtp(m, extra){
       op: m.op || null,
       codigo_produto: m.codigoProduto || null,
       linha: m.linha || null,
+      obs: m.obs || null,
       data_separacao: parseDataHistorico(m.separacao),
       montagem: parseDataHistorico(m.montagem),
       data_entrega_pcp: parseDataHistorico(m.entregaPcp),
@@ -16742,8 +16708,7 @@ async function upsertMaquinaEtp(m, extra){
 // As 3 funções abaixo (status/urgente/ordem) usam `.upsert()`, não
 // `.update()` — de propósito: se a máquina agindo sobre ainda não tem linha
 // em `maquinas_etp` (item com `etp` preenchido mas cujo cache nunca foi
-// criado, ex. uma busca por Empenho Aberto que falhou no momento de
-// adicionar), `.update()` simplesmente não acharia nenhuma linha pra
+// criado), `.update()` simplesmente não acharia nenhuma linha pra
 // atualizar e a ação pareceria "não fazer nada", sem erro nenhum — mesma
 // categoria de bug silencioso já documentada várias vezes neste projeto.
 // `.upsert()` sana isso sozinho: cria a linha que faltava, com os campos
@@ -16811,7 +16776,9 @@ async function excluirMaquinaCompleta(etp){
     if(errMaquina) throw errMaquina;
     return {ok:true};
   }catch(err){
-    return {ok:false, erro:(err && err.message) || 'Não foi possível excluir a máquina.'};
+    console.error('Erro ao excluir máquina:', err);
+    const msg = err && err.message ? err.message : 'Não foi possível excluir a máquina.';
+    return {ok:false, erro: msg.includes('policy') ? 'Apenas administrador pode excluir. Verifique seu perfil.' : msg};
   }
 }
 
@@ -18206,8 +18173,7 @@ function statusAgregadoMaquina(itensDaMaquina){
 // `status`: o CACHE (`maquina.status`) é a fonte de verdade sempre que a
 // máquina já existe em `maquinas_etp` — `statusAgregadoMaquina` vira só um
 // FALLBACK pra máquina órfã (itens com `etp` preenchido cujo cache nunca
-// chegou a ser criado, ex. Empenho Aberto que falhou no momento do
-// "Adicionar"). Antes desta rodada (com a tela "Lista" ainda existindo), o
+// chegou a ser criado). Antes desta rodada (com a tela "Lista" ainda existindo), o
 // status agregado sempre recalculava na hora, porque não tinha pra onde
 // gravar um veredito de ação em lote — agora que "Lista" foi removida, o
 // Painel É o único lugar que avança o pipeline, então o status PRECISA ser
@@ -18605,23 +18571,16 @@ function SeparacaoPainelBoard({itens, maquinasEtp, canManage, isAdmin, onAvancar
   );
 }
 
-// Modal "+ Adicionar ETP" — mesmo fluxo de busca por ETP que já existia
-// solto na tela (documentado no CLAUDE.md, "'Programação' ganha busca por
-// ETP"), agora dentro de uma superfície flutuante (.modal-*, CSS autorado
-// do zero pra este uso — não existia nenhum modal genérico neste app
-// antes). `maquinasEtp` só é usada pra decidir se a ETP confirmada é uma
-// máquina GENUINAMENTE NOVA (pra só então gravar `ordem`/`urgente`
-// iniciais — ver comentário em `upsertMaquinaEtp`; máquina já existente
-// nunca tem esses 2 campos resetados aqui).
+// Modal "+ Adicionar ETP" — preenchimento 100% manual (a busca automática
+// que antes consultava o Empenho Aberto da Selgron foi removida a pedido do
+// cliente; ver `.modal-*`, CSS autorado do zero pra este uso — não existia
+// nenhum modal genérico neste app antes). `maquinasEtp` só é usada pra
+// decidir se a ETP confirmada é uma máquina GENUINAMENTE NOVA (pra só então
+// gravar `ordem`/`urgente` iniciais — ver comentário em `upsertMaquinaEtp`;
+// máquina já existente nunca tem esses 2 campos resetados aqui).
 function AdicionarEtpModal({open, currentUser, maquinasEtp, linhaPadrao, onClose, onSucesso, maquinaParaEditar}){
-  const [etpCodigo, setEtpCodigo] = useState('');
-  const [buscandoEtp, setBuscandoEtp] = useState(false);
-  const [buscaResultado, setBuscaResultado] = useState(null); // {ok, resultados} | {ok:false, erro} | null
   // Campos editáveis da máquina/OP — nomes EXATAMENTE iguais aos que
-  // `upsertMaquinaEtp(m, extra)` já espera receber (a mesma nomenclatura
-  // crua da API de Empenho Aberto: `separacao`/`entregaPcp`/
-  // `entregaComercial`, não `dataSeparacao`/etc.) — permite mandar
-  // `campoEtp` direto pra `upsertMaquinaEtp` sem reformatar nada.
+  // `upsertMaquinaEtp(m, extra)` já espera receber.
   const [campoEtp, setCampoEtp] = useState(null);
   const [urgenteEtp, setUrgenteEtp] = useState(false);
   const [adicionandoEtp, setAdicionandoEtp] = useState(false);
@@ -18633,9 +18592,6 @@ function AdicionarEtpModal({open, currentUser, maquinasEtp, linhaPadrao, onClose
   }
 
   function fecharELimpar(){
-    setEtpCodigo('');
-    setBuscandoEtp(false);
-    setBuscaResultado(null);
     setCampoEtp(null);
     setUrgenteEtp(false);
     setAdicionandoEtp(false);
@@ -18644,10 +18600,13 @@ function AdicionarEtpModal({open, currentUser, maquinasEtp, linhaPadrao, onClose
     onClose();
   }
 
+  // Preenchimento 100% manual — sem busca automática em nenhuma consulta
+  // externa. Ao abrir pra EDITAR, popula com os dados já salvos da máquina;
+  // ao abrir pra ADICIONAR, começa com os campos em branco (linha cai pra
+  // aba atualmente selecionada em "Programação", pra nunca ficar vazia).
   React.useEffect(() => {
     if(open && maquinaParaEditar) {
       setModoEdicao(true);
-      setEtpCodigo(maquinaParaEditar.etp || '');
       setCampoEtp({
         etp: maquinaParaEditar.etp || '',
         cliente: maquinaParaEditar.cliente || '',
@@ -18659,58 +18618,14 @@ function AdicionarEtpModal({open, currentUser, maquinasEtp, linhaPadrao, onClose
       setUrgenteEtp(maquinaParaEditar.urgente || false);
     } else if(open && !maquinaParaEditar) {
       setModoEdicao(false);
+      setCampoEtp({
+        etp: '', cliente: '', chassi: '', codigoProduto: '',
+        linha: linhaPadrao || LINHA_PADRAO,
+        obs: '',
+      });
+      setUrgenteEtp(false);
     }
   }, [open, maquinaParaEditar, linhaPadrao]);
-
-  async function handleBuscarEtp(){
-    const etpLimpo = etpCodigo.trim();
-    if(!etpLimpo) return;
-    setBuscandoEtp(true);
-    setErroAdicionarEtp(null);
-    setBuscaResultado(null);
-    const res = await fetchEmpenhoAbertoPorEtp(etpLimpo);
-    setBuscandoEtp(false);
-    setBuscaResultado(res);
-    // Sempre popula os campos editáveis, mesmo quando a busca falha ou não
-    // acha nada pra essa ETP — o admin nunca fica travado sem ter onde
-    // digitar/corrigir os dados manualmente, só a base muda: da 1ª máquina
-    // encontrada (quando existe) ou de campos em branco + o próprio código
-    // digitado (quando não).
-    // A `linha` (linha de produção) nunca vem do Empenho Aberto — cai pro
-    // valor já cadastrado da própria máquina, se essa ETP já existir na
-    // fila (edição), ou pra aba atualmente selecionada em "Programação"
-    // (ETP nova), sem nunca ficar em branco.
-    const maquinaJaExiste = maquinasEtp.find(mm=>mm.etp===etpLimpo);
-    const linhaBase = (maquinaJaExiste && maquinaJaExiste.linha) || linhaPadrao || LINHA_PADRAO;
-    if(res && res.ok && Array.isArray(res.resultados) && res.resultados.length>0){
-      const m = res.resultados[0];
-      setCampoEtp({
-        etp: m.etp || etpLimpo,
-        cliente: m.cliente || '',
-        nomeFantasia: m.nomeFantasia || '',
-        descricao: m.descricao || '',
-        chassi: m.chassi || '',
-        op: m.op || '',
-        codigoProduto: m.codigoProduto || '',
-        linha: linhaBase,
-        obs: m.obs || '',
-        separacao: m.separacao || '',
-        montagem: m.montagem || '',
-        entregaPcp: m.entregaPcp || '',
-        entregaComercial: m.entregaComercial || '',
-      });
-    }else{
-      setCampoEtp({
-        etp: etpLimpo,
-        cliente: '', nomeFantasia: '', descricao: '', chassi: '', op: '',
-        codigoProduto: '',
-        linha: linhaBase,
-        obs: '',
-        separacao: '', montagem: '', entregaPcp: '', entregaComercial: '',
-      });
-    }
-    setUrgenteEtp(false);
-  }
 
   if(!open) return null;
 
@@ -18751,65 +18666,19 @@ function AdicionarEtpModal({open, currentUser, maquinasEtp, linhaPadrao, onClose
             <div className="modal-subtitle">
               {modoEdicao
                 ? 'Edite os dados da máquina e confirme.'
-                : 'Digite o código da ETP — busca os dados da máquina/OP na consulta da Selgron. Revise e corrija qualquer campo antes de adicionar a ETP à fila.'
+                : 'Preencha os dados da máquina manualmente e confirme para adicionar a ETP à fila.'
               }
             </div>
           </div>
           <button type="button" className="modal-close-btn" onClick={fecharELimpar}><DIcon name="x" size={18} /></button>
         </div>
 
-        {!modoEdicao && (
-          <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'flex-end',marginBottom:14}}>
-            <div className="field" style={{flex:1,minWidth:160,marginBottom:0}}>
-              <label>Código da ETP</label>
-              <input
-                type="text"
-                value={etpCodigo}
-                onChange={e=>setEtpCodigo(e.target.value)}
-                onKeyDown={e=>{ if(e.key==='Enter') handleBuscarEtp(); }}
-                placeholder="Ex: 6220-26"
-                autoFocus
-              />
-            </div>
-            <button type="button" className="btn btn-primary" style={{width:'auto'}} disabled={buscandoEtp || !etpCodigo.trim()} onClick={handleBuscarEtp}>
-              {buscandoEtp ? 'Buscando…' : 'Buscar'}
-            </button>
-          </div>
-        )}
-
-        {!modoEdicao && (
-          <>
-            {buscaResultado && !buscaResultado.ok && (
-              <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginBottom:10}}>
-                {buscaResultado.erro} — os campos abaixo continuam editáveis manualmente.
-              </div>
-            )}
-            {buscaResultado && buscaResultado.ok && Array.isArray(buscaResultado.resultados) && buscaResultado.resultados.length===0 && (
-              <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginBottom:10}}>
-                Nenhuma máquina/OP encontrada pra essa ETP na consulta da Selgron — preencha os campos manualmente abaixo.
-              </div>
-            )}
-            {buscaResultado && buscaResultado.ok && Array.isArray(buscaResultado.resultados) && buscaResultado.resultados.length>1 && (
-              <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginBottom:10}}>
-                {buscaResultado.resultados.length} máquinas/OPs encontradas pra essa ETP — os campos abaixo foram preenchidos com a 1ª; corrija manualmente se precisar de outra.
-              </div>
-            )}
-          </>
-        )}
-
         {campoEtp && (
           <div>
-            {!modoEdicao && (campoEtp.nomeFantasia || campoEtp.descricao) && (
-              <div style={{marginBottom:10}}>
-                {campoEtp.nomeFantasia && <div className="lr-title">{campoEtp.nomeFantasia}</div>}
-                {campoEtp.descricao && <div className="lr-sub">{campoEtp.descricao}</div>}
-              </div>
-            )}
-
             <div style={{display:'flex',gap:10,flexWrap:'wrap',marginBottom:14}}>
               <div className="field" style={{flex:'1 1 120px',marginBottom:0}}>
                 <label>ETP</label>
-                <input type="text" value={campoEtp.etp} onChange={e=>atualizarCampoEtp('etp', e.target.value)} disabled={modoEdicao} />
+                <input type="text" value={campoEtp.etp} onChange={e=>atualizarCampoEtp('etp', e.target.value)} disabled={modoEdicao} placeholder="Ex: 6220-26" autoFocus={!modoEdicao} />
               </div>
               <div className="field" style={{flex:'1 1 200px',marginBottom:0}}>
                 <label>Cliente</label>
