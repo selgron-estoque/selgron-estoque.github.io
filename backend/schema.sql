@@ -2497,3 +2497,68 @@ alter table maquinas_etp add column if not exists observacao text;
 -- RLS: nenhuma policy nova necessária — mesmo raciocínio das colunas
 -- anteriores, as policies de INSERT/UPDATE já existentes são incondicionais
 -- por coluna.
+
+-- =============================================================================
+-- "PAINEL INDICADORES" (painel-indicadores.html): CONFIGURAÇÃO DE QUAIS
+-- GRÁFICOS APARECEM, E EM QUE ORDEM
+-- =============================================================================
+-- Pedido do cliente: até aqui, o Painel Indicadores (a TV do almoxarifado)
+-- sempre mostrava os 6 gráficos da tela "Indicadores" (index.html,
+-- `Dashboard`) TODOS de uma vez, hardcoded no código de `painel-
+-- indicadores.html` — não existe (e continua não existindo) nenhum vínculo
+-- automático entre as duas telas: são páginas independentes, cada uma com
+-- sua própria cópia do código de cálculo (ver comentário "DUPLICATA
+-- proposital" no topo de painel-indicadores.html). O que o cliente queria de
+-- verdade era poder ESCOLHER, entre os 6 gráficos que o Painel já calcula,
+-- quais aparecem e em que ordem — nunca um cadastro dinâmico de indicadores
+-- novos (isso exigiria reformular a tela "Indicadores" também, fora do
+-- pedido).
+--
+-- Tabela SINGLETON (1 linha só, id sempre 1) — não há "várias
+-- configurações", é uma preferência única compartilhada por qualquer TV/
+-- aparelho que abra o Painel. `indicadores` guarda os ids (chave interna
+-- fixa no código, ver INDICADORES_CATALOGO em painel-indicadores.html) dos
+-- gráficos SELECIONADOS, na ORDEM em que devem aparecer — um id ausente da
+-- lista significa "não mostrar esse gráfico". Sem RLS por tela
+-- (`tem_acesso_tela`) na LEITURA de propósito: o Painel roda com a conta de
+-- login automático da TV (baixo privilégio, só precisa estar autenticada,
+-- mesmo critério já usado por `contagens`), que não precisa de nenhum
+-- acesso extra só pra saber quais gráficos mostrar.
+create table if not exists painel_indicadores_config (
+  id int primary key default 1,
+  indicadores jsonb not null default '["acuracidadeSemanal","contagensSemana","acuracidadeMensal","divergenciaFamilia","contadosDivergencias","itensContadosSemana"]'::jsonb,
+  atualizado_em timestamptz not null default now()
+);
+insert into painel_indicadores_config (id) values (1) on conflict (id) do nothing;
+
+alter table painel_indicadores_config enable row level security;
+
+drop policy if exists "leitura autenticada" on painel_indicadores_config;
+create policy "leitura autenticada" on painel_indicadores_config for select
+  using (auth.role() = 'authenticated');
+
+-- Só quem tem acesso à tela "Indicadores" (líder/admin sempre, operador só
+-- com a exceção concedida — mesma função `tem_acesso_tela` já usada pelas
+-- outras telas deste projeto) pode ALTERAR a configuração — mudar o que
+-- aparece na TV do almoxarifado não é uma ação de leitura corriqueira.
+drop policy if exists "escrita por tela indicadores" on painel_indicadores_config;
+create policy "escrita por tela indicadores" on painel_indicadores_config for insert
+  with check (tem_acesso_tela(auth.uid(), 'dashboard'));
+drop policy if exists "atualizacao por tela indicadores" on painel_indicadores_config;
+create policy "atualizacao por tela indicadores" on painel_indicadores_config for update
+  using (tem_acesso_tela(auth.uid(), 'dashboard'))
+  with check (tem_acesso_tela(auth.uid(), 'dashboard'));
+
+-- Realtime — pra salvar a configuração num aparelho já refletir na TV sem
+-- precisar esperar o próximo ciclo de 5 min nem dar F5 manualmente. Bloco
+-- guardado (idempotente), mesmo padrão já usado pras outras tabelas deste
+-- projeto.
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and tablename = 'painel_indicadores_config'
+  ) then
+    alter publication supabase_realtime add table painel_indicadores_config;
+  end if;
+end $$;

@@ -107,6 +107,25 @@
 
   .chart-meta-badge{font-family:var(--font-mono);font-size:var(--text-xs);font-weight:700;color:var(--teal);background:rgba(13,148,136,0.12);border-radius:6px;padding:4px 9px;white-space:nowrap;}
 
+  /* ---- Modal de configuração "Quais indicadores aparecem" — CSS
+     duplicado 1:1 de `.modal-*` (index.html), mesmo motivo/mesma decisão
+     de arquitetura do resto deste arquivo. ---- */
+  .modal-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:200;display:flex;align-items:center;justify-content:center;padding:20px;}
+  .modal-box{background:var(--panel);border-radius:var(--radius);box-shadow:0 8px 24px rgba(15,23,42,.12);max-width:520px;width:100%;max-height:88vh;overflow-y:auto;padding:22px;}
+  .modal-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px;}
+  .modal-title{font-size:var(--text-lg);font-weight:700;color:var(--ink);}
+  .modal-subtitle{font-size:var(--text-xs);color:var(--ink-dim);margin-top:4px;line-height:1.5;}
+  .modal-close-btn{background:none;border:none;cursor:pointer;color:var(--ink-dim);padding:4px;border-radius:6px;display:flex;flex-shrink:0;}
+  .pnl-cfg-item{display:flex;align-items:center;gap:10px;padding:10px 8px;border-radius:8px;border:1px solid var(--line);margin-bottom:8px;}
+  .pnl-cfg-item label{flex:1;font-size:var(--text-sm);color:var(--ink);display:flex;align-items:center;gap:9px;cursor:pointer;}
+  .pnl-cfg-arrows{display:flex;gap:4px;}
+  .pnl-cfg-arrows button{background:var(--panel-raised);border:1px solid var(--line);border-radius:6px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--ink-dim);}
+  .pnl-cfg-arrows button:disabled{opacity:.35;cursor:default;}
+  .pnl-cfg-btn{font-family:var(--font-display);font-size:var(--text-sm);text-transform:uppercase;letter-spacing:0.4px;font-weight:600;padding:11px 18px;border-radius:var(--radius);border:none;cursor:pointer;}
+  .pnl-cfg-btn-primary{background:var(--navy);color:#fff;}
+  .pnl-cfg-btn-outline{background:transparent;color:var(--ink-dim);border:1px solid var(--line);}
+  .pnl-cfg-btn:disabled{opacity:.5;cursor:default;}
+
   .bar-row{display:flex;align-items:center;gap:12px;margin-bottom:12px;}
   .bar-row .bl{width:200px;font-size:var(--text-sm);color:var(--ink-dim);flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .bar-track{flex:1;height:22px;background:var(--panel-raised);border-radius:5px;overflow:hidden;}
@@ -721,7 +740,22 @@ function BotaoTelaCheia(){
   );
 }
 
-function PanelTabs({tela, onChange}){
+// Botão de engrenagem (config de indicadores) — só aparece quando o
+// chamador passa `onAbrirConfig` (só a aba "Painel Indicadores" tem
+// indicador nenhum pra configurar; "Tracking Picking" não recebe essa
+// prop, então o botão nem aparece lá).
+function BotaoConfigIndicadores({onClick}){
+  return (
+    <button type="button" className="panel-tab-btn" style={{padding:'11px',display:'flex',alignItems:'center',justifyContent:'center'}} onClick={onClick} title="Escolher indicadores" aria-label="Escolher indicadores">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.04 1.56V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.96 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.04H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 8.96a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9a1.7 1.7 0 0 0 1.04-1.56V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.04 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V9c0 .69.4 1.32 1.04 1.6.2.08.4.13.6.15H21a2 2 0 1 1 0 4h-.09c-.69 0-1.32.4-1.6 1.04Z"/>
+      </svg>
+    </button>
+  );
+}
+
+function PanelTabs({tela, onChange, onAbrirConfig}){
   return (
     <div className="panel-tabs">
       <button
@@ -732,9 +766,154 @@ function PanelTabs({tela, onChange}){
         className={'panel-tab-btn' + (tela==='picking' ? ' active' : '')}
         onClick={()=>onChange('picking')}
       >Tracking Picking</button>
+      {onAbrirConfig && <BotaoConfigIndicadores onClick={onAbrirConfig} />}
       <BotaoTelaCheia />
     </div>
   );
+}
+
+// Catálogo dos 6 gráficos que o Painel já calcula hoje (nomes/ids internos
+// — nunca mostrados na tela, só usados como chave da seleção/ordem salva em
+// `painel_indicadores_config`). Ver comentário completo da decisão de
+// produto no schema.sql ("PAINEL INDICADORES: CONFIGURAÇÃO..."): isto NÃO é
+// um cadastro dinâmico, é só uma seleção/ordem sobre os gráficos que já
+// existem — a tela "Indicadores" (index.html) nunca é consultada aqui, nem
+// precisa mudar. A ORDEM desta lista é a ordem padrão (mostrar tudo, na
+// ordem em que o Painel sempre mostrou).
+const INDICADORES_CATALOGO = [
+  {id:'acuracidadeSemanal', label:'Acuracidade Semanal (%)'},
+  {id:'contagensSemana', label:'Contagens na Semana'},
+  {id:'acuracidadeMensal', label:'Acuracidade Mensal (%)'},
+  {id:'divergenciaFamilia', label:'Divergência por Família/Grupo (Top 7)'},
+  {id:'contadosDivergencias', label:'Contados × Divergências'},
+  {id:'itensContadosSemana', label:'Itens Contados na Semana'},
+];
+const INDICADORES_PADRAO = INDICADORES_CATALOGO.map(c=>c.id);
+
+async function fetchPainelIndicadoresConfig(){
+  if(!supabaseClient) return INDICADORES_PADRAO;
+  try{
+    const { data, error } = await supabaseClient.from('painel_indicadores_config').select('indicadores').eq('id',1).maybeSingle();
+    if(error) throw error;
+    if(!data || !Array.isArray(data.indicadores)) return INDICADORES_PADRAO;
+    // Descarta ids que não existem mais no catálogo (indicador removido do
+    // código depois de já ter sido salvo) — nunca deixa uma config antiga
+    // quebrar a tela; lista vazia (tudo desmarcado, deliberadamente salvo
+    // assim) é respeitada como está, não cai no padrão.
+    return data.indicadores.filter(id=>INDICADORES_CATALOGO.some(c=>c.id===id));
+  }catch(err){
+    console.warn('Painel Indicadores: falha ao buscar configuração de indicadores', err);
+    return INDICADORES_PADRAO;
+  }
+}
+async function salvarPainelIndicadoresConfig(ids){
+  if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
+  try{
+    const { error } = await supabaseClient.from('painel_indicadores_config').upsert(
+      {id:1, indicadores:ids, atualizado_em:new Date().toISOString()}, {onConflict:'id'}
+    );
+    if(error) throw error;
+    return {ok:true};
+  }catch(err){
+    return {ok:false, erro:(err && err.message) || 'Não foi possível salvar.'};
+  }
+}
+
+// Modal de configuração — lista TODO o catálogo (mesmo o que já está
+// desmarcado), com checkbox pra incluir/excluir e setas ↑/↓ pra reordenar
+// (mesmo padrão de reordenação manual por botão já usado no resto do app,
+// ver Programação). A ordem das setas só afeta os itens MARCADOS — os
+// desmarcados ficam ancorados no fim da lista visual, fora da reordenação,
+// já que sua posição não importa enquanto ficarem de fora do Painel.
+function ConfigIndicadoresModal({open, ordemAtual, onClose, onSalvo}){
+  const [ordem, setOrdem] = useState(ordemAtual);
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState(null);
+
+  useEffect(()=>{ if(open) setOrdem(ordemAtual); }, [open, ordemAtual]);
+
+  if(!open) return null;
+
+  const marcados = ordem;
+  const desmarcados = INDICADORES_CATALOGO.map(c=>c.id).filter(id=>!ordem.includes(id));
+  const labelDe = id => (INDICADORES_CATALOGO.find(c=>c.id===id)||{}).label || id;
+
+  function alternar(id, marcar){
+    setOrdem(prev => marcar ? [...prev, id] : prev.filter(x=>x!==id));
+  }
+  function mover(id, direcao){
+    setOrdem(prev=>{
+      const idx = prev.indexOf(id);
+      const alvo = direcao==='up' ? idx-1 : idx+1;
+      if(idx===-1 || alvo<0 || alvo>=prev.length) return prev;
+      const nova = [...prev];
+      [nova[idx], nova[alvo]] = [nova[alvo], nova[idx]];
+      return nova;
+    });
+  }
+  async function handleSalvar(){
+    setSalvando(true);
+    setErro(null);
+    const res = await salvarPainelIndicadoresConfig(ordem);
+    setSalvando(false);
+    if(!res.ok){ setErro(res.erro); return; }
+    onSalvo(ordem);
+    onClose();
+  }
+
+  // Portal pro <body> — o conteúdo do Painel fica dentro de um elemento
+  // com `transform:scale` (`FitToScreen`/`.fit-screen-inner`, pra caber
+  // 100% na tela), e um ancestral com transform vira a "containing block"
+  // de qualquer `position:fixed` dentro dele (regra do CSS) — sem o
+  // portal, o backdrop deste modal ficaria preso na área ESCALADA em vez
+  // de cobrir a tela de verdade.
+  return ReactDOM.createPortal((
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-box" onClick={e=>e.stopPropagation()}>
+        <div className="modal-header">
+          <div>
+            <div className="modal-title">Escolher indicadores</div>
+            <div className="modal-subtitle">Marque quais gráficos aparecem no Painel e use as setas pra escolher a ordem.</div>
+          </div>
+          <button type="button" className="modal-close-btn" onClick={onClose} aria-label="Fechar">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+          </button>
+        </div>
+
+        {marcados.map((id,i)=>(
+          <div key={id} className="pnl-cfg-item">
+            <label>
+              <input type="checkbox" checked={true} onChange={()=>alternar(id,false)} />
+              {labelDe(id)}
+            </label>
+            <div className="pnl-cfg-arrows">
+              <button type="button" disabled={i===0} onClick={()=>mover(id,'up')} title="Mover pra cima" aria-label="Mover pra cima">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>
+              </button>
+              <button type="button" disabled={i===marcados.length-1} onClick={()=>mover(id,'down')} title="Mover pra baixo" aria-label="Mover pra baixo">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>
+              </button>
+            </div>
+          </div>
+        ))}
+        {desmarcados.map(id=>(
+          <div key={id} className="pnl-cfg-item" style={{opacity:.6}}>
+            <label>
+              <input type="checkbox" checked={false} onChange={()=>alternar(id,true)} />
+              {labelDe(id)}
+            </label>
+          </div>
+        ))}
+
+        {erro && <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',margin:'8px 0'}}>{erro}</div>}
+
+        <div style={{display:'flex',gap:10,marginTop:16}}>
+          <button type="button" className="pnl-cfg-btn pnl-cfg-btn-outline" onClick={onClose} disabled={salvando}>Cancelar</button>
+          <button type="button" className="pnl-cfg-btn pnl-cfg-btn-primary" onClick={handleSalvar} disabled={salvando}>{salvando ? 'Salvando…' : 'Salvar'}</button>
+        </div>
+      </div>
+    </div>
+  ), document.body);
 }
 
 function PainelIndicadores({tela, onChange}){
@@ -819,6 +998,28 @@ function PainelIndicadores({tela, onChange}){
     };
   }, []);
 
+  // Configuração de quais indicadores aparecem/em que ordem — busca
+  // separada de `carregarDados` (não depende de sessão da mesma forma:
+  // a policy de leitura de `painel_indicadores_config` só exige estar
+  // autenticado, então já funciona assim que `tentarLoginSilenciosoTv`
+  // resolver, sem precisar duplicar aquele fluxo aqui) + Realtime pra
+  // uma config salva noutro aparelho já refletir na hora nesta TV.
+  const [ordemVisivel, setOrdemVisivel] = useState(INDICADORES_PADRAO);
+  const [configModalAberto, setConfigModalAberto] = useState(false);
+
+  useEffect(()=>{
+    let cancelado = false;
+    fetchPainelIndicadoresConfig().then(ids=>{ if(!cancelado) setOrdemVisivel(ids); });
+    if(!supabaseClient) return ()=>{ cancelado = true; };
+    const canal = supabaseClient
+      .channel('realtime:painel_indicadores_config')
+      .on('postgres_changes', {event:'*', schema:'public', table:'painel_indicadores_config'}, ()=>{
+        fetchPainelIndicadoresConfig().then(ids=>{ if(!cancelado) setOrdemVisivel(ids); });
+      })
+      .subscribe();
+    return ()=>{ cancelado = true; supabaseClient.removeChannel(canal); };
+  }, []);
+
   const dadosAoVivo = status==='ok';
 
   const calc = useMemo(()=>{
@@ -873,9 +1074,113 @@ function PainelIndicadores({tela, onChange}){
     ? ultimaAtualizacao.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'})
     : null;
 
+  // Catálogo id→JSX de cada painel — construído a cada render (barato,
+  // são só 6 nós) a partir dos mesmos dados/cálculos já existentes acima,
+  // NUNCA duplicados. `ordemVisivel` (config salva, ver useEffect acima)
+  // decide só quais entram e em que ordem — o cálculo é sempre o mesmo,
+  // rode ou não o gráfico correspondente.
+  const nodesPorId = {
+    acuracidadeSemanal: (
+      <div className="panel" style={{margin:0}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:16}}>
+          <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Acuracidade Semanal (%)</div>
+          <span className="chart-meta-badge">Meta: {META_ACURACIDADE_SEMANAL}%</span>
+        </div>
+        <WeeklyLineChart weeks={weeklyStats} meta={META_ACURACIDADE_SEMANAL} />
+      </div>
+    ),
+    contagensSemana: (
+      <div className="panel" style={{margin:0}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:16}}>
+          <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Contagens na Semana</div>
+          <span className="chart-meta-badge">Meta: {META_CONTAGENS_SEMANAL}</span>
+        </div>
+        <WeeklyCountChart weeks={weeklyStats} meta={META_CONTAGENS_SEMANAL} />
+      </div>
+    ),
+    acuracidadeMensal: (
+      <div className="panel" style={{margin:0}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:16}}>
+          <div>
+            <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Acuracidade Mensal (%)</div>
+            <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:2}}>Todos os meses de {new Date().getFullYear()} com dado registrado</div>
+          </div>
+          <span className="chart-meta-badge">Meta: {META_ACURACIDADE_SEMANAL}%</span>
+        </div>
+        <MonthlyAccuracyBarChart months={monthlyStats} meta={META_ACURACIDADE_SEMANAL} />
+      </div>
+    ),
+    divergenciaFamilia: (
+      <div className="panel" style={{margin:0,display:'flex',flexDirection:'column'}}>
+        <div style={{fontSize:'var(--text-sm)',fontWeight:700,marginBottom:16}}>Divergência por Família/Grupo (Top 7)</div>
+        <div style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'center'}}>
+          {porFamilia.length===0 ? (
+            <div className="empty-msg">Ainda sem dado suficiente pra esse indicador no período.</div>
+          ) : porFamilia.map(([fam,n])=>(
+            <div key={fam} className="bar-row">
+              <div className="bl">{fam}</div>
+              <div className="bar-track"><div className="bar-fill" style={{width:(n/maxFamilia*100)+'%', background:'var(--teal)'}}><span>{n}</span></div></div>
+            </div>
+          ))}
+        </div>
+      </div>
+    ),
+    contadosDivergencias: (
+      <div className="panel" style={{margin:0}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:16}}>
+          <div>
+            <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Contados × Divergências</div>
+            <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:2}}>Quantidade total contada no período, separada por divergência.</div>
+          </div>
+          <span className="chart-meta-badge">{pizzaTotalContado>0 ? Math.round(pizzaDivergentes/pizzaTotalContado*100) : 0}% divergente</span>
+        </div>
+        {pizzaTotalContado===0 ? (
+          <div className="empty-msg">Nenhuma contagem no período.</div>
+        ) : (
+          <div className="pnl-donut-wrap">
+            <PnlDonut segments={pizzaSegments} size={200} centerLabel="contados" />
+            <div className="pnl-donut-legend">
+              {pizzaSegments.map(s=>(
+                <div key={s.label} className="pnl-legend-row">
+                  <span className="pnl-legend-dot" style={{background:s.color}}></span>
+                  {s.label}
+                  <span className="n">{s.value} · {pizzaTotalContado>0 ? Math.round(s.value/pizzaTotalContado*100) : 0}%</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    ),
+    itensContadosSemana: (
+      <div className="panel" style={{margin:0}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:16}}>
+          <div>
+            <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Itens Contados na Semana</div>
+            <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:2}}>Cada item conta uma vez só, mesmo se recontado.</div>
+          </div>
+          <span className="chart-meta-badge">Meta: {META_CONTAGENS_SEMANAL}</span>
+        </div>
+        <WeeklyCountChart weeks={weeklyStatsItensUnicos} meta={META_CONTAGENS_SEMANAL} />
+      </div>
+    ),
+  };
+  // NÃO gateado por `dadosAoVivo` — `nodesPorId` já usa `weeklyStats`/
+  // `monthlyStats`/etc. com fallback pros dados de EXEMPLO (ver
+  // `calc ? calc.X : DEMO_X` acima) quando `status` não é 'ok', mesmo
+  // comportamento de sempre desta tela (mostrar exemplo, nunca uma tela
+  // em branco, enquanto não há sessão/dado ao vivo).
+  const paineisVisiveis = ordemVisivel.map(id=>({id, node:nodesPorId[id]})).filter(p=>p.node);
+  // Agrupa de 2 em 2 pra manter o mesmo layout visual de sempre
+  // (`.weekly-pair-row`, grid 2 colunas em telas largas) — uma seleção com
+  // quantidade ÍMPAR deixa o último painel sozinho ocupando a linha
+  // inteira (`gridColumn:'1 / -1'`), em vez de uma célula vazia ao lado.
+  const linhasDePaineis = [];
+  for(let i=0;i<paineisVisiveis.length;i+=2) linhasDePaineis.push(paineisVisiveis.slice(i,i+2));
+
   return (
     <div className="content">
-      <PanelTabs tela={tela} onChange={onChange} />
+      <PanelTabs tela={tela} onChange={onChange} onAbrirConfig={()=>setConfigModalAberto(true)} />
       <div className="page-head">
         <div className="page-brand">
           <img src={SELGRON_LOGO_URL} alt="Selgron" />
@@ -898,89 +1203,30 @@ function PainelIndicadores({tela, onChange}){
           Não foi possível buscar os dados ao vivo agora (mostrando exemplo). A próxima tentativa automática acontece em até 5 minutos.
         </div>
       )}
+      {paineisVisiveis.length===0 && (
+        <div className="demo-banner">
+          Nenhum indicador selecionado. Clique no ícone de engrenagem, ao lado das abas, pra escolher quais aparecem aqui.
+        </div>
+      )}
 
       <div className="weekly-charts-grid">
-        <div className="weekly-pair-row">
-          <div className="panel" style={{margin:0}}>
-            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:16}}>
-              <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Acuracidade Semanal (%)</div>
-              <span className="chart-meta-badge">Meta: {META_ACURACIDADE_SEMANAL}%</span>
-            </div>
-            <WeeklyLineChart weeks={weeklyStats} meta={META_ACURACIDADE_SEMANAL} />
-          </div>
-          <div className="panel" style={{margin:0}}>
-            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:16}}>
-              <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Contagens na Semana</div>
-              <span className="chart-meta-badge">Meta: {META_CONTAGENS_SEMANAL}</span>
-            </div>
-            <WeeklyCountChart weeks={weeklyStats} meta={META_CONTAGENS_SEMANAL} />
-          </div>
-        </div>
-
-        <div className="weekly-pair-row">
-          <div className="panel" style={{margin:0}}>
-            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:16}}>
-              <div>
-                <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Acuracidade Mensal (%)</div>
-                <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:2}}>Todos os meses de {new Date().getFullYear()} com dado registrado</div>
-              </div>
-              <span className="chart-meta-badge">Meta: {META_ACURACIDADE_SEMANAL}%</span>
-            </div>
-            <MonthlyAccuracyBarChart months={monthlyStats} meta={META_ACURACIDADE_SEMANAL} />
-          </div>
-          <div className="panel" style={{margin:0,display:'flex',flexDirection:'column'}}>
-            <div style={{fontSize:'var(--text-sm)',fontWeight:700,marginBottom:16}}>Divergência por Família/Grupo (Top 7)</div>
-            <div style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'center'}}>
-              {porFamilia.length===0 ? (
-                <div className="empty-msg">Ainda sem dado suficiente pra esse indicador no período.</div>
-              ) : porFamilia.map(([fam,n])=>(
-                <div key={fam} className="bar-row">
-                  <div className="bl">{fam}</div>
-                  <div className="bar-track"><div className="bar-fill" style={{width:(n/maxFamilia*100)+'%', background:'var(--teal)'}}><span>{n}</span></div></div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="weekly-pair-row">
-          <div className="panel" style={{margin:0}}>
-            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:16}}>
-              <div>
-                <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Contados × Divergências</div>
-                <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:2}}>Quantidade total contada no período, separada por divergência.</div>
-              </div>
-              <span className="chart-meta-badge">{pizzaTotalContado>0 ? Math.round(pizzaDivergentes/pizzaTotalContado*100) : 0}% divergente</span>
-            </div>
-            {pizzaTotalContado===0 ? (
-              <div className="empty-msg">Nenhuma contagem no período.</div>
-            ) : (
-              <div className="pnl-donut-wrap">
-                <PnlDonut segments={pizzaSegments} size={200} centerLabel="contados" />
-                <div className="pnl-donut-legend">
-                  {pizzaSegments.map(s=>(
-                    <div key={s.label} className="pnl-legend-row">
-                      <span className="pnl-legend-dot" style={{background:s.color}}></span>
-                      {s.label}
-                      <span className="n">{s.value} · {pizzaTotalContado>0 ? Math.round(s.value/pizzaTotalContado*100) : 0}%</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+        {linhasDePaineis.map((linha,i)=>(
+          <div key={i} className="weekly-pair-row">
+            {linha.map(p=>
+              linha.length===1
+                ? <div key={p.id} style={{gridColumn:'1 / -1'}}>{p.node}</div>
+                : <React.Fragment key={p.id}>{p.node}</React.Fragment>
             )}
           </div>
-          <div className="panel" style={{margin:0}}>
-            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:16}}>
-              <div>
-                <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Itens Contados na Semana</div>
-                <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:2}}>Cada item conta uma vez só, mesmo se recontado.</div>
-              </div>
-              <span className="chart-meta-badge">Meta: {META_CONTAGENS_SEMANAL}</span>
-            </div>
-            <WeeklyCountChart weeks={weeklyStatsItensUnicos} meta={META_CONTAGENS_SEMANAL} />
-          </div>
-        </div>
+        ))}
       </div>
+
+      <ConfigIndicadoresModal
+        open={configModalAberto}
+        ordemAtual={ordemVisivel}
+        onClose={()=>setConfigModalAberto(false)}
+        onSalvo={setOrdemVisivel}
+      />
     </div>
   );
 }
