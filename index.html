@@ -16715,11 +16715,21 @@ async function upsertMaquinaEtp(m, extra){
 // `.upsert()` sana isso sozinho: cria a linha que faltava, com os campos
 // descritivos vazios (o painel já lida com "—" pra máquina sem esses
 // dados) e só o campo que a ação pediu preenchido.
-async function atualizarStatusMaquina(etp, status){
+// `novaOrdem` é opcional — quando informado (sempre que a máquina avança de
+// coluna no Kanban, ver `avancarStatusMaquinaEmLote`), a máquina ganha a
+// PRÓXIMA ordem disponível junto com o novo status, pra sempre entrar no
+// FINAL da fila da coluna de destino (pedido do cliente: "sequência sempre
+// de cima pra baixo o mais antigo primeiro, os que vão liberando entram no
+// final"). Sem isso, a máquina manteria a `ordem` antiga (de quando ainda
+// estava na coluna anterior), que não tem relação nenhuma com a posição
+// certa na fila nova.
+async function atualizarStatusMaquina(etp, status, novaOrdem){
   if(!supabaseClient || !etp) return {ok:false, erro:'ETP não informada.'};
   try{
+    const patch = {etp, status, atualizado_em: new Date().toISOString()};
+    if(typeof novaOrdem==='number') patch.ordem = novaOrdem;
     const { error } = await supabaseClient.from('maquinas_etp')
-      .upsert({etp, status, atualizado_em: new Date().toISOString()}, {onConflict:'etp'});
+      .upsert(patch, {onConflict:'etp'});
     if(error) throw error;
     return {ok:true};
   }catch(err){
@@ -18321,7 +18331,7 @@ function moverOrdemNaColuna(maquinasDaColuna, etp, direcao){
 // nunca regride — só os itens "atrasados" em relação ao avanço em lote são
 // tocados. Isso também deixa itens em estágios diferentes dentro da mesma
 // máquina "alcançarem" o próximo nível juntos.
-async function avancarStatusMaquinaEmLote(maquina, itensDaMaquina, nomeUsuario){
+async function avancarStatusMaquinaEmLote(maquina, itensDaMaquina, nomeUsuario, novaOrdem){
   const proximo = SEPARACAO_STATUS_PROXIMO[maquina.status];
   if(!proximo) return {ok:false, erro:'Esta máquina já está no estágio final.'};
   const alvoOrdem = SEPARACAO_STATUS_ORDEM[proximo];
@@ -18341,7 +18351,7 @@ async function avancarStatusMaquinaEmLote(maquina, itensDaMaquina, nomeUsuario){
   // Só grava o veredito da MÁQUINA depois que TODOS os itens avançaram com
   // sucesso — nunca marca a máquina como avançada se algum item ficou pra
   // trás (o painel mostraria um status inconsistente com a realidade).
-  const resStatus = await atualizarStatusMaquina(maquina.etp, proximo);
+  const resStatus = await atualizarStatusMaquina(maquina.etp, proximo, novaOrdem);
   if(!resStatus.ok){
     return {ok:false, erro:`Itens avançados, mas não foi possível salvar o status da máquina: ${resStatus.erro}`, avancados, total: pendentes.length};
   }
@@ -18883,7 +18893,12 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
   // máquina), não justificava a complexidade extra de uma função SQL só
   // pra isso.
   async function handleAvancarStatusMaquina(maquina, itensDaMaquina){
-    return await avancarStatusMaquinaEmLote(maquina, itensDaMaquina, currentUser ? currentUser.nome : null);
+    // Próxima ordem disponível (maior ordem já usada + 1) — garante que a
+    // máquina entre no FINAL da fila da coluna de destino ao avançar,
+    // nunca "pulando" pro meio dela por causa de uma ordem antiga, de
+    // quando ainda estava na coluna anterior.
+    const novaOrdem = maquinasEtp.reduce((max,m)=> (m.ordem!=null && m.ordem>max) ? m.ordem : max, 0) + 1;
+    return await avancarStatusMaquinaEmLote(maquina, itensDaMaquina, currentUser ? currentUser.nome : null, novaOrdem);
   }
 
   // Reordenar manualmente (botões ↑/↓, sem drag-and-drop — decisão
