@@ -18833,6 +18833,21 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
     setModalAdicionarAberto(false);
   }
 
+  // Remove a máquina da tela IMEDIATAMENTE após o delete confirmar no banco,
+  // sem depender só do canal Realtime (`maquinas_etp`/`sequencia_separacao`)
+  // pra refletir a mudança — se o Realtime demorar, falhar silenciosamente
+  // ou não estiver publicando essa tabela no ambiente, o card antes ficava
+  // "preso" na tela como se a exclusão não tivesse funcionado, mesmo já
+  // tendo sido excluída no Supabase.
+  async function handleExcluirMaquina(etp){
+    const res = await excluirMaquinaCompleta(etp);
+    if(res.ok){
+      setItens(prev=>prev.filter(i=>i.etp!==etp));
+      setMaquinasEtp(prev=>prev.filter(m=>m.etp!==etp));
+    }
+    return res;
+  }
+
   // Avançar status de uma MÁQUINA inteira, não item por item — decisão
   // deliberada, documentada aqui (não só no comentário de
   // `avancarStatusMaquinaEmLote`): com a tela "Lista" removida, não sobrou
@@ -18914,7 +18929,7 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
         onAvancarStatus={handleAvancarStatusMaquina}
         onMoverOrdem={handleMoverOrdem}
         onToggleUrgente={atualizarUrgenteMaquina}
-        onExcluirMaquina={excluirMaquinaCompleta}
+        onExcluirMaquina={handleExcluirMaquina}
         onAdicionarEtpClick={()=>{ setMaquinaParaEditar(null); setModalAdicionarAberto(true); }}
         onEditarMaquina={handleEditarMaquina}
       />
