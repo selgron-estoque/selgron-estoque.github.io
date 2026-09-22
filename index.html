@@ -18389,7 +18389,6 @@ function MaquinaCard({m, canManage, isAdmin, ordinal, mostrarReordenar, podeSubi
       )}
       <div className="sep-kanban-foot">
         <SeparacaoStatusTag status={m.status} />
-        <span className="lr-sub">{m.totalItens} item(ns)</span>
       </div>
       {erro && <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginTop:6}}>{erro}</div>}
       {mostrarReordenar && (
