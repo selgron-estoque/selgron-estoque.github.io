@@ -16812,7 +16812,9 @@ async function excluirMaquinaCompleta(etp){
     if(errMaquina) throw errMaquina;
     return {ok:true};
   }catch(err){
-    return {ok:false, erro:(err && err.message) || 'Não foi possível excluir a máquina.'};
+    console.error('Erro ao excluir máquina:', err);
+    const msg = err && err.message ? err.message : 'Não foi possível excluir a máquina.';
+    return {ok:false, erro: msg.includes('policy') ? 'Apenas administrador pode excluir. Verifique seu perfil.' : msg};
   }
 }
 
