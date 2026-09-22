@@ -671,6 +671,55 @@ const DEMO_PIZZA = {total:1883, divergentes:530, semDivergencia:1353};
 // tela agora, cada uma renderiza esta mesma barra logo acima do próprio
 // page-head, pra trocar de tela sem sair da página (window.open já foi
 // usado só uma vez, pelo menu do app).
+// Atalho pra tela cheia (mesmo efeito do F11 do navegador) — pedido do
+// cliente: colocar a TV em tela cheia hoje depende de saber o atalho de
+// teclado do navegador; este botão faz o mesmo via Fullscreen API padrão
+// (suportada sem prefixo em qualquer navegador atual — Chrome/Edge/
+// Firefox/Safari — sem precisar de fallback pra navegador antigo, mesmo
+// critério de simplicidade já usado no resto do app). Pede tela cheia do
+// `<html>` inteiro (`documentElement`), não só de um painel, senão as abas
+// (`.panel-tabs`) ficariam de fora da área em tela cheia.
+function BotaoTelaCheia(){
+  const [emTelaCheia, setEmTelaCheia] = useState(!!document.fullscreenElement);
+
+  useEffect(()=>{
+    function onChangeFs(){ setEmTelaCheia(!!document.fullscreenElement); }
+    document.addEventListener('fullscreenchange', onChangeFs);
+    return ()=>document.removeEventListener('fullscreenchange', onChangeFs);
+  }, []);
+
+  function alternar(){
+    if(document.fullscreenElement){
+      document.exitFullscreen();
+    } else {
+      document.documentElement.requestFullscreen().catch(()=>{
+        // Alguns navegadores recusam sem gesto direto do usuário — já
+        // estamos dentro de um onClick, então só sobra recusa de
+        // ambiente sem suporte (ex.: dentro de um iframe sem permissão),
+        // nada a fazer além de deixar como está.
+      });
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      className="panel-tab-btn"
+      style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:8}}
+      onClick={alternar}
+      title={emTelaCheia ? 'Sair da tela cheia' : 'Tela cheia'}
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        {emTelaCheia
+          ? <><path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/></>
+          : <><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></>
+        }
+      </svg>
+      {emTelaCheia ? 'Sair da tela cheia' : 'Tela cheia'}
+    </button>
+  );
+}
+
 function PanelTabs({tela, onChange}){
   return (
     <div className="panel-tabs">
@@ -682,6 +731,7 @@ function PanelTabs({tela, onChange}){
         className={'panel-tab-btn' + (tela==='picking' ? ' active' : '')}
         onClick={()=>onChange('picking')}
       >Tracking Picking</button>
+      <BotaoTelaCheia />
     </div>
   );
 }
