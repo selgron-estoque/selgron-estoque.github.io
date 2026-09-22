@@ -18217,6 +18217,7 @@ function computeMaquinasPainel(itens, maquinasEtp, hojeStr){
       ordem: maquina ? maquina.ordem : null,
       totalItens: itensDaMaquina.length,
       cliente: maquina ? maquina.cliente : null,
+      obs: maquina ? maquina.obs : null,
       chassi: maquina ? maquina.chassi : null,
       dataSeparacao,
       atrasada,
@@ -18376,7 +18377,10 @@ function MaquinaCard({m, canManage, isAdmin, ordinal, mostrarReordenar, podeSubi
         <span className="sep-kanban-etp">{m.etp}</span>
         {m.urgente && <span className="sep-urgente-chip"><DIcon name="flame" size={11} /> Urgente</span>}
       </div>
-      <div className="sep-kanban-nome">{m.cliente || 'Cliente não informado'}</div>
+      <div className="sep-kanban-nome" style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',gap:8}}>
+        {m.obs && <span>{m.obs}</span>}
+        <span>{m.cliente || 'Cliente não informado'}</span>
+      </div>
       {m.chassi && <div className="sep-kanban-meta-line">Chassi: {m.chassi}</div>}
       {m.dataSeparacao && (
         <div className={m.atrasada ? 'sep-kanban-meta-line sep-kanban-data-atrasada' : 'sep-kanban-meta-line'}>
