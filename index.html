@@ -18228,6 +18228,9 @@ function computeMaquinasPainel(itens, maquinasEtp, hojeStr){
       cliente: maquina ? maquina.cliente : null,
       obs: maquina ? maquina.obs : null,
       chassi: maquina ? maquina.chassi : null,
+      codigoProduto: maquina ? maquina.codigoProduto : null,
+      descricao: maquina ? maquina.descricao : null,
+      linha: maquina ? maquina.linha : null,
       dataSeparacao,
       atrasada,
     };
@@ -18626,6 +18629,7 @@ function AdicionarEtpModal({open, currentUser, maquinasEtp, linhaPadrao, onClose
         cliente: maquinaParaEditar.cliente || '',
         chassi: maquinaParaEditar.chassi || '',
         codigoProduto: maquinaParaEditar.codigoProduto || '',
+        descricao: maquinaParaEditar.descricao || '',
         linha: maquinaParaEditar.linha || linhaPadrao || LINHA_PADRAO,
         obs: maquinaParaEditar.obs || '',
       });
@@ -18633,7 +18637,7 @@ function AdicionarEtpModal({open, currentUser, maquinasEtp, linhaPadrao, onClose
     } else if(open && !maquinaParaEditar) {
       setModoEdicao(false);
       setCampoEtp({
-        etp: '', cliente: '', chassi: '', codigoProduto: '',
+        etp: '', cliente: '', chassi: '', codigoProduto: '', descricao: '',
         linha: linhaPadrao || LINHA_PADRAO,
         obs: '',
       });
