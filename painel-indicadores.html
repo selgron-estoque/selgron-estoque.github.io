@@ -1307,7 +1307,17 @@ function TrackingPicking({tela, onChange}){
 function FitToScreen({children}){
   const outerRef = useRef(null);
   const innerRef = useRef(null);
-  const [scale, setScale] = useState(1);
+  // Escala X/Y INDEPENDENTE de propósito (não `Math.min` de uma só escala
+  // proporcional) — preencher os dois eixos por completo é mais importante,
+  // numa TV, do que preservar a proporção exata: a versão proporcional
+  // (`object-fit:contain`) deixava sobra de espaço vazio nos 2 lados
+  // sempre que a proporção da tela não batia EXATAMENTE com a do painel
+  // (praticamente sempre), o que lia como "painel pequeno boiando no
+  // meio da tela" — pedido explícito do cliente foi mudar isso. Único
+  // efeito colateral: o gráfico de rosca (círculo) pode ficar levemente
+  // oval quando a proporção da tela for bem diferente de ~4:3 (a do
+  // conteúdo natural, ver `.fit-screen-inner{width:1600px}`).
+  const [escala, setEscala] = useState({x:1, y:1});
 
   useEffect(() => {
     const outer = outerRef.current, inner = innerRef.current;
@@ -1319,8 +1329,9 @@ function FitToScreen({children}){
       const contentW = inner.scrollWidth;
       const contentH = inner.scrollHeight;
       if(contentW===0 || contentH===0) return;
-      const novaEscala = Math.min(outer.clientWidth/contentW, outer.clientHeight/contentH);
-      setScale(novaEscala>0 ? novaEscala : 1);
+      const x = outer.clientWidth/contentW;
+      const y = outer.clientHeight/contentH;
+      setEscala({x: x>0?x:1, y: y>0?y:1});
     }
     ajustarEscala();
     const ro = new ResizeObserver(ajustarEscala);
@@ -1331,7 +1342,7 @@ function FitToScreen({children}){
 
   return (
     <div ref={outerRef} className="fit-screen-outer">
-      <div ref={innerRef} className="fit-screen-inner" style={{transform:`scale(${scale})`}}>
+      <div ref={innerRef} className="fit-screen-inner" style={{transform:`scale(${escala.x}, ${escala.y})`}}>
         {children}
       </div>
     </div>
