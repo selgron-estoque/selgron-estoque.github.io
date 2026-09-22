@@ -18274,24 +18274,27 @@ function bucketizeKanban(maquinas){
 }
 
 // Botões ↑/↓ (não drag-and-drop — decisão explícita: menos dependência,
-// mais confiável em tablet/TV) — reordena só dentro da coluna AGUARDANDO
-// SEPARAÇÃO do Kanban (status==='aguardando'); máquina já em separação/
-// concluída/atrasada não participa da fila manual. `maquinasPainel` (o
-// parâmetro recebido) já precisa vir só com essa mesma coluna — quem chama
-// (`SeparacaoPainelBoard.handleMover`) passa `buckets.aguardando`, nunca a
-// lista bruta inteira, senão o índice ↑/↓ não bateria com o que está
-// visualmente na tela.
+// mais confiável em tablet/TV) — reordena dentro da COLUNA do Kanban em que
+// o card está (Aguardando/Em Separação/Atrasada — Separada/Entregue não
+// participam da fila manual, já são etapas encerradas). `maquinasPainel` (o
+// parâmetro recebido) já precisa vir só com a coluna do card que disparou a
+// ação — quem chama (`SeparacaoPainelBoard.handleMover`) passa `buckets
+// [col.chave]`, nunca a lista bruta inteira, senão o índice ↑/↓ não bateria
+// com o que está visualmente na tela. Por isso NÃO filtra de novo por
+// `status` aqui dentro — "atrasada" é um bucket derivado (não existe
+// `status==='atrasada'` de verdade, ver `bucketizeKanban`), filtrar por
+// status quebraria essa coluna.
 //
-// Normaliza `ordem` nula pro índice+1 dela DENTRO da fila 'aguardando' no
-// momento da troca (não antes) — como `computeMaquinasPainel` já ordena
-// nulos por último, o índice atual de uma máquina sem `ordem` já reflete
-// onde ela "realmente está" nessa fila; dar um valor concreto a ela não
-// muda nada visualmente, só formaliza o que já era implícito. Só as DUAS
-// máquinas envolvidas na troca são persistidas (`atualizarOrdemMaquina`,
-// chamado pelo componente) — as demais continuam nulas até serem tocadas
-// por sua vez, sem precisar de nenhuma renumeração em massa.
-function moverOrdemAguardando(maquinasPainel, etp, direcao){
-  const fila = maquinasPainel.filter(m=>m.status==='aguardando');
+// Normaliza `ordem` nula pro índice+1 dela DENTRO da coluna no momento da
+// troca (não antes) — como `computeMaquinasPainel` já ordena nulos por
+// último, o índice atual de uma máquina sem `ordem` já reflete onde ela
+// "realmente está" nessa coluna; dar um valor concreto a ela não muda nada
+// visualmente, só formaliza o que já era implícito. Só as DUAS máquinas
+// envolvidas na troca são persistidas (`atualizarOrdemMaquina`, chamado
+// pelo componente) — as demais continuam nulas até serem tocadas por sua
+// vez, sem precisar de nenhuma renumeração em massa.
+function moverOrdemNaColuna(maquinasDaColuna, etp, direcao){
+  const fila = maquinasDaColuna;
   const idx = fila.findIndex(m=>m.etp===etp);
   if(idx===-1) return null;
   const alvo = direcao==='up' ? idx-1 : idx+1;
@@ -18470,8 +18473,12 @@ const SEP_KANBAN_COLUNAS = [
   {chave:'entregue', titulo:'Entregue', icone:'checkCircle', cor:'--blue', corBg:'--blue-bg', vazio:'Nenhuma máquina entregue ainda.'},
 ];
 
+// Colunas em que a fila ainda é "de trabalho" — participam da reordenação
+// manual (↑/↓). Separada/Entregue ficam de fora de propósito: são etapas já
+// encerradas, reordenar ali não tem efeito operacional nenhum.
+const SEP_KANBAN_COLUNAS_REORDENAVEIS = ['aguardando', 'emSeparacao', 'atrasada'];
+
 function SeparacaoPainelBoard({itens, maquinasEtp, canManage, isAdmin, onAvancarStatus, onMoverOrdem, onToggleUrgente, onExcluirMaquina, onAdicionarEtpClick, onEditarMaquina}){
-  const [modoReordenar, setModoReordenar] = useState(false);
   const [somenteUrgentes, setSomenteUrgentes] = useState(false);
   const [busyEtp, setBusyEtp] = useState(null);
   const [errosEtp, setErrosEtp] = useState({});
@@ -18483,16 +18490,13 @@ function SeparacaoPainelBoard({itens, maquinasEtp, canManage, isAdmin, onAvancar
 
   const buckets = bucketizeKanban(maquinas);
 
-  // Filtro "Somente Urgentes" — de propósito, o modo reordenar fica
-  // desabilitado enquanto ele está ativo: `moverOrdemAguardando` sempre
-  // opera sobre a coluna AGUARDANDO SEPARAÇÃO já visível (`buckets.
-  // aguardando`, ver `handleMover` abaixo — nunca a lista bruta antes do
-  // bucketing) — deixar os botões ↑/↓ ativos em cima de uma lista
+  // Filtro "Somente Urgentes" — de propósito, as setas ↑/↓ somem enquanto
+  // ele está ativo: `moverOrdemNaColuna` sempre opera sobre a coluna já
+  // visível (`buckets[col.chave]`, ver `handleMover` abaixo — nunca a lista
+  // bruta antes do bucketing), e deixá-las ativas em cima de uma lista
   // visualmente recortada por este filtro confundiria o que "pra cima"/
   // "pra baixo" de fato move.
   function aplicarFiltro(lista){ return somenteUrgentes ? lista.filter(m=>m.urgente) : lista; }
-  const reordenarAtivo = modoReordenar && !somenteUrgentes;
-  const aguardandoView = aplicarFiltro(buckets.aguardando);
 
   async function handleAvancar(m){
     setBusyEtp(m.etp);
@@ -18502,10 +18506,10 @@ function SeparacaoPainelBoard({itens, maquinasEtp, canManage, isAdmin, onAvancar
     if(!res.ok) setErrosEtp(prev=>({...prev, [m.etp]: res.erro || 'Não foi possível avançar — tente novamente.'}));
   }
 
-  async function handleMover(etp, direcao){
+  async function handleMover(bucketChave, etp, direcao){
     setBusyEtp(etp);
     setErrosEtp(prev=>({...prev, [etp]:null}));
-    const res = await onMoverOrdem(buckets.aguardando, etp, direcao);
+    const res = await onMoverOrdem(buckets[bucketChave], etp, direcao);
     setBusyEtp(null);
     if(!res.ok) setErrosEtp(prev=>({...prev, [etp]: res.erro || 'Não foi possível reordenar — tente novamente.'}));
   }
@@ -18534,11 +18538,6 @@ function SeparacaoPainelBoard({itens, maquinasEtp, canManage, isAdmin, onAvancar
             <DIcon name="plus" size={15} /> Adicionar ETP
           </button>
         )}
-        {buckets.aguardando.length>1 && (
-          <button type="button" className="btn btn-outline btn-sm" disabled={somenteUrgentes} onClick={()=>setModoReordenar(v=>!v)}>
-            {modoReordenar ? 'Concluir reordenação' : 'Reordenar fila'}
-          </button>
-        )}
         <button
           type="button"
           className={somenteUrgentes ? 'btn btn-primary btn-sm' : 'btn btn-outline btn-sm'}
@@ -18551,7 +18550,8 @@ function SeparacaoPainelBoard({itens, maquinasEtp, canManage, isAdmin, onAvancar
       <div className="sep-kanban-board">
         {SEP_KANBAN_COLUNAS.map(col=>{
           const listaBruta = buckets[col.chave];
-          const lista = col.chave==='aguardando' ? aguardandoView : aplicarFiltro(listaBruta);
+          const lista = aplicarFiltro(listaBruta);
+          const reordenavel = SEP_KANBAN_COLUNAS_REORDENAVEIS.includes(col.chave) && !somenteUrgentes;
           return (
             <div key={col.chave} className="sep-kanban-col">
               <div className="sep-kanban-col-head" style={{color:`var(${col.cor})`,background:`var(${col.corBg})`}}>
@@ -18566,13 +18566,13 @@ function SeparacaoPainelBoard({itens, maquinasEtp, canManage, isAdmin, onAvancar
                   lista.map((m, idx)=>(
                     <MaquinaCard
                       key={m.etp} m={m} canManage={canManage} isAdmin={isAdmin}
-                      ordinal={col.chave==='aguardando' ? idx+1 : null}
-                      mostrarReordenar={col.chave==='aguardando' && reordenarAtivo}
+                      ordinal={reordenavel ? idx+1 : null}
+                      mostrarReordenar={reordenavel}
                       podeSubir={idx>0} podeDescer={idx<lista.length-1}
                       busy={busyEtp===m.etp} erro={errosEtp[m.etp]}
                       onAvancar={()=>handleAvancar(m)}
-                      onMoverCima={()=>handleMover(m.etp,'up')}
-                      onMoverBaixo={()=>handleMover(m.etp,'down')}
+                      onMoverCima={()=>handleMover(col.chave, m.etp,'up')}
+                      onMoverBaixo={()=>handleMover(col.chave, m.etp,'down')}
                       onToggleUrgente={()=>handleToggleUrgente(m)}
                       onExcluir={()=>handleExcluir(m)}
                       onEditar={onEditarMaquina}
@@ -18892,12 +18892,12 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
   // `ordem` da máquina com a vizinha na direção pedida, persistindo os 2
   // valores junto (`atualizarOrdemMaquina`). Recebe `maquinasPainelSubset`
   // pronto de quem chama (`SeparacaoPainelBoard.handleMover`, que passa
-  // `buckets.aguardando` — a coluna AGUARDANDO SEPARAÇÃO já visível na
-  // tela, com qualquer máquina atrasada já excluída) — o índice ↑/↓ dentro
-  // de `moverOrdemAguardando` precisa bater exatamente com a ordem
-  // renderizada, nunca com a lista bruta antes do bucketing do Kanban.
+  // `buckets[col.chave]` — a coluna do Kanban onde o card está, já visível
+  // na tela) — o índice ↑/↓ dentro de `moverOrdemNaColuna` precisa bater
+  // exatamente com a ordem renderizada, nunca com a lista bruta antes do
+  // bucketing do Kanban.
   async function handleMoverOrdem(maquinasPainelSubset, etp, direcao){
-    const res = moverOrdemAguardando(maquinasPainelSubset, etp, direcao);
+    const res = moverOrdemNaColuna(maquinasPainelSubset, etp, direcao);
     if(!res) return {ok:true};
     const [resA, resB] = await Promise.all([
       atualizarOrdemMaquina(res.etpA, res.ordemA),
