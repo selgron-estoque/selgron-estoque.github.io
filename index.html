@@ -16773,8 +16773,16 @@ async function excluirMaquinaCompleta(etp){
   try{
     const { error: errItens } = await supabaseClient.from('sequencia_separacao').delete().eq('etp', etp);
     if(errItens) throw errItens;
-    const { error: errMaquina } = await supabaseClient.from('maquinas_etp').delete().eq('etp', etp);
+    // `.select('etp')` no delete devolve as linhas de fato removidas — sem
+    // isso, o Supabase não reporta `error` quando a policy RLS bloqueia o
+    // DELETE (ela só filtra silenciosamente pra 0 linhas afetadas), então
+    // `res.ok` voltava `true` mesmo sem excluir nada e o card reaparecia ao
+    // recarregar a página (bug real relatado pelo cliente).
+    const { data: dataMaquina, error: errMaquina } = await supabaseClient.from('maquinas_etp').delete().eq('etp', etp).select('etp');
     if(errMaquina) throw errMaquina;
+    if(!dataMaquina || dataMaquina.length===0){
+      return {ok:false, erro:'Exclusão bloqueada (apenas administrador pode excluir, ou a ETP já foi removida). Verifique seu perfil.'};
+    }
     return {ok:true};
   }catch(err){
     console.error('Erro ao excluir máquina:', err);
