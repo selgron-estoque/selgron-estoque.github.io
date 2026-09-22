@@ -18138,8 +18138,8 @@ function SeparacaoStatusTag({status}){
 // existir de antes desta coluna, seja por nunca ter sido preenchida) cai
 // nela por padrão, tanto na exibição quanto no filtro por aba, pra nunca
 // desaparecer silenciosamente de todas as linhas.
-const LINHA_PADRAO = 'Geral';
-const LINHAS_PRODUCAO = ['Geral', 'Elétrica', 'SEM', 'SSE', 'SEP'];
+const LINHA_PADRAO = 'Elétrica';
+const LINHAS_PRODUCAO = ['Elétrica', 'SEM', 'SSE', 'SEP'];
 
 // Regra de agregação do status da MÁQUINA a partir do conjunto de itens da
 // mesma ETP — decisão de produto confirmada com o cliente (o painel/TV
@@ -18696,14 +18696,14 @@ function AdicionarEtpModal({open, currentUser, maquinasEtp, linhaPadrao, onClose
                 <label>Cód. Produto</label>
                 <input type="text" value={campoEtp.codigoProduto} onChange={e=>atualizarCampoEtp('codigoProduto', e.target.value)} />
               </div>
-              <div className="field" style={{flex:'1 1 140px',marginBottom:0}}>
+              <div className="field" style={{flex:'1 1 90px',marginBottom:0}}>
                 <label>Linha</label>
                 <select value={campoEtp.linha || LINHA_PADRAO} onChange={e=>atualizarCampoEtp('linha', e.target.value)}>
                   {LINHAS_PRODUCAO.map(l=><option key={l} value={l}>{l}</option>)}
                 </select>
               </div>
-              <div className="field" style={{flex:'1',marginBottom:0}}>
-                <label>OBS</label>
+              <div className="field" style={{flex:'1 1 200px',marginBottom:0}}>
+                <label>Máquina</label>
                 <input type="text" value={campoEtp.obs} onChange={e=>atualizarCampoEtp('obs', e.target.value)} placeholder="Tipo de máquina ou informação adicional" />
               </div>
             </div>
