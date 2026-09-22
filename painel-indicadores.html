@@ -55,6 +55,27 @@
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);font-family:var(--font-body);height:100%;}
 
+  /* Ajusta o conteúdo inteiro da aba "Painel Indicadores" (tamanho fixo de
+     8 gráficos, sempre a mesma quantidade) pra caber 100% na tela, sem
+     cortar nem rolar — encolhe OU amplia (nunca só encolhe) mantendo a
+     proporção original, pra aproveitar bem tanto uma tela pequena quanto
+     uma TV grande de parede. Não é usado em "Tracking Picking" de propósito:
+     lá a lista de ETPs é ilimitada (pode ter poucas ou centenas), então cada
+     coluna do Kanban rola por dentro (`.sep-kanban-col-body`) em vez de
+     escalar o texto até ficar ilegível — ver `FitToScreen`/`.fit-screen-*`
+     no script abaixo. */
+  .fit-screen-outer{height:100vh;width:100vw;overflow:hidden;display:flex;align-items:center;justify-content:center;}
+  /* Largura FIXA (não 100%/auto) de propósito — um filho de flex sem
+     largura definida vira "shrink-to-fit", e todo `width:100%`/`flex`
+     interno dos gráficos (que dependem de uma largura definida do
+     ancestral pra calcular %) ficaria ambíguo/errado antes da 1ª medição
+     do JS. 1600px é bem acima do breakpoint de 1200px em que
+     `.weekly-pair-row` já vira grid de 2 colunas (ver acima) — garante que
+     o tamanho NATURAL medido pelo JS seja sempre o layout largo de TV,
+     nunca a versão empilhada de celular, mesmo numa tela final estreita
+     (que só encolhe a versão larga já renderizada, não troca de layout). */
+  .fit-screen-inner{width:1600px;transform-origin:center center;}
+
   .content{padding:24px 40px;max-width:100%;margin:0 auto;}
 
   .page-head{display:flex;justify-content:space-between;align-items:flex-end;gap:24px;margin-bottom:20px;flex-wrap:wrap;}
@@ -142,7 +163,7 @@
 <div id="root"></div>
 
 <script type="text/babel" data-presets="react">
-const {useState, useEffect, useMemo} = React;
+const {useState, useEffect, useMemo, useRef} = React;
 
 /* ============================================================
    Painel Indicadores — TV do almoxarifado.
@@ -1271,6 +1292,52 @@ function TrackingPicking({tela, onChange}){
   );
 }
 
+// Escala o conteúdo do filho (tamanho FIXO — sempre os mesmos 8 gráficos,
+// nunca uma lista que cresce) pra caber 100% em qualquer tamanho de tela,
+// sem cortar nem precisar rolar — mede o tamanho NATURAL do conteúdo (sem
+// escala nenhuma) contra o espaço disponível e aplica a MENOR proporção
+// necessária pros dois eixos (largura/altura) baterem, preservando a
+// proporção original (mesma ideia de `object-fit: contain` numa imagem).
+// Sem limite superior de propósito — numa TV grande, amplia pra preencher
+// a tela de verdade em vez de deixar uma ilha pequena cercada de vazio.
+// Reage tanto a resize da janela quanto a mudança de tamanho do próprio
+// conteúdo (ResizeObserver — cobre o gráfico carregando/trocando de dado
+// ao vivo pro exemplo e vice-versa, sem precisar de nenhuma dependência
+// manual no useEffect).
+function FitToScreen({children}){
+  const outerRef = useRef(null);
+  const innerRef = useRef(null);
+  const [scale, setScale] = useState(1);
+
+  useEffect(() => {
+    const outer = outerRef.current, inner = innerRef.current;
+    if(!outer || !inner) return;
+    function ajustarEscala(){
+      // Mede em tamanho natural — o `transform:scale` de uma medição
+      // anterior nunca afeta `scrollWidth/scrollHeight` (são do layout,
+      // não do transform), então não precisa resetar antes de medir.
+      const contentW = inner.scrollWidth;
+      const contentH = inner.scrollHeight;
+      if(contentW===0 || contentH===0) return;
+      const novaEscala = Math.min(outer.clientWidth/contentW, outer.clientHeight/contentH);
+      setScale(novaEscala>0 ? novaEscala : 1);
+    }
+    ajustarEscala();
+    const ro = new ResizeObserver(ajustarEscala);
+    ro.observe(inner);
+    window.addEventListener('resize', ajustarEscala);
+    return () => { ro.disconnect(); window.removeEventListener('resize', ajustarEscala); };
+  }, []);
+
+  return (
+    <div ref={outerRef} className="fit-screen-outer">
+      <div ref={innerRef} className="fit-screen-inner" style={{transform:`scale(${scale})`}}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 function App(){
   const [tela, setTela] = useState('indicadores');
 
@@ -1286,7 +1353,7 @@ function App(){
   }, []);
 
   return tela==='indicadores'
-    ? <PainelIndicadores tela={tela} onChange={setTela} />
+    ? <FitToScreen><PainelIndicadores tela={tela} onChange={setTela} /></FitToScreen>
     : <TrackingPicking tela={tela} onChange={setTela} />;
 }
 
