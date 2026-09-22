@@ -16722,6 +16722,7 @@ async function upsertMaquinaEtp(m, extra){
       op: m.op || null,
       codigo_produto: m.codigoProduto || null,
       linha: m.linha || null,
+      obs: m.obs || null,
       data_separacao: parseDataHistorico(m.separacao),
       montagem: parseDataHistorico(m.montagem),
       data_entrega_pcp: parseDataHistorico(m.entregaPcp),
