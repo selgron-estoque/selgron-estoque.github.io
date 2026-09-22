@@ -18382,6 +18382,8 @@ function MaquinaCard({m, canManage, isAdmin, ordinal, mostrarReordenar, podeSubi
         <span>{m.cliente || 'Cliente não informado'}</span>
       </div>
       {m.chassi && <div className="sep-kanban-meta-line">Chassi: {m.chassi}</div>}
+      {m.codigoProduto && <div className="sep-kanban-meta-line">Código do Produto: {m.codigoProduto}</div>}
+      {m.descricao && <div className="sep-kanban-meta-line">Descrição: {m.descricao}</div>}
       {m.dataSeparacao && (
         <div className={m.atrasada ? 'sep-kanban-meta-line sep-kanban-data-atrasada' : 'sep-kanban-meta-line'}>
           {m.atrasada && <DIcon name="alertTriangle" size={12} />} Data de Separação: {new Date(m.dataSeparacao+'T00:00:00').toLocaleDateString('pt-BR')}
