@@ -18709,6 +18709,13 @@ function AdicionarEtpModal({open, currentUser, maquinasEtp, linhaPadrao, onClose
               </div>
             </div>
 
+            <div style={{display:'flex',gap:10,flexWrap:'wrap',marginBottom:14}}>
+              <div className="field" style={{flex:'1 1 100%',marginBottom:0}}>
+                <label>Descrição</label>
+                <input type="text" value={campoEtp.descricao || ''} onChange={e=>atualizarCampoEtp('descricao', e.target.value)} placeholder="Descrição adicional" />
+              </div>
+            </div>
+
             {!modoEdicao && maquinaExistente && (
               <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginBottom:12}}>
                 Essa ETP já está na fila (status atual: {maquinaExistente.status || 'aguardando'}) — confirmar aqui só
