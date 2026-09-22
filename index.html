@@ -18853,6 +18853,9 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
     if(res.ok){
       setItens(prev=>prev.filter(i=>i.etp!==etp));
       setMaquinasEtp(prev=>prev.filter(m=>m.etp!==etp));
+      mostrarSucesso('ETP deletada com sucesso');
+    } else {
+      alert('Erro ao deletar: ' + (res.erro || 'Falha desconhecida'));
     }
     return res;
   }
