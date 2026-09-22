@@ -18396,7 +18396,7 @@ async function avancarStatusMaquinaEmLote(maquina, itensDaMaquina, nomeUsuario){
 // decisão já confirmada: "Não preciso mais rastrear item nenhum"). O botão
 // de avançar SEMPRE age sobre TODOS os itens da ETP de uma vez (ver
 // `avancarStatusMaquinaEmLote`).
-function MaquinaCard({m, canManage, isAdmin, ordinal, mostrarReordenar, podeSubir, podeDescer, busy, erro, onAvancar, onMoverCima, onMoverBaixo, onToggleUrgente, onExcluir}){
+function MaquinaCard({m, canManage, isAdmin, ordinal, mostrarReordenar, podeSubir, podeDescer, busy, erro, onAvancar, onMoverCima, onMoverBaixo, onToggleUrgente, onExcluir, onEditar}){
   const [confirmandoExcluir, setConfirmandoExcluir] = useState(false);
   const [menuAbertoId, setMenuAbertoId] = useState(null);
   const classes = ['sep-kanban-card'];
@@ -18442,7 +18442,7 @@ function MaquinaCard({m, canManage, isAdmin, ordinal, mostrarReordenar, podeSubi
                 <button type="button" disabled={busy} onClick={()=>{ onToggleUrgente(); setMenuAbertoId(null); }}>
                   <Ic>⊕</Ic> {m.urgente ? 'Remover urgência' : 'Marcar urgente'}
                 </button>
-                <button type="button" disabled={busy} onClick={()=>{/* placeholder for edit action */ setMenuAbertoId(null);}} title="Editar máquina">
+                <button type="button" disabled={busy} onClick={()=>{ onEditar && onEditar(m); setMenuAbertoId(null); }} title="Editar máquina">
                   <Ic>✎</Ic> Editar
                 </button>
                 {isAdmin && (
@@ -18487,7 +18487,7 @@ const SEP_KANBAN_COLUNAS = [
   {chave:'entregue', titulo:'Entregue', icone:'checkCircle', cor:'--blue', corBg:'--blue-bg', vazio:'Nenhuma máquina entregue ainda.'},
 ];
 
-function SeparacaoPainelBoard({itens, maquinasEtp, canManage, isAdmin, onAvancarStatus, onMoverOrdem, onToggleUrgente, onExcluirMaquina, onAdicionarEtpClick}){
+function SeparacaoPainelBoard({itens, maquinasEtp, canManage, isAdmin, onAvancarStatus, onMoverOrdem, onToggleUrgente, onExcluirMaquina, onAdicionarEtpClick, onEditarMaquina}){
   const [modoReordenar, setModoReordenar] = useState(false);
   const [somenteUrgentes, setSomenteUrgentes] = useState(false);
   const [busyEtp, setBusyEtp] = useState(null);
@@ -18592,6 +18592,7 @@ function SeparacaoPainelBoard({itens, maquinasEtp, canManage, isAdmin, onAvancar
                       onMoverBaixo={()=>handleMover(m.etp,'down')}
                       onToggleUrgente={()=>handleToggleUrgente(m)}
                       onExcluir={()=>handleExcluir(m)}
+                      onEditar={onEditarMaquina}
                     />
                   ))
                 )}
@@ -18612,7 +18613,7 @@ function SeparacaoPainelBoard({itens, maquinasEtp, canManage, isAdmin, onAvancar
 // máquina GENUINAMENTE NOVA (pra só então gravar `ordem`/`urgente`
 // iniciais — ver comentário em `upsertMaquinaEtp`; máquina já existente
 // nunca tem esses 2 campos resetados aqui).
-function AdicionarEtpModal({open, currentUser, maquinasEtp, linhaPadrao, onClose, onSucesso}){
+function AdicionarEtpModal({open, currentUser, maquinasEtp, linhaPadrao, onClose, onSucesso, maquinaParaEditar}){
   const [etpCodigo, setEtpCodigo] = useState('');
   const [buscandoEtp, setBuscandoEtp] = useState(false);
   const [buscaResultado, setBuscaResultado] = useState(null); // {ok, resultados} | {ok:false, erro} | null
@@ -18625,6 +18626,7 @@ function AdicionarEtpModal({open, currentUser, maquinasEtp, linhaPadrao, onClose
   const [urgenteEtp, setUrgenteEtp] = useState(false);
   const [adicionandoEtp, setAdicionandoEtp] = useState(false);
   const [erroAdicionarEtp, setErroAdicionarEtp] = useState(null);
+  const [modoEdicao, setModoEdicao] = useState(false);
 
   function atualizarCampoEtp(chave, valor){
     setCampoEtp(prev => prev ? {...prev, [chave]: valor} : prev);
@@ -18638,8 +18640,27 @@ function AdicionarEtpModal({open, currentUser, maquinasEtp, linhaPadrao, onClose
     setUrgenteEtp(false);
     setAdicionandoEtp(false);
     setErroAdicionarEtp(null);
+    setModoEdicao(false);
     onClose();
   }
+
+  React.useEffect(() => {
+    if(open && maquinaParaEditar) {
+      setModoEdicao(true);
+      setEtpCodigo(maquinaParaEditar.etp || '');
+      setCampoEtp({
+        etp: maquinaParaEditar.etp || '',
+        cliente: maquinaParaEditar.cliente || '',
+        chassi: maquinaParaEditar.chassi || '',
+        codigoProduto: maquinaParaEditar.codigoProduto || '',
+        linha: maquinaParaEditar.linha || linhaPadrao || LINHA_PADRAO,
+        obs: maquinaParaEditar.obs || '',
+      });
+      setUrgenteEtp(maquinaParaEditar.urgente || false);
+    } else if(open && !maquinaParaEditar) {
+      setModoEdicao(false);
+    }
+  }, [open, maquinaParaEditar, linhaPadrao]);
 
   async function handleBuscarEtp(){
     const etpLimpo = etpCodigo.trim();
@@ -18672,6 +18693,7 @@ function AdicionarEtpModal({open, currentUser, maquinasEtp, linhaPadrao, onClose
         op: m.op || '',
         codigoProduto: m.codigoProduto || '',
         linha: linhaBase,
+        obs: m.obs || '',
         separacao: m.separacao || '',
         montagem: m.montagem || '',
         entregaPcp: m.entregaPcp || '',
@@ -18683,6 +18705,7 @@ function AdicionarEtpModal({open, currentUser, maquinasEtp, linhaPadrao, onClose
         cliente: '', nomeFantasia: '', descricao: '', chassi: '', op: '',
         codigoProduto: '',
         linha: linhaBase,
+        obs: '',
         separacao: '', montagem: '', entregaPcp: '', entregaComercial: '',
       });
     }
@@ -18724,51 +18747,59 @@ function AdicionarEtpModal({open, currentUser, maquinasEtp, linhaPadrao, onClose
       <div className="modal-box" onClick={e=>e.stopPropagation()}>
         <div className="modal-header">
           <div>
-            <div className="modal-title">Adicionar ETP</div>
+            <div className="modal-title">{modoEdicao ? 'Editar ETP' : 'Adicionar ETP'}</div>
             <div className="modal-subtitle">
-              Digite o código da ETP — busca os dados da máquina/OP na consulta da
-              Selgron. Revise e corrija qualquer campo antes de adicionar a ETP à fila.
+              {modoEdicao
+                ? 'Edite os dados da máquina e confirme.'
+                : 'Digite o código da ETP — busca os dados da máquina/OP na consulta da Selgron. Revise e corrija qualquer campo antes de adicionar a ETP à fila.'
+              }
             </div>
           </div>
           <button type="button" className="modal-close-btn" onClick={fecharELimpar}><DIcon name="x" size={18} /></button>
         </div>
 
-        <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'flex-end',marginBottom:14}}>
-          <div className="field" style={{flex:1,minWidth:160,marginBottom:0}}>
-            <label>Código da ETP</label>
-            <input
-              type="text"
-              value={etpCodigo}
-              onChange={e=>setEtpCodigo(e.target.value)}
-              onKeyDown={e=>{ if(e.key==='Enter') handleBuscarEtp(); }}
-              placeholder="Ex: 6220-26"
-              autoFocus
-            />
+        {!modoEdicao && (
+          <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'flex-end',marginBottom:14}}>
+            <div className="field" style={{flex:1,minWidth:160,marginBottom:0}}>
+              <label>Código da ETP</label>
+              <input
+                type="text"
+                value={etpCodigo}
+                onChange={e=>setEtpCodigo(e.target.value)}
+                onKeyDown={e=>{ if(e.key==='Enter') handleBuscarEtp(); }}
+                placeholder="Ex: 6220-26"
+                autoFocus
+              />
+            </div>
+            <button type="button" className="btn btn-primary" style={{width:'auto'}} disabled={buscandoEtp || !etpCodigo.trim()} onClick={handleBuscarEtp}>
+              {buscandoEtp ? 'Buscando…' : 'Buscar'}
+            </button>
           </div>
-          <button type="button" className="btn btn-primary" style={{width:'auto'}} disabled={buscandoEtp || !etpCodigo.trim()} onClick={handleBuscarEtp}>
-            {buscandoEtp ? 'Buscando…' : 'Buscar'}
-          </button>
-        </div>
+        )}
 
-        {buscaResultado && !buscaResultado.ok && (
-          <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginBottom:10}}>
-            {buscaResultado.erro} — os campos abaixo continuam editáveis manualmente.
-          </div>
-        )}
-        {buscaResultado && buscaResultado.ok && Array.isArray(buscaResultado.resultados) && buscaResultado.resultados.length===0 && (
-          <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginBottom:10}}>
-            Nenhuma máquina/OP encontrada pra essa ETP na consulta da Selgron — preencha os campos manualmente abaixo.
-          </div>
-        )}
-        {buscaResultado && buscaResultado.ok && Array.isArray(buscaResultado.resultados) && buscaResultado.resultados.length>1 && (
-          <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginBottom:10}}>
-            {buscaResultado.resultados.length} máquinas/OPs encontradas pra essa ETP — os campos abaixo foram preenchidos com a 1ª; corrija manualmente se precisar de outra.
-          </div>
+        {!modoEdicao && (
+          <>
+            {buscaResultado && !buscaResultado.ok && (
+              <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginBottom:10}}>
+                {buscaResultado.erro} — os campos abaixo continuam editáveis manualmente.
+              </div>
+            )}
+            {buscaResultado && buscaResultado.ok && Array.isArray(buscaResultado.resultados) && buscaResultado.resultados.length===0 && (
+              <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginBottom:10}}>
+                Nenhuma máquina/OP encontrada pra essa ETP na consulta da Selgron — preencha os campos manualmente abaixo.
+              </div>
+            )}
+            {buscaResultado && buscaResultado.ok && Array.isArray(buscaResultado.resultados) && buscaResultado.resultados.length>1 && (
+              <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginBottom:10}}>
+                {buscaResultado.resultados.length} máquinas/OPs encontradas pra essa ETP — os campos abaixo foram preenchidos com a 1ª; corrija manualmente se precisar de outra.
+              </div>
+            )}
+          </>
         )}
 
         {campoEtp && (
           <div>
-            {(campoEtp.nomeFantasia || campoEtp.descricao) && (
+            {!modoEdicao && (campoEtp.nomeFantasia || campoEtp.descricao) && (
               <div style={{marginBottom:10}}>
                 {campoEtp.nomeFantasia && <div className="lr-title">{campoEtp.nomeFantasia}</div>}
                 {campoEtp.descricao && <div className="lr-sub">{campoEtp.descricao}</div>}
@@ -18776,19 +18807,15 @@ function AdicionarEtpModal({open, currentUser, maquinasEtp, linhaPadrao, onClose
             )}
 
             <div style={{display:'flex',gap:10,flexWrap:'wrap',marginBottom:14}}>
+              <div className="field" style={{flex:'1 1 120px',marginBottom:0}}>
+                <label>ETP</label>
+                <input type="text" value={campoEtp.etp} onChange={e=>atualizarCampoEtp('etp', e.target.value)} disabled={modoEdicao} />
+              </div>
               <div className="field" style={{flex:'1 1 200px',marginBottom:0}}>
                 <label>Cliente</label>
                 <input type="text" value={campoEtp.cliente} onChange={e=>atualizarCampoEtp('cliente', e.target.value)} />
               </div>
-              <div className="field" style={{flex:'1 1 120px',marginBottom:0}}>
-                <label>OP</label>
-                <input type="text" value={campoEtp.op} onChange={e=>atualizarCampoEtp('op', e.target.value)} />
-              </div>
-              <div className="field" style={{flex:'1 1 120px',marginBottom:0}}>
-                <label>ETP</label>
-                <input type="text" value={campoEtp.etp} onChange={e=>atualizarCampoEtp('etp', e.target.value)} />
-              </div>
-              <div className="field" style={{flex:'1 1 120px',marginBottom:0}}>
+              <div className="field" style={{flex:'1 1 140px',marginBottom:0}}>
                 <label>Chassi</label>
                 <input type="text" value={campoEtp.chassi} onChange={e=>atualizarCampoEtp('chassi', e.target.value)} />
               </div>
@@ -18802,30 +18829,19 @@ function AdicionarEtpModal({open, currentUser, maquinasEtp, linhaPadrao, onClose
                   {LINHAS_PRODUCAO.map(l=><option key={l} value={l}>{l}</option>)}
                 </select>
               </div>
-              <div className="field" style={{flex:'1 1 140px',marginBottom:0}}>
-                <label>Separação</label>
-                <input type="text" placeholder="DD/MM/AAAA" value={campoEtp.separacao} onChange={e=>atualizarCampoEtp('separacao', e.target.value)} />
-              </div>
-              <div className="field" style={{flex:'1 1 140px',marginBottom:0}}>
-                <label>Montagem</label>
-                <input type="text" placeholder="DD/MM/AAAA" value={campoEtp.montagem} onChange={e=>atualizarCampoEtp('montagem', e.target.value)} />
-              </div>
-              <div className="field" style={{flex:'1 1 140px',marginBottom:0}}>
-                <label>Entrega PCP</label>
-                <input type="text" placeholder="DD/MM/AAAA" value={campoEtp.entregaPcp} onChange={e=>atualizarCampoEtp('entregaPcp', e.target.value)} />
-              </div>
-              <div className="field" style={{flex:'1 1 140px',marginBottom:0}}>
-                <label>Entrega Comercial</label>
-                <input type="text" placeholder="DD/MM/AAAA" value={campoEtp.entregaComercial} onChange={e=>atualizarCampoEtp('entregaComercial', e.target.value)} />
+              <div className="field" style={{flex:'1',marginBottom:0}}>
+                <label>OBS</label>
+                <input type="text" value={campoEtp.obs} onChange={e=>atualizarCampoEtp('obs', e.target.value)} placeholder="Tipo de máquina ou informação adicional" />
               </div>
             </div>
 
-            {maquinaExistente ? (
+            {!modoEdicao && maquinaExistente && (
               <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginBottom:12}}>
                 Essa ETP já está na fila (status atual: {maquinaExistente.status || 'aguardando'}) — confirmar aqui só
                 atualiza os dados da máquina, sem mexer na prioridade/urgência já definida.
               </div>
-            ) : (
+            )}
+            {!modoEdicao && !maquinaExistente && (
               <label style={{display:'flex',alignItems:'center',gap:8,marginBottom:12,cursor:'pointer'}}>
                 <input type="checkbox" checked={urgenteEtp} onChange={e=>setUrgenteEtp(e.target.checked)} />
                 <span style={{fontSize:'var(--text-sm)'}}>Marcar como urgente</span>
@@ -18839,7 +18855,7 @@ function AdicionarEtpModal({open, currentUser, maquinasEtp, linhaPadrao, onClose
               disabled={adicionandoEtp || !etpTrimmed}
               onClick={handleAdicionarEtp}
             >
-              {adicionandoEtp ? 'Adicionando…' : (maquinaExistente ? 'Atualizar ETP' : 'Adicionar ETP à fila')}
+              {adicionandoEtp ? (modoEdicao ? 'Salvando…' : 'Adicionando…') : (modoEdicao ? 'Salvar alterações' : (maquinaExistente ? 'Atualizar ETP' : 'Adicionar ETP à fila'))}
             </button>
             {erroAdicionarEtp && <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginTop:8}}>{erroAdicionarEtp}</div>}
           </div>
@@ -18862,6 +18878,7 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
   // agrupada por MÁQUINA/ETP, nunca por item avulso. Adicionar uma ETP nova
   // virou um modal (AdicionarEtpModal), controlado por este único estado.
   const [modalAdicionarAberto, setModalAdicionarAberto] = useState(false);
+  const [maquinaParaEditar, setMaquinaParaEditar] = useState(null);
   const [mensagemSucesso, setMensagemSucesso] = useState(null);
 
   // Aba (linha de produção) selecionada — preferência de sessão do
@@ -18931,6 +18948,16 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
   function mostrarSucesso(msg){
     setMensagemSucesso(msg);
     setTimeout(()=>setMensagemSucesso(null), 2500);
+  }
+
+  function handleEditarMaquina(maquina){
+    setMaquinaParaEditar(maquina);
+    setModalAdicionarAberto(true);
+  }
+
+  function handleModalFechadoEditar(){
+    setMaquinaParaEditar(null);
+    setModalAdicionarAberto(false);
   }
 
   // Avançar status de uma MÁQUINA inteira, não item por item — decisão
@@ -19015,7 +19042,8 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
         onMoverOrdem={handleMoverOrdem}
         onToggleUrgente={atualizarUrgenteMaquina}
         onExcluirMaquina={excluirMaquinaCompleta}
-        onAdicionarEtpClick={()=>setModalAdicionarAberto(true)}
+        onAdicionarEtpClick={()=>{ setMaquinaParaEditar(null); setModalAdicionarAberto(true); }}
+        onEditarMaquina={handleEditarMaquina}
       />
 
       <AdicionarEtpModal
@@ -19023,8 +19051,9 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
         currentUser={currentUser}
         maquinasEtp={maquinasEtp}
         linhaPadrao={linhaSelecionada}
-        onClose={()=>setModalAdicionarAberto(false)}
+        onClose={handleModalFechadoEditar}
         onSucesso={mostrarSucesso}
+        maquinaParaEditar={maquinaParaEditar}
       />
     </div>
   );
