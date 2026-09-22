@@ -2371,6 +2371,7 @@ end $$;
 alter table maquinas_etp add column if not exists status text not null default 'aguardando';
 alter table maquinas_etp add column if not exists ordem integer;
 alter table maquinas_etp add column if not exists urgente boolean not null default false;
+alter table maquinas_etp add column if not exists obs text;
 
 -- Backfill de `status` — reproduz, uma única vez, a MESMA agregação que
 -- `statusAgregadoMaquina` já calculava em memória (todos os itens
