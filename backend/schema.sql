@@ -2484,3 +2484,16 @@ alter table maquinas_etp add column if not exists linha text;
 
 -- RLS: nenhuma policy nova necessária — mesmo raciocínio da coluna anterior,
 -- as policies de INSERT/UPDATE já existentes são incondicionais por coluna.
+
+-- =============================================================================
+-- "PROGRAMAÇÃO": CAMPO "OBSERVAÇÃO" COM DESTAQUE VISUAL (MARCA-TEXTO) NO CARD
+-- =============================================================================
+-- Pedido do cliente: um campo extra no modal "Adicionar ETP"/"Editar ETP",
+-- separado de `descricao` e de `obs` (rotulado "Máquina" na tela) — quando
+-- preenchido, aparece destacado no card do Kanban como se tivesse passado um
+-- marca-texto por cima (ver `.sep-kanban-obs-destaque` no index.html).
+alter table maquinas_etp add column if not exists observacao text;
+
+-- RLS: nenhuma policy nova necessária — mesmo raciocínio das colunas
+-- anteriores, as policies de INSERT/UPDATE já existentes são incondicionais
+-- por coluna.

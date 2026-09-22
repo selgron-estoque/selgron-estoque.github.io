@@ -1539,6 +1539,10 @@
   .sep-kanban-nome{font-size:16px;font-weight:700;color:var(--ink);line-height:1.25;margin-bottom:4px;}
   .sep-kanban-meta-line{font-size:var(--text-sm);color:var(--ink-dim);margin-bottom:2px;display:flex;align-items:center;gap:5px;}
   .sep-kanban-data-atrasada{color:var(--danger);font-weight:700;}
+  /* Observação com destaque de "marca-texto" (highlighter) — cor fixa
+     (não usa token de tema) pra sempre parecer um marcador amarelo por cima
+     do texto, em qualquer modo claro/escuro. */
+  .sep-kanban-obs-destaque{display:inline;background:#FFEB3B;color:#3A2F00;font-weight:700;padding:2px 6px;border-radius:3px;box-decoration-break:clone;-webkit-box-decoration-break:clone;}
   .sep-kanban-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line);}
   /* Posiciona o menu de 3 pontinhos no canto superior direito da máquina card */
   .sep-kanban-card .count-card-menu{position:absolute;top:8px;right:8px;}
@@ -16623,6 +16627,7 @@ function maquinaEtpRowToLocal(row){
     op: row.op,
     codigoProduto: row.codigo_produto,
     obs: row.obs,
+    observacao: row.observacao,
     dataSeparacao: row.data_separacao,
     montagem: row.montagem,
     dataEntregaPcp: row.data_entrega_pcp,
@@ -16689,6 +16694,7 @@ async function upsertMaquinaEtp(m, extra){
       codigo_produto: m.codigoProduto || null,
       linha: m.linha || null,
       obs: m.obs || null,
+      observacao: m.observacao || null,
       data_separacao: parseDataHistorico(m.separacao),
       montagem: parseDataHistorico(m.montagem),
       data_entrega_pcp: parseDataHistorico(m.entregaPcp),
@@ -18237,6 +18243,7 @@ function computeMaquinasPainel(itens, maquinasEtp, hojeStr){
       totalItens: itensDaMaquina.length,
       cliente: maquina ? maquina.cliente : null,
       obs: maquina ? maquina.obs : null,
+      observacao: maquina ? maquina.observacao : null,
       chassi: maquina ? maquina.chassi : null,
       codigoProduto: maquina ? maquina.codigoProduto : null,
       descricao: maquina ? maquina.descricao : null,
@@ -18409,6 +18416,11 @@ function MaquinaCard({m, canManage, isAdmin, ordinal, mostrarReordenar, podeSubi
       {m.chassi && <div className="sep-kanban-meta-line">Chassi: {m.chassi}</div>}
       {m.codigoProduto && <div className="sep-kanban-meta-line">Código do Produto: {m.codigoProduto}</div>}
       {m.descricao && <div className="sep-kanban-meta-line">Descrição: {m.descricao}</div>}
+      {m.observacao && (
+        <div className="sep-kanban-meta-line" style={{marginTop:4,marginBottom:6}}>
+          <span className="sep-kanban-obs-destaque">{m.observacao}</span>
+        </div>
+      )}
       {m.dataSeparacao && (
         <div className={m.atrasada ? 'sep-kanban-meta-line sep-kanban-data-atrasada' : 'sep-kanban-meta-line'}>
           {m.atrasada && <DIcon name="alertTriangle" size={12} />} Data de Separação: {new Date(m.dataSeparacao+'T00:00:00').toLocaleDateString('pt-BR')}
@@ -18641,6 +18653,7 @@ function AdicionarEtpModal({open, currentUser, maquinasEtp, linhaPadrao, onClose
         descricao: maquinaParaEditar.descricao || '',
         linha: maquinaParaEditar.linha || linhaPadrao || LINHA_PADRAO,
         obs: maquinaParaEditar.obs || '',
+        observacao: maquinaParaEditar.observacao || '',
       });
       setUrgenteEtp(maquinaParaEditar.urgente || false);
     } else if(open && !maquinaParaEditar) {
@@ -18648,7 +18661,7 @@ function AdicionarEtpModal({open, currentUser, maquinasEtp, linhaPadrao, onClose
       setCampoEtp({
         etp: '', cliente: '', chassi: '', codigoProduto: '', descricao: '',
         linha: linhaPadrao || LINHA_PADRAO,
-        obs: '',
+        obs: '', observacao: '',
       });
       setUrgenteEtp(false);
     }
@@ -18735,6 +18748,13 @@ function AdicionarEtpModal({open, currentUser, maquinasEtp, linhaPadrao, onClose
               <div className="field" style={{flex:'1 1 100%',marginBottom:0}}>
                 <label>Descrição</label>
                 <input type="text" value={campoEtp.descricao || ''} onChange={e=>atualizarCampoEtp('descricao', e.target.value)} placeholder="Descrição adicional" />
+              </div>
+            </div>
+
+            <div style={{display:'flex',gap:10,flexWrap:'wrap',marginBottom:14}}>
+              <div className="field" style={{flex:'1 1 100%',marginBottom:0}}>
+                <label>Observação</label>
+                <input type="text" value={campoEtp.observacao || ''} onChange={e=>atualizarCampoEtp('observacao', e.target.value)} placeholder="Aparece destacada no card, como marca-texto" />
               </div>
             </div>
 
