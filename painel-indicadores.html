@@ -146,6 +146,40 @@ const supabaseClient = window.supabase
     })
   : null;
 
+// Login automático da TV — pra esta página carregar dado AO VIVO mesmo
+// aberta direto (sem passar pelo app logado antes, ex.: favorito/atalho
+// numa TV do almoxarifado). Preencha com um usuário DEDICADO, criado em
+// "Gerenciar usuários" (Admin) só pra isso — perfil "Operador", SEM marcar
+// nenhum "acesso extra": assim `tem_acesso_tela` nega toda tela protegida
+// por ela (só a leitura de `contagens`, que este painel usa, é liberada só
+// por estar autenticado — não depende de tela nenhuma).
+//
+// ATENÇÃO — mesmo aviso que já vale pra SUPABASE_PUBLISHABLE_KEY acima:
+// qualquer texto aqui fica visível pra quem ver o código-fonte desta
+// página (é um arquivo estático público, sem servidor por trás). Por isso
+// a conta usada aqui precisa ser de baixíssimo privilégio (só o suficiente
+// pra logar) — nunca a conta de um admin/líder de verdade. Deixe os dois
+// campos em branco pra manter o comportamento antigo (cai no exemplo).
+const TV_LOGIN_IDENTIFIER = '';
+const TV_LOGIN_SENHA = '';
+
+async function tentarLoginSilenciosoTv(){
+  if(!supabaseClient || !TV_LOGIN_IDENTIFIER || !TV_LOGIN_SENHA) return false;
+  try{
+    const { data, error } = await supabaseClient.functions.invoke('auth-publico', {
+      body: {acao:'login', identifier: TV_LOGIN_IDENTIFIER, senha: TV_LOGIN_SENHA},
+    });
+    if(error || !data || !data.ok || !data.access_token) return false;
+    const { error: setErr } = await supabaseClient.auth.setSession({
+      access_token: data.access_token, refresh_token: data.refresh_token,
+    });
+    return !setErr;
+  }catch(err){
+    console.warn('Painel Indicadores: falha no login automático da TV', err);
+    return false;
+  }
+}
+
 // Realtime só entrega evento pra quem RECEBE se o socket estiver
 // autenticado (RLS de `contagens` exige auth.role()='authenticated') — sem
 // isso a conexão do Realtime fica anônima por padrão. Mesmo helper/mesmo
@@ -617,7 +651,18 @@ function PainelIndicadores({tela, onChange}){
   async function carregarDados(){
     if(!supabaseClient){ setStatus('erro'); return; }
     try{
-      const { data: sessionData } = await supabaseClient.auth.getSession();
+      let { data: sessionData } = await supabaseClient.auth.getSession();
+      if(!sessionData || !sessionData.session){
+        // Sem sessão herdada do app (página aberta direto) — tenta o login
+        // automático da TV antes de desistir e cair no exemplo (ver
+        // `TV_LOGIN_IDENTIFIER`/`tentarLoginSilenciosoTv` acima; sem nada
+        // configurado, `tentarLoginSilenciosoTv` já devolve `false` na
+        // hora, sem nenhuma chamada de rede extra).
+        const logou = await tentarLoginSilenciosoTv();
+        if(logou){
+          ({ data: sessionData } = await supabaseClient.auth.getSession());
+        }
+      }
       if(!sessionData || !sessionData.session){
         setStatus('sem-sessao');
         return;
