@@ -18703,7 +18703,7 @@ function AdicionarEtpModal({open, currentUser, maquinasEtp, linhaPadrao, onClose
                   {LINHAS_PRODUCAO.map(l=><option key={l} value={l}>{l}</option>)}
                 </select>
               </div>
-              <div className="field" style={{flex:'1 1 200px',marginBottom:0}}>
+              <div className="field" style={{flex:'1 1 280px',marginBottom:0}}>
                 <label>Máquina</label>
                 <input type="text" value={campoEtp.obs} onChange={e=>atualizarCampoEtp('obs', e.target.value)} placeholder="Tipo de máquina ou informação adicional" />
               </div>
