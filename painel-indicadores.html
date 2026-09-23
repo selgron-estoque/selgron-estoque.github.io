@@ -140,6 +140,15 @@
   .pnl-topbar-icon-btn:hover{background:rgba(255,255,255,0.1);color:#fff;}
   .pnl-topbar-right{margin-left:auto;display:flex;align-items:center;gap:18px;flex-shrink:0;}
 
+  /* Switch de tema — cópia 1:1 de `.theme-switch` (index.html,
+     DesktopTopbar), mesmo pedido do cliente: "deixar o botão igual a
+     este". */
+  .theme-switch{position:relative;width:44px;height:24px;border-radius:999px;border:none;background:var(--gray-200);flex-shrink:0;cursor:pointer;padding:0;transition:background-color .2s ease;}
+  .theme-switch:hover{filter:brightness(0.95);}
+  .theme-switch.on{background:var(--safety);}
+  .theme-switch .knob{position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:var(--panel);box-shadow:0 1px 3px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;color:var(--gray-500);transition:left .2s ease,color .2s ease;}
+  .theme-switch.on .knob{left:22px;color:var(--safety);}
+
   .panel-tabs{display:flex;gap:10px;margin-bottom:22px;flex-wrap:wrap;}
   .panel-tab-btn{font-family:var(--font-display);font-size:var(--text-md);text-transform:uppercase;letter-spacing:0.5px;font-weight:600;color:var(--ink-dim);background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:13px 22px;cursor:pointer;transition:background .15s,color .15s;}
   .panel-tab-btn:hover{color:var(--navy);}
@@ -779,22 +788,28 @@ const DEMO_PIZZA = {total:1883, divergentes:530, semDivergencia:1353};
 // critério de simplicidade já usado no resto do app). Pede tela cheia do
 // `<html>` inteiro (`documentElement`), não só de um painel, senão a barra
 // de navegação (`.pnl-topbar`) ficaria de fora da área em tela cheia.
-// Ícones sol/lua — mesmos paths de `DICON_PATHS.sun`/`.moon` (index.html).
+// Switch de tema — réplica exata de `DesktopTopbar` (index.html): mesma
+// classe `.theme-switch`/`.knob`, mesmo ícone (lua quando JÁ está escuro,
+// sol quando JÁ está claro — ícone de ESTADO, não de ação, a posição do
+// switch já comunica a ação de trocar).
 function BotaoTema({theme, onToggle}){
   return (
     <button
       type="button"
-      className="pnl-topbar-icon-btn"
+      className={'theme-switch' + (theme==='dark' ? ' on' : '')}
       onClick={onToggle}
-      title={theme==='dark' ? 'Modo claro' : 'Modo escuro'}
-      aria-label={theme==='dark' ? 'Modo claro' : 'Modo escuro'}
+      role="switch"
+      aria-checked={theme==='dark'}
+      title={theme==='dark' ? 'Modo Escuro ativado — clique para voltar ao Modo Claro' : 'Modo Claro ativado — clique para ativar o Modo Escuro'}
     >
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        {theme==='dark'
-          ? <><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.4"/><path d="M12 19.1v2.4"/><path d="M4.2 4.2l1.7 1.7"/><path d="M18.1 18.1l1.7 1.7"/><path d="M2.5 12h2.4"/><path d="M19.1 12h2.4"/><path d="M4.2 19.8l1.7-1.7"/><path d="M18.1 5.9l1.7-1.7"/></>
-          : <path d="M20.5 14.5A8.5 8.5 0 1 1 9.5 3.5a7 7 0 0 0 11 11Z"/>
-        }
-      </svg>
+      <span className="knob">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          {theme==='dark'
+            ? <path d="M20.5 14.5A8.5 8.5 0 1 1 9.5 3.5a7 7 0 0 0 11 11Z"/>
+            : <><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.4"/><path d="M12 19.1v2.4"/><path d="M4.2 4.2l1.7 1.7"/><path d="M18.1 18.1l1.7 1.7"/><path d="M2.5 12h2.4"/><path d="M19.1 12h2.4"/><path d="M4.2 19.8l1.7-1.7"/><path d="M18.1 5.9l1.7-1.7"/></>
+          }
+        </svg>
+      </span>
     </button>
   );
 }
