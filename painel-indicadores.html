@@ -1176,6 +1176,24 @@ async function criarLinkExterno(url, titulo, ordem){
     return {ok:false, erro:(err && err.message) || 'Não foi possível salvar.'};
   }
 }
+// Content-Type que cada extensão precisa ir no Storage — NÃO dá pra
+// confiar em `file.type` (o que o navegador detecta sozinho ao escolher o
+// arquivo): pra .html/.htm ele costuma vir vazio ou genérico dependendo do
+// navegador/sistema, e sem Content-Type certo o Storage guarda como
+// `application/octet-stream` — o navegador então baixa/mostra o
+// CÓDIGO-FONTE em vez de renderizar a página (foi exatamente isso que
+// aconteceu: usuário mandou um .html e viu o `<!DOCTYPE html>` na tela em
+// vez da página). Mapear pela extensão, sempre, evita esse problema de vez.
+const CONTENT_TYPE_ARQUIVO_EXTERNO = {
+  html: 'text/html; charset=utf-8',
+  htm: 'text/html; charset=utf-8',
+  pdf: 'application/pdf',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  gif: 'image/gif',
+  webp: 'image/webp',
+};
 // Envia um arquivo (html/pdf/jpg — pedido do cliente) pro bucket público
 // `painel-arquivos` (ver schema.sql) e já cria a linha correspondente em
 // `painel_links_externos`, com `tipo` inferido pela extensão do arquivo.
@@ -1191,7 +1209,7 @@ async function enviarArquivoLinkExterno(file, titulo, ordem){
   if(!tipo) return {ok:false, erro:'Formato não suportado. Envie um arquivo .html, .pdf, .jpg/.jpeg/.png.'};
   try{
     const caminho = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-    const { error: erroUpload } = await supabaseClient.storage.from('painel-arquivos').upload(caminho, file, {contentType: file.type || undefined});
+    const { error: erroUpload } = await supabaseClient.storage.from('painel-arquivos').upload(caminho, file, {contentType: CONTENT_TYPE_ARQUIVO_EXTERNO[ext]});
     if(erroUpload) throw erroUpload;
     const { data: urlData } = supabaseClient.storage.from('painel-arquivos').getPublicUrl(caminho);
     const { error } = await supabaseClient.from('painel_links_externos').insert({url: urlData.publicUrl, titulo: titulo || null, ordem, tipo});
