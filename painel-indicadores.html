@@ -1503,6 +1503,31 @@ function LinkExternoPanel({tela, onChange, theme, onToggleTheme, onAbrirConfigLi
 
   const linkAtual = links[linkIndex] || links[0] || null;
 
+  // Arquivo HTML enviado (tipo==='html') — NÃO usa <iframe src=...> direto.
+  // O Storage do Supabase se recusa a servir esse arquivo com
+  // `Content-Type: text/html` no link público (proteção deles contra
+  // hospedar página maliciosa sob o domínio supabase.co) — o navegador
+  // então mostra o código-fonte em vez de renderizar, mesmo com o upload
+  // pedindo o Content-Type certo (`CONTENT_TYPE_ARQUIVO_EXTERNO`, ver
+  // `enviarArquivoLinkExterno`; aquilo sozinho não resolve). Contorno: busca
+  // o HTML como TEXTO (`fetch` + `.text()`, o Content-Type do download não
+  // importa pra isso) e injeta no iframe via `srcDoc` — um iframe com
+  // `srcDoc` sempre renderiza a string como HTML, não depende de header
+  // nenhum vindo de lugar nenhum.
+  const [htmlConteudo, setHtmlConteudo] = useState(null);
+  const [htmlErro, setHtmlErro] = useState(false);
+  useEffect(() => {
+    if(!linkAtual || linkAtual.tipo!=='html'){ setHtmlConteudo(null); setHtmlErro(false); return; }
+    let cancelado = false;
+    setHtmlConteudo(null);
+    setHtmlErro(false);
+    fetch(linkAtual.url)
+      .then(res => { if(!res.ok) throw new Error('status '+res.status); return res.text(); })
+      .then(texto => { if(!cancelado) setHtmlConteudo(texto); })
+      .catch(() => { if(!cancelado) setHtmlErro(true); });
+    return () => { cancelado = true; };
+  }, [linkAtual && linkAtual.id, linkAtual && linkAtual.tipo]);
+
   return (
     <div>
       <PanelTabs tela={tela} onChange={onChange} onAbrirConfigLink={onAbrirConfigLink} links={links} linkIndex={linkIndex} onSelecionarLink={onSelecionarLink} onNavegarEsquerda={onNavegarEsquerda} onNavegarDireita={onNavegarDireita} theme={theme} onToggleTheme={onToggleTheme} />
@@ -1516,6 +1541,18 @@ function LinkExternoPanel({tela, onChange, theme, onToggleTheme, onAbrirConfigLi
                 style={{maxWidth:'100%',maxHeight:'100%',objectFit:'contain'}}
               />
             </div>
+          ) : linkAtual.tipo==='html' ? (
+            htmlErro ? (
+              <div className="content"><div className="demo-banner">Não foi possível carregar esse arquivo.</div></div>
+            ) : htmlConteudo==null ? (
+              <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',color:'var(--ink-dim)'}}>Carregando…</div>
+            ) : (
+              <iframe
+                srcDoc={htmlConteudo}
+                title={linkAtual.titulo || 'Link externo'}
+                style={{display:'block',width:'100%',flex:1,border:'none'}}
+              />
+            )
           ) : (
             <iframe
               src={linkAtual.url}
