@@ -2608,6 +2608,15 @@ create table if not exists painel_links_externos (
   ordem int not null default 0,
   criado_em timestamptz not null default now()
 );
+-- `tipo` distingue como o Painel exibe cada linha: 'link' (padrão, o que já
+-- existia — URL externa qualquer, mostrada num <iframe>) ou um arquivo
+-- ENVIADO (pedido do cliente: "quero também opção de mandar arquivo html,
+-- pdf, jpg") — nesse caso `url` aponta pro Storage (bucket
+-- `painel-arquivos`, ver mais abaixo) em vez de um site de terceiro.
+-- 'html'/'pdf' continuam num <iframe> (mesmo esquema de 'link' — só mudam
+-- de onde vêm); 'imagem' (jpg/jpeg/png/gif/webp) vira uma tag <img> —
+-- diferença tratada só no front-end (LinkExternoPanel), nunca aqui.
+alter table painel_links_externos add column if not exists tipo text not null default 'link';
 
 -- Migra o link único salvo pela 1ª versão desta funcionalidade (tabela
 -- singleton `painel_link_externo`, id=1) pra 1ª linha desta tabela nova —
@@ -2653,3 +2662,29 @@ begin
     alter publication supabase_realtime add table painel_links_externos;
   end if;
 end $$;
+
+-- Bucket de Storage pros arquivos enviados (html/pdf/jpg, ver `tipo` acima).
+-- PÚBLICO por decisão do cliente (mesma escolha já aceita pros links do
+-- Google Sheets: mais simples e confiável de exibir na TV, sem depender de
+-- sessão/login) — qualquer um com o link do arquivo consegue abrir, sem
+-- estar logado. Não usar pra conteúdo sensível.
+insert into storage.buckets (id, name, public)
+values ('painel-arquivos', 'painel-arquivos', true)
+on conflict (id) do nothing;
+
+drop policy if exists "leitura publica painel-arquivos" on storage.objects;
+create policy "leitura publica painel-arquivos" on storage.objects for select
+  using (bucket_id = 'painel-arquivos');
+
+drop policy if exists "insercao por tela indicadores painel-arquivos" on storage.objects;
+create policy "insercao por tela indicadores painel-arquivos" on storage.objects for insert
+  with check (bucket_id = 'painel-arquivos' and tem_acesso_tela(auth.uid(), 'dashboard'));
+
+drop policy if exists "atualizacao por tela indicadores painel-arquivos" on storage.objects;
+create policy "atualizacao por tela indicadores painel-arquivos" on storage.objects for update
+  using (bucket_id = 'painel-arquivos' and tem_acesso_tela(auth.uid(), 'dashboard'))
+  with check (bucket_id = 'painel-arquivos' and tem_acesso_tela(auth.uid(), 'dashboard'));
+
+drop policy if exists "remocao por tela indicadores painel-arquivos" on storage.objects;
+create policy "remocao por tela indicadores painel-arquivos" on storage.objects for delete
+  using (bucket_id = 'painel-arquivos' and tem_acesso_tela(auth.uid(), 'dashboard'));

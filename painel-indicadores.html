@@ -1158,7 +1158,7 @@ function ConfigIndicadoresModal({open, ordemAtual, onClose, onSalvo}){
 async function fetchLinksExternos(){
   if(!supabaseClient) return [];
   try{
-    const { data, error } = await supabaseClient.from('painel_links_externos').select('id, url, titulo, ordem').order('ordem', {ascending:true});
+    const { data, error } = await supabaseClient.from('painel_links_externos').select('id, url, titulo, ordem, tipo').order('ordem', {ascending:true});
     if(error) throw error;
     return data || [];
   }catch(err){
@@ -1169,11 +1169,36 @@ async function fetchLinksExternos(){
 async function criarLinkExterno(url, titulo, ordem){
   if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
   try{
-    const { error } = await supabaseClient.from('painel_links_externos').insert({url, titulo: titulo || null, ordem});
+    const { error } = await supabaseClient.from('painel_links_externos').insert({url, titulo: titulo || null, ordem, tipo:'link'});
     if(error) throw error;
     return {ok:true};
   }catch(err){
     return {ok:false, erro:(err && err.message) || 'Não foi possível salvar.'};
+  }
+}
+// Envia um arquivo (html/pdf/jpg — pedido do cliente) pro bucket público
+// `painel-arquivos` (ver schema.sql) e já cria a linha correspondente em
+// `painel_links_externos`, com `tipo` inferido pela extensão do arquivo.
+// Nome do arquivo no Storage é gerado (timestamp + aleatório), não o nome
+// original — evita colisão entre uploads de nomes iguais.
+async function enviarArquivoLinkExterno(file, titulo, ordem){
+  if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  const tipo = ext==='pdf' ? 'pdf'
+    : (ext==='html' || ext==='htm') ? 'html'
+    : (['jpg','jpeg','png','gif','webp'].includes(ext)) ? 'imagem'
+    : null;
+  if(!tipo) return {ok:false, erro:'Formato não suportado. Envie um arquivo .html, .pdf, .jpg/.jpeg/.png.'};
+  try{
+    const caminho = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+    const { error: erroUpload } = await supabaseClient.storage.from('painel-arquivos').upload(caminho, file, {contentType: file.type || undefined});
+    if(erroUpload) throw erroUpload;
+    const { data: urlData } = supabaseClient.storage.from('painel-arquivos').getPublicUrl(caminho);
+    const { error } = await supabaseClient.from('painel_links_externos').insert({url: urlData.publicUrl, titulo: titulo || null, ordem, tipo});
+    if(error) throw error;
+    return {ok:true};
+  }catch(err){
+    return {ok:false, erro:(err && err.message) || 'Não foi possível enviar o arquivo.'};
   }
 }
 async function atualizarLinkExterno(id, url, titulo){
@@ -1213,34 +1238,49 @@ async function salvarOrdemLinksExternos(idsEmOrdem){
   }
 }
 
-// Modal de configuração dos links externos — lista (adicionar, editar,
-// remover, reordenar), pedido do cliente depois da 1ª versão (que só
-// aceitava 1 link): "consigo criar mais abas com outros links?". Sem
-// nenhum link cadastrado, as abas de link somem do rodízio (ver `temLink`
+// Modal de configuração dos links/arquivos externos — lista (adicionar,
+// editar, remover, reordenar), pedido do cliente depois da 1ª versão (que só
+// aceitava 1 link): "consigo criar mais abas com outros links?" e depois
+// "quero também opção de mandar arquivo html, pdf, jpg". Sem nenhum
+// link/arquivo cadastrado, as abas de link somem do rodízio (ver `temLink`
 // em `PanelTabs`/`App()`) — sem precisar de um checkbox separado, é só a
 // lista ficar vazia.
-function LinkExternoConfigModal({open, links, onClose, onCriar, onAtualizar, onRemover, onReordenar}){
+//
+// 2 formas de adicionar (alternadas por `modo`, só aparece a escolha ao
+// ADICIONAR — editar um item já existente só mexe no título, nunca troca de
+// link pra arquivo nem reenvia um arquivo novo; pra isso, remove e adiciona
+// de novo): colar uma URL (`modo==='link'`, comportamento original) ou
+// enviar um arquivo (`modo==='arquivo'`, sobe pro Storage via
+// `enviarArquivoLinkExterno` — ver ali o porquê do `tipo` inferido pela
+// extensão).
+function LinkExternoConfigModal({open, links, onClose, onCriar, onAtualizar, onRemover, onReordenar, onEnviarArquivo}){
   const [editandoId, setEditandoId] = useState(null); // null = formulário é "adicionar novo"
+  const [modo, setModo] = useState('link'); // 'link' | 'arquivo' — só usado ao adicionar
   const [url, setUrl] = useState('');
   const [titulo, setTitulo] = useState('');
+  const [arquivo, setArquivo] = useState(null);
   const [salvando, setSalvando] = useState(false);
   const [removendoId, setRemovendoId] = useState(null);
   const [erro, setErro] = useState(null);
 
-  useEffect(()=>{ if(open){ setEditandoId(null); setUrl(''); setTitulo(''); setErro(null); } }, [open]);
+  useEffect(()=>{ if(open){ setEditandoId(null); setModo('link'); setUrl(''); setTitulo(''); setArquivo(null); setErro(null); } }, [open]);
 
   if(!open) return null;
 
   function iniciarEdicao(link){
     setEditandoId(link.id);
+    setModo('link');
     setUrl(link.url);
     setTitulo(link.titulo || '');
+    setArquivo(null);
     setErro(null);
   }
   function cancelarEdicao(){
     setEditandoId(null);
+    setModo('link');
     setUrl('');
     setTitulo('');
+    setArquivo(null);
     setErro(null);
   }
   function mover(id, direcao){
@@ -1251,7 +1291,30 @@ function LinkExternoConfigModal({open, links, onClose, onCriar, onAtualizar, onR
     [nova[idx], nova[alvo]] = [nova[alvo], nova[idx]];
     onReordenar(nova.map(l=>l.id));
   }
+  // Editando um item que foi ENVIADO como arquivo (não colado como link) —
+  // só o título é editável (o campo de URL nem aparece, ver JSX abaixo).
+  const editandoArquivo = editandoId && (links.find(l=>l.id===editandoId) || {}).tipo !== 'link';
+
   async function handleSalvar(){
+    if(editandoArquivo){
+      setSalvando(true);
+      setErro(null);
+      const res = await onAtualizar(editandoId, url, titulo.trim());
+      setSalvando(false);
+      if(!res.ok){ setErro(res.erro); return; }
+      cancelarEdicao();
+      return;
+    }
+    if(!editandoId && modo==='arquivo'){
+      if(!arquivo){ setErro('Escolha um arquivo.'); return; }
+      setSalvando(true);
+      setErro(null);
+      const res = await onEnviarArquivo(arquivo, titulo.trim(), links.length);
+      setSalvando(false);
+      if(!res.ok){ setErro(res.erro); return; }
+      cancelarEdicao();
+      return;
+    }
     const urlLimpa = url.trim();
     if(!urlLimpa){
       setErro('Cole um link.');
@@ -1276,17 +1339,20 @@ function LinkExternoConfigModal({open, links, onClose, onCriar, onAtualizar, onR
     setRemovendoId(null);
   }
 
+  const rotuloTipo = {link:null, html:'HTML', pdf:'PDF', imagem:'IMAGEM'};
+
   return ReactDOM.createPortal((
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal-box" onClick={e=>e.stopPropagation()}>
         <div className="modal-header">
           <div>
-            <div className="modal-title">Links externos</div>
+            <div className="modal-title">Links e arquivos externos</div>
             <div className="modal-subtitle">
-              Cada link vira uma aba própria, no mesmo rodízio automático da TV e na navegação por controle
-              (60s cada). Precisa ser um link que a origem permita exibir dentro de outra página (ex.: Google
-              Sheets "Publicado na Web", aba "Inserir") — links normais de edição/visualização geralmente são
-              bloqueados pela própria origem e a aba aparece em branco.
+              Cada um vira uma aba própria, no mesmo rodízio automático da TV e na navegação por controle (60s
+              cada). Um link colado precisa ser de uma origem que permita exibir dentro de outra página (ex.:
+              Google Sheets "Publicado na Web", aba "Inserir") — links normais de edição/visualização geralmente
+              são bloqueados pela própria origem e a aba aparece em branco. Um arquivo enviado (HTML, PDF ou
+              imagem) não tem esse problema.
             </div>
           </div>
           <button type="button" className="modal-close-btn" onClick={onClose} aria-label="Fechar">
@@ -1297,7 +1363,10 @@ function LinkExternoConfigModal({open, links, onClose, onCriar, onAtualizar, onR
         {links.map((l,i)=>(
           <div key={l.id} className="pnl-cfg-item">
             <div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column',gap:2}}>
-              <div style={{fontSize:'var(--text-sm)',color:'var(--ink)',fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{l.titulo || `Link ${i+1}`}</div>
+              <div style={{fontSize:'var(--text-sm)',color:'var(--ink)',fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',display:'flex',alignItems:'center',gap:8}}>
+                {l.titulo || `Link ${i+1}`}
+                {rotuloTipo[l.tipo] && <span className="chart-meta-badge">{rotuloTipo[l.tipo]}</span>}
+              </div>
               <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{l.url}</div>
             </div>
             <div className="pnl-cfg-arrows">
@@ -1318,16 +1387,50 @@ function LinkExternoConfigModal({open, links, onClose, onCriar, onAtualizar, onR
         ))}
 
         <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',textTransform:'uppercase',letterSpacing:'0.5px',margin:'12px 0 10px'}}>
-          {editandoId ? 'Editar link' : 'Adicionar link'}
+          {editandoId ? 'Editar' : 'Adicionar'}
         </div>
-        <div className="pnl-cfg-item" style={{display:'block'}}>
-          <label style={{display:'block',fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginBottom:6,textTransform:'uppercase',letterSpacing:'0.5px'}}>Link (URL)</label>
-          <input
-            type="text" value={url} onChange={e=>setUrl(e.target.value)}
-            placeholder="https://docs.google.com/spreadsheets/d/e/.../pubhtml"
-            style={{width:'100%',padding:'10px 12px',borderRadius:8,border:'1px solid var(--line)',background:'var(--panel)',color:'var(--ink)',fontSize:'var(--text-sm)',boxSizing:'border-box'}}
-          />
-        </div>
+
+        {!editandoId && (
+          <div style={{display:'flex',gap:8,marginBottom:12}}>
+            <button
+              type="button"
+              className={'panel-tab-btn' + (modo==='link' ? ' active' : '')}
+              style={{padding:'8px 16px',fontSize:'var(--text-sm)',flex:1}}
+              onClick={()=>{ setModo('link'); setErro(null); }}
+            >Colar link</button>
+            <button
+              type="button"
+              className={'panel-tab-btn' + (modo==='arquivo' ? ' active' : '')}
+              style={{padding:'8px 16px',fontSize:'var(--text-sm)',flex:1}}
+              onClick={()=>{ setModo('arquivo'); setErro(null); }}
+            >Enviar arquivo</button>
+          </div>
+        )}
+
+        {editandoArquivo ? (
+          <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',margin:'0 0 12px'}}>
+            Este item foi enviado como arquivo — só dá pra trocar o título aqui. Pra trocar o arquivo, remova
+            este item e envie o novo.
+          </div>
+        ) : (!editandoId && modo==='arquivo') ? (
+          <div className="pnl-cfg-item" style={{display:'block'}}>
+            <label style={{display:'block',fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginBottom:6,textTransform:'uppercase',letterSpacing:'0.5px'}}>Arquivo (.html, .pdf, .jpg/.jpeg/.png)</label>
+            <input
+              type="file" accept=".html,.htm,.pdf,.jpg,.jpeg,.png,.gif,.webp"
+              onChange={e=>setArquivo(e.target.files && e.target.files[0] ? e.target.files[0] : null)}
+              style={{width:'100%',fontSize:'var(--text-sm)',color:'var(--ink)'}}
+            />
+          </div>
+        ) : (
+          <div className="pnl-cfg-item" style={{display:'block'}}>
+            <label style={{display:'block',fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginBottom:6,textTransform:'uppercase',letterSpacing:'0.5px'}}>Link (URL)</label>
+            <input
+              type="text" value={url} onChange={e=>setUrl(e.target.value)}
+              placeholder="https://docs.google.com/spreadsheets/d/e/.../pubhtml"
+              style={{width:'100%',padding:'10px 12px',borderRadius:8,border:'1px solid var(--line)',background:'var(--panel)',color:'var(--ink)',fontSize:'var(--text-sm)',boxSizing:'border-box'}}
+            />
+          </div>
+        )}
         <div className="pnl-cfg-item" style={{display:'block'}}>
           <label style={{display:'block',fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginBottom:6,textTransform:'uppercase',letterSpacing:'0.5px'}}>Título da aba (opcional)</label>
           <input
@@ -1342,7 +1445,9 @@ function LinkExternoConfigModal({open, links, onClose, onCriar, onAtualizar, onR
         <div style={{display:'flex',gap:10,marginTop:16}}>
           {editandoId && <button type="button" className="pnl-cfg-btn pnl-cfg-btn-outline" onClick={cancelarEdicao} disabled={salvando}>Cancelar edição</button>}
           <button type="button" className="pnl-cfg-btn pnl-cfg-btn-outline" onClick={onClose} disabled={salvando}>Fechar</button>
-          <button type="button" className="pnl-cfg-btn pnl-cfg-btn-primary" onClick={handleSalvar} disabled={salvando}>{salvando ? 'Salvando…' : (editandoId ? 'Salvar edição' : 'Adicionar link')}</button>
+          <button type="button" className="pnl-cfg-btn pnl-cfg-btn-primary" onClick={handleSalvar} disabled={salvando}>
+            {salvando ? (modo==='arquivo' && !editandoId ? 'Enviando…' : 'Salvando…') : (editandoId ? 'Salvar edição' : (modo==='arquivo' ? 'Enviar arquivo' : 'Adicionar link'))}
+          </button>
         </div>
       </div>
     </div>
@@ -1395,11 +1500,21 @@ function LinkExternoPanel({tela, onChange, theme, onToggleTheme, onAbrirConfigLi
               ))}
             </div>
           )}
-          <iframe
-            src={linkAtual.url}
-            title={linkAtual.titulo || 'Link externo'}
-            style={{display:'block',width:'100%',flex:1,border:'none'}}
-          />
+          {linkAtual.tipo==='imagem' ? (
+            <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden',background:'#000'}}>
+              <img
+                src={linkAtual.url}
+                alt={linkAtual.titulo || 'Imagem'}
+                style={{maxWidth:'100%',maxHeight:'100%',objectFit:'contain'}}
+              />
+            </div>
+          ) : (
+            <iframe
+              src={linkAtual.url}
+              title={linkAtual.titulo || 'Link externo'}
+              style={{display:'block',width:'100%',flex:1,border:'none'}}
+            />
+          )}
         </div>
       ) : (
         <div className="content">
@@ -2349,6 +2464,7 @@ function App(){
         onAtualizar={atualizarLinkExterno}
         onRemover={removerLinkExterno}
         onReordenar={salvarOrdemLinksExternos}
+        onEnviarArquivo={enviarArquivoLinkExterno}
       />
     </React.Fragment>
   );
