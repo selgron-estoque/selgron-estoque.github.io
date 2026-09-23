@@ -1612,11 +1612,31 @@ function TrackingPickingBoard({maquinas}){
   );
 }
 
-function TrackingPicking({tela, onChange, theme, onToggleTheme}){
+function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto}){
   const [status, setStatus] = useState('loading'); // loading | ok | sem-sessao | erro
   const [maquinasEtp, setMaquinasEtp] = useState([]);
   const [itens, setItens] = useState([]);
   const [linhaSelecionada, setLinhaSelecionada] = useState(LINHA_PADRAO_TRACKING);
+
+  // Rotação automática das abas de linha (Elétrica/SEM/SSE/SEP) — 30s em
+  // cada, pedido explícito do cliente. Só depois de mostrar as 4 (30s×4 =
+  // 120s) é que avisa o App() pra trocar de tela de vez
+  // (`onCicloCompleto`) — nunca um tempo fixo pra tela inteira, que
+  // poderia cortar no meio de alguma linha. Mesmo critério do timer de
+  // `App()`: clicar numa aba troca na hora, mas não reseta este ciclo.
+  useEffect(() => {
+    const id = setInterval(() => {
+      setLinhaSelecionada(atual => {
+        const proximoIdx = LINHAS_PRODUCAO_TRACKING.indexOf(atual) + 1;
+        if(proximoIdx >= LINHAS_PRODUCAO_TRACKING.length){
+          if(onCicloCompleto) onCicloCompleto();
+          return LINHAS_PRODUCAO_TRACKING[0];
+        }
+        return LINHAS_PRODUCAO_TRACKING[proximoIdx];
+      });
+    }, 30000);
+    return () => clearInterval(id);
+  }, [onCicloCompleto]);
 
   async function carregarDados(){
     if(!supabaseClient){ setStatus('erro'); return; }
@@ -1792,20 +1812,26 @@ function App(){
   const [tela, setTela] = useState('indicadores');
   const [theme, toggleTheme] = usePersistedTheme();
 
-  // TV sem ninguém mexendo — alterna sozinho entre as duas telas a cada
-  // minuto, pra dar tempo de ler cada uma sem precisar de clique manual.
-  // Clicar numa aba continua trocando na hora (onChange abaixo); o timer
-  // não reseta por causa disso, só segue no próprio ciclo de 60s.
+  // TV sem ninguém mexendo — alterna sozinho entre as duas telas, pra dar
+  // tempo de ler cada uma sem precisar de clique manual. "Painel
+  // Indicadores" tem um tempo FIXO (60s, sem sub-abas). "Tracking Picking"
+  // é diferente: tem 4 abas internas de linha (Elétrica/SEM/SSE/SEP,
+  // ver LINHAS_PRODUCAO_TRACKING) — pedido explícito do cliente foi só
+  // trocar de tela DEPOIS de mostrar as 4, 30s cada (ver
+  // `onCicloCompleto` em `TrackingPicking`, que avisa quando isso
+  // acontece), nunca num tempo fixo que poderia cortar no meio do ciclo
+  // de linhas. Clicar numa aba continua trocando na hora (onChange
+  // abaixo); os timers não resetam por causa disso, só seguem no próprio
+  // ciclo.
   useEffect(() => {
-    const id = setInterval(() => {
-      setTela(t => t === 'indicadores' ? 'picking' : 'indicadores');
-    }, 60000);
-    return () => clearInterval(id);
-  }, []);
+    if(tela !== 'indicadores') return;
+    const id = setTimeout(() => setTela('picking'), 60000);
+    return () => clearTimeout(id);
+  }, [tela]);
 
   return tela==='indicadores'
     ? <PainelIndicadores tela={tela} onChange={setTela} theme={theme} onToggleTheme={toggleTheme} />
-    : <TrackingPicking tela={tela} onChange={setTela} theme={theme} onToggleTheme={toggleTheme} />;
+    : <TrackingPicking tela={tela} onChange={setTela} theme={theme} onToggleTheme={toggleTheme} onCicloCompleto={()=>setTela('indicadores')} />;
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(<App />);
