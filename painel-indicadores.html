@@ -89,7 +89,11 @@
      renderizado como irmão de `.content`, não filho) — só assim ocupa a
      largura inteira, sem herdar o padding de 24px/40px do corpo da página. */
   .pnl-topbar{background:var(--navy);display:flex;align-items:center;height:56px;padding:0 20px;}
-  .pnl-topbar-logo{height:22px;width:auto;display:block;flex-shrink:0;}
+  /* Logo original é colorida (laranja/navy) — filtro padrão pra virar
+     silhueta branca sólida, preservando a transparência do PNG (não existe
+     nenhuma versão branca do arquivo, só a colorida usada no resto do
+     app). */
+  .pnl-topbar-logo{height:22px;width:auto;display:block;flex-shrink:0;filter:brightness(0) invert(1);}
   .pnl-topbar-sep{width:1px;height:24px;background:rgba(255,255,255,0.16);margin:0 16px;flex-shrink:0;}
   .pnl-topbar-tab{display:flex;align-items:center;gap:8px;height:100%;background:none;border:none;padding:0;cursor:pointer;font-family:var(--font-corp);font-size:var(--text-md);font-weight:600;color:rgba(255,255,255,0.55);white-space:nowrap;}
   .pnl-topbar-tab.active{color:#fff;}
@@ -102,20 +106,10 @@
   .panel-tab-btn:hover{color:var(--navy);}
   .panel-tab-btn.active{background:var(--navy);color:#fff;border-color:var(--navy);}
 
-  /* `.status-pill` vive só dentro de `.pnl-topbar` agora (barra escura) —
-     texto+ponto colorido direto no fundo navy, sem "pílula"/fundo próprio,
-     igual à referência ("● Ao vivo · atualizado às 22:33" liso, sem chip). */
-  .status-pill{display:inline-flex;align-items:center;gap:7px;font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600;white-space:nowrap;}
-  .status-pill.ok{color:#4ADE80;}
-  .status-pill.warn{color:#FBBF24;}
-  .status-pill.loading{color:rgba(255,255,255,0.55);}
-  .status-pill .dot{width:7px;height:7px;border-radius:50%;background:currentColor;flex-shrink:0;}
-
   @media (max-width:760px){
     .pnl-topbar{padding:0 12px;}
     .pnl-topbar-sep{margin:0 10px;}
     .pnl-topbar-tab-label{display:none;}
-    .status-pill{font-size:var(--text-xs);}
     .pnl-topbar-right{gap:10px;}
   }
 
@@ -805,7 +799,7 @@ function PnlTabIcon({name}){
 // "Painel Indicadores"/"Tracking Picking") — pedido explícito do cliente
 // foi remover esse 2º título por completo, a logo "pertence" só a esta
 // barra agora.
-function PanelTabs({tela, onChange, onAbrirConfig, statusPill}){
+function PanelTabs({tela, onChange, onAbrirConfig}){
   return (
     <div className="pnl-topbar">
       <img src={SELGRON_LOGO_URL} alt="Selgron" className="pnl-topbar-logo" />
@@ -834,7 +828,6 @@ function PanelTabs({tela, onChange, onAbrirConfig, statusPill}){
         </React.Fragment>
       )}
       <div className="pnl-topbar-right">
-        {statusPill}
         <BotaoTelaCheia />
       </div>
     </div>
@@ -989,13 +982,6 @@ function PainelIndicadores({tela, onChange}){
   const [status, setStatus] = useState('loading'); // loading | ok | sem-sessao | erro
   const [counts, setCounts] = useState([]);
   const [historico, setHistorico] = useState([]);
-  const [ultimaAtualizacao, setUltimaAtualizacao] = useState(null);
-  const [relogio, setRelogio] = useState(new Date());
-
-  useEffect(()=>{
-    const id = setInterval(()=>setRelogio(new Date()), 30000);
-    return ()=>clearInterval(id);
-  }, []);
 
   async function carregarDados(){
     if(!supabaseClient){ setStatus('erro'); return; }
@@ -1023,7 +1009,6 @@ function PainelIndicadores({tela, onChange}){
       ]);
       setCounts(countsData);
       setHistorico(historicoData);
-      setUltimaAtualizacao(new Date());
       setStatus('ok');
     }catch(err){
       console.warn('Painel Indicadores: falha ao carregar dados ao vivo', err);
@@ -1138,11 +1123,6 @@ function PainelIndicadores({tela, onChange}){
     {label:'Divergentes', value:pizzaDivergentes, color:'var(--danger)'},
   ];
 
-  const horaFmt = relogio.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
-  const ultimaAtualizacaoFmt = ultimaAtualizacao
-    ? ultimaAtualizacao.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'})
-    : null;
-
   // Catálogo id→JSX de cada painel — construído a cada render (barato,
   // são só 6 nós) a partir dos mesmos dados/cálculos já existentes acima,
   // NUNCA duplicados. `ordemVisivel` (config salva, ver useEffect acima)
@@ -1247,15 +1227,9 @@ function PainelIndicadores({tela, onChange}){
   const linhasDePaineis = [];
   for(let i=0;i<paineisVisiveis.length;i+=2) linhasDePaineis.push(paineisVisiveis.slice(i,i+2));
 
-  const statusPill =
-    status==='loading' ? <span className="status-pill loading"><span className="dot"></span>Carregando dados ao vivo…</span> :
-    status==='ok' ? <span className="status-pill ok"><span className="dot"></span>Ao vivo · atualizado às {ultimaAtualizacaoFmt}</span> :
-    status==='sem-sessao' ? <span className="status-pill warn"><span className="dot"></span>Exemplo · sem sessão ativa</span> :
-    <span className="status-pill warn"><span className="dot"></span>Exemplo · falha ao carregar dados</span>;
-
   return (
     <div>
-      <PanelTabs tela={tela} onChange={onChange} onAbrirConfig={()=>setConfigModalAberto(true)} statusPill={statusPill} />
+      <PanelTabs tela={tela} onChange={onChange} onAbrirConfig={()=>setConfigModalAberto(true)} />
       {/* FitToScreen envolve só o CONTEÚDO (gráficos), nunca a barra de
           navegação — o cabeçalho precisa ficar do MESMO tamanho natural
           nas duas telas do Painel (Indicadores/Tracking Picking, que não
@@ -1619,14 +1593,9 @@ function TrackingPicking({tela, onChange}){
   // uma tela de erro.
   const avisoPossivelSemAcesso = status==='ok' && maquinasEtp.length===0 && itens.length===0;
 
-  const statusPill =
-    status==='ok' ? <span className="status-pill ok"><span className="dot"></span>Ao vivo</span> :
-    status==='loading' ? <span className="status-pill loading"><span className="dot"></span>Carregando…</span> :
-    <span className="status-pill warn"><span className="dot"></span>Sem dado ao vivo</span>;
-
   return (
     <div>
-      <PanelTabs tela={tela} onChange={onChange} statusPill={statusPill} />
+      <PanelTabs tela={tela} onChange={onChange} />
       <div className="content">
       {(status==='sem-sessao' || status==='erro') && (
         <div className="demo-banner">
