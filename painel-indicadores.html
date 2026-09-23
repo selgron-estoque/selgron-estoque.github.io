@@ -1864,12 +1864,23 @@ function App(){
   // TrackingPicking): eles continuam rodando no próprio ciclo, do mesmo
   // jeito que já ignoravam clique manual antes desta funcionalidade.
   useEffect(() => {
+    // Navegadores de TV (Tizen/webOS/Android TV/Fire TV) nem sempre
+    // preenchem `e.key` do jeito moderno padrão ("ArrowLeft"/"ArrowRight")
+    // pro D-pad do controle físico — muitos ainda mandam o nome antigo
+    // ("Left"/"Right", convenção pré-padronização) ou só o `keyCode`
+    // numérico (37/39, a mesma dupla desde sempre, mesmo em navegador bem
+    // antigo). Checa os 3 formatos pra cobrir o controle remoto de
+    // verdade, não só teclado de computador.
+    const EH_ESQUERDA = e => e.key==='ArrowLeft' || e.key==='Left' || e.keyCode===37 || e.which===37;
+    const EH_DIREITA = e => e.key==='ArrowRight' || e.key==='Right' || e.keyCode===39 || e.which===39;
     function onKeyDown(e){
-      if(e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+      const direita = EH_DIREITA(e);
+      const esquerda = !direita && EH_ESQUERDA(e);
+      if(!direita && !esquerda) return;
       e.preventDefault();
       const totalPosicoes = 1 + LINHAS_PRODUCAO_TRACKING.length; // Indicadores + 4 linhas
       const posAtual = tela==='indicadores' ? 0 : 1 + LINHAS_PRODUCAO_TRACKING.indexOf(linhaSelecionada);
-      const delta = e.key==='ArrowRight' ? 1 : -1;
+      const delta = direita ? 1 : -1;
       const novaPos = (posAtual + delta + totalPosicoes) % totalPosicoes;
       if(novaPos===0){
         setTela('indicadores');
