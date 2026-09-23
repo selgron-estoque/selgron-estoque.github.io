@@ -2564,6 +2564,52 @@ begin
 end $$;
 
 -- =============================================================================
+-- "PAINEL INDICADORES" (painel-indicadores.html): TEMPO DE CADA TELA
+-- =============================================================================
+-- Pedido do cliente: "quero a opção de colocar quanto tempo eu quero que
+-- rode cada tela" — até aqui os 3 tempos do rodízio automático eram
+-- hardcoded no código (60s Indicadores, 30s cada linha do Tracking Picking,
+-- 60s cada link/arquivo). Um tempo POR TIPO de tela (não individual por
+-- aba — decisão do cliente): todas as linhas (Elétrica/SEM/SSE/SEP) usam o
+-- mesmo `segundos_linha_tracking`, todo link/arquivo usa o mesmo
+-- `segundos_link`. Mesmo padrão singleton (id=1) e mesmas policies de
+-- `painel_indicadores_config` — inclusive os valores DEFAULT são os mesmos
+-- que já estavam hardcoded, então rodar este SQL não muda nada visualmente
+-- até alguém abrir a configuração e salvar um valor diferente.
+create table if not exists painel_tempos_config (
+  id int primary key default 1,
+  segundos_indicadores int not null default 60,
+  segundos_linha_tracking int not null default 30,
+  segundos_link int not null default 60,
+  atualizado_em timestamptz not null default now()
+);
+insert into painel_tempos_config (id) values (1) on conflict (id) do nothing;
+
+alter table painel_tempos_config enable row level security;
+
+drop policy if exists "leitura autenticada" on painel_tempos_config;
+create policy "leitura autenticada" on painel_tempos_config for select
+  using (auth.role() = 'authenticated');
+
+drop policy if exists "escrita por tela indicadores" on painel_tempos_config;
+create policy "escrita por tela indicadores" on painel_tempos_config for insert
+  with check (tem_acesso_tela(auth.uid(), 'dashboard'));
+drop policy if exists "atualizacao por tela indicadores" on painel_tempos_config;
+create policy "atualizacao por tela indicadores" on painel_tempos_config for update
+  using (tem_acesso_tela(auth.uid(), 'dashboard'))
+  with check (tem_acesso_tela(auth.uid(), 'dashboard'));
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and tablename = 'painel_tempos_config'
+  ) then
+    alter publication supabase_realtime add table painel_tempos_config;
+  end if;
+end $$;
+
+-- =============================================================================
 -- PERFORMANCE: BUSCA DE PRODUTO LENTA (tela "Etiquetas" e qualquer outra que
 -- use `searchSupabaseCatalog`, index.html — busca manual em "Nova Contagem",
 -- "Itens Específicos", etc.)

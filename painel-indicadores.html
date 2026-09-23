@@ -914,6 +914,19 @@ function BotaoConfigLink({onClick}){
   );
 }
 
+// Botão de relógio (config do tempo de cada tela, ver TemposConfigModal) —
+// mesmo critério de BotaoConfigLink: aparece em QUALQUER tela, é uma
+// configuração global do rodízio automático, não específica de uma aba.
+function BotaoConfigTempos({onClick}){
+  return (
+    <button type="button" className="pnl-topbar-icon-btn" onClick={onClick} title="Tempo de cada tela" aria-label="Tempo de cada tela">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+      </svg>
+    </button>
+  );
+}
+
 // Ícones das 2 abas — "Indicadores" reaproveita o mesmo desenho de
 // `barChart` (DICON_PATHS, index.html, usado no menu lateral pra esta
 // mesma tela); "Tracking Picking" é um caminhão (Lucide "truck") — não
@@ -943,7 +956,7 @@ function PnlTabIcon({name}){
 // "Painel Indicadores"/"Tracking Picking") — pedido explícito do cliente
 // foi remover esse 2º título por completo, a logo "pertence" só a esta
 // barra agora.
-function PanelTabs({tela, onChange, onAbrirConfig, onAbrirConfigLink, links, linkIndex, onSelecionarLink, onNavegarEsquerda, onNavegarDireita, theme, onToggleTheme}){
+function PanelTabs({tela, onChange, onAbrirConfig, onAbrirConfigLink, onAbrirConfigTempos, links, linkIndex, onSelecionarLink, onNavegarEsquerda, onNavegarDireita, theme, onToggleTheme}){
   return (
     <div className="pnl-topbar">
       <img src={SELGRON_LOGO_URL} alt="Selgron" className="pnl-topbar-logo" />
@@ -998,6 +1011,12 @@ function PanelTabs({tela, onChange, onAbrirConfig, onAbrirConfigLink, links, lin
           <BotaoConfigLink onClick={onAbrirConfigLink} />
         </React.Fragment>
       )}
+      {onAbrirConfigTempos && (
+        <React.Fragment>
+          <div className="pnl-topbar-sep"></div>
+          <BotaoConfigTempos onClick={onAbrirConfigTempos} />
+        </React.Fragment>
+      )}
       <div className="pnl-topbar-right">
         {onNavegarEsquerda && onNavegarDireita && <BotaoNavegacao onEsquerda={onNavegarEsquerda} onDireita={onNavegarDireita} />}
         <BotaoTema theme={theme} onToggle={onToggleTheme} />
@@ -1047,6 +1066,49 @@ async function salvarPainelIndicadoresConfig(ids){
     const { error } = await supabaseClient.from('painel_indicadores_config').upsert(
       {id:1, indicadores:ids, atualizado_em:new Date().toISOString()}, {onConflict:'id'}
     );
+    if(error) throw error;
+    return {ok:true};
+  }catch(err){
+    return {ok:false, erro:(err && err.message) || 'Não foi possível salvar.'};
+  }
+}
+
+// Tempo (em segundos) que cada TIPO de tela fica no ar antes de trocar
+// sozinha — pedido do cliente: "quero a opção de colocar quanto tempo eu
+// quero que rode cada tela". Um valor por TIPO, não por aba individual
+// (decisão do cliente): todas as linhas do Tracking Picking usam
+// `segundosLinhaTracking`, todo link/arquivo usa `segundosLink`. Os
+// DEFAULT abaixo são os mesmos valores que já estavam hardcoded antes desta
+// funcionalidade existir — ver comentário completo no schema.sql
+// ("PAINEL INDICADORES: TEMPO DE CADA TELA").
+const TEMPOS_PADRAO = {segundosIndicadores:60, segundosLinhaTracking:30, segundosLink:60};
+async function fetchTemposConfig(){
+  if(!supabaseClient) return TEMPOS_PADRAO;
+  try{
+    const { data, error } = await supabaseClient.from('painel_tempos_config')
+      .select('segundos_indicadores, segundos_linha_tracking, segundos_link').eq('id',1).maybeSingle();
+    if(error) throw error;
+    if(!data) return TEMPOS_PADRAO;
+    return {
+      segundosIndicadores: data.segundos_indicadores || TEMPOS_PADRAO.segundosIndicadores,
+      segundosLinhaTracking: data.segundos_linha_tracking || TEMPOS_PADRAO.segundosLinhaTracking,
+      segundosLink: data.segundos_link || TEMPOS_PADRAO.segundosLink,
+    };
+  }catch(err){
+    console.warn('Painel Indicadores: falha ao buscar configuração de tempos', err);
+    return TEMPOS_PADRAO;
+  }
+}
+async function salvarTemposConfig(tempos){
+  if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
+  try{
+    const { error } = await supabaseClient.from('painel_tempos_config').upsert({
+      id:1,
+      segundos_indicadores: tempos.segundosIndicadores,
+      segundos_linha_tracking: tempos.segundosLinhaTracking,
+      segundos_link: tempos.segundosLink,
+      atualizado_em: new Date().toISOString(),
+    }, {onConflict:'id'});
     if(error) throw error;
     return {ok:true};
   }catch(err){
@@ -1137,6 +1199,92 @@ function ConfigIndicadoresModal({open, ordemAtual, onClose, onSalvo}){
               <input type="checkbox" checked={false} onChange={()=>alternar(id,true)} />
               {labelDe(id)}
             </label>
+          </div>
+        ))}
+
+        {erro && <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',margin:'8px 0'}}>{erro}</div>}
+
+        <div style={{display:'flex',gap:10,marginTop:16}}>
+          <button type="button" className="pnl-cfg-btn pnl-cfg-btn-outline" onClick={onClose} disabled={salvando}>Cancelar</button>
+          <button type="button" className="pnl-cfg-btn pnl-cfg-btn-primary" onClick={handleSalvar} disabled={salvando}>{salvando ? 'Salvando…' : 'Salvar'}</button>
+        </div>
+      </div>
+    </div>
+  ), document.body);
+}
+
+// Mínimo sensato pra cada tempo — evita alguém salvar "0" ou um valor
+// negativo sem querer e a tela ficar trocando descontroladamente rápido
+// (ou o setInterval nem funcionar direito com um número inválido).
+const TEMPO_MINIMO_SEGUNDOS = 5;
+
+// Modal de configuração do tempo de cada TIPO de tela (pedido do cliente:
+// "quero a opção de colocar quanto tempo eu quero que rode cada tela") — 3
+// campos numéricos (segundos), mesmo padrão visual dos outros modais deste
+// arquivo. Salvar aqui não reinicia nenhum timer em andamento na hora — o
+// valor novo só passa a valer na PRÓXIMA vez que aquele timer for recriado
+// (troca de tela, ver dependências dos `useEffect`/`setInterval` em App()/
+// TrackingPicking/LinkExternoPanel), mesmo comportamento de qualquer outra
+// config já editável no Painel enquanto a TV está com outra tela aberta.
+function TemposConfigModal({open, temposAtuais, onClose, onSalvo}){
+  const [tempos, setTempos] = useState(temposAtuais);
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState(null);
+
+  useEffect(()=>{ if(open){ setTempos(temposAtuais); setErro(null); } }, [open, temposAtuais]);
+
+  if(!open) return null;
+
+  function campo(chave, valor){
+    setTempos(prev => ({...prev, [chave]: valor}));
+  }
+  async function handleSalvar(){
+    const valores = [tempos.segundosIndicadores, tempos.segundosLinhaTracking, tempos.segundosLink];
+    if(valores.some(v => !Number.isFinite(v) || v < TEMPO_MINIMO_SEGUNDOS)){
+      setErro(`Cada tempo precisa ser um número de pelo menos ${TEMPO_MINIMO_SEGUNDOS} segundos.`);
+      return;
+    }
+    setSalvando(true);
+    setErro(null);
+    const res = await salvarTemposConfig(tempos);
+    setSalvando(false);
+    if(!res.ok){ setErro(res.erro); return; }
+    onSalvo(tempos);
+    onClose();
+  }
+
+  const campos = [
+    {chave:'segundosIndicadores', label:'Indicadores'},
+    {chave:'segundosLinhaTracking', label:'Cada linha do Tracking Picking (Elétrica/SEM/SSE/SEP)'},
+    {chave:'segundosLink', label:'Cada link/arquivo'},
+  ];
+
+  return ReactDOM.createPortal((
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-box" onClick={e=>e.stopPropagation()}>
+        <div className="modal-header">
+          <div>
+            <div className="modal-title">Tempo de cada tela</div>
+            <div className="modal-subtitle">
+              Quanto tempo (em segundos) cada tipo de tela fica no ar antes do rodízio automático trocar
+              sozinho pra próxima. Um valor novo só vale a partir da próxima troca — não reinicia o
+              cronômetro em andamento na hora de salvar.
+            </div>
+          </div>
+          <button type="button" className="modal-close-btn" onClick={onClose} aria-label="Fechar">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+          </button>
+        </div>
+
+        {campos.map(c => (
+          <div key={c.chave} className="pnl-cfg-item" style={{display:'block'}}>
+            <label style={{display:'block',fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginBottom:6,textTransform:'uppercase',letterSpacing:'0.5px'}}>{c.label} (segundos)</label>
+            <input
+              type="number" min={TEMPO_MINIMO_SEGUNDOS} step="1"
+              value={tempos[c.chave]}
+              onChange={e=>campo(c.chave, parseInt(e.target.value, 10))}
+              style={{width:'100%',padding:'10px 12px',borderRadius:8,border:'1px solid var(--line)',background:'var(--panel)',color:'var(--ink)',fontSize:'var(--text-sm)',boxSizing:'border-box'}}
+            />
           </div>
         ))}
 
@@ -1483,7 +1631,7 @@ function LinkExternoConfigModal({open, links, onClose, onCriar, onAtualizar, onR
 // chamadas (mudar link / avisar que fechou o ciclo) como statements DIRETOS
 // e sequenciais — nunca uma aninhada dentro do updater da outra (mesmo bug
 // de "atualizar um componente enquanto renderiza outro" já corrigido antes).
-function LinkExternoPanel({tela, onChange, theme, onToggleTheme, onAbrirConfigLink, onSelecionarLink, onNavegarEsquerda, onNavegarDireita, onCicloCompleto, links, linkIndex, onChangeLinkIndex}){
+function LinkExternoPanel({tela, onChange, theme, onToggleTheme, onAbrirConfigLink, onAbrirConfigTempos, onSelecionarLink, onNavegarEsquerda, onNavegarDireita, onCicloCompleto, links, linkIndex, onChangeLinkIndex, segundosLink}){
   const linkIndexRef = useRef(linkIndex);
   useEffect(() => { linkIndexRef.current = linkIndex; }, [linkIndex]);
 
@@ -1497,9 +1645,9 @@ function LinkExternoPanel({tela, onChange, theme, onToggleTheme, onAbrirConfigLi
       } else {
         onChangeLinkIndex(proximoIdx);
       }
-    }, 60000);
+    }, segundosLink*1000);
     return () => clearInterval(id);
-  }, [links.length, onCicloCompleto, onChangeLinkIndex]);
+  }, [links.length, onCicloCompleto, onChangeLinkIndex, segundosLink]);
 
   const linkAtual = links[linkIndex] || links[0] || null;
 
@@ -1530,7 +1678,7 @@ function LinkExternoPanel({tela, onChange, theme, onToggleTheme, onAbrirConfigLi
 
   return (
     <div>
-      <PanelTabs tela={tela} onChange={onChange} onAbrirConfigLink={onAbrirConfigLink} links={links} linkIndex={linkIndex} onSelecionarLink={onSelecionarLink} onNavegarEsquerda={onNavegarEsquerda} onNavegarDireita={onNavegarDireita} theme={theme} onToggleTheme={onToggleTheme} />
+      <PanelTabs tela={tela} onChange={onChange} onAbrirConfigLink={onAbrirConfigLink} onAbrirConfigTempos={onAbrirConfigTempos} links={links} linkIndex={linkIndex} onSelecionarLink={onSelecionarLink} onNavegarEsquerda={onNavegarEsquerda} onNavegarDireita={onNavegarDireita} theme={theme} onToggleTheme={onToggleTheme} />
       {linkAtual ? (
         <div style={{display:'flex',flexDirection:'column',height:'calc(100vh - 56px)'}}>
           {linkAtual.tipo==='imagem' ? (
@@ -1570,7 +1718,7 @@ function LinkExternoPanel({tela, onChange, theme, onToggleTheme, onAbrirConfigLi
   );
 }
 
-function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfigLink, links, linkIndex, onSelecionarLink, onNavegarEsquerda, onNavegarDireita}){
+function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfigLink, onAbrirConfigTempos, links, linkIndex, onSelecionarLink, onNavegarEsquerda, onNavegarDireita}){
   const [status, setStatus] = useState('loading'); // loading | ok | sem-sessao | erro
   const [counts, setCounts] = useState([]);
   const [historico, setHistorico] = useState([]);
@@ -1821,7 +1969,7 @@ function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfigL
 
   return (
     <div>
-      <PanelTabs tela={tela} onChange={onChange} onAbrirConfig={()=>setConfigModalAberto(true)} onAbrirConfigLink={onAbrirConfigLink} links={links} linkIndex={linkIndex} onSelecionarLink={onSelecionarLink} onNavegarEsquerda={onNavegarEsquerda} onNavegarDireita={onNavegarDireita} theme={theme} onToggleTheme={onToggleTheme} />
+      <PanelTabs tela={tela} onChange={onChange} onAbrirConfig={()=>setConfigModalAberto(true)} onAbrirConfigLink={onAbrirConfigLink} onAbrirConfigTempos={onAbrirConfigTempos} links={links} linkIndex={linkIndex} onSelecionarLink={onSelecionarLink} onNavegarEsquerda={onNavegarEsquerda} onNavegarDireita={onNavegarDireita} theme={theme} onToggleTheme={onToggleTheme} />
       {/* FitToScreen envolve só o CONTEÚDO (gráficos), nunca a barra de
           navegação — o cabeçalho precisa ficar do MESMO tamanho natural
           nas duas telas do Painel (Indicadores/Tracking Picking, que não
@@ -2105,7 +2253,7 @@ function TrackingPickingBoard({maquinas}){
   );
 }
 
-function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto, linhaSelecionada, onChangeLinha, onAbrirConfigLink, links, linkIndex, onSelecionarLink, onNavegarEsquerda, onNavegarDireita}){
+function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto, linhaSelecionada, onChangeLinha, onAbrirConfigLink, onAbrirConfigTempos, links, linkIndex, onSelecionarLink, onNavegarEsquerda, onNavegarDireita, segundosLinhaTracking}){
   const [status, setStatus] = useState('loading'); // loading | ok | sem-sessao | erro
   const [maquinasEtp, setMaquinasEtp] = useState([]);
   const [itens, setItens] = useState([]);
@@ -2145,9 +2293,9 @@ function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto,
       } else {
         onChangeLinha(LINHAS_PRODUCAO_TRACKING[proximoIdx]);
       }
-    }, 30000);
+    }, segundosLinhaTracking*1000);
     return () => clearInterval(id);
-  }, [onCicloCompleto, onChangeLinha]);
+  }, [onCicloCompleto, onChangeLinha, segundosLinhaTracking]);
 
   async function carregarDados(){
     if(!supabaseClient){ setStatus('erro'); return; }
@@ -2225,7 +2373,7 @@ function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto,
 
   return (
     <div>
-      <PanelTabs tela={tela} onChange={onChange} onAbrirConfigLink={onAbrirConfigLink} links={links} linkIndex={linkIndex} onSelecionarLink={onSelecionarLink} onNavegarEsquerda={onNavegarEsquerda} onNavegarDireita={onNavegarDireita} theme={theme} onToggleTheme={onToggleTheme} />
+      <PanelTabs tela={tela} onChange={onChange} onAbrirConfigLink={onAbrirConfigLink} onAbrirConfigTempos={onAbrirConfigTempos} links={links} linkIndex={linkIndex} onSelecionarLink={onSelecionarLink} onNavegarEsquerda={onNavegarEsquerda} onNavegarDireita={onNavegarDireita} theme={theme} onToggleTheme={onToggleTheme} />
       <div className="content">
       {(status==='sem-sessao' || status==='erro') && (
         <div className="demo-banner">
@@ -2363,24 +2511,46 @@ function App(){
     if(linkIndex > 0 && linkIndex >= linksExternos.length) setLinkIndex(0);
   }, [linksExternos.length, linkIndex]);
 
+  // Tempo (segundos) de cada TIPO de tela — pedido do cliente: "quero a
+  // opção de colocar quanto tempo eu quero que rode cada tela". Mesmo
+  // padrão de busca-uma-vez + Realtime das outras configs deste arquivo;
+  // aqui em App() porque o efeito do Indicadores logo abaixo e os 2
+  // componentes que recebem `segundosLinhaTracking`/`segundosLink` (mais
+  // abaixo, no return) precisam do valor mais atual.
+  const [temposConfig, setTemposConfig] = useState(TEMPOS_PADRAO);
+  const [temposModalAberto, setTemposModalAberto] = useState(false);
+  useEffect(() => {
+    let cancelado = false;
+    fetchTemposConfig().then(v => { if(!cancelado) setTemposConfig(v); });
+    if(!supabaseClient) return () => { cancelado = true; };
+    const canal = supabaseClient
+      .channel('realtime:painel_tempos_config')
+      .on('postgres_changes', {event:'*', schema:'public', table:'painel_tempos_config'}, () => {
+        fetchTemposConfig().then(v => { if(!cancelado) setTemposConfig(v); });
+      })
+      .subscribe();
+    return () => { cancelado = true; supabaseClient.removeChannel(canal); };
+  }, []);
+
   // TV sem ninguém mexendo — alterna sozinho entre as duas telas, pra dar
   // tempo de ler cada uma sem precisar de clique manual. "Painel
-  // Indicadores" tem um tempo FIXO (60s, sem sub-abas). "Tracking Picking"
-  // é diferente: tem 4 abas internas de linha (Elétrica/SEM/SSE/SEP,
-  // ver LINHAS_PRODUCAO_TRACKING) — pedido explícito do cliente foi só
-  // trocar de tela DEPOIS de mostrar as 4, 30s cada (ver
+  // Indicadores" tem um tempo FIXO (`temposConfig.segundosIndicadores`, sem
+  // sub-abas). "Tracking Picking" é diferente: tem 4 abas internas de linha
+  // (Elétrica/SEM/SSE/SEP, ver LINHAS_PRODUCAO_TRACKING) — pedido explícito
+  // do cliente foi só trocar de tela DEPOIS de mostrar as 4 (ver
   // `onCicloCompleto` em `TrackingPicking`, que avisa quando isso
   // acontece), nunca num tempo fixo que poderia cortar no meio do ciclo
   // de linhas. Clicar numa aba continua trocando na hora (onChange
   // abaixo); os timers não resetam por causa disso, só seguem no próprio
-  // ciclo. ESTE EFEITO (e o ciclo de 30s dentro de TrackingPicking) NÃO
-  // FORAM ALTERADOS pelo controle remoto abaixo — pedido explícito do
-  // cliente foi não mexer na troca automática de jeito nenhum.
+  // ciclo. ESTE EFEITO (e o ciclo dentro de TrackingPicking) NÃO FORAM
+  // ALTERADOS pelo controle remoto abaixo — pedido explícito do cliente foi
+  // não mexer na troca automática de jeito nenhum (só o TEMPO de cada um
+  // passou a ser configurável, não a lógica em si).
   useEffect(() => {
     if(tela !== 'indicadores') return;
-    const id = setTimeout(() => setTela('picking'), 60000);
+    const id = setTimeout(() => setTela('picking'), temposConfig.segundosIndicadores*1000);
     return () => clearTimeout(id);
-  }, [tela]);
+  }, [tela, temposConfig.segundosIndicadores]);
 
   // (Não tem um efeito de tempo fixo aqui pra `tela==='link'` — desde que
   // virou lista de vários links, ela cicla do mesmo jeito que
@@ -2477,6 +2647,7 @@ function App(){
   // — `PanelTabs` mapeia `links` direto pra gerar 1 botão por item.
   const propsAbaLink = {
     onAbrirConfigLink: () => setLinkModalAberto(true),
+    onAbrirConfigTempos: () => setTemposModalAberto(true),
     links: linksExternos,
     linkIndex,
     onSelecionarLink: (i) => { setLinkIndex(i); setTela('link'); },
@@ -2492,6 +2663,7 @@ function App(){
           tela={tela} onChange={setTela} theme={theme} onToggleTheme={toggleTheme}
           onCicloCompleto={() => setTela(temLink ? 'link' : 'indicadores')}
           linhaSelecionada={linhaSelecionada} onChangeLinha={setLinhaSelecionada}
+          segundosLinhaTracking={temposConfig.segundosLinhaTracking}
           {...propsAbaLink}
         />
       )}
@@ -2500,6 +2672,7 @@ function App(){
           tela={tela} onChange={setTela} theme={theme} onToggleTheme={toggleTheme}
           onCicloCompleto={() => setTela('indicadores')}
           onChangeLinkIndex={setLinkIndex}
+          segundosLink={temposConfig.segundosLink}
           {...propsAbaLink}
         />
       )}
@@ -2512,6 +2685,12 @@ function App(){
         onRemover={removerLinkExterno}
         onReordenar={salvarOrdemLinksExternos}
         onEnviarArquivo={enviarArquivoLinkExterno}
+      />
+      <TemposConfigModal
+        open={temposModalAberto}
+        temposAtuais={temposConfig}
+        onClose={() => setTemposModalAberto(false)}
+        onSalvo={setTemposConfig}
       />
     </React.Fragment>
   );
