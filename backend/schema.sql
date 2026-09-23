@@ -2582,3 +2582,51 @@ end $$;
 create extension if not exists pg_trgm;
 create index if not exists idx_produtos_codigo_trgm on produtos using gin (codigo gin_trgm_ops);
 create index if not exists idx_produtos_descricao_trgm on produtos using gin (descricao gin_trgm_ops);
+
+-- =============================================================================
+-- "PAINEL INDICADORES" (painel-indicadores.html): 3ª ABA — LINK EXTERNO
+-- =============================================================================
+-- Pedido do cliente: mostrar uma planilha do Google Sheets na TV também —
+-- resolvido de forma genérica (não específica de Google Sheets): um campo de
+-- URL configurável que vira uma 3ª aba no rodízio automático, mostrando esse
+-- link dentro de um <iframe>. Só funciona pra links de origens que permitem
+-- ser exibidas dentro de outra página (ex.: Google Sheets "Publicado na
+-- Web", nunca o link normal de edição/visualização, que o próprio Google
+-- bloqueia) — decisão de quem cola o link, não deste schema.
+--
+-- Tabela SINGLETON (1 linha só, id sempre 1), mesmo padrão de
+-- `painel_indicadores_config` — inclusive as mesmas policies (leitura só
+-- autenticado, escrita só quem tem acesso à tela "Indicadores").
+-- `url` nulo/vazio = 3ª aba não aparece no rodízio (comportamento continua
+-- igual a antes desta funcionalidade existir).
+create table if not exists painel_link_externo (
+  id int primary key default 1,
+  url text,
+  titulo text,
+  atualizado_em timestamptz not null default now()
+);
+insert into painel_link_externo (id) values (1) on conflict (id) do nothing;
+
+alter table painel_link_externo enable row level security;
+
+drop policy if exists "leitura autenticada" on painel_link_externo;
+create policy "leitura autenticada" on painel_link_externo for select
+  using (auth.role() = 'authenticated');
+
+drop policy if exists "escrita por tela indicadores" on painel_link_externo;
+create policy "escrita por tela indicadores" on painel_link_externo for insert
+  with check (tem_acesso_tela(auth.uid(), 'dashboard'));
+drop policy if exists "atualizacao por tela indicadores" on painel_link_externo;
+create policy "atualizacao por tela indicadores" on painel_link_externo for update
+  using (tem_acesso_tela(auth.uid(), 'dashboard'))
+  with check (tem_acesso_tela(auth.uid(), 'dashboard'));
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and tablename = 'painel_link_externo'
+  ) then
+    alter publication supabase_realtime add table painel_link_externo;
+  end if;
+end $$;
