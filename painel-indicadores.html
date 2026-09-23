@@ -1856,6 +1856,23 @@ function App(){
     return () => clearTimeout(id);
   }, [tela]);
 
+  // TVs Samsung (Tizen) só entregam pro JavaScript da página as teclas do
+  // controle físico que o app REGISTRAR explicitamente antes — por padrão,
+  // mesmo o D-pad (setas) pode não chegar em nenhum listener de `keydown`
+  // nenhum, sem erro nenhum, só silêncio total (exatamente o sintoma
+  // relatado: "nada acontece"). `tizen` só existe no navegador embutido
+  // das TVs Samsung — vira um no-op inofensivo em qualquer outro
+  // navegador/aparelho (Chrome de PC, webOS, Android TV, etc.).
+  useEffect(() => {
+    if(typeof tizen==='undefined' || !tizen.tvinputdevice || !tizen.tvinputdevice.registerKey) return;
+    try{
+      tizen.tvinputdevice.registerKey('ArrowLeft');
+      tizen.tvinputdevice.registerKey('ArrowRight');
+    }catch(err){
+      console.warn('Painel Indicadores: falha ao registrar teclas do controle (Tizen)', err);
+    }
+  }, []);
+
   // Controle remoto da TV — ArrowRight avança, ArrowLeft volta, andando
   // pela MESMA sequência de telas que a troca automática já percorre:
   // Indicadores → Elétrica → SEM → SSE → SEP → (volta pra Indicadores),
@@ -1890,8 +1907,12 @@ function App(){
         setTela('picking');
       }
     }
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    // `true` (fase de CAPTURA, não a de bubble padrão) — intercepta o
+    // evento o mais cedo possível no fluxo, antes de qualquer script da
+    // própria TV (navegação espacial entre botões focáveis, comum nesses
+    // navegadores) ter chance de consumi-lo primeiro.
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
   }, [tela, linhaSelecionada]);
 
   return tela==='indicadores'
