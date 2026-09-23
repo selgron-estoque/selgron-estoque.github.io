@@ -302,20 +302,21 @@ const supabaseClient = window.supabase
 
 // Login automático da TV — pra esta página carregar dado AO VIVO mesmo
 // aberta direto (sem passar pelo app logado antes, ex.: favorito/atalho
-// numa TV do almoxarifado). Preencha com um usuário DEDICADO, criado em
-// "Gerenciar usuários" (Admin) só pra isso — perfil "Operador", SEM marcar
-// nenhum "acesso extra": assim `tem_acesso_tela` nega toda tela protegida
-// por ela (só a leitura de `contagens`, que este painel usa, é liberada só
-// por estar autenticado — não depende de tela nenhuma).
+// numa TV do almoxarifado). Usuário DEDICADO, criado em "Gerenciar
+// usuários" (Admin) só pra isso — perfil "Operador", com só 2 acessos
+// extras liberados: "Programação" (pra Tracking Picking ler
+// maquinas_etp/sequencia_separacao) e "Indicadores" (pra poder salvar a
+// configuração de quais gráficos aparecem em painel_indicadores_config —
+// ver ConfigIndicadoresModal). Nenhuma outra tela — `tem_acesso_tela`
+// nega o resto.
 //
 // ATENÇÃO — mesmo aviso que já vale pra SUPABASE_PUBLISHABLE_KEY acima:
 // qualquer texto aqui fica visível pra quem ver o código-fonte desta
 // página (é um arquivo estático público, sem servidor por trás). Por isso
-// a conta usada aqui precisa ser de baixíssimo privilégio (só o suficiente
-// pra logar) — nunca a conta de um admin/líder de verdade. Deixe os dois
-// campos em branco pra manter o comportamento antigo (cai no exemplo).
-const TV_LOGIN_IDENTIFIER = '';
-const TV_LOGIN_SENHA = '';
+// esta senha NUNCA deve ser reaproveitada em nenhuma outra conta — é
+// visível publicamente a partir daqui.
+const TV_LOGIN_IDENTIFIER = 'tv.almox';
+const TV_LOGIN_SENHA = 'Nova@2026';
 
 async function tentarLoginSilenciosoTv(){
   if(!supabaseClient || !TV_LOGIN_IDENTIFIER || !TV_LOGIN_SENHA) return false;
