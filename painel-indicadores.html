@@ -64,7 +64,11 @@
      coluna do Kanban rola por dentro (`.sep-kanban-col-body`) em vez de
      escalar o texto até ficar ilegível — ver `FitToScreen`/`.fit-screen-*`
      no script abaixo. */
-  .fit-screen-outer{height:100vh;width:100vw;overflow:hidden;display:flex;align-items:center;justify-content:center;}
+  /* Altura = 100vh MENOS a altura fixa de `.pnl-topbar` (56px, ver mais
+     abaixo) — o cabeçalho fica de fora deste wrapper (nunca escala, ver
+     comentário em `PainelIndicadores`), então só o espaço que sobra
+     embaixo dele deve ser preenchido aqui. */
+  .fit-screen-outer{height:calc(100vh - 56px);width:100vw;overflow:hidden;display:flex;align-items:center;justify-content:center;}
   /* Largura FIXA (não 100%/auto) de propósito — um filho de flex sem
      largura definida vira "shrink-to-fit", e todo `width:100%`/`flex`
      interno dos gráficos (que dependem de uma largura definida do
@@ -1252,6 +1256,16 @@ function PainelIndicadores({tela, onChange}){
   return (
     <div>
       <PanelTabs tela={tela} onChange={onChange} onAbrirConfig={()=>setConfigModalAberto(true)} statusPill={statusPill} />
+      {/* FitToScreen envolve só o CONTEÚDO (gráficos), nunca a barra de
+          navegação — o cabeçalho precisa ficar do MESMO tamanho natural
+          nas duas telas do Painel (Indicadores/Tracking Picking, que não
+          usa FitToScreen nenhum), senão a escala do conteúdo "vaza" pro
+          cabeçalho e ele fica com tamanho diferente entre as abas (bug
+          real reportado pelo cliente: cabeçalho maior na aba Indicadores
+          que na Tracking Picking). Ver `.fit-screen-outer{height:calc(100vh
+          - 56px)}` — 56px é a altura fixa de `.pnl-topbar`, pro conteúdo
+          preencher exatamente o espaço que sobra abaixo do cabeçalho. */}
+      <FitToScreen>
       <div className="content">
       {status==='sem-sessao' && (
         <div className="demo-banner">
@@ -1282,6 +1296,7 @@ function PainelIndicadores({tela, onChange}){
         ))}
       </div>
       </div>
+      </FitToScreen>
 
       <ConfigIndicadoresModal
         open={configModalAberto}
@@ -1720,7 +1735,7 @@ function App(){
   }, []);
 
   return tela==='indicadores'
-    ? <FitToScreen><PainelIndicadores tela={tela} onChange={setTela} /></FitToScreen>
+    ? <PainelIndicadores tela={tela} onChange={setTela} />
     : <TrackingPicking tela={tela} onChange={setTela} />;
 }
 
