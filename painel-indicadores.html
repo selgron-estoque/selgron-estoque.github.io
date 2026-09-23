@@ -920,7 +920,7 @@ function PnlTabIcon({name}){
 // "Painel Indicadores"/"Tracking Picking") — pedido explícito do cliente
 // foi remover esse 2º título por completo, a logo "pertence" só a esta
 // barra agora.
-function PanelTabs({tela, onChange, onAbrirConfig, onAbrirConfigLink, temLink, theme, onToggleTheme}){
+function PanelTabs({tela, onChange, onAbrirConfig, onAbrirConfigLink, temLink, tituloLink, theme, onToggleTheme}){
   return (
     <div className="pnl-topbar">
       <img src={SELGRON_LOGO_URL} alt="Selgron" className="pnl-topbar-logo" />
@@ -945,9 +945,9 @@ function PanelTabs({tela, onChange, onAbrirConfig, onAbrirConfigLink, temLink, t
       {/* Aba de links externos — só aparece quando existe pelo menos 1 link
           configurado (ver LinkExternoConfigModal/App()); sem nenhum link
           salvo, o rodízio/menu continua com só as 2 abas de sempre. Rótulo
-          fixo "Links" (não o título de um link específico) porque agora pode
-          ter vários — a escolha de qual link ver é a fileira de sub-abas
-          dentro de LinkExternoPanel, não este botão do cabeçalho. */}
+          é o título do link em exibição AGORA (`tituloLink`, calculado em
+          App() a partir de `linkIndex`) — muda junto com o rodízio/controle,
+          igual ao nome de uma pessoa que muda de aba. */}
       {temLink && (
         <React.Fragment>
           <div className="pnl-topbar-sep"></div>
@@ -957,7 +957,7 @@ function PanelTabs({tela, onChange, onAbrirConfig, onAbrirConfigLink, temLink, t
             onClick={()=>onChange('link')}
           >
             <PnlTabIcon name="link" />
-            <span className="pnl-topbar-tab-label">Links</span>
+            <span className="pnl-topbar-tab-label">{tituloLink || 'Links'}</span>
           </button>
         </React.Fragment>
       )}
@@ -1334,7 +1334,7 @@ function LinkExternoConfigModal({open, links, onClose, onCriar, onAtualizar, onR
 // chamadas (mudar link / avisar que fechou o ciclo) como statements DIRETOS
 // e sequenciais — nunca uma aninhada dentro do updater da outra (mesmo bug
 // de "atualizar um componente enquanto renderiza outro" já corrigido antes).
-function LinkExternoPanel({tela, onChange, theme, onToggleTheme, onAbrirConfigLink, temLink, onCicloCompleto, links, linkIndex, onChangeLinkIndex}){
+function LinkExternoPanel({tela, onChange, theme, onToggleTheme, onAbrirConfigLink, temLink, tituloLink, onCicloCompleto, links, linkIndex, onChangeLinkIndex}){
   const linkIndexRef = useRef(linkIndex);
   useEffect(() => { linkIndexRef.current = linkIndex; }, [linkIndex]);
 
@@ -1356,7 +1356,7 @@ function LinkExternoPanel({tela, onChange, theme, onToggleTheme, onAbrirConfigLi
 
   return (
     <div>
-      <PanelTabs tela={tela} onChange={onChange} onAbrirConfigLink={onAbrirConfigLink} temLink={temLink} theme={theme} onToggleTheme={onToggleTheme} />
+      <PanelTabs tela={tela} onChange={onChange} onAbrirConfigLink={onAbrirConfigLink} temLink={temLink} tituloLink={tituloLink} theme={theme} onToggleTheme={onToggleTheme} />
       {linkAtual ? (
         <div style={{display:'flex',flexDirection:'column',height:'calc(100vh - 56px)'}}>
           {links.length > 1 && (
@@ -1386,7 +1386,7 @@ function LinkExternoPanel({tela, onChange, theme, onToggleTheme, onAbrirConfigLi
   );
 }
 
-function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfigLink, temLink}){
+function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfigLink, temLink, tituloLink}){
   const [status, setStatus] = useState('loading'); // loading | ok | sem-sessao | erro
   const [counts, setCounts] = useState([]);
   const [historico, setHistorico] = useState([]);
@@ -1637,7 +1637,7 @@ function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfigL
 
   return (
     <div>
-      <PanelTabs tela={tela} onChange={onChange} onAbrirConfig={()=>setConfigModalAberto(true)} onAbrirConfigLink={onAbrirConfigLink} temLink={temLink} theme={theme} onToggleTheme={onToggleTheme} />
+      <PanelTabs tela={tela} onChange={onChange} onAbrirConfig={()=>setConfigModalAberto(true)} onAbrirConfigLink={onAbrirConfigLink} temLink={temLink} tituloLink={tituloLink} theme={theme} onToggleTheme={onToggleTheme} />
       {/* FitToScreen envolve só o CONTEÚDO (gráficos), nunca a barra de
           navegação — o cabeçalho precisa ficar do MESMO tamanho natural
           nas duas telas do Painel (Indicadores/Tracking Picking, que não
@@ -1921,7 +1921,7 @@ function TrackingPickingBoard({maquinas}){
   );
 }
 
-function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto, linhaSelecionada, onChangeLinha, onAbrirConfigLink, temLink}){
+function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto, linhaSelecionada, onChangeLinha, onAbrirConfigLink, temLink, tituloLink}){
   const [status, setStatus] = useState('loading'); // loading | ok | sem-sessao | erro
   const [maquinasEtp, setMaquinasEtp] = useState([]);
   const [itens, setItens] = useState([]);
@@ -2041,7 +2041,7 @@ function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto,
 
   return (
     <div>
-      <PanelTabs tela={tela} onChange={onChange} onAbrirConfigLink={onAbrirConfigLink} temLink={temLink} theme={theme} onToggleTheme={onToggleTheme} />
+      <PanelTabs tela={tela} onChange={onChange} onAbrirConfigLink={onAbrirConfigLink} temLink={temLink} tituloLink={tituloLink} theme={theme} onToggleTheme={onToggleTheme} />
       <div className="content">
       {(status==='sem-sessao' || status==='erro') && (
         <div className="demo-banner">
@@ -2275,9 +2275,15 @@ function App(){
     return () => window.removeEventListener('keydown', onKeyDown, true);
   }, [tela, linhaSelecionada, linkIndex, linksExternos]);
 
+  // Título mostrado no botão da aba, no cabeçalho — o do link EM EXIBIÇÃO
+  // agora (`linksExternos[linkIndex]`), não um nome fixo "Links": muda
+  // sozinho junto com o rodízio/controle remoto, e ao clicar numa sub-aba
+  // dentro de LinkExternoPanel.
+  const linkExternoAtual = linksExternos[linkIndex] || linksExternos[0] || null;
   const propsAbaLink = {
     onAbrirConfigLink: () => setLinkModalAberto(true),
     temLink,
+    tituloLink: linkExternoAtual ? (linkExternoAtual.titulo || 'Link Externo') : null,
   };
 
   return (
