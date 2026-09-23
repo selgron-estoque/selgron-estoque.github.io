@@ -999,25 +999,15 @@ function PanelTabs({tela, onChange, onAbrirConfig, onAbrirConfigLink, onAbrirCon
           </button>
         </React.Fragment>
       ))}
-      {onAbrirConfig && (
-        <React.Fragment>
-          <div className="pnl-topbar-sep"></div>
-          <BotaoConfigIndicadores onClick={onAbrirConfig} />
-        </React.Fragment>
-      )}
-      {onAbrirConfigLink && (
-        <React.Fragment>
-          <div className="pnl-topbar-sep"></div>
-          <BotaoConfigLink onClick={onAbrirConfigLink} />
-        </React.Fragment>
-      )}
-      {onAbrirConfigTempos && (
-        <React.Fragment>
-          <div className="pnl-topbar-sep"></div>
-          <BotaoConfigTempos onClick={onAbrirConfigTempos} />
-        </React.Fragment>
-      )}
+      {/* Botões de configuração (indicadores/link/tempo) — jogados pro lado
+          DIREITO do cabeçalho (pedido do cliente), junto do resto dos
+          controles (setas, tema, tela cheia), em vez de ficarem colados nas
+          abas à esquerda. */}
       <div className="pnl-topbar-right">
+        {onAbrirConfig && <BotaoConfigIndicadores onClick={onAbrirConfig} />}
+        {onAbrirConfigLink && <BotaoConfigLink onClick={onAbrirConfigLink} />}
+        {onAbrirConfigTempos && <BotaoConfigTempos onClick={onAbrirConfigTempos} />}
+        {(onAbrirConfig || onAbrirConfigLink || onAbrirConfigTempos) && <div className="pnl-topbar-sep"></div>}
         {onNavegarEsquerda && onNavegarDireita && <BotaoNavegacao onEsquerda={onNavegarEsquerda} onDireita={onNavegarDireita} />}
         <BotaoTema theme={theme} onToggle={onToggleTheme} />
         <BotaoTelaCheia />
