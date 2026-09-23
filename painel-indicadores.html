@@ -1612,44 +1612,49 @@ function TrackingPickingBoard({maquinas}){
   );
 }
 
-function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto}){
+function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto, linhaSelecionada, onChangeLinha}){
   const [status, setStatus] = useState('loading'); // loading | ok | sem-sessao | erro
   const [maquinasEtp, setMaquinasEtp] = useState([]);
   const [itens, setItens] = useState([]);
-  const [linhaSelecionada, setLinhaSelecionada] = useState(LINHA_PADRAO_TRACKING);
 
-  // Rotação automática das abas de linha (Elétrica/SEM/SSE/SEP) — 30s em
-  // cada, pedido explícito do cliente. Só depois de mostrar as 4 (30s×4 =
-  // 120s) é que avisa o App() pra trocar de tela de vez
-  // (`onCicloCompleto`) — nunca um tempo fixo pra tela inteira, que
-  // poderia cortar no meio de alguma linha. Mesmo critério do timer de
-  // `App()`: clicar numa aba troca na hora, mas não reseta este ciclo.
+  // `linhaSelecionada` mora no App() agora (não mais um useState local
+  // aqui) — necessário pra permitir a navegação por controle remoto
+  // (ArrowLeft/ArrowRight, ver App()) andar pela MESMA sequência de telas
+  // que já existe (Indicadores → Elétrica → SEM → SSE → SEP), inclusive
+  // cruzando a fronteira entre "Painel Indicadores" e "Tracking Picking".
+  // O TIMER/CICLO AUTOMÁTICO abaixo continua EXATAMENTE igual (mesmo
+  // intervalo de 30s, mesma condição de "completou as 4 linhas" chamando
+  // `onCicloCompleto`) — só a variável que ele lê/escreve passou a viver
+  // 1 nível acima.
   //
-  // `linhaIndexRef` (não `LINHAS_PRODUCAO_TRACKING.indexOf(estadoAtual)`
-  // dentro do updater de `setLinhaSelecionada`) é de propósito — chamar
-  // `onCicloCompleto()` (que faz `setTela(...)` no `App`, um componente
-  // DIFERENTE) de dentro da função updater de `setLinhaSelecionada` conta
-  // como "atualizar um componente enquanto renderiza outro" pro React,
-  // que teoricamente pode disparar aviso/comportamento inconsistente —
-  // bug real encontrado testando a lógica isoladamente. Com o índice num
-  // ref, `setLinhaSelecionada`/`onCicloCompleto()` viram 2 chamadas
-  // diretas e independentes dentro do callback do timer, nunca uma
-  // aninhada dentro da outra.
-  const linhaIndexRef = useRef(0);
+  // Guarda a leitura mais recente de `linhaSelecionada` num ref — o valor
+  // agora pode mudar por 3 fontes (esta rotação automática, clique manual
+  // numa aba, ou seta do controle remoto lá no App()), e o `setInterval`
+  // abaixo só é recriado quando `onCicloCompleto`/`onChangeLinha` mudam de
+  // referência (não a cada troca de linha) — sem o ref, ele leria sempre
+  // o valor "congelado" de quando foi criado.
+  const linhaAtualRef = useRef(linhaSelecionada);
+  useEffect(() => { linhaAtualRef.current = linhaSelecionada; }, [linhaSelecionada]);
+
+  // `onChangeLinha(...)`/`onCicloCompleto()` como 2 chamadas DIRETAS
+  // dentro do callback do timer (nunca uma aninhada dentro de uma função
+  // updater de setState) — mesma correção de bug já aplicada antes (ver
+  // histórico): chamar o setState de um componente DIFERENTE de dentro do
+  // updater de outro conta como "atualizar um componente enquanto
+  // renderiza outro" pro React.
   useEffect(() => {
     const id = setInterval(() => {
-      const proximoIdx = linhaIndexRef.current + 1;
+      const idxAtual = LINHAS_PRODUCAO_TRACKING.indexOf(linhaAtualRef.current);
+      const proximoIdx = idxAtual + 1;
       if(proximoIdx >= LINHAS_PRODUCAO_TRACKING.length){
-        linhaIndexRef.current = 0;
-        setLinhaSelecionada(LINHAS_PRODUCAO_TRACKING[0]);
+        onChangeLinha(LINHAS_PRODUCAO_TRACKING[0]);
         if(onCicloCompleto) onCicloCompleto();
       } else {
-        linhaIndexRef.current = proximoIdx;
-        setLinhaSelecionada(LINHAS_PRODUCAO_TRACKING[proximoIdx]);
+        onChangeLinha(LINHAS_PRODUCAO_TRACKING[proximoIdx]);
       }
     }, 30000);
     return () => clearInterval(id);
-  }, [onCicloCompleto]);
+  }, [onCicloCompleto, onChangeLinha]);
 
   async function carregarDados(){
     if(!supabaseClient){ setStatus('erro'); return; }
@@ -1752,7 +1757,7 @@ function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto}
                 key={l} type="button"
                 className={'panel-tab-btn' + (linhaSelecionada===l ? ' active' : '')}
                 style={{padding:'8px 16px',fontSize:'var(--text-sm)'}}
-                onClick={()=>setLinhaSelecionada(l)}
+                onClick={()=>onChangeLinha(l)}
               >{l}</button>
             ))}
           </div>
@@ -1823,6 +1828,12 @@ function FitToScreen({children}){
 
 function App(){
   const [tela, setTela] = useState('indicadores');
+  // `linhaSelecionada` (Elétrica/SEM/SSE/SEP) subiu do TrackingPicking pra
+  // cá — ver comentário completo lá. Precisa estar aqui pra o controle
+  // remoto (ArrowLeft/ArrowRight, mais abaixo) conseguir navegar através
+  // da fronteira entre "Painel Indicadores" e "Tracking Picking" na MESMA
+  // sequência que a troca automática já percorre.
+  const [linhaSelecionada, setLinhaSelecionada] = useState(LINHA_PADRAO_TRACKING);
   const [theme, toggleTheme] = usePersistedTheme();
 
   // TV sem ninguém mexendo — alterna sozinho entre as duas telas, pra dar
@@ -1835,16 +1846,49 @@ function App(){
   // acontece), nunca num tempo fixo que poderia cortar no meio do ciclo
   // de linhas. Clicar numa aba continua trocando na hora (onChange
   // abaixo); os timers não resetam por causa disso, só seguem no próprio
-  // ciclo.
+  // ciclo. ESTE EFEITO (e o ciclo de 30s dentro de TrackingPicking) NÃO
+  // FORAM ALTERADOS pelo controle remoto abaixo — pedido explícito do
+  // cliente foi não mexer na troca automática de jeito nenhum.
   useEffect(() => {
     if(tela !== 'indicadores') return;
     const id = setTimeout(() => setTela('picking'), 60000);
     return () => clearTimeout(id);
   }, [tela]);
 
+  // Controle remoto da TV — ArrowRight avança, ArrowLeft volta, andando
+  // pela MESMA sequência de telas que a troca automática já percorre:
+  // Indicadores → Elétrica → SEM → SSE → SEP → (volta pra Indicadores),
+  // cíclico nos dois sentidos. Só troca `tela`/`linhaSelecionada` na
+  // hora — EXATAMENTE o que clicar numa aba já fazia antes — nunca cria
+  // timer novo nem mexe nos 2 já existentes (acima, e o de 30s dentro de
+  // TrackingPicking): eles continuam rodando no próprio ciclo, do mesmo
+  // jeito que já ignoravam clique manual antes desta funcionalidade.
+  useEffect(() => {
+    function onKeyDown(e){
+      if(e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+      e.preventDefault();
+      const totalPosicoes = 1 + LINHAS_PRODUCAO_TRACKING.length; // Indicadores + 4 linhas
+      const posAtual = tela==='indicadores' ? 0 : 1 + LINHAS_PRODUCAO_TRACKING.indexOf(linhaSelecionada);
+      const delta = e.key==='ArrowRight' ? 1 : -1;
+      const novaPos = (posAtual + delta + totalPosicoes) % totalPosicoes;
+      if(novaPos===0){
+        setTela('indicadores');
+      } else {
+        setLinhaSelecionada(LINHAS_PRODUCAO_TRACKING[novaPos-1]);
+        setTela('picking');
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [tela, linhaSelecionada]);
+
   return tela==='indicadores'
     ? <PainelIndicadores tela={tela} onChange={setTela} theme={theme} onToggleTheme={toggleTheme} />
-    : <TrackingPicking tela={tela} onChange={setTela} theme={theme} onToggleTheme={toggleTheme} onCicloCompleto={()=>setTela('indicadores')} />;
+    : <TrackingPicking
+        tela={tela} onChange={setTela} theme={theme} onToggleTheme={toggleTheme}
+        onCicloCompleto={()=>setTela('indicadores')}
+        linhaSelecionada={linhaSelecionada} onChangeLinha={setLinhaSelecionada}
+      />;
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(<App />);
