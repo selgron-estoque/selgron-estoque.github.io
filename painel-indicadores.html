@@ -943,7 +943,7 @@ function PnlTabIcon({name}){
 // "Painel Indicadores"/"Tracking Picking") — pedido explícito do cliente
 // foi remover esse 2º título por completo, a logo "pertence" só a esta
 // barra agora.
-function PanelTabs({tela, onChange, onAbrirConfig, onAbrirConfigLink, temLink, tituloLink, onNavegarEsquerda, onNavegarDireita, theme, onToggleTheme}){
+function PanelTabs({tela, onChange, onAbrirConfig, onAbrirConfigLink, links, linkIndex, onSelecionarLink, onNavegarEsquerda, onNavegarDireita, theme, onToggleTheme}){
   return (
     <div className="pnl-topbar">
       <img src={SELGRON_LOGO_URL} alt="Selgron" className="pnl-topbar-logo" />
@@ -965,25 +965,27 @@ function PanelTabs({tela, onChange, onAbrirConfig, onAbrirConfigLink, temLink, t
         <PnlTabIcon name="truck" />
         <span className="pnl-topbar-tab-label">Tracking Picking</span>
       </button>
-      {/* Aba de links externos — só aparece quando existe pelo menos 1 link
-          configurado (ver LinkExternoConfigModal/App()); sem nenhum link
-          salvo, o rodízio/menu continua com só as 2 abas de sempre. Rótulo
-          é o título do link em exibição AGORA (`tituloLink`, calculado em
-          App() a partir de `linkIndex`) — muda junto com o rodízio/controle,
-          igual ao nome de uma pessoa que muda de aba. */}
-      {temLink && (
-        <React.Fragment>
+      {/* 1 aba própria por link/arquivo cadastrado (pedido do cliente: nada
+          de fileira separada de sub-abas embaixo, cada um aparece direto
+          aqui, junto de Indicadores/Tracking Picking). Sem nenhum
+          link/arquivo salvo, `links` vem vazio e nada extra aparece — o
+          cabeçalho continua com só as 2 abas de sempre. `onSelecionarLink`
+          troca `tela` PRA 'link' E `linkIndex` pro item clicado, de
+          qualquer tela (ver App()) — clicar numa aba de link enquanto já
+          está vendo OUTRO link também pula direto pro clicado. */}
+      {links.map((l,i)=>(
+        <React.Fragment key={l.id}>
           <div className="pnl-topbar-sep"></div>
           <button
             type="button"
-            className={'pnl-topbar-tab' + (tela==='link' ? ' active' : '')}
-            onClick={()=>onChange('link')}
+            className={'pnl-topbar-tab' + (tela==='link' && linkIndex===i ? ' active' : '')}
+            onClick={()=>onSelecionarLink(i)}
           >
             <PnlTabIcon name="link" />
-            <span className="pnl-topbar-tab-label">{tituloLink || 'Links'}</span>
+            <span className="pnl-topbar-tab-label">{l.titulo || `Link ${i+1}`}</span>
           </button>
         </React.Fragment>
-      )}
+      ))}
       {onAbrirConfig && (
         <React.Fragment>
           <div className="pnl-topbar-sep"></div>
@@ -1481,7 +1483,7 @@ function LinkExternoConfigModal({open, links, onClose, onCriar, onAtualizar, onR
 // chamadas (mudar link / avisar que fechou o ciclo) como statements DIRETOS
 // e sequenciais — nunca uma aninhada dentro do updater da outra (mesmo bug
 // de "atualizar um componente enquanto renderiza outro" já corrigido antes).
-function LinkExternoPanel({tela, onChange, theme, onToggleTheme, onAbrirConfigLink, temLink, tituloLink, onNavegarEsquerda, onNavegarDireita, onCicloCompleto, links, linkIndex, onChangeLinkIndex}){
+function LinkExternoPanel({tela, onChange, theme, onToggleTheme, onAbrirConfigLink, onSelecionarLink, onNavegarEsquerda, onNavegarDireita, onCicloCompleto, links, linkIndex, onChangeLinkIndex}){
   const linkIndexRef = useRef(linkIndex);
   useEffect(() => { linkIndexRef.current = linkIndex; }, [linkIndex]);
 
@@ -1503,21 +1505,9 @@ function LinkExternoPanel({tela, onChange, theme, onToggleTheme, onAbrirConfigLi
 
   return (
     <div>
-      <PanelTabs tela={tela} onChange={onChange} onAbrirConfigLink={onAbrirConfigLink} temLink={temLink} tituloLink={tituloLink} onNavegarEsquerda={onNavegarEsquerda} onNavegarDireita={onNavegarDireita} theme={theme} onToggleTheme={onToggleTheme} />
+      <PanelTabs tela={tela} onChange={onChange} onAbrirConfigLink={onAbrirConfigLink} links={links} linkIndex={linkIndex} onSelecionarLink={onSelecionarLink} onNavegarEsquerda={onNavegarEsquerda} onNavegarDireita={onNavegarDireita} theme={theme} onToggleTheme={onToggleTheme} />
       {linkAtual ? (
         <div style={{display:'flex',flexDirection:'column',height:'calc(100vh - 56px)'}}>
-          {links.length > 1 && (
-            <div style={{display:'flex',gap:8,flexWrap:'wrap',padding:'16px 24px 0'}}>
-              {links.map((l,i)=>(
-                <button
-                  key={l.id} type="button"
-                  className={'panel-tab-btn' + (linkIndex===i ? ' active' : '')}
-                  style={{padding:'8px 16px',fontSize:'var(--text-sm)'}}
-                  onClick={()=>onChangeLinkIndex(i)}
-                >{l.titulo || `Link ${i+1}`}</button>
-              ))}
-            </div>
-          )}
           {linkAtual.tipo==='imagem' ? (
             <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden',background:'#000'}}>
               <img
@@ -1543,7 +1533,7 @@ function LinkExternoPanel({tela, onChange, theme, onToggleTheme, onAbrirConfigLi
   );
 }
 
-function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfigLink, temLink, tituloLink, onNavegarEsquerda, onNavegarDireita}){
+function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfigLink, links, linkIndex, onSelecionarLink, onNavegarEsquerda, onNavegarDireita}){
   const [status, setStatus] = useState('loading'); // loading | ok | sem-sessao | erro
   const [counts, setCounts] = useState([]);
   const [historico, setHistorico] = useState([]);
@@ -1794,7 +1784,7 @@ function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfigL
 
   return (
     <div>
-      <PanelTabs tela={tela} onChange={onChange} onAbrirConfig={()=>setConfigModalAberto(true)} onAbrirConfigLink={onAbrirConfigLink} temLink={temLink} tituloLink={tituloLink} onNavegarEsquerda={onNavegarEsquerda} onNavegarDireita={onNavegarDireita} theme={theme} onToggleTheme={onToggleTheme} />
+      <PanelTabs tela={tela} onChange={onChange} onAbrirConfig={()=>setConfigModalAberto(true)} onAbrirConfigLink={onAbrirConfigLink} links={links} linkIndex={linkIndex} onSelecionarLink={onSelecionarLink} onNavegarEsquerda={onNavegarEsquerda} onNavegarDireita={onNavegarDireita} theme={theme} onToggleTheme={onToggleTheme} />
       {/* FitToScreen envolve só o CONTEÚDO (gráficos), nunca a barra de
           navegação — o cabeçalho precisa ficar do MESMO tamanho natural
           nas duas telas do Painel (Indicadores/Tracking Picking, que não
@@ -2078,7 +2068,7 @@ function TrackingPickingBoard({maquinas}){
   );
 }
 
-function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto, linhaSelecionada, onChangeLinha, onAbrirConfigLink, temLink, tituloLink, onNavegarEsquerda, onNavegarDireita}){
+function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto, linhaSelecionada, onChangeLinha, onAbrirConfigLink, links, linkIndex, onSelecionarLink, onNavegarEsquerda, onNavegarDireita}){
   const [status, setStatus] = useState('loading'); // loading | ok | sem-sessao | erro
   const [maquinasEtp, setMaquinasEtp] = useState([]);
   const [itens, setItens] = useState([]);
@@ -2198,7 +2188,7 @@ function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto,
 
   return (
     <div>
-      <PanelTabs tela={tela} onChange={onChange} onAbrirConfigLink={onAbrirConfigLink} temLink={temLink} tituloLink={tituloLink} onNavegarEsquerda={onNavegarEsquerda} onNavegarDireita={onNavegarDireita} theme={theme} onToggleTheme={onToggleTheme} />
+      <PanelTabs tela={tela} onChange={onChange} onAbrirConfigLink={onAbrirConfigLink} links={links} linkIndex={linkIndex} onSelecionarLink={onSelecionarLink} onNavegarEsquerda={onNavegarEsquerda} onNavegarDireita={onNavegarDireita} theme={theme} onToggleTheme={onToggleTheme} />
       <div className="content">
       {(status==='sem-sessao' || status==='erro') && (
         <div className="demo-banner">
@@ -2442,15 +2432,17 @@ function App(){
     return () => window.removeEventListener('keydown', onKeyDown, true);
   }, [navegar]);
 
-  // Título mostrado no botão da aba, no cabeçalho — o do link EM EXIBIÇÃO
-  // agora (`linksExternos[linkIndex]`), não um nome fixo "Links": muda
-  // sozinho junto com o rodízio/controle remoto, e ao clicar numa sub-aba
-  // dentro de LinkExternoPanel.
-  const linkExternoAtual = linksExternos[linkIndex] || linksExternos[0] || null;
+  // Cada link/arquivo vira sua PRÓPRIA aba lá em cima, junto de
+  // "Indicadores"/"Tracking Picking" (pedido do cliente — nada de fileira
+  // de sub-abas separada embaixo, que existia antes disso). Clicar numa
+  // dessas abas precisa fazer 2 coisas de uma vez (trocar `tela` E
+  // `linkIndex`), então empacota isso num único callback (`onSelecionarLink`)
+  // — `PanelTabs` mapeia `links` direto pra gerar 1 botão por item.
   const propsAbaLink = {
     onAbrirConfigLink: () => setLinkModalAberto(true),
-    temLink,
-    tituloLink: linkExternoAtual ? (linkExternoAtual.titulo || 'Link Externo') : null,
+    links: linksExternos,
+    linkIndex,
+    onSelecionarLink: (i) => { setLinkIndex(i); setTela('link'); },
     onNavegarEsquerda: () => navegar(false),
     onNavegarDireita: () => navegar(true),
   };
@@ -2470,7 +2462,7 @@ function App(){
         <LinkExternoPanel
           tela={tela} onChange={setTela} theme={theme} onToggleTheme={toggleTheme}
           onCicloCompleto={() => setTela('indicadores')}
-          links={linksExternos} linkIndex={linkIndex} onChangeLinkIndex={setLinkIndex}
+          onChangeLinkIndex={setLinkIndex}
           {...propsAbaLink}
         />
       )}
