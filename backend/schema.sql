@@ -2562,3 +2562,23 @@ begin
     alter publication supabase_realtime add table painel_indicadores_config;
   end if;
 end $$;
+
+-- =============================================================================
+-- PERFORMANCE: BUSCA DE PRODUTO LENTA (tela "Etiquetas" e qualquer outra que
+-- use `searchSupabaseCatalog`, index.html — busca manual em "Nova Contagem",
+-- "Itens Específicos", etc.)
+-- =============================================================================
+-- Cliente reportou demora real buscando produto pelo código/descrição na
+-- tela Etiquetas (screenshot: campo preso em "Buscando…" por vários
+-- segundos digitando "000.41409"). Causa raiz: `produtos` tem 85.357 linhas
+-- (catálogo real, ver CLAUDE.md) e `searchSupabaseCatalog` busca com
+-- `codigo.ilike.%termo%,descricao.ilike.%termo%` — um "contém" (wildcard
+-- nas DUAS pontas), que o índice comum de `codigo` (chave primária, só serve
+-- pra igualdade/prefixo) NUNCA consegue usar; cada busca varre a tabela
+-- inteira linha por linha. `pg_trgm` (índice de trigramas, extensão padrão
+-- do Postgres/Supabase) é a solução de sempre pra "contém" ficar rápido
+-- (de ~segundos pra poucos milissegundos), sem mudar nenhuma busca já
+-- escrita no app — só acelera a mesma consulta que já existe.
+create extension if not exists pg_trgm;
+create index if not exists idx_produtos_codigo_trgm on produtos using gin (codigo gin_trgm_ops);
+create index if not exists idx_produtos_descricao_trgm on produtos using gin (descricao gin_trgm_ops);
