@@ -1624,16 +1624,29 @@ function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto}
   // (`onCicloCompleto`) — nunca um tempo fixo pra tela inteira, que
   // poderia cortar no meio de alguma linha. Mesmo critério do timer de
   // `App()`: clicar numa aba troca na hora, mas não reseta este ciclo.
+  //
+  // `linhaIndexRef` (não `LINHAS_PRODUCAO_TRACKING.indexOf(estadoAtual)`
+  // dentro do updater de `setLinhaSelecionada`) é de propósito — chamar
+  // `onCicloCompleto()` (que faz `setTela(...)` no `App`, um componente
+  // DIFERENTE) de dentro da função updater de `setLinhaSelecionada` conta
+  // como "atualizar um componente enquanto renderiza outro" pro React,
+  // que teoricamente pode disparar aviso/comportamento inconsistente —
+  // bug real encontrado testando a lógica isoladamente. Com o índice num
+  // ref, `setLinhaSelecionada`/`onCicloCompleto()` viram 2 chamadas
+  // diretas e independentes dentro do callback do timer, nunca uma
+  // aninhada dentro da outra.
+  const linhaIndexRef = useRef(0);
   useEffect(() => {
     const id = setInterval(() => {
-      setLinhaSelecionada(atual => {
-        const proximoIdx = LINHAS_PRODUCAO_TRACKING.indexOf(atual) + 1;
-        if(proximoIdx >= LINHAS_PRODUCAO_TRACKING.length){
-          if(onCicloCompleto) onCicloCompleto();
-          return LINHAS_PRODUCAO_TRACKING[0];
-        }
-        return LINHAS_PRODUCAO_TRACKING[proximoIdx];
-      });
+      const proximoIdx = linhaIndexRef.current + 1;
+      if(proximoIdx >= LINHAS_PRODUCAO_TRACKING.length){
+        linhaIndexRef.current = 0;
+        setLinhaSelecionada(LINHAS_PRODUCAO_TRACKING[0]);
+        if(onCicloCompleto) onCicloCompleto();
+      } else {
+        linhaIndexRef.current = proximoIdx;
+        setLinhaSelecionada(LINHAS_PRODUCAO_TRACKING[proximoIdx]);
+      }
     }, 30000);
     return () => clearInterval(id);
   }, [onCicloCompleto]);
