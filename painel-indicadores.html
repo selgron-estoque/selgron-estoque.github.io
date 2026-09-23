@@ -920,7 +920,7 @@ function PnlTabIcon({name}){
 // "Painel Indicadores"/"Tracking Picking") — pedido explícito do cliente
 // foi remover esse 2º título por completo, a logo "pertence" só a esta
 // barra agora.
-function PanelTabs({tela, onChange, onAbrirConfig, onAbrirConfigLink, temLink, tituloLink, theme, onToggleTheme}){
+function PanelTabs({tela, onChange, onAbrirConfig, onAbrirConfigLink, temLink, theme, onToggleTheme}){
   return (
     <div className="pnl-topbar">
       <img src={SELGRON_LOGO_URL} alt="Selgron" className="pnl-topbar-logo" />
@@ -942,9 +942,12 @@ function PanelTabs({tela, onChange, onAbrirConfig, onAbrirConfigLink, temLink, t
         <PnlTabIcon name="truck" />
         <span className="pnl-topbar-tab-label">Tracking Picking</span>
       </button>
-      {/* 3ª aba — só aparece quando existe um link configurado (ver
-          LinkExternoConfigModal/App()); sem link salvo, o rodízio/menu
-          continua com só as 2 abas de sempre. */}
+      {/* Aba de links externos — só aparece quando existe pelo menos 1 link
+          configurado (ver LinkExternoConfigModal/App()); sem nenhum link
+          salvo, o rodízio/menu continua com só as 2 abas de sempre. Rótulo
+          fixo "Links" (não o título de um link específico) porque agora pode
+          ter vários — a escolha de qual link ver é a fileira de sub-abas
+          dentro de LinkExternoPanel, não este botão do cabeçalho. */}
       {temLink && (
         <React.Fragment>
           <div className="pnl-topbar-sep"></div>
@@ -954,7 +957,7 @@ function PanelTabs({tela, onChange, onAbrirConfig, onAbrirConfigLink, temLink, t
             onClick={()=>onChange('link')}
           >
             <PnlTabIcon name="link" />
-            <span className="pnl-topbar-tab-label">{tituloLink || 'Link Externo'}</span>
+            <span className="pnl-topbar-tab-label">Links</span>
           </button>
         </React.Fragment>
       )}
@@ -1122,63 +1125,131 @@ function ConfigIndicadoresModal({open, ordemAtual, onClose, onSalvo}){
   ), document.body);
 }
 
-// 3ª aba — link externo configurável (pedido do cliente: mostrar uma
+// Abas de link externo configuráveis (pedido do cliente: mostrar uma
 // planilha do Google Sheets na TV; resolvido de forma genérica, não
 // específica de Sheets — qualquer URL que a origem permita exibir dentro
-// de um <iframe>). Mesmo padrão singleton (id=1) de
-// `painel_indicadores_config` — ver comentário completo no schema.sql
-// ("PAINEL INDICADORES: 3ª ABA — LINK EXTERNO").
-async function fetchLinkExterno(){
-  if(!supabaseClient) return {url:'', titulo:''};
+// de um <iframe>). Lista (não mais 1 link só, ver histórico) — ordenada por
+// `ordem` — ver comentário completo no schema.sql ("PAINEL INDICADORES:
+// ABAS DE LINK EXTERNO").
+async function fetchLinksExternos(){
+  if(!supabaseClient) return [];
   try{
-    const { data, error } = await supabaseClient.from('painel_link_externo').select('url, titulo').eq('id',1).maybeSingle();
+    const { data, error } = await supabaseClient.from('painel_links_externos').select('id, url, titulo, ordem').order('ordem', {ascending:true});
     if(error) throw error;
-    return {url:(data && data.url) || '', titulo:(data && data.titulo) || ''};
+    return data || [];
   }catch(err){
-    console.warn('Painel Indicadores: falha ao buscar link externo', err);
-    return {url:'', titulo:''};
+    console.warn('Painel Indicadores: falha ao buscar links externos', err);
+    return [];
   }
 }
-async function salvarLinkExterno(url, titulo){
+async function criarLinkExterno(url, titulo, ordem){
   if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
   try{
-    const { error } = await supabaseClient.from('painel_link_externo').upsert(
-      {id:1, url: url || null, titulo: titulo || null, atualizado_em:new Date().toISOString()}, {onConflict:'id'}
-    );
+    const { error } = await supabaseClient.from('painel_links_externos').insert({url, titulo: titulo || null, ordem});
     if(error) throw error;
     return {ok:true};
   }catch(err){
     return {ok:false, erro:(err && err.message) || 'Não foi possível salvar.'};
   }
 }
+async function atualizarLinkExterno(id, url, titulo){
+  if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
+  try{
+    const { error } = await supabaseClient.from('painel_links_externos').update({url, titulo: titulo || null}).eq('id', id);
+    if(error) throw error;
+    return {ok:true};
+  }catch(err){
+    return {ok:false, erro:(err && err.message) || 'Não foi possível salvar.'};
+  }
+}
+async function removerLinkExterno(id){
+  if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
+  try{
+    const { error } = await supabaseClient.from('painel_links_externos').delete().eq('id', id);
+    if(error) throw error;
+    return {ok:true};
+  }catch(err){
+    return {ok:false, erro:(err && err.message) || 'Não foi possível remover.'};
+  }
+}
+// Reordena em lote — recebe os ids JÁ na nova ordem e grava o índice de cada
+// um como `ordem` (0, 1, 2...). Várias chamadas de update em paralelo (não
+// uma tabela grande, não compensa complicar com upsert em lote).
+async function salvarOrdemLinksExternos(idsEmOrdem){
+  if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
+  try{
+    const resultados = await Promise.all(idsEmOrdem.map((id, i) =>
+      supabaseClient.from('painel_links_externos').update({ordem: i}).eq('id', id)
+    ));
+    const comErro = resultados.find(r => r.error);
+    if(comErro) throw comErro.error;
+    return {ok:true};
+  }catch(err){
+    return {ok:false, erro:(err && err.message) || 'Não foi possível reordenar.'};
+  }
+}
 
-// Modal de configuração do link externo — só 2 campos (URL + título opcional
-// da aba). Deixar a URL em branco e salvar REMOVE a 3ª aba do rodízio (ver
-// `temLink` em `PanelTabs`/`App()`) — forma natural de "desligar" essa
-// funcionalidade sem precisar de um checkbox separado.
-function LinkExternoConfigModal({open, urlAtual, tituloAtual, onClose, onSalvo}){
-  const [url, setUrl] = useState(urlAtual);
-  const [titulo, setTitulo] = useState(tituloAtual);
+// Modal de configuração dos links externos — lista (adicionar, editar,
+// remover, reordenar), pedido do cliente depois da 1ª versão (que só
+// aceitava 1 link): "consigo criar mais abas com outros links?". Sem
+// nenhum link cadastrado, as abas de link somem do rodízio (ver `temLink`
+// em `PanelTabs`/`App()`) — sem precisar de um checkbox separado, é só a
+// lista ficar vazia.
+function LinkExternoConfigModal({open, links, onClose, onCriar, onAtualizar, onRemover, onReordenar}){
+  const [editandoId, setEditandoId] = useState(null); // null = formulário é "adicionar novo"
+  const [url, setUrl] = useState('');
+  const [titulo, setTitulo] = useState('');
   const [salvando, setSalvando] = useState(false);
+  const [removendoId, setRemovendoId] = useState(null);
   const [erro, setErro] = useState(null);
 
-  useEffect(()=>{ if(open){ setUrl(urlAtual); setTitulo(tituloAtual); setErro(null); } }, [open, urlAtual, tituloAtual]);
+  useEffect(()=>{ if(open){ setEditandoId(null); setUrl(''); setTitulo(''); setErro(null); } }, [open]);
 
   if(!open) return null;
 
+  function iniciarEdicao(link){
+    setEditandoId(link.id);
+    setUrl(link.url);
+    setTitulo(link.titulo || '');
+    setErro(null);
+  }
+  function cancelarEdicao(){
+    setEditandoId(null);
+    setUrl('');
+    setTitulo('');
+    setErro(null);
+  }
+  function mover(id, direcao){
+    const idx = links.findIndex(l=>l.id===id);
+    const alvo = direcao==='up' ? idx-1 : idx+1;
+    if(idx===-1 || alvo<0 || alvo>=links.length) return;
+    const nova = [...links];
+    [nova[idx], nova[alvo]] = [nova[alvo], nova[idx]];
+    onReordenar(nova.map(l=>l.id));
+  }
   async function handleSalvar(){
     const urlLimpa = url.trim();
-    if(urlLimpa && !/^https?:\/\//i.test(urlLimpa)){
+    if(!urlLimpa){
+      setErro('Cole um link.');
+      return;
+    }
+    if(!/^https?:\/\//i.test(urlLimpa)){
       setErro('O link precisa começar com http:// ou https://');
       return;
     }
     setSalvando(true);
     setErro(null);
-    const res = await salvarLinkExterno(urlLimpa, titulo.trim());
+    const res = editandoId
+      ? await onAtualizar(editandoId, urlLimpa, titulo.trim())
+      : await onCriar(urlLimpa, titulo.trim(), links.length);
     setSalvando(false);
     if(!res.ok){ setErro(res.erro); return; }
-    onSalvo({url: urlLimpa, titulo: titulo.trim()});
-    onClose();
+    cancelarEdicao();
+  }
+  async function handleRemover(id){
+    setRemovendoId(id);
+    await onRemover(id);
+    setRemovendoId(null);
   }
 
   return ReactDOM.createPortal((
@@ -1186,11 +1257,12 @@ function LinkExternoConfigModal({open, urlAtual, tituloAtual, onClose, onSalvo})
       <div className="modal-box" onClick={e=>e.stopPropagation()}>
         <div className="modal-header">
           <div>
-            <div className="modal-title">Link externo</div>
+            <div className="modal-title">Links externos</div>
             <div className="modal-subtitle">
-              Cole um link que a origem permita exibir dentro de outra página (ex.: Google Sheets "Publicado na Web",
-              aba "Inserir"). Links normais de edição/visualização geralmente são bloqueados pela própria origem —
-              nesse caso a aba aparece em branco. Deixe o campo vazio e salve pra remover a 3ª aba.
+              Cada link vira uma aba própria, no mesmo rodízio automático da TV e na navegação por controle
+              (60s cada). Precisa ser um link que a origem permita exibir dentro de outra página (ex.: Google
+              Sheets "Publicado na Web", aba "Inserir") — links normais de edição/visualização geralmente são
+              bloqueados pela própria origem e a aba aparece em branco.
             </div>
           </div>
           <button type="button" className="modal-close-btn" onClick={onClose} aria-label="Fechar">
@@ -1198,6 +1270,32 @@ function LinkExternoConfigModal({open, urlAtual, tituloAtual, onClose, onSalvo})
           </button>
         </div>
 
+        {links.map((l,i)=>(
+          <div key={l.id} className="pnl-cfg-item">
+            <div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column',gap:2}}>
+              <div style={{fontSize:'var(--text-sm)',color:'var(--ink)',fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{l.titulo || `Link ${i+1}`}</div>
+              <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{l.url}</div>
+            </div>
+            <div className="pnl-cfg-arrows">
+              <button type="button" disabled={i===0} onClick={()=>mover(l.id,'up')} title="Mover pra cima" aria-label="Mover pra cima">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>
+              </button>
+              <button type="button" disabled={i===links.length-1} onClick={()=>mover(l.id,'down')} title="Mover pra baixo" aria-label="Mover pra baixo">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>
+              </button>
+              <button type="button" onClick={()=>iniciarEdicao(l)} title="Editar" aria-label="Editar">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+              </button>
+              <button type="button" disabled={removendoId===l.id} onClick={()=>handleRemover(l.id)} title="Remover" aria-label="Remover">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+              </button>
+            </div>
+          </div>
+        ))}
+
+        <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',textTransform:'uppercase',letterSpacing:'0.5px',margin:'12px 0 10px'}}>
+          {editandoId ? 'Editar link' : 'Adicionar link'}
+        </div>
         <div className="pnl-cfg-item" style={{display:'block'}}>
           <label style={{display:'block',fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginBottom:6,textTransform:'uppercase',letterSpacing:'0.5px'}}>Link (URL)</label>
           <input
@@ -1218,28 +1316,67 @@ function LinkExternoConfigModal({open, urlAtual, tituloAtual, onClose, onSalvo})
         {erro && <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',margin:'8px 0'}}>{erro}</div>}
 
         <div style={{display:'flex',gap:10,marginTop:16}}>
-          <button type="button" className="pnl-cfg-btn pnl-cfg-btn-outline" onClick={onClose} disabled={salvando}>Cancelar</button>
-          <button type="button" className="pnl-cfg-btn pnl-cfg-btn-primary" onClick={handleSalvar} disabled={salvando}>{salvando ? 'Salvando…' : 'Salvar'}</button>
+          {editandoId && <button type="button" className="pnl-cfg-btn pnl-cfg-btn-outline" onClick={cancelarEdicao} disabled={salvando}>Cancelar edição</button>}
+          <button type="button" className="pnl-cfg-btn pnl-cfg-btn-outline" onClick={onClose} disabled={salvando}>Fechar</button>
+          <button type="button" className="pnl-cfg-btn pnl-cfg-btn-primary" onClick={handleSalvar} disabled={salvando}>{salvando ? 'Salvando…' : (editandoId ? 'Salvar edição' : 'Adicionar link')}</button>
         </div>
       </div>
     </div>
   ), document.body);
 }
 
-// Tela da 3ª aba — só um <iframe> com o link configurado, dentro do mesmo
-// cabeçalho (`PanelTabs`) das outras 2. Fora de `.content` de propósito
-// (mesmo motivo de `FitToScreen`/Tracking Picking: sem herdar padding,
-// pra aproveitar o espaço inteiro abaixo do cabeçalho).
-function LinkExternoPanel({tela, onChange, theme, onToggleTheme, onAbrirConfigLink, temLink, tituloLink, url}){
+// Tela das abas de link — <iframe> do link atual + (quando há mais de 1) uma
+// fileira de sub-abas pra escolher direto, mesmo padrão visual/estrutural
+// dos botões Elétrica/SEM/SSE/SEP dentro de Tracking Picking (`.panel-tab-btn`).
+// Ciclo automático (60s por link, própria dessa tela) segue o MESMO padrão
+// já usado por TrackingPicking pro ciclo de linhas (ver comentário lá):
+// ref pra sempre ler o índice mais atual dentro do setInterval, e as 2
+// chamadas (mudar link / avisar que fechou o ciclo) como statements DIRETOS
+// e sequenciais — nunca uma aninhada dentro do updater da outra (mesmo bug
+// de "atualizar um componente enquanto renderiza outro" já corrigido antes).
+function LinkExternoPanel({tela, onChange, theme, onToggleTheme, onAbrirConfigLink, temLink, onCicloCompleto, links, linkIndex, onChangeLinkIndex}){
+  const linkIndexRef = useRef(linkIndex);
+  useEffect(() => { linkIndexRef.current = linkIndex; }, [linkIndex]);
+
+  useEffect(() => {
+    if(links.length === 0) return;
+    const id = setInterval(() => {
+      const proximoIdx = linkIndexRef.current + 1;
+      if(proximoIdx >= links.length){
+        onChangeLinkIndex(0);
+        if(onCicloCompleto) onCicloCompleto();
+      } else {
+        onChangeLinkIndex(proximoIdx);
+      }
+    }, 60000);
+    return () => clearInterval(id);
+  }, [links.length, onCicloCompleto, onChangeLinkIndex]);
+
+  const linkAtual = links[linkIndex] || links[0] || null;
+
   return (
     <div>
-      <PanelTabs tela={tela} onChange={onChange} onAbrirConfigLink={onAbrirConfigLink} temLink={temLink} tituloLink={tituloLink} theme={theme} onToggleTheme={onToggleTheme} />
-      {url ? (
-        <iframe
-          src={url}
-          title={tituloLink || 'Link externo'}
-          style={{display:'block',width:'100%',height:'calc(100vh - 56px)',border:'none'}}
-        />
+      <PanelTabs tela={tela} onChange={onChange} onAbrirConfigLink={onAbrirConfigLink} temLink={temLink} theme={theme} onToggleTheme={onToggleTheme} />
+      {linkAtual ? (
+        <div style={{display:'flex',flexDirection:'column',height:'calc(100vh - 56px)'}}>
+          {links.length > 1 && (
+            <div style={{display:'flex',gap:8,flexWrap:'wrap',padding:'16px 24px 0'}}>
+              {links.map((l,i)=>(
+                <button
+                  key={l.id} type="button"
+                  className={'panel-tab-btn' + (linkIndex===i ? ' active' : '')}
+                  style={{padding:'8px 16px',fontSize:'var(--text-sm)'}}
+                  onClick={()=>onChangeLinkIndex(i)}
+                >{l.titulo || `Link ${i+1}`}</button>
+              ))}
+            </div>
+          )}
+          <iframe
+            src={linkAtual.url}
+            title={linkAtual.titulo || 'Link externo'}
+            style={{display:'block',width:'100%',flex:1,border:'none'}}
+          />
+        </div>
       ) : (
         <div className="content">
           <div className="demo-banner">Nenhum link configurado. Clique no ícone de link, ao lado das abas, pra colar um.</div>
@@ -1249,7 +1386,7 @@ function LinkExternoPanel({tela, onChange, theme, onToggleTheme, onAbrirConfigLi
   );
 }
 
-function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfigLink, temLink, tituloLink}){
+function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfigLink, temLink}){
   const [status, setStatus] = useState('loading'); // loading | ok | sem-sessao | erro
   const [counts, setCounts] = useState([]);
   const [historico, setHistorico] = useState([]);
@@ -1500,7 +1637,7 @@ function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfigL
 
   return (
     <div>
-      <PanelTabs tela={tela} onChange={onChange} onAbrirConfig={()=>setConfigModalAberto(true)} onAbrirConfigLink={onAbrirConfigLink} temLink={temLink} tituloLink={tituloLink} theme={theme} onToggleTheme={onToggleTheme} />
+      <PanelTabs tela={tela} onChange={onChange} onAbrirConfig={()=>setConfigModalAberto(true)} onAbrirConfigLink={onAbrirConfigLink} temLink={temLink} theme={theme} onToggleTheme={onToggleTheme} />
       {/* FitToScreen envolve só o CONTEÚDO (gráficos), nunca a barra de
           navegação — o cabeçalho precisa ficar do MESMO tamanho natural
           nas duas telas do Painel (Indicadores/Tracking Picking, que não
@@ -1784,7 +1921,7 @@ function TrackingPickingBoard({maquinas}){
   );
 }
 
-function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto, linhaSelecionada, onChangeLinha, onAbrirConfigLink, temLink, tituloLink}){
+function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto, linhaSelecionada, onChangeLinha, onAbrirConfigLink, temLink}){
   const [status, setStatus] = useState('loading'); // loading | ok | sem-sessao | erro
   const [maquinasEtp, setMaquinasEtp] = useState([]);
   const [itens, setItens] = useState([]);
@@ -1904,7 +2041,7 @@ function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto,
 
   return (
     <div>
-      <PanelTabs tela={tela} onChange={onChange} onAbrirConfigLink={onAbrirConfigLink} temLink={temLink} tituloLink={tituloLink} theme={theme} onToggleTheme={onToggleTheme} />
+      <PanelTabs tela={tela} onChange={onChange} onAbrirConfigLink={onAbrirConfigLink} temLink={temLink} theme={theme} onToggleTheme={onToggleTheme} />
       <div className="content">
       {(status==='sem-sessao' || status==='erro') && (
         <div className="demo-banner">
@@ -2008,27 +2145,39 @@ function App(){
   const [linhaSelecionada, setLinhaSelecionada] = useState(LINHA_PADRAO_TRACKING);
   const [theme, toggleTheme] = usePersistedTheme();
 
-  // 3ª aba (link externo) — busca uma vez + Realtime (mesmo padrão de
-  // `ordemVisivel`/`painel_indicadores_config` em PainelIndicadores), só
-  // que aqui em App() porque tanto o rodízio automático quanto o controle
-  // remoto (mais abaixo) precisam saber se essa aba existe. `temLink`
-  // deriva de `linkExterno.url` — string vazia/null = aba não existe, sem
-  // precisar de outro campo booleano separado (ver LinkExternoConfigModal).
-  const [linkExterno, setLinkExterno] = useState({url:'', titulo:''});
+  // Abas de link externo (lista, ver histórico: 1ª versão só aceitava 1
+  // link, cliente pediu "consigo criar mais abas com outros links?") —
+  // busca uma vez + Realtime (mesmo padrão de `ordemVisivel`/
+  // `painel_indicadores_config` em PainelIndicadores), aqui em App() porque
+  // tanto o rodízio automático quanto o controle remoto (mais abaixo)
+  // precisam saber a lista inteira. `temLink` deriva do tamanho da lista —
+  // lista vazia = nenhuma aba de link existe, sem precisar de outro campo
+  // booleano separado (ver LinkExternoConfigModal). `linkIndex` (qual link
+  // da lista está em exibição agora) segue o MESMO padrão de
+  // `linhaSelecionada` acima: vive aqui pra permitir o controle remoto
+  // cruzar a fronteira entre telas na mesma sequência única.
+  const [linksExternos, setLinksExternos] = useState([]);
+  const [linkIndex, setLinkIndex] = useState(0);
   const [linkModalAberto, setLinkModalAberto] = useState(false);
-  const temLink = !!linkExterno.url;
+  const temLink = linksExternos.length > 0;
   useEffect(() => {
     let cancelado = false;
-    fetchLinkExterno().then(v => { if(!cancelado) setLinkExterno(v); });
+    fetchLinksExternos().then(v => { if(!cancelado) setLinksExternos(v); });
     if(!supabaseClient) return () => { cancelado = true; };
     const canal = supabaseClient
-      .channel('realtime:painel_link_externo')
-      .on('postgres_changes', {event:'*', schema:'public', table:'painel_link_externo'}, () => {
-        fetchLinkExterno().then(v => { if(!cancelado) setLinkExterno(v); });
+      .channel('realtime:painel_links_externos')
+      .on('postgres_changes', {event:'*', schema:'public', table:'painel_links_externos'}, () => {
+        fetchLinksExternos().then(v => { if(!cancelado) setLinksExternos(v); });
       })
       .subscribe();
     return () => { cancelado = true; supabaseClient.removeChannel(canal); };
   }, []);
+  // Se um link for removido (por qualquer aparelho) e `linkIndex` ficar
+  // apontando pra uma posição que não existe mais na lista, volta pro
+  // primeiro — nunca deixa `links[linkIndex]` indefinido.
+  useEffect(() => {
+    if(linkIndex > 0 && linkIndex >= linksExternos.length) setLinkIndex(0);
+  }, [linksExternos.length, linkIndex]);
 
   // TV sem ninguém mexendo — alterna sozinho entre as duas telas, pra dar
   // tempo de ler cada uma sem precisar de clique manual. "Painel
@@ -2049,16 +2198,13 @@ function App(){
     return () => clearTimeout(id);
   }, [tela]);
 
-  // 3ª aba (link externo) — mesma ideia acima, tempo FIXO de 60s (pedido do
-  // cliente), sempre volta pro INÍCIO do ciclo (Indicadores) — fecha o
-  // rodízio Indicadores → Elétrica/SEM/SSE/SEP → Link → Indicadores → ...
-  // Só roda quando `tela==='link'`, então nunca interfere nos 2 efeitos já
-  // existentes (este daqui e o ciclo de 30s dentro de TrackingPicking).
-  useEffect(() => {
-    if(tela !== 'link') return;
-    const id = setTimeout(() => setTela('indicadores'), 60000);
-    return () => clearTimeout(id);
-  }, [tela]);
+  // (Não tem um efeito de tempo fixo aqui pra `tela==='link'` — desde que
+  // virou lista de vários links, ela cicla do mesmo jeito que
+  // TrackingPicking cicla as linhas: o próprio LinkExternoPanel controla seu
+  // ciclo interno (60s por link) e avisa `onCicloCompleto` quando termina o
+  // último, fechando o rodízio Indicadores → Elétrica/SEM/SSE/SEP →
+  // Link 1..N → Indicadores → ... Ver comentário completo em
+  // LinkExternoPanel.)
 
   // TVs Samsung (Tizen) só entregam pro JavaScript da página as teclas do
   // controle físico que o app REGISTRAR explicitamente antes — por padrão,
@@ -2101,18 +2247,24 @@ function App(){
       const esquerda = !direita && EH_ESQUERDA(e);
       if(!direita && !esquerda) return;
       e.preventDefault();
-      // Sequência dinâmica — Indicadores + 4 linhas + (Link, só se
-      // configurado). Construída a cada tecla (é só um array de 5 ou 6
-      // posições, sem custo nenhum) em vez de fórmula fixa, pra caber a
-      // 3ª aba sem duplicar a lógica de navegação em outro lugar.
+      // Sequência dinâmica — Indicadores + 4 linhas + 1 posição por link
+      // externo cadastrado. Construída a cada tecla (é só um array de
+      // poucas posições, sem custo nenhum) em vez de fórmula fixa, pra caber
+      // a lista de links (tamanho variável) sem duplicar a lógica de
+      // navegação em outro lugar.
       const posicoes = [{tela:'indicadores'}];
       LINHAS_PRODUCAO_TRACKING.forEach(l => posicoes.push({tela:'picking', linha:l}));
-      if(temLink) posicoes.push({tela:'link'});
-      const idxAtual = posicoes.findIndex(p => p.tela===tela && (p.tela!=='picking' || p.linha===linhaSelecionada));
+      linksExternos.forEach((l, i) => posicoes.push({tela:'link', linkIndex:i}));
+      const idxAtual = posicoes.findIndex(p =>
+        p.tela===tela &&
+        (p.tela!=='picking' || p.linha===linhaSelecionada) &&
+        (p.tela!=='link' || p.linkIndex===linkIndex)
+      );
       const delta = direita ? 1 : -1;
       const novoIdx = ((idxAtual===-1 ? 0 : idxAtual) + delta + posicoes.length) % posicoes.length;
       const novaPos = posicoes[novoIdx];
       if(novaPos.tela==='picking') setLinhaSelecionada(novaPos.linha);
+      if(novaPos.tela==='link') setLinkIndex(novaPos.linkIndex);
       setTela(novaPos.tela);
     }
     // `true` (fase de CAPTURA, não a de bubble padrão) — intercepta o
@@ -2121,12 +2273,11 @@ function App(){
     // navegadores) ter chance de consumi-lo primeiro.
     window.addEventListener('keydown', onKeyDown, true);
     return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, [tela, linhaSelecionada, temLink]);
+  }, [tela, linhaSelecionada, linkIndex, linksExternos]);
 
   const propsAbaLink = {
     onAbrirConfigLink: () => setLinkModalAberto(true),
     temLink,
-    tituloLink: linkExterno.titulo,
   };
 
   return (
@@ -2140,13 +2291,22 @@ function App(){
           {...propsAbaLink}
         />
       )}
-      {tela==='link' && <LinkExternoPanel tela={tela} onChange={setTela} theme={theme} onToggleTheme={toggleTheme} url={linkExterno.url} {...propsAbaLink} />}
+      {tela==='link' && (
+        <LinkExternoPanel
+          tela={tela} onChange={setTela} theme={theme} onToggleTheme={toggleTheme}
+          onCicloCompleto={() => setTela('indicadores')}
+          links={linksExternos} linkIndex={linkIndex} onChangeLinkIndex={setLinkIndex}
+          {...propsAbaLink}
+        />
+      )}
       <LinkExternoConfigModal
         open={linkModalAberto}
-        urlAtual={linkExterno.url}
-        tituloAtual={linkExterno.titulo}
+        links={linksExternos}
         onClose={() => setLinkModalAberto(false)}
-        onSalvo={setLinkExterno}
+        onCriar={criarLinkExterno}
+        onAtualizar={atualizarLinkExterno}
+        onRemover={removerLinkExterno}
+        onReordenar={salvarOrdemLinksExternos}
       />
     </React.Fragment>
   );

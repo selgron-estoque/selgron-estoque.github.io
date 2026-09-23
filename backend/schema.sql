@@ -2584,49 +2584,72 @@ create index if not exists idx_produtos_codigo_trgm on produtos using gin (codig
 create index if not exists idx_produtos_descricao_trgm on produtos using gin (descricao gin_trgm_ops);
 
 -- =============================================================================
--- "PAINEL INDICADORES" (painel-indicadores.html): 3ª ABA — LINK EXTERNO
+-- "PAINEL INDICADORES" (painel-indicadores.html): ABAS DE LINK EXTERNO
 -- =============================================================================
 -- Pedido do cliente: mostrar uma planilha do Google Sheets na TV também —
 -- resolvido de forma genérica (não específica de Google Sheets): um campo de
--- URL configurável que vira uma 3ª aba no rodízio automático, mostrando esse
+-- URL configurável que vira uma aba no rodízio automático, mostrando esse
 -- link dentro de um <iframe>. Só funciona pra links de origens que permitem
 -- ser exibidas dentro de outra página (ex.: Google Sheets "Publicado na
 -- Web", nunca o link normal de edição/visualização, que o próprio Google
 -- bloqueia) — decisão de quem cola o link, não deste schema.
 --
--- Tabela SINGLETON (1 linha só, id sempre 1), mesmo padrão de
--- `painel_indicadores_config` — inclusive as mesmas policies (leitura só
--- autenticado, escrita só quem tem acesso à tela "Indicadores").
--- `url` nulo/vazio = 3ª aba não aparece no rodízio (comportamento continua
--- igual a antes desta funcionalidade existir).
-create table if not exists painel_link_externo (
-  id int primary key default 1,
-  url text,
+-- Tabela com VÁRIAS linhas (uma por link/aba, pedido do cliente: "consigo
+-- criar mais abas com outros links?") — cada uma vira sua própria aba no
+-- rodízio automático (60s cada) e na navegação por controle remoto, na ordem
+-- da coluna `ordem`. Mesmas policies de sempre: leitura só autenticado,
+-- escrita (inserir/editar/remover) só quem tem acesso à tela "Indicadores".
+-- Nenhum link cadastrado = as abas de link somem do rodízio (comportamento
+-- continua igual a antes desta funcionalidade existir).
+create table if not exists painel_links_externos (
+  id uuid primary key default gen_random_uuid(),
+  url text not null,
   titulo text,
-  atualizado_em timestamptz not null default now()
+  ordem int not null default 0,
+  criado_em timestamptz not null default now()
 );
-insert into painel_link_externo (id) values (1) on conflict (id) do nothing;
 
-alter table painel_link_externo enable row level security;
+-- Migra o link único salvo pela 1ª versão desta funcionalidade (tabela
+-- singleton `painel_link_externo`, id=1) pra 1ª linha desta tabela nova —
+-- só roda se aquela tabela existir e tiver algo preenchido, e só se esta
+-- aqui ainda estiver vazia (idempotente, seguro rodar de novo).
+do $$
+begin
+  if exists (select 1 from information_schema.tables where table_name = 'painel_link_externo')
+     and not exists (select 1 from painel_links_externos)
+  then
+    insert into painel_links_externos (url, titulo, ordem)
+    select url, titulo, 0
+    from painel_link_externo
+    where url is not null and url <> '';
+  end if;
+end $$;
 
-drop policy if exists "leitura autenticada" on painel_link_externo;
-create policy "leitura autenticada" on painel_link_externo for select
+drop table if exists painel_link_externo;
+
+alter table painel_links_externos enable row level security;
+
+drop policy if exists "leitura autenticada" on painel_links_externos;
+create policy "leitura autenticada" on painel_links_externos for select
   using (auth.role() = 'authenticated');
 
-drop policy if exists "escrita por tela indicadores" on painel_link_externo;
-create policy "escrita por tela indicadores" on painel_link_externo for insert
+drop policy if exists "insercao por tela indicadores" on painel_links_externos;
+create policy "insercao por tela indicadores" on painel_links_externos for insert
   with check (tem_acesso_tela(auth.uid(), 'dashboard'));
-drop policy if exists "atualizacao por tela indicadores" on painel_link_externo;
-create policy "atualizacao por tela indicadores" on painel_link_externo for update
+drop policy if exists "atualizacao por tela indicadores" on painel_links_externos;
+create policy "atualizacao por tela indicadores" on painel_links_externos for update
   using (tem_acesso_tela(auth.uid(), 'dashboard'))
   with check (tem_acesso_tela(auth.uid(), 'dashboard'));
+drop policy if exists "remocao por tela indicadores" on painel_links_externos;
+create policy "remocao por tela indicadores" on painel_links_externos for delete
+  using (tem_acesso_tela(auth.uid(), 'dashboard'));
 
 do $$
 begin
   if not exists (
     select 1 from pg_publication_tables
-    where pubname = 'supabase_realtime' and tablename = 'painel_link_externo'
+    where pubname = 'supabase_realtime' and tablename = 'painel_links_externos'
   ) then
-    alter publication supabase_realtime add table painel_link_externo;
+    alter publication supabase_realtime add table painel_links_externos;
   end if;
 end $$;
