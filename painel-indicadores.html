@@ -186,55 +186,71 @@
   .kpi-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin:12px 0 16px 0;}
   @media (max-width:1000px){.kpi-row{grid-template-columns:repeat(2,1fr);}}
   @media (max-width:560px){.kpi-row{grid-template-columns:1fr;}}
-  /* `align-items` NÃO é `center` de propósito — com o ícone de altura FIXA
-     (58px) dentro de um container `align-items:center`, o `height:100%'
-     do `.kpi-card-body` deixa de ser confiável (regra do flexbox: altura
-     em % num item flex só resolve quando esse item está de fato esticando
-     pelo cross-axis, ou seja com `align-items:stretch` — o padrão do
-     `display:flex`, mas não mais o valor depois de `center`) — o corpo do
-     card encolhia pro tamanho do conteúdo e o ícone ficava "colado" no
-     topo em vez de centralizado (bug relatado pelo cliente). Com o padrão
-     (`stretch`), `.kpi-card-body` ocupa a altura inteira do card de
-     verdade, e só o ÍCONE (que tem tamanho fixo, então não estica) pede
-     centralização própria via `align-self:center` abaixo. */
-  .kpi-card{display:flex;gap:18px;height:154px;box-sizing:border-box;padding:16px 20px 14px 16px;background:var(--panel-raised);border:1px solid var(--line);border-radius:10px;}
-  .kpi-card-icon{width:58px;height:58px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;align-self:center;}
-  /* `.kpi-card-body`: 3 blocos empilhados (topo: título+período; meio:
-     número/meta à esquerda + informações auxiliares à direita; rodapé:
-     tendência/barra de progresso) — `justify-content:space-between` com os
-     3 blocos SEMPRE presentes (rodapé fica vazio, nunca ausente, quando o
-     card não tem tendência real pra mostrar) é o que garante título e
-     número na MESMA altura nos 4 cards, sem precisar de nenhum truque de
-     padding fixo — os 4 cards têm exatamente a mesma estrutura de blocos
-     agora. */
-  .kpi-card-body{flex:1;min-width:0;height:100%;display:flex;flex-direction:column;justify-content:space-between;box-sizing:border-box;}
-  .kpi-card-titulo{font-size:14px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .kpi-card-periodo{font-size:12px;font-weight:400;color:var(--ink-dim);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .kpi-card-lower{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;min-width:0;}
-  .kpi-card-numbers{min-width:0;flex-shrink:0;}
-  .kpi-card-valor{font-family:var(--font-mono);font-size:40px;font-weight:700;line-height:1;color:var(--ink);}
-  .kpi-card-meta{font-size:14px;font-weight:600;color:var(--ink);margin-top:8px;}
-  .kpi-card-info{flex-shrink:0;display:flex;flex-direction:column;justify-content:center;}
-  .kpi-card-info-row{display:flex;align-items:baseline;justify-content:space-between;gap:14px;font-size:13px;font-weight:400;color:var(--ink-dim);line-height:22px;white-space:nowrap;}
-  .kpi-card-info-row .v{font-size:14px;font-weight:600;color:var(--ink);}
-  /* Bloco alternativo à `.kpi-card-meta` (card de Divergências: percentual
-     em destaque + texto, em vez de "Meta: X"). */
-  .kpi-card-secundario{margin-top:6px;}
-  .kpi-card-secundario .pct{font-size:20px;font-weight:700;line-height:1;color:var(--ink);}
-  .kpi-card-secundario .txt{font-size:12px;font-weight:400;color:var(--ink-dim);margin-top:3px;}
-  /* Rodapé — tendência (▲/▼ vs. período anterior) ou barra de progresso da
-     meta semanal (card de Contagens). Altura mínima reservada mesmo vazio
-     (card de Cobertura, sem dado histórico de tendência real disponível —
-     ver comentário em `calc`), pra manter os 4 cards com a MESMA altura. */
-  .kpi-card-footer{min-height:32px;display:flex;flex-direction:column;justify-content:center;}
-  .kpi-card-footer-trend .valor{font-size:14px;font-weight:700;display:block;}
-  .kpi-card-footer-trend .texto{font-size:13px;font-weight:400;color:var(--ink-dim);display:block;margin-top:1px;}
-  .kpi-card-progress-labels{display:flex;align-items:baseline;justify-content:space-between;font-size:13px;color:var(--ink-dim);margin-bottom:5px;}
+  /* Estrutura HORIZONTAL (não mais empilhada verticalmente) — 3 colunas
+     fixas via CSS Grid: ícone | conteúdo principal (título/período/número/
+     meta) | informações secundárias. Altura do card FIXA (170px, nunca
+     `height:auto` por conteúdo) — qualquer ajuste de espaçamento pra caber
+     é feito DENTRO dela, nunca esticando o card. `overflow:hidden` só como
+     proteção final, depois do conteúdo já estar dimensionado pra caber. */
+  .kpi-card{height:170px;box-sizing:border-box;padding:16px;background:var(--panel-raised);border:1px solid var(--line);border-radius:10px;display:flex;flex-direction:column;overflow:hidden;}
+  /* `flex:1` (não `height:100%`) de propósito — item flex com `flex:1`
+     sempre recebe uma altura definida pelo algoritmo do flexbox, ao
+     contrário de `height:100%` num item flex (que só resolve de forma
+     confiável quando esse item realmente estica — outra fonte do bug de
+     ícone desalinhado corrigido antes). `min-height:0` permite esse grid
+     encolher quando o rodapé (barra de progresso do Card 3) ocupa parte da
+     altura do card. */
+  /* Coluna direita em 128px (não 150px) e gap um pouco mais enxuto —
+     medição real de texto (canvas `measureText`) mostrou que os títulos
+     mais longos ("Acuracidade (itens recontados)", "Cobertura da
+     programação") precisam de ~180-210px a 14px/600 — não cabe inteiro ao
+     lado de uma coluna de info de 150px dentro da largura real do card
+     (~368px, herdada do canvas fixo de 1600px que os gráficos já usam).
+     Prioriza a coluna PRINCIPAL (título/número) — ela é a informação mais
+     importante do card — e aceita reticências (`text-overflow:ellipsis`,
+     já usado no título) como saída elegante pro texto mais longo, em vez
+     de estourar a largura ou a altura do card. */
+  .kpi-card-content{flex:1;min-height:0;display:grid;grid-template-columns:56px minmax(0,1fr) 128px;gap:12px;align-items:center;}
+  .kpi-card-icon{width:56px;height:56px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .kpi-card-main{min-width:0;display:flex;flex-direction:column;}
+  .kpi-card-titulo{font-size:14px;font-weight:600;line-height:18px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  /* Fonte um pouco menor só nos 2 títulos mais longos (Acuracidade,
+     Cobertura) — medição real (canvas `measureText`) mostrou que mesmo a
+     12px eles não cabem 100% na coluna de 128px, mas reduz bastante o
+     quanto fica cortado; as reticências continuam como rede de segurança
+     pro que sobrar. Título curto (Contagens, Divergências) continua 14px. */
+  .kpi-card-titulo.compacto{font-size:12px;line-height:16px;}
+  .kpi-card-periodo{font-size:12px;line-height:16px;color:var(--ink-dim);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .kpi-card-valor{font-family:var(--font-mono);font-size:38px;font-weight:700;line-height:40px;color:var(--ink);margin-top:4px;}
+  .kpi-card-meta{font-size:14px;font-weight:600;line-height:18px;color:var(--ink);margin-top:2px;}
+  .kpi-card-info{min-width:0;display:flex;flex-direction:column;justify-content:center;}
+  /* Rótulo trunca com reticências se precisar (`min-width:0` + ellipsis no
+     `span` do rótulo, não no valor) — o VALOR (o número em si) nunca é
+     cortado, só o texto do rótulo quando muito longo (ex.: "Itens com
+     divergência" na coluna estreita de 128px). */
+  .kpi-card-info-row{display:flex;align-items:baseline;justify-content:space-between;gap:8px;font-size:13px;font-weight:400;color:var(--ink-dim);line-height:22px;}
+  .kpi-card-info-row span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .kpi-card-info-row .v{font-size:14px;font-weight:600;color:var(--ink);white-space:nowrap;flex-shrink:0;}
+  /* Coluna direita alternativa (card de Divergências: percentual em
+     destaque + tendência, no lugar das 3 linhas rótulo/valor). */
+  .kpi-card-info .pct{font-size:20px;font-weight:700;line-height:22px;color:var(--ink);}
+  .kpi-card-info .txt{font-size:12px;font-weight:400;color:var(--ink-dim);line-height:16px;}
+  .kpi-card-info .trend-valor{font-size:14px;font-weight:700;line-height:18px;margin-top:6px;}
+  .kpi-card-info .trend-texto{font-size:12px;font-weight:400;color:var(--ink-dim);line-height:16px;}
+  /* Barra de progresso (só o Card 3/Contagens usa) — fora do grid acima,
+     numa faixa própria no rodapé do card, sempre DENTRO da altura fixa
+     (o grid acima usa `flex:1`, então encolhe pra abrir espaço pra ela). */
+  .kpi-card-progress{margin-top:8px;flex-shrink:0;}
+  .kpi-card-progress-labels{display:flex;align-items:baseline;justify-content:space-between;font-size:12px;color:var(--ink-dim);margin-bottom:4px;}
   .kpi-card-progress-labels .v{font-weight:600;color:var(--ink);}
-  .kpi-card-progress-track{height:7px;border-radius:999px;background:var(--line);overflow:hidden;}
+  .kpi-card-progress-track{height:6px;border-radius:999px;background:var(--line);overflow:hidden;}
   .kpi-card-progress-fill{height:100%;border-radius:999px;background:var(--purple);}
   @media (max-width:560px){
-    .kpi-card{height:auto;padding:16px;}
+    .kpi-card{height:auto;}
+    .kpi-card-content{grid-template-columns:56px minmax(0,1fr);grid-template-areas:"icon main" "icon info";}
+    .kpi-card-icon{grid-area:icon;}
+    .kpi-card-main{grid-area:main;}
+    .kpi-card-info{grid-area:info;}
   }
 
   /* ---- Modal de configuração "Quais indicadores aparecem" — CSS
@@ -823,45 +839,38 @@ function MonthlyAccuracyBarChart({months, meta=META_ACURACIDADE_SEMANAL}){
   );
 }
 
-// Card de KPI (1ª linha, resumo executivo) — ícone à esquerda; título +
-// período numa linha própria (largura toda); no meio, número grande +
-// meta/secundário à esquerda e informações complementares à direita, lado
-// a lado (ver `.kpi-card-lower`); rodapé com tendência real (vs. período
-// anterior) ou barra de progresso, quando houver.
-// `periodo`/`meta`/`linhas`/`footer` são opcionais. `secundario` (nó React)
-// substitui `meta` quando o card precisa de outra coisa ali (ex.: o
-// percentual em destaque do card de Divergências). `linhas` omitido não
-// renderiza a coluna de informações à direita (card de Divergências não
-// tem uma — ver seção 9 do pedido do cliente).
-function KpiCard({icon, iconBg, iconColor, titulo, periodo, valor, corValor, meta, secundario, linhas, footer}){
+// Card de KPI (1ª linha, resumo executivo) — layout HORIZONTAL fixo em 3
+// colunas (`.kpi-card-content`, grid): ícone | principal (título, período,
+// número, meta) | informações secundárias. Altura do card é FIXA (170px,
+// ver CSS) — nada aqui pode crescer além dela.
+// `meta`/`linhas`/`direitaCustom`/`progresso` são opcionais. `direitaCustom`
+// (nó React) substitui as linhas rótulo/valor padrão da coluna direita —
+// usado só pelo card de Divergências (percentual + tendência, formato
+// diferente do "rótulo ........ valor" dos outros 3 cards). `progresso`
+// (nó React) é a barra de progresso do card de Contagens, renderizada numa
+// faixa própria abaixo do grid principal, ainda dentro da altura fixa do
+// card (o grid encolhe via `flex:1` pra abrir espaço pra ela).
+function KpiCard({icon, iconBg, iconColor, titulo, tituloCompacto, periodo, valor, corValor, meta, linhas, direitaCustom, progresso}){
   return (
     <div className="kpi-card">
-      <div className="kpi-card-icon" style={{background:iconBg, color:iconColor}}>{icon}</div>
-      <div className="kpi-card-body">
-        <div>
-          <div className="kpi-card-titulo">{titulo}</div>
+      <div className="kpi-card-content">
+        <div className="kpi-card-icon" style={{background:iconBg, color:iconColor}}>{icon}</div>
+        <div className="kpi-card-main">
+          <div className={'kpi-card-titulo' + (tituloCompacto ? ' compacto' : '')}>{titulo}</div>
           {periodo && <div className="kpi-card-periodo">{periodo}</div>}
+          <div className="kpi-card-valor" style={corValor ? {color:corValor} : undefined}>{valor}</div>
+          {meta!=null && <div className="kpi-card-meta">Meta: {meta}</div>}
         </div>
-        <div className="kpi-card-lower">
-          <div className="kpi-card-numbers">
-            <div className="kpi-card-valor" style={corValor ? {color:corValor} : undefined}>{valor}</div>
-            {secundario ? secundario : (
-              <div className="kpi-card-meta" style={meta==null ? {visibility:'hidden'} : undefined}>Meta: {meta}</div>
-            )}
-          </div>
-          {linhas && (
-            <div className="kpi-card-info">
-              {linhas.map((l,i)=>(
-                <div key={i} className="kpi-card-info-row">
-                  <span>{l.rotulo}</span>
-                  <span className="v" style={l.cor ? {color:l.cor} : undefined}>{l.valor}</span>
-                </div>
-              ))}
+        <div className="kpi-card-info">
+          {direitaCustom ? direitaCustom : (linhas||[]).map((l,i)=>(
+            <div key={i} className="kpi-card-info-row">
+              <span>{l.rotulo}</span>
+              <span className="v" style={l.cor ? {color:l.cor} : undefined}>{l.valor}</span>
             </div>
-          )}
+          ))}
         </div>
-        <div className="kpi-card-footer">{footer}</div>
       </div>
+      {progresso}
     </div>
   );
 }
@@ -2234,6 +2243,7 @@ function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfig,
         <KpiCard
           icon={IconAcuracidade} iconBg="var(--teal-bg)" iconColor="var(--teal)"
           titulo="Acuracidade (itens recontados)"
+          tituloCompacto
           periodo={`Semana atual (${formatDDMM(semanaAtualInicio)} a ${formatDDMM(semanaAtualFim)})`}
           valor={kpiAcuracidade!=null ? Math.round(kpiAcuracidade)+'%' : '—'}
           meta={META_ACURACIDADE_SEMANAL+'%'}
@@ -2242,20 +2252,11 @@ function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfig,
             {rotulo:'Itens corretos', valor:kpiCorretos},
             {rotulo:'Itens com divergência', valor:kpiDivergentes},
           ]}
-          footer={(kpiAcuracidade!=null && kpiAcuracidadeSemanaAnterior!=null) ? (()=>{
-            const delta = kpiAcuracidade - kpiAcuracidadeSemanaAnterior;
-            const bom = delta>=0;
-            return (
-              <div className="kpi-card-footer-trend" style={{color: bom?'var(--ok)':'var(--danger)'}}>
-                <span className="valor">{delta>=0?'▲ +':'▼ '}{Math.round(delta)} p.p.</span>
-                <span className="texto">vs. semana anterior ({Math.round(kpiAcuracidadeSemanaAnterior)}%)</span>
-              </div>
-            );
-          })() : null}
         />
         <KpiCard
           icon={IconCobertura} iconBg="var(--blue-bg)" iconColor="var(--blue)"
           titulo="Cobertura da programação"
+          tituloCompacto
           periodo={`Programação atual (${periodoMesAtual})`}
           valor={coberturaPercent!=null ? Math.round(coberturaPercent)+'%' : '—'}
           meta="100%"
@@ -2276,7 +2277,7 @@ function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfig,
             {rotulo:'Maior dia', valor:kpiMaiorDia},
             {rotulo:'Menor dia', valor:kpiMenorDia},
           ]}
-          footer={
+          progresso={
             <div className="kpi-card-progress">
               <div className="kpi-card-progress-labels">
                 <span>{META_CONTAGENS_SEMANAL>0 ? Math.round(Math.min(100, kpiItensAvaliados/META_CONTAGENS_SEMANAL*100)) : 0}% da meta semanal</span>
@@ -2294,21 +2295,20 @@ function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfig,
           periodo={`Semana atual (${formatDDMM(semanaAtualInicio)} a ${formatDDMM(semanaAtualFim)})`}
           valor={kpiDivergentes}
           corValor="var(--danger)"
-          secundario={
-            <div className="kpi-card-secundario">
+          direitaCustom={
+            <>
               <div className="pct">{kpiItensAvaliados>0 ? Math.round(kpiDivergentes/kpiItensAvaliados*100)+'%' : '—'}</div>
               <div className="txt">dos itens contados</div>
-            </div>
+              {kpiDivergenciaVariacaoPercent!=null && (
+                <>
+                  <div className="trend-valor" style={{color: kpiDivergenciaVariacaoPercent<=0 ? 'var(--ok)' : 'var(--danger)'}}>
+                    {kpiDivergenciaVariacaoPercent>0?'▲ +':'▼ '}{Math.round(kpiDivergenciaVariacaoPercent)}%
+                  </div>
+                  <div className="trend-texto">vs. semana anterior ({kpiDivergentesSemanaAnterior})</div>
+                </>
+              )}
+            </>
           }
-          footer={kpiDivergenciaVariacaoPercent!=null ? (()=>{
-            const bom = kpiDivergenciaVariacaoPercent<=0;
-            return (
-              <div className="kpi-card-footer-trend" style={{color: bom?'var(--ok)':'var(--danger)'}}>
-                <span className="valor">{kpiDivergenciaVariacaoPercent>0?'▲ +':'▼ '}{Math.round(kpiDivergenciaVariacaoPercent)}%</span>
-                <span className="texto">vs. semana anterior ({kpiDivergentesSemanaAnterior})</span>
-              </div>
-            );
-          })() : null}
         />
       </div>
 
