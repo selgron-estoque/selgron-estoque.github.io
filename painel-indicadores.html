@@ -186,8 +186,19 @@
   .kpi-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin:12px 0 16px 0;}
   @media (max-width:1000px){.kpi-row{grid-template-columns:repeat(2,1fr);}}
   @media (max-width:560px){.kpi-row{grid-template-columns:1fr;}}
-  .kpi-card{display:flex;align-items:center;gap:18px;height:154px;box-sizing:border-box;padding:16px 20px 14px 16px;background:var(--panel-raised);border:1px solid var(--line);border-radius:10px;}
-  .kpi-card-icon{width:58px;height:58px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  /* `align-items` NÃO é `center` de propósito — com o ícone de altura FIXA
+     (58px) dentro de um container `align-items:center`, o `height:100%'
+     do `.kpi-card-body` deixa de ser confiável (regra do flexbox: altura
+     em % num item flex só resolve quando esse item está de fato esticando
+     pelo cross-axis, ou seja com `align-items:stretch` — o padrão do
+     `display:flex`, mas não mais o valor depois de `center`) — o corpo do
+     card encolhia pro tamanho do conteúdo e o ícone ficava "colado" no
+     topo em vez de centralizado (bug relatado pelo cliente). Com o padrão
+     (`stretch`), `.kpi-card-body` ocupa a altura inteira do card de
+     verdade, e só o ÍCONE (que tem tamanho fixo, então não estica) pede
+     centralização própria via `align-self:center` abaixo. */
+  .kpi-card{display:flex;gap:18px;height:154px;box-sizing:border-box;padding:16px 20px 14px 16px;background:var(--panel-raised);border:1px solid var(--line);border-radius:10px;}
+  .kpi-card-icon{width:58px;height:58px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;align-self:center;}
   /* `.kpi-card-body`: 3 blocos empilhados (topo: título+período; meio:
      número/meta à esquerda + informações auxiliares à direita; rodapé:
      tendência/barra de progresso) — `justify-content:space-between` com os
