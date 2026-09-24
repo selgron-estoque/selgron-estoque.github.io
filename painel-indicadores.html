@@ -389,7 +389,14 @@
   .pc-info-card-value{font-size:17px;font-weight:700;color:var(--pcink);}
 
   .pc-cards-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;flex-shrink:0;}
-  .pc-card{height:108px;border-radius:9px;border:1px solid var(--pcline);background:var(--pcpanel);box-sizing:border-box;padding:16px 20px;display:flex;align-items:center;gap:16px;}
+  /* `justify-content:center` — numa TV grande (1920px), 3 cards dividindo
+     a largura toda deixam cada um bem mais largo que o conteúdo (ícone +
+     número + rótulo) precisa, e sem isso o conteúdo ficava colado na
+     esquerda com uma sobra vazia enorme do lado direito de CADA card
+     (pedido do cliente pra arrumar, com print real dos 52 pedidos).
+     Centralizar reparte essa sobra nos dois lados — lê como intencional,
+     não como espaço desperdiçado. */
+  .pc-card{height:108px;border-radius:9px;border:1px solid var(--pcline);background:var(--pcpanel);box-sizing:border-box;padding:16px 20px;display:flex;align-items:center;justify-content:center;gap:16px;}
   .pc-card-icon-wrap{width:56px;height:56px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
   .pc-card-body{display:flex;flex-direction:column;min-width:0;justify-content:center;}
   .pc-card-valor{font-family:var(--font-mono);font-size:40px;font-weight:700;line-height:42px;color:var(--pcink);}
