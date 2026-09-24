@@ -1013,6 +1013,7 @@ const DEMO_KPI = {
   semanaAtualInicio:'2026-09-15', semanaAtualFim:'2026-09-21',
   itensAvaliados:125, corretos:114, divergentes:11, acuracidade:91.2, divergenciaVariacaoPercent:-12,
   divergentesSemanaAnterior:13, acuracidadeSemanaAnterior:93.5,
+  itensAvaliadosMes:512, corretosMes:462, divergentesMes:50, acuracidadeMes:90.2,
   mediaDiaria:17.9, maiorDia:44, menorDia:0,
   coberturaProgramado:250, coberturaContado:125, coberturaPendente:125, coberturaPercent:50,
 };
@@ -2042,6 +2043,22 @@ function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfig,
     const kpiCorretosAnterior = kpiItensAvaliadosAnterior - kpiDivergentesSemanaAnterior;
     const kpiAcuracidadeSemanaAnterior = kpiItensAvaliadosAnterior>0 ? (kpiCorretosAnterior/kpiItensAvaliadosAnterior)*100 : null;
 
+    // "Mês atual" (1º dia do mês até o último) — escopo só do card
+    // "Acuracidade (itens recontados)" (pedido do cliente: esse card
+    // mostra o mês corrente, não a semana — os outros 2 cards desta linha
+    // continuam por semana, usando `poolSemanaAtual`/`kpiItensAvaliados`/
+    // `kpiDivergentes` acima, sem mudança nenhuma). Mesmo pool
+    // deduplicado (`todasParaQualidade`) usado em todos os cards.
+    const dataHojeObj = new Date(hojeStr+'T00:00:00');
+    const mesAtualInicio = hojeStr.slice(0,7)+'-01';
+    const mesAtualFimDate = new Date(dataHojeObj.getFullYear(), dataHojeObj.getMonth()+1, 0);
+    const mesAtualFim = localDateStr(mesAtualFimDate);
+    const poolMesAtual = todasParaQualidade.filter(c=>c.data && c.data>=mesAtualInicio && c.data<=mesAtualFim);
+    const kpiItensAvaliadosMes = poolMesAtual.length;
+    const kpiDivergentesMes = poolMesAtual.filter(c=>c.diferenca!==0 && c.diferenca!=null).length;
+    const kpiCorretosMes = kpiItensAvaliadosMes - kpiDivergentesMes;
+    const kpiAcuracidadeMes = kpiItensAvaliadosMes>0 ? (kpiCorretosMes/kpiItensAvaliadosMes)*100 : null;
+
     const diasSemanaAtual = computeDiasSemanaAtual(poolSemanaAtual, semanaAtualInicio);
     const diasComContagem = diasSemanaAtual.filter(d=>d.total>0);
     const kpiMediaDiaria = kpiItensAvaliados / 7;
@@ -2061,6 +2078,7 @@ function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfig,
       semanaAtualInicio, semanaAtualFim,
       kpiItensAvaliados, kpiCorretos, kpiDivergentes, kpiAcuracidade, kpiDivergenciaVariacaoPercent,
       kpiDivergentesSemanaAnterior, kpiAcuracidadeSemanaAnterior,
+      kpiItensAvaliadosMes, kpiCorretosMes, kpiDivergentesMes, kpiAcuracidadeMes,
       kpiMediaDiaria, kpiMaiorDia, kpiMenorDia,
       coberturaProgramado, coberturaContado, coberturaPendente, coberturaPercent,
     };
@@ -2092,6 +2110,10 @@ function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfig,
   const kpiCorretos = calc ? calc.kpiCorretos : DEMO_KPI.corretos;
   const kpiDivergentes = calc ? calc.kpiDivergentes : DEMO_KPI.divergentes;
   const kpiAcuracidade = calc ? calc.kpiAcuracidade : DEMO_KPI.acuracidade;
+  const kpiItensAvaliadosMes = calc ? calc.kpiItensAvaliadosMes : DEMO_KPI.itensAvaliadosMes;
+  const kpiCorretosMes = calc ? calc.kpiCorretosMes : DEMO_KPI.corretosMes;
+  const kpiDivergentesMes = calc ? calc.kpiDivergentesMes : DEMO_KPI.divergentesMes;
+  const kpiAcuracidadeMes = calc ? calc.kpiAcuracidadeMes : DEMO_KPI.acuracidadeMes;
   const kpiDivergenciaVariacaoPercent = calc ? calc.kpiDivergenciaVariacaoPercent : DEMO_KPI.divergenciaVariacaoPercent;
   const kpiDivergentesSemanaAnterior = calc ? calc.kpiDivergentesSemanaAnterior : DEMO_KPI.divergentesSemanaAnterior;
   const kpiAcuracidadeSemanaAnterior = calc ? calc.kpiAcuracidadeSemanaAnterior : DEMO_KPI.acuracidadeSemanaAnterior;
@@ -2257,13 +2279,13 @@ function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfig,
         <KpiCard
           icon={IconAcuracidade} iconBg="var(--teal-bg)" iconColor="var(--teal)"
           titulo="Acuracidade (itens recontados)"
-          periodo={`Semana atual (${formatDDMM(semanaAtualInicio)} a ${formatDDMM(semanaAtualFim)})`}
-          valor={kpiAcuracidade!=null ? Math.round(kpiAcuracidade)+'%' : '—'}
+          periodo={`Mês atual (${periodoMesAtual})`}
+          valor={kpiAcuracidadeMes!=null ? Math.round(kpiAcuracidadeMes)+'%' : '—'}
           meta={META_ACURACIDADE_SEMANAL+'%'}
           linhas={[
-            {rotulo:'Itens avaliados', valor:kpiItensAvaliados},
-            {rotulo:'Itens corretos', valor:kpiCorretos},
-            {rotulo:'Itens com divergência', valor:kpiDivergentes},
+            {rotulo:'Itens avaliados', valor:kpiItensAvaliadosMes},
+            {rotulo:'Itens corretos', valor:kpiCorretosMes},
+            {rotulo:'Itens com divergência', valor:kpiDivergentesMes},
           ]}
         />
         <KpiCard
