@@ -336,7 +336,7 @@
   }
   .pc-container{flex:1;min-height:0;display:flex;flex-direction:column;box-sizing:border-box;padding:22px 32px 0;max-width:1920px;width:100%;margin:0 auto;}
 
-  .pc-header{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;flex-shrink:0;margin-bottom:18px;}
+  .pc-header{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;flex-shrink:0;margin-bottom:22px;}
   .pc-header-left{display:flex;align-items:center;gap:16px;}
   .pc-header-icon{width:52px;height:52px;border-radius:50%;background:var(--pcteal-bg);color:var(--pcteal);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
   .pc-header-text{display:flex;flex-direction:column;justify-content:center;}
@@ -352,7 +352,7 @@
   .pc-info-card-label{font-size:12px;color:var(--pcink-dim);}
   .pc-info-card-value{font-size:17px;font-weight:700;color:var(--pcink);}
 
-  .pc-cards-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;flex-shrink:0;}
+  .pc-cards-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;flex-shrink:0;}
   .pc-card{height:108px;border-radius:9px;border:1px solid var(--pcline);background:var(--pcpanel);box-sizing:border-box;padding:16px 20px;display:flex;align-items:center;gap:16px;}
   .pc-card-icon-wrap{width:56px;height:56px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
   .pc-card-body{display:flex;flex-direction:column;min-width:0;justify-content:center;}
@@ -378,7 +378,7 @@
      que deixa cabeçalho/KPIs/rodapé fixos e só a LISTA rola, quando tem
      pedido demais pra caber na tela de uma vez (TV, sem scroll de
      página inteira). */
-  .pc-list{flex:1;min-height:0;overflow-y:auto;margin-top:18px;padding-bottom:16px;display:flex;flex-direction:column;gap:10px;scroll-behavior:smooth;}
+  .pc-list{flex:1;min-height:0;overflow-y:auto;margin-top:22px;padding-bottom:20px;display:flex;flex-direction:column;gap:14px;scroll-behavior:smooth;}
   .pc-list::-webkit-scrollbar{width:8px;}
   .pc-list::-webkit-scrollbar-thumb{background:var(--pcline);border-radius:4px;}
   .pc-list::-webkit-scrollbar-track{background:transparent;}
@@ -386,7 +386,7 @@
   .pc-order{background:var(--pcpanel);border:1px solid var(--pcline);border-radius:9px;overflow:hidden;flex-shrink:0;transition:border-color .25s ease;}
   .pc-order.expandido{border-color:rgba(45,212,198,0.4);}
 
-  .pc-order-head{all:unset;box-sizing:border-box;cursor:pointer;display:grid;grid-template-columns:150px 1fr 260px;align-items:center;gap:16px;width:100%;height:64px;padding:0 16px;text-align:left;}
+  .pc-order-head{all:unset;box-sizing:border-box;cursor:pointer;display:grid;grid-template-columns:150px 1fr 260px;align-items:center;gap:20px;width:100%;height:68px;padding:0 20px;text-align:left;}
 
   .pc-status-badge{display:inline-flex;align-items:center;gap:8px;height:32px;padding:0 12px;border-radius:8px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap;}
   .pc-status-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
@@ -395,7 +395,7 @@
   .pc-order-fornecedor-nome{font-size:16px;font-weight:700;color:var(--pcink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .pc-order-meta{font-size:13px;font-weight:400;color:var(--pcink-dim);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 
-  .pc-order-badges{display:flex;align-items:center;gap:10px;justify-content:flex-end;flex-shrink:0;}
+  .pc-order-badges{display:flex;align-items:center;gap:12px;justify-content:flex-end;flex-shrink:0;}
   .pc-order-badge{width:80px;height:48px;border:1px solid var(--pcline);border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;}
   .pc-order-badge-num{font-family:var(--font-mono);font-size:18px;font-weight:700;color:var(--pcink);line-height:1;}
   /* 12px = piso mínimo de texto secundário (pedido explícito do cliente
@@ -405,7 +405,7 @@
   .pc-order-chevron{color:var(--pcink-dim);flex-shrink:0;transition:transform .25s ease,color .25s ease;}
   .pc-order.expandido .pc-order-chevron{transform:rotate(180deg);color:var(--pcteal);}
 
-  .pc-order-body{padding:0 16px 16px;animation:pc-order-expand .25s ease;}
+  .pc-order-body{padding:4px 20px 20px;animation:pc-order-expand .25s ease;}
   @keyframes pc-order-expand{from{opacity:0;}to{opacity:1;}}
   .pc-order-table{width:100%;border-collapse:collapse;table-layout:fixed;}
   .pc-order-table thead th{height:36px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;color:var(--pcink-dim);text-align:left;border-bottom:1px solid var(--pcline);}
@@ -2734,8 +2734,16 @@ function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto,
           embaixo (relatado pelo cliente numa TV grande de verdade no
           almoxarifado). Com FitToScreen, o board escala pra preencher a
           tela inteira, texto/cards incluídos — mesmo efeito que já existe
-          na aba Indicadores. */}
-      <FitToScreen>
+          na aba Indicadores. `maxScale` aqui (Indicadores não usa,
+          continua sem teto) — quando a linha selecionada está com as 5
+          colunas vazias (0 máquinas), a altura natural do conteúdo fica
+          bem pequena, e sem teto o Y precisava esticar 3x+ o X só pra
+          preencher a tela — abas/cabeçalhos de coluna ficavam gigantes,
+          visivelmente quebrado (print real do cliente). Com o teto, o
+          caso vazio fica só moderadamente maior (nunca voltando a ser
+          minúsculo), e o caso com máquinas de verdade (bem abaixo do
+          teto) continua escalando normalmente, sem mudança nenhuma. */}
+      <FitToScreen maxScale={1.8}>
       <div className="content">
       {(status==='sem-sessao' || status==='erro') && (
         <div className="demo-banner">
@@ -3155,7 +3163,7 @@ function PedidosCompraPanel({tela, onChange, theme, onToggleTheme, onAbrirConfig
 // conteúdo (ResizeObserver — cobre o gráfico carregando/trocando de dado
 // ao vivo pro exemplo e vice-versa, sem precisar de nenhuma dependência
 // manual no useEffect).
-function FitToScreen({children}){
+function FitToScreen({children, maxScale}){
   const outerRef = useRef(null);
   const innerRef = useRef(null);
   // Escala X/Y INDEPENDENTE de propósito (não `Math.min` de uma só escala
@@ -3168,6 +3176,18 @@ function FitToScreen({children}){
   // efeito colateral: o gráfico de rosca (círculo) pode ficar levemente
   // oval quando a proporção da tela for bem diferente de ~4:3 (a do
   // conteúdo natural, ver `.fit-screen-inner{width:1600px}`).
+  //
+  // `maxScale` (opcional, sem limite por padrão — Indicadores continua
+  // exatamente igual) — usado pelo Tracking Picking: o Kanban lá tem
+  // altura natural bem VARIÁVEL (0 a várias máquinas por coluna), e
+  // quando fica quase vazio (só "Nenhuma máquina..." nas 5 colunas) a
+  // altura natural despenca pra bem pouco — sem limite, o Y precisaria
+  // esticar várias vezes mais que o X só pra preencher a tela, e tudo
+  // (abas de linha, cabeçalho de coluna, texto vazio) ficava
+  // visivelmente esticado/gigante, em vez de só "preenchendo melhor" —
+  // bug relatado pelo cliente com print real. O teto evita esse extremo
+  // sem afetar o caso normal (várias máquinas), onde a escala já fica
+  // bem abaixo do teto.
   const [escala, setEscala] = useState({x:1, y:1});
 
   useEffect(() => {
@@ -3180,16 +3200,19 @@ function FitToScreen({children}){
       const contentW = inner.scrollWidth;
       const contentH = inner.scrollHeight;
       if(contentW===0 || contentH===0) return;
-      const x = outer.clientWidth/contentW;
-      const y = outer.clientHeight/contentH;
-      setEscala({x: x>0?x:1, y: y>0?y:1});
+      let x = outer.clientWidth/contentW;
+      let y = outer.clientHeight/contentH;
+      x = x>0 ? x : 1;
+      y = y>0 ? y : 1;
+      if(maxScale){ x = Math.min(x, maxScale); y = Math.min(y, maxScale); }
+      setEscala({x, y});
     }
     ajustarEscala();
     const ro = new ResizeObserver(ajustarEscala);
     ro.observe(inner);
     window.addEventListener('resize', ajustarEscala);
     return () => { ro.disconnect(); window.removeEventListener('resize', ajustarEscala); };
-  }, []);
+  }, [maxScale]);
 
   return (
     <div ref={outerRef} className="fit-screen-outer">
