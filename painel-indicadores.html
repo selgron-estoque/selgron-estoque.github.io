@@ -213,13 +213,16 @@
   .kpi-card-content{flex:1;min-height:0;display:grid;grid-template-columns:56px minmax(0,1fr) 108px;gap:10px;align-items:center;}
   .kpi-card-icon{width:56px;height:56px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
   .kpi-card-main{min-width:0;display:flex;flex-direction:column;}
-  .kpi-card-titulo{font-size:14px;font-weight:600;line-height:18px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  /* Fonte um pouco menor só nos 2 títulos mais longos (Acuracidade,
-     Cobertura) — medição real (canvas `measureText`) mostrou que mesmo a
-     12px eles não cabem 100% na coluna de 128px, mas reduz bastante o
-     quanto fica cortado; as reticências continuam como rede de segurança
-     pro que sobrar. Título curto (Contagens, Divergências) continua 14px. */
-  .kpi-card-titulo.compacto{font-size:12px;line-height:16px;}
+  /* MESMO tamanho de fonte nos 4 títulos, sempre — tamanhos diferentes
+     por card (tentativa anterior: 12px só nos 2 mais compridos) quebrava
+     a consistência visual entre os cards (pedido explícito do cliente:
+     "os 4 cards devem parecer uma família única de componentes"), mesmo
+     resolvendo a questão do corte em alguns deles. 13px é o meio-termo
+     que cabe o título inteiro em mais casos (ex.: "Contagens na semana")
+     sem precisar de um tamanho por card — as reticências continuam como
+     rede de segurança pro texto que ainda não couber (ex.: o mais comprido,
+     "Acuracidade (itens recontados)"). */
+  .kpi-card-titulo{font-size:13px;font-weight:600;line-height:17px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .kpi-card-periodo{font-size:12px;line-height:16px;color:var(--ink-dim);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .kpi-card-valor{font-family:var(--font-mono);font-size:38px;font-weight:700;line-height:40px;color:var(--ink);margin-top:4px;}
   .kpi-card-meta{font-size:14px;font-weight:600;line-height:18px;color:var(--ink);margin-top:2px;}
@@ -850,13 +853,13 @@ function MonthlyAccuracyBarChart({months, meta=META_ACURACIDADE_SEMANAL}){
 // (nó React) é a barra de progresso do card de Contagens, renderizada numa
 // faixa própria abaixo do grid principal, ainda dentro da altura fixa do
 // card (o grid encolhe via `flex:1` pra abrir espaço pra ela).
-function KpiCard({icon, iconBg, iconColor, titulo, tituloCompacto, periodo, valor, corValor, meta, linhas, direitaCustom, progresso}){
+function KpiCard({icon, iconBg, iconColor, titulo, periodo, valor, corValor, meta, linhas, direitaCustom, progresso}){
   return (
     <div className="kpi-card">
       <div className="kpi-card-content">
         <div className="kpi-card-icon" style={{background:iconBg, color:iconColor}}>{icon}</div>
         <div className="kpi-card-main">
-          <div className={'kpi-card-titulo' + (tituloCompacto ? ' compacto' : '')}>{titulo}</div>
+          <div className="kpi-card-titulo">{titulo}</div>
           {periodo && <div className="kpi-card-periodo">{periodo}</div>}
           <div className="kpi-card-valor" style={corValor ? {color:corValor} : undefined}>{valor}</div>
           {meta!=null && <div className="kpi-card-meta">Meta: {meta}</div>}
@@ -2243,7 +2246,6 @@ function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfig,
         <KpiCard
           icon={IconAcuracidade} iconBg="var(--teal-bg)" iconColor="var(--teal)"
           titulo="Acuracidade (itens recontados)"
-          tituloCompacto
           periodo={`Semana atual (${formatDDMM(semanaAtualInicio)} a ${formatDDMM(semanaAtualFim)})`}
           valor={kpiAcuracidade!=null ? Math.round(kpiAcuracidade)+'%' : '—'}
           meta={META_ACURACIDADE_SEMANAL+'%'}
@@ -2256,7 +2258,6 @@ function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfig,
         <KpiCard
           icon={IconCobertura} iconBg="var(--blue-bg)" iconColor="var(--blue)"
           titulo="Cobertura da programação"
-          tituloCompacto
           periodo={`Programação atual (${periodoMesAtual})`}
           valor={coberturaPercent!=null ? Math.round(coberturaPercent)+'%' : '—'}
           meta="100%"
