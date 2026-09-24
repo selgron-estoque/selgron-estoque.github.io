@@ -302,14 +302,15 @@
      nenhum transform/escala — só flexbox comum, então nunca distorce
      texto/ícone. */
   .sep-kanban-board{display:flex;gap:14px;overflow-x:auto;padding-bottom:8px;align-items:stretch;flex:1;}
-  /* Sem borda de propósito — desde que a coluna passou a esticar até o
-     fundo da tela (ver `.sep-kanban-board`/`.sep-kanban-col-body{flex:1}`
-     acima), uma coluna com poucas máquinas deixava um contorno bem
-     visível ao redor de uma área vazia enorme embaixo dos cards, o que
-     lia como "moldura vazia" — pedido do cliente pra tirar. O fundo
-     (`--panel-raised`, mais claro que a página) já diferencia as
-     colunas sem precisar de contorno nenhum. */
-  .sep-kanban-col{flex:1 1 0;min-width:260px;max-width:340px;background:var(--panel-raised);border-radius:var(--radius);display:flex;flex-direction:column;}
+  /* Sem borda NEM fundo de propósito (a 1ª tentativa só tirou a borda,
+     mas manteve `background:var(--panel-raised)` — como a coluna estica
+     até o fundo da tela, esse fundo sozinho já lia como um "quadradão"
+     em volta de uma área vazia enorme embaixo dos cards). Pedido do
+     cliente: nenhuma diferenciação de área pra coluna, igual era antes —
+     só o cabeçalho colorido (`.sep-kanban-col-head`) e os cards
+     (`.sep-kanban-card`) ficam visíveis, soltos direto no fundo da
+     página. */
+  .sep-kanban-col{flex:1 1 0;min-width:260px;max-width:340px;display:flex;flex-direction:column;}
   .sep-kanban-col-head{display:flex;align-items:center;gap:8px;padding:12px 14px;border-radius:var(--radius) var(--radius) 0 0;font-family:var(--font-mono);font-size:var(--text-sm);font-weight:700;text-transform:uppercase;letter-spacing:0.4px;}
   .sep-kanban-col-count{margin-left:auto;background:rgba(0,0,0,.08);color:inherit;font-size:var(--text-xs);font-weight:800;padding:2px 9px;border-radius:20px;}
   /* Sem altura máxima nem rolagem própria de propósito — pedido do cliente:
