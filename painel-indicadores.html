@@ -370,7 +370,12 @@
     background:var(--pcbg); color:var(--pcink);
     height:calc(100vh - 56px); display:flex; flex-direction:column; overflow:hidden;
   }
-  .pc-container{flex:1;min-height:0;display:flex;flex-direction:column;box-sizing:border-box;padding:22px 32px 0;max-width:1920px;width:100%;margin:0 auto;}
+  /* Sem `max-width` de propósito — com 1920px, numa tela/TV real MAIOR
+     que isso (2560px, 4K etc.) o conteúdo ficava travado no meio com
+     faixas vazias enormes dos dois lados (print real do cliente). Sem
+     teto, preenche a largura real disponível sempre, igual ao resto do
+     Painel (mesmo critério do Tracking Picking). */
+  .pc-container{flex:1;min-height:0;display:flex;flex-direction:column;box-sizing:border-box;padding:22px 32px 0;}
 
   .pc-header{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;flex-shrink:0;margin-bottom:22px;}
   .pc-header-left{display:flex;align-items:center;gap:16px;}
@@ -389,14 +394,12 @@
   .pc-info-card-value{font-size:17px;font-weight:700;color:var(--pcink);}
 
   .pc-cards-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;flex-shrink:0;}
-  /* `justify-content:center` — numa TV grande (1920px), 3 cards dividindo
-     a largura toda deixam cada um bem mais largo que o conteúdo (ícone +
-     número + rótulo) precisa, e sem isso o conteúdo ficava colado na
-     esquerda com uma sobra vazia enorme do lado direito de CADA card
-     (pedido do cliente pra arrumar, com print real dos 52 pedidos).
-     Centralizar reparte essa sobra nos dois lados — lê como intencional,
-     não como espaço desperdiçado. */
-  .pc-card{height:108px;border-radius:9px;border:1px solid var(--pcline);background:var(--pcpanel);box-sizing:border-box;padding:16px 20px;display:flex;align-items:center;justify-content:center;gap:16px;}
+  /* Conteúdo do card alinhado à esquerda (não centralizado) — o "vazio"
+     que o cliente via não era o alinhamento do card, era o `.pc-container`
+     ficando mais estreito que a tela real (ver `max-width` removido de
+     lá) — com isso corrigido, cada card já ocupa a largura certa e o
+     conteúdo à esquerda fica como sempre foi. */
+  .pc-card{height:108px;border-radius:9px;border:1px solid var(--pcline);background:var(--pcpanel);box-sizing:border-box;padding:16px 20px;display:flex;align-items:center;gap:16px;}
   .pc-card-icon-wrap{width:56px;height:56px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
   .pc-card-body{display:flex;flex-direction:column;min-width:0;justify-content:center;}
   .pc-card-valor{font-family:var(--font-mono);font-size:40px;font-weight:700;line-height:42px;color:var(--pcink);}
