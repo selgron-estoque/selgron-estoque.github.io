@@ -310,7 +310,13 @@
      só o cabeçalho colorido (`.sep-kanban-col-head`) e os cards
      (`.sep-kanban-card`) ficam visíveis, soltos direto no fundo da
      página. */
-  .sep-kanban-col{flex:1 1 0;min-width:260px;max-width:340px;display:flex;flex-direction:column;}
+  /* Sem `max-width` de propósito — com ele (340px), as 5 colunas
+     paravam de crescer bem antes de preencher a largura toda numa TV
+     grande (1920px), deixando uma faixa vazia enorme do lado direito
+     (print real do cliente) — mais visível ainda agora que a coluna não
+     tem fundo/contorno nenhum (nada disfarça o vazio). Sem teto, as 5
+     colunas dividem a largura toda igualmente sempre. */
+  .sep-kanban-col{flex:1 1 0;min-width:260px;display:flex;flex-direction:column;}
   .sep-kanban-col-head{display:flex;align-items:center;gap:8px;padding:12px 14px;border-radius:var(--radius) var(--radius) 0 0;font-family:var(--font-mono);font-size:var(--text-sm);font-weight:700;text-transform:uppercase;letter-spacing:0.4px;}
   .sep-kanban-col-count{margin-left:auto;background:rgba(0,0,0,.08);color:inherit;font-size:var(--text-xs);font-weight:800;padding:2px 9px;border-radius:20px;}
   /* Sem altura máxima nem rolagem própria de propósito — pedido do cliente:
