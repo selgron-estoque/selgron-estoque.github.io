@@ -165,6 +165,10 @@
   }
 
   .demo-banner{background:var(--warn-bg);color:var(--warn);border:1px solid rgba(163,95,0,0.25);border-radius:var(--radius);padding:12px 16px;font-size:var(--text-sm);margin-bottom:20px;}
+  /* Mesma função do `.demo-banner`, mas pra `status==='loading'` — não é
+     um aviso (nada deu errado, ainda nem terminou de tentar), então usa
+     tom neutro/azul em vez do âmbar de aviso, pra não parecer erro. */
+  .loading-banner{background:var(--blue-bg);color:var(--blue);border:1px solid rgba(42,111,214,0.25);border-radius:var(--radius);padding:12px 16px;font-size:var(--text-sm);margin-bottom:20px;}
 
   .section-title{font-family:var(--font-display);font-size:var(--text-sm);text-transform:uppercase;letter-spacing:1px;color:var(--ink-dim);margin:24px 0 12px 0;display:flex;align-items:center;gap:8px;}
 
@@ -360,6 +364,11 @@
   .pc-td-descricao{font-size:14px;color:#B9C3D0;white-space:normal;line-height:1.35;}
   .pc-td-qtde{text-align:right;}
   .pc-qtde-badge{display:inline-flex;align-items:center;justify-content:center;min-width:56px;height:34px;padding:0 10px;border-radius:8px;background:rgba(22,119,255,0.16);color:#F5F7FA;font-size:15px;font-weight:700;box-sizing:border-box;}
+
+  .pc-loading{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:100px 0;color:#9AA6B5;}
+  .pc-loading-spinner{width:40px;height:40px;border-radius:50%;border:3px solid #283244;border-top-color:#1677FF;animation:pc-spin 0.8s linear infinite;}
+  .pc-loading-text{font-size:15px;color:#9AA6B5;}
+  @keyframes pc-spin{to{transform:rotate(360deg);}}
 
   @media (max-width:1300px){
     .pc-container{padding:24px 16px 32px;}
@@ -2293,6 +2302,11 @@ function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfig,
           preencher exatamente o espaço que sobra abaixo do cabeçalho. */}
       <FitToScreen>
       <div className="content">
+      {status==='loading' && (
+        <div className="loading-banner">
+          Carregando dados ao vivo... (mostrando exemplo enquanto isso)
+        </div>
+      )}
       {status==='sem-sessao' && (
         <div className="demo-banner">
           Esta página está mostrando dados de EXEMPLO. Para ver os números reais, abra "Painel Indicadores" pelo
@@ -2924,8 +2938,38 @@ function PedidosCompraPanel({tela, onChange, theme, onToggleTheme, onAbrirConfig
     return ()=>clearInterval(id);
   }, []);
 
-  const dadosAoVivo = status==='ok';
   const agora = new Date();
+
+  // Estado de carregamento genuíno — antes, "loading" caía junto com
+  // "sem-sessao"/"erro" no fallback pros dados de exemplo, então a tela
+  // mostrava os 4 pedidos demo (e "Última atualização: —") por alguns
+  // segundos toda vez que a aba abria, antes da 1ª consulta real na
+  // Selgron terminar — parecia "carregou errado e se corrigiu sozinho".
+  // Agora esse instante mostra só um carregando, sem número nenhum.
+  if(status==='loading'){
+    return (
+      <div className="pc-page">
+        <PanelTabs tela={tela} onChange={onChange} onAbrirConfig={onAbrirConfig} links={links} linkIndex={linkIndex} onSelecionarLink={onSelecionarLink} onNavegarEsquerda={onNavegarEsquerda} onNavegarDireita={onNavegarDireita} theme={theme} onToggleTheme={onToggleTheme} />
+        <div className="pc-container">
+          <div className="pc-header">
+            <div className="pc-header-left">
+              <div className="pc-header-icon"><PcIcon name="caixa" size={28} /></div>
+              <div className="pc-header-text">
+                <h1 className="pc-title">Pedidos de Compra</h1>
+                <div className="pc-subtitle">Entregas previstas para hoje</div>
+              </div>
+            </div>
+          </div>
+          <div className="pc-loading">
+            <div className="pc-loading-spinner"></div>
+            <div className="pc-loading-text">Carregando pedidos de compra…</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const dadosAoVivo = status==='ok';
   const hojeStr = hojeLocalStr();
   const pedidosHoje = dadosAoVivo
     ? pedidos.filter(p=>p.entrega===hojeStr)
