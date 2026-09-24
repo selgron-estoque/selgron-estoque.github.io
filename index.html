@@ -1585,6 +1585,17 @@ const {useState, useMemo, useRef, useEffect} = React;
 const SUPABASE_URL = 'https://geeqfpzamexmeketcecu.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_Wx-oyRE86XWz4bTSPWBe5A_8tXRpHJr';
 
+// Custo unitário do catálogo é sempre `valor_financeiro/saldo` (divisão) —
+// arredonda pra centavo NA ORIGEM, não só na exibição. Sem isso, itens cujo
+// saldo não divide o valor financeiro de forma exata geram ruído de ponto
+// flutuante (ex: 76.575000000000003 em vez de 76,57) que fica gravado no
+// custo do item, se propaga pro `valorDivergente`/relatório de SA e só
+// aparece pro cliente numa consulta direta ao banco ou no Excel exportado
+// (bug real reportado pelo cliente, produtos 000.63733 e 000.26531).
+function arredondarCentavos(v){
+  return Math.round(Number(v||0) * 100) / 100;
+}
+
 // Sessão de login guardada em `sessionStorage`, não no `localStorage`
 // (default do supabase-js) — pedido explícito do cliente: "sempre quando
 // [o app] for fechado ele deslogue o usuário... como se fosse um app de
@@ -1812,7 +1823,7 @@ async function searchSupabaseCatalog(query, almoxarifado){
       // de aproximação razoável mesmo vindo de outro armazém).
       const comCusto = linhas.filter(r=>Number(r.saldo||0)!==0 && r.valor_financeiro!=null);
       const preferido = comCusto.find(r=>r.almoxarifado===almoxarifado) || comCusto[0];
-      if(preferido) custoUnitPorCodigo[codigo] = Number(preferido.valor_financeiro||0) / Number(preferido.saldo||1);
+      if(preferido) custoUnitPorCodigo[codigo] = arredondarCentavos(Number(preferido.valor_financeiro||0) / Number(preferido.saldo||1));
     });
   }
 
@@ -3373,7 +3384,7 @@ async function fetchValorEstoqueArmazem01AoVivo(onProgress){
     for(let i=0; i<linhas.length; i++){
       const row = linhas[i];
       const saldoLocal = Number(row.saldo || 0);
-      const custoLocal = saldoLocal>0 ? Number(row.valor_financeiro || 0) / saldoLocal : 0;
+      const custoLocal = saldoLocal>0 ? arredondarCentavos(Number(row.valor_financeiro || 0) / saldoLocal) : 0;
       let saldo = saldoLocal, custo = custoLocal;
       try{
         // Armazém sempre '1' aqui — a lista de códigos já vem filtrada por
@@ -4314,7 +4325,7 @@ async function fetchProdutosByCodigos(codigos, almoxarifado){
         .sort((a,b)=>Number(b.saldo||0)-Number(a.saldo||0));
       const custoPreferido = comCusto.find(l=>l.almoxarifado===almoxarifado) || comCusto[0];
       const custoUnitarioFallback = custoPreferido
-        ? Number(custoPreferido.valor_financeiro||0) / Number(custoPreferido.saldo||1)
+        ? arredondarCentavos(Number(custoPreferido.valor_financeiro||0) / Number(custoPreferido.saldo||1))
         : null;
       // Mesmo padrão de `searchSupabaseCatalog` — join aninhado
       // `estoque_enderecos → enderecos`, primeira posição do array (um
