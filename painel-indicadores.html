@@ -176,6 +176,44 @@
 
   .chart-meta-badge{font-family:var(--font-mono);font-size:var(--text-xs);font-weight:700;color:var(--teal);background:rgba(13,148,136,0.12);border-radius:6px;padding:4px 9px;white-space:nowrap;}
 
+  /* ---- 1ª linha de KPIs (resumo executivo, acima dos gráficos) — 4 cards
+     SEMPRE em 1 única linha (pedido do cliente), altura fixa (~145px) igual
+     nos 4, conteúdo centralizado verticalmente. `.kpi-row` só quebra pra
+     2/1 coluna em telas realmente estreitas (esta página também abre num
+     navegador comum, fora da TV, pra teste/preview) — na TV (1920×1080) o
+     `FitToScreen` acima já renderiza tudo num canvas de 1600px de largura
+     fixa, então as 4 colunas sempre cabem lado a lado de verdade. */
+  .kpi-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin:12px 0 16px 0;}
+  @media (max-width:1000px){.kpi-row{grid-template-columns:repeat(2,1fr);}}
+  @media (max-width:560px){.kpi-row{grid-template-columns:1fr;}}
+  .kpi-card{display:flex;align-items:center;gap:18px;height:145px;box-sizing:border-box;padding:0 20px 0 16px;background:var(--panel-raised);border:1px solid var(--line);border-radius:10px;}
+  .kpi-card-icon{width:58px;height:58px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  /* `.kpi-card-body`: título ocupa a largura INTEIRA da área de conteúdo
+     (só a coluna do ícone é descontada), numa linha própria — só a linha de
+     baixo (número+meta à esquerda, informações complementares à direita)
+     divide a largura em 2 colunas. É o que dá espaço de sobra pro título
+     não truncar (mesma estrutura da referência visual do cliente: título
+     em cima ocupando tudo, número/meta+informações embaixo lado a lado). */
+  /* `padding-top` FIXO (não `justify-content:center`) de propósito — o
+     card de Divergências tem só 2 linhas de informação complementar
+     (contra 3 nos outros 3 cards), então uma altura de conteúdo menor;
+     centralizar verticalmente pelo CONTEÚDO faria o título/número dele
+     ficar alguns pixels mais abaixo que os outros (viola a seção 12: título
+     e número na MESMA altura nos 4 cards). Com padding fixo, a âncora do
+     topo não depende de quantas linhas o card tem. */
+  .kpi-card-body{flex:1;min-width:0;height:100%;display:flex;flex-direction:column;padding-top:28px;gap:6px;box-sizing:border-box;}
+  .kpi-card-titulo{font-size:14px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .kpi-card-lower{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;min-width:0;}
+  .kpi-card-numbers{min-width:0;flex-shrink:0;}
+  .kpi-card-valor{font-family:var(--font-mono);font-size:40px;font-weight:700;line-height:1;color:var(--ink);}
+  .kpi-card-meta{font-size:14px;font-weight:600;color:var(--ink);margin-top:8px;}
+  .kpi-card-info{flex-shrink:0;display:flex;flex-direction:column;justify-content:center;}
+  .kpi-card-info-row{display:flex;align-items:baseline;justify-content:space-between;gap:14px;font-size:13px;font-weight:400;color:var(--ink-dim);line-height:22px;white-space:nowrap;}
+  .kpi-card-info-row .v{font-size:14px;font-weight:600;color:var(--ink);}
+  @media (max-width:560px){
+    .kpi-card{height:auto;padding:16px;}
+  }
+
   /* ---- Modal de configuração "Quais indicadores aparecem" — CSS
      duplicado 1:1 de `.modal-*` (index.html), mesmo motivo/mesma decisão
      de arquitetura do resto deste arquivo. ---- */
@@ -420,6 +458,25 @@ async function fetchHistoricoParaTendencia(){
   return data.filter(row => !['Recontar','Ajustar'].includes(String(row.status||'').trim()));
 }
 
+// "Cobertura da Programação" (card de KPI novo) precisa de `inventarios`
+// (Programado=qtd_itens, Contado=contados) — tabela real que já existe no
+// Supabase e já é usada por index.html, só que este arquivo não buscava
+// até aqui (só usava `contagens`/`contagens_historico`). Select enxuto,
+// mesmo critério de `fetchContagensParaPainel`. `status!='cancelado'` =
+// carga de trabalho ATUAL (inventário cancelado não deve contar nem como
+// Programado nem como Contado).
+async function fetchInventariosParaPainel(){
+  if(!supabaseClient) return [];
+  const data = await fetchTodasPaginado(() => supabaseClient
+    .from('inventarios')
+    .select('id, qtd_itens, contados, status')
+    .neq('status', 'cancelado'));
+  return data.map(row => ({
+    qtdItens: Number(row.qtd_itens) || 0,
+    contados: Number(row.contados) || 0,
+  }));
+}
+
 function ultimaContagemPorDocumento(pool){
   const hasFollowUp = new Set();
   pool.forEach(c=>{ if(c.contagemAnteriorId) hasFollowUp.add(c.contagemAnteriorId); });
@@ -467,6 +524,25 @@ function localDateStr(d){
 }
 function hojeLocalStr(){
   return localDateStr(new Date());
+}
+
+// Dia-a-dia da semana ATUAL (segunda a domingo) — só pro card de KPI
+// "Contagens na Semana" (média diária/maior dia/menor dia). `poolDedup` já
+// precisa vir deduplicado (1 linha por item, `ultimaContagemPorDocumento`)
+// e filtrado pra essa semana.
+function computeDiasSemanaAtual(poolDedup, segundaFeiraStr){
+  const dias = [];
+  const cursor = new Date(segundaFeiraStr + 'T00:00:00');
+  for(let i=0;i<7;i++){
+    dias.push({data: localDateStr(cursor), total: 0});
+    cursor.setDate(cursor.getDate()+1);
+  }
+  const porData = {};
+  dias.forEach(d=>{ porData[d.data] = d; });
+  poolDedup.forEach(c=>{
+    if(c.data && porData[c.data]) porData[c.data].total += 1;
+  });
+  return dias;
 }
 
 // Painel fica sempre numa TV, sem controle de filtro interativo — período
@@ -716,6 +792,41 @@ function MonthlyAccuracyBarChart({months, meta=META_ACURACIDADE_SEMANAL}){
   );
 }
 
+// Card de KPI (1ª linha, resumo executivo) — ícone à esquerda; título numa
+// linha própria (largura toda); embaixo, número grande + meta à esquerda e
+// informações complementares à direita, lado a lado (nunca embaixo do
+// número, enquanto houver espaço horizontal — ver `.kpi-card-lower`).
+// `meta` é opcional (o card de Divergências não tem meta).
+function KpiCard({icon, iconBg, iconColor, titulo, valor, meta, linhas}){
+  return (
+    <div className="kpi-card">
+      <div className="kpi-card-icon" style={{background:iconBg, color:iconColor}}>{icon}</div>
+      <div className="kpi-card-body">
+        <div className="kpi-card-titulo">{titulo}</div>
+        <div className="kpi-card-lower">
+          <div className="kpi-card-numbers">
+            <div className="kpi-card-valor">{valor}</div>
+            {/* Sempre ocupa o espaço da linha de meta, mesmo quando o card
+                não tem meta (Divergências) — só o texto fica invisível
+                (`visibility:hidden`, não `display:none`) — é o que garante
+                título/número na MESMA altura nos 4 cards (pedido explícito
+                do cliente, seção 12), não só quando todos têm meta. */}
+            <div className="kpi-card-meta" style={meta==null ? {visibility:'hidden'} : undefined}>Meta: {meta}</div>
+          </div>
+          <div className="kpi-card-info">
+            {linhas.map((l,i)=>(
+              <div key={i} className="kpi-card-info-row">
+                <span>{l.rotulo}</span>
+                <span className="v" style={l.cor ? {color:l.cor} : undefined}>{l.valor}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PnlDonut({segments, size=168, strokeWidth=22, centerLabel='inventários'}){
   const r = (size - strokeWidth) / 2;
   const c = 2 * Math.PI * r;
@@ -780,6 +891,14 @@ const DEMO_FAMILIA = [
   ['USINAGEM C/ ST.', 17], ['CALDEIRARIA CORTE LAS...', 12], ['USINADOS', 9], ['USINADOS EM TERCEIROS', 9],
 ];
 const DEMO_PIZZA = {total:1883, divergentes:530, semDivergencia:1353};
+
+// Números de EXEMPLO pros 4 cards de KPI (1ª linha) — só aparecem quando
+// não há sessão/dado ao vivo, mesmo critério de todo `DEMO_*` acima.
+const DEMO_KPI = {
+  itensAvaliados:125, corretos:114, divergentes:11, acuracidade:91.2, divergenciaVariacaoPercent:-12,
+  mediaDiaria:17.9, maiorDia:44, menorDia:0,
+  coberturaProgramado:250, coberturaContado:125, coberturaPendente:125, coberturaPercent:50,
+};
 
 /* ---- Componente principal ---- */
 
@@ -1718,6 +1837,7 @@ function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfig,
   const [status, setStatus] = useState('loading'); // loading | ok | sem-sessao | erro
   const [counts, setCounts] = useState([]);
   const [historico, setHistorico] = useState([]);
+  const [inventariosData, setInventariosData] = useState([]);
 
   async function carregarDados(){
     if(!supabaseClient){ setStatus('erro'); return; }
@@ -1739,12 +1859,14 @@ function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfig,
         return;
       }
       sincronizarAuthRealtime(sessionData.session);
-      const [countsData, historicoData] = await Promise.all([
+      const [countsData, historicoData, inventariosParaPainel] = await Promise.all([
         fetchContagensParaPainel(),
         fetchHistoricoParaTendencia(),
+        fetchInventariosParaPainel(),
       ]);
       setCounts(countsData);
       setHistorico(historicoData);
+      setInventariosData(inventariosParaPainel);
       setStatus('ok');
     }catch(err){
       console.warn('Painel Indicadores: falha ao carregar dados ao vivo', err);
@@ -1823,11 +1945,53 @@ function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfig,
     divergentesNoPeriodo.forEach(c=>{ if(c.familia) porFamiliaObj[c.familia] = (porFamiliaObj[c.familia]||0)+1; });
     const porFamilia = Object.entries(porFamiliaObj).sort((a,b)=>b[1]-a[1]).slice(0,7);
 
+    // ---- 1ª linha de KPIs (cards novos, resumo executivo) ----
+    // "Semana atual" (segunda a domingo de hoje) — escopo dos 3 primeiros
+    // cards, sempre a partir do MESMO pool deduplicado (1 linha por item)
+    // já usado acima em `todasParaQualidade` (item contado mais de uma vez
+    // na semana conta 1 vez só, pelo estado mais recente dele).
+    const semanaAtualInicio = getWeekInfo(hojeStr).key;
+    const fimSemanaAtualDate = new Date(semanaAtualInicio+'T00:00:00'); fimSemanaAtualDate.setDate(fimSemanaAtualDate.getDate()+6);
+    const semanaAtualFim = localDateStr(fimSemanaAtualDate);
+    const inicioSemanaAnteriorDate = new Date(semanaAtualInicio+'T00:00:00'); inicioSemanaAnteriorDate.setDate(inicioSemanaAnteriorDate.getDate()-7);
+    const semanaAnteriorInicio = localDateStr(inicioSemanaAnteriorDate);
+    const fimSemanaAnteriorDate = new Date(semanaAtualInicio+'T00:00:00'); fimSemanaAnteriorDate.setDate(fimSemanaAnteriorDate.getDate()-1);
+    const semanaAnteriorFim = localDateStr(fimSemanaAnteriorDate);
+
+    const poolSemanaAtual = todasParaQualidade.filter(c=>c.data && c.data>=semanaAtualInicio && c.data<=semanaAtualFim);
+    const poolSemanaAnterior = todasParaQualidade.filter(c=>c.data && c.data>=semanaAnteriorInicio && c.data<=semanaAnteriorFim);
+
+    const kpiItensAvaliados = poolSemanaAtual.length;
+    const kpiDivergentes = poolSemanaAtual.filter(c=>c.diferenca!==0 && c.diferenca!=null).length;
+    const kpiCorretos = kpiItensAvaliados - kpiDivergentes;
+    const kpiAcuracidade = kpiItensAvaliados>0 ? (kpiCorretos/kpiItensAvaliados)*100 : null;
+
+    const kpiDivergentesSemanaAnterior = poolSemanaAnterior.filter(c=>c.diferenca!==0 && c.diferenca!=null).length;
+    const kpiDivergenciaVariacaoPercent = kpiDivergentesSemanaAnterior>0
+      ? ((kpiDivergentes - kpiDivergentesSemanaAnterior)/kpiDivergentesSemanaAnterior)*100
+      : null;
+
+    const diasSemanaAtual = computeDiasSemanaAtual(poolSemanaAtual, semanaAtualInicio);
+    const diasComContagem = diasSemanaAtual.filter(d=>d.total>0);
+    const kpiMediaDiaria = kpiItensAvaliados / 7;
+    const kpiMaiorDia = diasComContagem.length ? Math.max(...diasComContagem.map(d=>d.total)) : 0;
+    const kpiMenorDia = diasComContagem.length ? Math.min(...diasComContagem.map(d=>d.total)) : 0;
+
+    // "Cobertura da Programação" — carga de trabalho ATUAL (inventários não
+    // cancelados), sem recorte de semana (ver `fetchInventariosParaPainel`).
+    const coberturaProgramado = inventariosData.reduce((soma,inv)=>soma+inv.qtdItens, 0);
+    const coberturaContado = inventariosData.reduce((soma,inv)=>soma+Math.min(inv.contados, inv.qtdItens), 0);
+    const coberturaPendente = Math.max(0, coberturaProgramado - coberturaContado);
+    const coberturaPercent = coberturaProgramado>0 ? (coberturaContado/coberturaProgramado)*100 : null;
+
     return {
       dataInicioStr, dataFimStr, weeklyStats, weeklyStatsItensUnicos, monthlyStats,
       pizzaTotalContado, pizzaDivergentes, pizzaSemDivergencia, porFamilia,
+      kpiItensAvaliados, kpiCorretos, kpiDivergentes, kpiAcuracidade, kpiDivergenciaVariacaoPercent,
+      kpiMediaDiaria, kpiMaiorDia, kpiMenorDia,
+      coberturaProgramado, coberturaContado, coberturaPendente, coberturaPercent,
     };
-  }, [dadosAoVivo, counts, historico]);
+  }, [dadosAoVivo, counts, historico, inventariosData]);
 
   const weeklyStats = calc ? calc.weeklyStats : DEMO_WEEKLY;
   const weeklyStatsItensUnicos = calc ? calc.weeklyStatsItensUnicos : DEMO_WEEKLY_ITENS;
@@ -1841,6 +2005,25 @@ function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfig,
     {label:'Sem divergência', value:pizzaSemDivergencia, color:'var(--ok)'},
     {label:'Divergentes', value:pizzaDivergentes, color:'var(--danger)'},
   ];
+
+  // ---- 1ª linha de KPIs (cards novos, resumo executivo) ----
+  const kpiItensAvaliados = calc ? calc.kpiItensAvaliados : DEMO_KPI.itensAvaliados;
+  const kpiCorretos = calc ? calc.kpiCorretos : DEMO_KPI.corretos;
+  const kpiDivergentes = calc ? calc.kpiDivergentes : DEMO_KPI.divergentes;
+  const kpiAcuracidade = calc ? calc.kpiAcuracidade : DEMO_KPI.acuracidade;
+  const kpiDivergenciaVariacaoPercent = calc ? calc.kpiDivergenciaVariacaoPercent : DEMO_KPI.divergenciaVariacaoPercent;
+  const kpiMediaDiaria = calc ? calc.kpiMediaDiaria : DEMO_KPI.mediaDiaria;
+  const kpiMaiorDia = calc ? calc.kpiMaiorDia : DEMO_KPI.maiorDia;
+  const kpiMenorDia = calc ? calc.kpiMenorDia : DEMO_KPI.menorDia;
+  const coberturaProgramado = calc ? calc.coberturaProgramado : DEMO_KPI.coberturaProgramado;
+  const coberturaContado = calc ? calc.coberturaContado : DEMO_KPI.coberturaContado;
+  const coberturaPendente = calc ? calc.coberturaPendente : DEMO_KPI.coberturaPendente;
+  const coberturaPercent = calc ? calc.coberturaPercent : DEMO_KPI.coberturaPercent;
+
+  const IconAcuracidade = <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>;
+  const IconCobertura = <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="M8 2v4"/><path d="M16 2v4"/></svg>;
+  const IconContagens = <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>;
+  const IconDivergencias = <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>;
 
   // Catálogo id→JSX de cada painel — construído a cada render (barato,
   // são só 6 nós) a partir dos mesmos dados/cálculos já existentes acima,
@@ -1976,6 +2159,53 @@ function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfig,
           Nenhum indicador selecionado. Clique no ícone de engrenagem, ao lado das abas, pra escolher quais aparecem aqui.
         </div>
       )}
+
+      {/* 1ª linha — 4 cards de KPI (resumo executivo), sempre acima dos
+          gráficos configuráveis abaixo. */}
+      <div className="kpi-row">
+        <KpiCard
+          icon={IconAcuracidade} iconBg="var(--teal-bg)" iconColor="var(--teal)"
+          titulo="Acuracidade (itens recontados)"
+          valor={kpiAcuracidade!=null ? Math.round(kpiAcuracidade)+'%' : '—'}
+          meta={META_ACURACIDADE_SEMANAL+'%'}
+          linhas={[
+            {rotulo:'Itens avaliados', valor:kpiItensAvaliados},
+            {rotulo:'Itens corretos', valor:kpiCorretos},
+            {rotulo:'Itens com divergência', valor:kpiDivergentes},
+          ]}
+        />
+        <KpiCard
+          icon={IconCobertura} iconBg="var(--blue-bg)" iconColor="var(--blue)"
+          titulo="Cobertura da programação"
+          valor={coberturaPercent!=null ? Math.round(coberturaPercent)+'%' : '—'}
+          meta="100%"
+          linhas={[
+            {rotulo:'Programado', valor:coberturaProgramado},
+            {rotulo:'Contados', valor:coberturaContado},
+            {rotulo:'Pendentes', valor:coberturaPendente},
+          ]}
+        />
+        <KpiCard
+          icon={IconContagens} iconBg="var(--purple-bg)" iconColor="var(--purple)"
+          titulo="Contagens na semana"
+          valor={kpiItensAvaliados}
+          meta={META_CONTAGENS_SEMANAL}
+          linhas={[
+            {rotulo:'Média diária', valor:kpiMediaDiaria.toFixed(1)},
+            {rotulo:'Maior dia', valor:kpiMaiorDia},
+            {rotulo:'Menor dia', valor:kpiMenorDia},
+          ]}
+        />
+        <KpiCard
+          icon={IconDivergencias} iconBg="var(--danger-bg)" iconColor="var(--danger)"
+          titulo="Divergências na semana"
+          valor={kpiDivergentes}
+          linhas={[
+            {rotulo:'% sobre contados', valor: kpiItensAvaliados>0 ? Math.round(kpiDivergentes/kpiItensAvaliados*100)+'%' : '—'},
+            {rotulo:'Semana anterior', valor: kpiDivergenciaVariacaoPercent!=null ? (kpiDivergenciaVariacaoPercent>0?'+':'')+Math.round(kpiDivergenciaVariacaoPercent)+'%' : '—', cor: kpiDivergenciaVariacaoPercent>0 ? 'var(--danger)' : 'var(--ok)'},
+          ]}
+        />
+      </div>
 
       <div className="weekly-charts-grid">
         {linhasDePaineis.map((linha,i)=>(
