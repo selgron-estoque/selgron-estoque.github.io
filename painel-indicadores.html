@@ -304,6 +304,73 @@
   .sep-kanban-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line);}
   .sep-kanban-obs-destaque{display:inline;background:#FFEB3B;color:#3A2F00;font-weight:700;padding:2px 6px;border-radius:3px;box-decoration-break:clone;-webkit-box-decoration-break:clone;}
 
+  /* ---- Pedidos de Compra (3ª tela do painel) — painel executivo, cores
+     FIXAS (não seguem `--bg`/`--panel`/etc. do resto do app, nem o toggle
+     claro/escuro) — pedido explícito do cliente: "Dark Mode" é a
+     identidade desta tela específica, sempre, mesmo padrão de decisão já
+     usado em `--brand-navy` (a barra de navegação também é sempre escura,
+     em qualquer tema). Prefixo `.pc-` isola isso do resto do CSS — nada
+     aqui reaproveita ou sobrescreve as variáveis globais, então não afeta
+     Indicadores/Tracking Picking/o resto do app. */
+  .pc-page{background:#0B0F17;min-height:calc(100vh - 56px);}
+  .pc-container{max-width:1600px;margin:0 auto;padding:28px 24px 40px;box-sizing:border-box;}
+
+  .pc-header{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;margin-bottom:28px;flex-wrap:wrap;}
+  .pc-header-left{display:flex;align-items:center;gap:18px;}
+  .pc-header-icon{width:52px;height:52px;border-radius:50%;background:rgba(22,119,255,0.16);color:#1677FF;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .pc-header-text{display:flex;flex-direction:column;justify-content:center;}
+  .pc-title{font-size:30px;font-weight:700;line-height:36px;color:#F5F7FA;margin:0;}
+  .pc-subtitle{font-size:16px;font-weight:400;color:#9AA6B5;margin-top:2px;}
+
+  .pc-info-blocks{display:flex;gap:12px;flex-shrink:0;}
+  .pc-info-card{width:245px;height:76px;background:#151D2A;border:1px solid #273449;border-radius:12px;box-sizing:border-box;padding:0 16px;display:flex;align-items:center;gap:12px;color:#9AA6B5;flex-shrink:0;}
+  /* Bloco de "última atualização" — mais estreito de propósito (pedido do
+     cliente: "não deixar esses blocos enormes", ele é só contexto, menos
+     importante que o bloco de data). */
+  .pc-update-card{width:190px;}
+  .pc-info-card-label{font-size:14px;color:#9AA6B5;}
+  .pc-info-card-value{font-size:20px;font-weight:700;color:#F5F7FA;margin-top:2px;}
+  .pc-update-card-label{font-size:13px;color:#9AA6B5;}
+  .pc-update-card-value{font-size:18px;font-weight:600;color:#F5F7FA;margin-top:2px;}
+
+  .pc-cards-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;margin-bottom:24px;}
+  .pc-card{height:128px;border-radius:14px;border:1px solid #283244;background:#111722;box-sizing:border-box;padding:0 24px;display:flex;align-items:center;gap:18px;}
+  .pc-card-icon-wrap{width:56px;height:56px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .pc-card-body{display:flex;flex-direction:column;min-width:0;}
+  .pc-card-valor{font-family:var(--font-mono);font-size:40px;font-weight:700;line-height:1;color:#F5F7FA;}
+  .pc-card-label{font-size:15px;font-weight:400;color:#9AA6B5;margin-top:8px;white-space:nowrap;}
+  .pc-card.azul .pc-card-icon-wrap{background:rgba(22,119,255,0.14);color:#1677FF;}
+  .pc-card.roxo .pc-card-icon-wrap{background:rgba(139,92,246,0.14);color:#8B5CF6;}
+  .pc-card.verde .pc-card-icon-wrap{background:rgba(34,197,94,0.14);color:#22C55E;}
+
+  .pc-table-wrap{border-radius:14px;border:1px solid #283244;background:#111722;overflow:hidden;}
+  .pc-table{width:100%;border-collapse:collapse;table-layout:fixed;}
+  .pc-table col.col-pedido{width:11%;}
+  .pc-table col.col-fornecedor{width:30%;}
+  .pc-table col.col-produto{width:15%;}
+  .pc-table col.col-descricao{width:34%;}
+  .pc-table col.col-qtde{width:10%;}
+  .pc-table thead th{height:54px;background:#151C28;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:#AAB5C5;text-align:left;padding:0 20px;box-sizing:border-box;}
+  .pc-table thead th.pc-th-right{text-align:right;}
+  .pc-table tbody td{font-size:15px;padding:16px 20px;border-top:1px solid #242D3B;box-sizing:border-box;overflow:hidden;text-overflow:ellipsis;}
+  .pc-table tbody tr:first-child td{border-top:none;}
+  .pc-td-pedido{font-weight:500;color:#F5F7FA;white-space:nowrap;}
+  .pc-td-fornecedor{font-weight:500;color:#F5F7FA;white-space:nowrap;}
+  .pc-td-produto{font-size:14px;color:#D8DEE8;white-space:nowrap;}
+  .pc-td-descricao{font-size:14px;color:#B9C3D0;white-space:normal;line-height:1.35;}
+  .pc-td-qtde{text-align:right;}
+  .pc-qtde-badge{display:inline-flex;align-items:center;justify-content:center;min-width:56px;height:34px;padding:0 10px;border-radius:8px;background:rgba(22,119,255,0.16);color:#F5F7FA;font-size:15px;font-weight:700;box-sizing:border-box;}
+
+  @media (max-width:1300px){
+    .pc-container{padding:24px 16px 32px;}
+    .pc-header{flex-direction:column;align-items:flex-start;}
+  }
+  @media (max-width:1000px){
+    .pc-cards-row{grid-template-columns:1fr;}
+    .pc-table-wrap{overflow-x:auto;}
+    .pc-table{min-width:880px;}
+  }
+
   @media (max-width:1400px){
     .content{padding:20px 32px;}
   }
@@ -1075,6 +1142,8 @@ const PNL_TAB_ICON_PATHS = {
   truck: <><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></>,
   // 3ª aba (Link Externo) — Lucide "link".
   link: <><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/></>,
+  // Aba "Pedidos de Compra" — Lucide "package".
+  package: <><path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73Z"/><path d="M12 22V12"/><polyline points="3.29 7 12 12 20.71 7"/><path d="m7.5 4.27 9 5.15"/></>,
 };
 function PnlTabIcon({name}){
   return (
@@ -1114,6 +1183,15 @@ function PanelTabs({tela, onChange, onAbrirConfig, links, linkIndex, onSeleciona
       >
         <PnlTabIcon name="truck" />
         <span className="pnl-topbar-tab-label">Tracking Picking</span>
+      </button>
+      <div className="pnl-topbar-sep"></div>
+      <button
+        type="button"
+        className={'pnl-topbar-tab' + (tela==='pedidosCompra' ? ' active' : '')}
+        onClick={()=>onChange('pedidosCompra')}
+      >
+        <PnlTabIcon name="package" />
+        <span className="pnl-topbar-tab-label">Pedidos de Compra</span>
       </button>
       {/* 1 aba própria por link/arquivo cadastrado (pedido do cliente: nada
           de fileira separada de sub-abas embaixo, cada um aparece direto
@@ -2710,6 +2788,247 @@ function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto,
   );
 }
 
+/* ============================================================
+   Pedidos de Compra — 3ª tela do painel. Sugestão do cliente: puxar da
+   MESMA consulta Selgron já usada em index.html (consulta.selgron.com.br,
+   por trás dela o Protheus), só que outra aba/página dela
+   (pedido_compra_aberto.php, não produto.consulta.php) — pedidos de
+   compra em aberto com ENTREGA pra hoje, resumidos (nº de pedidos/
+   fornecedores/itens) + lista detalhada. Proxy/parser na Edge Function
+   `consultar-pedidos-compra-selgron` (mesmo padrão de
+   `consultar-produto-selgron`, reaproveita as MESMAS credenciais
+   CONSULTA_SELGRON_USER/PASS) — NÃO grava nada no Supabase, é AO VIVO a
+   cada carregamento, sem sincronismo em lote.
+
+   ATENÇÃO — calibrado só a partir de um PRINT da tela real (ninguém com
+   acesso extraiu o HTML cru ainda), não testado contra a página de
+   verdade. Ver comentário completo no topo da Edge Function pro que pode
+   precisar de ajuste fino na 1ª tentativa real.
+   ============================================================ */
+
+// Mesmo padrão de tratamento de erro de `fetchSaldoConsultaSelgron`
+// (index.html): lê o corpo JSON real do erro via `error.context.json()`
+// quando existe (senão a mensagem genérica do supabase-js não diz nada
+// útil sobre o que a Edge Function realmente respondeu).
+async function fetchPedidosCompraSelgron(){
+  if(!supabaseClient) return {ok:false, erro:'Não configurado.'};
+  try{
+    const { data, error } = await supabaseClient.functions.invoke('consultar-pedidos-compra-selgron');
+    if(error){
+      let erro = error.message;
+      if(error.context && typeof error.context.json==='function'){
+        try{
+          const corpo = await error.context.json();
+          if(corpo && corpo.erro) erro = corpo.erro;
+        }catch(_e){ /* corpo não era JSON — mantém a mensagem genérica */ }
+      }
+      return {ok:false, erro};
+    }
+    return data;
+  }catch(err){
+    return {ok:false, erro:String(err && err.message || err)};
+  }
+}
+
+// Dados de EXEMPLO — mesmo critério de todo `DEMO_*` deste arquivo, só
+// aparece sem sessão/dado ao vivo. São exatamente os dados de exemplo
+// definidos pelo cliente pra essa tela. NÃO filtra por "hoje" (é só
+// ilustrativo — mesmo espírito dos outros DEMO_* da tela Indicadores, que
+// também não tentam parecer dado real do dia).
+const DEMO_PEDIDOS_COMPRA = [
+  {numero:'136144', fornecedor:'FESTO BRASIL LTDA', produto:'000.17926', descricao:'VÁLVULA DO PNEUM SEG 3/2 VIAS', quantidade:1},
+  {numero:'136144', fornecedor:'FESTO BRASIL LTDA', produto:'000.22293', descricao:'CONEX COT QSML-M5-6', quantidade:10},
+  {numero:'136201', fornecedor:'PARKER HANNIFIN IND. COM. LTDA', produto:'000.31820', descricao:'MANGUEIRA HIDRÁULICA 1/2"', quantidade:4},
+  {numero:'136215', fornecedor:'WEG EQUIPAMENTOS ELÉTRICOS S.A.', produto:'000.08823', descricao:'MOTOR ELÉTRICO TRIFÁSICO 5CV', quantidade:2},
+];
+
+const DIAS_SEMANA_PT_LONGO = ['Domingo','Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sábado'];
+function formatarDataPtBr(d){
+  return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();
+}
+function formatarHoraPtBr(d){
+  return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+}
+
+// Ícones desta tela — inline (não reaproveitam `PnlTabIcon`, que é
+// sempre 16px fixo pras abas do cabeçalho; aqui precisam de tamanhos
+// diferentes por lugar: 28px no ícone do cabeçalho, 24px nos cards,
+// 26/28px nos blocos de data/atualização). `caminhao`/`caixa` reaproveitam
+// os MESMOS paths de `PNL_TAB_ICON_PATHS` (truck/package), só num `<svg>`
+// com tamanho próprio.
+function PcIcon({name, size=24}){
+  const paths = {
+    documento: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M9 13h6"/><path d="M9 17h6"/></>,
+    caminhao: PNL_TAB_ICON_PATHS.truck,
+    caixa: PNL_TAB_ICON_PATHS.package,
+    calendario: <><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="M8 2v4"/><path d="M16 2v4"/></>,
+    relogio: <><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>,
+  };
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {paths[name]}
+    </svg>
+  );
+}
+
+function PedidosCompraPanel({tela, onChange, theme, onToggleTheme, onAbrirConfig, links, linkIndex, onSelecionarLink, onNavegarEsquerda, onNavegarDireita}){
+  const [status, setStatus] = useState('loading'); // loading | ok | sem-sessao | erro
+  const [pedidos, setPedidos] = useState([]);
+  const [ultimaAtualizacao, setUltimaAtualizacao] = useState(null);
+
+  async function carregarDados(){
+    if(!supabaseClient){ setStatus('erro'); setUltimaAtualizacao(new Date()); return; }
+    try{
+      let { data: sessionData } = await supabaseClient.auth.getSession();
+      if(!sessionData || !sessionData.session){
+        const logou = await tentarLoginSilenciosoTv();
+        if(logou){
+          ({ data: sessionData } = await supabaseClient.auth.getSession());
+        }
+      }
+      if(!sessionData || !sessionData.session){
+        setStatus('sem-sessao');
+        setUltimaAtualizacao(new Date());
+        return;
+      }
+      sincronizarAuthRealtime(sessionData.session);
+      const resultado = await fetchPedidosCompraSelgron();
+      if(!resultado.ok){
+        // Falha real (rede/credencial/formato da página) — fica só como
+        // aviso discreto no console pra quem for investigar; a tela
+        // continua mostrando o exemplo sem alarme visual (pedido do
+        // cliente: painel executivo, sem alerta chamativo por uma falha
+        // temporária que a próxima tentativa automática já resolve).
+        console.warn('Pedidos de Compra: falha ao consultar Selgron —', resultado.erro);
+        setStatus('erro');
+        setUltimaAtualizacao(new Date());
+        return;
+      }
+      setPedidos(resultado.pedidos || []);
+      setStatus('ok');
+      setUltimaAtualizacao(new Date());
+    }catch(err){
+      console.warn('Pedidos de Compra: falha ao carregar dados ao vivo', err);
+      setStatus('erro');
+      setUltimaAtualizacao(new Date());
+    }
+  }
+
+  useEffect(()=>{
+    carregarDados();
+    // A cada 5 minutos — mesmo intervalo já usado no resto do Painel
+    // (confirmado com o cliente pra esta aba também). Sem Realtime aqui —
+    // o dado vem de fora do Supabase (consulta Selgron), não tem canal
+    // pra assinar.
+    const id = setInterval(carregarDados, 5*60*1000);
+    return ()=>clearInterval(id);
+  }, []);
+
+  const dadosAoVivo = status==='ok';
+  const agora = new Date();
+  const hojeStr = hojeLocalStr();
+  const pedidosHoje = dadosAoVivo
+    ? pedidos.filter(p=>p.entrega===hojeStr)
+    : DEMO_PEDIDOS_COMPRA;
+
+  // "Itens" = quantidade de LINHAS distintas exibidas na tabela, nunca a
+  // soma de `quantidade` (pedido explícito do cliente — 4 linhas com 17
+  // unidades no total mostra "4", não "17").
+  const numerosDistintos = new Set(pedidosHoje.map(p=>p.numero).filter(Boolean));
+  const fornecedoresDistintos = new Set(pedidosHoje.map(p=>p.fornecedor).filter(Boolean));
+  const totalItens = pedidosHoje.length;
+
+  return (
+    <div className="pc-page">
+      <PanelTabs tela={tela} onChange={onChange} onAbrirConfig={onAbrirConfig} links={links} linkIndex={linkIndex} onSelecionarLink={onSelecionarLink} onNavegarEsquerda={onNavegarEsquerda} onNavegarDireita={onNavegarDireita} theme={theme} onToggleTheme={onToggleTheme} />
+      <div className="pc-container">
+
+        <div className="pc-header">
+          <div className="pc-header-left">
+            <div className="pc-header-icon"><PcIcon name="caixa" size={28} /></div>
+            <div className="pc-header-text">
+              <h1 className="pc-title">Pedidos de Compra</h1>
+              <div className="pc-subtitle">Entregas previstas para hoje</div>
+            </div>
+          </div>
+          <div className="pc-info-blocks">
+            <div className="pc-info-card">
+              <PcIcon name="calendario" size={28} />
+              <div>
+                <div className="pc-info-card-label">{DIAS_SEMANA_PT_LONGO[agora.getDay()]}</div>
+                <div className="pc-info-card-value">{formatarDataPtBr(agora)}</div>
+              </div>
+            </div>
+            <div className="pc-info-card pc-update-card">
+              <PcIcon name="relogio" size={26} />
+              <div>
+                <div className="pc-update-card-label">Última atualização</div>
+                <div className="pc-update-card-value">{ultimaAtualizacao ? formatarHoraPtBr(ultimaAtualizacao) : '—'}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="pc-cards-row">
+          <div className="pc-card azul">
+            <div className="pc-card-icon-wrap"><PcIcon name="documento" size={24} /></div>
+            <div className="pc-card-body">
+              <div className="pc-card-valor">{numerosDistintos.size}</div>
+              <div className="pc-card-label">Pedidos com entrega hoje</div>
+            </div>
+          </div>
+          <div className="pc-card roxo">
+            <div className="pc-card-icon-wrap"><PcIcon name="caminhao" size={24} /></div>
+            <div className="pc-card-body">
+              <div className="pc-card-valor">{fornecedoresDistintos.size}</div>
+              <div className="pc-card-label">Fornecedores</div>
+            </div>
+          </div>
+          <div className="pc-card verde">
+            <div className="pc-card-icon-wrap"><PcIcon name="caixa" size={24} /></div>
+            <div className="pc-card-body">
+              <div className="pc-card-valor">{totalItens}</div>
+              <div className="pc-card-label">Itens</div>
+            </div>
+          </div>
+        </div>
+
+        {pedidosHoje.length===0 ? (
+          <div className="empty-msg">Nenhum pedido de compra com entrega hoje.</div>
+        ) : (
+          <div className="pc-table-wrap">
+            <table className="pc-table">
+              <colgroup>
+                <col className="col-pedido" /><col className="col-fornecedor" /><col className="col-produto" /><col className="col-descricao" /><col className="col-qtde" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>Pedido</th>
+                  <th>Fornecedor</th>
+                  <th>Produto</th>
+                  <th>Descrição</th>
+                  <th className="pc-th-right">Qtde</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pedidosHoje.map((p,i)=>(
+                  <tr key={i}>
+                    <td className="pc-td-pedido">{p.numero || '—'}</td>
+                    <td className="pc-td-fornecedor">{p.fornecedor || '—'}</td>
+                    <td className="pc-td-produto">{p.produto || '—'}</td>
+                    <td className="pc-td-descricao">{p.descricao || '—'}</td>
+                    <td className="pc-td-qtde"><span className="pc-qtde-badge">{p.quantidade!=null ? p.quantidade : '—'}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // Escala o conteúdo do filho (tamanho FIXO — sempre os mesmos 8 gráficos,
 // nunca uma lista que cresce) pra caber 100% em qualquer tamanho de tela,
 // sem cortar nem precisar rolar — mede o tamanho NATURAL do conteúdo (sem
@@ -2868,6 +3187,17 @@ function App(){
   // passou a ser configurável, não a lógica em si).
   useEffect(() => {
     if(tela !== 'indicadores') return;
+    const id = setTimeout(() => setTela('pedidosCompra'), temposConfig.segundosIndicadores*1000);
+    return () => clearTimeout(id);
+  }, [tela, temposConfig.segundosIndicadores]);
+
+  // "Pedidos de Compra" (3ª tela, sem sub-abas, mesmo critério de
+  // "Indicadores" acima) — reaproveita o MESMO tempo configurado
+  // (`segundosIndicadores`) em vez de criar um campo de configuração novo
+  // só pra ela; dá pra separar depois se o cliente pedir um tempo
+  // diferente pra essa tela especificamente.
+  useEffect(() => {
+    if(tela !== 'pedidosCompra') return;
     const id = setTimeout(() => setTela('picking'), temposConfig.segundosIndicadores*1000);
     return () => clearTimeout(id);
   }, [tela, temposConfig.segundosIndicadores]);
@@ -2918,7 +3248,7 @@ function App(){
   // mexe nos já existentes — só troca `tela`/`linhaSelecionada`/`linkIndex`
   // na hora, exatamente como clicar numa aba já fazia.
   const navegar = useCallback((direita) => {
-    const posicoes = [{tela:'indicadores'}];
+    const posicoes = [{tela:'indicadores'}, {tela:'pedidosCompra'}];
     LINHAS_PRODUCAO_TRACKING.forEach(l => posicoes.push({tela:'picking', linha:l}));
     linksExternos.forEach((l, i) => posicoes.push({tela:'link', linkIndex:i}));
     const idxAtual = posicoes.findIndex(p =>
@@ -2977,6 +3307,7 @@ function App(){
   return (
     <React.Fragment>
       {tela==='indicadores' && <PainelIndicadores tela={tela} onChange={setTela} theme={theme} onToggleTheme={toggleTheme} ordemVisivel={ordemIndicadores} {...propsAbaLink} />}
+      {tela==='pedidosCompra' && <PedidosCompraPanel tela={tela} onChange={setTela} theme={theme} onToggleTheme={toggleTheme} {...propsAbaLink} />}
       {tela==='picking' && (
         <TrackingPicking
           tela={tela} onChange={setTela} theme={theme} onToggleTheme={toggleTheme}
