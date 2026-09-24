@@ -312,68 +312,138 @@
      em qualquer tema). Prefixo `.pc-` isola isso do resto do CSS — nada
      aqui reaproveita ou sobrescreve as variáveis globais, então não afeta
      Indicadores/Tracking Picking/o resto do app. */
-  .pc-page{background:#0B0F17;min-height:calc(100vh - 56px);}
-  .pc-container{max-width:1600px;margin:0 auto;padding:28px 24px 40px;box-sizing:border-box;}
+  /* ---- Pedidos de Compra — redesign pra usar a MESMA identidade visual
+     já existente na aba Indicadores (pedido explícito do cliente: "não
+     quero criar identidade nova, quero que pareça ter sido feita pelo
+     mesmo designer, mesmo sistema"). Por isso os valores abaixo (--pc*)
+     são cópia EXATA de `:root[data-theme="dark"]` acima (--bg/--panel/
+     --panel-raised/--line/--ink/--ink-dim/--teal/--teal-bg/--blue/
+     --blue-bg/--purple/--purple-bg/--warn/--warn-bg/--danger/--danger-bg/
+     --ok/--ok-bg), não um palette novo — só continuam FIXOS (não seguem
+     o toggle claro/escuro do resto do app), mesmo critério já usado em
+     `--brand-navy` pro topbar: esta tela tem identidade escura fixa,
+     igual a Indicadores tem no tema escuro, sempre. */
+  .pc-page{
+    --pcbg:#14161B; --pcpanel:#23272F; --pcpanel2:#1A1D24; --pcline:#383D48;
+    --pcink:#EDEEF2; --pcink-dim:#9AA0AC;
+    --pcteal:#2DD4C6; --pcteal-bg:#123330;
+    --pcblue:#6FA8F5; --pcblue-bg:#152A42;
+    --pcpurple:#B18AF0; --pcpurple-bg:#2A2140;
+    --pcwarn:#FBBF24; --pcwarn-bg:#3A2A0A;
+    --pcdanger:#F87171; --pcdanger-bg:#3A1512;
+    background:var(--pcbg); color:var(--pcink);
+    height:calc(100vh - 56px); display:flex; flex-direction:column; overflow:hidden;
+  }
+  .pc-container{flex:1;min-height:0;display:flex;flex-direction:column;box-sizing:border-box;padding:22px 32px 0;max-width:1920px;width:100%;margin:0 auto;}
 
-  .pc-header{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;margin-bottom:28px;flex-wrap:wrap;}
-  .pc-header-left{display:flex;align-items:center;gap:18px;}
-  .pc-header-icon{width:52px;height:52px;border-radius:50%;background:rgba(22,119,255,0.16);color:#1677FF;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .pc-header{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;flex-shrink:0;margin-bottom:18px;}
+  .pc-header-left{display:flex;align-items:center;gap:16px;}
+  .pc-header-icon{width:52px;height:52px;border-radius:50%;background:var(--pcteal-bg);color:var(--pcteal);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
   .pc-header-text{display:flex;flex-direction:column;justify-content:center;}
-  .pc-title{font-size:30px;font-weight:700;line-height:36px;color:#F5F7FA;margin:0;}
-  .pc-subtitle{font-size:16px;font-weight:400;color:#9AA6B5;margin-top:2px;}
+  .pc-title{font-size:30px;font-weight:700;line-height:36px;color:var(--pcink);margin:0;}
+  .pc-subtitle{font-size:13px;font-weight:600;letter-spacing:1.4px;text-transform:uppercase;color:var(--pcink-dim);margin-top:4px;}
 
   .pc-info-blocks{display:flex;gap:12px;flex-shrink:0;}
-  .pc-info-card{width:245px;height:76px;background:#151D2A;border:1px solid #273449;border-radius:12px;box-sizing:border-box;padding:0 16px;display:flex;align-items:center;gap:12px;color:#9AA6B5;flex-shrink:0;}
+  .pc-info-card{width:210px;height:62px;background:var(--pcpanel2);border:1px solid var(--pcline);border-radius:8px;box-sizing:border-box;padding:12px 16px;display:flex;flex-direction:column;justify-content:center;gap:2px;flex-shrink:0;}
   /* Bloco de "última atualização" — mais estreito de propósito (pedido do
      cliente: "não deixar esses blocos enormes", ele é só contexto, menos
      importante que o bloco de data). */
-  .pc-update-card{width:190px;}
-  .pc-info-card-label{font-size:14px;color:#9AA6B5;}
-  .pc-info-card-value{font-size:20px;font-weight:700;color:#F5F7FA;margin-top:2px;}
-  .pc-update-card-label{font-size:13px;color:#9AA6B5;}
-  .pc-update-card-value{font-size:18px;font-weight:600;color:#F5F7FA;margin-top:2px;}
+  .pc-update-card{width:185px;}
+  .pc-info-card-label{font-size:12px;color:var(--pcink-dim);}
+  .pc-info-card-value{font-size:17px;font-weight:700;color:var(--pcink);}
 
-  .pc-cards-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;margin-bottom:24px;}
-  .pc-card{height:128px;border-radius:14px;border:1px solid #283244;background:#111722;box-sizing:border-box;padding:0 24px;display:flex;align-items:center;gap:18px;}
-  .pc-card-icon-wrap{width:56px;height:56px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
-  .pc-card-body{display:flex;flex-direction:column;min-width:0;}
-  .pc-card-valor{font-family:var(--font-mono);font-size:40px;font-weight:700;line-height:1;color:#F5F7FA;}
-  .pc-card-label{font-size:15px;font-weight:400;color:#9AA6B5;margin-top:8px;white-space:nowrap;}
-  .pc-card.azul .pc-card-icon-wrap{background:rgba(22,119,255,0.14);color:#1677FF;}
-  .pc-card.roxo .pc-card-icon-wrap{background:rgba(139,92,246,0.14);color:#8B5CF6;}
-  .pc-card.verde .pc-card-icon-wrap{background:rgba(34,197,94,0.14);color:#22C55E;}
+  .pc-cards-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;flex-shrink:0;}
+  .pc-card{height:108px;border-radius:9px;border:1px solid var(--pcline);background:var(--pcpanel);box-sizing:border-box;padding:16px 20px;display:flex;align-items:center;gap:16px;}
+  .pc-card-icon-wrap{width:56px;height:56px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .pc-card-body{display:flex;flex-direction:column;min-width:0;justify-content:center;}
+  .pc-card-valor{font-family:var(--font-mono);font-size:40px;font-weight:700;line-height:42px;color:var(--pcink);}
+  .pc-card-label{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;margin-top:2px;}
+  .pc-card-desc{font-size:12px;font-weight:400;color:var(--pcink-dim);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  /* Cor por card só no ícone/borda/label (nunca preenchendo o card
+     inteiro) — pedido explícito: "as cores comunicam informação, não
+     decoram"; o fundo continua sempre --pcpanel nos 3 cards. */
+  .pc-card.azul{border-color:rgba(111,168,245,0.35);}
+  .pc-card.azul .pc-card-icon-wrap{background:var(--pcblue-bg);color:var(--pcblue);}
+  .pc-card.azul .pc-card-label{color:var(--pcblue);}
+  .pc-card.roxo{border-color:rgba(177,138,240,0.35);}
+  .pc-card.roxo .pc-card-icon-wrap{background:var(--pcpurple-bg);color:var(--pcpurple);}
+  .pc-card.roxo .pc-card-label{color:var(--pcpurple);}
+  .pc-card.turquesa{border-color:rgba(45,212,198,0.35);}
+  .pc-card.turquesa .pc-card-icon-wrap{background:var(--pcteal-bg);color:var(--pcteal);}
+  .pc-card.turquesa .pc-card-label{color:var(--pcteal);}
 
-  .pc-table-wrap{border-radius:14px;border:1px solid #283244;background:#111722;overflow:hidden;}
-  .pc-table{width:100%;border-collapse:collapse;table-layout:fixed;}
-  .pc-table col.col-pedido{width:11%;}
-  .pc-table col.col-fornecedor{width:30%;}
-  .pc-table col.col-produto{width:15%;}
-  .pc-table col.col-descricao{width:34%;}
-  .pc-table col.col-qtde{width:10%;}
-  .pc-table thead th{height:54px;background:#151C28;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:#AAB5C5;text-align:left;padding:0 20px;box-sizing:border-box;}
-  .pc-table thead th.pc-th-right{text-align:right;}
-  .pc-table tbody td{font-size:15px;padding:16px 20px;border-top:1px solid #242D3B;box-sizing:border-box;overflow:hidden;text-overflow:ellipsis;}
-  .pc-table tbody tr:first-child td{border-top:none;}
-  .pc-td-pedido{font-weight:500;color:#F5F7FA;white-space:nowrap;}
-  .pc-td-fornecedor{font-weight:500;color:#F5F7FA;white-space:nowrap;}
-  .pc-td-produto{font-size:14px;color:#D8DEE8;white-space:nowrap;}
-  .pc-td-descricao{font-size:14px;color:#B9C3D0;white-space:normal;line-height:1.35;}
-  .pc-td-qtde{text-align:right;}
-  .pc-qtde-badge{display:inline-flex;align-items:center;justify-content:center;min-width:56px;height:34px;padding:0 10px;border-radius:8px;background:rgba(22,119,255,0.16);color:#F5F7FA;font-size:15px;font-weight:700;box-sizing:border-box;}
+  /* ---- Lista de pedidos agrupados (substitui a tabela única de antes —
+     pedido explícito do cliente: "agrupar por pedido/fornecedor", cada
+     grupo vira 1 card expansível). `flex:1` + `overflow-y:auto` aqui é o
+     que deixa cabeçalho/KPIs/rodapé fixos e só a LISTA rola, quando tem
+     pedido demais pra caber na tela de uma vez (TV, sem scroll de
+     página inteira). */
+  .pc-list{flex:1;min-height:0;overflow-y:auto;margin-top:18px;padding-bottom:16px;display:flex;flex-direction:column;gap:10px;scroll-behavior:smooth;}
+  .pc-list::-webkit-scrollbar{width:8px;}
+  .pc-list::-webkit-scrollbar-thumb{background:var(--pcline);border-radius:4px;}
+  .pc-list::-webkit-scrollbar-track{background:transparent;}
 
-  .pc-loading{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:100px 0;color:#9AA6B5;}
-  .pc-loading-spinner{width:40px;height:40px;border-radius:50%;border:3px solid #283244;border-top-color:#1677FF;animation:pc-spin 0.8s linear infinite;}
-  .pc-loading-text{font-size:15px;color:#9AA6B5;}
+  .pc-order{background:var(--pcpanel);border:1px solid var(--pcline);border-radius:9px;overflow:hidden;flex-shrink:0;transition:border-color .25s ease;}
+  .pc-order.expandido{border-color:rgba(45,212,198,0.4);}
+
+  .pc-order-head{all:unset;box-sizing:border-box;cursor:pointer;display:grid;grid-template-columns:150px 1fr 260px;align-items:center;gap:16px;width:100%;height:64px;padding:0 16px;text-align:left;}
+
+  .pc-status-badge{display:inline-flex;align-items:center;gap:8px;height:32px;padding:0 12px;border-radius:8px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap;}
+  .pc-status-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+
+  .pc-order-fornecedor{min-width:0;}
+  .pc-order-fornecedor-nome{font-size:16px;font-weight:700;color:var(--pcink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .pc-order-meta{font-size:13px;font-weight:400;color:var(--pcink-dim);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+  .pc-order-badges{display:flex;align-items:center;gap:10px;justify-content:flex-end;flex-shrink:0;}
+  .pc-order-badge{width:80px;height:48px;border:1px solid var(--pcline);border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;}
+  .pc-order-badge-num{font-family:var(--font-mono);font-size:18px;font-weight:700;color:var(--pcink);line-height:1;}
+  /* 12px = piso mínimo de texto secundário (pedido explícito do cliente
+     na redesign: "nunca usar 10px ou menor, mesmo que o texto seja
+     pequeno/pouco importante"). */
+  .pc-order-badge-label{font-size:12px;font-weight:600;text-transform:uppercase;color:var(--pcink-dim);margin-top:2px;}
+  .pc-order-chevron{color:var(--pcink-dim);flex-shrink:0;transition:transform .25s ease,color .25s ease;}
+  .pc-order.expandido .pc-order-chevron{transform:rotate(180deg);color:var(--pcteal);}
+
+  .pc-order-body{padding:0 16px 16px;animation:pc-order-expand .25s ease;}
+  @keyframes pc-order-expand{from{opacity:0;}to{opacity:1;}}
+  .pc-order-table{width:100%;border-collapse:collapse;table-layout:fixed;}
+  .pc-order-table thead th{height:36px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;color:var(--pcink-dim);text-align:left;border-bottom:1px solid var(--pcline);}
+  .pc-order-table thead th.pc-th-right{text-align:right;}
+  .pc-order-table tbody td{height:38px;font-size:13px;color:var(--pcink);border-bottom:1px solid var(--pcpanel2);box-sizing:border-box;}
+  .pc-order-table tbody tr:last-child td{border-bottom:none;}
+  .pc-order-td-produto{font-weight:500;}
+  .pc-order-td-descricao{font-weight:400;color:var(--pcink-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .pc-order-td-qtde{text-align:right;}
+  .pc-order-qtde-badge{display:inline-flex;align-items:center;justify-content:center;min-width:44px;height:28px;padding:0 8px;border-radius:6px;background:var(--pcblue-bg);color:var(--pcink);font-size:13px;font-weight:700;}
+
+  .pc-empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--pcink-dim);font-size:15px;background:var(--pcpanel);border:1px solid var(--pcline);border-radius:9px;margin-top:18px;}
+
+  .pc-footer{flex-shrink:0;height:50px;border-top:1px solid var(--pcline);background:var(--pcpanel2);display:flex;align-items:center;justify-content:space-between;padding:0 32px;box-sizing:border-box;font-size:12px;color:var(--pcink-dim);}
+  .pc-footer-left{display:flex;align-items:center;gap:8px;}
+  .pc-footer-count{color:var(--pcteal);font-weight:700;font-family:var(--font-mono);}
+  .pc-footer-right{white-space:nowrap;}
+
+  .pc-loading{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;color:var(--pcink-dim);}
+  .pc-loading-spinner{width:40px;height:40px;border-radius:50%;border:3px solid var(--pcline);border-top-color:var(--pcteal);animation:pc-spin 0.8s linear infinite;}
+  .pc-loading-text{font-size:15px;color:var(--pcink-dim);}
   @keyframes pc-spin{to{transform:rotate(360deg);}}
 
-  @media (max-width:1300px){
-    .pc-container{padding:24px 16px 32px;}
-    .pc-header{flex-direction:column;align-items:flex-start;}
+  @media (max-width:1600px){
+    .pc-container{padding:20px 24px 0;}
+    .pc-order-head{grid-template-columns:140px 1fr 230px;}
+  }
+  @media (max-width:1366px){
+    .pc-container{padding:18px 20px 0;}
+    .pc-header{flex-direction:column;align-items:flex-start;gap:14px;}
+    .pc-cards-row{gap:14px;}
+    .pc-order-head{grid-template-columns:130px 1fr 200px;gap:12px;}
+    .pc-order-badge{width:70px;}
   }
   @media (max-width:1000px){
     .pc-cards-row{grid-template-columns:1fr;}
-    .pc-table-wrap{overflow-x:auto;}
-    .pc-table{min-width:880px;}
+    .pc-order-head{grid-template-columns:1fr;height:auto;padding:12px 16px;gap:8px;}
+    .pc-order-badges{justify-content:flex-start;}
   }
 
   @media (max-width:1400px){
@@ -2747,14 +2817,25 @@ async function fetchPedidosCompraSelgron(){
 
 // Dados de EXEMPLO — mesmo critério de todo `DEMO_*` deste arquivo, só
 // aparece sem sessão/dado ao vivo. São exatamente os dados de exemplo
-// definidos pelo cliente pra essa tela. NÃO filtra por "hoje" (é só
+// definidos pelo cliente na redesign do painel operacional (pedidos
+// 135709/135820/135565/135566/135834). NÃO filtra por "hoje" (é só
 // ilustrativo — mesmo espírito dos outros DEMO_* da tela Indicadores, que
-// também não tentam parecer dado real do dia).
+// também não tentam parecer dado real do dia). Os pedidos 135565/135566/
+// 135834 vieram do cliente só com o total (ex.: "1 item, 2 unidades"),
+// sem produto/descrição — aqui viram 1 linha sintética cada, só pra
+// ilustrar o card recolhido (nunca aparecem expandidos com esse produto
+// fictício sendo o foco).
 const DEMO_PEDIDOS_COMPRA = [
-  {numero:'136144', fornecedor:'FESTO BRASIL LTDA', produto:'000.17926', descricao:'VÁLVULA DO PNEUM SEG 3/2 VIAS', quantidade:1},
-  {numero:'136144', fornecedor:'FESTO BRASIL LTDA', produto:'000.22293', descricao:'CONEX COT QSML-M5-6', quantidade:10},
-  {numero:'136201', fornecedor:'PARKER HANNIFIN IND. COM. LTDA', produto:'000.31820', descricao:'MANGUEIRA HIDRÁULICA 1/2"', quantidade:4},
-  {numero:'136215', fornecedor:'WEG EQUIPAMENTOS ELÉTRICOS S.A.', produto:'000.08823', descricao:'MOTOR ELÉTRICO TRIFÁSICO 5CV', quantidade:2},
+  {numero:'135709', fornecedor:'MITSUBISHI ELECTRIC BRASIL CO.SER. LTDA', produto:'000.27689', descricao:'CLP FX5UC 24VDC 16IN X 16OUT', quantidade:2},
+  {numero:'135709', fornecedor:'MITSUBISHI ELECTRIC BRASIL CO.SER. LTDA', produto:'000.27691', descricao:'EXPANSÃO FX5-C32 16IN X 16OUT', quantidade:4},
+  {numero:'135709', fornecedor:'MITSUBISHI ELECTRIC BRASIL CO.SER. LTDA', produto:'000.07654', descricao:'BATERIA DE LÍTIO 3,6V FX3U/3G', quantidade:2},
+  {numero:'135820', fornecedor:'METALTEC STEEL HOME LTDA', produto:'121.020.00128', descricao:'SUPORTE FIX DIR RESIST', quantidade:30},
+  {numero:'135820', fornecedor:'METALTEC STEEL HOME LTDA', produto:'121.020.00129', descricao:'SUP FIXO ESQ RESIST', quantidade:30},
+  {numero:'135820', fornecedor:'METALTEC STEEL HOME LTDA', produto:'121.020.00227', descricao:'POLIA SINCR', quantidade:20},
+  {numero:'135820', fornecedor:'METALTEC STEEL HOME LTDA', produto:'000.64051', descricao:'SUP CIL GARRAS', quantidade:10},
+  {numero:'135565', fornecedor:'ENDER USINAGEM LTDA', produto:'000.90001', descricao:'PEÇA USINADA CONFORME DESENHO', quantidade:2},
+  {numero:'135566', fornecedor:'BARTH USINAGEM LTDA-ME', produto:'000.90002', descricao:'PEÇA USINADA CONFORME DESENHO', quantidade:8},
+  {numero:'135834', fornecedor:'SIEBEN USINAGEM LTDA', produto:'000.90003', descricao:'PEÇA USINADA CONFORME DESENHO', quantidade:20},
 ];
 
 const DIAS_SEMANA_PT_LONGO = ['Domingo','Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sábado'];
@@ -2786,6 +2867,84 @@ function PcIcon({name, size=24}){
   );
 }
 
+// Status do pedido — mostrado em cada card da lista. Com o dado real de
+// hoje (só a DATA de entrega prevista, vinda da consulta Selgron — ver
+// `fetchPedidosCompraSelgron` acima, sem nenhum campo de status próprio
+// de conferência/recebimento) e a lista já filtrada pra só mostrar
+// `entrega === hoje` (ver `pedidosHoje` em `PedidosCompraPanel`), todo
+// pedido exibido aqui É "entrega hoje" por definição — por isso é o
+// único status realmente usado agora. Os outros 3 (aguardando/
+// conferência/atrasado) já ficam prontos no componente pra quando
+// existir uma fonte de dado de verdade pra eles.
+function PcStatusBadge({status}){
+  const cfg = {
+    'entrega-hoje': {rotulo:'Entrega hoje', cor:'var(--pcteal)', bg:'var(--pcteal-bg)'},
+    'aguardando': {rotulo:'Aguardando recebimento', cor:'var(--pcwarn)', bg:'var(--pcwarn-bg)'},
+    'conferencia': {rotulo:'Em conferência', cor:'var(--pcblue)', bg:'var(--pcblue-bg)'},
+    'atrasado': {rotulo:'Atrasado', cor:'var(--pcdanger)', bg:'var(--pcdanger-bg)'},
+  }[status] || {rotulo:'—', cor:'var(--pcink-dim)', bg:'transparent'};
+  return (
+    <span className="pc-status-badge" style={{color:cfg.cor, background:cfg.bg}}>
+      <span className="pc-status-dot" style={{background:cfg.cor}}></span>
+      {cfg.rotulo}
+    </span>
+  );
+}
+
+// Card de 1 pedido (grupo de linhas com o mesmo número+fornecedor) — vira
+// a unidade visual da lista, no lugar da tabela única de antes (pedido
+// explícito: "agrupar por pedido/fornecedor", isso comunica muito mais
+// rápido numa TV do que uma linha de tabela solta). Recolhido mostra só
+// o resumo (fornecedor/pedido/contagens); expandido mostra também a
+// tabela de produtos daquele pedido. `cardRef` é anexado no <div> raiz
+// pra permitir rolar o card até a vista quando ele vira o expandido da
+// vez (ver rotação automática em `PedidosCompraPanel`).
+function PedidoCardExpandivel({grupo, expandido, onToggle, cardRef}){
+  const rotuloItens = grupo.totalItens===1 ? 'item' : 'itens';
+  const rotuloUnidades = grupo.totalUnidades===1 ? 'unidade' : 'unidades';
+  return (
+    <div ref={cardRef} className={'pc-order' + (expandido ? ' expandido' : '')}>
+      <button type="button" className="pc-order-head" onClick={onToggle} aria-expanded={expandido}>
+        <PcStatusBadge status="entrega-hoje" />
+        <div className="pc-order-fornecedor">
+          <div className="pc-order-fornecedor-nome">{grupo.fornecedor || '—'}</div>
+          <div className="pc-order-meta">Pedido: {grupo.numero || '—'} · {grupo.totalItens} {rotuloItens} · {grupo.totalUnidades} {rotuloUnidades}</div>
+        </div>
+        <div className="pc-order-badges">
+          <div className="pc-order-badge">
+            <div className="pc-order-badge-num">{grupo.totalItens}</div>
+            <div className="pc-order-badge-label">Itens</div>
+          </div>
+          <div className="pc-order-badge">
+            <div className="pc-order-badge-num">{grupo.totalUnidades}</div>
+            <div className="pc-order-badge-label">Unidades</div>
+          </div>
+          <svg className="pc-order-chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+      </button>
+      {expandido && (
+        <div className="pc-order-body">
+          <table className="pc-order-table">
+            <colgroup><col style={{width:'32%'}} /><col style={{width:'58%'}} /><col style={{width:'10%'}} /></colgroup>
+            <thead>
+              <tr><th>Produto</th><th>Descrição</th><th className="pc-th-right">Qtde</th></tr>
+            </thead>
+            <tbody>
+              {grupo.itens.map((it,i)=>(
+                <tr key={i}>
+                  <td className="pc-order-td-produto">{it.produto || '—'}</td>
+                  <td className="pc-order-td-descricao">{it.descricao || '—'}</td>
+                  <td className="pc-order-td-qtde"><span className="pc-order-qtde-badge">{it.quantidade!=null ? it.quantidade : '—'}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PedidosCompraPanel({tela, onChange, theme, onToggleTheme, onAbrirConfig, links, linkIndex, onSelecionarLink, onNavegarEsquerda, onNavegarDireita, status, pedidos, ultimaAtualizacao}){
   // Busca de dado (status/pedidos/ultimaAtualizacao) e o polling de 5 min
   // AGORA vivem em App() — mesmo motivo de `PainelIndicadores` (ver
@@ -2794,11 +2953,91 @@ function PedidosCompraPanel({tela, onChange, theme, onToggleTheme, onAbrirConfig
   // e recomeçando do zero (mostrando o carregando/exemplo de novo) TODA
   // vez que "Pedidos de Compra" voltava a aparecer, não só na 1ª vez.
 
+  // Todos os hooks ficam ANTES de qualquer `return` condicional (ver
+  // `if(status==='loading')` mais abaixo) — Rules of Hooks: precisam
+  // rodar na MESMA ordem em todo render, então o que muda com o status é
+  // só o JSX final, nunca quais hooks são chamados.
+  const [indiceExpandido, setIndiceExpandido] = useState(0);
+  const cardRefs = useRef([]);
+
+  // Relógio próprio só pro contador "próxima atualização em MM:SS" do
+  // rodapé — não busca dado nenhum (isso é o `ultimaAtualizacao`/
+  // `carregarDadosPedidosCompra` de App(), aqui é só o TEXTO do contador
+  // que precisa de um tick de 1s pra não ficar parado).
+  const [agoraTick, setAgoraTick] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setAgoraTick(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const dadosAoVivo = status==='ok';
+  const hojeStr = hojeLocalStr();
+  const pedidosHoje = dadosAoVivo
+    ? pedidos.filter(p=>p.entrega===hojeStr)
+    : DEMO_PEDIDOS_COMPRA;
+
+  // Agrupa por PEDIDO+FORNECEDOR (redesign do painel operacional —
+  // "não usar tabela tradicional... agrupar por pedido/fornecedor") —
+  // cada grupo vira 1 card expansível (`PedidoCardExpandivel`), com os
+  // produtos daquele pedido dentro.
+  const gruposMap = new Map();
+  pedidosHoje.forEach(p => {
+    const chave = (p.numero||'—') + '||' + (p.fornecedor||'—');
+    if(!gruposMap.has(chave)) gruposMap.set(chave, {numero:p.numero, fornecedor:p.fornecedor, itens:[]});
+    gruposMap.get(chave).itens.push(p);
+  });
+  const grupos = Array.from(gruposMap.values()).map(g => ({
+    ...g,
+    totalItens: g.itens.length,
+    totalUnidades: g.itens.reduce((soma,it)=>soma+(it.quantidade||0), 0),
+  }));
+
+  // "Itens" (card de KPI) = quantidade de LINHAS distintas no total,
+  // nunca a soma de `quantidade` (pedido explícito do cliente — 4 linhas
+  // com 17 unidades no total mostra "4", não "17"; mesmo critério de
+  // sempre nesta tela, agora também usado por card em `totalItens`).
+  const numerosDistintos = new Set(pedidosHoje.map(p=>p.numero).filter(Boolean));
+  const fornecedoresDistintos = new Set(pedidosHoje.map(p=>p.fornecedor).filter(Boolean));
+  const totalItens = pedidosHoje.length;
+
+  // Rotação automática de qual card fica expandido — pedido do cliente
+  // pra TV: "mostrar cada grupo por 8-12s antes de avançar", preservando
+  // a interação manual (clicar num card manualmente reagenda o próximo
+  // avanço automático a partir dali, mesmo padrão já usado no resto do
+  // Painel — ver `TrackingPicking`/`LinkExternoPanel`). Reseta pro
+  // primeiro se a lista encolher (refresh) e o índice atual não existir
+  // mais.
+  useEffect(() => {
+    if(indiceExpandido >= grupos.length) setIndiceExpandido(0);
+  }, [grupos.length, indiceExpandido]);
+
+  useEffect(() => {
+    if(grupos.length <= 1) return;
+    const id = setTimeout(() => {
+      setIndiceExpandido(idx => (idx+1) % grupos.length);
+    }, 10000);
+    return () => clearTimeout(id);
+  }, [indiceExpandido, grupos.length]);
+
+  // Rolagem suave até o card expandido da vez — cobre o caso de ter mais
+  // pedidos do que cabem na tela de uma vez (pedido do cliente: "rolagem
+  // vertical automática muito suave"). `scroll-behavior:smooth` no CSS
+  // de `.pc-list` já cuida da suavidade; aqui só decide QUANDO rolar.
+  useEffect(() => {
+    const el = cardRefs.current[indiceExpandido];
+    if(el && el.scrollIntoView) el.scrollIntoView({behavior:'smooth', block:'nearest'});
+  }, [indiceExpandido]);
+
   const agora = new Date();
+  const proximaAtualizacao = ultimaAtualizacao ? new Date(ultimaAtualizacao.getTime() + 5*60*1000) : null;
+  const segundosRestantes = proximaAtualizacao ? Math.max(0, Math.round((proximaAtualizacao - agoraTick)/1000)) : null;
+  const contagemRegressiva = segundosRestantes!=null
+    ? String(Math.floor(segundosRestantes/60)).padStart(2,'0')+':'+String(segundosRestantes%60).padStart(2,'0')
+    : '—:—';
 
   // Estado de carregamento genuíno — antes, "loading" caía junto com
   // "sem-sessao"/"erro" no fallback pros dados de exemplo, então a tela
-  // mostrava os 4 pedidos demo (e "Última atualização: —") por alguns
+  // mostrava os pedidos demo (e "Última atualização: —") por alguns
   // segundos toda vez que a aba abria, antes da 1ª consulta real na
   // Selgron terminar — parecia "carregou errado e se corrigiu sozinho".
   // Agora esse instante mostra só um carregando, sem número nenhum.
@@ -2825,19 +3064,6 @@ function PedidosCompraPanel({tela, onChange, theme, onToggleTheme, onAbrirConfig
     );
   }
 
-  const dadosAoVivo = status==='ok';
-  const hojeStr = hojeLocalStr();
-  const pedidosHoje = dadosAoVivo
-    ? pedidos.filter(p=>p.entrega===hojeStr)
-    : DEMO_PEDIDOS_COMPRA;
-
-  // "Itens" = quantidade de LINHAS distintas exibidas na tabela, nunca a
-  // soma de `quantidade` (pedido explícito do cliente — 4 linhas com 17
-  // unidades no total mostra "4", não "17").
-  const numerosDistintos = new Set(pedidosHoje.map(p=>p.numero).filter(Boolean));
-  const fornecedoresDistintos = new Set(pedidosHoje.map(p=>p.fornecedor).filter(Boolean));
-  const totalItens = pedidosHoje.length;
-
   return (
     <div className="pc-page">
       <PanelTabs tela={tela} onChange={onChange} onAbrirConfig={onAbrirConfig} links={links} linkIndex={linkIndex} onSelecionarLink={onSelecionarLink} onNavegarEsquerda={onNavegarEsquerda} onNavegarDireita={onNavegarDireita} theme={theme} onToggleTheme={onToggleTheme} />
@@ -2853,18 +3079,12 @@ function PedidosCompraPanel({tela, onChange, theme, onToggleTheme, onAbrirConfig
           </div>
           <div className="pc-info-blocks">
             <div className="pc-info-card">
-              <PcIcon name="calendario" size={28} />
-              <div>
-                <div className="pc-info-card-label">{DIAS_SEMANA_PT_LONGO[agora.getDay()]}</div>
-                <div className="pc-info-card-value">{formatarDataPtBr(agora)}</div>
-              </div>
+              <div className="pc-info-card-label">{DIAS_SEMANA_PT_LONGO[agora.getDay()]}</div>
+              <div className="pc-info-card-value">{formatarDataPtBr(agora)}</div>
             </div>
             <div className="pc-info-card pc-update-card">
-              <PcIcon name="relogio" size={26} />
-              <div>
-                <div className="pc-update-card-label">Última atualização</div>
-                <div className="pc-update-card-value">{ultimaAtualizacao ? formatarHoraPtBr(ultimaAtualizacao) : '—'}</div>
-              </div>
+              <div className="pc-info-card-label">Última atualização</div>
+              <div className="pc-info-card-value">{ultimaAtualizacao ? formatarHoraPtBr(ultimaAtualizacao) : '—'}</div>
             </div>
           </div>
         </div>
@@ -2874,7 +3094,8 @@ function PedidosCompraPanel({tela, onChange, theme, onToggleTheme, onAbrirConfig
             <div className="pc-card-icon-wrap"><PcIcon name="documento" size={24} /></div>
             <div className="pc-card-body">
               <div className="pc-card-valor">{numerosDistintos.size}</div>
-              <div className="pc-card-label">Pedidos com entrega hoje</div>
+              <div className="pc-card-label">Pedidos</div>
+              <div className="pc-card-desc">Entrega prevista para hoje</div>
             </div>
           </div>
           <div className="pc-card roxo">
@@ -2882,48 +3103,41 @@ function PedidosCompraPanel({tela, onChange, theme, onToggleTheme, onAbrirConfig
             <div className="pc-card-body">
               <div className="pc-card-valor">{fornecedoresDistintos.size}</div>
               <div className="pc-card-label">Fornecedores</div>
+              <div className="pc-card-desc">Envolvidos nos pedidos de hoje</div>
             </div>
           </div>
-          <div className="pc-card verde">
+          <div className="pc-card turquesa">
             <div className="pc-card-icon-wrap"><PcIcon name="caixa" size={24} /></div>
             <div className="pc-card-body">
               <div className="pc-card-valor">{totalItens}</div>
               <div className="pc-card-label">Itens</div>
+              <div className="pc-card-desc">Itens distintos a receber</div>
             </div>
           </div>
         </div>
 
-        {pedidosHoje.length===0 ? (
-          <div className="empty-msg">Nenhum pedido de compra com entrega hoje.</div>
+        {grupos.length===0 ? (
+          <div className="pc-empty">Nenhum pedido de compra com entrega hoje.</div>
         ) : (
-          <div className="pc-table-wrap">
-            <table className="pc-table">
-              <colgroup>
-                <col className="col-pedido" /><col className="col-fornecedor" /><col className="col-produto" /><col className="col-descricao" /><col className="col-qtde" />
-              </colgroup>
-              <thead>
-                <tr>
-                  <th>Pedido</th>
-                  <th>Fornecedor</th>
-                  <th>Produto</th>
-                  <th>Descrição</th>
-                  <th className="pc-th-right">Qtde</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pedidosHoje.map((p,i)=>(
-                  <tr key={i}>
-                    <td className="pc-td-pedido">{p.numero || '—'}</td>
-                    <td className="pc-td-fornecedor">{p.fornecedor || '—'}</td>
-                    <td className="pc-td-produto">{p.produto || '—'}</td>
-                    <td className="pc-td-descricao">{p.descricao || '—'}</td>
-                    <td className="pc-td-qtde"><span className="pc-qtde-badge">{p.quantidade!=null ? p.quantidade : '—'}</span></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="pc-list">
+            {grupos.map((g,i) => (
+              <PedidoCardExpandivel
+                key={g.numero+'|'+g.fornecedor+'|'+i}
+                grupo={g}
+                expandido={indiceExpandido===i}
+                onToggle={() => setIndiceExpandido(i)}
+                cardRef={el => { cardRefs.current[i] = el; }}
+              />
+            ))}
           </div>
         )}
+      </div>
+
+      <div className="pc-footer">
+        <div className="pc-footer-left">
+          <span aria-hidden="true">↻</span> Próxima atualização automática em <span className="pc-footer-count">{contagemRegressiva}</span>
+        </div>
+        <div className="pc-footer-right">{fornecedoresDistintos.size} fornecedores · {numerosDistintos.size} pedidos · {totalItens} itens</div>
       </div>
     </div>
   );
