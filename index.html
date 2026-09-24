@@ -18395,7 +18395,7 @@ async function avancarStatusMaquinaEmLote(maquina, itensDaMaquina, nomeUsuario, 
 // decisão já confirmada: "Não preciso mais rastrear item nenhum"). O botão
 // de avançar SEMPRE age sobre TODOS os itens da ETP de uma vez (ver
 // `avancarStatusMaquinaEmLote`).
-function MaquinaCard({m, canManage, isAdmin, ordinal, mostrarReordenar, podeSubir, podeDescer, busy, erro, onAvancar, onMoverCima, onMoverBaixo, onToggleUrgente, onExcluir, onEditar}){
+function MaquinaCard({m, canManage, podeAvancarStatus, isAdmin, ordinal, mostrarReordenar, podeSubir, podeDescer, busy, erro, onAvancar, onMoverCima, onMoverBaixo, onToggleUrgente, onExcluir, onEditar}){
   const [confirmandoExcluir, setConfirmandoExcluir] = useState(false);
   const [menuAbertoId, setMenuAbertoId] = useState(null);
   const classes = ['sep-kanban-card'];
@@ -18436,31 +18436,33 @@ function MaquinaCard({m, canManage, isAdmin, ordinal, mostrarReordenar, podeSubi
           <button type="button" disabled={!podeDescer || busy} onClick={onMoverBaixo} title="Mover pra baixo na fila"><DIcon name="arrowDown" size={14} /></button>
         </div>
       )}
-      {canManage && !confirmandoExcluir && (
+      {!confirmandoExcluir && (podeAvancarStatus || canManage) && (
         <div className="btn-row" style={{width:'auto',marginTop:8,gap:'8px',flexWrap:'nowrap',alignItems:'flex-start'}}>
-          {temProximo && (
+          {podeAvancarStatus && temProximo && (
             <button type="button" className="btn btn-primary" style={{padding:'8px 12px',fontSize:'var(--text-xs)'}} disabled={busy} onClick={onAvancar}>
               {busy ? 'Salvando…' : acaoLabel}
             </button>
           )}
-          <div className="count-card-menu">
-            <button type="button" className="count-card-menu-btn" style={{padding:'8px 12px',fontSize:'var(--text-xs)'}} onClick={()=>setMenuAbertoId(menuAbertoId===m.etp ? null : m.etp)} title="Mais opções">⋮</button>
-            {menuAbertoId===m.etp && (
-              <div className="count-card-menu-dropdown" style={{minWidth:'180px'}}>
-                <button type="button" disabled={busy} onClick={()=>{ onToggleUrgente(); setMenuAbertoId(null); }}>
-                  <Ic>※</Ic> {m.urgente ? 'Remover urgência' : 'Marcar urgente'}
-                </button>
-                <button type="button" disabled={busy} onClick={()=>{ onEditar && onEditar(m); setMenuAbertoId(null); }} title="Editar máquina">
-                  <DIcon name="edit" size={16}/> Editar
-                </button>
-                {isAdmin && (
-                  <button type="button" className="menu-item-danger" disabled={busy} onClick={()=>{setConfirmandoExcluir(true); setMenuAbertoId(null);}} title="Excluir máquina">
-                    <Ic>⌫</Ic> Excluir
+          {canManage && (
+            <div className="count-card-menu">
+              <button type="button" className="count-card-menu-btn" style={{padding:'8px 12px',fontSize:'var(--text-xs)'}} onClick={()=>setMenuAbertoId(menuAbertoId===m.etp ? null : m.etp)} title="Mais opções">⋮</button>
+              {menuAbertoId===m.etp && (
+                <div className="count-card-menu-dropdown" style={{minWidth:'180px'}}>
+                  <button type="button" disabled={busy} onClick={()=>{ onToggleUrgente(); setMenuAbertoId(null); }}>
+                    <Ic>※</Ic> {m.urgente ? 'Remover urgência' : 'Marcar urgente'}
                   </button>
-                )}
-              </div>
-            )}
-          </div>
+                  <button type="button" disabled={busy} onClick={()=>{ onEditar && onEditar(m); setMenuAbertoId(null); }} title="Editar máquina">
+                    <DIcon name="edit" size={16}/> Editar
+                  </button>
+                  {isAdmin && (
+                    <button type="button" className="menu-item-danger" disabled={busy} onClick={()=>{setConfirmandoExcluir(true); setMenuAbertoId(null);}} title="Excluir máquina">
+                      <Ic>⌫</Ic> Excluir
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
       {isAdmin && confirmandoExcluir && (
@@ -18495,7 +18497,7 @@ const SEP_KANBAN_COLUNAS = [
   {chave:'entregue', titulo:'Entregue', icone:'checkCircle', cor:'--blue', corBg:'--blue-bg', vazio:'Nenhuma máquina entregue ainda.'},
 ];
 
-function SeparacaoPainelBoard({itens, maquinasEtp, canManage, isAdmin, onAvancarStatus, onMoverOrdem, onToggleUrgente, onExcluirMaquina, onAdicionarEtpClick, onEditarMaquina}){
+function SeparacaoPainelBoard({itens, maquinasEtp, canManage, podeAvancarStatus, isAdmin, onAvancarStatus, onMoverOrdem, onToggleUrgente, onExcluirMaquina, onAdicionarEtpClick, onEditarMaquina}){
   const [modoReordenar, setModoReordenar] = useState(false);
   const [somenteUrgentes, setSomenteUrgentes] = useState(false);
   const [busyEtp, setBusyEtp] = useState(null);
@@ -18586,7 +18588,7 @@ function SeparacaoPainelBoard({itens, maquinasEtp, canManage, isAdmin, onAvancar
                 ) : (
                   lista.map((m, idx)=>(
                     <MaquinaCard
-                      key={m.etp} m={m} canManage={canManage} isAdmin={isAdmin}
+                      key={m.etp} m={m} canManage={canManage} podeAvancarStatus={podeAvancarStatus} isAdmin={isAdmin}
                       ordinal={reordenarAtivo ? idx+1 : null}
                       mostrarReordenar={reordenarAtivo}
                       podeSubir={idx>0} podeDescer={idx<lista.length-1}
@@ -18812,6 +18814,16 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
 
   const canManage = role==='lider' || role==='admin';
   const isAdmin = role==='admin';
+  // Avançar o status ("marcar quando terminar a separação") NÃO é mais
+  // restrito a líder/admin — pedido do cliente: o próprio operador que fez
+  // a separação deve poder marcar sozinho, sem precisar de um líder pra
+  // clicar por ele. Continua indiretamente controlado por QUEM chega até
+  // aqui: só usuário com o acesso extra "Programação" liberado (ver
+  // `hasAccess(currentUser,'programacaoSeparacao')` na rota desta tela)
+  // consegue abrir esta tela pra começo de conversa. As outras ações
+  // (Adicionar ETP/editar/excluir/marcar urgente) continuam só pra
+  // líder/admin — `canManage`, sem mudança nenhuma.
+  const podeAvancarStatus = true;
 
   // Fila em tempo real — escopado a esta tela (mesmo padrão já usado por
   // EtiquetasPanel: só ela lê esse dado, não vale manter um canal aberto
@@ -18978,6 +18990,7 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
         itens={itensDaLinha}
         maquinasEtp={maquinasEtpDaLinha}
         canManage={canManage}
+        podeAvancarStatus={podeAvancarStatus}
         isAdmin={isAdmin}
         onAvancarStatus={handleAvancarStatusMaquina}
         onMoverOrdem={handleMoverOrdem}
