@@ -123,6 +123,14 @@
   .fit-screen-inner{width:1600px;transform-origin:center center;}
 
   .content{padding:24px 40px;max-width:100%;margin:0 auto;}
+  /* Só a aba Tracking Picking usa isto (ver comentário completo lá e em
+     `.sep-kanban-board`) — `min-height` (nunca `height`/`overflow:hidden`)
+     de propósito: garante um piso de altura igual sempre (o Kanban
+     estica até preencher, mesmo vazio), mas ainda deixa crescer além
+     disso e a PÁGINA rolar quando tem card demais pra caber — mesma
+     regra de sempre desta tela, só que agora sem "pular" de tamanho
+     quando a linha selecionada muda. */
+  .content-tracking{min-height:calc(100vh - 56px);display:flex;flex-direction:column;box-sizing:border-box;}
 
   /* Cabeçalho único (barra azul-marinho), réplica fiel de referência visual
      passada pelo cliente — substitui o antigo cabeçalho em 2 blocos (barra
@@ -284,15 +292,29 @@
   .status-dot{width:7px;height:7px;border-radius:50%;background:currentColor;}
   .status-ok{background:var(--ok-bg);color:var(--ok);}
   .status-warn{background:var(--warn-bg);color:var(--warn);}
-  .sep-kanban-board{display:flex;gap:14px;overflow-x:auto;padding-bottom:8px;align-items:flex-start;}
+  /* `align-items:stretch` (era `flex-start`) + `flex:1` — junto com
+     `.content-tracking{min-height:calc(100vh - 56px)}` (ver Tracking
+     Picking), isso faz as 5 colunas ESTICAREM pra preencher a MESMA
+     altura sempre, tenha 0 ou várias máquinas — antes, uma linha vazia
+     tinha o board bem mais baixo/curto que uma linha cheia, e trocar de
+     linha fazia tudo "pular" de tamanho (pedido do cliente: "esse painel
+     é fixo, não precisa ficar alternando tamanho ou localização"). Sem
+     nenhum transform/escala — só flexbox comum, então nunca distorce
+     texto/ícone. */
+  .sep-kanban-board{display:flex;gap:14px;overflow-x:auto;padding-bottom:8px;align-items:stretch;flex:1;}
   .sep-kanban-col{flex:1 1 0;min-width:260px;max-width:340px;background:var(--panel-raised);border:1px solid var(--line);border-radius:var(--radius);display:flex;flex-direction:column;}
   .sep-kanban-col-head{display:flex;align-items:center;gap:8px;padding:12px 14px;border-radius:var(--radius) var(--radius) 0 0;font-family:var(--font-mono);font-size:var(--text-sm);font-weight:700;text-transform:uppercase;letter-spacing:0.4px;}
   .sep-kanban-col-count{margin-left:auto;background:rgba(0,0,0,.08);color:inherit;font-size:var(--text-xs);font-weight:800;padding:2px 9px;border-radius:20px;}
   /* Sem altura máxima nem rolagem própria de propósito — pedido do cliente:
      "quero que apareça tudo, se eu quiser ver os itens lá de baixo eu faço
      a rolagem de tela" — cada coluna cresce pro tamanho de todos os cards
-     que tiver, e é a PÁGINA (não a coluna) que rola quando não cabe tudo. */
-  .sep-kanban-col-body{padding:10px;display:flex;flex-direction:column;gap:10px;}
+     que tiver, e é a PÁGINA (não a coluna) que rola quando não cabe tudo.
+     `flex:1` aqui é só o que faz a coluna ESTICAR até o fundo quando ela
+     tem poucos/nenhum card (ver comentário de `.sep-kanban-board` acima)
+     — de propósito SEM `min-height:0`/`overflow`: quando o conteúdo é
+     maior que o espaço "justo" da coluna, ele empurra a coluna (e a
+     página) pra ficar mais alta, em vez de cortar ou rolar sozinho. */
+  .sep-kanban-col-body{padding:10px;display:flex;flex-direction:column;gap:10px;flex:1;}
   .sep-kanban-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;box-shadow:0 1px 2px rgba(0,0,0,.04);position:relative;}
   .sep-kanban-card.sep-urgente-maquina{box-shadow:0 0 0 3px var(--danger),0 1px 3px rgba(0,0,0,.04);}
   .sep-kanban-card-head{display:flex;align-items:center;gap:8px;margin-bottom:4px;}
@@ -2727,24 +2749,21 @@ function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto,
   return (
     <div>
       <PanelTabs tela={tela} onChange={onChange} onAbrirConfig={onAbrirConfig} links={links} linkIndex={linkIndex} onSelecionarLink={onSelecionarLink} onNavegarEsquerda={onNavegarEsquerda} onNavegarDireita={onNavegarDireita} theme={theme} onToggleTheme={onToggleTheme} />
-      {/* FitToScreen (mesmo componente/critério já usado em
-          PainelIndicadores, ver comentário completo lá) — o Kanban aqui só
-          tem 5 colunas curtas (poucas máquinas por vez), então sem isso ele
-          ficava "flutuando" no canto superior da TV com um vazio enorme
-          embaixo (relatado pelo cliente numa TV grande de verdade no
-          almoxarifado). Com FitToScreen, o board escala pra preencher a
-          tela inteira, texto/cards incluídos — mesmo efeito que já existe
-          na aba Indicadores. `maxScale` aqui (Indicadores não usa,
-          continua sem teto) — quando a linha selecionada está com as 5
-          colunas vazias (0 máquinas), a altura natural do conteúdo fica
-          bem pequena, e sem teto o Y precisava esticar 3x+ o X só pra
-          preencher a tela — abas/cabeçalhos de coluna ficavam gigantes,
-          visivelmente quebrado (print real do cliente). Com o teto, o
-          caso vazio fica só moderadamente maior (nunca voltando a ser
-          minúsculo), e o caso com máquinas de verdade (bem abaixo do
-          teto) continua escalando normalmente, sem mudança nenhuma. */}
-      <FitToScreen maxScale={1.8}>
-      <div className="content">
+      {/* Layout de ALTURA FIXA (nunca escala por transform) — pedido do
+          cliente: "esse painel é fixo, não precisa ficar alternando
+          tamanho ou localização" (via print real — trocar de linha
+          fazia o board mudar visivelmente de tamanho/posição, já que uma
+          linha vazia tem conteúdo natural bem menor que uma linha cheia
+          de máquinas, e a versão anterior escalava esse conteúdo por
+          `transform:scale`, então cada linha "pulava" pra um tamanho
+          diferente). `.content-tracking` (ver CSS) fixa a altura em
+          `calc(100vh - 56px)` sempre — cada coluna do Kanban (ver
+          `.sep-kanban-col-body{flex:1}` no CSS) estica pra preencher
+          essa MESMA altura sempre, tenha 0 ou várias máquinas: poucas
+          deixam espaço vazio DENTRO da coluna (honesto, e não afeta o
+          tamanho/posição do board), muitas rolam dentro da própria
+          coluna — nunca mais transform, nunca mais "pular" de tamanho. */}
+      <div className="content content-tracking">
       {(status==='sem-sessao' || status==='erro') && (
         <div className="demo-banner">
           Esta página não conseguiu carregar a fila de separação ao vivo. Verifique se a conta de login
@@ -2762,7 +2781,7 @@ function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto,
 
       {status==='ok' && (
         <React.Fragment>
-          <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:18}}>
+          <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:18,flexShrink:0}}>
             {LINHAS_PRODUCAO_TRACKING.map(l=>(
               <button
                 key={l} type="button"
@@ -2776,7 +2795,6 @@ function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto,
         </React.Fragment>
       )}
       </div>
-      </FitToScreen>
     </div>
   );
 }
@@ -3163,7 +3181,7 @@ function PedidosCompraPanel({tela, onChange, theme, onToggleTheme, onAbrirConfig
 // conteúdo (ResizeObserver — cobre o gráfico carregando/trocando de dado
 // ao vivo pro exemplo e vice-versa, sem precisar de nenhuma dependência
 // manual no useEffect).
-function FitToScreen({children, maxScale}){
+function FitToScreen({children}){
   const outerRef = useRef(null);
   const innerRef = useRef(null);
   // Escala X/Y INDEPENDENTE de propósito (não `Math.min` de uma só escala
@@ -3177,17 +3195,14 @@ function FitToScreen({children, maxScale}){
   // oval quando a proporção da tela for bem diferente de ~4:3 (a do
   // conteúdo natural, ver `.fit-screen-inner{width:1600px}`).
   //
-  // `maxScale` (opcional, sem limite por padrão — Indicadores continua
-  // exatamente igual) — usado pelo Tracking Picking: o Kanban lá tem
-  // altura natural bem VARIÁVEL (0 a várias máquinas por coluna), e
-  // quando fica quase vazio (só "Nenhuma máquina..." nas 5 colunas) a
-  // altura natural despenca pra bem pouco — sem limite, o Y precisaria
-  // esticar várias vezes mais que o X só pra preencher a tela, e tudo
-  // (abas de linha, cabeçalho de coluna, texto vazio) ficava
-  // visivelmente esticado/gigante, em vez de só "preenchendo melhor" —
-  // bug relatado pelo cliente com print real. O teto evita esse extremo
-  // sem afetar o caso normal (várias máquinas), onde a escala já fica
-  // bem abaixo do teto.
+  // Usado só pela aba Indicadores (tamanho FIXO — sempre os mesmos 8
+  // gráficos) — o Tracking Picking já tentou usar isto também, mas o
+  // Kanban de lá tem altura natural bem VARIÁVEL (0 a várias máquinas
+  // por coluna), e trocar de linha fazia o board mudar de tamanho a
+  // cada vez (às vezes bem esticado com pouca máquina) — pedido do
+  // cliente foi um layout FIXO lá, que nunca muda de tamanho/posição
+  // (ver `.content-tracking`/`.sep-kanban-col-body{flex:1}` no CSS —
+  // layout comum de flexbox, sem nenhum transform).
   const [escala, setEscala] = useState({x:1, y:1});
 
   useEffect(() => {
@@ -3200,19 +3215,16 @@ function FitToScreen({children, maxScale}){
       const contentW = inner.scrollWidth;
       const contentH = inner.scrollHeight;
       if(contentW===0 || contentH===0) return;
-      let x = outer.clientWidth/contentW;
-      let y = outer.clientHeight/contentH;
-      x = x>0 ? x : 1;
-      y = y>0 ? y : 1;
-      if(maxScale){ x = Math.min(x, maxScale); y = Math.min(y, maxScale); }
-      setEscala({x, y});
+      const x = outer.clientWidth/contentW;
+      const y = outer.clientHeight/contentH;
+      setEscala({x: x>0?x:1, y: y>0?y:1});
     }
     ajustarEscala();
     const ro = new ResizeObserver(ajustarEscala);
     ro.observe(inner);
     window.addEventListener('resize', ajustarEscala);
     return () => { ro.disconnect(); window.removeEventListener('resize', ajustarEscala); };
-  }, [maxScale]);
+  }, []);
 
   return (
     <div ref={outerRef} className="fit-screen-outer">
