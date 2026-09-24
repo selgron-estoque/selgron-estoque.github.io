@@ -2247,11 +2247,12 @@ function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfig,
       <PanelTabs tela={tela} onChange={onChange} onAbrirConfig={onAbrirConfig} links={links} linkIndex={linkIndex} onSelecionarLink={onSelecionarLink} onNavegarEsquerda={onNavegarEsquerda} onNavegarDireita={onNavegarDireita} theme={theme} onToggleTheme={onToggleTheme} />
       {/* FitToScreen envolve só o CONTEÚDO (gráficos), nunca a barra de
           navegação — o cabeçalho precisa ficar do MESMO tamanho natural
-          nas duas telas do Painel (Indicadores/Tracking Picking, que não
-          usa FitToScreen nenhum), senão a escala do conteúdo "vaza" pro
+          em TODAS as telas do Painel (Indicadores/Tracking Picking/
+          Pedidos de Compra), senão a escala do conteúdo "vaza" pro
           cabeçalho e ele fica com tamanho diferente entre as abas (bug
           real reportado pelo cliente: cabeçalho maior na aba Indicadores
-          que na Tracking Picking). Ver `.fit-screen-outer{height:calc(100vh
+          que na Tracking Picking, antes desta também usar FitToScreen).
+          Ver `.fit-screen-outer{height:calc(100vh
           - 56px)}` — 56px é a altura fixa de `.pnl-topbar`, pro conteúdo
           preencher exatamente o espaço que sobra abaixo do cabeçalho. */}
       <FitToScreen>
@@ -2656,6 +2657,15 @@ function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto,
   return (
     <div>
       <PanelTabs tela={tela} onChange={onChange} onAbrirConfig={onAbrirConfig} links={links} linkIndex={linkIndex} onSelecionarLink={onSelecionarLink} onNavegarEsquerda={onNavegarEsquerda} onNavegarDireita={onNavegarDireita} theme={theme} onToggleTheme={onToggleTheme} />
+      {/* FitToScreen (mesmo componente/critério já usado em
+          PainelIndicadores, ver comentário completo lá) — o Kanban aqui só
+          tem 5 colunas curtas (poucas máquinas por vez), então sem isso ele
+          ficava "flutuando" no canto superior da TV com um vazio enorme
+          embaixo (relatado pelo cliente numa TV grande de verdade no
+          almoxarifado). Com FitToScreen, o board escala pra preencher a
+          tela inteira, texto/cards incluídos — mesmo efeito que já existe
+          na aba Indicadores. */}
+      <FitToScreen>
       <div className="content">
       {(status==='sem-sessao' || status==='erro') && (
         <div className="demo-banner">
@@ -2688,6 +2698,7 @@ function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto,
         </React.Fragment>
       )}
       </div>
+      </FitToScreen>
     </div>
   );
 }
