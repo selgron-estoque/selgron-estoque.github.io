@@ -200,17 +200,17 @@
      ícone desalinhado corrigido antes). `min-height:0` permite esse grid
      encolher quando o rodapé (barra de progresso do Card 3) ocupa parte da
      altura do card. */
-  /* Coluna direita em 128px (não 150px) e gap um pouco mais enxuto —
-     medição real de texto (canvas `measureText`) mostrou que os títulos
-     mais longos ("Acuracidade (itens recontados)", "Cobertura da
-     programação") precisam de ~180-210px a 14px/600 — não cabe inteiro ao
-     lado de uma coluna de info de 150px dentro da largura real do card
-     (~368px, herdada do canvas fixo de 1600px que os gráficos já usam).
-     Prioriza a coluna PRINCIPAL (título/número) — ela é a informação mais
-     importante do card — e aceita reticências (`text-overflow:ellipsis`,
-     já usado no título) como saída elegante pro texto mais longo, em vez
-     de estourar a largura ou a altura do card. */
-  .kpi-card-content{flex:1;min-height:0;display:grid;grid-template-columns:56px minmax(0,1fr) 128px;gap:12px;align-items:center;}
+  /* Coluna direita em 108px (não 150px) e gap mais enxuto — a largura real
+     do card (~368px, herdada do canvas fixo de 1600px que os gráficos já
+     usam) não é suficiente pra um título como "Acuracidade (itens
+     recontados)" (~180-210px a 14px/600) caber inteiro ao lado de uma
+     coluna de info larga. Entre título e rótulos da coluna secundária, o
+     TÍTULO fica com o máximo de espaço possível — é a informação mais
+     importante do card (hierarquia: número > título > meta > período >
+     informações secundárias). Rótulos mais longos da coluna direita (ex.:
+     "Itens com divergência", "Itens avaliados") também podem truncar com
+     reticências agora — o VALOR ao lado nunca é cortado, só o rótulo. */
+  .kpi-card-content{flex:1;min-height:0;display:grid;grid-template-columns:56px minmax(0,1fr) 108px;gap:10px;align-items:center;}
   .kpi-card-icon{width:56px;height:56px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
   .kpi-card-main{min-width:0;display:flex;flex-direction:column;}
   .kpi-card-titulo{font-size:14px;font-weight:600;line-height:18px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
