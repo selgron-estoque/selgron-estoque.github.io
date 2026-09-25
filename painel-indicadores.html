@@ -2644,12 +2644,17 @@ function SeparacaoStatusTagTracking({status}){
   return <span className="status-tag status-warn"><span className="status-dot"></span>{label}</span>;
 }
 
-// Ver LINHA_PADRAO/LINHAS_PRODUCAO_PADRAO em index.html — mesmo valor padrão,
-// mesma tabela `linhas_producao` (Supabase). A TV só LEITURA aqui — nunca
-// gerencia (adicionar/renomear/excluir é só na tela real "Programação",
-// index.html) — ver `linhasProducao`/`fetchLinhasProducao` em App().
-const LINHA_PADRAO_TRACKING = 'Elétrica';
+// Ver LINHA_PADRAO/linhaPadraoAtual/LINHAS_PRODUCAO_PADRAO em index.html —
+// mesma tabela `linhas_producao` (Supabase), mesmo critério de fallback
+// DINÂMICO (nenhuma linha é fixa/protegida, nem "Elétrica" — cliente
+// confirmou). A TV só LEITURA aqui — nunca gerencia (adicionar/renomear/
+// excluir é só na tela real "Programação", index.html) — ver
+// `linhasProducao`/`fetchLinhasProducao` em App().
+const LINHA_PADRAO_TRACKING = 'Elétrica'; // só o fallback-do-fallback, se `linhasProducao` vier vazia
 const LINHAS_PRODUCAO_TRACKING_PADRAO = ['Elétrica', 'SEM', 'SSE', 'SEP'];
+function linhaPadraoAtualTracking(linhasProducao){
+  return (linhasProducao && linhasProducao[0] && linhasProducao[0].nome) || LINHA_PADRAO_TRACKING;
+}
 
 function linhaProducaoRowToLocalTracking(row){
   return { nome: row.nome, ordem: Number(row.ordem)||0 };
@@ -2910,10 +2915,11 @@ function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto,
   }, [onCicloCompleto, onChangeLinha, segundosLinhaTracking]);
 
 
+  const linhaPadraoAtualValor = linhaPadraoAtualTracking(linhasProducao);
   const linhaPorEtp = {};
-  maquinasEtp.forEach(m=>{ linhaPorEtp[m.etp] = m.linha || LINHA_PADRAO_TRACKING; });
-  const maquinasEtpDaLinha = maquinasEtp.filter(m=>(m.linha || LINHA_PADRAO_TRACKING)===linhaSelecionada);
-  const itensDaLinha = itens.filter(i=>(linhaPorEtp[i.etp] || LINHA_PADRAO_TRACKING)===linhaSelecionada);
+  maquinasEtp.forEach(m=>{ linhaPorEtp[m.etp] = m.linha || linhaPadraoAtualValor; });
+  const maquinasEtpDaLinha = maquinasEtp.filter(m=>(m.linha || linhaPadraoAtualValor)===linhaSelecionada);
+  const itensDaLinha = itens.filter(i=>(linhaPorEtp[i.etp] || linhaPadraoAtualValor)===linhaSelecionada);
   const hojeStr = new Date().toISOString().slice(0,10);
   const maquinasPainel = status==='ok' ? computeMaquinasPainelTracking(itensDaLinha, maquinasEtpDaLinha, hojeStr) : [];
   // Nota (não erro) — ver comentário em `carregarDados`: as duas listas

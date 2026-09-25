@@ -18433,13 +18433,22 @@ function SeparacaoStatusTag({status}){
 // Linhas de produção do Kanban de "Programação" (ver "Programação: abas
 // para as outras linhas" no schema.sql) — pedido do cliente: "Aqui é uma
 // linha de produção... precisa criar abas para as outras linhas: Elétrica
-// SEM SSE SEP". LINHA_PADRAO ("Geral") é o rótulo escolhido pra linha que
-// já existia antes desta mudança (o cliente só nomeou explicitamente as 4
-// linhas *novas*) — qualquer ETP sem `linha` definida (nula, seja por já
-// existir de antes desta coluna, seja por nunca ter sido preenchida) cai
-// nela por padrão, tanto na exibição quanto no filtro por aba, pra nunca
+// SEM SSE SEP". Qualquer ETP sem `linha` definida (nula, seja por já existir
+// de antes desta coluna, seja por nunca ter sido preenchida) cai numa linha
+// PADRÃO por default, tanto na exibição quanto no filtro por aba, pra nunca
 // desaparecer silenciosamente de todas as linhas.
-const LINHA_PADRAO = 'Elétrica';
+//
+// Esse "padrão" NÃO é mais uma linha fixa/protegida — o cliente esclareceu
+// que nenhuma linha (nem "Elétrica") é especial, todas precisam poder ser
+// renomeadas/excluídas igual. `linhaPadraoAtual` calcula esse fallback
+// DINAMICAMENTE (sempre a linha de menor `ordem` em `linhasProducao`, ou
+// seja, a mais à esquerda das abas) em vez de comparar contra um nome
+// fixo — assim o fallback continua funcionando mesmo depois de "Elétrica"
+// ser renomeada ou excluída, sem nenhuma linha imune a edição.
+const LINHA_PADRAO = 'Elétrica'; // só o fallback-do-fallback, se `linhasProducao` vier vazia (nunca deveria, mas nunca quebra a tela)
+function linhaPadraoAtual(linhasProducao){
+  return (linhasProducao && linhasProducao[0] && linhasProducao[0].nome) || LINHA_PADRAO;
+}
 // Fallback caso a consulta a `linhas_producao` falhe (rede/RLS) — nunca deixa
 // a tela sem nenhuma aba pra escolher. Valor real e gerenciável (adicionar/
 // renomear/excluir) agora vive na tabela `linhas_producao` (ver
@@ -18484,11 +18493,11 @@ async function criarLinhaProducao(nome, ordem){
 // já usado no resto do projeto, ver `excluirMaquinaCompleta`), porque
 // `maquinas_etp.linha` é texto livre sem FK: sem a 2ª chamada, qualquer
 // máquina já atribuída à linha renomeada ficaria "órfã" (apontando pra um
-// nome que não existe mais em nenhuma aba).
+// nome que não existe mais em nenhuma aba). Nenhuma linha é protegida —
+// cliente confirmou que nenhuma (nem "Elétrica") é especial.
 async function renomearLinhaProducao(nomeAtual, nomeNovo){
   const novoTrim = (nomeNovo||'').trim();
   if(!supabaseClient || !nomeAtual || !novoTrim) return {ok:false, erro:'Dados inválidos.'};
-  if(nomeAtual===LINHA_PADRAO) return {ok:false, erro:'A linha padrão ("Elétrica") não pode ser renomeada.'};
   try{
     const { error: errLinha } = await supabaseClient.from('linhas_producao').update({nome:novoTrim}).eq('nome', nomeAtual);
     if(errLinha) throw errLinha;
@@ -18502,16 +18511,18 @@ async function renomearLinhaProducao(nomeAtual, nomeNovo){
   }
 }
 
-// Bloqueia a exclusão se ainda houver máquina atribuída a esta linha —
-// pedido explícito do cliente. Checado a partir do dado JÁ carregado na tela
-// (`maquinasEtp`, sem round-trip extra), mesmo critério de fallback pra
-// LINHA_PADRAO já usado em `linhaPorEtp`/`ProgramacaoSeparacaoPanel` (máquina
-// sem `linha` nenhuma conta como estando na linha padrão, nunca na que está
-// sendo excluída).
-async function excluirLinhaProducao(nome, maquinasEtp){
+// Bloqueia a exclusão em 2 casos: (1) ainda houver máquina atribuída a esta
+// linha — pedido explícito do cliente, checado a partir do dado JÁ
+// carregado na tela (`maquinasEtp`, sem round-trip extra), usando o
+// fallback DINÂMICO (`linhaPadraoAtual`, primeira linha da lista) pra saber
+// se uma máquina sem `linha` nenhuma conta como estando nesta; (2) seria a
+// ÚLTIMA linha restante — nenhuma linha é protegida por nome (nem
+// "Elétrica"), mas a tela sempre precisa de pelo menos 1 aba pra existir.
+async function excluirLinhaProducao(nome, maquinasEtp, linhasProducao){
   if(!supabaseClient || !nome) return {ok:false, erro:'Linha inválida.'};
-  if(nome===LINHA_PADRAO) return {ok:false, erro:'A linha padrão ("Elétrica") não pode ser excluída.'};
-  const emUso = (maquinasEtp||[]).some(m=>(m.linha||LINHA_PADRAO)===nome);
+  if((linhasProducao||[]).length<=1) return {ok:false, erro:'Não é possível excluir: precisa restar pelo menos 1 linha.'};
+  const padraoAtual = linhaPadraoAtual(linhasProducao);
+  const emUso = (maquinasEtp||[]).some(m=>(m.linha||padraoAtual)===nome);
   if(emUso) return {ok:false, erro:'Não é possível excluir: ainda há máquina(s) nesta linha.'};
   try{
     const { data, error } = await supabaseClient.from('linhas_producao').delete().eq('nome', nome).select('nome');
@@ -19151,10 +19162,11 @@ function AdicionarEtpModal({open, currentUser, maquinasEtp, linhaPadrao, linhas,
 // Modal "Gerenciar linhas de produção" — aberto pelo botão "+" ao lado das
 // abas Elétrica/SEM/SSE/SEP em `ProgramacaoSeparacaoPanel`. Pedido do
 // cliente: "caso algum dia eu queira acrescentar novas abas", depois
-// confirmado com escopo maior (adicionar E excluir/renomear). "Elétrica" (a
-// LINHA_PADRAO) nunca aparece com botões de editar/excluir — regra aplicada
-// tanto aqui (UI) quanto em `renomearLinhaProducao`/`excluirLinhaProducao`
-// (banco), defesa em profundidade.
+// confirmado com escopo maior (adicionar E excluir/renomear). Nenhuma linha
+// é protegida por nome — cliente esclareceu explicitamente que "Elétrica"
+// não é especial, precisa poder ser editada igual às outras. A ÚNICA
+// restrição de exclusão é não poder ficar sem nenhuma linha (ver
+// `excluirLinhaProducao`).
 function GerenciarLinhasModal({open, linhasProducao, maquinasEtp, onClose, onSucesso}){
   const [nomeNovo, setNomeNovo] = useState('');
   const [salvandoNovo, setSalvandoNovo] = useState(false);
@@ -19202,7 +19214,7 @@ function GerenciarLinhasModal({open, linhasProducao, maquinasEtp, onClose, onSuc
   async function handleExcluir(nome){
     if(!confirm('Excluir a linha "'+nome+'"? Essa ação não pode ser desfeita.')) return;
     setProcessando(nome); setErro(null);
-    const res = await excluirLinhaProducao(nome, maquinasEtp);
+    const res = await excluirLinhaProducao(nome, maquinasEtp, linhasProducao);
     setProcessando(null);
     if(res.ok) onSucesso('Linha "'+nome+'" excluída.');
     else setErro(res.erro);
@@ -19222,8 +19234,12 @@ function GerenciarLinhasModal({open, linhasProducao, maquinasEtp, onClose, onSuc
         <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:16}}>
           {linhasProducao.map(l=>{
             const emEdicao = editandoNome===l.nome;
-            const ehPadrao = l.nome===LINHA_PADRAO;
             const ocupado = processando===l.nome;
+            // Nenhuma linha é especial/fixa (nem "Elétrica") — a ÚNICA
+            // restrição é não poder excluir a última linha restante (a tela
+            // sempre precisa de pelo menos 1 aba), refletida aqui desabilitando
+            // só o botão de excluir nesse caso, com o motivo no tooltip.
+            const ultimaLinha = linhasProducao.length<=1;
             return (
               <div key={l.nome} style={{display:'flex',alignItems:'center',gap:8,padding:'8px 10px',border:'1px solid var(--line)',borderRadius:'var(--radius)'}}>
                 {emEdicao ? (
@@ -19232,12 +19248,9 @@ function GerenciarLinhasModal({open, linhasProducao, maquinasEtp, onClose, onSuc
                       onKeyDown={e=>{ if(e.key==='Enter') handleRenomear(l.nome); if(e.key==='Escape') setEditandoNome(null); }} />
                   </div>
                 ) : (
-                  <span style={{flex:1,fontWeight:600,fontSize:'var(--text-sm)'}}>
-                    {l.nome}
-                    {ehPadrao && <span style={{fontWeight:400,color:'var(--ink-dim)',fontSize:'var(--text-xs)'}}> (padrão, fixa)</span>}
-                  </span>
+                  <span style={{flex:1,fontWeight:600,fontSize:'var(--text-sm)'}}>{l.nome}</span>
                 )}
-                {!ehPadrao && (emEdicao ? (
+                {emEdicao ? (
                   <React.Fragment>
                     <button type="button" className="btn btn-primary btn-sm" style={{width:'auto'}} disabled={ocupado} onClick={()=>handleRenomear(l.nome)}>Salvar</button>
                     <button type="button" className="btn btn-outline btn-sm" style={{width:'auto'}} disabled={ocupado} onClick={()=>setEditandoNome(null)}>Cancelar</button>
@@ -19247,11 +19260,11 @@ function GerenciarLinhasModal({open, linhasProducao, maquinasEtp, onClose, onSuc
                     <button type="button" className="btn btn-outline btn-sm" style={{width:34,padding:0}} disabled={!!processando}
                       onClick={()=>{ setEditandoNome(l.nome); setNomeEditado(l.nome); setErro(null); }}
                       title="Renomear"><DIcon name="edit" size={14} /></button>
-                    <button type="button" className="btn btn-outline btn-sm" style={{width:34,padding:0,color:'var(--danger)'}} disabled={!!processando}
+                    <button type="button" className="btn btn-outline btn-sm" style={{width:34,padding:0,color:'var(--danger)'}} disabled={!!processando || ultimaLinha}
                       onClick={()=>handleExcluir(l.nome)}
-                      title="Excluir">{ocupado ? '…' : <DIcon name="trash" size={14} />}</button>
+                      title={ultimaLinha ? 'Precisa restar pelo menos 1 linha' : 'Excluir'}>{ocupado ? '…' : <DIcon name="trash" size={14} />}</button>
                   </React.Fragment>
-                ))}
+                )}
               </div>
             );
           })}
@@ -19394,11 +19407,13 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
   }, []);
 
   // Se a aba selecionada for renomeada/excluída (por qualquer líder, em
-  // qualquer aparelho) enquanto esta tela está aberta, cai pra LINHA_PADRAO
-  // em vez de ficar "presa" numa aba que não existe mais.
+  // qualquer aparelho) enquanto esta tela está aberta, cai pro fallback
+  // ATUAL (1ª linha da lista) em vez de ficar "presa" numa aba que não
+  // existe mais — nenhuma linha é fixa, então esse fallback precisa ser
+  // recalculado a cada mudança na lista, nunca um nome fixo.
   useEffect(()=>{
     if(linhasProducao.length===0) return;
-    if(!linhasProducao.some(l=>l.nome===linhaSelecionada)) setLinhaSelecionada(LINHA_PADRAO);
+    if(!linhasProducao.some(l=>l.nome===linhaSelecionada)) setLinhaSelecionada(linhaPadraoAtual(linhasProducao));
   }, [linhasProducao, linhaSelecionada, setLinhaSelecionada]);
 
   function mostrarSucesso(msg){
@@ -19477,14 +19492,16 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
 
   // Mapa etp→linha, derivado só de `maquinasEtp` — qualquer ETP sem `linha`
   // definida (nula, seja por já existir de antes desta coluna, seja por
-  // nunca ter sido preenchida) cai em LINHA_PADRAO ("Geral") por padrão,
-  // nunca desaparecendo silenciosamente de todas as abas. Aplicado nos DOIS
-  // arrays (itens e maquinasEtp) antes de chegar no Painel — `computeMaquinasPainel`
-  // não muda, o filtro por linha acontece sempre aqui, um nível acima.
+  // nunca ter sido preenchida) cai no fallback ATUAL (1ª linha da lista, ver
+  // `linhaPadraoAtual`) por padrão, nunca desaparecendo silenciosamente de
+  // todas as abas. Aplicado nos DOIS arrays (itens e maquinasEtp) antes de
+  // chegar no Painel — `computeMaquinasPainel` não muda, o filtro por linha
+  // acontece sempre aqui, um nível acima.
+  const linhaPadraoAtualValor = linhaPadraoAtual(linhasProducao);
   const linhaPorEtp = {};
-  maquinasEtp.forEach(m=>{ linhaPorEtp[m.etp] = m.linha || LINHA_PADRAO; });
-  const maquinasEtpDaLinha = maquinasEtp.filter(m=>(m.linha || LINHA_PADRAO)===linhaSelecionada);
-  const itensDaLinha = itens.filter(i=>(linhaPorEtp[i.etp] || LINHA_PADRAO)===linhaSelecionada);
+  maquinasEtp.forEach(m=>{ linhaPorEtp[m.etp] = m.linha || linhaPadraoAtualValor; });
+  const maquinasEtpDaLinha = maquinasEtp.filter(m=>(m.linha || linhaPadraoAtualValor)===linhaSelecionada);
+  const itensDaLinha = itens.filter(i=>(linhaPorEtp[i.etp] || linhaPadraoAtualValor)===linhaSelecionada);
 
   return (
     <div className="panel">
