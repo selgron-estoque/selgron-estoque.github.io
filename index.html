@@ -8271,7 +8271,11 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
     },
     ...(role!=='operador' ? [{
       key:'aprovacaoDiretoria', icon:'clipboardList', bg:'var(--warn-bg)', color:'var(--warn)',
-      label:'Aguardando Aprovação da Diretoria', value:aguardandoDiretoria,
+      // Rótulo curto só neste card (KPI, espaço apertado) — a tela de
+      // destino/sidebar continuam "Aguardando Aprovação" sem mudança, essa
+      // já era a forma curta usada lá; aqui só alinha o card à mesma
+      // referência visual conferida com o cliente.
+      label:'Aguardando Aprovação', value:aguardandoDiretoria,
       trend:<span className={"pnl-kpi-trend "+(aguardandoDiretoria>0?'bad':'good')}>{aguardandoDiretoria>0?'Requer atenção':'Nenhuma pendência'}</span>,
       onClick:()=>goto('aprovacaoDiretoria'),
     }] : []),
@@ -8345,13 +8349,16 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
     .slice(0,5);
 
   const acoes = [
-    {icon:'search', label:'Nova Contagem', desc:'Iniciar uma nova contagem de itens', onClick:()=>goto('pickCountType')},
-    {icon:'checkCircle', label:'Contagens Concluídas', desc:'Ver contagens já finalizadas', onClick:()=>goto('concluidas')},
-    {icon:'repeat', label:'Recontagens', desc:'Itens aguardando segunda contagem', onClick:()=>goto('recounts')},
+    // `primary:true` só no 1º item (ação mais comum) — fundo/ícone tingidos
+    // na cor de destaque, os demais com ícone colorido mas fundo neutro
+    // (mesmo padrão de referência conferido com o cliente).
+    {icon:'search', label:'Nova Contagem', desc:'Iniciar uma nova contagem de itens', onClick:()=>goto('pickCountType'), bg:'var(--blue-bg)', color:'var(--blue)', primary:true},
+    {icon:'checkCircle', label:'Contagens Concluídas', desc:'Ver contagens já finalizadas', onClick:()=>goto('concluidas'), bg:'var(--ok-bg)', color:'var(--ok)'},
+    {icon:'repeat', label:'Recontagens', desc:'Itens aguardando segunda contagem', onClick:()=>goto('recounts'), bg:'var(--teal-bg)', color:'var(--teal)'},
     // Some da lista (não só desabilita) quando o usuário não tem acesso a
     // Relatórios — mesmo critério de "não deixar link morto" já aplicado no
     // KPI de Indicadores acima.
-    ...(hasAccess(user,'relatorios') ? [{icon:'fileText', label:'Relatórios', desc:'Exportar relatórios do inventário', onClick:()=>goto('relatorios')}] : []),
+    ...(hasAccess(user,'relatorios') ? [{icon:'fileText', label:'Relatórios', desc:'Exportar relatórios do inventário', onClick:()=>goto('relatorios'), bg:'var(--safety-bg)', color:'var(--safety)'}] : []),
   ];
 
   // Data por extenso do cabeçalho (dia da semana + "24 de setembro de
@@ -8510,8 +8517,8 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
             </div>
             <div className="pnl-quick-list">
               {acoes.map(a=>(
-                <button key={a.label} className="pnl-quick-item" onClick={a.onClick}>
-                  <span className="pnl-quick-icon"><DIcon name={a.icon} size={15} /></span>
+                <button key={a.label} className={"pnl-quick-item"+(a.primary?' primary':'')} onClick={a.onClick} style={a.primary?{background:a.bg}:undefined}>
+                  <span className="pnl-quick-icon" style={{background:a.bg, color:a.color}}><DIcon name={a.icon} size={15} /></span>
                   <span className="pnl-quick-body">
                     <span className="pnl-quick-text">{a.label}</span>
                     <div className="pnl-quick-desc">{a.desc}</div>
