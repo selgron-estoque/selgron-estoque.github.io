@@ -864,27 +864,38 @@ function computeMonthlyStats(counts, dataInicioStr, dataFimStr){
   });
 }
 
-// Bug real corrigido aqui: a linha do histórico virava `{data, diferenca,
-// saldoSistema, acuracidade}` sem `productCode` — inofensivo pros
-// consumidores originais desta função (`computeWeeklyStats`/
-// `computeMonthlyStats`, que nunca agrupam por produto), mas
-// `computeAcuracidadeItensRecorrentes` (adicionada depois, ver "itens
-// recontados" no card de KPI) PRECISA de `productCode` pra agrupar
-// documentos do mesmo produto — sem ele, `if(!c.data || !c.productCode)
-// return;` descartava TODA contagem vinda do histórico antes mesmo de
-// entrar na conta de elegibilidade (2+ documentos), fazendo um produto com
-// 1 contagem ao vivo + 1 no histórico (2 no total, deveria ENTRAR) contar
-// só a ao vivo (1) e ficar de fora — resultado: card mostrando 21 itens
-// avaliados quando o real (confirmado no drill-down da aba Acuracidade,
-// que usa a fonte de dado completa) era 75. `reconstructNumericCode`
-// aqui, não só em `contagemRowToLocal`, pelo mesmo motivo de sempre (ver
-// `historicoRowToCountLike`, index.html): corrige a exibição/comparação
-// mesmo pra linhas já importadas antes da correção do parser.
 function buildPoolTendencia(counts, historicoParaTendencia){
   const historicoComoContagem = (historicoParaTendencia||[])
     .filter(h=>h.data)
-    .map(h=>({productCode: reconstructNumericCode(h.produto_codigo), data:h.data, diferenca:h.diferenca, saldoSistema:h.saldo_sistema, acuracidade:h.acuracidade}));
+    .map(h=>({data:h.data, diferenca:h.diferenca, saldoSistema:h.saldo_sistema, acuracidade:h.acuracidade}));
   return [...counts, ...historicoComoContagem];
+}
+
+// Mesma lista EXATA de index.html (`HISTORICO_STATUS_CONCLUIDOS`) — só
+// histórico com veredito final entra no cálculo "Acuracidade (itens
+// recontados)". `historicoParaTendencia`/`buildPoolTendencia` (acima) é de
+// propósito mais ABRANGENTE (mantém "Pendente" etc., pro gráfico de
+// tendência semanal — mesmo critério de `fetchContagensHistoricoParaTendencia`
+// em index.html: "um item pendente É uma contagem real que aconteceu
+// naquele dia"), então não serve pra esta conta — precisa da mesma fonte
+// restrita que `historicoConcluidas` já é na aba Acuracidade real.
+const HISTORICO_STATUS_CONCLUIDOS = ['OK', 'Sem Ajuste', 'Ajustado'];
+
+// Pool dedicado ao card "Acuracidade (itens recontados)" — não reaproveita
+// `poolTendenciaDedup` (que existe pro gráfico de tendência e por isso usa
+// o histórico "abrangente" acima). Preserva `productCode` (histórico
+// abrangente não precisa dele, mas este cálculo agrupa por produto) e já
+// filtra o histórico só pros 3 status concluídos, igual a `historicoConcluidas`
+// (index.html) — sem essa restrição, `poolTendenciaDedup` incluía linha de
+// histórico "Pendente" que a aba Acuracidade real nunca conta, inflando o
+// total (bug real reportado pelo cliente comparando com o drill-down: card
+// mostrando 86 avaliados/24 divergentes contra 75/13 do drill-down real).
+function buildPoolItensRecorrentes(counts, historicoParaTendencia){
+  const historicoConcluidoComProductCode = (historicoParaTendencia||[])
+    .filter(h=>h.data && HISTORICO_STATUS_CONCLUIDOS.includes(String(h.status||'').trim()))
+    .map(h=>({productCode: reconstructNumericCode(h.produto_codigo), data:h.data, diferenca:h.diferenca, saldoSistema:h.saldo_sistema, acuracidade:h.acuracidade}));
+  return ultimaContagemPorDocumento([...counts, ...historicoConcluidoComProductCode])
+    .filter(c=>!OPEN_STATUSES.includes(c.statusAprovacao));
 }
 
 // Portado de index.html (AcuracidadePanel/"Acuracidade Mensal — Itens
@@ -2244,16 +2255,12 @@ function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfig,
 
     // 2º card de KPI: "mesmo cálculo da aba Acuracidade" (pedido do
     // cliente) — `computeAcuracidadeItensRecorrentes`, mesma fórmula
-    // "Itens Recorrentes" da página Acuracidade (index.html), sobre o
-    // mesmo pool deduplicado+com histórico que este painel já usa pros
-    // gráficos de tendência (`poolTendenciaDedup`, ano corrente até hoje) —
-    // com o mesmo filtro extra que `todasParaQualidade` já aplica na aba
-    // Acuracidade: exclui `OPEN_STATUSES` (contagem ainda pendente de
-    // decisão não é "avaliada" pra esta fórmula). Bug real corrigido aqui:
-    // sem este filtro o card inflava avaliados/divergentes com pendências
-    // que a aba real já excluía (cliente reportou 86/24 no card contra
-    // 75/13 no drill-down real da aba Acuracidade pro mesmo mês).
-    const poolItensRecorrentes = poolTendenciaDedup.filter(c=>!OPEN_STATUSES.includes(c.statusAprovacao));
+    // "Itens Recorrentes" da página Acuracidade (index.html). Pool
+    // DEDICADO (`buildPoolItensRecorrentes`, não `poolTendenciaDedup` —
+    // ver comentário completo perto da função) pra bater exatamente com
+    // `todasParaQualidade` da aba real: histórico só concluído + exclui
+    // contagem ainda pendente de decisão.
+    const poolItensRecorrentes = buildPoolItensRecorrentes(counts, historico);
     const acuracidadeRecorrentes = computeAcuracidadeItensRecorrentes(poolItensRecorrentes, anoAtualStr, hojeStr);
     const mesAtualKey = getMonthInfo(hojeStr).key;
     const statsRecorrentesMesAtual = acuracidadeRecorrentes.monthlyStats.find(m=>m.key===mesAtualKey) || null;
