@@ -16870,6 +16870,33 @@ async function atualizarStatusSequenciaSeparacao(id, novoStatus, nomeUsuario){
   }
 }
 
+// Reverte o status de 1 item pro estágio ANTERIOR — usado pela opção
+// "Voltar" (menu "⋮" do card, ver MaquinaCard/voltarStatusMaquinaEmLote).
+// Ao contrário de `atualizarStatusSequenciaSeparacao` (que sempre GRAVA
+// quem/quando ao avançar), aqui a gente LIMPA o quem/quando do estágio que
+// está sendo desfeito (`statusAtual`, o status ANTES de reverter) — senão
+// um reinício correto depois ficaria com o timestamp/usuário errado da 1ª
+// vez (bug real reportado pelo cliente: "colocou como Em Separação, mas
+// não foi iniciada" — sem essa limpeza, "iniciado_em" continuaria com a
+// data/hora do engano mesmo depois de corrigido).
+async function reverterStatusSequenciaSeparacao(id, statusAtual, novoStatus){
+  if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
+  try{
+    const patch = {status: novoStatus};
+    if(statusAtual==='em_separacao'){ patch.iniciado_por = null; patch.iniciado_em = null; }
+    else if(statusAtual==='separada'){ patch.separado_por = null; patch.separado_em = null; }
+    else if(statusAtual==='entregue'){ patch.entregue_por = null; patch.entregue_em = null; }
+    const { error } = await supabaseClient
+      .from('sequencia_separacao')
+      .update(patch)
+      .eq('id', id);
+    if(error) throw error;
+    return {ok:true};
+  }catch(err){
+    return {ok:false, erro:(err && err.message) || 'Não foi possível reverter o status.'};
+  }
+}
+
 // Continua definida (RLS/policy de delete já existem pra ela — ver
 // backend/schema.sql), mas intencionalmente NUNCA chamada por nenhuma UI
 // desde que a tela "Lista" (gestão item-a-item) foi removida por completo
@@ -18413,6 +18440,12 @@ const SEPARACAO_STATUS_ICON = {aguardando:'clock', em_separacao:'repeat', separa
 // item; 'entregue' não tem entrada (é o estágio final, sem próximo).
 const SEPARACAO_STATUS_PROXIMO = {aguardando:'em_separacao', em_separacao:'separada', separada:'entregue'};
 const SEPARACAO_STATUS_ACAO_LABEL = {aguardando:'Iniciar separação', em_separacao:'Marcar separada', separada:'Confirmar entrega'};
+// Inverso de SEPARACAO_STATUS_PROXIMO — usado pela opção "Voltar" no menu
+// "⋮" do card (pedido do cliente: "alguém colocou um card como EM
+// SEPARAÇÃO, porém, não foi iniciada" — corrige um avanço feito por
+// engano, sem precisar excluir e recriar a ETP). 'aguardando' não tem
+// entrada (é o estágio inicial, sem anterior).
+const SEPARACAO_STATUS_ANTERIOR = {em_separacao:'aguardando', separada:'em_separacao', entregue:'separada'};
 
 // Badge de status do pipeline — reaproveita `StatusTag` (mesma paleta ok/
 // warn já usada em qualquer chip deste app) pros 2 estágios que já cabem
@@ -18734,6 +18767,45 @@ async function avancarStatusMaquinaEmLote(maquina, itensDaMaquina, nomeUsuario, 
   return {ok:true, avancados, total: pendentes.length};
 }
 
+// Inverso de `avancarStatusMaquinaEmLote` — opção "Voltar" no menu "⋮" do
+// card. Pedido real do cliente: "alguém colocou um card como EM SEPARAÇÃO,
+// porém, não foi iniciada" — corrige um avanço feito por engano sem
+// precisar excluir e recriar a ETP.
+//
+// Reverte só os itens que JÁ chegaram no nível ATUAL da máquina (mesmo
+// `status` que `maquina.status`) — item que ainda está mais pra trás
+// (nunca chegou nesse nível) não precisa mexer; item que por algum motivo
+// já foi confirmado individualmente MAIS à frente (raro, mas possível)
+// também não regride à força — mesmo critério defensivo de "nunca tocar
+// num item mais avançado que o alvo" já usado em `avancarStatusMaquinaEmLote`,
+// só que aplicado na direção oposta.
+async function voltarStatusMaquinaEmLote(maquina, itensDaMaquina, nomeUsuario, novaOrdem){
+  const anterior = SEPARACAO_STATUS_ANTERIOR[maquina.status];
+  if(!anterior) return {ok:false, erro:'Esta máquina já está no estágio inicial.'};
+  const nivelAtual = SEPARACAO_STATUS_ORDEM[maquina.status];
+  const paraVoltar = itensDaMaquina.filter(i=>SEPARACAO_STATUS_ORDEM[i.status]===nivelAtual);
+  let voltados = 0;
+  for(const item of paraVoltar){
+    const res = await reverterStatusSequenciaSeparacao(item.id, item.status, anterior);
+    if(!res.ok){
+      return {
+        ok:false,
+        erro:`Falhou ao voltar ${item.codigo}: ${res.erro || 'erro desconhecido'} (${voltados} de ${paraVoltar.length} itens já tinham voltado antes)`,
+        voltados, total: paraVoltar.length,
+      };
+    }
+    voltados++;
+  }
+  // Só grava o veredito da MÁQUINA depois que TODOS os itens voltaram com
+  // sucesso — mesmo critério de `avancarStatusMaquinaEmLote` (nunca marca a
+  // máquina como revertida se algum item ficou pra trás).
+  const resStatus = await atualizarStatusMaquina(maquina.etp, anterior, novaOrdem);
+  if(!resStatus.ok){
+    return {ok:false, erro:`Itens revertidos, mas não foi possível salvar o status da máquina: ${resStatus.erro}`, voltados, total: paraVoltar.length};
+  }
+  return {ok:true, voltados, total: paraVoltar.length};
+}
+
 // Painel/TV — ÚNICA visualização desta tela (a "Lista" de gestão item-a-item
 // foi removida por completo, decisão de arquitetura registrada em
 // `avancarStatusMaquinaEmLote` acima). A unidade de acompanhamento é sempre
@@ -18764,13 +18836,17 @@ async function avancarStatusMaquinaEmLote(maquina, itensDaMaquina, nomeUsuario, 
 // decisão já confirmada: "Não preciso mais rastrear item nenhum"). O botão
 // de avançar SEMPRE age sobre TODOS os itens da ETP de uma vez (ver
 // `avancarStatusMaquinaEmLote`).
-function MaquinaCard({m, canManage, podeAvancarStatus, isAdmin, ordinal, mostrarReordenar, podeSubir, podeDescer, busy, erro, onAvancar, onMoverCima, onMoverBaixo, onToggleUrgente, onExcluir, onEditar}){
+function MaquinaCard({m, canManage, podeAvancarStatus, isAdmin, ordinal, mostrarReordenar, podeSubir, podeDescer, busy, erro, onAvancar, onVoltar, onMoverCima, onMoverBaixo, onToggleUrgente, onExcluir, onEditar}){
   const [confirmandoExcluir, setConfirmandoExcluir] = useState(false);
   const [menuAbertoId, setMenuAbertoId] = useState(null);
   const classes = ['sep-kanban-card'];
   if(m.urgente) classes.push('sep-urgente-maquina');
   const acaoLabel = SEPARACAO_STATUS_ACAO_LABEL[m.status];
   const temProximo = !!SEPARACAO_STATUS_PROXIMO[m.status];
+  // "Voltar" (opção nova no menu "⋮") — pedido do cliente: "alguém colocou
+  // um card como EM SEPARAÇÃO, porém, não foi iniciada". Não aparece no
+  // estágio inicial (Aguardando), que não tem anterior nenhum pra voltar.
+  const temAnterior = !!SEPARACAO_STATUS_ANTERIOR[m.status];
   return (
     <div className={classes.join(' ')}>
       <div className="sep-kanban-card-head">
@@ -18817,6 +18893,11 @@ function MaquinaCard({m, canManage, podeAvancarStatus, isAdmin, ordinal, mostrar
               <button type="button" className="count-card-menu-btn" style={{padding:'8px 12px',fontSize:'var(--text-xs)'}} onClick={()=>setMenuAbertoId(menuAbertoId===m.etp ? null : m.etp)} title="Mais opções">⋮</button>
               {menuAbertoId===m.etp && (
                 <div className="count-card-menu-dropdown" style={{minWidth:'180px'}}>
+                  {temAnterior && (
+                    <button type="button" disabled={busy} onClick={()=>{ onVoltar(); setMenuAbertoId(null); }} title="Voltar pro estágio anterior">
+                      <DIcon name="chevronLeft" size={16}/> Voltar
+                    </button>
+                  )}
                   <button type="button" disabled={busy} onClick={()=>{ onToggleUrgente(); setMenuAbertoId(null); }}>
                     <Ic>※</Ic> {m.urgente ? 'Remover urgência' : 'Marcar urgente'}
                   </button>
@@ -18866,7 +18947,7 @@ const SEP_KANBAN_COLUNAS = [
   {chave:'entregue', titulo:'Entregue', icone:'checkCircle', cor:'--blue', corBg:'--blue-bg', vazio:'Nenhuma máquina entregue ainda.'},
 ];
 
-function SeparacaoPainelBoard({itens, maquinasEtp, canManage, podeAvancarStatus, isAdmin, onAvancarStatus, onMoverOrdem, onToggleUrgente, onExcluirMaquina, onAdicionarEtpClick, onEditarMaquina}){
+function SeparacaoPainelBoard({itens, maquinasEtp, canManage, podeAvancarStatus, isAdmin, onAvancarStatus, onVoltarStatus, onMoverOrdem, onToggleUrgente, onExcluirMaquina, onAdicionarEtpClick, onEditarMaquina}){
   const [modoReordenar, setModoReordenar] = useState(false);
   const [somenteUrgentes, setSomenteUrgentes] = useState(false);
   const [busyEtp, setBusyEtp] = useState(null);
@@ -18894,6 +18975,15 @@ function SeparacaoPainelBoard({itens, maquinasEtp, canManage, podeAvancarStatus,
     const res = await onAvancarStatus(m, porEtpItens[m.etp] || []);
     setBusyEtp(null);
     if(!res.ok) setErrosEtp(prev=>({...prev, [m.etp]: res.erro || 'Não foi possível avançar — tente novamente.'}));
+  }
+
+  // "Voltar" (menu "⋮") — mesmo padrão de `handleAvancar`, na direção oposta.
+  async function handleVoltar(m){
+    setBusyEtp(m.etp);
+    setErrosEtp(prev=>({...prev, [m.etp]:null}));
+    const res = await onVoltarStatus(m, porEtpItens[m.etp] || []);
+    setBusyEtp(null);
+    if(!res.ok) setErrosEtp(prev=>({...prev, [m.etp]: res.erro || 'Não foi possível voltar — tente novamente.'}));
   }
 
   async function handleMover(bucketChave, etp, direcao){
@@ -18963,6 +19053,7 @@ function SeparacaoPainelBoard({itens, maquinasEtp, canManage, podeAvancarStatus,
                       podeSubir={idx>0} podeDescer={idx<lista.length-1}
                       busy={busyEtp===m.etp} erro={errosEtp[m.etp]}
                       onAvancar={()=>handleAvancar(m)}
+                      onVoltar={()=>handleVoltar(m)}
                       onMoverCima={()=>handleMover(col.chave, m.etp,'up')}
                       onMoverBaixo={()=>handleMover(col.chave, m.etp,'down')}
                       onToggleUrgente={()=>handleToggleUrgente(m)}
@@ -19469,6 +19560,14 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
     return await avancarStatusMaquinaEmLote(maquina, itensDaMaquina, currentUser ? currentUser.nome : null, novaOrdem);
   }
 
+  // "Voltar" (menu "⋮" do card) — corrige um avanço feito por engano, ver
+  // `voltarStatusMaquinaEmLote`. Mesmo critério de `novaOrdem` (final da
+  // fila da coluna de destino) já usado em `handleAvancarStatusMaquina`.
+  async function handleVoltarStatusMaquina(maquina, itensDaMaquina){
+    const novaOrdem = maquinasEtp.reduce((max,m)=> (m.ordem!=null && m.ordem>max) ? m.ordem : max, 0) + 1;
+    return await voltarStatusMaquinaEmLote(maquina, itensDaMaquina, currentUser ? currentUser.nome : null, novaOrdem);
+  }
+
   // Reordenar manualmente (botões ↑/↓, sem drag-and-drop — decisão
   // deliberada, simplicidade/confiabilidade sem dependência nova) — troca a
   // `ordem` da máquina com a vizinha na direção pedida, persistindo os 2
@@ -19545,6 +19644,7 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
         podeAvancarStatus={podeAvancarStatus}
         isAdmin={isAdmin}
         onAvancarStatus={handleAvancarStatusMaquina}
+        onVoltarStatus={handleVoltarStatusMaquina}
         onMoverOrdem={handleMoverOrdem}
         onToggleUrgente={atualizarUrgenteMaquina}
         onExcluirMaquina={handleExcluirMaquina}
