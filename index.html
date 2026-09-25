@@ -18440,7 +18440,89 @@ function SeparacaoStatusTag({status}){
 // nela por padrão, tanto na exibição quanto no filtro por aba, pra nunca
 // desaparecer silenciosamente de todas as linhas.
 const LINHA_PADRAO = 'Elétrica';
-const LINHAS_PRODUCAO = ['Elétrica', 'SEM', 'SSE', 'SEP'];
+// Fallback caso a consulta a `linhas_producao` falhe (rede/RLS) — nunca deixa
+// a tela sem nenhuma aba pra escolher. Valor real e gerenciável (adicionar/
+// renomear/excluir) agora vive na tabela `linhas_producao` (ver
+// backend/schema.sql), buscado por `fetchLinhasProducao` dentro de
+// `ProgramacaoSeparacaoPanel` — pedido do cliente: "caso algum dia eu queira
+// acrescentar novas abas".
+const LINHAS_PRODUCAO_PADRAO = ['Elétrica', 'SEM', 'SSE', 'SEP'];
+
+function linhaProducaoRowToLocal(row){
+  return { nome: row.nome, ordem: Number(row.ordem)||0 };
+}
+
+async function fetchLinhasProducao(){
+  const fallback = LINHAS_PRODUCAO_PADRAO.map((nome,i)=>({nome, ordem:i}));
+  if(!supabaseClient) return fallback;
+  try{
+    const { data, error } = await supabaseClient.from('linhas_producao').select('nome,ordem').order('ordem', {ascending:true});
+    if(error) throw error;
+    return (data && data.length) ? data.map(linhaProducaoRowToLocal) : fallback;
+  }catch(err){
+    console.warn('Falha ao buscar linhas de produção:', err);
+    return fallback;
+  }
+}
+
+async function criarLinhaProducao(nome, ordem){
+  const nomeTrim = (nome||'').trim();
+  if(!supabaseClient || !nomeTrim) return {ok:false, erro:'Nome inválido.'};
+  try{
+    const { error } = await supabaseClient.from('linhas_producao').insert({nome:nomeTrim, ordem});
+    if(error) throw error;
+    return {ok:true};
+  }catch(err){
+    console.warn('Falha ao criar linha de produção:', err);
+    const msg = (err && err.message) || 'Não foi possível criar a linha.';
+    return {ok:false, erro: /duplicate|unique/i.test(msg) ? 'Já existe uma linha com esse nome.' : msg};
+  }
+}
+
+// Renomeia a DEFINIÇÃO da linha e migra as máquinas já atribuídas a ela pro
+// nome novo — 2 chamadas sequenciais (sem transação de banco, mesmo padrão
+// já usado no resto do projeto, ver `excluirMaquinaCompleta`), porque
+// `maquinas_etp.linha` é texto livre sem FK: sem a 2ª chamada, qualquer
+// máquina já atribuída à linha renomeada ficaria "órfã" (apontando pra um
+// nome que não existe mais em nenhuma aba).
+async function renomearLinhaProducao(nomeAtual, nomeNovo){
+  const novoTrim = (nomeNovo||'').trim();
+  if(!supabaseClient || !nomeAtual || !novoTrim) return {ok:false, erro:'Dados inválidos.'};
+  if(nomeAtual===LINHA_PADRAO) return {ok:false, erro:'A linha padrão ("Elétrica") não pode ser renomeada.'};
+  try{
+    const { error: errLinha } = await supabaseClient.from('linhas_producao').update({nome:novoTrim}).eq('nome', nomeAtual);
+    if(errLinha) throw errLinha;
+    const { error: errMaquinas } = await supabaseClient.from('maquinas_etp').update({linha:novoTrim}).eq('linha', nomeAtual);
+    if(errMaquinas) throw errMaquinas;
+    return {ok:true};
+  }catch(err){
+    console.warn('Falha ao renomear linha de produção:', err);
+    const msg = (err && err.message) || 'Não foi possível renomear a linha.';
+    return {ok:false, erro: /duplicate|unique/i.test(msg) ? 'Já existe uma linha com esse nome.' : msg};
+  }
+}
+
+// Bloqueia a exclusão se ainda houver máquina atribuída a esta linha —
+// pedido explícito do cliente. Checado a partir do dado JÁ carregado na tela
+// (`maquinasEtp`, sem round-trip extra), mesmo critério de fallback pra
+// LINHA_PADRAO já usado em `linhaPorEtp`/`ProgramacaoSeparacaoPanel` (máquina
+// sem `linha` nenhuma conta como estando na linha padrão, nunca na que está
+// sendo excluída).
+async function excluirLinhaProducao(nome, maquinasEtp){
+  if(!supabaseClient || !nome) return {ok:false, erro:'Linha inválida.'};
+  if(nome===LINHA_PADRAO) return {ok:false, erro:'A linha padrão ("Elétrica") não pode ser excluída.'};
+  const emUso = (maquinasEtp||[]).some(m=>(m.linha||LINHA_PADRAO)===nome);
+  if(emUso) return {ok:false, erro:'Não é possível excluir: ainda há máquina(s) nesta linha.'};
+  try{
+    const { data, error } = await supabaseClient.from('linhas_producao').delete().eq('nome', nome).select('nome');
+    if(error) throw error;
+    if(!data || data.length===0) return {ok:false, erro:'Exclusão bloqueada ou a linha já foi removida. Verifique seu acesso.'};
+    return {ok:true};
+  }catch(err){
+    console.warn('Falha ao excluir linha de produção:', err);
+    return {ok:false, erro:(err && err.message) || 'Não foi possível excluir a linha.'};
+  }
+}
 
 // Regra de agregação do status da MÁQUINA a partir do conjunto de itens da
 // mesma ETP — decisão de produto confirmada com o cliente (o painel/TV
@@ -18894,7 +18976,7 @@ function SeparacaoPainelBoard({itens, maquinasEtp, canManage, podeAvancarStatus,
 // decidir se a ETP confirmada é uma máquina GENUINAMENTE NOVA (pra só então
 // gravar `ordem`/`urgente` iniciais — ver comentário em `upsertMaquinaEtp`;
 // máquina já existente nunca tem esses 2 campos resetados aqui).
-function AdicionarEtpModal({open, currentUser, maquinasEtp, linhaPadrao, onClose, onSucesso, maquinaParaEditar}){
+function AdicionarEtpModal({open, currentUser, maquinasEtp, linhaPadrao, linhas, onClose, onSucesso, maquinaParaEditar}){
   // Campos editáveis da máquina/OP — nomes EXATAMENTE iguais aos que
   // `upsertMaquinaEtp(m, extra)` já espera receber.
   const [campoEtp, setCampoEtp] = useState(null);
@@ -19013,7 +19095,7 @@ function AdicionarEtpModal({open, currentUser, maquinasEtp, linhaPadrao, onClose
               <div className="field" style={{flex:'1 1 90px',marginBottom:0}}>
                 <label>Linha</label>
                 <select value={campoEtp.linha || LINHA_PADRAO} onChange={e=>atualizarCampoEtp('linha', e.target.value)}>
-                  {LINHAS_PRODUCAO.map(l=><option key={l} value={l}>{l}</option>)}
+                  {(linhas||[]).map(l=><option key={l.nome} value={l.nome}>{l.nome}</option>)}
                 </select>
               </div>
               <div className="field" style={{flex:'1 1 100%',marginBottom:0}}>
@@ -19066,6 +19148,132 @@ function AdicionarEtpModal({open, currentUser, maquinasEtp, linhaPadrao, onClose
   );
 }
 
+// Modal "Gerenciar linhas de produção" — aberto pelo botão "+" ao lado das
+// abas Elétrica/SEM/SSE/SEP em `ProgramacaoSeparacaoPanel`. Pedido do
+// cliente: "caso algum dia eu queira acrescentar novas abas", depois
+// confirmado com escopo maior (adicionar E excluir/renomear). "Elétrica" (a
+// LINHA_PADRAO) nunca aparece com botões de editar/excluir — regra aplicada
+// tanto aqui (UI) quanto em `renomearLinhaProducao`/`excluirLinhaProducao`
+// (banco), defesa em profundidade.
+function GerenciarLinhasModal({open, linhasProducao, maquinasEtp, onClose, onSucesso}){
+  const [nomeNovo, setNomeNovo] = useState('');
+  const [salvandoNovo, setSalvandoNovo] = useState(false);
+  const [erro, setErro] = useState(null);
+  const [editandoNome, setEditandoNome] = useState(null); // nome ORIGINAL em edição, ou null
+  const [nomeEditado, setNomeEditado] = useState('');
+  const [processando, setProcessando] = useState(null); // nome da linha com uma ação em andamento
+
+  function fecharELimpar(){
+    setNomeNovo(''); setSalvandoNovo(false); setErro(null);
+    setEditandoNome(null); setNomeEditado(''); setProcessando(null);
+    onClose();
+  }
+
+  if(!open) return null;
+
+  function nomeJaExiste(nome, ignorarAtual){
+    const alvo = nome.trim().toLowerCase();
+    return linhasProducao.some(l => l.nome.toLowerCase()===alvo && l.nome!==ignorarAtual);
+  }
+
+  async function handleAdicionar(){
+    const nome = nomeNovo.trim();
+    if(!nome) return;
+    if(nomeJaExiste(nome, null)){ setErro('Já existe uma linha com esse nome.'); return; }
+    setSalvandoNovo(true); setErro(null);
+    const proximaOrdem = linhasProducao.reduce((max,l)=>Math.max(max, l.ordem||0), -1) + 1;
+    const res = await criarLinhaProducao(nome, proximaOrdem);
+    setSalvandoNovo(false);
+    if(res.ok){ setNomeNovo(''); onSucesso('Linha "'+nome+'" criada.'); }
+    else setErro(res.erro);
+  }
+
+  async function handleRenomear(nomeAtual){
+    const novo = nomeEditado.trim();
+    if(!novo || novo===nomeAtual){ setEditandoNome(null); return; }
+    if(nomeJaExiste(novo, nomeAtual)){ setErro('Já existe uma linha com esse nome.'); return; }
+    setProcessando(nomeAtual); setErro(null);
+    const res = await renomearLinhaProducao(nomeAtual, novo);
+    setProcessando(null);
+    if(res.ok){ setEditandoNome(null); onSucesso('Linha renomeada para "'+novo+'".'); }
+    else setErro(res.erro);
+  }
+
+  async function handleExcluir(nome){
+    if(!confirm('Excluir a linha "'+nome+'"? Essa ação não pode ser desfeita.')) return;
+    setProcessando(nome); setErro(null);
+    const res = await excluirLinhaProducao(nome, maquinasEtp);
+    setProcessando(null);
+    if(res.ok) onSucesso('Linha "'+nome+'" excluída.');
+    else setErro(res.erro);
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={fecharELimpar}>
+      <div className="modal-box" onClick={e=>e.stopPropagation()}>
+        <div className="modal-header">
+          <div>
+            <div className="modal-title">Gerenciar linhas de produção</div>
+            <div className="modal-subtitle">Adicione, renomeie ou exclua as abas desta tela.</div>
+          </div>
+          <button type="button" className="modal-close-btn" onClick={fecharELimpar}><DIcon name="x" size={18} /></button>
+        </div>
+
+        <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:16}}>
+          {linhasProducao.map(l=>{
+            const emEdicao = editandoNome===l.nome;
+            const ehPadrao = l.nome===LINHA_PADRAO;
+            const ocupado = processando===l.nome;
+            return (
+              <div key={l.nome} style={{display:'flex',alignItems:'center',gap:8,padding:'8px 10px',border:'1px solid var(--line)',borderRadius:'var(--radius)'}}>
+                {emEdicao ? (
+                  <div className="field" style={{flex:1,marginBottom:0}}>
+                    <input type="text" value={nomeEditado} onChange={e=>setNomeEditado(e.target.value)} autoFocus
+                      onKeyDown={e=>{ if(e.key==='Enter') handleRenomear(l.nome); if(e.key==='Escape') setEditandoNome(null); }} />
+                  </div>
+                ) : (
+                  <span style={{flex:1,fontWeight:600,fontSize:'var(--text-sm)'}}>
+                    {l.nome}
+                    {ehPadrao && <span style={{fontWeight:400,color:'var(--ink-dim)',fontSize:'var(--text-xs)'}}> (padrão, fixa)</span>}
+                  </span>
+                )}
+                {!ehPadrao && (emEdicao ? (
+                  <React.Fragment>
+                    <button type="button" className="btn btn-primary btn-sm" style={{width:'auto'}} disabled={ocupado} onClick={()=>handleRenomear(l.nome)}>Salvar</button>
+                    <button type="button" className="btn btn-outline btn-sm" style={{width:'auto'}} disabled={ocupado} onClick={()=>setEditandoNome(null)}>Cancelar</button>
+                  </React.Fragment>
+                ) : (
+                  <React.Fragment>
+                    <button type="button" className="btn btn-outline btn-sm" style={{width:34,padding:0}} disabled={!!processando}
+                      onClick={()=>{ setEditandoNome(l.nome); setNomeEditado(l.nome); setErro(null); }}
+                      title="Renomear"><DIcon name="edit" size={14} /></button>
+                    <button type="button" className="btn btn-outline btn-sm" style={{width:34,padding:0,color:'var(--danger)'}} disabled={!!processando}
+                      onClick={()=>handleExcluir(l.nome)}
+                      title="Excluir">{ocupado ? '…' : <DIcon name="trash" size={14} />}</button>
+                  </React.Fragment>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{display:'flex',gap:8,alignItems:'flex-end'}}>
+          <div className="field" style={{flex:1,marginBottom:0}}>
+            <label>Nova linha</label>
+            <input type="text" placeholder="Ex: SEG" value={nomeNovo}
+              onChange={e=>setNomeNovo(e.target.value)}
+              onKeyDown={e=>{ if(e.key==='Enter') handleAdicionar(); }} />
+          </div>
+          <button type="button" className="btn btn-primary btn-sm" style={{width:'auto'}} disabled={salvandoNovo || !nomeNovo.trim()} onClick={handleAdicionar}>
+            {salvandoNovo ? 'Adicionando…' : 'Adicionar'}
+          </button>
+        </div>
+        {erro && <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginTop:8}}>{erro}</div>}
+      </div>
+    </div>
+  );
+}
+
 function ProgramacaoSeparacaoPanel({currentUser, role}){
   const [itens, setItens] = useState([]);
   // Cache de dado da MÁQUINA (nome fantasia/chassi/data prevista/status/
@@ -19085,7 +19293,8 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
   // Aba (linha de produção) selecionada — preferência de sessão do
   // aparelho, não dado compartilhado (cada painel/TV pode ficar aberto
   // numa linha diferente), por isso `usePersistedState` e não estado no
-  // Supabase. Ver LINHA_PADRAO/LINHAS_PRODUCAO.
+  // Supabase. As linhas em SI (Elétrica/SEM/SSE/SEP + as que forem
+  // adicionadas depois) vêm de `linhasProducao` (Supabase), ver mais abaixo.
   const [linhaSelecionada, setLinhaSelecionada] = usePersistedState('separacaoLinhaSelecionada', LINHA_PADRAO);
 
   const canManage = role==='lider' || role==='admin';
@@ -19155,6 +19364,42 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
 
     return ()=>{ cancelado = true; supabaseClient.removeChannel(canal); };
   }, []);
+
+  // Abas desta tela (Elétrica/SEM/SSE/SEP + qualquer linha adicionada depois)
+  // — mesmo padrão de fetch-ao-montar + reconciliação-ao-conectar/reconectar
+  // já usado acima, só que SEMPRE um refetch completo em vez de merge por
+  // linha (diferente de `itens`/`maquinasEtp`): esta tabela tem poucas linhas
+  // (uma dúzia no máximo, não centenas), então não vale a complexidade extra
+  // de tratar INSERT/UPDATE/DELETE separadamente.
+  const [linhasProducao, setLinhasProducao] = useState(
+    () => LINHAS_PRODUCAO_PADRAO.map((nome,i)=>({nome, ordem:i}))
+  );
+  const [modalLinhasAberto, setModalLinhasAberto] = useState(false);
+  useEffect(()=>{
+    if(!supabaseClient) return;
+    let cancelado = false;
+    fetchLinhasProducao().then(rows=>{ if(!cancelado) setLinhasProducao(rows); });
+
+    const canal = supabaseClient
+      .channel('realtime:linhas_producao')
+      .on('postgres_changes', {event:'*', schema:'public', table:'linhas_producao'}, ()=>{
+        fetchLinhasProducao().then(rows=>{ if(!cancelado) setLinhasProducao(rows); });
+      })
+      .subscribe(status=>{
+        if(status!=='SUBSCRIBED') return;
+        fetchLinhasProducao().then(rows=>{ if(!cancelado) setLinhasProducao(rows); });
+      });
+
+    return ()=>{ cancelado = true; supabaseClient.removeChannel(canal); };
+  }, []);
+
+  // Se a aba selecionada for renomeada/excluída (por qualquer líder, em
+  // qualquer aparelho) enquanto esta tela está aberta, cai pra LINHA_PADRAO
+  // em vez de ficar "presa" numa aba que não existe mais.
+  useEffect(()=>{
+    if(linhasProducao.length===0) return;
+    if(!linhasProducao.some(l=>l.nome===linhaSelecionada)) setLinhaSelecionada(LINHA_PADRAO);
+  }, [linhasProducao, linhaSelecionada, setLinhaSelecionada]);
 
   function mostrarSucesso(msg){
     setMensagemSucesso(msg);
@@ -19248,29 +19493,30 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
       </div>
 
       <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:14}}>
-        {LINHAS_PRODUCAO.map(l=>(
+        {linhasProducao.map(l=>(
           <button
-            key={l}
+            key={l.nome}
             type="button"
-            className={'btn '+(linhaSelecionada===l ? 'btn-primary' : 'btn-outline')+' btn-sm'}
-            onClick={()=>setLinhaSelecionada(l)}
+            className={'btn '+(linhaSelecionada===l.nome ? 'btn-primary' : 'btn-outline')+' btn-sm'}
+            onClick={()=>setLinhaSelecionada(l.nome)}
           >
-            {l}
+            {l.nome}
           </button>
         ))}
-        {/* Placeholder pra futuras linhas de produção — pedido do cliente:
-            "caso algum dia eu queira acrescentar novas abas". Só reserva o
-            espaço visual, SEM funcionalidade nenhuma ainda (LINHAS_PRODUCAO
-            continua uma lista fixa em código — adicionar linha de verdade
-            também mudaria o Painel Indicadores/TV, que lê a MESMA lista
-            duplicada lá, fora do escopo deste botão). Desabilitado de
-            propósito, pra não parecer clicável à toa. */}
-        <button
-          type="button" disabled
-          title="Adicionar novas linhas de produção — em breve"
-          className="btn btn-outline btn-sm"
-          style={{width:34,padding:0,display:'flex',alignItems:'center',justifyContent:'center',borderStyle:'dashed',color:'var(--ink-dim)',cursor:'not-allowed'}}
-        ><Ic>+</Ic></button>
+        {/* Gerenciar linhas (adicionar/renomear/excluir) — pedido do
+            cliente: "caso algum dia eu queira acrescentar novas abas", com
+            escopo confirmado depois (adicionar E excluir/renomear). Mesmo
+            grupo que já gerencia o resto desta tela (`canManage` —
+            líder/admin); operador sem essa liberação nem vê o botão. */}
+        {canManage && (
+          <button
+            type="button"
+            title="Gerenciar linhas de produção"
+            className="btn btn-outline btn-sm"
+            style={{width:34,padding:0,display:'flex',alignItems:'center',justifyContent:'center'}}
+            onClick={()=>setModalLinhasAberto(true)}
+          ><Ic>+</Ic></button>
+        )}
       </div>
 
       {mensagemSucesso && <div style={{fontSize:'var(--text-xs)',color:'var(--ok)',marginBottom:14}}>{mensagemSucesso}</div>}
@@ -19294,9 +19540,18 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
         currentUser={currentUser}
         maquinasEtp={maquinasEtp}
         linhaPadrao={linhaSelecionada}
+        linhas={linhasProducao}
         onClose={handleModalFechadoEditar}
         onSucesso={mostrarSucesso}
         maquinaParaEditar={maquinaParaEditar}
+      />
+
+      <GerenciarLinhasModal
+        open={modalLinhasAberto}
+        linhasProducao={linhasProducao}
+        maquinasEtp={maquinasEtp}
+        onClose={()=>setModalLinhasAberto(false)}
+        onSucesso={mostrarSucesso}
       />
     </div>
   );
