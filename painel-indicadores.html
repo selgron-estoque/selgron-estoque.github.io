@@ -850,10 +850,26 @@ function computeMonthlyStats(counts, dataInicioStr, dataFimStr){
   });
 }
 
+// Bug real corrigido aqui: a linha do histórico virava `{data, diferenca,
+// saldoSistema, acuracidade}` sem `productCode` — inofensivo pros
+// consumidores originais desta função (`computeWeeklyStats`/
+// `computeMonthlyStats`, que nunca agrupam por produto), mas
+// `computeAcuracidadeItensRecorrentes` (adicionada depois, ver "itens
+// recontados" no card de KPI) PRECISA de `productCode` pra agrupar
+// documentos do mesmo produto — sem ele, `if(!c.data || !c.productCode)
+// return;` descartava TODA contagem vinda do histórico antes mesmo de
+// entrar na conta de elegibilidade (2+ documentos), fazendo um produto com
+// 1 contagem ao vivo + 1 no histórico (2 no total, deveria ENTRAR) contar
+// só a ao vivo (1) e ficar de fora — resultado: card mostrando 21 itens
+// avaliados quando o real (confirmado no drill-down da aba Acuracidade,
+// que usa a fonte de dado completa) era 75. `reconstructNumericCode`
+// aqui, não só em `contagemRowToLocal`, pelo mesmo motivo de sempre (ver
+// `historicoRowToCountLike`, index.html): corrige a exibição/comparação
+// mesmo pra linhas já importadas antes da correção do parser.
 function buildPoolTendencia(counts, historicoParaTendencia){
   const historicoComoContagem = (historicoParaTendencia||[])
     .filter(h=>h.data)
-    .map(h=>({data:h.data, diferenca:h.diferenca, saldoSistema:h.saldo_sistema, acuracidade:h.acuracidade}));
+    .map(h=>({productCode: reconstructNumericCode(h.produto_codigo), data:h.data, diferenca:h.diferenca, saldoSistema:h.saldo_sistema, acuracidade:h.acuracidade}));
   return [...counts, ...historicoComoContagem];
 }
 
@@ -2222,8 +2238,16 @@ function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfig,
     const statsRecorrentesMesAtual = acuracidadeRecorrentes.monthlyStats.find(m=>m.key===mesAtualKey) || null;
     const recorrentesElegiveisMesAtual = acuracidadeRecorrentes.elegiveis.filter(c=>c.data && getMonthInfo(c.data).key===mesAtualKey);
     const recorrentesAvaliadosMes = statsRecorrentesMesAtual ? statsRecorrentesMesAtual.total : 0;
+    // Mesmo critério EXATO do drill-down "Itens Acurados × Divergentes"
+    // (AcuracidadeMesDetalheModal, index.html) — 3 categorias, nunca 2:
+    // acurado (diferenca===0), divergente (diferenca!=null e ≠0) e "sem
+    // dado" (diferenca==null, fica de fora dos dois). Bug real corrigido
+    // aqui: a versão anterior fazia `corretos = avaliados - divergentes`,
+    // o que jogava qualquer item "sem dado" pra dentro de "corretos"
+    // silenciosamente — sem bater com o drill-down real (que conta os 3
+    // separados) sempre que existisse pelo menos 1 item sem dado no mês.
+    const recorrentesCorretosMes = recorrentesElegiveisMesAtual.filter(c=>c.diferenca===0).length;
     const recorrentesDivergentesMes = recorrentesElegiveisMesAtual.filter(c=>c.diferenca!==0 && c.diferenca!=null).length;
-    const recorrentesCorretosMes = recorrentesAvaliadosMes - recorrentesDivergentesMes;
     const recorrentesAcuracidadeMes = statsRecorrentesMesAtual ? statsRecorrentesMesAtual.acuracidade : null;
 
     return {
