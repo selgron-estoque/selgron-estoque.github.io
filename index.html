@@ -1117,7 +1117,10 @@
        deixava até ~120px de vão morto de cada lado num monitor comum).
        O conteúdo (grids/cards, não texto corrido longo) ocupa toda a
        largura disponível de `.app-main`, sem cap nenhum. */
-    .content{padding:32px 40px 48px;width:100%;}
+    /* 18px topo / 36px laterais / 32px embaixo (era 32/40/48) — mesmo pedido
+       do topbar acima: aproveitar melhor a largura/altura em TODAS as telas
+       desktop, não só a Início. */
+    .content{padding:18px 36px 32px;width:100%;}
 
     .sidebar{display:flex;flex-direction:column;width:264px;flex-shrink:0;background:#0F172A;min-height:100vh;position:sticky;top:0;overflow:hidden;transition:width .18s ease;} /* hex literal, não var(--navy) — a Sidebar é sempre escura, em qualquer tema (ver comentário do tema escuro) */
     .sidebar.collapsed{width:0;}
@@ -1145,7 +1148,11 @@
     .sidebar-footer .status .dot{width:6px;height:6px;border-radius:50%;background:var(--ok);flex-shrink:0;}
     .sidebar-footer .sf-user{display:flex;align-items:center;gap:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.08);color:rgba(255,255,255,0.72);font-weight:600;}
 
-    .desktop-topbar{position:relative;height:72px;display:flex;align-items:center;justify-content:space-between;padding:0 32px;background:var(--panel);border-bottom:1px solid var(--line);}
+    /* 60px (era 72px) — pedido explícito e repetido do cliente (3 rodadas
+       seguidas de ajuste da Início). Compartilhado com TODAS as telas
+       desktop, não só a Início — mudança pequena o bastante (avatar/sino
+       têm 36px, sobra folga de sobra) pra não cortar nada em nenhuma tela. */
+    .desktop-topbar{position:relative;height:60px;display:flex;align-items:center;justify-content:space-between;padding:0 32px;background:var(--panel);border-bottom:1px solid var(--line);}
     .desktop-topbar-titlewrap{display:flex;flex-direction:column;justify-content:center;gap:2px;}
     .desktop-topbar-title{font-family:var(--font-corp);font-size:20px;font-weight:700;color:var(--navy);letter-spacing:-0.1px;}
     .desktop-topbar-subtitle{font-family:var(--font-corp);font-size:var(--text-sm);color:var(--gray-500);}
@@ -1219,19 +1226,32 @@
        minmax(150px,1fr) garante que até 6 colunas cabem numa linha só a
        partir do breakpoint de 1360px logo abaixo (6×150px + 5×16px de gap
        ≈ 980px, bem dentro do espaço disponível mesmo com a sidebar). */
-    /* Densidade revista (pedido do cliente: "a página Início inteira precisa
-       caber em 1920x1080 sem rolagem") — mesmas classes de antes, valores
-       menores. gap/margin-bottom cortados quase à metade, card raso o
-       bastante pra 6 KPIs + atenção + tabela + ações rápidas + footer
-       caberem juntos abaixo do header (72px) e do padding de `.content`. */
-    .pnl-kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:14px;}
-    .pnl-kpi{display:block;width:100%;text-align:left;font:inherit;background:var(--panel);border:1px solid var(--gray-200);border-radius:var(--radius);padding:12px 14px;box-shadow:0 1px 2px rgba(15,23,42,.03);transition:box-shadow .15s, transform .15s;}
+    /* Equilíbrio revisto (3ª rodada — a versão anterior "coube" mas ficou
+       apertada demais: números pequenos, espaço vazio sobrando embaixo).
+       Agora: fontes/padding de volta a um tamanho confortável, MAS a folga
+       vai pra dentro dos cards (padding maior) e pro gap entre seções, não
+       pra uma área vazia solta no rodapé. Acuracidade ganha coluna 1.25x
+       mais larga que as outras 5 (grid-template-columns), não mais altura —
+       card mais largo comporta a barra/2 variações lado a lado sem crescer
+       verticalmente e sem dominar a fileira. */
+    /* Número de colunas fixo via CSS var setada inline no JSX
+       (--kpi-cols: kpis.length-1), não `repeat(auto-fit,...)` — os dois não
+       se misturam bem no mesmo grid-template-columns: `auto-fit` calcula
+       quantas colunas de `minmax()` cabem olhando só a largura total do
+       container, ignorando o track explícito (1.25fr) antes dele, e cada
+       KPI depois do 1º acaba cada um na sua própria linha (bug real visto
+       ao testar: 5 cards empilhados verticais em vez de lado a lado). Usa
+       var() (não `style={{gridTemplateColumns}}` direto) pra o breakpoint
+       de 1360px abaixo continuar conseguindo sobrescrever — `style` inline
+       sempre venceria uma regra de media query. */
+    .pnl-kpi-row{display:grid;grid-template-columns:1.25fr repeat(var(--kpi-cols,5),1fr);gap:16px;margin-bottom:28px;}
+    .pnl-kpi{display:block;width:100%;text-align:left;font:inherit;background:var(--panel);border:1px solid var(--gray-200);border-radius:var(--radius);padding:20px 22px;box-shadow:0 1px 2px rgba(15,23,42,.03);transition:box-shadow .15s, transform .15s;}
     .pnl-kpi:hover{box-shadow:0 6px 16px rgba(15,23,42,.08);transform:translateY(-1px);}
-    .pnl-kpi-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}
-    .pnl-kpi-icon{width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
-    .pnl-kpi-value{font-family:var(--font-corp);font-size:28px;font-weight:700;color:var(--navy);line-height:1;margin-bottom:3px;}
-    .pnl-kpi-label{font-size:11px;color:var(--gray-500);font-weight:500;margin-bottom:3px;line-height:1.25;}
-    .pnl-kpi-trend{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:3px 8px;border-radius:20px;}
+    .pnl-kpi-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+    .pnl-kpi-icon{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+    .pnl-kpi-value{font-family:var(--font-corp);font-size:34px;font-weight:700;color:var(--navy);line-height:1;margin-bottom:6px;}
+    .pnl-kpi-label{font-size:12px;color:var(--gray-500);font-weight:500;margin-bottom:6px;line-height:1.3;}
+    .pnl-kpi-trend{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:600;padding:3px 9px;border-radius:20px;}
     /* Antes hex fixo (#ECFDF5/#FEF2F2) — só ficava certo no tema claro; no
        escuro virava um chip claro flutuando sobre card escuro, brigando com
        o resto do painel. Tokens já existem pros dois temas (ver
@@ -1241,16 +1261,20 @@
     .pnl-kpi-trend.flat{background:var(--gray-100);color:var(--gray-500);}
     .pnl-kpi-meta{font-size:var(--text-xs);color:var(--gray-500);margin-top:4px;}
 
-    /* Card de Acuracidade em destaque (maior KPI da fileira, ver Home) —
-       modificadores aplicados em cima de .pnl-kpi/.pnl-kpi-value normais,
-       não um shell novo. Só "ligeiramente" maior que os outros 5 — não deve
-       dominar a fileira nem puxar a altura da linha inteira pra cima
-       (pedido do cliente, correção do redesign anterior). */
-    .pnl-kpi-value.pnl-kpi-value-lg{font-size:32px;}
-    .pnl-kpi-goal{font-size:10.5px;color:var(--gray-500);margin-bottom:3px;}
-    .pnl-kpi-progress-track{width:100%;max-width:200px;height:5px;border-radius:20px;background:var(--gray-100);overflow:hidden;margin:1px 0 5px;}
+    /* Card de Acuracidade — KPI principal (Nível 1 da hierarquia pedida
+       pelo cliente). Mesmos elementos dos outros cards (valor/label/trend),
+       só que na coluna mais larga (1.25fr acima): título+meta cabem lado a
+       lado numa linha só, e as 2 variações (distância da meta / vs. ontem)
+       ficam lado a lado (`.pnl-kpi-trends{flex-direction:row}`) em vez de
+       empilhadas — usa a largura extra pra NÃO crescer em altura, continua
+       um KPI (número+texto), nunca vira gráfico. */
+    .pnl-kpi-value.pnl-kpi-value-lg{font-size:39px;}
+    .pnl-kpi-label-row{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:4px;}
+    .pnl-kpi-label-row .pnl-kpi-label{margin-bottom:0;}
+    .pnl-kpi-goal{font-size:12px;color:var(--gray-500);flex-shrink:0;}
+    .pnl-kpi-progress-track{width:100%;max-width:230px;height:5px;border-radius:20px;background:var(--gray-100);overflow:hidden;margin:2px 0 8px;}
     .pnl-kpi-progress-fill{height:100%;border-radius:20px;background:var(--gray-400);}
-    .pnl-kpi-trends{display:flex;flex-direction:column;gap:3px;align-items:flex-start;}
+    .pnl-kpi-trends{display:flex;flex-direction:row;flex-wrap:wrap;gap:8px;align-items:center;}
 
     /* "O que precisa de atenção" — 3 blocos horizontais, mesmo shell de card
        (.pnl-card) com um acento de cor discreto só na borda esquerda, nunca
@@ -1258,22 +1282,22 @@
     /* auto-fit, não repeat(3,1fr) fixo — mesmo motivo do .pnl-kpi-row acima:
        Operador só vê 2 blocos (Divergentes/Recontagens, sem "Aguardando
        Aprovação", que é líder/admin), Líder/Admin veem os 3. */
-    .pnl-attention-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-bottom:14px;}
+    .pnl-attention-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;margin-bottom:28px;}
     /* `.pnl-card.pnl-attention-card` (composto) — só assim o padding menor
        daqui vence o `padding:20px` de `.pnl-card` (mesma especificidade,
        mas `.pnl-card` vem depois no arquivo e ganharia por ordem sozinho). */
-    .pnl-card.pnl-attention-card{display:flex;flex-direction:column;gap:4px;padding:12px 14px;border-left-width:3px;border-left-style:solid;}
+    .pnl-card.pnl-attention-card{display:flex;flex-direction:column;gap:8px;padding:22px 24px;border-left-width:3px;border-left-style:solid;}
     .pnl-attention-card.danger{border-left-color:var(--danger);}
     .pnl-attention-card.warn{border-left-color:var(--warn);}
     .pnl-attention-top{display:flex;align-items:baseline;justify-content:space-between;gap:8px;}
-    .pnl-attention-value{font-size:23px;font-weight:700;color:var(--navy);line-height:1;}
-    .pnl-attention-label{font-size:11.5px;color:var(--gray-500);font-weight:500;}
-    .pnl-attention-meta{font-size:10.5px;color:var(--gray-500);line-height:1.3;}
-    .pnl-attention-link{font-size:10.5px;font-weight:600;color:var(--accent2);background:none;border:none;padding:0;display:inline-flex;align-items:center;gap:4px;align-self:flex-start;margin-top:auto;}
+    .pnl-attention-value{font-size:27px;font-weight:700;color:var(--navy);line-height:1;}
+    .pnl-attention-label{font-size:13px;color:var(--gray-500);font-weight:500;}
+    .pnl-attention-meta{font-size:12px;color:var(--gray-500);line-height:1.4;}
+    .pnl-attention-link{font-size:12px;font-weight:600;color:var(--accent2);background:none;border:none;padding:0;display:inline-flex;align-items:center;gap:4px;align-self:flex-start;margin-top:auto;}
 
     /* Barra de acuracidade compacta dentro da tabela "Últimas Contagens" —
        menor que .pnl-bar-track (que é pra linhas de legenda/donut). */
-    .pnl-table-acc-bar{width:100px;height:4px;border-radius:20px;background:var(--gray-100);overflow:hidden;margin-top:3px;}
+    .pnl-table-acc-bar{width:105px;height:5px;border-radius:20px;background:var(--gray-100);overflow:hidden;margin-top:4px;}
     .pnl-table-acc-fill{height:100%;border-radius:20px;}
 
     .pnl-quick-item{align-items:flex-start;}
@@ -1285,20 +1309,20 @@
        ~220px de altura. Pedido do cliente: "a consulta de item deve ficar
        na mesma linha da saudação/data... essa área inteira deve ocupar
        aproximadamente 70px de altura". */
-    .pnl-hero-row{display:flex;align-items:center;gap:24px;margin-bottom:14px;}
+    .pnl-hero-row{display:flex;align-items:center;gap:28px;margin-bottom:28px;}
     .pnl-hero-greet{flex-shrink:0;}
-    .pnl-hero-greet .hg-label{font-family:var(--font-mono);font-size:10px;text-transform:uppercase;letter-spacing:2px;color:var(--safety);margin-bottom:2px;}
-    .pnl-hero-greet .hg-name{font-family:var(--font-corp);font-size:21px;font-weight:700;color:var(--navy);line-height:1.15;white-space:nowrap;}
+    .pnl-hero-greet .hg-label{font-family:var(--font-mono);font-size:11px;text-transform:uppercase;letter-spacing:2px;color:var(--safety);margin-bottom:3px;}
+    .pnl-hero-greet .hg-name{font-family:var(--font-corp);font-size:26px;font-weight:700;color:var(--navy);line-height:1.15;white-space:nowrap;}
     /* Busca de item — mesmo componente `ItemStatusSearchPanel`/`SearchWithScanner`
        usado em outras telas, só que achatado aqui: sem o `.panel`
        (fundo/borda/padding) nem o título "Consultar Status de um Item",
        campo só com o input+ícone de scanner, do tamanho de uma linha. */
-    .pnl-hero-search{flex:1;max-width:580px;min-width:0;}
+    .pnl-hero-search{flex:1;max-width:480px;min-width:0;}
     .pnl-hero-search .panel{margin-bottom:0;padding:0;border:none;box-shadow:none;background:transparent;}
     .pnl-hero-search .section-title{display:none;}
     .pnl-hero-search .field{margin-bottom:0;}
     .pnl-hero-search .field label{display:none;}
-    .pnl-hero-search .field input{padding:13px 14px;}
+    .pnl-hero-search .field input{padding:15px 14px;font-size:14px;}
     /* Resultado da busca (quando o operador digita algo) continua no fluxo
        normal, empurrando o que vem depois pra baixo — mesmo comportamento
        de sempre deste componente; só acontece durante uma busca ativa, não
@@ -1346,32 +1370,32 @@
     @media (max-width:1360px){ .ops-kpi-row{grid-template-columns:repeat(2,1fr);} }
     @media (max-width:640px){ .ops-kpi-row{grid-template-columns:1fr;gap:10px;} }
 
-    .pnl-section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
-    .pnl-section-title{font-size:15px;font-weight:700;color:var(--navy);}
-    .pnl-section-link{font-size:12px;font-weight:600;color:var(--accent2);background:none;border:none;display:flex;align-items:center;gap:4px;}
+    .pnl-section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+    .pnl-section-title{font-size:18px;font-weight:700;color:var(--navy);}
+    .pnl-section-link{font-size:13px;font-weight:600;color:var(--accent2);background:none;border:none;display:flex;align-items:center;gap:4px;}
 
-    .pnl-row{display:grid;grid-template-columns:repeat(12,1fr);gap:16px;margin-bottom:14px;}
+    .pnl-row{display:grid;grid-template-columns:repeat(12,1fr);gap:18px;margin-bottom:20px;}
     .pnl-col-8{grid-column:span 8;}
     .pnl-col-4{grid-column:span 4;}
     .pnl-col-5{grid-column:span 5;}
     .pnl-col-7{grid-column:span 7;}
-    .pnl-card{background:var(--panel);border:1px solid var(--gray-200);border-radius:var(--radius);padding:16px;box-shadow:0 1px 2px rgba(15,23,42,.03);}
+    .pnl-card{background:var(--panel);border:1px solid var(--gray-200);border-radius:var(--radius);padding:26px;box-shadow:0 1px 2px rgba(15,23,42,.03);}
 
-    .pnl-table{width:100%;border-collapse:collapse;font-size:13px;}
-    .pnl-table th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:0.4px;color:var(--gray-500);font-weight:600;padding:0 10px 6px;border-bottom:1px solid var(--gray-200);}
-    .pnl-table td{padding:7px 10px;border-bottom:1px solid var(--gray-100);color:var(--navy);vertical-align:middle;}
+    .pnl-table{width:100%;border-collapse:collapse;font-size:14px;}
+    .pnl-table th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:0.4px;color:var(--gray-500);font-weight:600;padding:0 10px 10px;border-bottom:1px solid var(--gray-200);}
+    .pnl-table td{padding:13px 10px;border-bottom:1px solid var(--gray-100);color:var(--navy);vertical-align:middle;}
     .pnl-table tr:last-child td{border-bottom:none;}
-    .pnl-status{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;padding:3px 8px;border-radius:20px;white-space:nowrap;}
+    .pnl-status{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;padding:4px 9px;border-radius:20px;white-space:nowrap;}
     .pnl-status .dot{width:5px;height:5px;border-radius:50%;background:currentColor;flex-shrink:0;}
     .pnl-status.ok{background:var(--ok-bg);color:var(--ok);}
     .pnl-status.warn{background:var(--warn-bg);color:var(--warn);}
     .pnl-status.danger{background:var(--danger-bg);color:var(--danger);}
 
-    .pnl-quick-list{display:flex;flex-direction:column;gap:2px;}
-    .pnl-quick-item{display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:8px;background:none;border:none;text-align:left;width:100%;color:var(--navy);}
+    .pnl-quick-list{display:flex;flex-direction:column;gap:4px;}
+    .pnl-quick-item{display:flex;align-items:center;gap:12px;padding:10px 8px;border-radius:8px;background:none;border:none;text-align:left;width:100%;color:var(--navy);}
     .pnl-quick-item:hover{background:var(--gray-50);}
-    .pnl-quick-icon{width:26px;height:26px;border-radius:7px;background:var(--gray-100);color:var(--gray-500);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
-    .pnl-quick-text{flex:1;font-size:12px;font-weight:500;}
+    .pnl-quick-icon{width:28px;height:28px;border-radius:8px;background:var(--gray-100);color:var(--gray-500);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+    .pnl-quick-text{flex:1;font-size:13px;font-weight:500;}
     .pnl-quick-arrow{color:var(--gray-400);flex-shrink:0;}
 
     .pnl-donut-wrap{display:flex;flex-direction:column;align-items:center;gap:20px;padding-top:4px;}
@@ -1386,7 +1410,7 @@
     .pnl-bar-fill{height:100%;border-radius:20px;}
     .pnl-bar-num{width:76px;text-align:right;font-size:var(--text-sm);font-weight:600;color:var(--navy);flex-shrink:0;}
 
-    .pnl-footer{display:flex;align-items:center;justify-content:space-between;padding:8px 4px 2px;margin-top:2px;border-top:1px solid var(--gray-200);font-size:11px;color:var(--gray-500);}
+    .pnl-footer{display:flex;align-items:center;justify-content:space-between;padding:16px 4px 4px;margin-top:8px;border-top:1px solid var(--gray-200);font-size:11px;color:var(--gray-500);}
     .pnl-footer-links{display:flex;gap:18px;color:var(--gray-500);}
 
     @media (max-width:1360px){
@@ -8385,15 +8409,21 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
           </div>
         </div>
 
-        <div className="pnl-kpi-row">
+        <div className="pnl-kpi-row" style={{'--kpi-cols':kpis.length-1}}>
           {kpis.map(k=>(
             <button key={k.key} className="pnl-kpi" onClick={k.onClick} style={{cursor:'pointer'}}>
               <div className="pnl-kpi-top">
                 <span className="pnl-kpi-icon" style={{background:k.bg, color:k.color}}><DIcon name={k.icon} size={17} /></span>
               </div>
               <div className={"pnl-kpi-value"+(k.big?' pnl-kpi-value-lg':'')}>{k.value}</div>
-              <div className="pnl-kpi-label">{k.label}</div>
-              {k.goal}
+              {k.big ? (
+                <div className="pnl-kpi-label-row">
+                  <div className="pnl-kpi-label">{k.label}</div>
+                  {k.goal}
+                </div>
+              ) : (
+                <div className="pnl-kpi-label">{k.label}</div>
+              )}
               {k.big && (
                 <div className="pnl-kpi-progress-track">
                   <div className="pnl-kpi-progress-fill" style={{width:k.progressPct+'%'}}></div>
