@@ -2406,15 +2406,15 @@ function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfig,
           ]}
         />
         <KpiCard
-          icon={IconCobertura} iconBg="var(--blue-bg)" iconColor="var(--blue)"
-          titulo="Cobertura da programação"
-          periodo={`Programação atual (${periodoMesAtual})`}
-          valor={coberturaPercent!=null ? Math.round(coberturaPercent)+'%' : '—'}
-          meta="100%"
+          icon={IconAcuracidade} iconBg="var(--teal-bg)" iconColor="var(--teal)"
+          titulo="Acuracidade (itens recontados)"
+          periodo={`Mês atual (${periodoMesAtual})`}
+          valor={kpiAcuracidadeMes!=null ? Math.round(kpiAcuracidadeMes)+'%' : '—'}
+          meta={META_ACURACIDADE_SEMANAL+'%'}
           linhas={[
-            {rotulo:'Programado', valor:coberturaProgramado},
-            {rotulo:'Contados', valor:coberturaContado},
-            {rotulo:'Pendentes', valor:coberturaPendente},
+            {rotulo:'Itens avaliados', valor:kpiItensAvaliadosMes},
+            {rotulo:'Itens corretos', valor:kpiCorretosMes},
+            {rotulo:'Itens com divergência', valor:kpiDivergentesMes},
           ]}
         />
         <KpiCard
