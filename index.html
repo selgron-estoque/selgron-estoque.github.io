@@ -16039,6 +16039,16 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
   // documento (ver comentário completo em `computeAcuracidadeItensRecorrentes`).
   const acuracidadeRecorrentes = computeAcuracidadeItensRecorrentes(todasParaQualidade, anoAtualStr, hojeStr);
 
+  // "Acuracidade Geral" — pedido do cliente: mostrar lado a lado com "Itens
+  // Recorrentes" nesta mesma aba, pra deixar claro que são dois indicadores
+  // com regra de cálculo independente (um considera TODO item já avaliado,
+  // o outro só os com 2+ contagens concluídas). Reaproveita
+  // `acuracidadeGeralAte` — a MESMA função que já alimenta "Acuracidade
+  // Geral" (Dashboard) e "Acuracidade do Estoque" (Home) — nunca uma
+  // lógica paralela; mesmo pool `todasParaQualidade` já deduplicado/só-
+  // concluído que o resto desta página usa.
+  const acuracidadeGeral = acuracidadeGeralAte(todasParaQualidade, hojeStr);
+
   // "Efeito dos Ajustes Aprovados" — mesmo pool deduplicado
   // (`todasParaQualidade`) e o mesmo intervalo de data do filtro desta
   // página (`dataInicioStr`/`dataFimStr`).
@@ -16051,15 +16061,25 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
       <div className="ops-kpi-row ops-kpi-row-auto">
         <div className="ops-kpi-card">
           <div className="ops-kpi-head">
-            <span className="ops-kpi-label">Acuracidade Média — Itens Recorrentes</span>
+            <span className="ops-kpi-label">Acuracidade Geral</span>
+            <span className="ops-kpi-icon" style={{background:'var(--blue-bg)', color:'var(--blue)'}}><DIcon name="percent" size={15} /></span>
+          </div>
+          <div className="ops-kpi-value">{acuracidadeGeral.toFixed(1)+'%'}</div>
+          <div className={'ops-kpi-meta'+(acuracidadeGeral<META_ACURACIDADE_SEMANAL ? ' danger' : '')}>
+            {(acuracidadeGeral-META_ACURACIDADE_SEMANAL>=0?'+':'')}{(acuracidadeGeral-META_ACURACIDADE_SEMANAL).toFixed(1)} p.p. da meta de {META_ACURACIDADE_SEMANAL}% · todo item avaliado
+          </div>
+        </div>
+        <div className="ops-kpi-card">
+          <div className="ops-kpi-head">
+            <span className="ops-kpi-label">Acuracidade — Itens Recorrentes</span>
             <span className="ops-kpi-icon" style={{background:'var(--purple-bg)', color:'var(--purple)'}}><DIcon name="percent" size={15} /></span>
           </div>
           <div className="ops-kpi-value">{acuracidadeRecorrentes.acuracidadeMedia==null ? '—' : acuracidadeRecorrentes.acuracidadeMedia.toFixed(1)+'%'}</div>
           {acuracidadeRecorrentes.acuracidadeMedia==null ? (
-            <div className="ops-kpi-meta">sem dado no período em tela</div>
+            <div className="ops-kpi-meta">sem dado no período em tela · itens com 2+ contagens concluídas</div>
           ) : (
             <div className={'ops-kpi-meta'+(acuracidadeRecorrentes.acuracidadeMedia<META_ACURACIDADE_SEMANAL ? ' danger' : '')}>
-              {(acuracidadeRecorrentes.acuracidadeMedia-META_ACURACIDADE_SEMANAL>=0?'+':'')}{(acuracidadeRecorrentes.acuracidadeMedia-META_ACURACIDADE_SEMANAL).toFixed(1)} p.p. da meta de {META_ACURACIDADE_SEMANAL}%
+              {(acuracidadeRecorrentes.acuracidadeMedia-META_ACURACIDADE_SEMANAL>=0?'+':'')}{(acuracidadeRecorrentes.acuracidadeMedia-META_ACURACIDADE_SEMANAL).toFixed(1)} p.p. da meta de {META_ACURACIDADE_SEMANAL}% · itens com 2+ contagens concluídas
             </div>
           )}
         </div>
