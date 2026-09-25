@@ -16823,6 +16823,13 @@ function sequenciaSeparacaoRowToLocal(row){
     op: row.op,
     local: row.local,
     unidade: row.unidade,
+    // A que LINHA este item pertence — mesmo campo que `maquinas_etp.linha`
+    // já tinha, agora também aqui pra cada item saber a qual card ele
+    // pertence desde que a mesma ETP passou a poder ter um card por linha
+    // (ver "PROGRAMAÇÃO: MESMA ETP EM VÁRIAS LINHAS" no schema.sql). Nulo
+    // em item órfão (sem máquina correspondente na hora da migração/
+    // backfill) cai no mesmo fallback de linha padrão de sempre.
+    linha: row.linha || null,
   };
 }
 
@@ -16975,15 +16982,22 @@ async function fetchMaquinasEtp(){
 // 100% manualmente pelo líder (sem busca automática em nenhuma consulta
 // externa).
 // `extra` é opcional e só deve ser passado pra uma máquina GENUINAMENTE NOVA
-// (o chamador já checou que essa ETP ainda não existe em `maquinasEtp`) —
-// `{ordem, urgente}`. De propósito, quando `extra` não é passado (o caso
-// comum: já existe uma máquina com essa ETP e o líder só está adicionando
-// mais itens a ela), `status`/`ordem`/`urgente` NUNCA entram no objeto
-// gravado — o upsert do supabase-js só altera, no conflito, as colunas
-// presentes no payload; omitidas ficam intocadas. É assim que uma
-// re-confirmação rotineira (mais itens pra uma ETP que já está em
-// 'em_separacao', já reordenada pelo líder, ou já marcada urgente) nunca
-// reseta nada disso de volta pro padrão sem querer.
+// (o chamador já checou que essa ETP+linha ainda não existe em
+// `maquinasEtp`) — `{ordem, urgente}`. De propósito, quando `extra` não é
+// passado (o caso comum: já existe uma máquina com essa ETP NA MESMA LINHA
+// e o líder só está adicionando mais itens a ela), `status`/`ordem`/
+// `urgente` NUNCA entram no objeto gravado — o upsert do supabase-js só
+// altera, no conflito, as colunas presentes no payload; omitidas ficam
+// intocadas. É assim que uma re-confirmação rotineira (mais itens pra uma
+// ETP que já está em 'em_separacao', já reordenada pelo líder, ou já
+// marcada urgente) nunca reseta nada disso de volta pro padrão sem querer.
+//
+// Chave de conflito `etp,linha` (não só `etp`) — pedido do cliente: "vai
+// ter abas que vai ter o mesmo card". A mesma ETP pode ter um card
+// independente EM CADA linha; `linha` nunca fica null aqui (sempre um
+// texto real) porque agora faz parte da chave primária composta de
+// `maquinas_etp` (ver backend/schema.sql) — mandar null quebraria o
+// upsert.
 async function upsertMaquinaEtp(m, extra){
   if(!supabaseClient || !m || !m.etp) return {ok:false, erro:'Sem dado de máquina pra salvar.'};
   try{
@@ -16995,7 +17009,7 @@ async function upsertMaquinaEtp(m, extra){
       chassi: m.chassi || null,
       op: m.op || null,
       codigo_produto: m.codigoProduto || null,
-      linha: m.linha || null,
+      linha: m.linha || LINHA_PADRAO,
       obs: m.obs || null,
       observacao: m.observacao || null,
       data_separacao: parseDataHistorico(m.separacao),
@@ -17006,7 +17020,7 @@ async function upsertMaquinaEtp(m, extra){
     };
     if(extra && typeof extra.ordem==='number') patch.ordem = extra.ordem;
     if(extra && typeof extra.urgente==='boolean') patch.urgente = extra.urgente;
-    const { error } = await supabaseClient.from('maquinas_etp').upsert(patch, {onConflict:'etp'});
+    const { error } = await supabaseClient.from('maquinas_etp').upsert(patch, {onConflict:'etp,linha'});
     if(error) throw error;
     return {ok:true};
   }catch(err){
@@ -17032,13 +17046,17 @@ async function upsertMaquinaEtp(m, extra){
 // final"). Sem isso, a máquina manteria a `ordem` antiga (de quando ainda
 // estava na coluna anterior), que não tem relação nenhuma com a posição
 // certa na fila nova.
-async function atualizarStatusMaquina(etp, status, novaOrdem){
-  if(!supabaseClient || !etp) return {ok:false, erro:'ETP não informada.'};
+// `linha` faz parte da chave (junto com `etp`) desde que a mesma ETP passou
+// a poder ter um card independente por linha — sem ela, o upsert acertaria
+// (ou criaria) a linha ERRADA sempre que a mesma ETP existisse em mais de
+// uma aba.
+async function atualizarStatusMaquina(etp, linha, status, novaOrdem){
+  if(!supabaseClient || !etp || !linha) return {ok:false, erro:'ETP/linha não informada.'};
   try{
-    const patch = {etp, status, atualizado_em: new Date().toISOString()};
+    const patch = {etp, linha, status, atualizado_em: new Date().toISOString()};
     if(typeof novaOrdem==='number') patch.ordem = novaOrdem;
     const { error } = await supabaseClient.from('maquinas_etp')
-      .upsert(patch, {onConflict:'etp'});
+      .upsert(patch, {onConflict:'etp,linha'});
     if(error) throw error;
     return {ok:true};
   }catch(err){
@@ -17046,11 +17064,11 @@ async function atualizarStatusMaquina(etp, status, novaOrdem){
   }
 }
 
-async function atualizarUrgenteMaquina(etp, urgente){
-  if(!supabaseClient || !etp) return {ok:false, erro:'ETP não informada.'};
+async function atualizarUrgenteMaquina(etp, linha, urgente){
+  if(!supabaseClient || !etp || !linha) return {ok:false, erro:'ETP/linha não informada.'};
   try{
     const { error } = await supabaseClient.from('maquinas_etp')
-      .upsert({etp, urgente, atualizado_em: new Date().toISOString()}, {onConflict:'etp'});
+      .upsert({etp, linha, urgente, atualizado_em: new Date().toISOString()}, {onConflict:'etp,linha'});
     if(error) throw error;
     return {ok:true};
   }catch(err){
@@ -17058,11 +17076,11 @@ async function atualizarUrgenteMaquina(etp, urgente){
   }
 }
 
-async function atualizarOrdemMaquina(etp, ordem){
-  if(!supabaseClient || !etp) return {ok:false, erro:'ETP não informada.'};
+async function atualizarOrdemMaquina(etp, linha, ordem){
+  if(!supabaseClient || !etp || !linha) return {ok:false, erro:'ETP/linha não informada.'};
   try{
     const { error } = await supabaseClient.from('maquinas_etp')
-      .upsert({etp, ordem, atualizado_em: new Date().toISOString()}, {onConflict:'etp'});
+      .upsert({etp, linha, ordem, atualizado_em: new Date().toISOString()}, {onConflict:'etp,linha'});
     if(error) throw error;
     return {ok:true};
   }catch(err){
@@ -17073,31 +17091,37 @@ async function atualizarOrdemMaquina(etp, ordem){
 // Excluir uma MÁQUINA/ETP inteira do painel — pedido do cliente pra reverter
 // uma ETP adicionada por engano ("Adicionar ETP"), com uma restrição
 // explícita: "apenas perfil de admin pode excluir". Apaga os dois lados:
-// todo item de `sequencia_separacao` daquela ETP (senão os itens ficariam
-// órfãos, sem máquina nenhuma pra agrupá-los, e reapareceriam via
-// `computeMaquinasPainel` assim que o cache local recarregasse) e a própria
-// linha de cache em `maquinas_etp`. Restrito a admin em DOIS níveis: na UI
-// (`isAdmin` em `ProgramacaoSeparacaoPanel`/`MaquinaCard`, esconde o botão
-// pra quem não é admin) E no banco (policy `"exclusao admin"` em
-// `maquinas_etp`, `eh_admin(auth.uid())`, backend/schema.sql — diferente de
-// toda outra policy desta tabela/de `sequencia_separacao`, que usam
-// `tem_acesso_tela` e por isso liberam qualquer perfil com acesso à tela,
-// não só admin). O delete de `sequencia_separacao` acima ainda passa pela
-// policy por TELA de sempre (não por perfil) — só a linha de `maquinas_etp`
-// tem a trava de admin de verdade; como o app já bloqueia isso na UI antes
-// de chamar esta função, na prática as duas linhas só rodam juntas quando
-// quem clicou já é admin.
-async function excluirMaquinaCompleta(etp){
-  if(!supabaseClient || !etp) return {ok:false, erro:'ETP não informada.'};
+// todo item de `sequencia_separacao` daquela ETP NESTA LINHA (senão os
+// itens ficariam órfãos, sem máquina nenhuma pra agrupá-los, e
+// reapareceriam via `computeMaquinasPainel` assim que o cache local
+// recarregasse) e a própria linha de cache em `maquinas_etp`. Sempre
+// escopado por `(etp, linha)`, nunca só `etp` — desde que a mesma ETP pode
+// ter um card independente por linha, excluir só por `etp` apagaria
+// também os itens/o card de OUTRA linha que por coincidência compartilha
+// o mesmo código.
+//
+// Restrito a admin em DOIS níveis: na UI (`isAdmin` em
+// `ProgramacaoSeparacaoPanel`/`MaquinaCard`, esconde o botão pra quem não é
+// admin) E no banco (policy `"exclusao admin"` em `maquinas_etp`,
+// `eh_admin(auth.uid())`, backend/schema.sql — diferente de toda outra
+// policy desta tabela/de `sequencia_separacao`, que usam `tem_acesso_tela`
+// e por isso liberam qualquer perfil com acesso à tela, não só admin). O
+// delete de `sequencia_separacao` acima ainda passa pela policy por TELA
+// de sempre (não por perfil) — só a linha de `maquinas_etp` tem a trava de
+// admin de verdade; como o app já bloqueia isso na UI antes de chamar esta
+// função, na prática as duas linhas só rodam juntas quando quem clicou já
+// é admin.
+async function excluirMaquinaCompleta(etp, linha){
+  if(!supabaseClient || !etp || !linha) return {ok:false, erro:'ETP/linha não informada.'};
   try{
-    const { error: errItens } = await supabaseClient.from('sequencia_separacao').delete().eq('etp', etp);
+    const { error: errItens } = await supabaseClient.from('sequencia_separacao').delete().eq('etp', etp).eq('linha', linha);
     if(errItens) throw errItens;
     // `.select('etp')` no delete devolve as linhas de fato removidas — sem
     // isso, o Supabase não reporta `error` quando a policy RLS bloqueia o
     // DELETE (ela só filtra silenciosamente pra 0 linhas afetadas), então
     // `res.ok` voltava `true` mesmo sem excluir nada e o card reaparecia ao
     // recarregar a página (bug real relatado pelo cliente).
-    const { data: dataMaquina, error: errMaquina } = await supabaseClient.from('maquinas_etp').delete().eq('etp', etp).select('etp');
+    const { data: dataMaquina, error: errMaquina } = await supabaseClient.from('maquinas_etp').delete().eq('etp', etp).eq('linha', linha).select('etp');
     if(errMaquina) throw errMaquina;
     if(!dataMaquina || dataMaquina.length===0){
       return {ok:false, erro:'Exclusão bloqueada (apenas administrador pode excluir, ou a ETP já foi removida). Verifique seu perfil.'};
@@ -18760,7 +18784,7 @@ async function avancarStatusMaquinaEmLote(maquina, itensDaMaquina, nomeUsuario, 
   // Só grava o veredito da MÁQUINA depois que TODOS os itens avançaram com
   // sucesso — nunca marca a máquina como avançada se algum item ficou pra
   // trás (o painel mostraria um status inconsistente com a realidade).
-  const resStatus = await atualizarStatusMaquina(maquina.etp, proximo, novaOrdem);
+  const resStatus = await atualizarStatusMaquina(maquina.etp, maquina.linha, proximo, novaOrdem);
   if(!resStatus.ok){
     return {ok:false, erro:`Itens avançados, mas não foi possível salvar o status da máquina: ${resStatus.erro}`, avancados, total: pendentes.length};
   }
@@ -18799,7 +18823,7 @@ async function voltarStatusMaquinaEmLote(maquina, itensDaMaquina, nomeUsuario, n
   // Só grava o veredito da MÁQUINA depois que TODOS os itens voltaram com
   // sucesso — mesmo critério de `avancarStatusMaquinaEmLote` (nunca marca a
   // máquina como revertida se algum item ficou pra trás).
-  const resStatus = await atualizarStatusMaquina(maquina.etp, anterior, novaOrdem);
+  const resStatus = await atualizarStatusMaquina(maquina.etp, maquina.linha, anterior, novaOrdem);
   if(!resStatus.ok){
     return {ok:false, erro:`Itens revertidos, mas não foi possível salvar o status da máquina: ${resStatus.erro}`, voltados, total: paraVoltar.length};
   }
@@ -18918,7 +18942,8 @@ function MaquinaCard({m, canManage, podeAvancarStatus, isAdmin, ordinal, mostrar
       {isAdmin && confirmandoExcluir && (
         <div style={{marginTop:8,padding:8,background:'var(--danger-bg)',borderRadius:8}}>
           <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginBottom:6}}>
-            Excluir a ETP {m.etp} e todos os {m.totalItens} item(ns) dela? Não pode ser desfeito.
+            Excluir a ETP {m.etp} (linha {m.linha}) e todos os {m.totalItens} item(ns) dela nesta linha? Não pode ser desfeito.
+            {' '}Se essa ETP também existir em outra linha, o card de lá não é afetado.
           </div>
           <div className="btn-row" style={{width:'auto',flexWrap:'wrap'}}>
             <button type="button" className="btn btn-outline" style={{padding:'8px 12px',fontSize:'var(--text-xs)'}} disabled={busy} onClick={()=>setConfirmandoExcluir(false)}>
@@ -18997,7 +19022,7 @@ function SeparacaoPainelBoard({itens, maquinasEtp, canManage, podeAvancarStatus,
   async function handleToggleUrgente(m){
     setBusyEtp(m.etp);
     setErrosEtp(prev=>({...prev, [m.etp]:null}));
-    const res = await onToggleUrgente(m.etp, !m.urgente);
+    const res = await onToggleUrgente(m.etp, m.linha, !m.urgente);
     setBusyEtp(null);
     if(!res.ok) setErrosEtp(prev=>({...prev, [m.etp]: res.erro || 'Não foi possível salvar — tente novamente.'}));
   }
@@ -19005,7 +19030,7 @@ function SeparacaoPainelBoard({itens, maquinasEtp, canManage, podeAvancarStatus,
   async function handleExcluir(m){
     setBusyEtp(m.etp);
     setErrosEtp(prev=>({...prev, [m.etp]:null}));
-    const res = await onExcluirMaquina(m.etp);
+    const res = await onExcluirMaquina(m.etp, m.linha);
     setBusyEtp(null);
     if(!res.ok) setErrosEtp(prev=>({...prev, [m.etp]: res.erro || 'Não foi possível excluir — tente novamente.'}));
   }
@@ -19132,19 +19157,28 @@ function AdicionarEtpModal({open, currentUser, maquinasEtp, linhaPadrao, linhas,
   if(!open) return null;
 
   const etpTrimmed = campoEtp ? (campoEtp.etp || '').trim() : '';
-  const maquinaExistente = etpTrimmed ? maquinasEtp.find(m=>m.etp===etpTrimmed) : null;
+  // Chave de "já existe" é o par (etp, linha), NUNCA só etp — pedido do
+  // cliente: "vai ter abas que vai ter o mesmo card". Bug real corrigido
+  // aqui: antes, achar QUALQUER máquina com esse etp (em qualquer linha)
+  // fazia o formulário tratar como "editando a mesma máquina" e, ao salvar,
+  // sobrescrevia a linha dela pra aba atual — "movia" o card sem querer em
+  // vez de criar um novo independente. Com o par completo, a mesma ETP numa
+  // linha DIFERENTE da atual conta como genuinamente nova.
+  const maquinaExistente = (campoEtp && etpTrimmed)
+    ? maquinasEtp.find(m=>m.etp===etpTrimmed && m.linha===campoEtp.linha)
+    : null;
 
   async function handleAdicionarEtp(){
     if(!campoEtp || !etpTrimmed) return;
     setAdicionandoEtp(true);
     setErroAdicionarEtp(null);
-    // Máquina GENUINAMENTE NOVA (ainda não existe em `maquinasEtp`) ganha
-    // `ordem` (próxima livre, max+1) e `urgente` a partir do checkbox desta
-    // tela; máquina já existente nunca tem esses 2 campos tocados aqui —
-    // `extra` fica `undefined`, e `upsertMaquinaEtp` só altera, no
-    // conflito, as colunas presentes no payload (nunca mexe na
+    // Máquina GENUINAMENTE NOVA (ainda não existe em `maquinasEtp` NESTA
+    // LINHA) ganha `ordem` (próxima livre, max+1) e `urgente` a partir do
+    // checkbox desta tela; máquina já existente nunca tem esses 2 campos
+    // tocados aqui — `extra` fica `undefined`, e `upsertMaquinaEtp` só
+    // altera, no conflito, as colunas presentes no payload (nunca mexe na
     // prioridade/urgência/posição já definidas antes pra essa ETP).
-    const etpEhNova = !maquinasEtp.some(m=>m.etp===etpTrimmed);
+    const etpEhNova = !maquinasEtp.some(m=>m.etp===etpTrimmed && m.linha===campoEtp.linha);
     const extra = etpEhNova ? {
       ordem: maquinasEtp.reduce((max,m)=> (m.ordem!=null && m.ordem>max) ? m.ordem : max, 0) + 1,
       urgente: urgenteEtp,
@@ -19196,7 +19230,13 @@ function AdicionarEtpModal({open, currentUser, maquinasEtp, linhaPadrao, linhas,
               </div>
               <div className="field" style={{flex:'1 1 90px',marginBottom:0}}>
                 <label>Linha</label>
-                <select value={campoEtp.linha || LINHA_PADRAO} onChange={e=>atualizarCampoEtp('linha', e.target.value)}>
+                {/* Travada ao EDITAR — igual o campo ETP logo acima, e pelo
+                    mesmo motivo: (etp, linha) juntos identificam QUAL card
+                    está sendo editado agora (ver `maquinaExistente`). Trocar
+                    a linha aqui criaria um card NOVO na linha nova em vez de
+                    mover o card atual, e deixaria o antigo órfão/duplicado —
+                    mover uma ETP pra outra linha não é o que este campo faz. */}
+                <select value={campoEtp.linha || LINHA_PADRAO} disabled={modoEdicao} onChange={e=>atualizarCampoEtp('linha', e.target.value)}>
                   {(linhas||[]).map(l=><option key={l.nome} value={l.nome}>{l.nome}</option>)}
                 </select>
               </div>
@@ -19454,12 +19494,15 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
     const canal = supabaseClient
       .channel('realtime:maquinas_etp')
       .on('postgres_changes', {event:'*', schema:'public', table:'maquinas_etp'}, payload=>{
+        // Filtra por (etp, linha) juntos, nunca só etp — a mesma ETP pode
+        // ter um card independente em outra linha, que este evento NUNCA
+        // deve tocar.
         if(payload.eventType==='DELETE'){
-          setMaquinasEtp(prev=>prev.filter(m=>m.etp!==payload.old.etp));
+          setMaquinasEtp(prev=>prev.filter(m=>!(m.etp===payload.old.etp && m.linha===payload.old.linha)));
           return;
         }
         const row = maquinaEtpRowToLocal(payload.new);
-        setMaquinasEtp(prev=>[...prev.filter(m=>m.etp!==row.etp), row]);
+        setMaquinasEtp(prev=>[...prev.filter(m=>!(m.etp===row.etp && m.linha===row.linha)), row]);
       })
       .subscribe(status=>{
         if(status!=='SUBSCRIBED') return;
@@ -19528,11 +19571,13 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
   // ou não estiver publicando essa tabela no ambiente, o card antes ficava
   // "preso" na tela como se a exclusão não tivesse funcionado, mesmo já
   // tendo sido excluída no Supabase.
-  async function handleExcluirMaquina(etp){
-    const res = await excluirMaquinaCompleta(etp);
+  async function handleExcluirMaquina(etp, linha){
+    const res = await excluirMaquinaCompleta(etp, linha);
     if(res.ok){
-      setItens(prev=>prev.filter(i=>i.etp!==etp));
-      setMaquinasEtp(prev=>prev.filter(m=>m.etp!==etp));
+      // Escopado por (etp, linha) juntos — nunca só etp, senão excluiria
+      // também os itens/o card de OUTRA linha que compartilha a mesma ETP.
+      setItens(prev=>prev.filter(i=>!(i.etp===etp && i.linha===linha)));
+      setMaquinasEtp(prev=>prev.filter(m=>!(m.etp===etp && m.linha===linha)));
       mostrarSucesso('ETP deletada com sucesso');
     } else {
       alert('Erro ao deletar: ' + (res.erro || 'Falha desconhecida'));
@@ -19580,27 +19625,30 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
   async function handleMoverOrdem(maquinasPainelSubset, etp, direcao){
     const res = moverOrdemNaColuna(maquinasPainelSubset, etp, direcao);
     if(!res) return {ok:true};
+    // `maquinasPainelSubset` já é só a coluna do Kanban da linha ATUAL
+    // (`linhaSelecionada`) — as 2 máquinas trocando de posição estão sempre
+    // nela.
     const [resA, resB] = await Promise.all([
-      atualizarOrdemMaquina(res.etpA, res.ordemA),
-      atualizarOrdemMaquina(res.etpB, res.ordemB),
+      atualizarOrdemMaquina(res.etpA, linhaSelecionada, res.ordemA),
+      atualizarOrdemMaquina(res.etpB, linhaSelecionada, res.ordemB),
     ]);
     if(!resA.ok) return resA;
     if(!resB.ok) return resB;
     return {ok:true};
   }
 
-  // Mapa etp→linha, derivado só de `maquinasEtp` — qualquer ETP sem `linha`
-  // definida (nula, seja por já existir de antes desta coluna, seja por
-  // nunca ter sido preenchida) cai no fallback ATUAL (1ª linha da lista, ver
-  // `linhaPadraoAtual`) por padrão, nunca desaparecendo silenciosamente de
-  // todas as abas. Aplicado nos DOIS arrays (itens e maquinasEtp) antes de
-  // chegar no Painel — `computeMaquinasPainel` não muda, o filtro por linha
-  // acontece sempre aqui, um nível acima.
+  // Cada ETP/máquina/item já carrega sua PRÓPRIA `linha` diretamente (ver
+  // "PROGRAMAÇÃO: MESMA ETP EM VÁRIAS LINHAS" no schema.sql — a mesma ETP
+  // pode ter um card independente por linha) — não precisa mais de um mapa
+  // etp→linha derivado só da máquina. `linhaPadraoAtual` (1ª linha da
+  // lista) é só o FALLBACK pra quando `linha` vem nula (registro de antes
+  // dessa coluna existir, ou nunca preenchido), nunca desaparecendo
+  // silenciosamente de todas as abas. Aplicado nos DOIS arrays (itens e
+  // maquinasEtp) antes de chegar no Painel — `computeMaquinasPainel` não
+  // muda, o filtro por linha acontece sempre aqui, um nível acima.
   const linhaPadraoAtualValor = linhaPadraoAtual(linhasProducao);
-  const linhaPorEtp = {};
-  maquinasEtp.forEach(m=>{ linhaPorEtp[m.etp] = m.linha || linhaPadraoAtualValor; });
   const maquinasEtpDaLinha = maquinasEtp.filter(m=>(m.linha || linhaPadraoAtualValor)===linhaSelecionada);
-  const itensDaLinha = itens.filter(i=>(linhaPorEtp[i.etp] || linhaPadraoAtualValor)===linhaSelecionada);
+  const itensDaLinha = itens.filter(i=>(i.linha || linhaPadraoAtualValor)===linhaSelecionada);
 
   return (
     <div className="panel">

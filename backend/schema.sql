@@ -2679,6 +2679,42 @@ begin
 end $$;
 
 -- =============================================================================
+-- "PROGRAMAÇÃO": MESMA ETP EM VÁRIAS LINHAS AO MESMO TEMPO (cards independentes)
+-- =============================================================================
+-- Pedido do cliente: "vai ter abas que vai ter o mesmo card" — a mesma ETP
+-- passa a poder ter um card INDEPENDENTE por linha, cada um com seu próprio
+-- status/fila/urgente/itens. Bug real reportado por ele mesmo: ao tentar
+-- adicionar, numa aba, uma ETP que já existia em OUTRA aba, o formulário
+-- achava que era a MESMA máquina (chave única de `maquinas_etp` era só
+-- `etp`) e sobrescrevia a linha dela — "movia" o card sem querer em vez de
+-- criar um novo independente.
+
+-- 1) `sequencia_separacao` ganha a mesma coluna `linha` que `maquinas_etp`
+-- já tem — antes só a MÁQUINA/cabeçalho sabia a linha, os ITENS dela não.
+-- Backfill: copia a linha ATUAL de cada item a partir da máquina
+-- correspondente — seguro rodar exatamente AGORA (antes do passo 2 abaixo)
+-- porque, até este ponto, cada `etp` ainda só pode ter 1 linha possível.
+alter table sequencia_separacao add column if not exists linha text;
+update sequencia_separacao s
+set linha = m.linha
+from maquinas_etp m
+where m.etp = s.etp and s.linha is null and m.linha is not null;
+
+-- 2) `maquinas_etp`: troca a chave única de `etp` sozinho pra `(etp, linha)`
+-- — é isso que permite a mesma ETP ter 1 card por linha. `linha` precisa
+-- ser NOT NULL pra poder entrar numa chave primária; qualquer linha nula
+-- que sobrar (máquina cadastrada antes da coluna `linha` existir) cai na
+-- linha padrão, mesmo fallback "Elétrica" que o front-end já usa.
+update maquinas_etp set linha = 'Elétrica' where linha is null;
+alter table maquinas_etp alter column linha set not null;
+alter table maquinas_etp drop constraint if exists maquinas_etp_pkey;
+alter table maquinas_etp add constraint maquinas_etp_pkey primary key (etp, linha);
+
+-- Nenhuma policy de RLS nova necessária — `tem_acesso_tela`/`eh_admin` não
+-- fazem referência à chave primária da tabela, continuam funcionando do
+-- mesmo jeito com a chave composta.
+
+-- =============================================================================
 -- PERFORMANCE: BUSCA DE PRODUTO LENTA (tela "Etiquetas" e qualquer outra que
 -- use `searchSupabaseCatalog`, index.html — busca manual em "Nova Contagem",
 -- "Itens Específicos", etc.)
