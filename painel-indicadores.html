@@ -2291,6 +2291,26 @@ function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfig,
     };
   }, [dadosAoVivo, counts, historico, inventariosData]);
 
+  // Estado de carregamento genuíno — mesmo bug (e mesma correção) já
+  // aplicada em PedidosCompraPanel, ver comentário completo lá ("Antes,
+  // 'loading' caía junto com 'sem-sessao'/'erro' no fallback pros dados de
+  // exemplo..."). Sem este early-return, esta aba renderizava com
+  // `calc=null` enquanto o login automático da TV + a 1ª consulta real
+  // ainda estavam em andamento, mostrando os números de DEMO_KPI por
+  // alguns segundos — e trocava de repente pro dado real assim que
+  // `status` virasse 'ok', dando a impressão de um "flash" (relatado pelo
+  // cliente). Só bail aqui em 'loading', nunca em 'erro'/'sem-sessao' —
+  // esses dois continuam mostrando o exemplo + o banner de aviso (mesmo
+  // critério de sempre, tela nunca fica "quebrada" numa TV do almoxarifado).
+  if(status==='loading'){
+    return (
+      <div>
+        <PanelTabs tela={tela} onChange={onChange} onAbrirConfig={onAbrirConfig} links={links} linkIndex={linkIndex} onSelecionarLink={onSelecionarLink} onNavegarEsquerda={onNavegarEsquerda} onNavegarDireita={onNavegarDireita} theme={theme} onToggleTheme={onToggleTheme} />
+        <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'calc(100vh - 56px)',color:'var(--ink-dim)'}}>Carregando indicadores…</div>
+      </div>
+    );
+  }
+
   const weeklyStats = calc ? calc.weeklyStats : DEMO_WEEKLY;
   const weeklyStatsItensUnicos = calc ? calc.weeklyStatsItensUnicos : DEMO_WEEKLY_ITENS;
   const monthlyStats = calc ? calc.monthlyStats : DEMO_MONTHLY;
