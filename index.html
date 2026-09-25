@@ -1207,6 +1207,10 @@
        navy, laranja Selgron, grid de 12 colunas, espaçamento em múltiplos de 8) ---- */
     .pnl-wrap{display:block;font-family:var(--font-corp);color:var(--navy);}
     .mobile-home-menu{display:none;}
+    /* Saudação simples (mobile/tablet) some em telas largas — vira a versão
+       compacta dentro de `.pnl-hero-row` (label+nome ao lado da busca/data),
+       ver Home. Evita duas saudações na mesma tela. */
+    .greet, .greet-title{display:none;}
     /* auto-fit em vez de um número fixo de colunas — o array `kpis` (Home)
        varia de 4 (operador) a 6 (líder/admin, com "Analisados"/
        "Aguardando Aprovação da Diretoria") itens, e um `repeat(5,1fr)` fixo
@@ -1215,14 +1219,19 @@
        minmax(150px,1fr) garante que até 6 colunas cabem numa linha só a
        partir do breakpoint de 1360px logo abaixo (6×150px + 5×16px de gap
        ≈ 980px, bem dentro do espaço disponível mesmo com a sidebar). */
-    .pnl-kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px;margin-bottom:24px;}
-    .pnl-kpi{display:block;width:100%;text-align:left;font:inherit;background:var(--panel);border:1px solid var(--gray-200);border-radius:var(--radius);padding:14px 16px;box-shadow:0 1px 2px rgba(15,23,42,.03);transition:box-shadow .15s, transform .15s;}
+    /* Densidade revista (pedido do cliente: "a página Início inteira precisa
+       caber em 1920x1080 sem rolagem") — mesmas classes de antes, valores
+       menores. gap/margin-bottom cortados quase à metade, card raso o
+       bastante pra 6 KPIs + atenção + tabela + ações rápidas + footer
+       caberem juntos abaixo do header (72px) e do padding de `.content`. */
+    .pnl-kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:14px;}
+    .pnl-kpi{display:block;width:100%;text-align:left;font:inherit;background:var(--panel);border:1px solid var(--gray-200);border-radius:var(--radius);padding:12px 14px;box-shadow:0 1px 2px rgba(15,23,42,.03);transition:box-shadow .15s, transform .15s;}
     .pnl-kpi:hover{box-shadow:0 6px 16px rgba(15,23,42,.08);transform:translateY(-1px);}
-    .pnl-kpi-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
-    .pnl-kpi-icon{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
-    .pnl-kpi-value{font-family:var(--font-corp);font-size:23px;font-weight:700;color:var(--navy);line-height:1;margin-bottom:6px;}
-    .pnl-kpi-label{font-size:var(--text-sm);color:var(--gray-500);font-weight:500;margin-bottom:8px;line-height:1.35;}
-    .pnl-kpi-trend{display:inline-flex;align-items:center;gap:4px;font-size:var(--text-xs);font-weight:600;padding:4px 9px;border-radius:20px;}
+    .pnl-kpi-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}
+    .pnl-kpi-icon{width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+    .pnl-kpi-value{font-family:var(--font-corp);font-size:28px;font-weight:700;color:var(--navy);line-height:1;margin-bottom:3px;}
+    .pnl-kpi-label{font-size:11px;color:var(--gray-500);font-weight:500;margin-bottom:3px;line-height:1.25;}
+    .pnl-kpi-trend{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:3px 8px;border-radius:20px;}
     /* Antes hex fixo (#ECFDF5/#FEF2F2) — só ficava certo no tema claro; no
        escuro virava um chip claro flutuando sobre card escuro, brigando com
        o resto do painel. Tokens já existem pros dois temas (ver
@@ -1230,16 +1239,18 @@
     .pnl-kpi-trend.good{background:var(--ok-bg);color:var(--ok);}
     .pnl-kpi-trend.bad{background:var(--danger-bg);color:var(--danger);}
     .pnl-kpi-trend.flat{background:var(--gray-100);color:var(--gray-500);}
-    .pnl-kpi-meta{font-size:var(--text-xs);color:var(--gray-500);margin-top:8px;}
+    .pnl-kpi-meta{font-size:var(--text-xs);color:var(--gray-500);margin-top:4px;}
 
     /* Card de Acuracidade em destaque (maior KPI da fileira, ver Home) —
        modificadores aplicados em cima de .pnl-kpi/.pnl-kpi-value normais,
-       não um shell novo. */
-    .pnl-kpi-value.pnl-kpi-value-lg{font-size:38px;}
-    .pnl-kpi-goal{font-size:var(--text-xs);color:var(--gray-500);margin-bottom:8px;}
-    .pnl-kpi-progress-track{width:100%;max-width:220px;height:6px;border-radius:20px;background:var(--gray-100);overflow:hidden;margin:2px 0 10px;}
+       não um shell novo. Só "ligeiramente" maior que os outros 5 — não deve
+       dominar a fileira nem puxar a altura da linha inteira pra cima
+       (pedido do cliente, correção do redesign anterior). */
+    .pnl-kpi-value.pnl-kpi-value-lg{font-size:32px;}
+    .pnl-kpi-goal{font-size:10.5px;color:var(--gray-500);margin-bottom:3px;}
+    .pnl-kpi-progress-track{width:100%;max-width:200px;height:5px;border-radius:20px;background:var(--gray-100);overflow:hidden;margin:1px 0 5px;}
     .pnl-kpi-progress-fill{height:100%;border-radius:20px;background:var(--gray-400);}
-    .pnl-kpi-trends{display:flex;flex-direction:column;gap:6px;align-items:flex-start;}
+    .pnl-kpi-trends{display:flex;flex-direction:column;gap:3px;align-items:flex-start;}
 
     /* "O que precisa de atenção" — 3 blocos horizontais, mesmo shell de card
        (.pnl-card) com um acento de cor discreto só na borda esquerda, nunca
@@ -1247,37 +1258,54 @@
     /* auto-fit, não repeat(3,1fr) fixo — mesmo motivo do .pnl-kpi-row acima:
        Operador só vê 2 blocos (Divergentes/Recontagens, sem "Aguardando
        Aprovação", que é líder/admin), Líder/Admin veem os 3. */
-    .pnl-attention-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-bottom:24px;}
-    .pnl-attention-card{display:flex;flex-direction:column;gap:8px;border-left-width:3px;border-left-style:solid;}
+    .pnl-attention-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-bottom:14px;}
+    /* `.pnl-card.pnl-attention-card` (composto) — só assim o padding menor
+       daqui vence o `padding:20px` de `.pnl-card` (mesma especificidade,
+       mas `.pnl-card` vem depois no arquivo e ganharia por ordem sozinho). */
+    .pnl-card.pnl-attention-card{display:flex;flex-direction:column;gap:4px;padding:12px 14px;border-left-width:3px;border-left-style:solid;}
     .pnl-attention-card.danger{border-left-color:var(--danger);}
     .pnl-attention-card.warn{border-left-color:var(--warn);}
     .pnl-attention-top{display:flex;align-items:baseline;justify-content:space-between;gap:8px;}
-    .pnl-attention-value{font-size:28px;font-weight:700;color:var(--navy);line-height:1;}
-    .pnl-attention-label{font-size:var(--text-sm);color:var(--gray-500);font-weight:500;}
-    .pnl-attention-meta{font-size:var(--text-xs);color:var(--gray-500);line-height:1.5;}
-    .pnl-attention-link{font-size:var(--text-xs);font-weight:600;color:var(--accent2);background:none;border:none;padding:0;display:inline-flex;align-items:center;gap:4px;align-self:flex-start;margin-top:auto;}
+    .pnl-attention-value{font-size:23px;font-weight:700;color:var(--navy);line-height:1;}
+    .pnl-attention-label{font-size:11.5px;color:var(--gray-500);font-weight:500;}
+    .pnl-attention-meta{font-size:10.5px;color:var(--gray-500);line-height:1.3;}
+    .pnl-attention-link{font-size:10.5px;font-weight:600;color:var(--accent2);background:none;border:none;padding:0;display:inline-flex;align-items:center;gap:4px;align-self:flex-start;margin-top:auto;}
 
     /* Barra de acuracidade compacta dentro da tabela "Últimas Contagens" —
        menor que .pnl-bar-track (que é pra linhas de legenda/donut). */
-    .pnl-table-acc-bar{width:120px;height:6px;border-radius:20px;background:var(--gray-100);overflow:hidden;margin-top:5px;}
+    .pnl-table-acc-bar{width:100px;height:4px;border-radius:20px;background:var(--gray-100);overflow:hidden;margin-top:3px;}
     .pnl-table-acc-fill{height:100%;border-radius:20px;}
 
     .pnl-quick-item{align-items:flex-start;}
     .pnl-quick-body{flex:1;min-width:0;}
     .pnl-quick-desc{font-size:var(--text-xs);color:var(--gray-500);margin-top:2px;font-weight:400;}
 
-    /* Linha do cabeçalho da Início: busca de item + data, lado a lado —
-       substitui o `.panel` genérico (tablet/operador) que ItemStatusSearchPanel
-       usa por padrão; aqui, escopado só a este wrapper, fica mais discreto
-       pra não competir visualmente com os KPIs logo abaixo (pedido do
-       cliente). */
-    .pnl-header-row{display:flex;align-items:flex-start;gap:24px;margin-bottom:24px;}
-    .pnl-header-row .pnl-search-col{flex:1;max-width:620px;min-width:0;}
-    .pnl-header-row .pnl-search-col .panel{margin-bottom:0;border-color:var(--gray-200);}
-    .pnl-header-row .pnl-search-col .section-title{font-size:var(--text-sm);color:var(--gray-500);text-transform:none;letter-spacing:0;font-weight:600;}
-    .pnl-date-col{display:flex;align-items:center;gap:10px;padding-top:14px;flex-shrink:0;color:var(--gray-500);white-space:nowrap;}
-    .pnl-date-col .d1{font-size:var(--text-sm);}
-    .pnl-date-col .d2{font-size:var(--text-md);font-weight:600;color:var(--navy);}
+    /* Uma linha só (saudação + busca de item + data) — correção do redesign
+       anterior, que empilhava saudação (bloco próprio) + busca + data em
+       ~220px de altura. Pedido do cliente: "a consulta de item deve ficar
+       na mesma linha da saudação/data... essa área inteira deve ocupar
+       aproximadamente 70px de altura". */
+    .pnl-hero-row{display:flex;align-items:center;gap:24px;margin-bottom:14px;}
+    .pnl-hero-greet{flex-shrink:0;}
+    .pnl-hero-greet .hg-label{font-family:var(--font-mono);font-size:10px;text-transform:uppercase;letter-spacing:2px;color:var(--safety);margin-bottom:2px;}
+    .pnl-hero-greet .hg-name{font-family:var(--font-corp);font-size:21px;font-weight:700;color:var(--navy);line-height:1.15;white-space:nowrap;}
+    /* Busca de item — mesmo componente `ItemStatusSearchPanel`/`SearchWithScanner`
+       usado em outras telas, só que achatado aqui: sem o `.panel`
+       (fundo/borda/padding) nem o título "Consultar Status de um Item",
+       campo só com o input+ícone de scanner, do tamanho de uma linha. */
+    .pnl-hero-search{flex:1;max-width:580px;min-width:0;}
+    .pnl-hero-search .panel{margin-bottom:0;padding:0;border:none;box-shadow:none;background:transparent;}
+    .pnl-hero-search .section-title{display:none;}
+    .pnl-hero-search .field{margin-bottom:0;}
+    .pnl-hero-search .field label{display:none;}
+    .pnl-hero-search .field input{padding:13px 14px;}
+    /* Resultado da busca (quando o operador digita algo) continua no fluxo
+       normal, empurrando o que vem depois pra baixo — mesmo comportamento
+       de sempre deste componente; só acontece durante uma busca ativa, não
+       no estado padrão (em repouso) que a régua de 1080px cobre. */
+    .pnl-date-col{display:flex;align-items:center;gap:10px;flex-shrink:0;color:var(--gray-500);white-space:nowrap;}
+    .pnl-date-col .d1{font-size:12px;}
+    .pnl-date-col .d2{font-size:13px;font-weight:600;color:var(--navy);}
 
     /* Cards "Resumo da Operação" (Indicadores) — shell PRÓPRIO, separado de
        .pnl-kpi (que a Home usa nos 5 cards com trend/badge, ver kpis[] em
@@ -1318,32 +1346,32 @@
     @media (max-width:1360px){ .ops-kpi-row{grid-template-columns:repeat(2,1fr);} }
     @media (max-width:640px){ .ops-kpi-row{grid-template-columns:1fr;gap:10px;} }
 
-    .pnl-section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
-    .pnl-section-title{font-size:16px;font-weight:700;color:var(--navy);}
-    .pnl-section-link{font-size:var(--text-sm);font-weight:600;color:var(--accent2);background:none;border:none;display:flex;align-items:center;gap:4px;}
+    .pnl-section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
+    .pnl-section-title{font-size:15px;font-weight:700;color:var(--navy);}
+    .pnl-section-link{font-size:12px;font-weight:600;color:var(--accent2);background:none;border:none;display:flex;align-items:center;gap:4px;}
 
-    .pnl-row{display:grid;grid-template-columns:repeat(12,1fr);gap:24px;margin-bottom:24px;}
+    .pnl-row{display:grid;grid-template-columns:repeat(12,1fr);gap:16px;margin-bottom:14px;}
     .pnl-col-8{grid-column:span 8;}
     .pnl-col-4{grid-column:span 4;}
     .pnl-col-5{grid-column:span 5;}
     .pnl-col-7{grid-column:span 7;}
-    .pnl-card{background:var(--panel);border:1px solid var(--gray-200);border-radius:var(--radius);padding:20px;box-shadow:0 1px 2px rgba(15,23,42,.03);}
+    .pnl-card{background:var(--panel);border:1px solid var(--gray-200);border-radius:var(--radius);padding:16px;box-shadow:0 1px 2px rgba(15,23,42,.03);}
 
-    .pnl-table{width:100%;border-collapse:collapse;font-size:var(--text-sm);}
-    .pnl-table th{text-align:left;font-size:var(--text-xs);text-transform:uppercase;letter-spacing:0.4px;color:var(--gray-500);font-weight:600;padding:0 10px 10px;border-bottom:1px solid var(--gray-200);}
-    .pnl-table td{padding:12px 10px;border-bottom:1px solid var(--gray-100);color:var(--navy);vertical-align:middle;}
+    .pnl-table{width:100%;border-collapse:collapse;font-size:13px;}
+    .pnl-table th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:0.4px;color:var(--gray-500);font-weight:600;padding:0 10px 6px;border-bottom:1px solid var(--gray-200);}
+    .pnl-table td{padding:7px 10px;border-bottom:1px solid var(--gray-100);color:var(--navy);vertical-align:middle;}
     .pnl-table tr:last-child td{border-bottom:none;}
-    .pnl-status{display:inline-flex;align-items:center;gap:6px;font-size:var(--text-xs);font-weight:600;padding:4px 9px;border-radius:20px;white-space:nowrap;}
-    .pnl-status .dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex-shrink:0;}
+    .pnl-status{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;padding:3px 8px;border-radius:20px;white-space:nowrap;}
+    .pnl-status .dot{width:5px;height:5px;border-radius:50%;background:currentColor;flex-shrink:0;}
     .pnl-status.ok{background:var(--ok-bg);color:var(--ok);}
     .pnl-status.warn{background:var(--warn-bg);color:var(--warn);}
     .pnl-status.danger{background:var(--danger-bg);color:var(--danger);}
 
-    .pnl-quick-list{display:flex;flex-direction:column;gap:4px;}
-    .pnl-quick-item{display:flex;align-items:center;gap:12px;padding:11px 8px;border-radius:8px;background:none;border:none;text-align:left;width:100%;color:var(--navy);}
+    .pnl-quick-list{display:flex;flex-direction:column;gap:2px;}
+    .pnl-quick-item{display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:8px;background:none;border:none;text-align:left;width:100%;color:var(--navy);}
     .pnl-quick-item:hover{background:var(--gray-50);}
-    .pnl-quick-icon{width:32px;height:32px;border-radius:8px;background:var(--gray-100);color:var(--gray-500);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
-    .pnl-quick-text{flex:1;font-size:var(--text-sm);font-weight:500;}
+    .pnl-quick-icon{width:26px;height:26px;border-radius:7px;background:var(--gray-100);color:var(--gray-500);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+    .pnl-quick-text{flex:1;font-size:12px;font-weight:500;}
     .pnl-quick-arrow{color:var(--gray-400);flex-shrink:0;}
 
     .pnl-donut-wrap{display:flex;flex-direction:column;align-items:center;gap:20px;padding-top:4px;}
@@ -1358,15 +1386,14 @@
     .pnl-bar-fill{height:100%;border-radius:20px;}
     .pnl-bar-num{width:76px;text-align:right;font-size:var(--text-sm);font-weight:600;color:var(--navy);flex-shrink:0;}
 
-    .pnl-footer{display:flex;align-items:center;justify-content:space-between;padding:20px 4px 4px;margin-top:8px;border-top:1px solid var(--gray-200);font-size:var(--text-sm);color:var(--gray-500);}
+    .pnl-footer{display:flex;align-items:center;justify-content:space-between;padding:8px 4px 2px;margin-top:2px;border-top:1px solid var(--gray-200);font-size:11px;color:var(--gray-500);}
     .pnl-footer-links{display:flex;gap:18px;color:var(--gray-500);}
 
     @media (max-width:1360px){
       .pnl-kpi-row{grid-template-columns:repeat(3,1fr);}
       .pnl-col-8,.pnl-col-4,.pnl-col-5,.pnl-col-7{grid-column:span 12;}
       .pnl-attention-row{grid-template-columns:1fr;}
-      .pnl-header-row{flex-wrap:wrap;}
-      .pnl-date-col{padding-top:0;}
+      .pnl-hero-row{flex-wrap:wrap;}
     }
 
     /* Celular (360-767px): menu lateral completo (Sidebar/sidebar-toggle,
@@ -8325,29 +8352,39 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
 
   return (
     <div>
+      {/* Celular/tablet (<1024px): saudação em bloco próprio, como sempre
+          foi — CSS esconde este bloco em telas largas (ver ".greet,
+          .greet-title{display:none}" dentro do @media min-width:1024px),
+          onde a versão compacta abaixo (.pnl-hero-row) assume. */}
       <div className="greet">{saudacaoPorHorario()}</div>
       <h2 className="greet-title">{user.nome}</h2>
-
-      {/* No celular/tablet este bloco continua igual (largura total) — a
-          fileira com a data (.pnl-date-col) só aparece em telas largas, ver
-          CSS ".pnl-header-row"/".pnl-wrap". */}
-      <div className="pnl-header-row">
-        <div className="pnl-search-col">
-          <ItemStatusSearchPanel counts={counts} historicoConcluidas={historicoConcluidas} user={user} goto={goto} />
-        </div>
-        <div className="pnl-date-col">
-          <DIcon name="calendar" size={16} />
-          <div>
-            <div className="d1">{diaSemanaCap}</div>
-            <div className="d2">{dataExtenso}</div>
-          </div>
-        </div>
-      </div>
 
       {/* Telas largas: Dashboard novo (design corporativo/ERP) — ver CLAUDE.md
           "Dashboard vira a tela inicial". Tablet/celular continua com o grid
           de atalhos simples logo abaixo, sem alteração. */}
       <div className="pnl-wrap">
+        {/* Saudação + busca de item + data numa linha só (~70px de altura) —
+            correção do redesign anterior, que empilhava os três blocos e
+            estourava a régua de 1920x1080 sem rolagem (pedido do cliente:
+            "a página Início inteira precisa caber em uma tela 1920x1080 sem
+            rolagem vertical"). */}
+        <div className="pnl-hero-row">
+          <div className="pnl-hero-greet">
+            <div className="hg-label">{saudacaoPorHorario()}</div>
+            <div className="hg-name">{user.nome}</div>
+          </div>
+          <div className="pnl-hero-search">
+            <ItemStatusSearchPanel counts={counts} historicoConcluidas={historicoConcluidas} user={user} goto={goto} />
+          </div>
+          <div className="pnl-date-col">
+            <DIcon name="calendar" size={15} />
+            <div>
+              <div className="d1">{diaSemanaCap}</div>
+              <div className="d2">{dataExtenso}</div>
+            </div>
+          </div>
+        </div>
+
         <div className="pnl-kpi-row">
           {kpis.map(k=>(
             <button key={k.key} className="pnl-kpi" onClick={k.onClick} style={{cursor:'pointer'}}>
