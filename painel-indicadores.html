@@ -631,8 +631,22 @@ function contagemRowToLocal(row){
     familia: row.familia,
     contagemAnteriorId: row.contagem_anterior_id,
     data: row.data,
+    // Só existe pra filtrar `OPEN_STATUSES` no cálculo "Acuracidade (itens
+    // recontados)" (mesmo critério exato de `todasParaQualidade` na aba
+    // Acuracidade, index.html) — nenhum outro card/gráfico deste painel usa
+    // este campo.
+    statusAprovacao: row.status_aprovacao,
   };
 }
+
+// Mesma lista EXATA de index.html — contagem ainda pendente de decisão
+// (aguardando segunda contagem, análise do líder, SA do armazém ou
+// aprovação da diretoria) não pode contar como "avaliada" na fórmula
+// "Itens Recorrentes": ela ainda não tem um resultado final, e por
+// definição tende a ser divergente (é POR ISSO que ainda está em
+// tratativa) — sem este filtro, o card inflava avaliados/divergentes com
+// contagens que a aba Acuracidade real já exclui.
+const OPEN_STATUSES = ['aguardando_segunda', 'aguardando_analise_lider', 'aguardando_solicitacao_armazem', 'aguardando_aprovacao_diretoria'];
 
 async function fetchTodasPaginado(buildQuery){
   const PAGE_SIZE = 1000;
@@ -656,7 +670,7 @@ async function fetchContagensParaPainel(){
   if(!supabaseClient) return [];
   const data = await fetchTodasPaginado(() => supabaseClient
     .from('contagens')
-    .select('id, produto_codigo, descricao, diferenca, saldo_sistema, familia, contagem_anterior_id, data')
+    .select('id, produto_codigo, descricao, diferenca, saldo_sistema, familia, contagem_anterior_id, data, status_aprovacao')
     .order('criado_em', {ascending:false})
     .order('id', {ascending:true}));
   return data.map(contagemRowToLocal);
@@ -2232,8 +2246,15 @@ function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfig,
     // cliente) — `computeAcuracidadeItensRecorrentes`, mesma fórmula
     // "Itens Recorrentes" da página Acuracidade (index.html), sobre o
     // mesmo pool deduplicado+com histórico que este painel já usa pros
-    // gráficos de tendência (`poolTendenciaDedup`, ano corrente até hoje).
-    const acuracidadeRecorrentes = computeAcuracidadeItensRecorrentes(poolTendenciaDedup, anoAtualStr, hojeStr);
+    // gráficos de tendência (`poolTendenciaDedup`, ano corrente até hoje) —
+    // com o mesmo filtro extra que `todasParaQualidade` já aplica na aba
+    // Acuracidade: exclui `OPEN_STATUSES` (contagem ainda pendente de
+    // decisão não é "avaliada" pra esta fórmula). Bug real corrigido aqui:
+    // sem este filtro o card inflava avaliados/divergentes com pendências
+    // que a aba real já excluía (cliente reportou 86/24 no card contra
+    // 75/13 no drill-down real da aba Acuracidade pro mesmo mês).
+    const poolItensRecorrentes = poolTendenciaDedup.filter(c=>!OPEN_STATUSES.includes(c.statusAprovacao));
+    const acuracidadeRecorrentes = computeAcuracidadeItensRecorrentes(poolItensRecorrentes, anoAtualStr, hojeStr);
     const mesAtualKey = getMonthInfo(hojeStr).key;
     const statsRecorrentesMesAtual = acuracidadeRecorrentes.monthlyStats.find(m=>m.key===mesAtualKey) || null;
     const recorrentesElegiveisMesAtual = acuracidadeRecorrentes.elegiveis.filter(c=>c.data && getMonthInfo(c.data).key===mesAtualKey);
