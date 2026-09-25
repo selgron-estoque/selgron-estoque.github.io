@@ -3629,6 +3629,20 @@ function App(){
 
   const [configModalAberto, setConfigModalAberto] = useState(false);
 
+  // Guardas (refs) do status mais recente de Pedidos de Compra/Tracking,
+  // só pra troca automática abaixo poder LER o valor atual sem precisar
+  // estar nas dependências do useEffect — se `statusPedidosCompra`/
+  // `statusTracking` estivessem lá, toda atualização em segundo plano
+  // (ex.: cada nova consulta de 5 em 5 min, depois que a tela já carregou
+  // pela 1ª vez) recriaria o efeito e reiniciaria a contagem do tempo
+  // configurado do zero — a troca automática NUNCA aconteceria no tempo
+  // certo. Com o ref, o efeito só olha o status quando o próprio timer
+  // dispara, não toda vez que ele muda.
+  const statusPedidosCompraRef = useRef(statusPedidosCompra);
+  useEffect(() => { statusPedidosCompraRef.current = statusPedidosCompra; }, [statusPedidosCompra]);
+  const statusTrackingRef = useRef(statusTracking);
+  useEffect(() => { statusTrackingRef.current = statusTracking; }, [statusTracking]);
+
   // TV sem ninguém mexendo — alterna sozinho entre as duas telas, pra dar
   // tempo de ler cada uma sem precisar de clique manual. "Painel
   // Indicadores" tem um tempo FIXO (`temposConfig.segundosIndicadores`, sem
@@ -3639,25 +3653,55 @@ function App(){
   // acontece), nunca num tempo fixo que poderia cortar no meio do ciclo
   // de linhas. Clicar numa aba continua trocando na hora (onChange
   // abaixo); os timers não resetam por causa disso, só seguem no próprio
-  // ciclo. ESTE EFEITO (e o ciclo dentro de TrackingPicking) NÃO FORAM
-  // ALTERADOS pelo controle remoto abaixo — pedido explícito do cliente foi
-  // não mexer na troca automática de jeito nenhum (só o TEMPO de cada um
-  // passou a ser configurável, não a lógica em si).
+  // ciclo.
+  //
+  // A troca só acontece DEPOIS do tempo configurado E com o dado da
+  // PRÓXIMA tela já resolvido (`status` != 'loading') — pedido do cliente:
+  // "ficar no indicador anterior, só passar pro próximo quando tiver
+  // certeza que carregou". Sem essa 2ª condição, a troca sempre acontecia
+  // no tempo fixo mesmo que a 1ª consulta daquela tela ainda estivesse em
+  // andamento (TV recém-ligada/recarregada, ou rede mais lenta naquele
+  // instante) — o rodízio caía numa tela ainda em "Carregando…" e só se
+  // corrigia sozinho quando a consulta terminasse, sensação de "flash"
+  // repetindo ao longo do dia (relatado pelo cliente). Reavalia de 1 em 1s
+  // só enquanto ainda estiver 'loading' — depois da 1ª vez que cada tela
+  // carrega, o status nunca mais volta a 'loading' sozinho (só um
+  // recarregamento de página reinicia esse estado), então isso nunca
+  // atrasa a troca no dia a dia normal.
   useEffect(() => {
     if(tela !== 'indicadores') return;
-    const id = setTimeout(() => setTela('pedidosCompra'), temposConfig.segundosIndicadores*1000);
-    return () => clearTimeout(id);
+    let cancelado = false;
+    let id;
+    function agendarTroca(delayMs){
+      id = setTimeout(() => {
+        if(cancelado) return;
+        if(statusPedidosCompraRef.current === 'loading'){ agendarTroca(1000); return; }
+        setTela('pedidosCompra');
+      }, delayMs);
+    }
+    agendarTroca(temposConfig.segundosIndicadores*1000);
+    return () => { cancelado = true; clearTimeout(id); };
   }, [tela, temposConfig.segundosIndicadores]);
 
   // "Pedidos de Compra" (3ª tela, sem sub-abas, mesmo critério de
-  // "Indicadores" acima) — reaproveita o MESMO tempo configurado
+  // "Indicadores" acima, inclusive a espera pelo status da PRÓXIMA tela
+  // antes de trocar) — reaproveita o MESMO tempo configurado
   // (`segundosIndicadores`) em vez de criar um campo de configuração novo
   // só pra ela; dá pra separar depois se o cliente pedir um tempo
   // diferente pra essa tela especificamente.
   useEffect(() => {
     if(tela !== 'pedidosCompra') return;
-    const id = setTimeout(() => setTela('picking'), temposConfig.segundosIndicadores*1000);
-    return () => clearTimeout(id);
+    let cancelado = false;
+    let id;
+    function agendarTroca(delayMs){
+      id = setTimeout(() => {
+        if(cancelado) return;
+        if(statusTrackingRef.current === 'loading'){ agendarTroca(1000); return; }
+        setTela('picking');
+      }, delayMs);
+    }
+    agendarTroca(temposConfig.segundosIndicadores*1000);
+    return () => { cancelado = true; clearTimeout(id); };
   }, [tela, temposConfig.segundosIndicadores]);
 
   // (Não tem um efeito de tempo fixo aqui pra `tela==='link'` — desde que
