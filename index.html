@@ -1223,10 +1223,61 @@
     .pnl-kpi-value{font-family:var(--font-corp);font-size:23px;font-weight:700;color:var(--navy);line-height:1;margin-bottom:6px;}
     .pnl-kpi-label{font-size:var(--text-sm);color:var(--gray-500);font-weight:500;margin-bottom:8px;line-height:1.35;}
     .pnl-kpi-trend{display:inline-flex;align-items:center;gap:4px;font-size:var(--text-xs);font-weight:600;padding:4px 9px;border-radius:20px;}
-    .pnl-kpi-trend.good{background:#ECFDF5;color:#15803D;}
-    .pnl-kpi-trend.bad{background:#FEF2F2;color:#B91C1C;}
+    /* Antes hex fixo (#ECFDF5/#FEF2F2) — só ficava certo no tema claro; no
+       escuro virava um chip claro flutuando sobre card escuro, brigando com
+       o resto do painel. Tokens já existem pros dois temas (ver
+       :root[data-theme="dark"]), só faltava usar aqui. */
+    .pnl-kpi-trend.good{background:var(--ok-bg);color:var(--ok);}
+    .pnl-kpi-trend.bad{background:var(--danger-bg);color:var(--danger);}
     .pnl-kpi-trend.flat{background:var(--gray-100);color:var(--gray-500);}
     .pnl-kpi-meta{font-size:var(--text-xs);color:var(--gray-500);margin-top:8px;}
+
+    /* Card de Acuracidade em destaque (maior KPI da fileira, ver Home) —
+       modificadores aplicados em cima de .pnl-kpi/.pnl-kpi-value normais,
+       não um shell novo. */
+    .pnl-kpi-value.pnl-kpi-value-lg{font-size:38px;}
+    .pnl-kpi-goal{font-size:var(--text-xs);color:var(--gray-500);margin-bottom:8px;}
+    .pnl-kpi-progress-track{width:100%;max-width:220px;height:6px;border-radius:20px;background:var(--gray-100);overflow:hidden;margin:2px 0 10px;}
+    .pnl-kpi-progress-fill{height:100%;border-radius:20px;background:var(--gray-400);}
+    .pnl-kpi-trends{display:flex;flex-direction:column;gap:6px;align-items:flex-start;}
+
+    /* "O que precisa de atenção" — 3 blocos horizontais, mesmo shell de card
+       (.pnl-card) com um acento de cor discreto só na borda esquerda, nunca
+       o card inteiro colorido. */
+    /* auto-fit, não repeat(3,1fr) fixo — mesmo motivo do .pnl-kpi-row acima:
+       Operador só vê 2 blocos (Divergentes/Recontagens, sem "Aguardando
+       Aprovação", que é líder/admin), Líder/Admin veem os 3. */
+    .pnl-attention-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-bottom:24px;}
+    .pnl-attention-card{display:flex;flex-direction:column;gap:8px;border-left-width:3px;border-left-style:solid;}
+    .pnl-attention-card.danger{border-left-color:var(--danger);}
+    .pnl-attention-card.warn{border-left-color:var(--warn);}
+    .pnl-attention-top{display:flex;align-items:baseline;justify-content:space-between;gap:8px;}
+    .pnl-attention-value{font-size:28px;font-weight:700;color:var(--navy);line-height:1;}
+    .pnl-attention-label{font-size:var(--text-sm);color:var(--gray-500);font-weight:500;}
+    .pnl-attention-meta{font-size:var(--text-xs);color:var(--gray-500);line-height:1.5;}
+    .pnl-attention-link{font-size:var(--text-xs);font-weight:600;color:var(--accent2);background:none;border:none;padding:0;display:inline-flex;align-items:center;gap:4px;align-self:flex-start;margin-top:auto;}
+
+    /* Barra de acuracidade compacta dentro da tabela "Últimas Contagens" —
+       menor que .pnl-bar-track (que é pra linhas de legenda/donut). */
+    .pnl-table-acc-bar{width:120px;height:6px;border-radius:20px;background:var(--gray-100);overflow:hidden;margin-top:5px;}
+    .pnl-table-acc-fill{height:100%;border-radius:20px;}
+
+    .pnl-quick-item{align-items:flex-start;}
+    .pnl-quick-body{flex:1;min-width:0;}
+    .pnl-quick-desc{font-size:var(--text-xs);color:var(--gray-500);margin-top:2px;font-weight:400;}
+
+    /* Linha do cabeçalho da Início: busca de item + data, lado a lado —
+       substitui o `.panel` genérico (tablet/operador) que ItemStatusSearchPanel
+       usa por padrão; aqui, escopado só a este wrapper, fica mais discreto
+       pra não competir visualmente com os KPIs logo abaixo (pedido do
+       cliente). */
+    .pnl-header-row{display:flex;align-items:flex-start;gap:24px;margin-bottom:24px;}
+    .pnl-header-row .pnl-search-col{flex:1;max-width:620px;min-width:0;}
+    .pnl-header-row .pnl-search-col .panel{margin-bottom:0;border-color:var(--gray-200);}
+    .pnl-header-row .pnl-search-col .section-title{font-size:var(--text-sm);color:var(--gray-500);text-transform:none;letter-spacing:0;font-weight:600;}
+    .pnl-date-col{display:flex;align-items:center;gap:10px;padding-top:14px;flex-shrink:0;color:var(--gray-500);white-space:nowrap;}
+    .pnl-date-col .d1{font-size:var(--text-sm);}
+    .pnl-date-col .d2{font-size:var(--text-md);font-weight:600;color:var(--navy);}
 
     /* Cards "Resumo da Operação" (Indicadores) — shell PRÓPRIO, separado de
        .pnl-kpi (que a Home usa nos 5 cards com trend/badge, ver kpis[] em
@@ -1313,6 +1364,9 @@
     @media (max-width:1360px){
       .pnl-kpi-row{grid-template-columns:repeat(3,1fr);}
       .pnl-col-8,.pnl-col-4,.pnl-col-5,.pnl-col-7{grid-column:span 12;}
+      .pnl-attention-row{grid-template-columns:1fr;}
+      .pnl-header-row{flex-wrap:wrap;}
+      .pnl-date-col{padding-top:0;}
     }
 
     /* Celular (360-767px): menu lateral completo (Sidebar/sidebar-toggle,
@@ -8117,12 +8171,37 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
   const concluidasTrendPct = pnlTrendPct(concluidasHoje, concluidasOntem);
   const acuracidadePontos = ontem.total>0 ? (hoje.acuracidade-ontem.acuracidade) : null;
 
+  // Distância até a meta (META_ACURACIDADE_SEMANAL, mesma constante usada em
+  // Indicadores/Acuracidade — 95%, confirmada pelo cliente) — não é uma
+  // tendência (não compara com ontem/mês anterior), é "quão longe da meta",
+  // por isso fica separado de `acuracidadePontos` (KpiTrend, comparação
+  // dia-a-dia real).
+  const acuracidadeMetaGapPts = hoje.acuracidade - META_ACURACIDADE_SEMANAL;
+
   const kpis = [
     {
-      key:'recontagens', icon:'repeat', bg:'var(--warn-bg)', color:'var(--warn)',
-      label:'Recontagens Pendentes', value:pendentesRecontagem,
-      trend:<span className={"pnl-kpi-trend "+(pendentesRecontagem>0?'bad':'good')}>{pendentesRecontagem>0?'Requer atenção':'Nenhuma pendência'}</span>,
-      onClick:()=>goto('recounts'),
+      // Primeiro da fileira e visualmente maior (ver `big`/pnl-kpi-value-lg)
+      // — pedido do cliente: "deve ser o KPI visualmente mais importante".
+      key:'acuracidade', icon:'percent', bg:'var(--purple-bg)', color:'var(--purple)',
+      label:'Acuracidade do Estoque', value:hoje.acuracidade.toFixed(1).replace('.',',')+'%',
+      big:true,
+      goal:<span className="pnl-kpi-goal">Meta: {META_ACURACIDADE_SEMANAL}%</span>,
+      progressPct: Math.max(0, Math.min(100, hoje.acuracidade)),
+      trend:(
+        <div className="pnl-kpi-trends">
+          {/* Distância até a meta — mesmo critério de cor que o resto do
+              app usa pra "abaixo da meta" (danger) vs "na meta/acima" (ok). */}
+          <span className={"pnl-kpi-trend "+(acuracidadeMetaGapPts<0?'bad':'good')}>
+            <DIcon name={acuracidadeMetaGapPts<0?'trendingDown':'trendingUp'} size={11} />
+            {acuracidadeMetaGapPts>=0?'+':''}{acuracidadeMetaGapPts.toFixed(1).replace('.',',')} pts da meta
+          </span>
+          <KpiTrend pct={acuracidadePontos} suffix=" pts" />
+        </div>
+      ),
+      // Sem acesso a Indicadores (perfil não libera nem tem exceção
+      // concedida, ver ACESSOS_RESTRITOS), o card continua mostrando o
+      // número mas não navega pra lugar nenhum.
+      onClick: hasAccess(user,'dashboard') ? ()=>goto('dashboard') : undefined,
     },
     {
       key:'divergentes', icon:'alertTriangle', bg:'var(--danger-bg)', color:'var(--danger)',
@@ -8133,12 +8212,12 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
       trend:<span className={"pnl-kpi-trend "+(itensDivergentesPendentes>0?'bad':'good')}>{itensDivergentesPendentes>0?'Requer atenção':'Nenhuma pendência'}</span>,
       onClick:()=>goto('divergentes'),
     },
-    ...(role!=='operador' ? [{
-      key:'solicitacaoArmazem', icon:'building', bg:'var(--warn-bg)', color:'var(--warn)',
-      label:'Analisados', value:aguardandoArmazem,
-      trend:<span className={"pnl-kpi-trend "+(aguardandoArmazem>0?'bad':'good')}>{aguardandoArmazem>0?'Requer atenção':'Nenhuma pendência'}</span>,
-      onClick:()=>goto('solicitacaoArmazem'),
-    }] : []),
+    {
+      key:'recontagens', icon:'repeat', bg:'var(--warn-bg)', color:'var(--warn)',
+      label:'Recontagens Pendentes', value:pendentesRecontagem,
+      trend:<span className={"pnl-kpi-trend "+(pendentesRecontagem>0?'bad':'good')}>{pendentesRecontagem>0?'Requer atenção':'Nenhuma pendência'}</span>,
+      onClick:()=>goto('recounts'),
+    },
     ...(role!=='operador' ? [{
       key:'aprovacaoDiretoria', icon:'clipboardList', bg:'var(--warn-bg)', color:'var(--warn)',
       label:'Aguardando Aprovação da Diretoria', value:aguardandoDiretoria,
@@ -8157,16 +8236,38 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
       // qualquer status, ver `concluidasHoje` acima). Pedido do cliente.
       onClick:()=>goto('contagensHoje'),
     },
-    {
-      key:'acuracidade', icon:'percent', bg:'var(--purple-bg)', color:'var(--purple)',
-      label:'Acuracidade do Estoque', value:hoje.acuracidade.toFixed(1)+'%',
-      trend:<KpiTrend pct={acuracidadePontos} suffix=" pts" />,
-      // Sem acesso a Indicadores (perfil não libera nem tem exceção
-      // concedida, ver ACESSOS_RESTRITOS), o card continua mostrando o
-      // número mas não navega pra lugar nenhum.
-      onClick: hasAccess(user,'dashboard') ? ()=>goto('dashboard') : undefined,
-    },
+    ...(role!=='operador' ? [{
+      key:'solicitacaoArmazem', icon:'building', bg:'var(--warn-bg)', color:'var(--warn)',
+      label:'Analisados', value:aguardandoArmazem,
+      trend:<span className={"pnl-kpi-trend "+(aguardandoArmazem>0?'bad':'good')}>{aguardandoArmazem>0?'Requer atenção':'Nenhuma pendência'}</span>,
+      onClick:()=>goto('solicitacaoArmazem'),
+    }] : []),
   ];
+
+  // "O que precisa de atenção" — mesmos 3 recortes já usados nos KPIs acima
+  // (divergentes/recontagens/aguardando aprovação da Diretoria), só que
+  // detalhando a composição de cada fila a partir de `c.data` (a única data
+  // real disponível em cada contagem — não existe um campo separado de
+  // "data em que entrou neste status"): "novos hoje" = contados hoje;
+  // "há mais de 7 dias" = contados há mais de 7 dias e ainda pendentes. É
+  // uma aproximação real a partir de dado existente, não um dado inventado.
+  function detalharFila(lista, destino, corClasse){
+    const novosHoje = lista.filter(c=>c.data===hojeStr).length;
+    const antigos = lista.filter(c=>{
+      if(!c.data) return false;
+      const dias = Math.floor((new Date(hojeStr+'T00:00:00') - new Date(c.data+'T00:00:00')) / 86400000);
+      return dias > 7;
+    }).length;
+    return {total:lista.length, novosHoje, antigos, destino, corClasse};
+  }
+  const divergentesArr = counts.filter(c=>c.statusAprovacao==='aguardando_analise_lider');
+  const recontagemArr = counts.filter(c=>c.statusAprovacao==='aguardando_segunda' && !byOriginal[c.id]);
+  const aguardandoDiretoriaArr = counts.filter(c=>c.statusAprovacao==='aguardando_aprovacao_diretoria');
+  const atencaoBlocks = [
+    {key:'divergentes', label:'itens divergentes', icone:'alertTriangle', ...detalharFila(divergentesArr, 'divergentes', 'danger'), linkLabel:'Ver itens'},
+    {key:'recontagens', label:'recontagens pendentes', icone:'repeat', ...detalharFila(recontagemArr, 'recounts', 'warn'), linkLabel:'Ver recontagens'},
+    ...(role!=='operador' ? [{key:'aprovacao', label:'aguardando aprovação', icone:'clipboardList', ...detalharFila(aguardandoDiretoriaArr, 'aprovacaoDiretoria', 'warn'), linkLabel:'Ver aprovações'}] : []),
+  ].filter(b=>b.total>0);
 
   // "Últimas Contagens" — pedido do cliente com imagem de referência:
   // agrupa contagens individuais por SESSÃO (mesmo usuário + mesma data +
@@ -8193,14 +8294,21 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
     .slice(0,5);
 
   const acoes = [
-    {icon:'search', label:'Nova Contagem', onClick:()=>goto('pickCountType')},
-    {icon:'checkCircle', label:'Contagens Concluídas', onClick:()=>goto('concluidas')},
-    {icon:'repeat', label:'Recontagens', onClick:()=>goto('recounts')},
+    {icon:'search', label:'Nova Contagem', desc:'Iniciar uma nova contagem de itens', onClick:()=>goto('pickCountType')},
+    {icon:'checkCircle', label:'Contagens Concluídas', desc:'Ver contagens já finalizadas', onClick:()=>goto('concluidas')},
+    {icon:'repeat', label:'Recontagens', desc:'Itens aguardando segunda contagem', onClick:()=>goto('recounts')},
     // Some da lista (não só desabilita) quando o usuário não tem acesso a
     // Relatórios — mesmo critério de "não deixar link morto" já aplicado no
     // KPI de Indicadores acima.
-    ...(hasAccess(user,'relatorios') ? [{icon:'fileText', label:'Relatórios', onClick:()=>goto('relatorios')}] : []),
+    ...(hasAccess(user,'relatorios') ? [{icon:'fileText', label:'Relatórios', desc:'Exportar relatórios do inventário', onClick:()=>goto('relatorios')}] : []),
   ];
+
+  // Data por extenso do cabeçalho (dia da semana + "24 de setembro de
+  // 2026") — só formatação de `new Date()`, nenhum dado novo.
+  const agora = new Date();
+  const diaSemanaExtenso = new Intl.DateTimeFormat('pt-BR', {weekday:'long'}).format(agora);
+  const diaSemanaCap = diaSemanaExtenso.charAt(0).toUpperCase() + diaSemanaExtenso.slice(1);
+  const dataExtenso = new Intl.DateTimeFormat('pt-BR', {day:'numeric', month:'long', year:'numeric'}).format(agora);
 
   const planejados = inventories.filter(i=>i.contados===0 && i.status!=='cancelado').length;
   const concluidosInv = inventories.filter(i=>i.qtdItens>0 && i.contados>=i.qtdItens).length;
@@ -8220,7 +8328,21 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
       <div className="greet">{saudacaoPorHorario()}</div>
       <h2 className="greet-title">{user.nome}</h2>
 
-      <ItemStatusSearchPanel counts={counts} historicoConcluidas={historicoConcluidas} user={user} goto={goto} />
+      {/* No celular/tablet este bloco continua igual (largura total) — a
+          fileira com a data (.pnl-date-col) só aparece em telas largas, ver
+          CSS ".pnl-header-row"/".pnl-wrap". */}
+      <div className="pnl-header-row">
+        <div className="pnl-search-col">
+          <ItemStatusSearchPanel counts={counts} historicoConcluidas={historicoConcluidas} user={user} goto={goto} />
+        </div>
+        <div className="pnl-date-col">
+          <DIcon name="calendar" size={16} />
+          <div>
+            <div className="d1">{diaSemanaCap}</div>
+            <div className="d2">{dataExtenso}</div>
+          </div>
+        </div>
+      </div>
 
       {/* Telas largas: Dashboard novo (design corporativo/ERP) — ver CLAUDE.md
           "Dashboard vira a tela inicial". Tablet/celular continua com o grid
@@ -8232,12 +8354,40 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
               <div className="pnl-kpi-top">
                 <span className="pnl-kpi-icon" style={{background:k.bg, color:k.color}}><DIcon name={k.icon} size={17} /></span>
               </div>
-              <div className="pnl-kpi-value">{k.value}</div>
+              <div className={"pnl-kpi-value"+(k.big?' pnl-kpi-value-lg':'')}>{k.value}</div>
               <div className="pnl-kpi-label">{k.label}</div>
+              {k.goal}
+              {k.big && (
+                <div className="pnl-kpi-progress-track">
+                  <div className="pnl-kpi-progress-fill" style={{width:k.progressPct+'%'}}></div>
+                </div>
+              )}
               {k.trend}
             </button>
           ))}
         </div>
+
+        {atencaoBlocks.length>0 && (
+          <>
+            <div className="pnl-section-title" style={{marginBottom:14}}>O que precisa de atenção?</div>
+            <div className="pnl-attention-row">
+              {atencaoBlocks.map(b=>(
+                <div key={b.key} className={"pnl-card pnl-attention-card "+b.corClasse}>
+                  <div className="pnl-attention-top">
+                    <span className="pnl-attention-value">{b.total}</span>
+                    <DIcon name={b.icone} size={16} style={{color:b.corClasse==='danger'?'var(--danger)':'var(--warn)'}} />
+                  </div>
+                  <div className="pnl-attention-label">{b.label}</div>
+                  <div className="pnl-attention-meta">
+                    {b.novosHoje>0 && <div>{b.novosHoje} novo{b.novosHoje===1?'':'s'} hoje</div>}
+                    {b.antigos>0 && <div>{b.antigos} há mais de 7 dias</div>}
+                  </div>
+                  <button type="button" className="pnl-attention-link" onClick={()=>goto(b.destino)}>{b.linkLabel} <DIcon name="chevronRight" size={12} /></button>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
 
         <div className="pnl-row">
           <div className="pnl-col-8 pnl-card">
@@ -8249,18 +8399,36 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
               <div style={{color:'var(--gray-500)', fontSize:'var(--text-sm)', padding:'12px 4px'}}>Nenhuma atividade registrada ainda.</div>
             ) : (
               <table className="pnl-table">
-                <thead><tr><th>Data</th><th>Usuário</th><th>Almoxarifado</th><th>Itens</th><th>Acuracidade</th></tr></thead>
+                <thead><tr><th>Data</th><th>Usuário</th><th>Almoxarifado</th><th>Itens</th><th>Acuracidade</th><th>Status</th></tr></thead>
                 <tbody>
                   {atividades.map(s=>{
                     const almoxLabel = s.almoxarifado==='—' ? '—' : ('Almox ' + (/^[0-9]+$/.test(s.almoxarifado) ? s.almoxarifado.padStart(2,'0') : s.almoxarifado));
                     const accColor = s.acuracidade==null ? 'var(--gray-500)' : s.acuracidade>=85 ? 'var(--ok)' : s.acuracidade>=70 ? 'var(--warn)' : 'var(--danger)';
+                    // Badge Crítico/OK — mesmo limiar já usado no resto do
+                    // app pra marcar acuracidade baixa como "danger" (<70%,
+                    // ver accColor acima e itemAcuracidade). Sem dado
+                    // (acuracidade==null) não mostra badge nenhum — não dá
+                    // pra afirmar "OK" nem "Crítico" sem número.
+                    const statusOk = s.acuracidade!=null && s.acuracidade>=70;
                     return (
                       <tr key={s.usuario+'|'+s.data+'|'+s.almoxarifado}>
                         <td>{fmtDataBR(s.data)}</td>
                         <td>{s.usuario}</td>
                         <td>{almoxLabel}</td>
                         <td>{s.itens}</td>
-                        <td style={{color:accColor, fontWeight:700}}>{s.acuracidade==null ? '—' : s.acuracidade.toFixed(0)+'%'}</td>
+                        <td>
+                          <div style={{color:accColor, fontWeight:700}}>{s.acuracidade==null ? '—' : s.acuracidade.toFixed(0)+'%'}</div>
+                          {s.acuracidade!=null && (
+                            <div className="pnl-table-acc-bar">
+                              <div className="pnl-table-acc-fill" style={{width:Math.max(0,Math.min(100,s.acuracidade))+'%', background:accColor}}></div>
+                            </div>
+                          )}
+                        </td>
+                        <td>
+                          {s.acuracidade!=null && (
+                            <span className={'pnl-status '+(statusOk?'ok':'danger')}><span className="dot"></span>{statusOk?'OK':'Crítico'}</span>
+                          )}
+                        </td>
                       </tr>
                     );
                   })}
@@ -8277,7 +8445,10 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], endereco
               {acoes.map(a=>(
                 <button key={a.label} className="pnl-quick-item" onClick={a.onClick}>
                   <span className="pnl-quick-icon"><DIcon name={a.icon} size={15} /></span>
-                  <span className="pnl-quick-text">{a.label}</span>
+                  <span className="pnl-quick-body">
+                    <span className="pnl-quick-text">{a.label}</span>
+                    <div className="pnl-quick-desc">{a.desc}</div>
+                  </span>
                   <span className="pnl-quick-arrow"><DIcon name="chevronRight" size={15} /></span>
                 </button>
               ))}
