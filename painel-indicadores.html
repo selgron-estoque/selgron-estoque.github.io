@@ -2708,12 +2708,15 @@ async function fetchMaquinasEtpTracking(){
     return [];
   }
 }
-// Select enxuto — só os 3 campos que `computeMaquinasPainelTracking` usa
-// (etp/status pro agrupamento e agregação, id só de chave React).
+// Select enxuto — só os campos que `computeMaquinasPainelTracking` usa
+// (etp/status pro agrupamento e agregação, id só de chave React). `linha`
+// adicionada (ver "PROGRAMAÇÃO: MESMA ETP EM VÁRIAS LINHAS" no schema.sql)
+// — sem ela, um item não saberia a qual card ele pertence quando a mesma
+// ETP tem card em mais de uma linha, e apareceria duplicado nas duas.
 async function fetchItensSeparacaoTracking(){
   if(!supabaseClient) return [];
   try{
-    const { data, error } = await supabaseClient.from('sequencia_separacao').select('id, etp, status');
+    const { data, error } = await supabaseClient.from('sequencia_separacao').select('id, etp, status, linha');
     if(error) throw error;
     return data || [];
   }catch(err){
@@ -2915,11 +2918,15 @@ function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto,
   }, [onCicloCompleto, onChangeLinha, segundosLinhaTracking]);
 
 
+  // Cada ETP/máquina/item já carrega sua PRÓPRIA `linha` diretamente (ver
+  // "PROGRAMAÇÃO: MESMA ETP EM VÁRIAS LINHAS" no schema.sql — a mesma ETP
+  // pode ter um card independente por linha) — não usa mais um mapa
+  // etp→linha derivado só da máquina (isso misturaria os itens das 2
+  // linhas quando a mesma ETP existisse em ambas). `linhaPadraoAtualTracking`
+  // (1ª linha da lista) é só o fallback pra `linha` nula.
   const linhaPadraoAtualValor = linhaPadraoAtualTracking(linhasProducao);
-  const linhaPorEtp = {};
-  maquinasEtp.forEach(m=>{ linhaPorEtp[m.etp] = m.linha || linhaPadraoAtualValor; });
   const maquinasEtpDaLinha = maquinasEtp.filter(m=>(m.linha || linhaPadraoAtualValor)===linhaSelecionada);
-  const itensDaLinha = itens.filter(i=>(linhaPorEtp[i.etp] || linhaPadraoAtualValor)===linhaSelecionada);
+  const itensDaLinha = itens.filter(i=>(i.linha || linhaPadraoAtualValor)===linhaSelecionada);
   const hojeStr = new Date().toISOString().slice(0,10);
   const maquinasPainel = status==='ok' ? computeMaquinasPainelTracking(itensDaLinha, maquinasEtpDaLinha, hojeStr) : [];
   // Nota (não erro) — ver comentário em `carregarDados`: as duas listas
