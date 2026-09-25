@@ -19258,6 +19258,19 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
             {l}
           </button>
         ))}
+        {/* Placeholder pra futuras linhas de produção — pedido do cliente:
+            "caso algum dia eu queira acrescentar novas abas". Só reserva o
+            espaço visual, SEM funcionalidade nenhuma ainda (LINHAS_PRODUCAO
+            continua uma lista fixa em código — adicionar linha de verdade
+            também mudaria o Painel Indicadores/TV, que lê a MESMA lista
+            duplicada lá, fora do escopo deste botão). Desabilitado de
+            propósito, pra não parecer clicável à toa. */}
+        <button
+          type="button" disabled
+          title="Adicionar novas linhas de produção — em breve"
+          className="btn btn-outline btn-sm"
+          style={{width:34,padding:0,display:'flex',alignItems:'center',justifyContent:'center',borderStyle:'dashed',color:'var(--ink-dim)',cursor:'not-allowed'}}
+        ><Ic>+</Ic></button>
       </div>
 
       {mensagemSucesso && <div style={{fontSize:'var(--text-xs)',color:'var(--ok)',marginBottom:14}}>{mensagemSucesso}</div>}
