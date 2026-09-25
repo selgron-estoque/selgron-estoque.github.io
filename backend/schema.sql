@@ -2610,6 +2610,75 @@ begin
 end $$;
 
 -- =============================================================================
+-- "PROGRAMAÇÃO": LINHAS DE PRODUÇÃO GERENCIÁVEIS (Elétrica/SEM/SSE/SEP)
+-- =============================================================================
+-- Pedido do cliente: "caso algum dia eu queira acrescentar novas abas" — até
+-- aqui as 4 linhas (Elétrica/SEM/SSE/SEP) eram uma lista fixa em código
+-- (`LINHAS_PRODUCAO`, index.html), duplicada em painel-indicadores.html pra
+-- TV. `nome` é a PRIMARY KEY (texto), não um id numérico/uuid separado — de
+-- propósito, pro mesmo valor já usado como texto livre em
+-- `maquinas_etp.linha` (sem FK, mesmo padrão denormalizado de sempre neste
+-- projeto) continuar sendo a única fonte da verdade, sem precisar de join
+-- nenhum. Migração inicial insere as 4 linhas que já existiam, então rodar
+-- este SQL não tira nenhuma aba que já estava lá.
+--
+-- "Elétrica" é a LINHA PADRÃO (`LINHA_PADRAO` no front-end) — qualquer
+-- máquina sem `linha` definida cai nela por padrão (ver comentário original
+-- em index.html). Por isso ela nunca pode ser renomeada nem excluída — regra
+-- aplicada no FRONT-END (`renomearLinhaProducao`/`excluirLinhaProducao`,
+-- index.html), não em constraint de banco, mesmo critério já usado noutras
+-- regras de negócio deste projeto que não mudam com frequência.
+create table if not exists linhas_producao (
+  nome text primary key,
+  ordem integer not null default 0,
+  criado_em timestamptz not null default now()
+);
+insert into linhas_producao (nome, ordem) values
+  ('Elétrica', 0), ('SEM', 1), ('SSE', 2), ('SEP', 3)
+on conflict (nome) do nothing;
+
+alter table linhas_producao enable row level security;
+
+-- Mesmo padrão de RLS já usado em `maquinas_etp` (policies não-delete): gate
+-- único por `tem_acesso_tela`, liberado pra qualquer um com acesso à tela
+-- "Programação" (líder/admin/operador com a exceção concedida) — inclusive a
+-- exclusão aqui, diferente de `maquinas_etp` (lá o cliente pediu
+-- explicitamente "só admin exclui uma ETP inteira"; aqui não houve pedido
+-- equivalente, então segue o mesmo gate por tela do resto desta tabela). O
+-- bloqueio de "não excluir linha com máquina" é regra de NEGÓCIO (pedido do
+-- cliente), aplicada no front-end antes de chamar o delete — não uma
+-- restrição de acesso, por isso não vira policy de RLS.
+drop policy if exists "leitura por tela" on linhas_producao;
+create policy "leitura por tela" on linhas_producao for select
+  using (tem_acesso_tela(auth.uid(), 'programacaoSeparacao'));
+
+drop policy if exists "insercao por tela" on linhas_producao;
+create policy "insercao por tela" on linhas_producao for insert
+  with check (tem_acesso_tela(auth.uid(), 'programacaoSeparacao'));
+
+drop policy if exists "atualizacao por tela" on linhas_producao;
+create policy "atualizacao por tela" on linhas_producao for update
+  using (tem_acesso_tela(auth.uid(), 'programacaoSeparacao'))
+  with check (tem_acesso_tela(auth.uid(), 'programacaoSeparacao'));
+
+drop policy if exists "exclusao por tela" on linhas_producao;
+create policy "exclusao por tela" on linhas_producao for delete
+  using (tem_acesso_tela(auth.uid(), 'programacaoSeparacao'));
+
+-- Realtime — pra outro líder (em outro aparelho) E a TV (painel-indicadores.
+-- html, só leitura) verem uma linha nova/renomeada/excluída sem precisar
+-- recarregar a página. Mesmo bloco guardado (idempotente) de sempre.
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and tablename = 'linhas_producao'
+  ) then
+    alter publication supabase_realtime add table linhas_producao;
+  end if;
+end $$;
+
+-- =============================================================================
 -- PERFORMANCE: BUSCA DE PRODUTO LENTA (tela "Etiquetas" e qualquer outra que
 -- use `searchSupabaseCatalog`, index.html — busca manual em "Nova Contagem",
 -- "Itens Específicos", etc.)

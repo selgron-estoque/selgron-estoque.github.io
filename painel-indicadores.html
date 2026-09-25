@@ -2644,9 +2644,29 @@ function SeparacaoStatusTagTracking({status}){
   return <span className="status-tag status-warn"><span className="status-dot"></span>{label}</span>;
 }
 
-// Ver LINHA_PADRAO/LINHAS_PRODUCAO em index.html — mesmos valores.
+// Ver LINHA_PADRAO/LINHAS_PRODUCAO_PADRAO em index.html — mesmo valor padrão,
+// mesma tabela `linhas_producao` (Supabase). A TV só LEITURA aqui — nunca
+// gerencia (adicionar/renomear/excluir é só na tela real "Programação",
+// index.html) — ver `linhasProducao`/`fetchLinhasProducao` em App().
 const LINHA_PADRAO_TRACKING = 'Elétrica';
-const LINHAS_PRODUCAO_TRACKING = ['Elétrica', 'SEM', 'SSE', 'SEP'];
+const LINHAS_PRODUCAO_TRACKING_PADRAO = ['Elétrica', 'SEM', 'SSE', 'SEP'];
+
+function linhaProducaoRowToLocalTracking(row){
+  return { nome: row.nome, ordem: Number(row.ordem)||0 };
+}
+
+async function fetchLinhasProducao(){
+  const fallback = LINHAS_PRODUCAO_TRACKING_PADRAO.map((nome,i)=>({nome, ordem:i}));
+  if(!supabaseClient) return fallback;
+  try{
+    const { data, error } = await supabaseClient.from('linhas_producao').select('nome,ordem').order('ordem', {ascending:true});
+    if(error) throw error;
+    return (data && data.length) ? data.map(linhaProducaoRowToLocalTracking) : fallback;
+  }catch(err){
+    console.warn('Painel Indicadores: falha ao buscar linhas de produção', err);
+    return fallback;
+  }
+}
 
 const SEP_KANBAN_COLUNAS_TRACKING = [
   {chave:'aguardando', titulo:'Aguardando Separação', icone:'clock', cor:'--warn', corBg:'--warn-bg', vazio:'Nenhuma máquina aguardando.'},
@@ -2831,7 +2851,7 @@ function TrackingPickingBoard({maquinas}){
   );
 }
 
-function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto, linhaSelecionada, onChangeLinha, onAbrirConfig, links, linkIndex, onSelecionarLink, onNavegarEsquerda, onNavegarDireita, segundosLinhaTracking, status, maquinasEtp, itens}){
+function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto, linhaSelecionada, onChangeLinha, onAbrirConfig, links, linkIndex, onSelecionarLink, onNavegarEsquerda, onNavegarDireita, segundosLinhaTracking, status, maquinasEtp, itens, linhasProducao}){
   // Busca de dado (status/maquinasEtp/itens) e o polling de 5 min +
   // Realtime AGORA vivem em App() — mesmo motivo de `PainelIndicadores`
   // (ver comentário completo lá): o rodízio automático desmontava este
@@ -2857,6 +2877,16 @@ function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto,
   const linhaAtualRef = useRef(linhaSelecionada);
   useEffect(() => { linhaAtualRef.current = linhaSelecionada; }, [linhaSelecionada]);
 
+  // Mesmo motivo do ref acima, agora pra `linhasProducao` (lista dinâmica,
+  // vinda de App()/Supabase — ver "PROGRAMAÇÃO: LINHAS DE PRODUÇÃO
+  // GERENCIÁVEIS" no schema.sql): o `setInterval` abaixo só é recriado
+  // quando `onCicloCompleto`/`onChangeLinha`/`segundosLinhaTracking` mudam,
+  // não a cada linha nova/renomeada/excluída por um líder em outro
+  // aparelho — sem o ref, uma mudança na lista reiniciaria o timer no meio
+  // da contagem.
+  const linhasProducaoRef = useRef(linhasProducao);
+  useEffect(() => { linhasProducaoRef.current = linhasProducao; }, [linhasProducao]);
+
   // `onChangeLinha(...)`/`onCicloCompleto()` como 2 chamadas DIRETAS
   // dentro do callback do timer (nunca uma aninhada dentro de uma função
   // updater de setState) — mesma correção de bug já aplicada antes (ver
@@ -2865,13 +2895,15 @@ function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto,
   // renderiza outro" pro React.
   useEffect(() => {
     const id = setInterval(() => {
-      const idxAtual = LINHAS_PRODUCAO_TRACKING.indexOf(linhaAtualRef.current);
+      const linhas = linhasProducaoRef.current;
+      if(linhas.length===0) return;
+      const idxAtual = linhas.findIndex(l=>l.nome===linhaAtualRef.current);
       const proximoIdx = idxAtual + 1;
-      if(proximoIdx >= LINHAS_PRODUCAO_TRACKING.length){
-        onChangeLinha(LINHAS_PRODUCAO_TRACKING[0]);
+      if(proximoIdx >= linhas.length){
+        onChangeLinha(linhas[0].nome);
         if(onCicloCompleto) onCicloCompleto();
       } else {
-        onChangeLinha(LINHAS_PRODUCAO_TRACKING[proximoIdx]);
+        onChangeLinha(linhas[proximoIdx].nome);
       }
     }, segundosLinhaTracking*1000);
     return () => clearInterval(id);
@@ -2926,13 +2958,13 @@ function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto,
       {status==='ok' && (
         <React.Fragment>
           <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:18,flexShrink:0}}>
-            {LINHAS_PRODUCAO_TRACKING.map(l=>(
+            {linhasProducao.map(l=>(
               <button
-                key={l} type="button"
-                className={'panel-tab-btn' + (linhaSelecionada===l ? ' active' : '')}
+                key={l.nome} type="button"
+                className={'panel-tab-btn' + (linhaSelecionada===l.nome ? ' active' : '')}
                 style={{padding:'8px 16px',fontSize:'var(--text-sm)'}}
-                onClick={()=>onChangeLinha(l)}
-              >{l}</button>
+                onClick={()=>onChangeLinha(l.nome)}
+              >{l.nome}</button>
             ))}
           </div>
           <TrackingPickingBoard maquinas={maquinasPainel} />
@@ -3627,6 +3659,35 @@ function App(){
     };
   }, [carregarDadosTracking]);
 
+  // Linhas de produção (abas do Tracking Picking) — pedido do cliente:
+  // "caso algum dia eu queira acrescentar novas abas" (gerenciado na tela
+  // real "Programação", index.html — ver GerenciarLinhasModal lá). A TV só
+  // LEITURA aqui, nunca gerencia. Sem gate de login próprio: reaproveita a
+  // MESMA sessão que qualquer um dos 3 `carregarDados*` acima já
+  // estabelece (refetch disparado assim que qualquer um deles chega em
+  // 'ok') — o fallback embutido em `fetchLinhasProducao` (as 4 linhas
+  // originais) cobre o instante antes disso sem tela quebrada.
+  const [linhasProducao, setLinhasProducao] = useState(
+    () => LINHAS_PRODUCAO_TRACKING_PADRAO.map((nome,i)=>({nome, ordem:i}))
+  );
+  useEffect(() => {
+    if(statusIndicadores!=='ok' && statusPedidosCompra!=='ok' && statusTracking!=='ok') return;
+    let cancelado = false;
+    fetchLinhasProducao().then(rows => { if(!cancelado) setLinhasProducao(rows); });
+    return () => { cancelado = true; };
+  }, [statusIndicadores, statusPedidosCompra, statusTracking]);
+  useEffect(() => {
+    if(!supabaseClient) return;
+    let cancelado = false;
+    const canal = supabaseClient
+      .channel('realtime:linhas_producao:tv')
+      .on('postgres_changes', {event:'*', schema:'public', table:'linhas_producao'}, () => {
+        fetchLinhasProducao().then(rows => { if(!cancelado) setLinhasProducao(rows); });
+      })
+      .subscribe();
+    return () => { cancelado = true; supabaseClient.removeChannel(canal); };
+  }, []);
+
   const [configModalAberto, setConfigModalAberto] = useState(false);
 
   // Guardas (refs) do status mais recente de Pedidos de Compra/Tracking,
@@ -3647,7 +3708,8 @@ function App(){
   // tempo de ler cada uma sem precisar de clique manual. "Painel
   // Indicadores" tem um tempo FIXO (`temposConfig.segundosIndicadores`, sem
   // sub-abas). "Tracking Picking" é diferente: tem 4 abas internas de linha
-  // (Elétrica/SEM/SSE/SEP, ver LINHAS_PRODUCAO_TRACKING) — pedido explícito
+  // (Elétrica/SEM/SSE/SEP + qualquer linha adicionada depois, ver
+  // `linhasProducao`) — pedido explícito
   // do cliente foi só trocar de tela DEPOIS de mostrar as 4 (ver
   // `onCicloCompleto` em `TrackingPicking`, que avisa quando isso
   // acontece), nunca num tempo fixo que poderia cortar no meio do ciclo
@@ -3751,7 +3813,7 @@ function App(){
   // na hora, exatamente como clicar numa aba já fazia.
   const navegar = useCallback((direita) => {
     const posicoes = [{tela:'indicadores'}, {tela:'pedidosCompra'}];
-    LINHAS_PRODUCAO_TRACKING.forEach(l => posicoes.push({tela:'picking', linha:l}));
+    linhasProducao.forEach(l => posicoes.push({tela:'picking', linha:l.nome}));
     linksExternos.forEach((l, i) => posicoes.push({tela:'link', linkIndex:i}));
     const idxAtual = posicoes.findIndex(p =>
       p.tela===tela &&
@@ -3764,7 +3826,7 @@ function App(){
     if(novaPos.tela==='picking') setLinhaSelecionada(novaPos.linha);
     if(novaPos.tela==='link') setLinkIndex(novaPos.linkIndex);
     setTela(novaPos.tela);
-  }, [tela, linhaSelecionada, linkIndex, linksExternos]);
+  }, [tela, linhaSelecionada, linkIndex, linksExternos, linhasProducao]);
 
   useEffect(() => {
     // Navegadores de TV (Tizen/webOS/Android TV/Fire TV) nem sempre
@@ -3829,6 +3891,7 @@ function App(){
           linhaSelecionada={linhaSelecionada} onChangeLinha={setLinhaSelecionada}
           segundosLinhaTracking={temposConfig.segundosLinhaTracking}
           status={statusTracking} maquinasEtp={maquinasEtpTracking} itens={itensTracking}
+          linhasProducao={linhasProducao}
           {...propsAbaLink}
         />
       )}
