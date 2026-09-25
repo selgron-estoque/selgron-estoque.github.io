@@ -857,6 +857,29 @@ function buildPoolTendencia(counts, historicoParaTendencia){
   return [...counts, ...historicoComoContagem];
 }
 
+// Portado de index.html (AcuracidadePanel/"Acuracidade Mensal — Itens
+// Recorrentes") — mesma fórmula EXATA, pedido do cliente: o 2º card de KPI
+// deste painel precisa usar "o mesmo cálculo da aba Acuracidade", não uma
+// aproximação. Só itens com 2+ documentos de contagem no histórico entram
+// (já recontados pelo menos uma vez) — item com 1 documento só fica de
+// fora por completo, nunca é fabricado como 100%/0%. Versão enxuta da
+// original (sem `documentosPorMes`/`evolucao` — esse drill-down não existe
+// aqui, só o card de KPI precisa do número mensal).
+function computeAcuracidadeItensRecorrentes(pool, dataInicioStr, dataFimStr){
+  const porCodigo = {};
+  pool.forEach(c=>{
+    if(!c.data || !c.productCode) return;
+    (porCodigo[c.productCode] = porCodigo[c.productCode] || []).push(c);
+  });
+  const elegiveis = [];
+  Object.values(porCodigo).forEach(arr=>{
+    if(arr.length < 2) return; // regra fundamental: só itens com 2+ documentos
+    elegiveis.push(...arr);
+  });
+  const monthlyStats = computeMonthlyStats(elegiveis, dataInicioStr, dataFimStr);
+  return { monthlyStats, elegiveis };
+}
+
 function niceAxisTicks(maxVal, targetTicks){
   if(maxVal<=0) return [0, 10];
   const rawStep = maxVal / targetTicks;
@@ -1132,6 +1155,7 @@ const DEMO_KPI = {
   itensAvaliadosMes:512, corretosMes:462, divergentesMes:50, acuracidadeMes:90.2,
   mediaDiaria:17.9, maiorDia:44, menorDia:0,
   coberturaProgramado:250, coberturaContado:125, coberturaPendente:125, coberturaPercent:50,
+  recorrentesAvaliadosMes:388, recorrentesCorretosMes:289, recorrentesDivergentesMes:99, recorrentesAcuracidadeMes:74,
 };
 
 /* ---- Componente principal ---- */
@@ -2188,6 +2212,20 @@ function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfig,
     const coberturaPendente = Math.max(0, coberturaProgramado - coberturaContado);
     const coberturaPercent = coberturaProgramado>0 ? (coberturaContado/coberturaProgramado)*100 : null;
 
+    // 2º card de KPI: "mesmo cálculo da aba Acuracidade" (pedido do
+    // cliente) — `computeAcuracidadeItensRecorrentes`, mesma fórmula
+    // "Itens Recorrentes" da página Acuracidade (index.html), sobre o
+    // mesmo pool deduplicado+com histórico que este painel já usa pros
+    // gráficos de tendência (`poolTendenciaDedup`, ano corrente até hoje).
+    const acuracidadeRecorrentes = computeAcuracidadeItensRecorrentes(poolTendenciaDedup, anoAtualStr, hojeStr);
+    const mesAtualKey = getMonthInfo(hojeStr).key;
+    const statsRecorrentesMesAtual = acuracidadeRecorrentes.monthlyStats.find(m=>m.key===mesAtualKey) || null;
+    const recorrentesElegiveisMesAtual = acuracidadeRecorrentes.elegiveis.filter(c=>c.data && getMonthInfo(c.data).key===mesAtualKey);
+    const recorrentesAvaliadosMes = statsRecorrentesMesAtual ? statsRecorrentesMesAtual.total : 0;
+    const recorrentesDivergentesMes = recorrentesElegiveisMesAtual.filter(c=>c.diferenca!==0 && c.diferenca!=null).length;
+    const recorrentesCorretosMes = recorrentesAvaliadosMes - recorrentesDivergentesMes;
+    const recorrentesAcuracidadeMes = statsRecorrentesMesAtual ? statsRecorrentesMesAtual.acuracidade : null;
+
     return {
       dataInicioStr, dataFimStr, weeklyStats, weeklyStatsItensUnicos, monthlyStats,
       pizzaTotalContado, pizzaDivergentes, pizzaSemDivergencia, porFamilia,
@@ -2197,6 +2235,7 @@ function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfig,
       kpiItensAvaliadosMes, kpiCorretosMes, kpiDivergentesMes, kpiAcuracidadeMes,
       kpiMediaDiaria, kpiMaiorDia, kpiMenorDia,
       coberturaProgramado, coberturaContado, coberturaPendente, coberturaPercent,
+      recorrentesAvaliadosMes, recorrentesCorretosMes, recorrentesDivergentesMes, recorrentesAcuracidadeMes,
     };
   }, [dadosAoVivo, counts, historico, inventariosData]);
 
@@ -2240,6 +2279,10 @@ function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfig,
   const coberturaContado = calc ? calc.coberturaContado : DEMO_KPI.coberturaContado;
   const coberturaPendente = calc ? calc.coberturaPendente : DEMO_KPI.coberturaPendente;
   const coberturaPercent = calc ? calc.coberturaPercent : DEMO_KPI.coberturaPercent;
+  const recorrentesAvaliadosMes = calc ? calc.recorrentesAvaliadosMes : DEMO_KPI.recorrentesAvaliadosMes;
+  const recorrentesCorretosMes = calc ? calc.recorrentesCorretosMes : DEMO_KPI.recorrentesCorretosMes;
+  const recorrentesDivergentesMes = calc ? calc.recorrentesDivergentesMes : DEMO_KPI.recorrentesDivergentesMes;
+  const recorrentesAcuracidadeMes = calc ? calc.recorrentesAcuracidadeMes : DEMO_KPI.recorrentesAcuracidadeMes;
   const periodoMesAtual = NOMES_MESES[new Date().getMonth()] + '/' + new Date().getFullYear();
 
   const IconAcuracidade = <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>;
@@ -2395,7 +2438,7 @@ function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfig,
       <div className="kpi-row">
         <KpiCard
           icon={IconAcuracidade} iconBg="var(--teal-bg)" iconColor="var(--teal)"
-          titulo="Acuracidade (itens recontados)"
+          titulo="Acuracidade"
           periodo={`Mês atual (${periodoMesAtual})`}
           valor={kpiAcuracidadeMes!=null ? Math.round(kpiAcuracidadeMes)+'%' : '—'}
           meta={META_ACURACIDADE_SEMANAL+'%'}
@@ -2405,16 +2448,21 @@ function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfig,
             {rotulo:'Itens com divergência', valor:kpiDivergentesMes},
           ]}
         />
+        {/* Mesmo cálculo EXATO da aba Acuracidade (index.html,
+            "Acuracidade Mensal — Itens Recorrentes") — pedido do cliente.
+            Título "(itens recontados)" migrou pra cá porque é este card,
+            não o da esquerda, que de fato implementa essa regra (só itens
+            com 2+ documentos de contagem no histórico). */}
         <KpiCard
           icon={IconAcuracidade} iconBg="var(--teal-bg)" iconColor="var(--teal)"
           titulo="Acuracidade (itens recontados)"
           periodo={`Mês atual (${periodoMesAtual})`}
-          valor={kpiAcuracidadeMes!=null ? Math.round(kpiAcuracidadeMes)+'%' : '—'}
+          valor={recorrentesAcuracidadeMes!=null ? Math.round(recorrentesAcuracidadeMes)+'%' : '—'}
           meta={META_ACURACIDADE_SEMANAL+'%'}
           linhas={[
-            {rotulo:'Itens avaliados', valor:kpiItensAvaliadosMes},
-            {rotulo:'Itens corretos', valor:kpiCorretosMes},
-            {rotulo:'Itens com divergência', valor:kpiDivergentesMes},
+            {rotulo:'Itens avaliados', valor:recorrentesAvaliadosMes},
+            {rotulo:'Itens corretos', valor:recorrentesCorretosMes},
+            {rotulo:'Itens com divergência', valor:recorrentesDivergentesMes},
           ]}
         />
         <KpiCard
