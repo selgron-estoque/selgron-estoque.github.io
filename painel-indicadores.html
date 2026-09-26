@@ -3210,6 +3210,26 @@ function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto,
   // usar isso direto como dependência do efeito abaixo dispararia
   // consulta ao vivo à toa a cada mudancinha).
   const etpsVisiveisChave = Array.from(new Set(maquinasPainel.map(m=>m.etp))).sort().join(',');
+  // Ordem de prioridade da busca (pedido do cliente): direita pra
+  // esquerda, de cima pra baixo — mesma ordem visual do board. Dentro de
+  // cada coluna já vem de cima pra baixo (`maquinasPainel` é ordenado por
+  // `ordem` em `computeMaquinasPainelTracking`, e `bucketizeKanbanTracking`
+  // preserva essa ordem); só as COLUNAS entram na ordem INVERTIDA de
+  // `SEP_KANBAN_COLUNAS_TRACKING` (que é esquerda pra direita: Aguardando,
+  // Em Separação, Separada, Entregue) — aqui começa por Entregue, termina
+  // em Aguardando. Só decide a ORDEM das tarefas na fila de
+  // `executarComLimiteDeConcorrencia` — não muda QUAIS ETPs são
+  // consultadas (isso continua sendo `etpsVisiveisChave`, usado como chave
+  // estável do efeito abaixo).
+  function ordenarEtpsPorPrioridadeVisual(maquinas){
+    const buckets = bucketizeKanbanTracking(maquinas);
+    const vistos = new Set();
+    const etps = [];
+    ['entregue','separada','emSeparacao','aguardando'].forEach(chave => {
+      buckets[chave].forEach(m => { if(!vistos.has(m.etp)){ vistos.add(m.etp); etps.push(m.etp); } });
+    });
+    return etps;
+  }
   // Busca cada ETP como uma promise INDEPENDENTE — nunca `Promise.all`
   // esperando todas juntas. Bug real pego no teste visual: com
   // `Promise.all`, 1 ETP lenta/travada (a consulta upstream pode demorar
@@ -3251,7 +3271,7 @@ function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto,
     executarComLimiteDeConcorrencia(tarefas, LIMITE_CONCORRENCIA_SALDO_TRACKING);
   }
   useEffect(() => {
-    const etps = etpsVisiveisChave ? etpsVisiveisChave.split(',') : [];
+    const etps = etpsVisiveisChave ? ordenarEtpsPorPrioridadeVisual(maquinasPainel) : [];
     if(etps.length===0) return;
     const cancelRef = {cancelado:false};
     // Marca como 'loading' só as ETPs que ainda não têm nenhum resultado
@@ -3274,7 +3294,7 @@ function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto,
   useEffect(() => {
     const cancelRef = {cancelado:false};
     const id = setInterval(() => {
-      const etps = etpsVisiveisChave ? etpsVisiveisChave.split(',') : [];
+      const etps = etpsVisiveisChave ? ordenarEtpsPorPrioridadeVisual(maquinasPainel) : [];
       if(etps.length===0) return;
       buscarSaldoDeCadaEtp(etps, cancelRef);
     }, 5*60*1000);
