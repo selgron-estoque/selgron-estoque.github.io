@@ -124,7 +124,7 @@
 
   .content{padding:24px 40px;max-width:100%;margin:0 auto;}
   /* Só a aba Tracking Picking usa isto (ver comentário completo lá e em
-     `.sep-kanban-board`) — `min-height` (nunca `height`/`overflow:hidden`)
+     `.tp-board`) — `min-height` (nunca `height`/`overflow:hidden`)
      de propósito: garante um piso de altura igual sempre (o Kanban
      estica até preencher, mesmo vazio), mas ainda deixa crescer além
      disso e a PÁGINA rolar quando tem card demais pra caber — mesma
@@ -281,64 +281,102 @@
 
   .empty-msg{color:var(--ink-dim);font-size:var(--text-sm);padding:20px 0;text-align:center;}
 
-  /* ---- Tracking Picking: Kanban de Programação, SOMENTE LEITURA — CSS
-     duplicado 1:1 das classes `.sep-kanban-*`/`.status-*` de index.html
-     (mesma decisão de arquitetura do resto deste arquivo: página estática
-     à parte, sem módulo compartilhado). Sem os estilos de botão/formulário
-     (.btn/.field/...) porque esta versão não tem nenhum controle de
-     edição — reaproveita `.panel-tab-btn` (já existente acima) pras abas
-     de linha de produção. ---- */
-  .status-tag{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:var(--text-xs);font-weight:700;text-transform:uppercase;padding:4px 9px;border-radius:20px;letter-spacing:0.3px;}
-  .status-dot{width:7px;height:7px;border-radius:50%;background:currentColor;}
-  .status-ok{background:var(--ok-bg);color:var(--ok);}
-  .status-warn{background:var(--warn-bg);color:var(--warn);}
-  /* `align-items:stretch` (era `flex-start`) + `flex:1` — junto com
-     `.content-tracking{min-height:calc(100vh - 56px)}` (ver Tracking
-     Picking), isso faz as 5 colunas ESTICAREM pra preencher a MESMA
-     altura sempre, tenha 0 ou várias máquinas — antes, uma linha vazia
-     tinha o board bem mais baixo/curto que uma linha cheia, e trocar de
-     linha fazia tudo "pular" de tamanho (pedido do cliente: "esse painel
-     é fixo, não precisa ficar alternando tamanho ou localização"). Sem
-     nenhum transform/escala — só flexbox comum, então nunca distorce
-     texto/ícone. */
-  .sep-kanban-board{display:flex;gap:14px;overflow-x:auto;padding-bottom:8px;align-items:stretch;flex:1;}
-  /* Sem borda NEM fundo de propósito (a 1ª tentativa só tirou a borda,
-     mas manteve `background:var(--panel-raised)` — como a coluna estica
-     até o fundo da tela, esse fundo sozinho já lia como um "quadradão"
-     em volta de uma área vazia enorme embaixo dos cards). Pedido do
-     cliente: nenhuma diferenciação de área pra coluna, igual era antes —
-     só o cabeçalho colorido (`.sep-kanban-col-head`) e os cards
-     (`.sep-kanban-card`) ficam visíveis, soltos direto no fundo da
-     página. */
-  /* Sem `max-width` de propósito — com ele (340px), as 5 colunas
-     paravam de crescer bem antes de preencher a largura toda numa TV
-     grande (1920px), deixando uma faixa vazia enorme do lado direito
-     (print real do cliente) — mais visível ainda agora que a coluna não
-     tem fundo/contorno nenhum (nada disfarça o vazio). Sem teto, as 5
-     colunas dividem a largura toda igualmente sempre. */
-  .sep-kanban-col{flex:1 1 0;min-width:260px;display:flex;flex-direction:column;}
-  .sep-kanban-col-head{display:flex;align-items:center;gap:8px;padding:12px 14px;border-radius:var(--radius) var(--radius) 0 0;font-family:var(--font-mono);font-size:var(--text-sm);font-weight:700;text-transform:uppercase;letter-spacing:0.4px;}
-  .sep-kanban-col-count{margin-left:auto;background:rgba(0,0,0,.08);color:inherit;font-size:var(--text-xs);font-weight:800;padding:2px 9px;border-radius:20px;}
-  /* Sem altura máxima nem rolagem própria de propósito — pedido do cliente:
-     "quero que apareça tudo, se eu quiser ver os itens lá de baixo eu faço
-     a rolagem de tela" — cada coluna cresce pro tamanho de todos os cards
-     que tiver, e é a PÁGINA (não a coluna) que rola quando não cabe tudo.
-     `flex:1` aqui é só o que faz a coluna ESTICAR até o fundo quando ela
-     tem poucos/nenhum card (ver comentário de `.sep-kanban-board` acima)
-     — de propósito SEM `min-height:0`/`overflow`: quando o conteúdo é
-     maior que o espaço "justo" da coluna, ele empurra a coluna (e a
-     página) pra ficar mais alta, em vez de cortar ou rolar sozinho. */
-  .sep-kanban-col-body{padding:10px;display:flex;flex-direction:column;gap:10px;flex:1;}
-  .sep-kanban-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;box-shadow:0 1px 2px rgba(0,0,0,.04);position:relative;}
-  .sep-kanban-card.sep-urgente-maquina{box-shadow:0 0 0 3px var(--danger),0 1px 3px rgba(0,0,0,.04);}
-  .sep-kanban-card-head{display:flex;align-items:center;gap:8px;margin-bottom:4px;}
-  .sep-kanban-etp{font-family:var(--font-mono);font-weight:800;font-size:var(--text-md);color:var(--ink);}
-  .sep-urgente-chip{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:999px;background:var(--danger-bg);color:var(--danger);font-size:var(--text-xs);font-weight:700;}
-  .sep-kanban-nome{font-size:16px;font-weight:700;color:var(--ink);line-height:1.25;margin-bottom:4px;}
-  .sep-kanban-meta-line{font-size:var(--text-sm);color:var(--ink-dim);margin-bottom:2px;display:flex;align-items:center;gap:5px;}
-  .sep-kanban-data-atrasada{color:var(--danger);font-weight:700;}
-  .sep-kanban-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line);}
-  .sep-kanban-obs-destaque{display:inline;background:#FFEB3B;color:#3A2F00;font-weight:700;padding:2px 6px;border-radius:3px;box-decoration-break:clone;-webkit-box-decoration-break:clone;}
+  /* ---- Tracking Picking: redesign visual (pedido do cliente, spec de 32
+     seções + imagem de referência) — SÓ visual: lógica/dados/filtros/
+     navegação/status continuam 100% os mesmos de antes (`TrackingPicking`/
+     `TrackingPickingBoard`/`computeMaquinasPainelTracking` em JS, sem
+     mudança de comportamento). Variáveis `--tp*` escopadas em `.tp-page`
+     (mesma técnica de `.pc-page` logo abaixo: um prefixo próprio, nunca
+     sobrescrevendo `--bg`/`--panel`/etc. globais) — MAS, ao contrário de
+     `.pc-page` (sempre escuro), aqui os 2 blocos (`:root .tp-page` claro,
+     `:root[data-theme="dark"] .tp-page` escuro) existem de propósito:
+     cliente confirmou que o botão de tema clara/escuro desta tela deve
+     continuar funcionando (diferente de Pedidos de Compra, que é sempre
+     escuro). O bloco escuro usa os hex exatos da referência; o claro
+     reaproveita os tokens claros já existentes no resto do app (mesma
+     relação de cor por status: aguardando=laranja/warn, em
+     separação=teal, separada=verde/ok, entregue=azul/blue), já que a
+     spec não trouxe uma versão clara. */
+  .tp-page{
+    --tpbg: var(--bg); --tpcard: var(--panel); --tpcardborder: var(--line);
+    --tpcardshadow: 0 1px 3px rgba(15,23,42,.08);
+    --tptrack: var(--line); --tpfill: var(--ok);
+    --tpcomsaldo-bg: var(--ok-bg); --tpcomsaldo-ink: var(--ok);
+    --tpsemsaldo-bg: var(--danger-bg); --tpsemsaldo-ink: var(--danger);
+    --tpcol-aguardando-bg: var(--warn-bg); --tpcol-aguardando-ink: var(--warn);
+    --tpcol-emsep-bg: var(--teal-bg); --tpcol-emsep-ink: var(--teal);
+    --tpcol-separada-bg: var(--ok-bg); --tpcol-separada-ink: var(--ok);
+    --tpcol-entregue-bg: var(--blue-bg); --tpcol-entregue-ink: var(--blue);
+    --tpink: var(--ink); --tpink-dim: var(--ink-dim); --tpsep: var(--ink-dim);
+    --tppill-bg: transparent; --tppill-border: var(--line); --tppill-ink: var(--ink-dim);
+    --tppill-selected-bg: var(--brand-navy); --tppill-selected-ink: #fff;
+    --tpurgente: var(--danger); --tpurgente-badge-bg: var(--danger-bg); --tpurgente-badge-ink: var(--danger);
+    --tpempty-icon: var(--gray-400); --tpempty-text: var(--ink-dim);
+  }
+  :root[data-theme="dark"] .tp-page{
+    --tpbg:#0F141B; --tpcard:#151E29; --tpcardborder:#263446;
+    --tpcardshadow: 0 2px 8px rgba(0,0,0,.18);
+    --tptrack:#26374A; --tpfill:#32DFA1;
+    --tpcomsaldo-bg:rgba(16,185,129,.08); --tpcomsaldo-ink:#29E09B;
+    --tpsemsaldo-bg:rgba(239,68,68,.08); --tpsemsaldo-ink:#FF5C5C;
+    --tpcol-aguardando-bg:#5A3A00; --tpcol-aguardando-ink:#FFC21A;
+    --tpcol-emsep-bg:#005B65; --tpcol-emsep-ink:#35D9E8;
+    --tpcol-separada-bg:#005B3B; --tpcol-separada-ink:#28E09B;
+    --tpcol-entregue-bg:#064B91; --tpcol-entregue-ink:#4BA3FF;
+    --tpink:#F1F5F9; --tpink-dim:#94A3B8; --tpsep:#64748B;
+    --tppill-bg:transparent; --tppill-border:rgba(255,255,255,.08); --tppill-ink:#CBD5E1;
+    --tppill-selected-bg:#152238; --tppill-selected-ink:#F8FAFC;
+    --tpurgente:#FF5C5C; --tpurgente-badge-bg:rgba(255,77,77,.14); --tpurgente-badge-ink:#FF4D4D;
+    --tpempty-icon:#64748B; --tpempty-text:#94A3B8;
+  }
+
+  .tp-pill-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;flex-shrink:0;}
+  .tp-pill{height:38px;padding:0 16px;border-radius:8px;border:1px solid var(--tppill-border);background:var(--tppill-bg);color:var(--tppill-ink);font-family:var(--font-corp);font-size:12px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;transition:background .15s,color .15s,border-color .15s;}
+  .tp-pill:hover{opacity:.85;}
+  .tp-pill.active{background:var(--tppill-selected-bg);color:var(--tppill-selected-ink);border-color:var(--tppill-selected-bg);}
+
+  /* `align-items:stretch` (default do grid) + `flex:1` — junto com
+     `.content-tracking{min-height:calc(100vh - 56px)}` — faz as 4 colunas
+     ESTICAREM pra preencher a MESMA altura sempre, tenha 0 ou várias
+     máquinas (pedido do cliente: "esse painel é fixo, não precisa ficar
+     alternando tamanho ou localização"). Sem `max-width`/altura máxima
+     nem rolagem própria por coluna de propósito — outro pedido do
+     cliente, ainda válido: "quero que apareça tudo, se eu quiser ver os
+     itens lá de baixo eu faço a rolagem de tela" — é a PÁGINA que rola
+     quando não cabe tudo, nunca uma coluna sozinha. */
+  .tp-board{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px;align-items:stretch;flex:1;}
+  .tp-col{display:flex;flex-direction:column;min-width:0;}
+  .tp-col-head{height:42px;border-radius:9px 9px 0 0;padding:0 14px;margin-bottom:12px;display:flex;align-items:center;gap:8px;font-family:var(--font-corp);font-size:15px;font-weight:700;text-transform:uppercase;letter-spacing:0.3px;flex-shrink:0;}
+  .tp-col-count{margin-left:auto;min-width:42px;height:30px;padding:0 10px;border-radius:10px;background:rgba(0,0,0,.18);color:inherit;font-size:13px;font-weight:800;display:flex;align-items:center;justify-content:center;}
+  .tp-col-body{display:flex;flex-direction:column;gap:12px;flex:1;}
+  .tp-col-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--tpempty-text);text-align:center;padding:24px 12px;}
+  .tp-col-empty svg{color:var(--tpempty-icon);}
+  .tp-col-empty span{font-family:var(--font-corp);font-size:14px;}
+
+  .tp-card{position:relative;min-height:134px;background:var(--tpcard);border:1px solid var(--tpcardborder);border-radius:9px;box-shadow:var(--tpcardshadow);padding:14px 14px 10px 18px;display:flex;flex-direction:column;justify-content:space-between;box-sizing:border-box;overflow:hidden;}
+  .tp-card::before{content:'';position:absolute;top:0;left:0;bottom:0;width:4px;border-top-left-radius:8px;border-bottom-left-radius:8px;background:var(--tp-stripe);}
+  .tp-card.tp-urgente,.tp-card.tp-atrasada{border-color:var(--tpurgente);}
+  .tp-card-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;min-width:0;}
+  .tp-card-left{min-width:0;flex:1;}
+  .tp-etp-row{display:flex;align-items:center;gap:8px;margin-bottom:2px;}
+  .tp-etp{font-family:var(--font-corp);font-size:18px;font-weight:700;color:var(--tpink);}
+  .tp-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:999px;background:var(--tpurgente-badge-bg);color:var(--tpurgente-badge-ink);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.2px;white-space:nowrap;}
+  .tp-maquina-cliente{font-family:var(--font-corp);font-size:15px;font-weight:600;color:var(--tpink);line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .tp-maquina-cliente .tp-cliente{font-weight:500;font-size:14px;color:var(--tpink-dim);}
+  .tp-maquina-cliente .tp-sep-txt{color:var(--tpsep);font-weight:400;margin:0 5px;}
+  .tp-meta{font-family:var(--font-corp);font-size:11px;font-weight:400;color:var(--tpink-dim);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .tp-card-right{display:flex;gap:8px;flex-shrink:0;}
+  .tp-stock-block{width:82px;height:58px;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-sizing:border-box;}
+  .tp-stock-block .num{font-family:var(--font-mono);font-size:22px;font-weight:700;line-height:1;}
+  .tp-stock-block .lbl{font-size:9px;font-weight:700;letter-spacing:.3px;margin-top:3px;}
+  .tp-stock-block.com{background:var(--tpcomsaldo-bg);}
+  .tp-stock-block.com .num,.tp-stock-block.com .lbl{color:var(--tpcomsaldo-ink);}
+  .tp-stock-block.sem{background:var(--tpsemsaldo-bg);}
+  .tp-stock-block.sem .num,.tp-stock-block.sem .lbl{color:var(--tpsemsaldo-ink);}
+  .tp-card-bottom{display:flex;align-items:center;gap:8px;margin-top:10px;flex-shrink:0;}
+  .tp-bar-track{flex:1;height:7px;border-radius:99px;background:var(--tptrack);overflow:hidden;}
+  .tp-bar-fill{height:100%;border-radius:99px;background:var(--tpfill);}
+  .tp-itens-txt{font-family:var(--font-corp);font-size:11px;font-weight:500;color:var(--tpink-dim);white-space:nowrap;}
 
   /* ---- Pedidos de Compra (3ª tela do painel) — painel executivo, cores
      FIXAS (não seguem `--bg`/`--panel`/etc. do resto do app, nem o toggle
@@ -2049,7 +2087,9 @@ function ConfiguracoesModal({
 
 // Tela das abas de link — <iframe> do link atual + (quando há mais de 1) uma
 // fileira de sub-abas pra escolher direto, mesmo padrão visual/estrutural
-// dos botões Elétrica/SEM/SSE/SEP dentro de Tracking Picking (`.panel-tab-btn`).
+// dos botões Elétrica/SEM/SSE/SEP dentro de Tracking Picking (aqui ainda
+// `.panel-tab-btn` — só os botões DENTRO do Tracking Picking passaram a usar
+// `.tp-pill`, redesign visual daquela tela específica).
 // Ciclo automático (60s por link, própria dessa tela) segue o MESMO padrão
 // já usado por TrackingPicking pro ciclo de linhas (ver comentário lá):
 // ref pra sempre ler o índice mais atual dentro do setInterval, e as 2
@@ -2634,16 +2674,6 @@ function DIconTracking({name, size=18, strokeWidth=1.8}){
   );
 }
 
-const SEPARACAO_STATUS_LABEL_TRACKING = {aguardando:'Aguardando', em_separacao:'Em Separação', separada:'Separada', entregue:'Entregue'};
-function SeparacaoStatusTagTracking({status}){
-  const label = SEPARACAO_STATUS_LABEL_TRACKING[status] || status;
-  if(status==='aguardando') return <span className="status-tag status-warn"><span className="status-dot"></span>{label}</span>;
-  if(status==='separada') return <span className="status-tag status-ok"><span className="status-dot"></span>{label}</span>;
-  if(status==='em_separacao') return <span className="status-tag" style={{background:'var(--teal-bg)',color:'var(--teal)'}}><span className="status-dot"></span>{label}</span>;
-  if(status==='entregue') return <span className="status-tag" style={{background:'var(--blue-bg)',color:'var(--blue)'}}><span className="status-dot"></span>{label}</span>;
-  return <span className="status-tag status-warn"><span className="status-dot"></span>{label}</span>;
-}
-
 // Ver LINHA_PADRAO/linhaPadraoAtual/LINHAS_PRODUCAO_PADRAO em index.html —
 // mesma tabela `linhas_producao` (Supabase), mesmo critério de fallback
 // DINÂMICO (nenhuma linha é fixa/protegida, nem "Elétrica" — cliente
@@ -2673,12 +2703,18 @@ async function fetchLinhasProducao(){
   }
 }
 
+// Redesign visual (pedido do cliente) juntou "Atrasada" de volta dentro da
+// coluna do status real da máquina — a referência enviada só mostra 4
+// colunas/4 cores (Aguardando/Em Separação/Separada/Entregue), sem coluna
+// própria pra atraso. `atrasada` continua calculado igual (ver
+// `computeMaquinasPainelTracking`) e vira só um destaque no CARD (borda +
+// selo, mesma linguagem visual do "Urgente" — ver `MaquinaCardTracking`),
+// nunca mais uma coluna separada.
 const SEP_KANBAN_COLUNAS_TRACKING = [
-  {chave:'aguardando', titulo:'Aguardando Separação', icone:'clock', cor:'--warn', corBg:'--warn-bg', vazio:'Nenhuma máquina aguardando.'},
-  {chave:'emSeparacao', titulo:'Em Separação', icone:'repeat', cor:'--teal', corBg:'--teal-bg', vazio:'Nenhuma máquina em separação no momento.'},
-  {chave:'separada', titulo:'Separada', icone:'box', cor:'--ok', corBg:'--ok-bg', vazio:'Nenhuma máquina separada ainda.'},
-  {chave:'atrasada', titulo:'Atrasada', icone:'alertTriangle', cor:'--danger', corBg:'--danger-bg', vazio:'Nenhuma máquina atrasada — tudo em dia.'},
-  {chave:'entregue', titulo:'Entregue', icone:'checkCircle', cor:'--blue', corBg:'--blue-bg', vazio:'Nenhuma máquina entregue ainda.'},
+  {chave:'aguardando', titulo:'Aguardando Separação', icone:'clock', cor:'--tpcol-aguardando-ink', corBg:'--tpcol-aguardando-bg', vazio:'Nenhuma máquina aguardando.'},
+  {chave:'emSeparacao', titulo:'Em Separação', icone:'repeat', cor:'--tpcol-emsep-ink', corBg:'--tpcol-emsep-bg', vazio:'Nenhuma máquina em separação no momento.'},
+  {chave:'separada', titulo:'Separada', icone:'box', cor:'--tpcol-separada-ink', corBg:'--tpcol-separada-bg', vazio:'Nenhuma máquina separada ainda.'},
+  {chave:'entregue', titulo:'Entregue', icone:'checkCircle', cor:'--tpcol-entregue-ink', corBg:'--tpcol-entregue-bg', vazio:'Nenhuma máquina entregue ainda.'},
 ];
 
 function maquinaEtpRowToLocalTracking(row){
@@ -2713,15 +2749,50 @@ async function fetchMaquinasEtpTracking(){
 // adicionada (ver "PROGRAMAÇÃO: MESMA ETP EM VÁRIAS LINHAS" no schema.sql)
 // — sem ela, um item não saberia a qual card ele pertence quando a mesma
 // ETP tem card em mais de uma linha, e apareceria duplicado nas duas.
+// `codigo` adicionada pro redesign visual (indicadores "COM SALDO"/"SEM
+// SALDO" do card — ver `fetchSaldoPorCodigosTracking` logo abaixo): é o
+// código de produto usado pra cruzar contra `estoque_saldo`.
 async function fetchItensSeparacaoTracking(){
   if(!supabaseClient) return [];
   try{
-    const { data, error } = await supabaseClient.from('sequencia_separacao').select('id, etp, status, linha');
+    const { data, error } = await supabaseClient.from('sequencia_separacao').select('id, etp, status, linha, codigo');
     if(error) throw error;
     return data || [];
   }catch(err){
     console.warn('Tracking Picking: falha ao buscar itens de separação:', err);
     return [];
+  }
+}
+
+// Redesign visual do Tracking Picking: cada card ganhou 2 indicadores novos
+// ("COM SALDO"/"SEM SALDO"), cruzando o código de cada item da ETP contra o
+// saldo real do Protheus (`estoque_saldo`, cache atualizado via upload
+// manual — ver CLAUDE.md). SEMPRE o armazém '1' (mesmo valor fixo já usado
+// em todo o app como armazém padrão — ver `useState('1')` em
+// NewInventory/ManualCountFlow/EtiquetaPanel e `fetchSaldoConsultaSelgron`
+// em index.html, todos hardcoded pro armazém '1'): decisão explícita do
+// cliente ("usar sempre um armazém específico"), NUNCA somar saldo de
+// vários armazéns nem adivinhar qual é o certo (mesma regra de sempre —
+// ver comentário em `fetchProdutosByCodigos`, index.html). `estoque_saldo`
+// tem RLS "leitura autenticada" (qualquer conta logada, sem exigir acesso
+// à tela "Programação" — ver backend/schema.sql), então a mesma sessão da
+// TV já basta, sem migração nenhuma.
+const ALMOXARIFADO_SALDO_TRACKING = '1';
+async function fetchSaldoPorCodigosTracking(codigos){
+  const mapa = new Map();
+  if(!supabaseClient || !codigos || codigos.length===0) return mapa;
+  try{
+    const { data, error } = await supabaseClient
+      .from('estoque_saldo')
+      .select('produto_codigo, saldo')
+      .eq('almoxarifado', ALMOXARIFADO_SALDO_TRACKING)
+      .in('produto_codigo', codigos);
+    if(error) throw error;
+    (data||[]).forEach(r=>{ mapa.set(r.produto_codigo, Number(r.saldo||0)); });
+    return mapa;
+  }catch(err){
+    console.warn('Tracking Picking: falha ao buscar saldo (COM SALDO/SEM SALDO):', err);
+    return mapa;
   }
 }
 
@@ -2740,8 +2811,13 @@ function statusAgregadoMaquinaTracking(itensDaMaquina){
 }
 
 // Mesma lógica de `computeMaquinasPainel` (index.html) — ver lá o
-// comentário completo.
-function computeMaquinasPainelTracking(itens, maquinasEtp, hojeStr){
+// comentário completo. `saldoPorCodigo` (Map codigo→saldo, armazém '1' —
+// ver `fetchSaldoPorCodigosTracking`) é novo, pro redesign visual: agrega
+// por máquina quantos itens da ETP têm saldo>0 (`comSaldo`) vs 0/sem linha
+// no cache (`semSaldo`), pros 2 blocos e a barra de progresso do card. Item
+// sem `codigo` (não deveria acontecer, `codigo` é NOT NULL) ou sem saldo
+// carregado ainda conta como SEM SALDO — nunca assume "tem" sem confirmar.
+function computeMaquinasPainelTracking(itens, maquinasEtp, hojeStr, saldoPorCodigo){
   const porEtp = {};
   itens.forEach(i=>{
     if(!i.etp) return;
@@ -2758,6 +2834,11 @@ function computeMaquinasPainelTracking(itens, maquinasEtp, hojeStr){
     const status = maquina ? maquina.status : statusAgregadoMaquinaTracking(itensDaMaquina);
     const dataSeparacao = maquina ? maquina.dataSeparacao : null;
     const atrasada = !!(dataSeparacao && dataSeparacao<hojeStr && status!=='separada' && status!=='entregue');
+    let comSaldo = 0, semSaldo = 0;
+    itensDaMaquina.forEach(i=>{
+      const saldo = (saldoPorCodigo && i.codigo!=null) ? saldoPorCodigo.get(i.codigo) : undefined;
+      if(saldo!=null && saldo>0) comSaldo++; else semSaldo++;
+    });
     return {
       etp, status,
       urgente: maquina ? maquina.urgente : false,
@@ -2771,6 +2852,7 @@ function computeMaquinasPainelTracking(itens, maquinasEtp, hojeStr){
       descricao: maquina ? maquina.descricao : null,
       linha: maquina ? maquina.linha : null,
       dataSeparacao, atrasada,
+      comSaldo, semSaldo,
     };
   });
 
@@ -2784,10 +2866,13 @@ function computeMaquinasPainelTracking(itens, maquinasEtp, hojeStr){
   return lista;
 }
 
+// Redesign visual: só 4 buckets agora (a referência enviada pelo cliente só
+// tem 4 colunas/4 cores) — `atrasada` não é mais uma coluna própria, cada
+// máquina cai na coluna do seu status REAL de qualquer jeito, e o destaque
+// de atraso vira só borda+selo no card (ver `MaquinaCardTracking`).
 function bucketizeKanbanTracking(maquinas){
-  const buckets = {aguardando:[], emSeparacao:[], separada:[], atrasada:[], entregue:[]};
+  const buckets = {aguardando:[], emSeparacao:[], separada:[], entregue:[]};
   maquinas.forEach(m=>{
-    if(m.atrasada){ buckets.atrasada.push(m); return; }
     if(m.status==='aguardando') buckets.aguardando.push(m);
     else if(m.status==='em_separacao') buckets.emSeparacao.push(m);
     else if(m.status==='separada') buckets.separada.push(m);
@@ -2796,37 +2881,59 @@ function bucketizeKanbanTracking(maquinas){
   return buckets;
 }
 
-// Card de 1 máquina — versão SOMENTE LEITURA de `MaquinaCard` (index.html):
-// mesmo conteúdo (ETP/urgente/nome/chassi/código/descrição/observação
-// destacada/data), sem nenhum botão de ação.
-function MaquinaCardTracking({m}){
-  const classes = ['sep-kanban-card'];
-  if(m.urgente) classes.push('sep-urgente-maquina');
+// Card de 1 máquina — versão SOMENTE LEITURA, redesign visual (pedido do
+// cliente, spec de 32 seções + imagem de referência): card horizontal
+// compacto, faixa colorida à esquerda (`corStripe`, cor da coluna),
+// ETP/Máquina|Cliente/Chassi+Código à esquerda, os 2 blocos "COM SALDO"/
+// "SEM SALDO" à direita, barra de progresso + "N itens" embaixo. O card
+// NUNCA repete o texto do status (a coluna já mostra) e NÃO mostra mais
+// "Descrição"/observação destacada/Data de Separação — a spec pediu um
+// card fixo bem mais compacto (~134px) sem espaço pra essas linhas extras;
+// esse dado continua 100% preservado no banco e na tela real "Programação"
+// (index.html), só não aparece mais neste card da TV. Urgente/Atrasada
+// usam a MESMA linguagem visual discreta (borda 1px + selo pequeno) —
+// nunca o card inteiro fica vermelho; se as 2 coisas forem verdade ao
+// mesmo tempo, só o selo "Urgente" aparece (prioridade), pra não duplicar
+// destaque.
+function MaquinaCardTracking({m, corStripe}){
+  const classes = ['tp-card'];
+  if(m.urgente) classes.push('tp-urgente');
+  else if(m.atrasada) classes.push('tp-atrasada');
+  const pct = m.totalItens>0 ? Math.round((m.comSaldo/m.totalItens)*100) : 0;
+  const metaChassiCodigo = [
+    m.chassi ? `Chassi: ${m.chassi}` : null,
+    m.codigoProduto ? `Cód: ${m.codigoProduto}` : null,
+  ].filter(Boolean).join(' • ');
   return (
-    <div className={classes.join(' ')}>
-      <div className="sep-kanban-card-head">
-        <span className="sep-kanban-etp">{m.etp}</span>
-        {m.urgente && <span className="sep-urgente-chip"><DIconTracking name="flame" size={11} /> Urgente</span>}
-      </div>
-      <div className="sep-kanban-nome" style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',gap:8}}>
-        {m.obs && <span>{m.obs}</span>}
-        <span>{m.cliente || 'Cliente não informado'}</span>
-      </div>
-      {m.chassi && <div className="sep-kanban-meta-line">Chassi: {m.chassi}</div>}
-      {m.codigoProduto && <div className="sep-kanban-meta-line">Código do Produto: {m.codigoProduto}</div>}
-      {m.descricao && <div className="sep-kanban-meta-line">Descrição: {m.descricao}</div>}
-      {m.observacao && (
-        <div className="sep-kanban-meta-line" style={{marginTop:4,marginBottom:6}}>
-          <span className="sep-kanban-obs-destaque">{m.observacao}</span>
+    <div className={classes.join(' ')} style={{'--tp-stripe':corStripe}}>
+      <div className="tp-card-top">
+        <div className="tp-card-left">
+          <div className="tp-etp-row">
+            <span className="tp-etp">{m.etp}</span>
+            {m.urgente && <span className="tp-badge"><DIconTracking name="alertTriangle" size={10} /> Urgente</span>}
+            {!m.urgente && m.atrasada && <span className="tp-badge"><DIconTracking name="clock" size={10} /> Atrasada</span>}
+          </div>
+          <div className="tp-maquina-cliente">
+            {m.obs && <span className="tp-maquina">{m.obs}</span>}
+            {m.obs && <span className="tp-sep-txt">|</span>}
+            <span className="tp-cliente">{m.cliente || 'Cliente não informado'}</span>
+          </div>
+          {metaChassiCodigo && <div className="tp-meta">{metaChassiCodigo}</div>}
         </div>
-      )}
-      {m.dataSeparacao && (
-        <div className={m.atrasada ? 'sep-kanban-meta-line sep-kanban-data-atrasada' : 'sep-kanban-meta-line'}>
-          {m.atrasada && <DIconTracking name="alertTriangle" size={12} />} Data de Separação: {new Date(m.dataSeparacao+'T00:00:00').toLocaleDateString('pt-BR')}
+        <div className="tp-card-right">
+          <div className="tp-stock-block com">
+            <span className="num">{m.comSaldo}</span>
+            <span className="lbl">COM SALDO</span>
+          </div>
+          <div className="tp-stock-block sem">
+            <span className="num">{m.semSaldo}</span>
+            <span className="lbl">SEM SALDO</span>
+          </div>
         </div>
-      )}
-      <div className="sep-kanban-foot">
-        <SeparacaoStatusTagTracking status={m.status} />
+      </div>
+      <div className="tp-card-bottom">
+        <div className="tp-bar-track"><div className="tp-bar-fill" style={{width: pct+'%'}}></div></div>
+        <span className="tp-itens-txt">{m.totalItens} {m.totalItens===1 ? 'item' : 'itens'}</span>
       </div>
     </div>
   );
@@ -2835,21 +2942,25 @@ function MaquinaCardTracking({m}){
 function TrackingPickingBoard({maquinas}){
   const buckets = bucketizeKanbanTracking(maquinas);
   return (
-    <div className="sep-kanban-board">
+    <div className="tp-board">
       {SEP_KANBAN_COLUNAS_TRACKING.map(col=>{
         const lista = buckets[col.chave];
+        const corVar = `var(${col.cor})`;
         return (
-          <div key={col.chave} className="sep-kanban-col">
-            <div className="sep-kanban-col-head" style={{color:`var(${col.cor})`,background:`var(${col.corBg})`}}>
-              <DIconTracking name={col.icone} size={16} />
+          <div key={col.chave} className="tp-col">
+            <div className="tp-col-head" style={{color:corVar,background:`var(${col.corBg})`}}>
+              <DIconTracking name={col.icone} size={22} />
               <span>{col.titulo}</span>
-              <span className="sep-kanban-col-count">{lista.length}</span>
+              <span className="tp-col-count">{lista.length}</span>
             </div>
-            <div className="sep-kanban-col-body">
+            <div className="tp-col-body">
               {lista.length===0 ? (
-                <div className="empty-msg" style={{padding:'10px 0'}}>{col.vazio}</div>
+                <div className="tp-col-empty">
+                  <DIconTracking name="box" size={40} />
+                  <span>{col.vazio}</span>
+                </div>
               ) : (
-                lista.map(m=> <MaquinaCardTracking key={m.etp} m={m} />)
+                lista.map(m=> <MaquinaCardTracking key={m.etp} m={m} corStripe={corVar} />)
               )}
             </div>
           </div>
@@ -2859,7 +2970,7 @@ function TrackingPickingBoard({maquinas}){
   );
 }
 
-function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto, linhaSelecionada, onChangeLinha, onAbrirConfig, links, linkIndex, onSelecionarLink, onNavegarEsquerda, onNavegarDireita, segundosLinhaTracking, status, maquinasEtp, itens, linhasProducao}){
+function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto, linhaSelecionada, onChangeLinha, onAbrirConfig, links, linkIndex, onSelecionarLink, onNavegarEsquerda, onNavegarDireita, segundosLinhaTracking, status, maquinasEtp, itens, linhasProducao, saldoPorCodigo}){
   // Busca de dado (status/maquinasEtp/itens) e o polling de 5 min +
   // Realtime AGORA vivem em App() — mesmo motivo de `PainelIndicadores`
   // (ver comentário completo lá): o rodízio automático desmontava este
@@ -2928,7 +3039,7 @@ function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto,
   const maquinasEtpDaLinha = maquinasEtp.filter(m=>(m.linha || linhaPadraoAtualValor)===linhaSelecionada);
   const itensDaLinha = itens.filter(i=>(i.linha || linhaPadraoAtualValor)===linhaSelecionada);
   const hojeStr = new Date().toISOString().slice(0,10);
-  const maquinasPainel = status==='ok' ? computeMaquinasPainelTracking(itensDaLinha, maquinasEtpDaLinha, hojeStr) : [];
+  const maquinasPainel = status==='ok' ? computeMaquinasPainelTracking(itensDaLinha, maquinasEtpDaLinha, hojeStr, saldoPorCodigo) : [];
   // Nota (não erro) — ver comentário em `carregarDados`: as duas listas
   // vazias tanto podem ser fila vazia de verdade quanto conta sem acesso à
   // tela "Programação". Mostra só como lembrete, nunca troca o Kanban por
@@ -2947,12 +3058,14 @@ function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto,
           `transform:scale`, então cada linha "pulava" pra um tamanho
           diferente). `.content-tracking` (ver CSS) fixa a altura em
           `calc(100vh - 56px)` sempre — cada coluna do Kanban (ver
-          `.sep-kanban-col-body{flex:1}` no CSS) estica pra preencher
-          essa MESMA altura sempre, tenha 0 ou várias máquinas: poucas
-          deixam espaço vazio DENTRO da coluna (honesto, e não afeta o
-          tamanho/posição do board), muitas rolam dentro da própria
-          coluna — nunca mais transform, nunca mais "pular" de tamanho. */}
-      <div className="content content-tracking">
+          `.tp-col-body` no CSS) estica pra preencher essa MESMA altura
+          sempre, tenha 0 ou várias máquinas: poucas deixam espaço vazio
+          DENTRO da coluna (honesto, e não afeta o tamanho/posição do
+          board), muitas empurram a coluna (e a página) pra baixo — nunca
+          mais transform, nunca mais "pular" de tamanho. `.tp-page` (ver
+          CSS) só dá as variáveis de cor do redesign visual pra esta tela
+          — sem afetar Indicadores/Pedidos de Compra. */}
+      <div className="content content-tracking tp-page">
       {(status==='sem-sessao' || status==='erro') && (
         <div className="demo-banner">
           Esta página não conseguiu carregar a fila de separação ao vivo. Verifique se a conta de login
@@ -2970,12 +3083,11 @@ function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto,
 
       {status==='ok' && (
         <React.Fragment>
-          <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:18,flexShrink:0}}>
+          <div className="tp-pill-row">
             {linhasProducao.map(l=>(
               <button
                 key={l.nome} type="button"
-                className={'panel-tab-btn' + (linhaSelecionada===l.nome ? ' active' : '')}
-                style={{padding:'8px 16px',fontSize:'var(--text-sm)'}}
+                className={'tp-pill' + (linhaSelecionada===l.nome ? ' active' : '')}
                 onClick={()=>onChangeLinha(l.nome)}
               >{l.nome}</button>
             ))}
@@ -3390,8 +3502,8 @@ function FitToScreen({children}){
   // por coluna), e trocar de linha fazia o board mudar de tamanho a
   // cada vez (às vezes bem esticado com pouca máquina) — pedido do
   // cliente foi um layout FIXO lá, que nunca muda de tamanho/posição
-  // (ver `.content-tracking`/`.sep-kanban-col-body{flex:1}` no CSS —
-  // layout comum de flexbox, sem nenhum transform).
+  // (ver `.content-tracking`/`.tp-board` no CSS — grid com
+  // `align-items:stretch`, sem nenhum transform).
   const [escala, setEscala] = useState({x:1, y:1});
 
   useEffect(() => {
@@ -3624,6 +3736,7 @@ function App(){
   const [statusTracking, setStatusTracking] = useState('loading');
   const [maquinasEtpTracking, setMaquinasEtpTracking] = useState([]);
   const [itensTracking, setItensTracking] = useState([]);
+  const [saldoPorCodigoTracking, setSaldoPorCodigoTracking] = useState(() => new Map());
   const carregarDadosTracking = useCallback(async () => {
     if(!supabaseClient){ setStatusTracking('erro'); return; }
     try{
@@ -3643,8 +3756,16 @@ function App(){
         fetchMaquinasEtpTracking(),
         fetchItensSeparacaoTracking(),
       ]);
+      // Saldo (COM SALDO/SEM SALDO do card, redesign visual) buscado DEPOIS
+      // dos itens (precisa dos códigos) e ANTES de `setStatusTracking('ok')`
+      // — mesmo critério já usado no resto do painel (ver PainelIndicadores/
+      // PedidosCompraPanel): só vira 'ok' quando TODO dado necessário pro
+      // card já está pronto, nunca um "flash" de card sem saldo carregado.
+      const codigosDistintos = Array.from(new Set(itensData.map(i=>i.codigo).filter(Boolean)));
+      const saldoMap = await fetchSaldoPorCodigosTracking(codigosDistintos);
       setMaquinasEtpTracking(maquinasData);
       setItensTracking(itensData);
+      setSaldoPorCodigoTracking(saldoMap);
       setStatusTracking('ok');
     }catch(err){
       console.warn('Tracking Picking: falha ao carregar dados ao vivo', err);
@@ -3904,7 +4025,7 @@ function App(){
           linhaSelecionada={linhaSelecionada} onChangeLinha={setLinhaSelecionada}
           segundosLinhaTracking={temposConfig.segundosLinhaTracking}
           status={statusTracking} maquinasEtp={maquinasEtpTracking} itens={itensTracking}
-          linhasProducao={linhasProducao}
+          linhasProducao={linhasProducao} saldoPorCodigo={saldoPorCodigoTracking}
           {...propsAbaLink}
         />
       )}
