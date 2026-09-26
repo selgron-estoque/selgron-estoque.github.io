@@ -21,14 +21,26 @@
 // que prioridade.
 //
 // Filtros fixos da busca (confirmados no exemplo de URL real mandado pelo
-// cliente) — SALDO=SEM_SALDO e o mesmo conjunto de grupos (B1_GRUPO) sempre;
-// só o C2_NTEP (código da ETP) muda a cada busca. Se o cliente pedir pra
-// tornar esses filtros configuráveis no futuro, é um pedido separado — por
-// enquanto ficam fixos, exatamente como o link que ele já usa manualmente:
+// cliente) — o mesmo conjunto de grupos (B1_GRUPO) sempre; só o C2_NTEP
+// (código da ETP) e o SALDO mudam a cada busca. Se o cliente pedir pra
+// tornar B1_GRUPO configurável no futuro, é um pedido separado — por
+// enquanto fica fixo, exatamente como o link que ele já usa manualmente:
 //   https://consulta.selgron.com.br/itensfaltantes.php?C2_NTEP=6220-26&
 //   D4_TRT=&DATA_EMISSAO_DE=&DATA_EMISSAO_ATE=&SALDO=SEM_SALDO&
 //   B1_GRUPO=0044%2C0090%2C0088%2C9900%2C9910%2C9930%2C9940%2C0016%2C1016&
 //   btn-confirmar=
+//
+// SALDO passou a ser parametrizado (era fixo em SEM_SALDO) — pedido do
+// Tracking Picking (painel-indicadores.html, redesign visual): o card de
+// cada máquina agora mostra "COM SALDO"/"SEM SALDO" cruzando cada ETP
+// contra esta MESMA consulta que o cliente já usa manualmente (print real:
+// o campo "Saldo" do formulário aceita "Sem Saldo" OU "Com Saldo", os 2
+// já existem na página — só a versão anterior desta function fixava
+// sempre em SEM_SALDO). `Deno.serve` abaixo dispara as 2 buscas (SEM_SALDO
+// e COM_SALDO) em paralelo pra mesma ETP e devolve as 2 CONTAGENS
+// (`semSaldo`/`comSaldo`) — só a contagem, não a lista de itens de cada
+// uma, porque é só o que o card precisa (evita carregar/transferir dado
+// que a tela não usa, mesmo critério de sempre neste projeto).
 //
 // PARSER — já calibrado contra o HTML real da página (o cliente mandou via
 // Ctrl+U, ETP 6220-26, 20 linhas de dado) — a lista de colunas do 1º
@@ -79,12 +91,18 @@
 const CONSULTA_SELGRON_USER = Deno.env.get("CONSULTA_SELGRON_USER") ?? "";
 const CONSULTA_SELGRON_PASS = Deno.env.get("CONSULTA_SELGRON_PASS") ?? "";
 const ITENS_FALTANTES_URL = "https://consulta.selgron.com.br/itensfaltantes.php";
-// Mesmo conjunto de grupos/saldo do exemplo real mandado pelo cliente — ver
-// comentário do topo do arquivo.
-const FILTROS_FIXOS =
-  "&D4_TRT=&DATA_EMISSAO_DE=&DATA_EMISSAO_ATE=&SALDO=SEM_SALDO&B1_GRUPO=" +
-  encodeURIComponent("0044,0090,0088,9900,9910,9930,9940,0016,1016") +
-  "&btn-confirmar=";
+// Mesmo conjunto de grupos do exemplo real mandado pelo cliente — ver
+// comentário do topo do arquivo. `SALDO` saiu daqui (era fixo em
+// SEM_SALDO) — agora é parâmetro de `montarUrl`, pra poder buscar os 2
+// estados (SEM_SALDO/COM_SALDO) da mesma ETP.
+const GRUPOS_FIXOS = "0044,0090,0088,9900,9910,9930,9940,0016,1016";
+function montarUrl(etp: string, saldo: "SEM_SALDO" | "COM_SALDO"): string {
+  return (
+    `${ITENS_FALTANTES_URL}?C2_NTEP=${encodeURIComponent(etp)}` +
+    `&D4_TRT=&DATA_EMISSAO_DE=&DATA_EMISSAO_ATE=&SALDO=${saldo}` +
+    `&B1_GRUPO=${encodeURIComponent(GRUPOS_FIXOS)}&btn-confirmar=`
+  );
+}
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -272,6 +290,45 @@ function extrairItensFaltantes(html: string): ItemFaltante[] | null {
   return resultado;
 }
 
+// Busca 1 dos 2 estados (SEM_SALDO/COM_SALDO) pra uma ETP e devolve só a
+// CONTAGEM de linhas — reusa o mesmo parser calibrado (`extrairItensFaltantes`),
+// já que a contagem de itens É o tamanho da lista retornada por ele.
+async function buscarContagem(
+  etp: string,
+  saldo: "SEM_SALDO" | "COM_SALDO",
+  auth: string,
+): Promise<{ ok: true; count: number } | { ok: false; erro: string }> {
+  try {
+    const resp = await fetch(montarUrl(etp, saldo), {
+      method: "GET",
+      headers: { Authorization: auth },
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (resp.status === 401 || resp.status === 403) {
+      return { ok: false, erro: "Login/senha da consulta Selgron inválidos ou expirados." };
+    }
+    if (!resp.ok) {
+      return { ok: false, erro: `Consulta Selgron (${saldo}) respondeu ${resp.status}.` };
+    }
+
+    const html = await resp.text();
+    const itens = extrairItensFaltantes(html);
+    if (itens === null) {
+      return {
+        ok: false,
+        erro:
+          `Não foi possível reconhecer a tabela de itens (${saldo}) — a página pode ter mudado de formato, ` +
+          "ou a ETP não existe. Se isso persistir, mande o HTML real da página (Ctrl+U) pra recalibrar.",
+      };
+    }
+    return { ok: true, count: itens.length };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, erro: `Falha ao consultar itens (${saldo}): ${msg}` };
+  }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS_HEADERS });
 
@@ -291,36 +348,20 @@ Deno.serve(async (req: Request) => {
   }
   if (!etp) return resposta(200, { ok: false, erro: "Informe o código da ETP." });
 
-  try {
-    const auth = "Basic " + btoa(`${CONSULTA_SELGRON_USER}:${CONSULTA_SELGRON_PASS}`);
-    const url = `${ITENS_FALTANTES_URL}?C2_NTEP=${encodeURIComponent(etp)}${FILTROS_FIXOS}`;
-    const resp = await fetch(url, {
-      method: "GET",
-      headers: { Authorization: auth },
-      signal: AbortSignal.timeout(15000),
-    });
+  const auth = "Basic " + btoa(`${CONSULTA_SELGRON_USER}:${CONSULTA_SELGRON_PASS}`);
+  // As 2 buscas (SEM_SALDO/COM_SALDO) disparadas em PARALELO — são 2
+  // requisições independentes na consulta Selgron, então rodar em série só
+  // dobraria a latência à toa. Exige as 2 darem certo pra responder
+  // `ok:true` — nunca devolve uma contagem "pela metade" (1 confiável, a
+  // outra 0 por falha silenciosa), mesmo critério de sempre deste projeto
+  // de nunca mostrar dado incerto como se fosse confiável.
+  const [semSaldo, comSaldo] = await Promise.all([
+    buscarContagem(etp, "SEM_SALDO", auth),
+    buscarContagem(etp, "COM_SALDO", auth),
+  ]);
 
-    if (resp.status === 401 || resp.status === 403) {
-      return resposta(200, { ok: false, erro: "Login/senha da consulta Selgron inválidos ou expirados." });
-    }
-    if (!resp.ok) {
-      return resposta(200, { ok: false, erro: `Consulta Selgron respondeu ${resp.status}.` });
-    }
+  if (!semSaldo.ok) return resposta(200, { ok: false, erro: semSaldo.erro });
+  if (!comSaldo.ok) return resposta(200, { ok: false, erro: comSaldo.erro });
 
-    const html = await resp.text();
-    const itens = extrairItensFaltantes(html);
-
-    if (itens === null) {
-      return resposta(200, {
-        ok: false,
-        erro:
-          "Não foi possível reconhecer a tabela de itens faltantes — a página pode ter mudado de formato, ou a ETP não existe. Se isso persistir, mande o HTML real da página (Ctrl+U) pra recalibrar.",
-      });
-    }
-
-    return resposta(200, { ok: true, etp, itens, total: itens.length });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return resposta(200, { ok: false, erro: "Falha ao consultar itens faltantes: " + msg });
-  }
+  return resposta(200, { ok: true, etp, semSaldo: semSaldo.count, comSaldo: comSaldo.count });
 });

@@ -2749,13 +2749,10 @@ async function fetchMaquinasEtpTracking(){
 // adicionada (ver "PROGRAMAÇÃO: MESMA ETP EM VÁRIAS LINHAS" no schema.sql)
 // — sem ela, um item não saberia a qual card ele pertence quando a mesma
 // ETP tem card em mais de uma linha, e apareceria duplicado nas duas.
-// `codigo` adicionada pro redesign visual (indicadores "COM SALDO"/"SEM
-// SALDO" do card — ver `fetchSaldoPorCodigosTracking` logo abaixo): é o
-// código de produto usado pra cruzar contra `estoque_saldo`.
 async function fetchItensSeparacaoTracking(){
   if(!supabaseClient) return [];
   try{
-    const { data, error } = await supabaseClient.from('sequencia_separacao').select('id, etp, status, linha, codigo');
+    const { data, error } = await supabaseClient.from('sequencia_separacao').select('id, etp, status, linha');
     if(error) throw error;
     return data || [];
   }catch(err){
@@ -2765,34 +2762,41 @@ async function fetchItensSeparacaoTracking(){
 }
 
 // Redesign visual do Tracking Picking: cada card ganhou 2 indicadores novos
-// ("COM SALDO"/"SEM SALDO"), cruzando o código de cada item da ETP contra o
-// saldo real do Protheus (`estoque_saldo`, cache atualizado via upload
-// manual — ver CLAUDE.md). SEMPRE o armazém '1' (mesmo valor fixo já usado
-// em todo o app como armazém padrão — ver `useState('1')` em
-// NewInventory/ManualCountFlow/EtiquetaPanel e `fetchSaldoConsultaSelgron`
-// em index.html, todos hardcoded pro armazém '1'): decisão explícita do
-// cliente ("usar sempre um armazém específico"), NUNCA somar saldo de
-// vários armazéns nem adivinhar qual é o certo (mesma regra de sempre —
-// ver comentário em `fetchProdutosByCodigos`, index.html). `estoque_saldo`
-// tem RLS "leitura autenticada" (qualquer conta logada, sem exigir acesso
-// à tela "Programação" — ver backend/schema.sql), então a mesma sessão da
-// TV já basta, sem migração nenhuma.
-const ALMOXARIFADO_SALDO_TRACKING = '1';
-async function fetchSaldoPorCodigosTracking(codigos){
-  const mapa = new Map();
-  if(!supabaseClient || !codigos || codigos.length===0) return mapa;
+// ("COM SALDO"/"SEM SALDO"), consultando AO VIVO a MESMA página que o
+// cliente já usa manualmente (https://consulta.selgron.com.br/
+// itensfaltantes.php?C2_NTEP=<etp>&...&SALDO=SEM_SALDO|COM_SALDO&
+// B1_GRUPO=...) via a Edge Function `consultar-itens-faltantes` — NÃO usa
+// `estoque_saldo` (cache local, upload manual): o cliente confirmou que
+// essa consulta ao vivo é a fonte certa ("por aqui é mais rápido, seleciona
+// a ETP filtra e ele já te traz a quantidade"). A function dispara as 2
+// buscas (SEM_SALDO/COM_SALDO) em paralelo pro back-end e devolve só as 2
+// CONTAGENS — ver comentário completo em
+// supabase/functions/consultar-itens-faltantes/index.ts.
+//
+// Chamada por ETP (não em lote) — diferente de `fetchSaldoPorCodigosTracking`
+// (removida, era o antigo caminho via `estoque_saldo`), aqui cada ETP é 1
+// invoke separado, porque a consulta upstream é por ETP. Quem decide QUAIS
+// ETPs pedir (só as da linha visível agora, nunca todas as 4 linhas de
+// uma vez) é o efeito de busca dentro de `TrackingPicking` — pedir saldo
+// ao vivo pra ETPs que nem estão na tela seria desperdiçar tempo/carga na
+// consulta Selgron à toa.
+async function fetchSaldoPorEtpTracking(etp){
+  if(!supabaseClient || !etp) return {ok:false, erro:'Não configurado.'};
   try{
-    const { data, error } = await supabaseClient
-      .from('estoque_saldo')
-      .select('produto_codigo, saldo')
-      .eq('almoxarifado', ALMOXARIFADO_SALDO_TRACKING)
-      .in('produto_codigo', codigos);
-    if(error) throw error;
-    (data||[]).forEach(r=>{ mapa.set(r.produto_codigo, Number(r.saldo||0)); });
-    return mapa;
+    const { data, error } = await supabaseClient.functions.invoke('consultar-itens-faltantes', {body:{etp}});
+    if(error){
+      // Mesmo padrão de tratamento de erro de `fetchSaldoConsultaSelgron`
+      // (index.html): lê o corpo JSON real do erro via `error.context.json()`
+      // quando existe, senão a mensagem genérica do supabase-js não diz
+      // nada útil sobre o que a Edge Function realmente respondeu.
+      let msg = error.message || 'Falha ao consultar saldo.';
+      try{ const corpo = await error.context.json(); if(corpo && corpo.erro) msg = corpo.erro; }catch(_e){ /* sem corpo JSON legível */ }
+      return {ok:false, erro:msg};
+    }
+    if(!data || data.ok!==true) return {ok:false, erro:(data&&data.erro) || 'Falha ao consultar saldo.'};
+    return {ok:true, comSaldo:Number(data.comSaldo||0), semSaldo:Number(data.semSaldo||0)};
   }catch(err){
-    console.warn('Tracking Picking: falha ao buscar saldo (COM SALDO/SEM SALDO):', err);
-    return mapa;
+    return {ok:false, erro:String((err&&err.message)||err)};
   }
 }
 
@@ -2811,13 +2815,11 @@ function statusAgregadoMaquinaTracking(itensDaMaquina){
 }
 
 // Mesma lógica de `computeMaquinasPainel` (index.html) — ver lá o
-// comentário completo. `saldoPorCodigo` (Map codigo→saldo, armazém '1' —
-// ver `fetchSaldoPorCodigosTracking`) é novo, pro redesign visual: agrega
-// por máquina quantos itens da ETP têm saldo>0 (`comSaldo`) vs 0/sem linha
-// no cache (`semSaldo`), pros 2 blocos e a barra de progresso do card. Item
-// sem `codigo` (não deveria acontecer, `codigo` é NOT NULL) ou sem saldo
-// carregado ainda conta como SEM SALDO — nunca assume "tem" sem confirmar.
-function computeMaquinasPainelTracking(itens, maquinasEtp, hojeStr, saldoPorCodigo){
+// comentário completo. NÃO calcula COM SALDO/SEM SALDO (redesign visual do
+// card) — esses 2 números vêm de uma consulta AO VIVO por ETP (ver
+// `fetchSaldoPorEtpTracking`/`saldoPorEtp` em `TrackingPicking`), mesclados
+// em cada máquina só na hora de renderizar o board, não aqui.
+function computeMaquinasPainelTracking(itens, maquinasEtp, hojeStr){
   const porEtp = {};
   itens.forEach(i=>{
     if(!i.etp) return;
@@ -2834,11 +2836,6 @@ function computeMaquinasPainelTracking(itens, maquinasEtp, hojeStr, saldoPorCodi
     const status = maquina ? maquina.status : statusAgregadoMaquinaTracking(itensDaMaquina);
     const dataSeparacao = maquina ? maquina.dataSeparacao : null;
     const atrasada = !!(dataSeparacao && dataSeparacao<hojeStr && status!=='separada' && status!=='entregue');
-    let comSaldo = 0, semSaldo = 0;
-    itensDaMaquina.forEach(i=>{
-      const saldo = (saldoPorCodigo && i.codigo!=null) ? saldoPorCodigo.get(i.codigo) : undefined;
-      if(saldo!=null && saldo>0) comSaldo++; else semSaldo++;
-    });
     return {
       etp, status,
       urgente: maquina ? maquina.urgente : false,
@@ -2852,7 +2849,6 @@ function computeMaquinasPainelTracking(itens, maquinasEtp, hojeStr, saldoPorCodi
       descricao: maquina ? maquina.descricao : null,
       linha: maquina ? maquina.linha : null,
       dataSeparacao, atrasada,
-      comSaldo, semSaldo,
     };
   });
 
@@ -2895,11 +2891,23 @@ function bucketizeKanbanTracking(maquinas){
 // nunca o card inteiro fica vermelho; se as 2 coisas forem verdade ao
 // mesmo tempo, só o selo "Urgente" aparece (prioridade), pra não duplicar
 // destaque.
+//
+// `m.saldo` (mesclado por `TrackingPicking` a partir de `saldoPorEtp`, a
+// consulta ao vivo por ETP) é `{status:'loading'|'erro'|'ok', comSaldo,
+// semSaldo}` — NUNCA mostra um número enquanto `status` não é 'ok' (nem um
+// "0" que pareceria resultado real): mostra "…" carregando, ou "—" se a
+// consulta falhou pra essa ETP. `totalItens` continua vindo da fila de
+// separação (`sequencia_separacao`) — é um dado DIFERENTE da contagem da
+// consulta ao vivo (que é filtrada por outro critério, B1_GRUPO), por isso
+// a barra de progresso usa `comSaldo/(comSaldo+semSaldo)`, não
+// `comSaldo/totalItens`.
 function MaquinaCardTracking({m, corStripe}){
   const classes = ['tp-card'];
   if(m.urgente) classes.push('tp-urgente');
   else if(m.atrasada) classes.push('tp-atrasada');
-  const pct = m.totalItens>0 ? Math.round((m.comSaldo/m.totalItens)*100) : 0;
+  const saldo = m.saldo || {status:'loading'};
+  const totalSaldo = saldo.status==='ok' ? (saldo.comSaldo + saldo.semSaldo) : 0;
+  const pct = totalSaldo>0 ? Math.round((saldo.comSaldo/totalSaldo)*100) : 0;
   const metaChassiCodigo = [
     m.chassi ? `Chassi: ${m.chassi}` : null,
     m.codigoProduto ? `Cód: ${m.codigoProduto}` : null,
@@ -2922,11 +2930,11 @@ function MaquinaCardTracking({m, corStripe}){
         </div>
         <div className="tp-card-right">
           <div className="tp-stock-block com">
-            <span className="num">{m.comSaldo}</span>
+            <span className="num">{saldo.status==='ok' ? saldo.comSaldo : (saldo.status==='erro' ? '—' : '…')}</span>
             <span className="lbl">COM SALDO</span>
           </div>
           <div className="tp-stock-block sem">
-            <span className="num">{m.semSaldo}</span>
+            <span className="num">{saldo.status==='ok' ? saldo.semSaldo : (saldo.status==='erro' ? '—' : '…')}</span>
             <span className="lbl">SEM SALDO</span>
           </div>
         </div>
@@ -2970,7 +2978,7 @@ function TrackingPickingBoard({maquinas}){
   );
 }
 
-function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto, linhaSelecionada, onChangeLinha, onAbrirConfig, links, linkIndex, onSelecionarLink, onNavegarEsquerda, onNavegarDireita, segundosLinhaTracking, status, maquinasEtp, itens, linhasProducao, saldoPorCodigo}){
+function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto, linhaSelecionada, onChangeLinha, onAbrirConfig, links, linkIndex, onSelecionarLink, onNavegarEsquerda, onNavegarDireita, segundosLinhaTracking, status, maquinasEtp, itens, linhasProducao}){
   // Busca de dado (status/maquinasEtp/itens) e o polling de 5 min +
   // Realtime AGORA vivem em App() — mesmo motivo de `PainelIndicadores`
   // (ver comentário completo lá): o rodízio automático desmontava este
@@ -3039,12 +3047,76 @@ function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto,
   const maquinasEtpDaLinha = maquinasEtp.filter(m=>(m.linha || linhaPadraoAtualValor)===linhaSelecionada);
   const itensDaLinha = itens.filter(i=>(i.linha || linhaPadraoAtualValor)===linhaSelecionada);
   const hojeStr = new Date().toISOString().slice(0,10);
-  const maquinasPainel = status==='ok' ? computeMaquinasPainelTracking(itensDaLinha, maquinasEtpDaLinha, hojeStr, saldoPorCodigo) : [];
+  const maquinasPainel = status==='ok' ? computeMaquinasPainelTracking(itensDaLinha, maquinasEtpDaLinha, hojeStr) : [];
   // Nota (não erro) — ver comentário em `carregarDados`: as duas listas
   // vazias tanto podem ser fila vazia de verdade quanto conta sem acesso à
   // tela "Programação". Mostra só como lembrete, nunca troca o Kanban por
   // uma tela de erro.
   const avisoPossivelSemAcesso = status==='ok' && maquinasEtp.length===0 && itens.length===0;
+
+  // COM SALDO/SEM SALDO (redesign visual do card) — consulta AO VIVO por
+  // ETP (ver `fetchSaldoPorEtpTracking`), só pras ETPs da linha visível
+  // AGORA (nunca as 4 linhas de uma vez — ver comentário em
+  // `carregarDadosTracking`, App()). `saldoPorEtp` é um Map etp→
+  // `{status:'loading'|'erro'|'ok', comSaldo, semSaldo}`, mesclado em cada
+  // máquina logo abaixo, na hora de montar `maquinasPainelComSaldo`.
+  const [saldoPorEtp, setSaldoPorEtp] = useState(() => new Map());
+  // Chave estável da lista de ETPs visíveis (ordenada, sem duplicar) — só
+  // muda de verdade quando uma ETP entra/sai da linha atual, não a cada
+  // atualização de status/urgente/ordem (que recriaria `maquinasPainel`
+  // com os MESMOS ETPs, mas passaria um array novo — usar isso direto
+  // como dependência do efeito abaixo dispararia consulta ao vivo à toa a
+  // cada mudancinha).
+  const etpsVisiveisChave = Array.from(new Set(maquinasPainel.map(m=>m.etp))).sort().join(',');
+  // Busca cada ETP como uma promise INDEPENDENTE — nunca `Promise.all`
+  // esperando todas juntas. Bug real pego no teste visual: com
+  // `Promise.all`, 1 ETP lenta/travada (a consulta upstream pode demorar
+  // até 15s) segurava o card de TODAS as outras ETPs da linha em "…" —
+  // mesmo as que já tinham voltado rápido. Cada `.then()` aqui aplica o
+  // resultado daquela ETP assim que ELA chega, sem esperar as demais.
+  function buscarSaldoDeCadaEtp(etps, cancelRef){
+    etps.forEach(etp => {
+      fetchSaldoPorEtpTracking(etp).then(res => {
+        if(cancelRef.cancelado) return;
+        setSaldoPorEtp(prev => {
+          const proximo = new Map(prev);
+          proximo.set(etp, res.ok ? {status:'ok', comSaldo:res.comSaldo, semSaldo:res.semSaldo} : {status:'erro', erro:res.erro});
+          return proximo;
+        });
+      });
+    });
+  }
+  useEffect(() => {
+    const etps = etpsVisiveisChave ? etpsVisiveisChave.split(',') : [];
+    if(etps.length===0) return;
+    const cancelRef = {cancelado:false};
+    // Marca como 'loading' só as ETPs que ainda não têm nenhum resultado
+    // (nunca reseta uma ETP que já tem um resultado 'ok'/'erro' anterior
+    // pra 'loading' de novo — evita o número sumir/piscar "…" a cada
+    // atualização automática, só troca quando o novo resultado chegar).
+    setSaldoPorEtp(prev => {
+      let mudou = false;
+      const proximo = new Map(prev);
+      etps.forEach(etp => { if(!proximo.has(etp)){ proximo.set(etp, {status:'loading'}); mudou = true; } });
+      return mudou ? proximo : prev;
+    });
+    buscarSaldoDeCadaEtp(etps, cancelRef);
+    return () => { cancelRef.cancelado = true; };
+  }, [etpsVisiveisChave]);
+  // Atualização periódica (5 min, mesmo intervalo do resto do painel) —
+  // além do efeito acima (que só dispara quando uma ETP entra/sai da
+  // linha), isto garante que o saldo de uma ETP que continua na tela por
+  // muito tempo também se atualiza (o saldo real muda o dia todo).
+  useEffect(() => {
+    const cancelRef = {cancelado:false};
+    const id = setInterval(() => {
+      const etps = etpsVisiveisChave ? etpsVisiveisChave.split(',') : [];
+      if(etps.length===0) return;
+      buscarSaldoDeCadaEtp(etps, cancelRef);
+    }, 5*60*1000);
+    return () => { clearInterval(id); cancelRef.cancelado = true; };
+  }, [etpsVisiveisChave]);
+  const maquinasPainelComSaldo = maquinasPainel.map(m => ({...m, saldo: saldoPorEtp.get(m.etp) || {status:'loading'}}));
 
   return (
     <div>
@@ -3092,7 +3164,7 @@ function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto,
               >{l.nome}</button>
             ))}
           </div>
-          <TrackingPickingBoard maquinas={maquinasPainel} />
+          <TrackingPickingBoard maquinas={maquinasPainelComSaldo} />
         </React.Fragment>
       )}
       </div>
@@ -3736,7 +3808,6 @@ function App(){
   const [statusTracking, setStatusTracking] = useState('loading');
   const [maquinasEtpTracking, setMaquinasEtpTracking] = useState([]);
   const [itensTracking, setItensTracking] = useState([]);
-  const [saldoPorCodigoTracking, setSaldoPorCodigoTracking] = useState(() => new Map());
   const carregarDadosTracking = useCallback(async () => {
     if(!supabaseClient){ setStatusTracking('erro'); return; }
     try{
@@ -3752,20 +3823,17 @@ function App(){
         return;
       }
       sincronizarAuthRealtime(sessionData.session);
+      // COM SALDO/SEM SALDO (redesign visual do card) NÃO é buscado aqui —
+      // é ao vivo, por ETP, e só pras ETPs da linha visível agora (ver
+      // `saldoPorEtp`/efeito de busca dentro de `TrackingPicking`): buscar
+      // aqui, pra TODAS as linhas de uma vez, dispararia consulta ao vivo
+      // pra dezenas de ETPs que nem estão na tela.
       const [maquinasData, itensData] = await Promise.all([
         fetchMaquinasEtpTracking(),
         fetchItensSeparacaoTracking(),
       ]);
-      // Saldo (COM SALDO/SEM SALDO do card, redesign visual) buscado DEPOIS
-      // dos itens (precisa dos códigos) e ANTES de `setStatusTracking('ok')`
-      // — mesmo critério já usado no resto do painel (ver PainelIndicadores/
-      // PedidosCompraPanel): só vira 'ok' quando TODO dado necessário pro
-      // card já está pronto, nunca um "flash" de card sem saldo carregado.
-      const codigosDistintos = Array.from(new Set(itensData.map(i=>i.codigo).filter(Boolean)));
-      const saldoMap = await fetchSaldoPorCodigosTracking(codigosDistintos);
       setMaquinasEtpTracking(maquinasData);
       setItensTracking(itensData);
-      setSaldoPorCodigoTracking(saldoMap);
       setStatusTracking('ok');
     }catch(err){
       console.warn('Tracking Picking: falha ao carregar dados ao vivo', err);
@@ -4025,7 +4093,7 @@ function App(){
           linhaSelecionada={linhaSelecionada} onChangeLinha={setLinhaSelecionada}
           segundosLinhaTracking={temposConfig.segundosLinhaTracking}
           status={statusTracking} maquinasEtp={maquinasEtpTracking} itens={itensTracking}
-          linhasProducao={linhasProducao} saldoPorCodigo={saldoPorCodigoTracking}
+          linhasProducao={linhasProducao}
           {...propsAbaLink}
         />
       )}
