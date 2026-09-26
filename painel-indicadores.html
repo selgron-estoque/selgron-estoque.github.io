@@ -2878,11 +2878,19 @@ function gravarCacheSaldoTracking(saldoPorEtp){
 // de requisições EM VOO ao mesmo tempo fica limitado. Começou em 3 (valor
 // conservador, sem acesso pra medir a capacidade real do sistema da
 // Selgron). Testado ao vivo: ~12 máquinas visíveis, 3 de cada vez, levava
-// uns 20s pra preencher tudo. Subiu pra 6 (12 requisições upstream
-// simultâneas, no máximo — ainda bem abaixo das ~36 do bug original com
-// 18 ETPs de uma vez) pra reduzir o tempo total; se ainda estiver lento
-// ou o sistema da Selgron não aguentar, pode ajustar de novo.
-const LIMITE_CONCORRENCIA_SALDO_TRACKING = 6;
+// uns 20s pra preencher tudo — subiu pra 6 pra reduzir esse tempo, mas
+// aí veio um bug real bem pior (aba "Elétrica", só 5 máquinas = 10
+// requisições simultâneas): parte dos cards ficava em erro de verdade
+// ("Não foi possível reconhecer a tabela..." — a Selgron devolvendo algo
+// que não é a tabela normal sob esse volume, não timeout) mesmo depois
+// de aumentar bastante o tempo de espera (ver TIMEOUT_UPSTREAM_MS em
+// supabase/functions/consultar-itens-faltantes/index.ts) — ou seja, NÃO
+// era só demora, era a Selgron não aguentando tantas requisições ao
+// mesmo tempo mesmo. Voltou pra 3 (6 requisições upstream simultâneas,
+// no máximo) — mais lento de novo, mas os números saem certos. Se quiser
+// tentar um meio-termo de novo no futuro, testar com cuidado e confirmar
+// que não volta esse erro específico antes de manter.
+const LIMITE_CONCORRENCIA_SALDO_TRACKING = 3;
 function executarComLimiteDeConcorrencia(tarefas, limite){
   return new Promise(resolve => {
     if(tarefas.length===0){ resolve(); return; }
