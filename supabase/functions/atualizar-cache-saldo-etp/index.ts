@@ -67,6 +67,17 @@ const LIMITE_CONCORRENCIA = 6;
 // extra aqui por causa do hop function-to-function.
 const TIMEOUT_CHAMADA_MS = 45000;
 
+// Descoberto na primeira rodada em produção: com LIMITE_CONCORRENCIA
+// chamadas simultâneas pra `consultar-itens-faltantes`, o próprio runtime
+// do Supabase (não a Selgron) às vezes devolve
+// "Rate limit exceeded for trace ..., Retry after Xms" — throttling de
+// invocações concorrentes da function, não um problema real de dado.
+// Tentamos de novo respeitando o tempo pedido, em vez de desistir na
+// primeira falha (o que deixaria a ETP sem nenhum valor no cache nesta
+// rodada).
+const REGEX_RETRY_AFTER = /retry after (\d+)\s*ms/i;
+const MAX_TENTATIVAS = 3;
+
 function resposta(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
     status,
@@ -74,7 +85,11 @@ function resposta(status: number, body: unknown) {
   });
 }
 
-async function buscarSaldoEtp(
+function aguardar(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function buscarSaldoEtpUmaVez(
   etp: string,
 ): Promise<{ ok: true; comSaldo: number; semSaldo: number } | { ok: false; erro: string }> {
   try {
@@ -100,6 +115,20 @@ async function buscarSaldoEtp(
     const msg = err instanceof Error ? err.message : String(err);
     return { ok: false, erro: msg };
   }
+}
+
+async function buscarSaldoEtp(
+  etp: string,
+): Promise<{ ok: true; comSaldo: number; semSaldo: number } | { ok: false; erro: string }> {
+  let ultimoResultado: Awaited<ReturnType<typeof buscarSaldoEtpUmaVez>> | null = null;
+  for (let tentativa = 1; tentativa <= MAX_TENTATIVAS; tentativa++) {
+    ultimoResultado = await buscarSaldoEtpUmaVez(etp);
+    if (ultimoResultado.ok) return ultimoResultado;
+    const match = REGEX_RETRY_AFTER.exec(ultimoResultado.erro);
+    if (!match || tentativa === MAX_TENTATIVAS) break;
+    await aguardar(Number(match[1]) + 200);
+  }
+  return ultimoResultado!;
 }
 
 Deno.serve(async (_req: Request) => {
