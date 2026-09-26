@@ -2878,19 +2878,21 @@ function gravarCacheSaldoTracking(saldoPorEtp){
 // de requisições EM VOO ao mesmo tempo fica limitado. Começou em 3 (valor
 // conservador, sem acesso pra medir a capacidade real do sistema da
 // Selgron). Testado ao vivo: ~12 máquinas visíveis, 3 de cada vez, levava
-// uns 20s pra preencher tudo — subiu pra 6 pra reduzir esse tempo, mas
-// aí veio um bug real bem pior (aba "Elétrica", só 5 máquinas = 10
-// requisições simultâneas): parte dos cards ficava em erro de verdade
-// ("Não foi possível reconhecer a tabela..." — a Selgron devolvendo algo
-// que não é a tabela normal sob esse volume, não timeout) mesmo depois
-// de aumentar bastante o tempo de espera (ver TIMEOUT_UPSTREAM_MS em
-// supabase/functions/consultar-itens-faltantes/index.ts) — ou seja, NÃO
-// era só demora, era a Selgron não aguentando tantas requisições ao
-// mesmo tempo mesmo. Voltou pra 3 (6 requisições upstream simultâneas,
-// no máximo) — mais lento de novo, mas os números saem certos. Se quiser
-// tentar um meio-termo de novo no futuro, testar com cuidado e confirmar
-// que não volta esse erro específico antes de manter.
-const LIMITE_CONCORRENCIA_SALDO_TRACKING = 3;
+// uns 20s pra preencher tudo — subiu pra 6 pra reduzir esse tempo, mas aí
+// veio um bug real bem pior (aba "Elétrica", só 5 máquinas): parte dos
+// cards ficava em erro de verdade ("Não foi possível reconhecer a
+// tabela..."). Voltou pra 3 por precaução — só que a causa raiz de
+// VERDADE era outra, sem relação com concorrência: a Selgron não monta
+// tabela nenhuma quando SEM_SALDO=0 (resultado genuinamente vazio), e o
+// parser tratava isso como falha (ver commit "trata resultado
+// genuinamente vazio como 0 itens"). Corrigido esse bug de verdade, subiu
+// pra 6 de novo (12 requisições upstream simultâneas, no máximo) — com
+// "Aguardando Separação" consultando de novo também (ver commit "volta a
+// consultar saldo pras máquinas Aguardando Separação"), o volume total
+// por linha dobrou, então vale a pena testar com cuidado se esse erro
+// específico ("Não foi possível reconhecer a tabela") não volta a
+// aparecer antes de manter em 6.
+const LIMITE_CONCORRENCIA_SALDO_TRACKING = 6;
 function executarComLimiteDeConcorrencia(tarefas, limite){
   return new Promise(resolve => {
     if(tarefas.length===0){ resolve(); return; }
