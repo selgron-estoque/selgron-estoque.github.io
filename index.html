@@ -6344,6 +6344,19 @@ function App(){
   // que precisa de "todas as contagens, sem exceção" no Excel. Ver
   // fetchContagensHistoricoTudo.
   const [historicoTudo, setHistoricoTudo] = useState([]);
+  // Bug real reportado pelo cliente ("flash" de dado genérico em várias
+  // telas, logo depois de logar): Home/Dashboard/AcuracidadePanel liam
+  // `historicoConcluidas` direto, sem saber se o fetch acima de cima já
+  // tinha chegado — na 1ª renderização depois do login, ele ainda está
+  // vazio (`useState([])`), então essas telas calculavam Acuracidade/KPIs
+  // só com o que já estava no localStorage (`counts`), mostravam esse
+  // número por um instante, e trocavam de repente pro valor certo assim
+  // que o fetch terminava (mesma classe de bug já corrigida antes em
+  // painel-indicadores.html, ver comentário em `PainelIndicadores`).
+  // `historicoCarregado` marca quando a 1ª rodada already terminou — as 3
+  // telas usam pra mostrar "Carregando…" nesse instante em vez de calcular
+  // com histórico incompleto.
+  const [historicoCarregado, setHistoricoCarregado] = useState(false);
   function refreshHistoricoConcluidas(){
     // Retorna a Promise combinada (não só fire-and-forget) — o botão
     // "Atualizar" do painel "Contagens Concluídas" espera essa promise pra
@@ -6353,7 +6366,7 @@ function App(){
       fetchContagensHistoricoConcluidas().then(setHistoricoConcluidas),
       fetchContagensHistoricoParaTendencia().then(setHistoricoParaTendencia),
       fetchContagensHistoricoTudo().then(setHistoricoTudo),
-    ]);
+    ]).then(() => setHistoricoCarregado(true));
   }
 
   useEffect(()=>{
@@ -7147,7 +7160,7 @@ function App(){
       )}
       {view!=='home' && !COUNT_SCREEN_VIEWS.includes(view) && <SubBar view={view} goto={goto} />}
       <div className="content">
-        {view==='home' && hasAccess(currentUser,'home') && <Home role={role} user={currentUser} inventories={inventories} counts={counts} historicoConcluidas={historicoConcluidas} enderecosPropostos={enderecosPropostos} goto={goto} />}
+        {view==='home' && hasAccess(currentUser,'home') && <Home role={role} user={currentUser} inventories={inventories} counts={counts} historicoConcluidas={historicoConcluidas} historicoCarregado={historicoCarregado} enderecosPropostos={enderecosPropostos} goto={goto} />}
         {view==='inventories' && hasAccess(currentUser,'inventories') && <InventoryList inventories={inventories} goto={goto} role={role} counts={counts} users={users} currentUser={currentUser} onDelete={deleteInventory} onCancel={cancelInventory} onToggleUrgente={toggleInventarioUrgente} onRemoverItemPendente={role==='admin' ? removerItemPendenteDaLista : undefined} onAtribuir={atribuirInventario} />}
         {view==='pickCountType' && hasAccess(currentUser,'pickCountType') && <PickCountType role={role} goto={goto} inventories={inventories} gruposExcluidos={gruposExcluidos} onCreate={async(inv)=>{
           const res = await saveInventarioToSupabase(inv);
@@ -7167,8 +7180,8 @@ function App(){
         {view==='contagensHoje' && <TodayCountsPanel counts={counts} inventories={inventories} />}
         {view==='programacaoSeparacao' && hasAccess(currentUser,'programacaoSeparacao') && <ProgramacaoSeparacaoPanel currentUser={currentUser} role={role} />}
         {view==='recount' && flowState && <RecountFlow original={flowState} user={currentUser} onAddressProposed={addAddressProposal} onFinish={(c)=>{registerFinishedCount(c); goto('recounts');}} operadorVeSaldo={operadorVeSaldo} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
-        {view==='dashboard' && hasAccess(currentUser,'dashboard') && <Dashboard counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} historicoParaTendencia={historicoParaTendencia} goto={goto} />}
-        {view==='acuracidade' && hasAccess(currentUser,'acuracidade') && <AcuracidadePanel counts={counts} historicoConcluidas={historicoConcluidas} historicoParaTendencia={historicoParaTendencia} />}
+        {view==='dashboard' && hasAccess(currentUser,'dashboard') && <Dashboard counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} historicoParaTendencia={historicoParaTendencia} historicoCarregado={historicoCarregado} goto={goto} />}
+        {view==='acuracidade' && hasAccess(currentUser,'acuracidade') && <AcuracidadePanel counts={counts} historicoConcluidas={historicoConcluidas} historicoParaTendencia={historicoParaTendencia} historicoCarregado={historicoCarregado} />}
         {view==='relatorios' && hasAccess(currentUser,'relatorios') && <ReportsScreen counts={counts} historicoTudo={historicoTudo} inventories={inventories} currentUser={currentUser} sendHistory={reportSendHistory} onLogSend={logReportSend} role={role} onHistoricoImportado={refreshHistoricoConcluidas} />}
         {view==='sasAberto' && hasAccess(currentUser,'sasAberto') && <SAsAbertoPanel currentUser={currentUser} role={role} />}
         {view==='settings' && hasAccess(currentUser,'settings') && <Settings role={role} currentUser={currentUser} operadorVeSaldo={operadorVeSaldo} onSetOperadorVeSaldo={updateOperadorVeSaldo} operadorVeValoresRecontagem={operadorVeValoresRecontagem} onSetOperadorVeValoresRecontagem={updateOperadorVeValoresRecontagem} gruposExcluidos={gruposExcluidos} onSetGruposExcluidos={updateGruposExcluidos} sessionTimeoutMin={sessionTimeoutMin} onSetSessionTimeoutMin={updateSessionTimeoutMin} />}
@@ -8084,7 +8097,21 @@ function saudacaoPorHorario(){
   return 'Boa noite';
 }
 
-function Home({role, user, inventories, counts, historicoConcluidas=[], enderecosPropostos=[], goto}){
+function Home({role, user, inventories, counts, historicoConcluidas=[], historicoCarregado=true, enderecosPropostos=[], goto}){
+  // Bug real corrigido aqui: sem esperar `historicoCarregado`, esta tela
+  // calculava Acuracidade/KPIs com `historicoConcluidas` ainda vazio (a 1ª
+  // renderização depois do login, antes do fetch no Supabase terminar) —
+  // um "flash" de número errado/incompleto por um instante, reportado pelo
+  // cliente ("mostra um dado genérico antes dos dados reais"). Mesmo
+  // critério já usado em painel-indicadores.html (`status==='loading'`).
+  // Sem hooks nesta função — pode sair cedo aqui sem violar Rules of Hooks.
+  if(!historicoCarregado){
+    return (
+      <div style={{display:'flex',alignItems:'center',justifyContent:'center',minHeight:'50vh',color:'var(--ink-dim)'}}>
+        Carregando…
+      </div>
+    );
+  }
   // Bug real corrigido aqui: `i.status` é gravado como 'pendente' na criação
   // do inventário e nunca é atualizado depois — nunca vira 'concluido' de
   // verdade. Deriva de `contados`/`qtdItens` via `inventarioConcluido`
@@ -15295,7 +15322,7 @@ function TrendFilterBar({trendFilter, setTrendFilter, dataInicioStr, dataFimStr,
   );
 }
 
-function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTendencia=[], goto}){
+function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTendencia=[], historicoCarregado=true, goto}){
   // Filtro de período do painel "Filtros" — trocado de janelas fixas
   // ("10/26 semanas") pra presets de calendário (Hoje/Esta semana/Este
   // mês/Últimos 30-90 dias/Este ano/Personalizado), pedido explícito do
@@ -15404,6 +15431,22 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   const [progressoArmazem01, setProgressoArmazem01] = useState(null); // {feito, total} | null
   const [erroArmazem01, setErroArmazem01] = useState('');
   const armazem01RunIdRef = useRef(0);
+
+  // Bug real corrigido aqui: sem esperar `historicoCarregado`, esta tela
+  // calculava Qualidade/Acuracidade/Tendência com `historicoConcluidas`/
+  // `historicoParaTendencia` ainda vazios (a 1ª renderização depois do
+  // login, antes do fetch no Supabase terminar) — um "flash" de número
+  // incompleto por um instante, reportado pelo cliente. Mesmo critério já
+  // usado em painel-indicadores.html (`status==='loading'`). Só depois de
+  // TODOS os hooks acima (Rules of Hooks) — os únicos desta função.
+  if(!historicoCarregado){
+    return (
+      <div style={{display:'flex',alignItems:'center',justifyContent:'center',minHeight:'50vh',color:'var(--ink-dim)'}}>
+        Carregando…
+      </div>
+    );
+  }
+
   const atualizarValorArmazem01 = async () => {
     const runId = ++armazem01RunIdRef.current;
     setCarregandoArmazem01(true);
@@ -15995,7 +16038,7 @@ function AcuracidadeMesDetalheModal({mes, itens, onClose}){
   );
 }
 
-function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendencia=[]}){
+function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendencia=[], historicoCarregado=true}){
   const [trendFilter, setTrendFilter] = usePersistedState('acuracidadeTrendFilter', {tipo:'30d', from:'', to:''});
   // Mês selecionado no gráfico "Acuracidade Mensal — Itens Recorrentes" pra
   // abrir o drill-down (`AcuracidadeMesDetalheModal`) — guarda só a `key`
@@ -16003,6 +16046,20 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
   // atual de `acuracidadeRecorrentes` (que pode mudar se `counts` mudar
   // enquanto o modal está aberto, ex. via Realtime).
   const [mesSelecionado, setMesSelecionado] = useState(null);
+
+  // Bug real corrigido aqui: sem esperar `historicoCarregado`, esta tela
+  // calculava toda a acuracidade com `historicoConcluidas` ainda vazio (a
+  // 1ª renderização depois do login, antes do fetch no Supabase terminar)
+  // — um "flash" de número incompleto por um instante, reportado pelo
+  // cliente. Mesmo critério já usado em painel-indicadores.html
+  // (`status==='loading'`). Só depois dos 2 hooks acima (Rules of Hooks).
+  if(!historicoCarregado){
+    return (
+      <div style={{display:'flex',alignItems:'center',justifyContent:'center',minHeight:'50vh',color:'var(--ink-dim)'}}>
+        Carregando…
+      </div>
+    );
+  }
 
   const historicoComoContagem = historicoConcluidas.map(historicoRowToCountLike).filter(Boolean);
   // Mesmo dedup por documento já usado em Indicadores/Home — só a rodada
