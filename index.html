@@ -17134,6 +17134,49 @@ async function excluirMaquinaCompleta(etp, linha){
   }
 }
 
+// Corrige o código de uma ETP já existente — pedido do cliente: "só foi um
+// número digitado errado, não faz sentido não deixar digitar [de novo] que
+// perde tudo" (a alternativa seria excluir a máquina errada e recriar do
+// zero, perdendo cliente/chassi/observação já preenchidos). Diferente de
+// simplesmente reabilitar o campo ETP e deixar `upsertMaquinaEtp` rodar
+// (isso criaria uma linha NOVA com o etp novo — `onConflict:'etp,linha'`
+// não acha conflito nenhum pro par novo — deixando a linha antiga órfã em
+// `maquinas_etp` E os itens de `sequencia_separacao` ainda presos ao etp
+// velho, sumidos do card): faz um UPDATE de verdade na MESMA linha, e migra
+// os itens vinculados junto. Sempre escopado por `(etp, linha)` — mesmo
+// critério de sempre (a mesma ETP pode ter card independente por linha);
+// a LINHA nunca muda aqui (trocar de linha continua travado no formulário,
+// por um motivo diferente — ver comentário no campo "Linha").
+//
+// Migra os ITENS primeiro, a máquina depois — mesma ordem de
+// `excluirMaquinaCompleta` — porque se falhar no meio, itens já migrados
+// pro etp novo mas sem a linha em `maquinas_etp` ainda aparecem
+// normalmente (computeMaquinasPainel já une os 2, ver `todasEtps`), então
+// o pior caso continua visível/recuperável, nunca "sumido".
+async function renomearEtp(etpAntigo, etpNovo, linha){
+  if(!supabaseClient || !etpAntigo || !etpNovo || !linha) return {ok:false, erro:'ETP/linha não informada.'};
+  if(etpAntigo===etpNovo) return {ok:true};
+  try{
+    const { data: conflito, error: errConflito } = await supabaseClient.from('maquinas_etp')
+      .select('etp').eq('etp', etpNovo).eq('linha', linha).maybeSingle();
+    if(errConflito) throw errConflito;
+    if(conflito) return {ok:false, erro:`Já existe uma máquina com a ETP ${etpNovo} nesta linha.`};
+
+    const { error: errItens } = await supabaseClient.from('sequencia_separacao')
+      .update({etp: etpNovo}).eq('etp', etpAntigo).eq('linha', linha);
+    if(errItens) throw errItens;
+
+    const { error: errMaquina } = await supabaseClient.from('maquinas_etp')
+      .update({etp: etpNovo, atualizado_em: new Date().toISOString()}).eq('etp', etpAntigo).eq('linha', linha);
+    if(errMaquina) throw errMaquina;
+
+    return {ok:true};
+  }catch(err){
+    console.error('Erro ao renomear ETP:', err);
+    return {ok:false, erro:(err && err.message) || 'Não foi possível renomear a ETP.'};
+  }
+}
+
 /* ---------------- SAs EM ABERTO (desempenho do almoxarifado) ---------------- */
 // Pedido do cliente: acompanhar automaticamente quanto tempo o almoxarifado
 // leva pra atender uma "Solicitação ao Almoxarifado" (SA) — hoje ele visita
@@ -19167,11 +19210,41 @@ function AdicionarEtpModal({open, currentUser, maquinasEtp, linhaPadrao, linhas,
   const maquinaExistente = (campoEtp && etpTrimmed)
     ? maquinasEtp.find(m=>m.etp===etpTrimmed && m.linha===campoEtp.linha)
     : null;
+  // Editando E o número da ETP mudou em relação ao que abriu no modal —
+  // pedido do cliente pra corrigir um número digitado errado (ver
+  // `renomearEtp`). `maquinaExistente` aqui só pode achar OUTRA máquina
+  // (nunca a própria sendo editada, já que ela ainda está cadastrada com o
+  // etp ANTIGO em `maquinasEtp`) — serve pra avisar de colisão antes de
+  // salvar.
+  const etpMudou = modoEdicao && maquinaParaEditar && etpTrimmed !== (maquinaParaEditar.etp || '');
+  const colisaoAoRenomear = etpMudou && maquinaExistente;
 
   async function handleAdicionarEtp(){
     if(!campoEtp || !etpTrimmed) return;
     setAdicionandoEtp(true);
     setErroAdicionarEtp(null);
+
+    if(etpMudou){
+      const resRename = await renomearEtp(maquinaParaEditar.etp, etpTrimmed, campoEtp.linha);
+      if(!resRename.ok){
+        setAdicionandoEtp(false);
+        setErroAdicionarEtp(resRename.erro || 'Não foi possível renomear a ETP.');
+        return;
+      }
+      // Resto dos campos (cliente/chassi/observação/etc.) — mesmo UPDATE de
+      // sempre, sem tocar `ordem`/`urgente` (extra=undefined), agora que a
+      // linha já existe com o etp novo (renomeada acima).
+      const resDados = await upsertMaquinaEtp({...campoEtp, etp: etpTrimmed}, undefined);
+      setAdicionandoEtp(false);
+      if(!resDados.ok){
+        setErroAdicionarEtp(resDados.erro || 'Não foi possível salvar a máquina.');
+        return;
+      }
+      onSucesso('ETP corrigida e dados atualizados.');
+      fecharELimpar();
+      return;
+    }
+
     // Máquina GENUINAMENTE NOVA (ainda não existe em `maquinasEtp` NESTA
     // LINHA) ganha `ordem` (próxima livre, max+1) e `urgente` a partir do
     // checkbox desta tela; máquina já existente nunca tem esses 2 campos
@@ -19214,7 +19287,13 @@ function AdicionarEtpModal({open, currentUser, maquinasEtp, linhaPadrao, linhas,
             <div style={{display:'flex',gap:10,flexWrap:'wrap',marginBottom:14}}>
               <div className="field" style={{flex:'1 1 120px',marginBottom:0}}>
                 <label>ETP</label>
-                <input type="text" value={campoEtp.etp} onChange={e=>atualizarCampoEtp('etp', e.target.value)} disabled={modoEdicao} placeholder="Ex: 6220-26" autoFocus={!modoEdicao} />
+                {/* Editável mesmo ao EDITAR (pedido do cliente: corrigir um
+                    número digitado errado sem perder os dados já
+                    preenchidos) — ao salvar com um valor diferente do
+                    original, `handleAdicionarEtp` chama `renomearEtp`, que
+                    migra os itens vinculados junto (ver comentário lá),
+                    nunca cria um card novo do zero. */}
+                <input type="text" value={campoEtp.etp} onChange={e=>atualizarCampoEtp('etp', e.target.value)} placeholder="Ex: 6220-26" autoFocus={!modoEdicao} />
               </div>
               <div className="field" style={{flex:'1 1 200px',marginBottom:0}}>
                 <label>Cliente</label>
@@ -19230,12 +19309,12 @@ function AdicionarEtpModal({open, currentUser, maquinasEtp, linhaPadrao, linhas,
               </div>
               <div className="field" style={{flex:'1 1 90px',marginBottom:0}}>
                 <label>Linha</label>
-                {/* Travada ao EDITAR — igual o campo ETP logo acima, e pelo
-                    mesmo motivo: (etp, linha) juntos identificam QUAL card
-                    está sendo editado agora (ver `maquinaExistente`). Trocar
-                    a linha aqui criaria um card NOVO na linha nova em vez de
-                    mover o card atual, e deixaria o antigo órfão/duplicado —
-                    mover uma ETP pra outra linha não é o que este campo faz. */}
+                {/* Travada ao EDITAR — diferente do campo ETP logo acima
+                    (que já pode ser corrigido, ver `renomearEtp`): mover uma
+                    máquina de linha é uma ação DIFERENTE (arrastar entre
+                    abas), não uma correção de cadastro — trocar aqui criaria
+                    um card novo na linha nova e deixaria o antigo órfão/
+                    duplicado em vez de mover o card atual. */}
                 <select value={campoEtp.linha || LINHA_PADRAO} disabled={modoEdicao} onChange={e=>atualizarCampoEtp('linha', e.target.value)}>
                   {(linhas||[]).map(l=><option key={l.nome} value={l.nome}>{l.nome}</option>)}
                 </select>
@@ -19266,6 +19345,11 @@ function AdicionarEtpModal({open, currentUser, maquinasEtp, linhaPadrao, linhas,
                 atualiza os dados da máquina, sem mexer na prioridade/urgência já definida.
               </div>
             )}
+            {colisaoAoRenomear && (
+              <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginBottom:12}}>
+                Já existe uma máquina com a ETP {etpTrimmed} nesta linha — escolha outro número.
+              </div>
+            )}
             {!modoEdicao && !maquinaExistente && (
               <label style={{display:'flex',alignItems:'center',gap:8,marginBottom:12,cursor:'pointer'}}>
                 <input type="checkbox" checked={urgenteEtp} onChange={e=>setUrgenteEtp(e.target.checked)} />
@@ -19277,7 +19361,7 @@ function AdicionarEtpModal({open, currentUser, maquinasEtp, linhaPadrao, linhas,
               type="button"
               className="btn btn-primary"
               style={{width:'auto'}}
-              disabled={adicionandoEtp || !etpTrimmed}
+              disabled={adicionandoEtp || !etpTrimmed || colisaoAoRenomear}
               onClick={handleAdicionarEtp}
             >
               {adicionandoEtp ? (modoEdicao ? 'Salvando…' : 'Adicionando…') : (modoEdicao ? 'Salvar alterações' : (maquinaExistente ? 'Atualizar ETP' : 'Adicionar ETP à fila'))}
