@@ -2800,6 +2800,43 @@ async function fetchSaldoPorEtpTracking(etp){
   }
 }
 
+// Bug real reportado pelo cliente (print da tela "SEM", ~18 máquinas de
+// uma vez): TODOS os cards ficavam travados em "…" por muito tempo. Causa
+// — cada ETP visível dispara 1 `fetchSaldoPorEtpTracking`, e cada uma
+// dessas faz 2 requisições upstream na consulta Selgron (SEM_SALDO +
+// COM_SALDO) — com 18 ETPs de uma vez, isso é ~36 requisições AO VIVO
+// simultâneas batendo no sistema legado da Selgron, que não aguenta essa
+// rajada (mesmo problema não aparecia antes, quando a fonte era
+// `estoque_saldo`: 1 única consulta em lote no Supabase, não N consultas
+// externas). `executarComLimiteDeConcorrencia` processa a lista de ETPs
+// em filas de no máximo `LIMITE_CONCORRENCIA_SALDO_TRACKING` por vez —
+// cada ETP continua resolvendo de forma INDEPENDENTE assim que termina
+// (mesmo comportamento de sempre, card não espera os outros), só o número
+// de requisições EM VOO ao mesmo tempo fica limitado. 3 é um valor
+// conservador (6 requisições upstream simultâneas, no máximo) — sem
+// acesso pra medir a capacidade real do sistema da Selgron, prefere errar
+// pro lado de sobrecarregar menos; pode ajustar se ainda for lento demais
+// ou se der pra aumentar sem problema.
+const LIMITE_CONCORRENCIA_SALDO_TRACKING = 3;
+function executarComLimiteDeConcorrencia(tarefas, limite){
+  return new Promise(resolve => {
+    if(tarefas.length===0){ resolve(); return; }
+    let proximaIdx = 0, emAndamento = 0, concluidas = 0;
+    function dispararProximas(){
+      while(emAndamento<limite && proximaIdx<tarefas.length){
+        const tarefa = tarefas[proximaIdx++];
+        emAndamento++;
+        tarefa().finally(() => {
+          emAndamento--; concluidas++;
+          if(concluidas===tarefas.length) resolve();
+          else dispararProximas();
+        });
+      }
+    }
+    dispararProximas();
+  });
+}
+
 // Mesma regra de agregação de `statusAgregadoMaquina` (index.html) — ver lá
 // o comentário completo da decisão de produto.
 function statusAgregadoMaquinaTracking(itensDaMaquina){
@@ -3074,17 +3111,22 @@ function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto,
   // até 15s) segurava o card de TODAS as outras ETPs da linha em "…" —
   // mesmo as que já tinham voltado rápido. Cada `.then()` aqui aplica o
   // resultado daquela ETP assim que ELA chega, sem esperar as demais.
+  // `executarComLimiteDeConcorrencia` (ver comentário completo lá) limita
+  // quantas rodam AO MESMO TEMPO — 2º bug real, também pego em teste
+  // visual (print do cliente com a aba "SEM", ~18 máquinas): sem esse
+  // limite, TODAS disparavam juntas (~36 requisições upstream de uma vez)
+  // e sobrecarregavam o sistema legado da Selgron, travando todo mundo em
+  // "…" por muito tempo.
   function buscarSaldoDeCadaEtp(etps, cancelRef){
-    etps.forEach(etp => {
-      fetchSaldoPorEtpTracking(etp).then(res => {
-        if(cancelRef.cancelado) return;
-        setSaldoPorEtp(prev => {
-          const proximo = new Map(prev);
-          proximo.set(etp, res.ok ? {status:'ok', comSaldo:res.comSaldo, semSaldo:res.semSaldo} : {status:'erro', erro:res.erro});
-          return proximo;
-        });
+    const tarefas = etps.map(etp => () => fetchSaldoPorEtpTracking(etp).then(res => {
+      if(cancelRef.cancelado) return;
+      setSaldoPorEtp(prev => {
+        const proximo = new Map(prev);
+        proximo.set(etp, res.ok ? {status:'ok', comSaldo:res.comSaldo, semSaldo:res.semSaldo} : {status:'erro', erro:res.erro});
+        return proximo;
       });
-    });
+    }));
+    executarComLimiteDeConcorrencia(tarefas, LIMITE_CONCORRENCIA_SALDO_TRACKING);
   }
   useEffect(() => {
     const etps = etpsVisiveisChave ? etpsVisiveisChave.split(',') : [];
