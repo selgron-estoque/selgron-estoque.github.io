@@ -2930,10 +2930,12 @@ function bucketizeKanbanTracking(maquinas){
 // destaque.
 //
 // `m.saldo` (mesclado por `TrackingPicking` a partir de `saldoPorEtp`, a
-// consulta ao vivo por ETP) é `{status:'loading'|'erro'|'ok', comSaldo,
-// semSaldo}` — NUNCA mostra um número enquanto `status` não é 'ok' (nem um
-// "0" que pareceria resultado real): mostra "…" carregando, ou "—" se a
-// consulta falhou pra essa ETP. `totalItens` continua vindo da fila de
+// consulta ao vivo por ETP) é `{status:'loading'|'erro'|'skip'|'ok',
+// comSaldo, semSaldo}` — NUNCA mostra um número enquanto `status` não é
+// 'ok' (nem um "0" que pareceria resultado real): mostra "…" só enquanto
+// `status==='loading'`, senão "—" (cobre 'erro' — consulta falhou — e
+// 'skip' — máquina "Aguardando Separação", nunca chega a consultar, ver
+// comentário em `TrackingPicking`). `totalItens` continua vindo da fila de
 // separação (`sequencia_separacao`) — é um dado DIFERENTE da contagem da
 // consulta ao vivo (que é filtrada por outro critério, B1_GRUPO), por isso
 // a barra de progresso usa `comSaldo/(comSaldo+semSaldo)`, não
@@ -2967,11 +2969,11 @@ function MaquinaCardTracking({m, corStripe}){
         </div>
         <div className="tp-card-right">
           <div className="tp-stock-block com">
-            <span className="num">{saldo.status==='ok' ? saldo.comSaldo : (saldo.status==='erro' ? '—' : '…')}</span>
+            <span className="num">{saldo.status==='ok' ? saldo.comSaldo : (saldo.status==='loading' ? '…' : '—')}</span>
             <span className="lbl">COM SALDO</span>
           </div>
           <div className="tp-stock-block sem">
-            <span className="num">{saldo.status==='ok' ? saldo.semSaldo : (saldo.status==='erro' ? '—' : '…')}</span>
+            <span className="num">{saldo.status==='ok' ? saldo.semSaldo : (saldo.status==='loading' ? '…' : '—')}</span>
             <span className="lbl">SEM SALDO</span>
           </div>
         </div>
@@ -3098,13 +3100,19 @@ function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto,
   // `{status:'loading'|'erro'|'ok', comSaldo, semSaldo}`, mesclado em cada
   // máquina logo abaixo, na hora de montar `maquinasPainelComSaldo`.
   const [saldoPorEtp, setSaldoPorEtp] = useState(() => new Map());
-  // Chave estável da lista de ETPs visíveis (ordenada, sem duplicar) — só
-  // muda de verdade quando uma ETP entra/sai da linha atual, não a cada
-  // atualização de status/urgente/ordem (que recriaria `maquinasPainel`
-  // com os MESMOS ETPs, mas passaria um array novo — usar isso direto
-  // como dependência do efeito abaixo dispararia consulta ao vivo à toa a
-  // cada mudancinha).
-  const etpsVisiveisChave = Array.from(new Set(maquinasPainel.map(m=>m.etp))).sort().join(',');
+  // Máquina "Aguardando Separação" NUNCA consulta saldo (pedido do
+  // cliente): reduz bastante o total de consultas por linha — é a coluna
+  // que mais tem máquina, e ainda não faz sentido saber "tem saldo" de algo
+  // que nem começou a ser separado. O card dela mostra "—" fixo nos 2
+  // blocos (ver `saldo.status==='skip'` em `MaquinaCardTracking`), nunca
+  // tenta a consulta.
+  // Chave estável da lista de ETPs visíveis, JÁ SEM as "Aguardando"
+  // (ordenada, sem duplicar) — só muda de verdade quando uma ETP relevante
+  // entra/sai da linha atual, não a cada atualização de status/urgente/
+  // ordem (que recriaria `maquinasPainel` com os MESMOS ETPs, mas passaria
+  // um array novo — usar isso direto como dependência do efeito abaixo
+  // dispararia consulta ao vivo à toa a cada mudancinha).
+  const etpsVisiveisChave = Array.from(new Set(maquinasPainel.filter(m=>m.status!=='aguardando').map(m=>m.etp))).sort().join(',');
   // Busca cada ETP como uma promise INDEPENDENTE — nunca `Promise.all`
   // esperando todas juntas. Bug real pego no teste visual: com
   // `Promise.all`, 1 ETP lenta/travada (a consulta upstream pode demorar
@@ -3158,7 +3166,7 @@ function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto,
     }, 5*60*1000);
     return () => { clearInterval(id); cancelRef.cancelado = true; };
   }, [etpsVisiveisChave]);
-  const maquinasPainelComSaldo = maquinasPainel.map(m => ({...m, saldo: saldoPorEtp.get(m.etp) || {status:'loading'}}));
+  const maquinasPainelComSaldo = maquinasPainel.map(m => ({...m, saldo: m.status==='aguardando' ? {status:'skip'} : (saldoPorEtp.get(m.etp) || {status:'loading'})}));
 
   return (
     <div>
