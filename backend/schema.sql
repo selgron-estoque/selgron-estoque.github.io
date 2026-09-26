@@ -2839,3 +2839,55 @@ create policy "atualizacao por tela indicadores painel-arquivos" on storage.obje
 drop policy if exists "remocao por tela indicadores painel-arquivos" on storage.objects;
 create policy "remocao por tela indicadores painel-arquivos" on storage.objects for delete
   using (bucket_id = 'painel-arquivos' and tem_acesso_tela(auth.uid(), 'dashboard'));
+
+-- =============================================================================
+-- TRACKING PICKING: CACHE COMPARTILHADO DE SALDO (COM SALDO/SEM SALDO)
+-- =============================================================================
+-- Pedido do cliente: "não tem como fazer com que ele fique carregando em
+-- outra tela (Programação), e só mostrar em painel já carregado, com os
+-- números atualizados?" — a TV (painel-indicadores.html, Tracking Picking)
+-- parou de consultar a Selgron ao vivo (histórico de bugs reais nisso, ver
+-- supabase/functions/atualizar-cache-saldo-etp/index.ts). Um processo
+-- agendado (pg_cron, ver backend/README.md seção 15) roda sozinho, busca o
+-- saldo de TODAS as (ETP, linha) e grava aqui — a TV só LÊ esta tabela.
+--
+-- `com_saldo`/`sem_saldo` só são sobrescritos numa consulta que deu CERTO —
+-- uma falha nunca os apaga, só atualiza `ultimo_erro`/`ultima_tentativa_em`
+-- (ver comentário completo na Edge Function). Front-end mostra o número
+-- (com um selo de "desatualizado") enquanto `ultimo_erro` não for null, em
+-- vez de escondê-lo.
+create table if not exists saldo_etp_cache (
+  etp text not null,
+  linha text not null,
+  com_saldo integer,
+  sem_saldo integer,
+  atualizado_em timestamptz,       -- só muda numa consulta que deu certo
+  ultimo_erro text,                -- null quando a última tentativa deu certo
+  ultima_tentativa_em timestamptz,
+  primary key (etp, linha)
+);
+
+alter table saldo_etp_cache enable row level security;
+
+-- Leitura liberada pra qualquer autenticado (mesmo critério já usado em
+-- `painel_indicadores_config`) — só números de contagem, sem dado sensível
+-- nenhum, não precisa do gate por tela. Sem policy nenhuma de
+-- insert/update/delete pra usuário comum — só a Edge Function (que usa
+-- SUPABASE_SERVICE_ROLE_KEY, ignora RLS) escreve aqui.
+drop policy if exists "leitura autenticada" on saldo_etp_cache;
+create policy "leitura autenticada" on saldo_etp_cache for select
+  using (auth.role() = 'authenticated');
+
+-- Realtime — a TV atualiza sozinha assim que o processo agendado grava um
+-- resultado novo, sem esperar o próximo ciclo de 5 min nem dar F5. Bloco
+-- guardado (idempotente), mesmo padrão já usado pras outras tabelas deste
+-- projeto.
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and tablename = 'saldo_etp_cache'
+  ) then
+    alter publication supabase_realtime add table saldo_etp_cache;
+  end if;
+end $$;

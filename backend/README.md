@@ -1095,3 +1095,126 @@ aba atualmente selecionada (se é uma ETP nova). **Não testado contra
 Postgres real** (mesma limitação de sempre, sandbox sem acesso de rede ao
 Supabase) — é 1 coluna simples, sem constraint nem policy nova, no mesmo
 padrão já aplicado e em produção pras outras colunas desta tabela.
+
+## 15. Tracking Picking: saldo (COM SALDO/SEM SALDO) vira um cache agendado, não mais ao vivo pela TV
+
+Pedido do cliente, depois de uma sequência inteira de bugs reais na consulta
+ao vivo por ETP (card travado pra sempre, timeout upstream estourando sob
+concorrência, resultado genuinamente vazio virando erro por engano — ver o
+histórico de comentários em `supabase/functions/consultar-itens-faltantes/
+index.ts` e `painel-indicadores.html`): **"não tem como fazer com que ele
+fique carregando em outra tela (Programação), e só mostrar em painel já
+carregado, com os números atualizados?"**
+
+Duas formas discutidas: (A) uma tela específica ("Programação") busca em
+segundo plano enquanto está aberta — simples, mas só funciona enquanto
+alguém tiver essa tela aberta, o que não serve pra uma TV que fica ligada
+sozinha o dia todo; (B) um processo agendado no Supabase, independente de
+qualquer tela — decisão do cliente, é o que está documentado aqui.
+
+### 15.1 — Rodar o SQL
+
+A tabela `saldo_etp_cache` já está no final de `schema.sql` — se você já
+aplicou o schema completo antes, rode só este trecho:
+
+```sql
+create table if not exists saldo_etp_cache (
+  etp text not null,
+  linha text not null,
+  com_saldo integer,
+  sem_saldo integer,
+  atualizado_em timestamptz,
+  ultimo_erro text,
+  ultima_tentativa_em timestamptz,
+  primary key (etp, linha)
+);
+
+alter table saldo_etp_cache enable row level security;
+
+drop policy if exists "leitura autenticada" on saldo_etp_cache;
+create policy "leitura autenticada" on saldo_etp_cache for select
+  using (auth.role() = 'authenticated');
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and tablename = 'saldo_etp_cache'
+  ) then
+    alter publication supabase_realtime add table saldo_etp_cache;
+  end if;
+end $$;
+```
+
+### 15.2 — Deploy
+
+```bash
+npx supabase functions deploy atualizar-cache-saldo-etp
+```
+
+Deploy padrão (com verificação de JWT). Esta function reaproveita
+`consultar-itens-faltantes` (já em produção) chamando-a internamente — não
+precisa de nenhum secret novo, usa a mesma `CONSULTA_SELGRON_USER`/
+`CONSULTA_SELGRON_PASS` já configurada lá (ela não é chamada diretamente por
+`atualizar-cache-saldo-etp`, só repassa a chamada).
+
+### 15.3 — Teste manual (sem esperar o cron)
+
+```bash
+curl -X POST 'https://<seu-project-ref>.supabase.co/functions/v1/atualizar-cache-saldo-etp' \
+  -H "Authorization: Bearer <SERVICE_ROLE_KEY>"
+```
+
+Devolve `{"ok":true,"totalEtps":N,"sucesso":N,"comErro":N}` — confira depois
+na tabela:
+
+```sql
+select etp, linha, com_saldo, sem_saldo, ultimo_erro, atualizado_em
+from saldo_etp_cache order by atualizado_em desc nulls last limit 20;
+```
+
+### 15.4 — Agendar (a cada 5 min)
+
+Mesma técnica de sempre (`pg_cron`+`pg_net`, ver seção 5):
+
+```sql
+select cron.schedule(
+  'atualizar-cache-saldo-etp-5min',
+  '*/5 * * * *',
+  $$ select net.http_post(
+       url:='https://<seu-project-ref>.supabase.co/functions/v1/atualizar-cache-saldo-etp',
+       headers:='{"Authorization": "Bearer <SERVICE_ROLE_KEY>"}'::jsonb
+     ) $$
+);
+```
+
+Troque `<seu-project-ref>` e `<SERVICE_ROLE_KEY>` (Project Settings → API →
+`service_role` — nunca a `anon`/publishable key aqui). Confirme:
+
+```sql
+select jobid, jobname, schedule, active from cron.job where jobname = 'atualizar-cache-saldo-etp-5min';
+```
+
+**Cobre TODAS as linhas de uma vez** (não só a que está na tela agora) — o
+volume total por execução é maior que o antigo modelo ao vivo por linha
+visível, mas roda de forma independente, sem nenhum usuário esperando.
+Acompanhe `sync_log` (`origem = 'saldo_etp_cache'`) pra ver quanto tempo cada
+rodada leva e quantas ETPs falharam — se `comErro` estiver consistentemente
+alto, pode ser hora de reduzir `LIMITE_CONCORRENCIA` dentro da function ou
+espaçar mais o intervalo.
+
+### 15.5 — O que mudou no front-end
+
+`painel-indicadores.html` NUNCA MAIS consulta a Selgron — `TrackingPicking`
+só lê `saldoEtpCache` (Map `"etp|linha"` → `{comSaldo, semSaldo, ultimoErro,
+atualizadoEm}`), carregado/mantido atualizado em `App()` via
+`fetchSaldoEtpCache` + Realtime (canal próprio, `saldo_etp_cache`). Toda a
+lógica antiga de busca ao vivo por ETP (fila com limite de concorrência,
+timeout de cliente, cache em `localStorage`, prioridade de busca por
+coluna) foi removida — não tem mais nada esperando, só lendo.
+
+**Não testado contra Postgres/pg_cron reais** (mesma limitação de sempre,
+sandbox sem acesso de rede ao Supabase) — testado com um harness que simula
+o banco (upsert com merge parcial de colunas, união das 2 tabelas fonte sem
+duplicar, nunca sobrescrever um valor bom numa falha) e o `fetch()` pra
+`consultar-itens-faltantes`.
