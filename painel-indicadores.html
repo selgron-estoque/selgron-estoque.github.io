@@ -2764,24 +2764,26 @@ async function fetchItensSeparacaoTracking(){
 // Redesign visual do Tracking Picking: cada card ganhou 2 indicadores novos
 // ("COM SALDO"/"SEM SALDO"), consultando AO VIVO a MESMA página que o
 // cliente já usa manualmente (https://consulta.selgron.com.br/
-// itensfaltantes.php?C2_NTEP=<etps>&...&SALDO=SEM_SALDO|COM_SALDO&
+// itensfaltantes.php?C2_NTEP=<etp>&...&SALDO=SEM_SALDO|COM_SALDO&
 // B1_GRUPO=...) via a Edge Function `consultar-itens-faltantes` — NÃO usa
 // `estoque_saldo` (cache local, upload manual): o cliente confirmou que
-// essa consulta ao vivo é a fonte certa. Ver comentário completo em
+// essa consulta ao vivo é a fonte certa ("por aqui é mais rápido, seleciona
+// a ETP filtra e ele já te traz a quantidade"). A function dispara as 2
+// buscas (SEM_SALDO/COM_SALDO) em paralelo pro back-end e devolve só as 2
+// CONTAGENS — ver comentário completo em
 // supabase/functions/consultar-itens-faltantes/index.ts.
 //
-// EM LOTE — 1 invoke só com TODAS as ETPs da linha visível (a página aceita
-// várias ETPs separadas por ";", print real do cliente), devolvendo
-// `{ok, porEtp:{<etp>:{semSaldo, comSaldo}}}`. Bug real que motivou isso:
-// a versão anterior fazia 1 invoke POR ETP (2 requisições upstream cada), e
-// com ~18 máquinas na tela eram ~36 requisições ao vivo simultâneas no
-// sistema legado da Selgron — todos os cards ficavam em "…" por muito
-// tempo. Agora são só 2 requisições upstream por linha, qualquer que seja
-// o número de máquinas.
-async function fetchSaldoPorEtpsTracking(etps){
-  if(!supabaseClient || !etps || etps.length===0) return {ok:false, erro:'Não configurado.'};
+// Chamada por ETP (não em lote) — diferente de `fetchSaldoPorCodigosTracking`
+// (removida, era o antigo caminho via `estoque_saldo`), aqui cada ETP é 1
+// invoke separado, porque a consulta upstream é por ETP. Quem decide QUAIS
+// ETPs pedir (só as da linha visível agora, nunca todas as 4 linhas de
+// uma vez) é o efeito de busca dentro de `TrackingPicking` — pedir saldo
+// ao vivo pra ETPs que nem estão na tela seria desperdiçar tempo/carga na
+// consulta Selgron à toa.
+async function fetchSaldoPorEtpTracking(etp){
+  if(!supabaseClient || !etp) return {ok:false, erro:'Não configurado.'};
   try{
-    const { data, error } = await supabaseClient.functions.invoke('consultar-itens-faltantes', {body:{etps}});
+    const { data, error } = await supabaseClient.functions.invoke('consultar-itens-faltantes', {body:{etp}});
     if(error){
       // Mesmo padrão de tratamento de erro de `fetchSaldoConsultaSelgron`
       // (index.html): lê o corpo JSON real do erro via `error.context.json()`
@@ -2791,11 +2793,48 @@ async function fetchSaldoPorEtpsTracking(etps){
       try{ const corpo = await error.context.json(); if(corpo && corpo.erro) msg = corpo.erro; }catch(_e){ /* sem corpo JSON legível */ }
       return {ok:false, erro:msg};
     }
-    if(!data || data.ok!==true || !data.porEtp) return {ok:false, erro:(data&&data.erro) || 'Falha ao consultar saldo.'};
-    return {ok:true, porEtp:data.porEtp};
+    if(!data || data.ok!==true) return {ok:false, erro:(data&&data.erro) || 'Falha ao consultar saldo.'};
+    return {ok:true, comSaldo:Number(data.comSaldo||0), semSaldo:Number(data.semSaldo||0)};
   }catch(err){
     return {ok:false, erro:String((err&&err.message)||err)};
   }
+}
+
+// Bug real reportado pelo cliente (print da tela "SEM", ~18 máquinas de
+// uma vez): TODOS os cards ficavam travados em "…" por muito tempo. Causa
+// — cada ETP visível dispara 1 `fetchSaldoPorEtpTracking`, e cada uma
+// dessas faz 2 requisições upstream na consulta Selgron (SEM_SALDO +
+// COM_SALDO) — com 18 ETPs de uma vez, isso é ~36 requisições AO VIVO
+// simultâneas batendo no sistema legado da Selgron, que não aguenta essa
+// rajada (mesmo problema não aparecia antes, quando a fonte era
+// `estoque_saldo`: 1 única consulta em lote no Supabase, não N consultas
+// externas). `executarComLimiteDeConcorrencia` processa a lista de ETPs
+// em filas de no máximo `LIMITE_CONCORRENCIA_SALDO_TRACKING` por vez —
+// cada ETP continua resolvendo de forma INDEPENDENTE assim que termina
+// (mesmo comportamento de sempre, card não espera os outros), só o número
+// de requisições EM VOO ao mesmo tempo fica limitado. 3 é um valor
+// conservador (6 requisições upstream simultâneas, no máximo) — sem
+// acesso pra medir a capacidade real do sistema da Selgron, prefere errar
+// pro lado de sobrecarregar menos; pode ajustar se ainda for lento demais
+// ou se der pra aumentar sem problema.
+const LIMITE_CONCORRENCIA_SALDO_TRACKING = 3;
+function executarComLimiteDeConcorrencia(tarefas, limite){
+  return new Promise(resolve => {
+    if(tarefas.length===0){ resolve(); return; }
+    let proximaIdx = 0, emAndamento = 0, concluidas = 0;
+    function dispararProximas(){
+      while(emAndamento<limite && proximaIdx<tarefas.length){
+        const tarefa = tarefas[proximaIdx++];
+        emAndamento++;
+        tarefa().finally(() => {
+          emAndamento--; concluidas++;
+          if(concluidas===tarefas.length) resolve();
+          else dispararProximas();
+        });
+      }
+    }
+    dispararProximas();
+  });
 }
 
 // Mesma regra de agregação de `statusAgregadoMaquina` (index.html) — ver lá
@@ -2814,9 +2853,9 @@ function statusAgregadoMaquinaTracking(itensDaMaquina){
 
 // Mesma lógica de `computeMaquinasPainel` (index.html) — ver lá o
 // comentário completo. NÃO calcula COM SALDO/SEM SALDO (redesign visual do
-// card) — esses 2 números vêm de uma consulta AO VIVO em lote (ver
-// `fetchSaldoPorEtpsTracking`/`saldoPorEtp` em `TrackingPicking`),
-// mesclados em cada máquina só na hora de renderizar o board, não aqui.
+// card) — esses 2 números vêm de uma consulta AO VIVO por ETP (ver
+// `fetchSaldoPorEtpTracking`/`saldoPorEtp` em `TrackingPicking`), mesclados
+// em cada máquina só na hora de renderizar o board, não aqui.
 function computeMaquinasPainelTracking(itens, maquinasEtp, hojeStr){
   const porEtp = {};
   itens.forEach(i=>{
@@ -3052,8 +3091,8 @@ function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto,
   // uma tela de erro.
   const avisoPossivelSemAcesso = status==='ok' && maquinasEtp.length===0 && itens.length===0;
 
-  // COM SALDO/SEM SALDO (redesign visual do card) — consulta AO VIVO, em
-  // lote (ver `fetchSaldoPorEtpsTracking`), só pras ETPs da linha visível
+  // COM SALDO/SEM SALDO (redesign visual do card) — consulta AO VIVO por
+  // ETP (ver `fetchSaldoPorEtpTracking`), só pras ETPs da linha visível
   // AGORA (nunca as 4 linhas de uma vez — ver comentário em
   // `carregarDadosTracking`, App()). `saldoPorEtp` é um Map etp→
   // `{status:'loading'|'erro'|'ok', comSaldo, semSaldo}`, mesclado em cada
@@ -3066,24 +3105,28 @@ function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto,
   // como dependência do efeito abaixo dispararia consulta ao vivo à toa a
   // cada mudancinha).
   const etpsVisiveisChave = Array.from(new Set(maquinasPainel.map(m=>m.etp))).sort().join(',');
-  // 1 chamada só pra TODAS as ETPs da linha (ver `fetchSaldoPorEtpsTracking`).
-  // Se a consulta falhar, ETP que já tinha um resultado 'ok' anterior
-  // CONTINUA com ele (valor real, só um pouco mais antigo) — só vira "—" a
-  // ETP que nunca teve resultado nenhum. Sem isso, 1 falha passageira na
-  // atualização de 5 min apagava o saldo de todos os cards da linha.
-  function buscarSaldoEmLote(etps, cancelRef){
-    fetchSaldoPorEtpsTracking(etps).then(res => {
+  // Busca cada ETP como uma promise INDEPENDENTE — nunca `Promise.all`
+  // esperando todas juntas. Bug real pego no teste visual: com
+  // `Promise.all`, 1 ETP lenta/travada (a consulta upstream pode demorar
+  // até 15s) segurava o card de TODAS as outras ETPs da linha em "…" —
+  // mesmo as que já tinham voltado rápido. Cada `.then()` aqui aplica o
+  // resultado daquela ETP assim que ELA chega, sem esperar as demais.
+  // `executarComLimiteDeConcorrencia` (ver comentário completo lá) limita
+  // quantas rodam AO MESMO TEMPO — 2º bug real, também pego em teste
+  // visual (print do cliente com a aba "SEM", ~18 máquinas): sem esse
+  // limite, TODAS disparavam juntas (~36 requisições upstream de uma vez)
+  // e sobrecarregavam o sistema legado da Selgron, travando todo mundo em
+  // "…" por muito tempo.
+  function buscarSaldoDeCadaEtp(etps, cancelRef){
+    const tarefas = etps.map(etp => () => fetchSaldoPorEtpTracking(etp).then(res => {
       if(cancelRef.cancelado) return;
       setSaldoPorEtp(prev => {
         const proximo = new Map(prev);
-        etps.forEach(etp => {
-          const r = res.ok ? res.porEtp[etp] : null;
-          if(r) proximo.set(etp, {status:'ok', comSaldo:Number(r.comSaldo||0), semSaldo:Number(r.semSaldo||0)});
-          else if(!prev.has(etp) || prev.get(etp).status!=='ok') proximo.set(etp, {status:'erro', erro: res.ok ? 'ETP sem resposta.' : res.erro});
-        });
+        proximo.set(etp, res.ok ? {status:'ok', comSaldo:res.comSaldo, semSaldo:res.semSaldo} : {status:'erro', erro:res.erro});
         return proximo;
       });
-    });
+    }));
+    executarComLimiteDeConcorrencia(tarefas, LIMITE_CONCORRENCIA_SALDO_TRACKING);
   }
   useEffect(() => {
     const etps = etpsVisiveisChave ? etpsVisiveisChave.split(',') : [];
@@ -3099,7 +3142,7 @@ function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto,
       etps.forEach(etp => { if(!proximo.has(etp)){ proximo.set(etp, {status:'loading'}); mudou = true; } });
       return mudou ? proximo : prev;
     });
-    buscarSaldoEmLote(etps, cancelRef);
+    buscarSaldoDeCadaEtp(etps, cancelRef);
     return () => { cancelRef.cancelado = true; };
   }, [etpsVisiveisChave]);
   // Atualização periódica (5 min, mesmo intervalo do resto do painel) —
@@ -3111,7 +3154,7 @@ function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto,
     const id = setInterval(() => {
       const etps = etpsVisiveisChave ? etpsVisiveisChave.split(',') : [];
       if(etps.length===0) return;
-      buscarSaldoEmLote(etps, cancelRef);
+      buscarSaldoDeCadaEtp(etps, cancelRef);
     }, 5*60*1000);
     return () => { clearInterval(id); cancelRef.cancelado = true; };
   }, [etpsVisiveisChave]);
