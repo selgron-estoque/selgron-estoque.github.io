@@ -238,7 +238,22 @@ function extrairItensFaltantes(html: string): ItemFaltante[] | null {
       tabela = t;
     }
   }
-  if (!tabela) return null;
+  if (!tabela) {
+    // SEM tabela nenhuma no HTML — pode ser 2 coisas bem diferentes:
+    // (1) a página nem é a certa (formato mudou, ETP não existe, login
+    // falhou) — falha de parser de verdade, devolve `null`; (2) resultado
+    // GENUINAMENTE vazio — a Selgron simplesmente não monta a <table>
+    // quando não há nenhum item (confirmado com HTML real, ETP 6358-26,
+    // SEM_SALDO: o formulário de busca aparece normal, com os valores
+    // buscados preenchidos de volta, mas a `<div class="lista">` fica
+    // vazia — sem tabela, sem mensagem de "nenhum resultado", nada). Faz
+    // sentido de negócio: SEM_SALDO=0 significa que a máquina não tem
+    // NENHUM item faltando em estoque (bom sinal, não erro). Distingue
+    // os 2 casos pela presença do campo `id="C2_NTEP"` do formulário —
+    // se a página É a itensfaltantes.php de verdade, trata como 0 itens.
+    if (/id=["']C2_NTEP["']/.test(html)) return [];
+    return null;
+  }
 
   // Cabeçalho — tenta primeiro um <thead> explícito, lendo os <th> de
   // dentro dele DIRETO (funciona com ou sem <tr> ao redor — ver comentário
