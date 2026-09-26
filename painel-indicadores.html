@@ -2797,7 +2797,20 @@ async function fetchItensSeparacaoTracking(){
 // (acima do timeout interno, pra dar chance da Edge Function responder um
 // erro "de verdade" primeiro) garante que a Promise SEMPRE resolve, com um
 // erro honesto — nunca fica pendurada pra sempre.
-const TIMEOUT_CONSULTA_SALDO_MS = 25000;
+//
+// Depois dessa 1ª correção, o cliente reportou o mesmo card (aba
+// "Elétrica", só 5 máquinas) caindo em erro de verdade (não mais travado):
+// `{"ok":false,"erro":"Falha ao consultar itens (COM_SALDO): Signal timed
+// out."}` — o timeout de 15s DENTRO da Edge Function (upstream, ver
+// `TIMEOUT_UPSTREAM_MS` em supabase/functions/consultar-itens-faltantes/
+// index.ts) estourando de verdade, mesmo uma consulta manual (1 requisição
+// só) levando só uns 7s — sob carga (10 requisições simultâneas: 5
+// máquinas × 2 consultas cada), o site da Selgron parece enfileirar/
+// atrasar. Subiu esse timeout interno pra 30s (dar mais margem nesses
+// picos) — `TIMEOUT_CONSULTA_SALDO_MS` aqui precisa ficar ACIMA dele,
+// senão o timeout do cliente dispararia primeiro e mascararia o erro real
+// da Edge Function.
+const TIMEOUT_CONSULTA_SALDO_MS = 40000;
 async function fetchSaldoPorEtpTracking(etp){
   if(!supabaseClient || !etp) return {ok:false, erro:'Não configurado.'};
   try{
@@ -2818,7 +2831,7 @@ async function fetchSaldoPorEtpTracking(etp){
     return {ok:true, comSaldo:Number(data.comSaldo||0), semSaldo:Number(data.semSaldo||0)};
   }catch(err){
     if(err && err.message==='TIMEOUT_CLIENTE_CONSULTA_SALDO'){
-      return {ok:false, erro:'A consulta de saldo demorou demais pra responder (mais de 25s).'};
+      return {ok:false, erro:'A consulta de saldo demorou demais pra responder (mais de 40s).'};
     }
     return {ok:false, erro:String((err&&err.message)||err)};
   }
