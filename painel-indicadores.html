@@ -366,13 +366,15 @@
   .tp-maquina-cliente .tp-sep-txt{color:var(--tpsep);font-weight:400;margin:0 5px;}
   .tp-meta{font-family:var(--font-corp);font-size:11px;font-weight:400;color:var(--tpink-dim);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .tp-card-right{display:flex;gap:8px;flex-shrink:0;}
-  .tp-stock-block{width:82px;height:58px;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-sizing:border-box;}
+  .tp-stock-block{width:82px;height:58px;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-sizing:border-box;position:relative;}
   .tp-stock-block .num{font-family:var(--font-mono);font-size:22px;font-weight:700;line-height:1;}
   .tp-stock-block .lbl{font-size:9px;font-weight:700;letter-spacing:.3px;margin-top:3px;}
   .tp-stock-block.com{background:var(--tpcomsaldo-bg);}
   .tp-stock-block.com .num,.tp-stock-block.com .lbl{color:var(--tpcomsaldo-ink);}
   .tp-stock-block.sem{background:var(--tpsemsaldo-bg);}
   .tp-stock-block.sem .num,.tp-stock-block.sem .lbl{color:var(--tpsemsaldo-ink);}
+  .tp-stock-block.tp-stock-desatualizado svg{position:absolute;top:4px;right:4px;opacity:.65;}
+  .tp-stock-block.tp-stock-desatualizado .num,.tp-stock-block.tp-stock-desatualizado .lbl{opacity:.6;}
   .tp-card-bottom{display:flex;align-items:center;gap:8px;margin-top:10px;flex-shrink:0;}
   .tp-bar-track{flex:1;height:7px;border-radius:99px;background:var(--tptrack);overflow:hidden;}
   .tp-bar-fill{height:100%;border-radius:99px;background:var(--tpfill);}
@@ -2800,6 +2802,32 @@ async function fetchSaldoPorEtpTracking(etp){
   }
 }
 
+// Cache do último saldo BOM (status 'ok') por ETP, em localStorage — por
+// aparelho, mesmo padrão do tema (ver `lerTemaSalvo`/`salvarTemaEscolhido`
+// acima). Existe só pra 2 casos: (1) uma consulta falha (timeout, rede) e
+// já existia um valor bom — em vez de derrubar o card pra "—", mantém o
+// último número mostrando (ver `desatualizado` em `TrackingPicking`); (2)
+// a TV recarrega a página (F5, queda de link) — em vez de nascer tudo em
+// "…" de novo até a 1ª consulta ao vivo voltar (pode levar até 15s por
+// ETP), já nasce mostrando o último valor conhecido, marcado como
+// desatualizado até a consulta nova confirmar. NUNCA é usado como fonte de
+// verdade — é só o que aparece ENQUANTO a consulta ao vivo (sempre
+// disparada) não confirma um valor mais novo.
+const TP_SALDO_CACHE_KEY = 'tp_saldo_cache_v1';
+function lerCacheSaldoTracking(){
+  try{
+    const raw = localStorage.getItem(TP_SALDO_CACHE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  }catch(_e){ return {}; }
+}
+function gravarCacheSaldoTracking(saldoPorEtp){
+  try{
+    const obj = {};
+    saldoPorEtp.forEach((v, etp) => { if(v.status==='ok') obj[etp] = {comSaldo:v.comSaldo, semSaldo:v.semSaldo}; });
+    localStorage.setItem(TP_SALDO_CACHE_KEY, JSON.stringify(obj));
+  }catch(_e){ /* localStorage indisponível (modo privado) — cache só não persiste entre recargas */ }
+}
+
 // Bug real reportado pelo cliente (print da tela "SEM", ~18 máquinas de
 // uma vez): TODOS os cards ficavam travados em "…" por muito tempo. Causa
 // — cada ETP visível dispara 1 `fetchSaldoPorEtpTracking`, e cada uma
@@ -2933,15 +2961,19 @@ function bucketizeKanbanTracking(maquinas){
 //
 // `m.saldo` (mesclado por `TrackingPicking` a partir de `saldoPorEtp`, a
 // consulta ao vivo por ETP) é `{status:'loading'|'erro'|'skip'|'ok',
-// comSaldo, semSaldo}` — NUNCA mostra um número enquanto `status` não é
-// 'ok' (nem um "0" que pareceria resultado real): mostra "…" só enquanto
-// `status==='loading'`, senão "—" (cobre 'erro' — consulta falhou — e
-// 'skip' — máquina "Aguardando Separação", nunca chega a consultar, ver
-// comentário em `TrackingPicking`). `totalItens` continua vindo da fila de
-// separação (`sequencia_separacao`) — é um dado DIFERENTE da contagem da
-// consulta ao vivo (que é filtrada por outro critério, B1_GRUPO), por isso
-// a barra de progresso usa `comSaldo/(comSaldo+semSaldo)`, não
-// `comSaldo/totalItens`.
+// comSaldo, semSaldo, desatualizado?}` — NUNCA mostra um número enquanto
+// `status` não é 'ok' (nem um "0" que pareceria resultado real): mostra
+// "…" só enquanto `status==='loading'`, senão "—" (cobre 'erro' — nunca
+// teve nenhum valor bom pra essa ETP — e 'skip' — máquina "Aguardando
+// Separação", nunca chega a consultar, ver comentário em
+// `TrackingPicking`). Quando `status==='ok'` E `desatualizado===true`
+// (última consulta falhou, mas já existia um valor bom de antes — ver
+// `buscarSaldoDeCadaEtp`), mostra o número normalmente, só com um selo de
+// relógio discreto no canto (nunca esconde o dado, só avisa que pode não
+// ser o mais recente). `totalItens` continua vindo da fila de separação
+// (`sequencia_separacao`) — é um dado DIFERENTE da contagem da consulta ao
+// vivo (que é filtrada por outro critério, B1_GRUPO), por isso a barra de
+// progresso usa `comSaldo/(comSaldo+semSaldo)`, não `comSaldo/totalItens`.
 function MaquinaCardTracking({m, corStripe}){
   const classes = ['tp-card'];
   if(m.urgente) classes.push('tp-urgente');
@@ -2970,11 +3002,13 @@ function MaquinaCardTracking({m, corStripe}){
           {metaChassiCodigo && <div className="tp-meta">{metaChassiCodigo}</div>}
         </div>
         <div className="tp-card-right">
-          <div className="tp-stock-block com">
+          <div className={'tp-stock-block com' + (saldo.desatualizado ? ' tp-stock-desatualizado' : '')}>
+            {saldo.desatualizado && <DIconTracking name="clock" size={10} />}
             <span className="num">{saldo.status==='ok' ? saldo.comSaldo : (saldo.status==='loading' ? '…' : '—')}</span>
             <span className="lbl">COM SALDO</span>
           </div>
-          <div className="tp-stock-block sem">
+          <div className={'tp-stock-block sem' + (saldo.desatualizado ? ' tp-stock-desatualizado' : '')}>
+            {saldo.desatualizado && <DIconTracking name="clock" size={10} />}
             <span className="num">{saldo.status==='ok' ? saldo.semSaldo : (saldo.status==='loading' ? '…' : '—')}</span>
             <span className="lbl">SEM SALDO</span>
           </div>
@@ -3099,9 +3133,21 @@ function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto,
   // ETP (ver `fetchSaldoPorEtpTracking`), só pras ETPs da linha visível
   // AGORA (nunca as 4 linhas de uma vez — ver comentário em
   // `carregarDadosTracking`, App()). `saldoPorEtp` é um Map etp→
-  // `{status:'loading'|'erro'|'ok', comSaldo, semSaldo}`, mesclado em cada
-  // máquina logo abaixo, na hora de montar `maquinasPainelComSaldo`.
-  const [saldoPorEtp, setSaldoPorEtp] = useState(() => new Map());
+  // `{status:'loading'|'erro'|'ok', comSaldo, semSaldo, desatualizado?}`,
+  // mesclado em cada máquina logo abaixo, na hora de montar
+  // `maquinasPainelComSaldo`. Nasce já hidratado com o último valor bom
+  // salvo em `localStorage` (ver `lerCacheSaldoTracking`), marcado
+  // `desatualizado:true` — assim, numa recarga de página (F5, queda de
+  // link), o card não volta a nascer em "…" até a 1ª consulta ao vivo
+  // confirmar; mostra o último número conhecido enquanto isso.
+  const [saldoPorEtp, setSaldoPorEtp] = useState(() => {
+    const cache = lerCacheSaldoTracking();
+    const inicial = new Map();
+    Object.keys(cache).forEach(etp => {
+      inicial.set(etp, {status:'ok', comSaldo:cache[etp].comSaldo, semSaldo:cache[etp].semSaldo, desatualizado:true});
+    });
+    return inicial;
+  });
   // Máquina "Aguardando Separação" NUNCA consulta saldo (pedido do
   // cliente): reduz bastante o total de consultas por linha — é a coluna
   // que mais tem máquina, e ainda não faz sentido saber "tem saldo" de algo
@@ -3127,12 +3173,29 @@ function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto,
   // limite, TODAS disparavam juntas (~36 requisições upstream de uma vez)
   // e sobrecarregavam o sistema legado da Selgron, travando todo mundo em
   // "…" por muito tempo.
+  //
+  // Pedido do cliente (a tela ficava caindo pra "—" toda hora, mesmo já
+  // tendo achado o saldo antes — a consulta upstream falha de vez em
+  // quando, timeout de 15s no sistema legado): uma falha NUNCA mais apaga
+  // um valor bom que já existia. Se já tinha `status:'ok'`, mantém esse
+  // mesmo valor mostrando, só marca `desatualizado:true` (card mostra o
+  // número normal, com um selo discreto — ver `MaquinaCardTracking`) até a
+  // PRÓXIMA consulta (seja ela sucesso ou falha de novo) resolver. Só cai
+  // pra "erro"/"—" quando nunca teve um valor bom pra começo de conversa.
   function buscarSaldoDeCadaEtp(etps, cancelRef){
     const tarefas = etps.map(etp => () => fetchSaldoPorEtpTracking(etp).then(res => {
       if(cancelRef.cancelado) return;
       setSaldoPorEtp(prev => {
+        const anterior = prev.get(etp);
         const proximo = new Map(prev);
-        proximo.set(etp, res.ok ? {status:'ok', comSaldo:res.comSaldo, semSaldo:res.semSaldo} : {status:'erro', erro:res.erro});
+        if(res.ok){
+          proximo.set(etp, {status:'ok', comSaldo:res.comSaldo, semSaldo:res.semSaldo});
+        }else if(anterior && anterior.status==='ok'){
+          proximo.set(etp, {...anterior, desatualizado:true});
+        }else{
+          proximo.set(etp, {status:'erro', erro:res.erro});
+        }
+        gravarCacheSaldoTracking(proximo);
         return proximo;
       });
     }));
