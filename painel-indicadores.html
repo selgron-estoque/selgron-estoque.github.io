@@ -2762,154 +2762,55 @@ async function fetchItensSeparacaoTracking(){
   }
 }
 
-// Redesign visual do Tracking Picking: cada card ganhou 2 indicadores novos
-// ("COM SALDO"/"SEM SALDO"), consultando AO VIVO a MESMA página que o
-// cliente já usa manualmente (https://consulta.selgron.com.br/
-// itensfaltantes.php?C2_NTEP=<etp>&...&SALDO=SEM_SALDO|COM_SALDO&
-// B1_GRUPO=...) via a Edge Function `consultar-itens-faltantes` — NÃO usa
-// `estoque_saldo` (cache local, upload manual): o cliente confirmou que
-// essa consulta ao vivo é a fonte certa ("por aqui é mais rápido, seleciona
-// a ETP filtra e ele já te traz a quantidade"). A function dispara as 2
-// buscas (SEM_SALDO/COM_SALDO) em paralelo pro back-end e devolve só as 2
-// CONTAGENS — ver comentário completo em
-// supabase/functions/consultar-itens-faltantes/index.ts.
+// COM SALDO/SEM SALDO (redesign visual do card) — pedido do cliente:
+// "não tem como fazer com que ele fique carregando em outra tela
+// (Programação), e só mostrar em painel já carregado, com os números
+// atualizados?" Até aqui a TV consultava a Selgron AO VIVO, por ETP, na
+// hora — gerou uma sequência de bugs reais (card travado pra sempre,
+// timeout upstream estourando sob concorrência, resultado vazio virando
+// erro por engano — ver histórico de commits desta seção antes desta
+// mudança) porque a TV ficava tentando E MOSTRANDO o resultado de uma
+// consulta lenta/instável em tempo real, sem nenhum lugar pra "esperar
+// escondido".
 //
-// Chamada por ETP (não em lote) — diferente de `fetchSaldoPorCodigosTracking`
-// (removida, era o antigo caminho via `estoque_saldo`), aqui cada ETP é 1
-// invoke separado, porque a consulta upstream é por ETP. Quem decide QUAIS
-// ETPs pedir (só as da linha visível agora, nunca todas as 4 linhas de
-// uma vez) é o efeito de busca dentro de `TrackingPicking` — pedir saldo
-// ao vivo pra ETPs que nem estão na tela seria desperdiçar tempo/carga na
-// consulta Selgron à toa.
+// Agora a TV NUNCA consulta a Selgron: só lê `saldo_etp_cache`, uma
+// tabela compartilhada que um processo agendado no Supabase mantém
+// atualizada sozinho, de tempos em tempos (a cada 5 min, cobrindo TODAS
+// as linhas de uma vez — ver supabase/functions/atualizar-cache-saldo-etp/
+// index.ts e backend/README.md seção 15). Isso elimina de vez o problema:
+// a TV só mostra o que já está pronto, nunca espera nada, nunca trava. Um
+// resultado que falhou na última tentativa (`ultimo_erro` preenchido)
+// mantém o último valor bom (`comSaldo`/`semSaldo`) já salvo, marcado
+// como desatualizado — mesmo princípio de "nunca apagar um valor bom só
+// porque a tentativa mais recente falhou" que já existia antes, só que
+// agora centralizado no cache compartilhado, não mais refeito por cada
+// tela que abrir o painel.
 //
-// Bug real reportado pelo cliente (aba "Elétrica", só 5 máquinas — nada a
-// ver com fila/concorrência): os cards ficavam travados em "…" pra sempre,
-// mesmo esperando bem mais que os 15s de timeout que a Edge Function já
-// usa pra CADA requisição upstream (ver `AbortSignal.timeout` em
-// supabase/functions/consultar-itens-faltantes/index.ts). Causa: aquele
-// timeout é só DENTRO da Edge Function — a chamada `functions.invoke` feita
-// AQUI, do navegador, nunca tinha limite nenhum. Se a function travar por
-// qualquer motivo alheio a esse timeout interno (cold start, instabilidade
-// da rede entre o navegador e o Supabase, etc.), o card ficava esperando
-// pra sempre, sem nunca cair em "erro"/"desatualizado" — mesmo com toda a
-// lógica de `buscarSaldoDeCadaEtp` pronta pra lidar com isso, ela nunca era
-// alcançada porque a Promise nunca resolvia. `TIMEOUT_CONSULTA_SALDO_MS`
-// (acima do timeout interno, pra dar chance da Edge Function responder um
-// erro "de verdade" primeiro) garante que a Promise SEMPRE resolve, com um
-// erro honesto — nunca fica pendurada pra sempre.
-//
-// Depois dessa 1ª correção, o cliente reportou o mesmo card (aba
-// "Elétrica", só 5 máquinas) caindo em erro de verdade (não mais travado):
-// `{"ok":false,"erro":"Falha ao consultar itens (COM_SALDO): Signal timed
-// out."}` — o timeout de 15s DENTRO da Edge Function (upstream, ver
-// `TIMEOUT_UPSTREAM_MS` em supabase/functions/consultar-itens-faltantes/
-// index.ts) estourando de verdade, mesmo uma consulta manual (1 requisição
-// só) levando só uns 7s — sob carga (10 requisições simultâneas: 5
-// máquinas × 2 consultas cada), o site da Selgron parece enfileirar/
-// atrasar. Subiu esse timeout interno pra 30s (dar mais margem nesses
-// picos) — `TIMEOUT_CONSULTA_SALDO_MS` aqui precisa ficar ACIMA dele,
-// senão o timeout do cliente dispararia primeiro e mascararia o erro real
-// da Edge Function.
-const TIMEOUT_CONSULTA_SALDO_MS = 40000;
-async function fetchSaldoPorEtpTracking(etp){
-  if(!supabaseClient || !etp) return {ok:false, erro:'Não configurado.'};
+// `saldoEtpCache` (carregado em App(), com Realtime — ver
+// `carregarDadosTracking`) é um Map `"etp|linha"` → `{comSaldo, semSaldo,
+// ultimoErro, atualizadoEm}`. `fetchSaldoEtpCache` só lê a tabela inteira
+// de uma vez — bem mais simples que todo o vai-e-vem de fila/concorrência/
+// timeout/cache local que existia antes.
+function saldoEtpCacheRowToLocal(row){
+  return {
+    comSaldo: row.com_saldo===null ? null : Number(row.com_saldo),
+    semSaldo: row.sem_saldo===null ? null : Number(row.sem_saldo),
+    ultimoErro: row.ultimo_erro || null,
+    atualizadoEm: row.atualizado_em || null,
+  };
+}
+async function fetchSaldoEtpCache(){
+  if(!supabaseClient) return new Map();
   try{
-    const { data, error } = await Promise.race([
-      supabaseClient.functions.invoke('consultar-itens-faltantes', {body:{etp}}),
-      new Promise((_resolve, reject) => setTimeout(() => reject(new Error('TIMEOUT_CLIENTE_CONSULTA_SALDO')), TIMEOUT_CONSULTA_SALDO_MS)),
-    ]);
-    if(error){
-      // Mesmo padrão de tratamento de erro de `fetchSaldoConsultaSelgron`
-      // (index.html): lê o corpo JSON real do erro via `error.context.json()`
-      // quando existe, senão a mensagem genérica do supabase-js não diz
-      // nada útil sobre o que a Edge Function realmente respondeu.
-      let msg = error.message || 'Falha ao consultar saldo.';
-      try{ const corpo = await error.context.json(); if(corpo && corpo.erro) msg = corpo.erro; }catch(_e){ /* sem corpo JSON legível */ }
-      return {ok:false, erro:msg};
-    }
-    if(!data || data.ok!==true) return {ok:false, erro:(data&&data.erro) || 'Falha ao consultar saldo.'};
-    return {ok:true, comSaldo:Number(data.comSaldo||0), semSaldo:Number(data.semSaldo||0)};
+    const { data, error } = await supabaseClient.from('saldo_etp_cache').select('*');
+    if(error) throw error;
+    const mapa = new Map();
+    (data||[]).forEach(row => { mapa.set(`${row.etp}|${row.linha}`, saldoEtpCacheRowToLocal(row)); });
+    return mapa;
   }catch(err){
-    if(err && err.message==='TIMEOUT_CLIENTE_CONSULTA_SALDO'){
-      return {ok:false, erro:'A consulta de saldo demorou demais pra responder (mais de 40s).'};
-    }
-    return {ok:false, erro:String((err&&err.message)||err)};
+    console.warn('Tracking Picking: falha ao buscar cache de saldo:', err);
+    return new Map();
   }
-}
-
-// Cache do último saldo BOM (status 'ok') por ETP, em localStorage — por
-// aparelho, mesmo padrão do tema (ver `lerTemaSalvo`/`salvarTemaEscolhido`
-// acima). Existe só pra 2 casos: (1) uma consulta falha (timeout, rede) e
-// já existia um valor bom — em vez de derrubar o card pra "—", mantém o
-// último número mostrando (ver `desatualizado` em `TrackingPicking`); (2)
-// a TV recarrega a página (F5, queda de link) — em vez de nascer tudo em
-// "…" de novo até a 1ª consulta ao vivo voltar (pode levar até 15s por
-// ETP), já nasce mostrando o último valor conhecido, marcado como
-// desatualizado até a consulta nova confirmar. NUNCA é usado como fonte de
-// verdade — é só o que aparece ENQUANTO a consulta ao vivo (sempre
-// disparada) não confirma um valor mais novo.
-const TP_SALDO_CACHE_KEY = 'tp_saldo_cache_v1';
-function lerCacheSaldoTracking(){
-  try{
-    const raw = localStorage.getItem(TP_SALDO_CACHE_KEY);
-    return raw ? JSON.parse(raw) : {};
-  }catch(_e){ return {}; }
-}
-function gravarCacheSaldoTracking(saldoPorEtp){
-  try{
-    const obj = {};
-    saldoPorEtp.forEach((v, etp) => { if(v.status==='ok') obj[etp] = {comSaldo:v.comSaldo, semSaldo:v.semSaldo}; });
-    localStorage.setItem(TP_SALDO_CACHE_KEY, JSON.stringify(obj));
-  }catch(_e){ /* localStorage indisponível (modo privado) — cache só não persiste entre recargas */ }
-}
-
-// Bug real reportado pelo cliente (print da tela "SEM", ~18 máquinas de
-// uma vez): TODOS os cards ficavam travados em "…" por muito tempo. Causa
-// — cada ETP visível dispara 1 `fetchSaldoPorEtpTracking`, e cada uma
-// dessas faz 2 requisições upstream na consulta Selgron (SEM_SALDO +
-// COM_SALDO) — com 18 ETPs de uma vez, isso é ~36 requisições AO VIVO
-// simultâneas batendo no sistema legado da Selgron, que não aguenta essa
-// rajada (mesmo problema não aparecia antes, quando a fonte era
-// `estoque_saldo`: 1 única consulta em lote no Supabase, não N consultas
-// externas). `executarComLimiteDeConcorrencia` processa a lista de ETPs
-// em filas de no máximo `LIMITE_CONCORRENCIA_SALDO_TRACKING` por vez —
-// cada ETP continua resolvendo de forma INDEPENDENTE assim que termina
-// (mesmo comportamento de sempre, card não espera os outros), só o número
-// de requisições EM VOO ao mesmo tempo fica limitado. Começou em 3 (valor
-// conservador, sem acesso pra medir a capacidade real do sistema da
-// Selgron). Testado ao vivo: ~12 máquinas visíveis, 3 de cada vez, levava
-// uns 20s pra preencher tudo — subiu pra 6 pra reduzir esse tempo, mas aí
-// veio um bug real bem pior (aba "Elétrica", só 5 máquinas): parte dos
-// cards ficava em erro de verdade ("Não foi possível reconhecer a
-// tabela..."). Voltou pra 3 por precaução — só que a causa raiz de
-// VERDADE era outra, sem relação com concorrência: a Selgron não monta
-// tabela nenhuma quando SEM_SALDO=0 (resultado genuinamente vazio), e o
-// parser tratava isso como falha (ver commit "trata resultado
-// genuinamente vazio como 0 itens"). Corrigido esse bug de verdade, subiu
-// pra 6 de novo (12 requisições upstream simultâneas, no máximo) — com
-// "Aguardando Separação" consultando de novo também (ver commit "volta a
-// consultar saldo pras máquinas Aguardando Separação"), o volume total
-// por linha dobrou, então vale a pena testar com cuidado se esse erro
-// específico ("Não foi possível reconhecer a tabela") não volta a
-// aparecer antes de manter em 6.
-const LIMITE_CONCORRENCIA_SALDO_TRACKING = 6;
-function executarComLimiteDeConcorrencia(tarefas, limite){
-  return new Promise(resolve => {
-    if(tarefas.length===0){ resolve(); return; }
-    let proximaIdx = 0, emAndamento = 0, concluidas = 0;
-    function dispararProximas(){
-      while(emAndamento<limite && proximaIdx<tarefas.length){
-        const tarefa = tarefas[proximaIdx++];
-        emAndamento++;
-        tarefa().finally(() => {
-          emAndamento--; concluidas++;
-          if(concluidas===tarefas.length) resolve();
-          else dispararProximas();
-        });
-      }
-    }
-    dispararProximas();
-  });
 }
 
 // Mesma regra de agregação de `statusAgregadoMaquina` (index.html) — ver lá
@@ -2928,9 +2829,9 @@ function statusAgregadoMaquinaTracking(itensDaMaquina){
 
 // Mesma lógica de `computeMaquinasPainel` (index.html) — ver lá o
 // comentário completo. NÃO calcula COM SALDO/SEM SALDO (redesign visual do
-// card) — esses 2 números vêm de uma consulta AO VIVO por ETP (ver
-// `fetchSaldoPorEtpTracking`/`saldoPorEtp` em `TrackingPicking`), mesclados
-// em cada máquina só na hora de renderizar o board, não aqui.
+// card) — esses 2 números vêm do cache compartilhado `saldo_etp_cache`
+// (ver `fetchSaldoEtpCache`), mesclados em cada máquina só na hora de
+// renderizar o board, não aqui.
 function computeMaquinasPainelTracking(itens, maquinasEtp, hojeStr){
   const porEtp = {};
   itens.forEach(i=>{
@@ -3004,17 +2905,18 @@ function bucketizeKanbanTracking(maquinas){
 // mesmo tempo, só o selo "Urgente" aparece (prioridade), pra não duplicar
 // destaque.
 //
-// `m.saldo` (mesclado por `TrackingPicking` a partir de `saldoPorEtp`, a
-// consulta ao vivo por ETP — TODAS as máquinas consultam, incluindo
-// "Aguardando Separação") é `{status:'loading'|'erro'|'ok', comSaldo,
-// semSaldo, desatualizado?}` — NUNCA mostra um número enquanto `status`
-// não é 'ok' (nem um "0" que pareceria resultado real): mostra "…" só
-// enquanto `status==='loading'`, senão "—" (consulta falhou e nunca teve
-// nenhum valor bom pra essa ETP). Quando `status==='ok'` E `desatualizado===true`
-// (última consulta falhou, mas já existia um valor bom de antes — ver
-// `buscarSaldoDeCadaEtp`), mostra o número normalmente, só com um selo de
-// relógio discreto no canto (nunca esconde o dado, só avisa que pode não
-// ser o mais recente). A barra de progresso usa só
+// `m.saldo` (mesclado por `TrackingPicking` a partir de `saldoEtpCache`, o
+// cache compartilhado — TODAS as máquinas mostram, incluindo "Aguardando
+// Separação") é `{status:'loading'|'erro'|'ok', comSaldo, semSaldo,
+// desatualizado?}` — NUNCA mostra um número enquanto `status` não é 'ok'
+// (nem um "0" que pareceria resultado real): mostra "…" só enquanto
+// `status==='loading'` (o processo agendado ainda não chegou nessa ETP),
+// senão "—" (o cache existe mas nunca teve um valor bom). Quando
+// `status==='ok'` E `desatualizado===true` (a ÚLTIMA tentativa do processo
+// agendado falhou, mas já existia um valor bom de antes — ver
+// `saldo_etp_cache`/`ultimo_erro`), mostra o número normalmente, só com um
+// selo de relógio discreto no canto (nunca esconde o dado, só avisa que
+// pode não ser o mais recente). A barra de progresso usa só
 // `comSaldo/(comSaldo+semSaldo)` — NUNCA `totalItens` (a contagem da fila
 // de separação, `sequencia_separacao`): são fontes DIFERENTES (a consulta
 // ao vivo é filtrada por outro critério, B1_GRUPO + armazém), misturar os
@@ -3100,7 +3002,7 @@ function TrackingPickingBoard({maquinas}){
   );
 }
 
-function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto, linhaSelecionada, onChangeLinha, onAbrirConfig, links, linkIndex, onSelecionarLink, onNavegarEsquerda, onNavegarDireita, segundosLinhaTracking, status, maquinasEtp, itens, linhasProducao}){
+function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto, linhaSelecionada, onChangeLinha, onAbrirConfig, links, linkIndex, onSelecionarLink, onNavegarEsquerda, onNavegarDireita, segundosLinhaTracking, status, maquinasEtp, itens, linhasProducao, saldoEtpCache}){
   // Busca de dado (status/maquinasEtp/itens) e o polling de 5 min +
   // Realtime AGORA vivem em App() — mesmo motivo de `PainelIndicadores`
   // (ver comentário completo lá): o rodízio automático desmontava este
@@ -3176,133 +3078,23 @@ function TrackingPicking({tela, onChange, theme, onToggleTheme, onCicloCompleto,
   // uma tela de erro.
   const avisoPossivelSemAcesso = status==='ok' && maquinasEtp.length===0 && itens.length===0;
 
-  // COM SALDO/SEM SALDO (redesign visual do card) — consulta AO VIVO por
-  // ETP (ver `fetchSaldoPorEtpTracking`), só pras ETPs da linha visível
-  // AGORA (nunca as 4 linhas de uma vez — ver comentário em
-  // `carregarDadosTracking`, App()). `saldoPorEtp` é um Map etp→
-  // `{status:'loading'|'erro'|'ok', comSaldo, semSaldo, desatualizado?}`,
-  // mesclado em cada máquina logo abaixo, na hora de montar
-  // `maquinasPainelComSaldo`. Nasce já hidratado com o último valor bom
-  // salvo em `localStorage` (ver `lerCacheSaldoTracking`), marcado
-  // `desatualizado:true` — assim, numa recarga de página (F5, queda de
-  // link), o card não volta a nascer em "…" até a 1ª consulta ao vivo
-  // confirmar; mostra o último número conhecido enquanto isso.
-  const [saldoPorEtp, setSaldoPorEtp] = useState(() => {
-    const cache = lerCacheSaldoTracking();
-    const inicial = new Map();
-    Object.keys(cache).forEach(etp => {
-      inicial.set(etp, {status:'ok', comSaldo:cache[etp].comSaldo, semSaldo:cache[etp].semSaldo, desatualizado:true});
-    });
-    return inicial;
+  // COM SALDO/SEM SALDO (redesign visual do card) — lido direto de
+  // `saldoEtpCache` (carregado/mantido atualizado em App(), com Realtime —
+  // ver comentário completo em `fetchSaldoEtpCache`). A TV nunca mais
+  // consulta a Selgron sozinha; só mostra o que o processo agendado já
+  // deixou pronto. Sem cache encontrado pra essa (etp, linha) ainda —
+  // 'loading' (o processo agendado ainda não chegou nela, ou é uma ETP nova
+  // de agora). Cache existe mas nunca teve um valor bom (`comSaldo`/
+  // `semSaldo` nulos) — 'erro'. Tem valor bom — 'ok', com `desatualizado`
+  // quando a ÚLTIMA tentativa falhou mas um valor bom anterior foi mantido.
+  const maquinasPainelComSaldo = maquinasPainel.map(m => {
+    const cache = saldoEtpCache.get(`${m.etp}|${linhaSelecionada}`);
+    if(!cache) return {...m, saldo:{status:'loading'}};
+    if(cache.comSaldo===null || cache.semSaldo===null){
+      return {...m, saldo:{status:'erro', erro:cache.ultimoErro || 'Falha ao consultar saldo.'}};
+    }
+    return {...m, saldo:{status:'ok', comSaldo:cache.comSaldo, semSaldo:cache.semSaldo, desatualizado: !!cache.ultimoErro}};
   });
-  // Máquina "Aguardando Separação" volta a consultar saldo normalmente
-  // (pedido do cliente) — chegou a ser pulada (nunca consultava, card
-  // mostrava "—" fixo) quando o motivo da lentidão/erro parecia ser
-  // volume de requisições, mas a causa raiz de verdade era outra (ver
-  // commit "trata resultado genuinamente vazio como 0 itens" — a Selgron
-  // não monta tabela pra SEM_SALDO=0, e isso virava erro por engano).
-  // Corrigido isso, não tem mais motivo técnico pra pular essa coluna —
-  // e ela é a que mais tem máquina, então voltar a consultar é útil de
-  // verdade (mostra "tem saldo" mesmo pra quem ainda não começou a
-  // separação).
-  // Chave estável da lista de ETPs visíveis (ordenada, sem duplicar) — só
-  // muda de verdade quando uma ETP relevante entra/sai da linha atual,
-  // não a cada atualização de status/urgente/ordem (que recriaria
-  // `maquinasPainel` com os MESMOS ETPs, mas passaria um array novo —
-  // usar isso direto como dependência do efeito abaixo dispararia
-  // consulta ao vivo à toa a cada mudancinha).
-  const etpsVisiveisChave = Array.from(new Set(maquinasPainel.map(m=>m.etp))).sort().join(',');
-  // Ordem de prioridade da busca (pedido do cliente): direita pra
-  // esquerda, de cima pra baixo — mesma ordem visual do board. Dentro de
-  // cada coluna já vem de cima pra baixo (`maquinasPainel` é ordenado por
-  // `ordem` em `computeMaquinasPainelTracking`, e `bucketizeKanbanTracking`
-  // preserva essa ordem); só as COLUNAS entram na ordem INVERTIDA de
-  // `SEP_KANBAN_COLUNAS_TRACKING` (que é esquerda pra direita: Aguardando,
-  // Em Separação, Separada, Entregue) — aqui começa por Entregue, termina
-  // em Aguardando. Só decide a ORDEM das tarefas na fila de
-  // `executarComLimiteDeConcorrencia` — não muda QUAIS ETPs são
-  // consultadas (isso continua sendo `etpsVisiveisChave`, usado como chave
-  // estável do efeito abaixo).
-  function ordenarEtpsPorPrioridadeVisual(maquinas){
-    const buckets = bucketizeKanbanTracking(maquinas);
-    const vistos = new Set();
-    const etps = [];
-    ['entregue','separada','emSeparacao','aguardando'].forEach(chave => {
-      buckets[chave].forEach(m => { if(!vistos.has(m.etp)){ vistos.add(m.etp); etps.push(m.etp); } });
-    });
-    return etps;
-  }
-  // Busca cada ETP como uma promise INDEPENDENTE — nunca `Promise.all`
-  // esperando todas juntas. Bug real pego no teste visual: com
-  // `Promise.all`, 1 ETP lenta/travada (a consulta upstream pode demorar
-  // até 15s) segurava o card de TODAS as outras ETPs da linha em "…" —
-  // mesmo as que já tinham voltado rápido. Cada `.then()` aqui aplica o
-  // resultado daquela ETP assim que ELA chega, sem esperar as demais.
-  // `executarComLimiteDeConcorrencia` (ver comentário completo lá) limita
-  // quantas rodam AO MESMO TEMPO — 2º bug real, também pego em teste
-  // visual (print do cliente com a aba "SEM", ~18 máquinas): sem esse
-  // limite, TODAS disparavam juntas (~36 requisições upstream de uma vez)
-  // e sobrecarregavam o sistema legado da Selgron, travando todo mundo em
-  // "…" por muito tempo.
-  //
-  // Pedido do cliente (a tela ficava caindo pra "—" toda hora, mesmo já
-  // tendo achado o saldo antes — a consulta upstream falha de vez em
-  // quando, timeout de 15s no sistema legado): uma falha NUNCA mais apaga
-  // um valor bom que já existia. Se já tinha `status:'ok'`, mantém esse
-  // mesmo valor mostrando, só marca `desatualizado:true` (card mostra o
-  // número normal, com um selo discreto — ver `MaquinaCardTracking`) até a
-  // PRÓXIMA consulta (seja ela sucesso ou falha de novo) resolver. Só cai
-  // pra "erro"/"—" quando nunca teve um valor bom pra começo de conversa.
-  function buscarSaldoDeCadaEtp(etps, cancelRef){
-    const tarefas = etps.map(etp => () => fetchSaldoPorEtpTracking(etp).then(res => {
-      if(cancelRef.cancelado) return;
-      setSaldoPorEtp(prev => {
-        const anterior = prev.get(etp);
-        const proximo = new Map(prev);
-        if(res.ok){
-          proximo.set(etp, {status:'ok', comSaldo:res.comSaldo, semSaldo:res.semSaldo});
-        }else if(anterior && anterior.status==='ok'){
-          proximo.set(etp, {...anterior, desatualizado:true});
-        }else{
-          proximo.set(etp, {status:'erro', erro:res.erro});
-        }
-        gravarCacheSaldoTracking(proximo);
-        return proximo;
-      });
-    }));
-    executarComLimiteDeConcorrencia(tarefas, LIMITE_CONCORRENCIA_SALDO_TRACKING);
-  }
-  useEffect(() => {
-    const etps = etpsVisiveisChave ? ordenarEtpsPorPrioridadeVisual(maquinasPainel) : [];
-    if(etps.length===0) return;
-    const cancelRef = {cancelado:false};
-    // Marca como 'loading' só as ETPs que ainda não têm nenhum resultado
-    // (nunca reseta uma ETP que já tem um resultado 'ok'/'erro' anterior
-    // pra 'loading' de novo — evita o número sumir/piscar "…" a cada
-    // atualização automática, só troca quando o novo resultado chegar).
-    setSaldoPorEtp(prev => {
-      let mudou = false;
-      const proximo = new Map(prev);
-      etps.forEach(etp => { if(!proximo.has(etp)){ proximo.set(etp, {status:'loading'}); mudou = true; } });
-      return mudou ? proximo : prev;
-    });
-    buscarSaldoDeCadaEtp(etps, cancelRef);
-    return () => { cancelRef.cancelado = true; };
-  }, [etpsVisiveisChave]);
-  // Atualização periódica (5 min, mesmo intervalo do resto do painel) —
-  // além do efeito acima (que só dispara quando uma ETP entra/sai da
-  // linha), isto garante que o saldo de uma ETP que continua na tela por
-  // muito tempo também se atualiza (o saldo real muda o dia todo).
-  useEffect(() => {
-    const cancelRef = {cancelado:false};
-    const id = setInterval(() => {
-      const etps = etpsVisiveisChave ? ordenarEtpsPorPrioridadeVisual(maquinasPainel) : [];
-      if(etps.length===0) return;
-      buscarSaldoDeCadaEtp(etps, cancelRef);
-    }, 5*60*1000);
-    return () => { clearInterval(id); cancelRef.cancelado = true; };
-  }, [etpsVisiveisChave]);
-  const maquinasPainelComSaldo = maquinasPainel.map(m => ({...m, saldo: saldoPorEtp.get(m.etp) || {status:'loading'}}));
 
   return (
     <div>
@@ -3994,6 +3786,11 @@ function App(){
   const [statusTracking, setStatusTracking] = useState('loading');
   const [maquinasEtpTracking, setMaquinasEtpTracking] = useState([]);
   const [itensTracking, setItensTracking] = useState([]);
+  // COM SALDO/SEM SALDO nunca mais é buscado ao vivo daqui (nem de
+  // lugar nenhum do front-end) — só lê `saldo_etp_cache`, mantida
+  // atualizada por um processo agendado no Supabase (ver comentário
+  // completo em `fetchSaldoEtpCache`).
+  const [saldoEtpCache, setSaldoEtpCache] = useState(() => new Map());
   const carregarDadosTracking = useCallback(async () => {
     if(!supabaseClient){ setStatusTracking('erro'); return; }
     try{
@@ -4009,17 +3806,14 @@ function App(){
         return;
       }
       sincronizarAuthRealtime(sessionData.session);
-      // COM SALDO/SEM SALDO (redesign visual do card) NÃO é buscado aqui —
-      // é ao vivo, por ETP, e só pras ETPs da linha visível agora (ver
-      // `saldoPorEtp`/efeito de busca dentro de `TrackingPicking`): buscar
-      // aqui, pra TODAS as linhas de uma vez, dispararia consulta ao vivo
-      // pra dezenas de ETPs que nem estão na tela.
-      const [maquinasData, itensData] = await Promise.all([
+      const [maquinasData, itensData, saldoData] = await Promise.all([
         fetchMaquinasEtpTracking(),
         fetchItensSeparacaoTracking(),
+        fetchSaldoEtpCache(),
       ]);
       setMaquinasEtpTracking(maquinasData);
       setItensTracking(itensData);
+      setSaldoEtpCache(saldoData);
       setStatusTracking('ok');
     }catch(err){
       console.warn('Tracking Picking: falha ao carregar dados ao vivo', err);
@@ -4041,9 +3835,19 @@ function App(){
       .channel('realtime:sequencia_separacao:tracking')
       .on('postgres_changes', {event:'*', schema:'public', table:'sequencia_separacao'}, () => { carregarDadosTracking(); })
       .subscribe();
+    // Canal PRÓPRIO pro cache de saldo (não recarrega máquinas/itens
+    // inteiros a cada atualização de saldo, que acontece com muito mais
+    // frequência que mudança de máquina/item) — o processo agendado
+    // escreve aqui a cada 5 min, cobrindo dezenas de ETPs de uma vez;
+    // recarrega só o cache (`fetchSaldoEtpCache`), não tudo.
+    const canalSaldo = supabaseClient
+      .channel('realtime:saldo_etp_cache:tracking')
+      .on('postgres_changes', {event:'*', schema:'public', table:'saldo_etp_cache'}, () => { fetchSaldoEtpCache().then(setSaldoEtpCache); })
+      .subscribe();
     return () => {
       supabaseClient.removeChannel(canalMaquinas);
       supabaseClient.removeChannel(canalItens);
+      supabaseClient.removeChannel(canalSaldo);
     };
   }, [carregarDadosTracking]);
 
@@ -4279,7 +4083,7 @@ function App(){
           linhaSelecionada={linhaSelecionada} onChangeLinha={setLinhaSelecionada}
           segundosLinhaTracking={temposConfig.segundosLinhaTracking}
           status={statusTracking} maquinasEtp={maquinasEtpTracking} itens={itensTracking}
-          linhasProducao={linhasProducao}
+          linhasProducao={linhasProducao} saldoEtpCache={saldoEtpCache}
           {...propsAbaLink}
         />
       )}
