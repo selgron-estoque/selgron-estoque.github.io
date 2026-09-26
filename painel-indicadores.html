@@ -2812,12 +2812,14 @@ async function fetchSaldoPorEtpTracking(etp){
 // em filas de no máximo `LIMITE_CONCORRENCIA_SALDO_TRACKING` por vez —
 // cada ETP continua resolvendo de forma INDEPENDENTE assim que termina
 // (mesmo comportamento de sempre, card não espera os outros), só o número
-// de requisições EM VOO ao mesmo tempo fica limitado. 3 é um valor
-// conservador (6 requisições upstream simultâneas, no máximo) — sem
-// acesso pra medir a capacidade real do sistema da Selgron, prefere errar
-// pro lado de sobrecarregar menos; pode ajustar se ainda for lento demais
-// ou se der pra aumentar sem problema.
-const LIMITE_CONCORRENCIA_SALDO_TRACKING = 3;
+// de requisições EM VOO ao mesmo tempo fica limitado. Começou em 3 (valor
+// conservador, sem acesso pra medir a capacidade real do sistema da
+// Selgron). Testado ao vivo: ~12 máquinas visíveis, 3 de cada vez, levava
+// uns 20s pra preencher tudo. Subiu pra 6 (12 requisições upstream
+// simultâneas, no máximo — ainda bem abaixo das ~36 do bug original com
+// 18 ETPs de uma vez) pra reduzir o tempo total; se ainda estiver lento
+// ou o sistema da Selgron não aguentar, pode ajustar de novo.
+const LIMITE_CONCORRENCIA_SALDO_TRACKING = 6;
 function executarComLimiteDeConcorrencia(tarefas, limite){
   return new Promise(resolve => {
     if(tarefas.length===0){ resolve(); return; }
