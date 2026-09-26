@@ -290,9 +290,21 @@ function extrairItensFaltantes(html: string): ItemFaltante[] | null {
   return resultado;
 }
 
+// Armazém da Selgron que é NOSSO — pedido do cliente, com print real da
+// página: a coluna "Local" da tabela mistura vários armazéns (01, 99, EX...)
+// numa busca só, e só "01" é nosso (99/EX são de terceiros/outra unidade).
+// Confirmado também antes com um caso real (ETP 6344-26): a busca sem filtro
+// trazia 8 linhas, mas só 3 eram do armazém 01 — a contagem SEM esse filtro
+// superestima bastante o saldo de cada ETP. O site da Selgron não tem um
+// parâmetro de URL pra isso (o campo "Local" na tela é um filtro do
+// DataTables, client-side, depois de já ter baixado tudo) — por isso o
+// filtro precisa ser feito aqui, depois do parser.
+const ARMAZEM_PROPRIO = "01";
+
 // Busca 1 dos 2 estados (SEM_SALDO/COM_SALDO) pra uma ETP e devolve só a
-// CONTAGEM de linhas — reusa o mesmo parser calibrado (`extrairItensFaltantes`),
-// já que a contagem de itens É o tamanho da lista retornada por ele.
+// CONTAGEM de linhas do armazém próprio (ver `ARMAZEM_PROPRIO`) — reusa o
+// mesmo parser calibrado (`extrairItensFaltantes`), só filtra por `local`
+// antes de contar.
 async function buscarContagem(
   etp: string,
   saldo: "SEM_SALDO" | "COM_SALDO",
@@ -322,7 +334,8 @@ async function buscarContagem(
           "ou a ETP não existe. Se isso persistir, mande o HTML real da página (Ctrl+U) pra recalibrar.",
       };
     }
-    return { ok: true, count: itens.length };
+    const itensArmazemProprio = itens.filter((it) => it.local === ARMAZEM_PROPRIO);
+    return { ok: true, count: itensArmazemProprio.length };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return { ok: false, erro: `Falha ao consultar itens (${saldo}): ${msg}` };
