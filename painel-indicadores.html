@@ -378,7 +378,6 @@
   .tp-card-bottom{display:flex;align-items:center;gap:8px;margin-top:10px;flex-shrink:0;}
   .tp-bar-track{flex:1;height:7px;border-radius:99px;background:var(--tptrack);overflow:hidden;}
   .tp-bar-fill{height:100%;border-radius:99px;background:var(--tpfill);}
-  .tp-itens-txt{font-family:var(--font-corp);font-size:11px;font-weight:500;color:var(--tpink-dim);white-space:nowrap;}
 
   /* ---- Pedidos de Compra (3ª tela do painel) — painel executivo, cores
      FIXAS (não seguem `--bg`/`--panel`/etc. do resto do app, nem o toggle
@@ -2970,10 +2969,14 @@ function bucketizeKanbanTracking(maquinas){
 // (última consulta falhou, mas já existia um valor bom de antes — ver
 // `buscarSaldoDeCadaEtp`), mostra o número normalmente, só com um selo de
 // relógio discreto no canto (nunca esconde o dado, só avisa que pode não
-// ser o mais recente). `totalItens` continua vindo da fila de separação
-// (`sequencia_separacao`) — é um dado DIFERENTE da contagem da consulta ao
-// vivo (que é filtrada por outro critério, B1_GRUPO), por isso a barra de
-// progresso usa `comSaldo/(comSaldo+semSaldo)`, não `comSaldo/totalItens`.
+// ser o mais recente). A barra de progresso usa só
+// `comSaldo/(comSaldo+semSaldo)` — NUNCA `totalItens` (a contagem da fila
+// de separação, `sequencia_separacao`): são fontes DIFERENTES (a consulta
+// ao vivo é filtrada por outro critério, B1_GRUPO + armazém), misturar os
+// 2 números no card só confundia (pedido do cliente: removido o texto
+// "N itens" que ficava do lado da barra — `m.totalItens` continua sendo
+// calculado em `computeMaquinasPainelTracking` pra quem mais precisar,
+// só não aparece mais neste card).
 function MaquinaCardTracking({m, corStripe}){
   const classes = ['tp-card'];
   if(m.urgente) classes.push('tp-urgente');
@@ -3016,7 +3019,6 @@ function MaquinaCardTracking({m, corStripe}){
       </div>
       <div className="tp-card-bottom">
         <div className="tp-bar-track"><div className="tp-bar-fill" style={{width: pct+'%'}}></div></div>
-        <span className="tp-itens-txt">{m.totalItens} {m.totalItens===1 ? 'item' : 'itens'}</span>
       </div>
     </div>
   );
