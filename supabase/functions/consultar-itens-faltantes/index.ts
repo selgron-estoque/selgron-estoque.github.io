@@ -301,6 +301,20 @@ function extrairItensFaltantes(html: string): ItemFaltante[] | null {
 // filtro precisa ser feito aqui, depois do parser.
 const ARMAZEM_PROPRIO = "01";
 
+// Timeout de CADA requisição upstream — pedido do cliente, com evidência
+// real: uma consulta manual (1 requisição só) leva uns 7s, mas o Tracking
+// Picking (várias ETPs de uma vez, 2 requisições por ETP — SEM_SALDO +
+// COM_SALDO — rodando em paralelo) estourava os 15s de antes MESMO com
+// pouca coisa na tela (5 máquinas = 10 requisições simultâneas). Suspeita:
+// o site da Selgron não aguenta tantas requisições ao mesmo tempo quanto
+// uma única manual — sob carga, algumas ficam esperando na fila e acabam
+// estourando o timeout, mesmo cada uma sozinha sendo rápida. Subiu de 15s
+// pra 30s pra dar mais margem nesses picos, sem precisar reduzir
+// `LIMITE_CONCORRENCIA_SALDO_TRACKING` (painel-indicadores.html) — que foi
+// aumentado recentemente pra ficar mais rápido nas outras abas, e reduzir
+// de novo voltaria a deixá-las lentas.
+const TIMEOUT_UPSTREAM_MS = 30000;
+
 // Busca 1 dos 2 estados (SEM_SALDO/COM_SALDO) pra uma ETP e devolve só a
 // CONTAGEM de linhas do armazém próprio (ver `ARMAZEM_PROPRIO`) — reusa o
 // mesmo parser calibrado (`extrairItensFaltantes`), só filtra por `local`
@@ -314,7 +328,7 @@ async function buscarContagem(
     const resp = await fetch(montarUrl(etp, saldo), {
       method: "GET",
       headers: { Authorization: auth },
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(TIMEOUT_UPSTREAM_MS),
     });
 
     if (resp.status === 401 || resp.status === 403) {
