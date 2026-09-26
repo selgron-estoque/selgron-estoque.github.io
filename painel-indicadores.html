@@ -2781,10 +2781,30 @@ async function fetchItensSeparacaoTracking(){
 // uma vez) é o efeito de busca dentro de `TrackingPicking` — pedir saldo
 // ao vivo pra ETPs que nem estão na tela seria desperdiçar tempo/carga na
 // consulta Selgron à toa.
+//
+// Bug real reportado pelo cliente (aba "Elétrica", só 5 máquinas — nada a
+// ver com fila/concorrência): os cards ficavam travados em "…" pra sempre,
+// mesmo esperando bem mais que os 15s de timeout que a Edge Function já
+// usa pra CADA requisição upstream (ver `AbortSignal.timeout` em
+// supabase/functions/consultar-itens-faltantes/index.ts). Causa: aquele
+// timeout é só DENTRO da Edge Function — a chamada `functions.invoke` feita
+// AQUI, do navegador, nunca tinha limite nenhum. Se a function travar por
+// qualquer motivo alheio a esse timeout interno (cold start, instabilidade
+// da rede entre o navegador e o Supabase, etc.), o card ficava esperando
+// pra sempre, sem nunca cair em "erro"/"desatualizado" — mesmo com toda a
+// lógica de `buscarSaldoDeCadaEtp` pronta pra lidar com isso, ela nunca era
+// alcançada porque a Promise nunca resolvia. `TIMEOUT_CONSULTA_SALDO_MS`
+// (acima do timeout interno, pra dar chance da Edge Function responder um
+// erro "de verdade" primeiro) garante que a Promise SEMPRE resolve, com um
+// erro honesto — nunca fica pendurada pra sempre.
+const TIMEOUT_CONSULTA_SALDO_MS = 25000;
 async function fetchSaldoPorEtpTracking(etp){
   if(!supabaseClient || !etp) return {ok:false, erro:'Não configurado.'};
   try{
-    const { data, error } = await supabaseClient.functions.invoke('consultar-itens-faltantes', {body:{etp}});
+    const { data, error } = await Promise.race([
+      supabaseClient.functions.invoke('consultar-itens-faltantes', {body:{etp}}),
+      new Promise((_resolve, reject) => setTimeout(() => reject(new Error('TIMEOUT_CLIENTE_CONSULTA_SALDO')), TIMEOUT_CONSULTA_SALDO_MS)),
+    ]);
     if(error){
       // Mesmo padrão de tratamento de erro de `fetchSaldoConsultaSelgron`
       // (index.html): lê o corpo JSON real do erro via `error.context.json()`
@@ -2797,6 +2817,9 @@ async function fetchSaldoPorEtpTracking(etp){
     if(!data || data.ok!==true) return {ok:false, erro:(data&&data.erro) || 'Falha ao consultar saldo.'};
     return {ok:true, comSaldo:Number(data.comSaldo||0), semSaldo:Number(data.semSaldo||0)};
   }catch(err){
+    if(err && err.message==='TIMEOUT_CLIENTE_CONSULTA_SALDO'){
+      return {ok:false, erro:'A consulta de saldo demorou demais pra responder (mais de 25s).'};
+    }
     return {ok:false, erro:String((err&&err.message)||err)};
   }
 }
