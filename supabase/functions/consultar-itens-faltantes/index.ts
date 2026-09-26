@@ -37,18 +37,10 @@
 // o campo "Saldo" do formulário aceita "Sem Saldo" OU "Com Saldo", os 2
 // já existem na página — só a versão anterior desta function fixava
 // sempre em SEM_SALDO). `Deno.serve` abaixo dispara as 2 buscas (SEM_SALDO
-// e COM_SALDO) em paralelo e devolve só as CONTAGENS por ETP — não a lista
-// de itens, porque é só o que o card precisa.
-//
-// VÁRIAS ETPs NUMA BUSCA SÓ — o campo "Código ETP" da página aceita várias
-// ETPs separadas por ";" (print real do cliente: "4630-20;6351-26"). Recebe
-// `{etps: string[]}` e faz só 2 requisições upstream no TOTAL (SEM_SALDO e
-// COM_SALDO, cada uma com todas as ETPs juntas), em vez de 2 POR ETP — a
-// versão anterior (1 invoke por ETP) fazia ~36 requisições simultâneas numa
-// linha com 18 máquinas e travava a TV. As linhas voltam misturadas; a
-// contagem por ETP sai da coluna "ETP" de cada linha da tabela. ETP pedida
-// sem nenhuma linha no resultado conta 0/0 (legítimo: nenhum item nos
-// grupos filtrados).
+// e COM_SALDO) em paralelo pra mesma ETP e devolve as 2 CONTAGENS
+// (`semSaldo`/`comSaldo`) — só a contagem, não a lista de itens de cada
+// uma, porque é só o que o card precisa (evita carregar/transferir dado
+// que a tela não usa, mesmo critério de sempre neste projeto).
 //
 // PARSER — já calibrado contra o HTML real da página (o cliente mandou via
 // Ctrl+U, ETP 6220-26, 20 linhas de dado) — a lista de colunas do 1º
@@ -104,9 +96,9 @@ const ITENS_FALTANTES_URL = "https://consulta.selgron.com.br/itensfaltantes.php"
 // SEM_SALDO) — agora é parâmetro de `montarUrl`, pra poder buscar os 2
 // estados (SEM_SALDO/COM_SALDO) da mesma ETP.
 const GRUPOS_FIXOS = "0044,0090,0088,9900,9910,9930,9940,0016,1016";
-function montarUrl(etps: string[], saldo: "SEM_SALDO" | "COM_SALDO"): string {
+function montarUrl(etp: string, saldo: "SEM_SALDO" | "COM_SALDO"): string {
   return (
-    `${ITENS_FALTANTES_URL}?C2_NTEP=${encodeURIComponent(etps.join(";"))}` +
+    `${ITENS_FALTANTES_URL}?C2_NTEP=${encodeURIComponent(etp)}` +
     `&D4_TRT=&DATA_EMISSAO_DE=&DATA_EMISSAO_ATE=&SALDO=${saldo}` +
     `&B1_GRUPO=${encodeURIComponent(GRUPOS_FIXOS)}&btn-confirmar=`
   );
@@ -298,28 +290,19 @@ function extrairItensFaltantes(html: string): ItemFaltante[] | null {
   return resultado;
 }
 
-// Chave de comparação de ETP — ignora espaço/caixa, pra "6311-26" pedido
-// casar com a célula da tabela mesmo que ela venha com espaço/quebra no meio.
-function normalizarEtp(s: string): string {
-  return s.replace(/\s+/g, "").toUpperCase();
-}
-
-// Busca 1 dos 2 estados (SEM_SALDO/COM_SALDO) pra TODAS as ETPs juntas e
-// devolve a CONTAGEM de linhas por ETP (chave normalizada) — reusa o mesmo
-// parser calibrado (`extrairItensFaltantes`). Linha sem ETP reconhecível
-// (coluna "ETP" não achada) vira erro, nunca contagem atribuída a esmo.
-async function buscarContagemPorEtp(
-  etps: string[],
+// Busca 1 dos 2 estados (SEM_SALDO/COM_SALDO) pra uma ETP e devolve só a
+// CONTAGEM de linhas — reusa o mesmo parser calibrado (`extrairItensFaltantes`),
+// já que a contagem de itens É o tamanho da lista retornada por ele.
+async function buscarContagem(
+  etp: string,
   saldo: "SEM_SALDO" | "COM_SALDO",
   auth: string,
-): Promise<{ ok: true; porEtp: Record<string, number> } | { ok: false; erro: string }> {
+): Promise<{ ok: true; count: number } | { ok: false; erro: string }> {
   try {
-    // 30s (era 15s com 1 ETP por busca) — agora cada busca traz as linhas
-    // de todas as ETPs da tela de uma vez, página maior.
-    const resp = await fetch(montarUrl(etps, saldo), {
+    const resp = await fetch(montarUrl(etp, saldo), {
       method: "GET",
       headers: { Authorization: auth },
-      signal: AbortSignal.timeout(30000),
+      signal: AbortSignal.timeout(15000),
     });
 
     if (resp.status === 401 || resp.status === 403) {
@@ -339,18 +322,7 @@ async function buscarContagemPorEtp(
           "ou a ETP não existe. Se isso persistir, mande o HTML real da página (Ctrl+U) pra recalibrar.",
       };
     }
-    const porEtp: Record<string, number> = {};
-    for (const item of itens) {
-      if (!item.etp) {
-        return {
-          ok: false,
-          erro: `Não foi possível identificar a ETP de cada linha (${saldo}) — a coluna "ETP" não foi reconhecida na tabela.`,
-        };
-      }
-      const chave = normalizarEtp(item.etp);
-      porEtp[chave] = (porEtp[chave] || 0) + 1;
-    }
-    return { ok: true, porEtp };
+    return { ok: true, count: itens.length };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return { ok: false, erro: `Falha ao consultar itens (${saldo}): ${msg}` };
@@ -367,34 +339,29 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  let etps: string[] = [];
+  let etp = "";
   try {
     const body = await req.json();
-    const lista = Array.isArray(body?.etps) ? body.etps : [];
-    etps = Array.from(new Set(lista.map((e: unknown) => String(e ?? "").trim()).filter(Boolean)));
+    etp = String(body?.etp ?? "").trim();
   } catch {
-    return resposta(400, { ok: false, erro: "Corpo da requisição inválido — esperado {etps: string[]}." });
+    return resposta(400, { ok: false, erro: "Corpo da requisição inválido — esperado {etp}." });
   }
-  if (etps.length === 0) return resposta(200, { ok: false, erro: "Informe ao menos um código de ETP." });
+  if (!etp) return resposta(200, { ok: false, erro: "Informe o código da ETP." });
 
   const auth = "Basic " + btoa(`${CONSULTA_SELGRON_USER}:${CONSULTA_SELGRON_PASS}`);
-  // As 2 buscas (SEM_SALDO/COM_SALDO) em PARALELO. Exige as 2 darem certo
-  // pra responder `ok:true` — nunca devolve contagem "pela metade" (uma
-  // confiável e a outra 0 por falha silenciosa).
+  // As 2 buscas (SEM_SALDO/COM_SALDO) disparadas em PARALELO — são 2
+  // requisições independentes na consulta Selgron, então rodar em série só
+  // dobraria a latência à toa. Exige as 2 darem certo pra responder
+  // `ok:true` — nunca devolve uma contagem "pela metade" (1 confiável, a
+  // outra 0 por falha silenciosa), mesmo critério de sempre deste projeto
+  // de nunca mostrar dado incerto como se fosse confiável.
   const [semSaldo, comSaldo] = await Promise.all([
-    buscarContagemPorEtp(etps, "SEM_SALDO", auth),
-    buscarContagemPorEtp(etps, "COM_SALDO", auth),
+    buscarContagem(etp, "SEM_SALDO", auth),
+    buscarContagem(etp, "COM_SALDO", auth),
   ]);
 
   if (!semSaldo.ok) return resposta(200, { ok: false, erro: semSaldo.erro });
   if (!comSaldo.ok) return resposta(200, { ok: false, erro: comSaldo.erro });
 
-  // Resposta indexada pela ETP EXATAMENTE como o front-end mandou (não a
-  // chave normalizada), pra ele achar direto sem normalizar de novo.
-  const porEtp: Record<string, { semSaldo: number; comSaldo: number }> = {};
-  for (const etp of etps) {
-    const chave = normalizarEtp(etp);
-    porEtp[etp] = { semSaldo: semSaldo.porEtp[chave] || 0, comSaldo: comSaldo.porEtp[chave] || 0 };
-  }
-  return resposta(200, { ok: true, porEtp });
+  return resposta(200, { ok: true, etp, semSaldo: semSaldo.count, comSaldo: comSaldo.count });
 });
