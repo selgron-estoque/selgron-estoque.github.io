@@ -15167,8 +15167,8 @@ function MonthlyAccuracyBarChart({months, meta=META_ACURACIDADE_SEMANAL, colorBy
           <text x={x(i)} y={H-padB+(fonteGrande?40:37)} textAnchor="middle" fontSize={fs.ano} fill="var(--ink-dim)" fontFamily="var(--font-mono)">{m.sublabel}</text>
           {mesParcialKey===m.key && (
             <g>
-              <rect x={x(i)-(fonteGrande?28:26)} y={H-padB+(fonteGrande?47:45)} width={fonteGrande?56:52} height={fonteGrande?17:15} rx={fonteGrande?8.5:7.5} fill="var(--line)" />
-              <text x={x(i)} y={H-padB+(fonteGrande?59:55)} textAnchor="middle" fontSize={fs.parcial} fontWeight={700} fill="var(--ink-dim)" fontFamily="var(--font-mono)" letterSpacing="0.5">PARCIAL</text>
+              <rect x={x(i)-(fonteGrande?17:26)} y={H-padB+(fonteGrande?47:45)} width={fonteGrande?34:52} height={fonteGrande?11:15} rx={fonteGrande?5.5:7.5} fill="var(--line)" />
+              <text x={x(i)} y={H-padB+(fonteGrande?54.5:55)} textAnchor="middle" fontSize={fs.parcial} fontWeight={700} fill="var(--ink-dim)" fontFamily="var(--font-mono)" letterSpacing="0.5">PARCIAL</text>
             </g>
           )}
         </g>
