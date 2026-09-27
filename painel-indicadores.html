@@ -365,15 +365,23 @@
   .tp-maquina-cliente .tp-cliente{font-weight:500;font-size:14px;color:var(--tpink-dim);}
   .tp-maquina-cliente .tp-sep-txt{color:var(--tpsep);font-weight:400;margin:0 5px;}
   .tp-meta{font-family:var(--font-corp);font-size:11px;font-weight:400;color:var(--tpink-dim);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  .tp-card-right{display:flex;gap:8px;flex-shrink:0;}
-  .tp-stock-block{width:82px;height:58px;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-sizing:border-box;position:relative;}
-  .tp-stock-block .num{font-family:var(--font-mono);font-size:22px;font-weight:700;line-height:1;}
-  .tp-stock-block .lbl{font-size:9px;font-weight:700;letter-spacing:.3px;margin-top:3px;}
+  .tp-card-right{display:flex;gap:6px;flex-shrink:0;}
+  /* Pedido do cliente: blocos COM SALDO/SEM SALDO como informação
+     SECUNDÁRIA — o destaque do card é ETP → descrição → status →
+     progresso, não esses 2 números. Reduzidos ~40% (largura/altura,
+     padding embutido no tamanho fixo, texto do rótulo "COM SALDO/SEM
+     SALDO") em relação ao tamanho original (82x58, texto 22px/9px),
+     mantendo o número (`.num`) grande o bastante pra continuar legível de
+     longe na TV — reduzido só o suficiente (22px→18px) pra caber no bloco
+     menor, nunca na mesma proporção do resto. */
+  .tp-stock-block{width:50px;height:36px;border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;box-sizing:border-box;position:relative;}
+  .tp-stock-block .num{font-family:var(--font-mono);font-size:18px;font-weight:700;line-height:1;}
+  .tp-stock-block .lbl{font-size:6.5px;font-weight:700;letter-spacing:.2px;margin-top:2px;}
   .tp-stock-block.com{background:var(--tpcomsaldo-bg);}
   .tp-stock-block.com .num,.tp-stock-block.com .lbl{color:var(--tpcomsaldo-ink);}
   .tp-stock-block.sem{background:var(--tpsemsaldo-bg);}
   .tp-stock-block.sem .num,.tp-stock-block.sem .lbl{color:var(--tpsemsaldo-ink);}
-  .tp-stock-block.tp-stock-desatualizado svg{position:absolute;top:4px;right:4px;opacity:.65;}
+  .tp-stock-block.tp-stock-desatualizado svg{position:absolute;top:3px;right:3px;opacity:.65;}
   .tp-stock-block.tp-stock-desatualizado .num,.tp-stock-block.tp-stock-desatualizado .lbl{opacity:.6;}
   .tp-card-bottom{display:flex;flex-direction:column;gap:5px;margin-top:10px;flex-shrink:0;}
   .tp-bar-header{display:flex;align-items:center;justify-content:space-between;gap:8px;font-family:var(--font-corp);}
@@ -2956,12 +2964,12 @@ function MaquinaCardTracking({m, corStripe}){
         </div>
         <div className="tp-card-right">
           <div className={'tp-stock-block com' + (saldo.desatualizado ? ' tp-stock-desatualizado' : '')}>
-            {saldo.desatualizado && <DIconTracking name="clock" size={10} />}
+            {saldo.desatualizado && <DIconTracking name="clock" size={8} />}
             <span className="num">{saldo.status==='ok' ? saldo.comSaldo : (saldo.status==='loading' ? '…' : '—')}</span>
             <span className="lbl">COM SALDO</span>
           </div>
           <div className={'tp-stock-block sem' + (saldo.desatualizado ? ' tp-stock-desatualizado' : '')}>
-            {saldo.desatualizado && <DIconTracking name="clock" size={10} />}
+            {saldo.desatualizado && <DIconTracking name="clock" size={8} />}
             <span className="num">{saldo.status==='ok' ? saldo.semSaldo : (saldo.status==='loading' ? '…' : '—')}</span>
             <span className="lbl">SEM SALDO</span>
           </div>
