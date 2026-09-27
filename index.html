@@ -1133,7 +1133,7 @@
        desktop, não só a Início. */
     .content{padding:18px 36px 28px;width:100%;}
 
-    .sidebar{display:flex;flex-direction:column;width:264px;flex-shrink:0;background:#0F172A;min-height:100vh;position:sticky;top:0;overflow:hidden;transition:width .18s ease;} /* hex literal, não var(--navy) — a Sidebar é sempre escura, em qualquer tema (ver comentário do tema escuro) */
+    .sidebar{display:flex;flex-direction:column;width:264px;flex-shrink:0;background:#0F172A;height:100vh;position:sticky;top:0;overflow:hidden;transition:width .18s ease;} /* hex literal, não var(--navy) — a Sidebar é sempre escura, em qualquer tema (ver comentário do tema escuro). `height` fixa (não `min-height`) — trava a caixa no tamanho do viewport pra rolagem do menu ficar restrita a `.sidebar-nav`, sem crescer junto com a página quando o menu tem muitos itens (bug real: com bastante item, a barra lateral inteira passava a rolar junto com o conteúdo principal). */
     .sidebar.collapsed{width:0;}
     .sidebar-toggle{display:flex;align-items:center;justify-content:center;position:absolute;top:24px;left:250px;width:28px;height:28px;border-radius:50%;background:var(--accent2);color:#fff;border:2px solid var(--bg);box-shadow:0 2px 6px rgba(0,0,0,0.18);z-index:30;transition:left .18s ease;}
     .sidebar-toggle:hover{background:#195a89;}
@@ -1143,7 +1143,7 @@
     .sidebar-brand-divider{position:relative;height:1px;background:linear-gradient(90deg, transparent, var(--safety) 20%, var(--safety) 80%, transparent);margin:14px auto;width:70%;}
     .sidebar-brand-divider::after{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:5px;height:5px;border-radius:50%;background:var(--safety);box-shadow:0 0 0 3px #0F172A;}
     .sidebar-brand .product{font-family:var(--font-display);font-size:var(--text-sm);font-weight:600;letter-spacing:0.4px;text-transform:uppercase;color:#fff;}
-    .sidebar-nav{padding:14px 12px;display:flex;flex-direction:column;gap:10px;width:264px;flex-shrink:0;box-sizing:border-box;}
+    .sidebar-nav{padding:14px 12px;display:flex;flex-direction:column;gap:10px;width:264px;flex:1 1 auto;min-height:0;overflow-y:auto;box-sizing:border-box;} /* `flex:1`+`min-height:0`+`overflow-y:auto` — única parte que rola dentro da sidebar; logo (`.sidebar-brand`) e rodapé (`.sidebar-footer`) ficam fixos, independente da rolagem da página principal */
     .sidebar-group{display:flex;flex-direction:column;gap:2px;}
     .sidebar-group-title{font-family:var(--font-mono);font-size:var(--text-2xs);text-transform:uppercase;letter-spacing:1px;color:rgba(255,255,255,0.4);padding:6px 12px 4px;}
     .sidebar-nav-item{display:flex;align-items:center;gap:12px;padding:11px 12px 11px 9px;border-radius:8px;background:none;border:none;border-left:3px solid transparent;color:rgba(255,255,255,0.72);font-size:var(--text-md);font-weight:500;text-align:left;width:100%;}
