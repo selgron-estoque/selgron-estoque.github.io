@@ -15094,7 +15094,17 @@ function WeeklyCountChart({weeks, meta=META_CONTAGENS_SEMANAL}){
 // 34) porque as colunas costumam bater perto de 100%, e o rótulo do valor
 // fica ACIMA da barra — precisa de mais respiro entre o topo do SVG e a
 // grade de "100%" pra não ficar espremido.
-function MonthlyAccuracyBarChart({months, meta=META_ACURACIDADE_SEMANAL, colorByMeta=false, onMonthClick=null, mesParcialKey=null}){
+function MonthlyAccuracyBarChart({months, meta=META_ACURACIDADE_SEMANAL, colorByMeta=false, onMonthClick=null, mesParcialKey=null, fonteGrande=false}){
+  // `fonteGrande` — só o gráfico "Acuracidade Mensal — Itens Recorrentes"
+  // (Acuracidade) usa este conjunto de tamanhos separado; o outro uso deste
+  // componente (Indicadores) mantém os tamanhos originais — por isso um
+  // prop explícito (default `false`), nunca um tamanho fixo mudado aqui
+  // pros dois usos. Reduzido em 50% a pedido do cliente depois do 1º ajuste
+  // (ficou grande demais) — nome do prop mantido por simplicidade, mesmo
+  // não sendo mais literalmente "grande".
+  const fs = fonteGrande
+    ? {eixoY:6, valor:6.5, tracoSemMedicao:8, mes:6, ano:5.5, parcial:5, legenda:6}
+    : {eixoY:10, valor:11, tracoSemMedicao:14, mes:10, ano:10, parcial:8, legenda:10};
   // `semMedicao` (ver `computeAcuracidadeItensRecorrentes`) — mês que
   // existe no eixo (pra dar contexto de "a série completa do ano"), mas
   // nunca teve o indicador medido oficialmente (ex.: jan-ago/2026, antes
@@ -15123,7 +15133,7 @@ function MonthlyAccuracyBarChart({months, meta=META_ACURACIDADE_SEMANAL, colorBy
       {[0,25,50,75,100].map(t=>(
         <g key={t}>
           <line x1={padL} x2={W-padR} y1={y(t)} y2={y(t)} stroke="var(--line)" strokeWidth={1} strokeDasharray="3,3" />
-          <text x={padL-8} y={y(t)+3.5} textAnchor="end" fontSize={10} fill="var(--ink-dim)" fontFamily="var(--font-mono)">{t}%</text>
+          <text x={padL-8} y={y(t)+(fonteGrande?4:3.5)} textAnchor="end" fontSize={fs.eixoY} fill="var(--ink-dim)" fontFamily="var(--font-mono)">{t}%</text>
         </g>
       ))}
       <line x1={padL} x2={W-padR} y1={y(meta)} y2={y(meta)} stroke={WEEKLY_CHART_COLOR} strokeWidth={1.5} strokeDasharray="5,4" opacity={0.65}>
@@ -15139,12 +15149,12 @@ function MonthlyAccuracyBarChart({months, meta=META_ACURACIDADE_SEMANAL, colorBy
               <rect x={x(i)-barW/2} y={y(m.acuracidade)} width={barW} height={Math.max(0, y(0)-y(m.acuracidade))} rx={4} fill={colorByMeta && m.acuracidade>=meta ? 'var(--ok)' : WEEKLY_CHART_COLOR}>
                 <title>{m.label} ({m.sublabel}): {m.acuracidade.toFixed(1)}% · {m.total} contagem(ns){colorByMeta ? (m.acuracidade>=meta ? ' · dentro da meta' : ' · abaixo da meta') : ''}{mesParcialKey===m.key ? ' · mês em andamento, resultado parcial' : ''}</title>
               </rect>
-              <text x={x(i)} y={y(m.acuracidade)-8} textAnchor="middle" fontSize={11} fontWeight={700} fill={colorByMeta ? (m.acuracidade>=meta ? 'var(--ok)' : 'var(--danger)') : 'var(--ink)'} fontFamily="var(--font-mono)">
+              <text x={x(i)} y={y(m.acuracidade)-8} textAnchor="middle" fontSize={fs.valor} fontWeight={700} fill={colorByMeta ? (m.acuracidade>=meta ? 'var(--ok)' : 'var(--danger)') : 'var(--ink)'} fontFamily="var(--font-mono)">
                 {Math.round(m.acuracidade)}%
               </text>
             </>
           ) : m.semMedicao ? (
-            <text x={x(i)} y={padT+chartH/2+4} textAnchor="middle" fontSize={14} fontWeight={700} fill="var(--ink-dim)" opacity={0.55}>
+            <text x={x(i)} y={padT+chartH/2+(fonteGrande?5:4)} textAnchor="middle" fontSize={fs.tracoSemMedicao} fontWeight={700} fill="var(--ink-dim)" opacity={0.55}>
               —
               <title>{m.label} ({m.sublabel}): sem medição deste indicador</title>
             </text>
@@ -15153,12 +15163,12 @@ function MonthlyAccuracyBarChart({months, meta=META_ACURACIDADE_SEMANAL, colorBy
               <title>{m.label} ({m.sublabel}): sem contagens</title>
             </rect>
           )}
-          <text x={x(i)} y={H-padB+24} textAnchor="middle" fontSize={10} fill="var(--ink-dim)" fontFamily="var(--font-mono)">{m.label}</text>
-          <text x={x(i)} y={H-padB+37} textAnchor="middle" fontSize={10} fill="var(--ink-dim)" fontFamily="var(--font-mono)">{m.sublabel}</text>
+          <text x={x(i)} y={H-padB+(fonteGrande?26:24)} textAnchor="middle" fontSize={fs.mes} fill="var(--ink-dim)" fontFamily="var(--font-mono)">{m.label}</text>
+          <text x={x(i)} y={H-padB+(fonteGrande?40:37)} textAnchor="middle" fontSize={fs.ano} fill="var(--ink-dim)" fontFamily="var(--font-mono)">{m.sublabel}</text>
           {mesParcialKey===m.key && (
             <g>
-              <rect x={x(i)-26} y={H-padB+45} width={52} height={15} rx={7.5} fill="var(--line)" />
-              <text x={x(i)} y={H-padB+55} textAnchor="middle" fontSize={8} fontWeight={700} fill="var(--ink-dim)" fontFamily="var(--font-mono)" letterSpacing="0.5">PARCIAL</text>
+              <rect x={x(i)-(fonteGrande?28:26)} y={H-padB+(fonteGrande?47:45)} width={fonteGrande?56:52} height={fonteGrande?17:15} rx={fonteGrande?8.5:7.5} fill="var(--line)" />
+              <text x={x(i)} y={H-padB+(fonteGrande?59:55)} textAnchor="middle" fontSize={fs.parcial} fontWeight={700} fill="var(--ink-dim)" fontFamily="var(--font-mono)" letterSpacing="0.5">PARCIAL</text>
             </g>
           )}
         </g>
@@ -15167,12 +15177,23 @@ function MonthlyAccuracyBarChart({months, meta=META_ACURACIDADE_SEMANAL, colorBy
         const xIni = x(indicesSemMedicao[0]) - barW/2;
         const xFim = x(indicesSemMedicao[indicesSemMedicao.length-1]) + barW/2;
         const yLinha = H - padB + 50;
+        const legenda = 'Sem medição deste indicador';
+        // Estimativa de largura pra fonte monoespaçada (~0.6em por
+        // caractere) — só pra saber onde cortar a linha nos dois lados do
+        // texto; não depende de medir o texto renderizado de verdade (SVG
+        // não tem isso sem canvas), mas essa estimativa já é o padrão usado
+        // no resto do arquivo pra layout de texto em SVG.
+        const metadeLargura = legenda.length * fs.legenda * 0.3;
+        const gap = 6;
+        const xTextoIni = (xIni+xFim)/2 - metadeLargura - gap;
+        const xTextoFim = (xIni+xFim)/2 + metadeLargura + gap;
         return (
           <g opacity={0.7}>
-            <line x1={xIni} x2={xFim} y1={yLinha} y2={yLinha} stroke="var(--ink-dim)" strokeWidth={1} />
+            <line x1={xIni} x2={xTextoIni} y1={yLinha} y2={yLinha} stroke="var(--ink-dim)" strokeWidth={1} />
+            <line x1={xTextoFim} x2={xFim} y1={yLinha} y2={yLinha} stroke="var(--ink-dim)" strokeWidth={1} />
             <line x1={xIni} x2={xIni} y1={yLinha-3} y2={yLinha+3} stroke="var(--ink-dim)" strokeWidth={1} />
             <line x1={xFim} x2={xFim} y1={yLinha-3} y2={yLinha+3} stroke="var(--ink-dim)" strokeWidth={1} />
-            <text x={(xIni+xFim)/2} y={yLinha+13} textAnchor="middle" fontSize={10} fill="var(--ink-dim)" fontFamily="var(--font-mono)">Sem medição deste indicador</text>
+            <text x={(xIni+xFim)/2} y={yLinha+4} textAnchor="middle" fontSize={fs.legenda} fill="var(--ink-dim)" fontFamily="var(--font-mono)">{legenda}</text>
           </g>
         );
       })()}
@@ -16290,14 +16311,14 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
 
       <div className="panel" style={{marginBottom:24}}>
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:4}}>
-          <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Acuracidade Mensal — Itens Recorrentes (%)</div>
+          <div style={{fontSize:'var(--text-md)',fontWeight:700}}>Acuracidade Mensal — Itens Recorrentes (%)</div>
           <span className="chart-meta-badge">Meta: {META_ACURACIDADE_SEMANAL}%</span>
         </div>
-        <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginBottom:16}}>
+        <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)',marginBottom:16}}>
           Somente itens com 2 ou mais contagens concluídas. Cada mês usa a data do próprio documento de contagem.
         </div>
-        <MonthlyAccuracyBarChart months={acuracidadeRecorrentes.monthlyStats} meta={META_ACURACIDADE_SEMANAL} colorByMeta={true} onMonthClick={(m)=>setMesSelecionado(m.key)} mesParcialKey={mesEmAndamentoKey} />
-        <div style={{fontSize:'var(--text-2xs)',color:'var(--ink-dim)',textAlign:'center',marginTop:12}}>
+        <MonthlyAccuracyBarChart months={acuracidadeRecorrentes.monthlyStats} meta={META_ACURACIDADE_SEMANAL} colorByMeta={true} onMonthClick={(m)=>setMesSelecionado(m.key)} mesParcialKey={mesEmAndamentoKey} fonteGrande={true} />
+        <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',textAlign:'center',marginTop:12}}>
           Indicador iniciado em {inicioAcumuloLabel}. Meses anteriores não possuem medição comparável.
         </div>
       </div>
