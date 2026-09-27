@@ -2942,6 +2942,10 @@ function MaquinaCardTracking({m, corStripe}){
   const saldo = m.saldo || {status:'loading'};
   const totalSaldo = saldo.status==='ok' ? (saldo.comSaldo + saldo.semSaldo) : 0;
   const pct = totalSaldo>0 ? Math.round((saldo.comSaldo/totalSaldo)*100) : 0;
+  // Pedido do cliente: a barra "Disponibilidade de materiais" muda de cor
+  // por faixa — 95-100% verde, 80-94% amarelo, abaixo de 80% vermelho —
+  // em vez de sempre verde não importa o valor.
+  const corBarra = pct>=95 ? 'var(--ok)' : pct>=80 ? 'var(--warn)' : 'var(--danger)';
   const metaChassiCodigo = [
     m.chassi ? `Chassi: ${m.chassi}` : null,
     m.codigoProduto ? `Cód: ${m.codigoProduto}` : null,
@@ -2980,7 +2984,7 @@ function MaquinaCardTracking({m, corStripe}){
           <span className="tp-bar-label">Disponibilidade de materiais</span>
           <span className="tp-bar-pct">{pct}%</span>
         </div>
-        <div className="tp-bar-track"><div className="tp-bar-fill" style={{width: pct+'%'}}></div></div>
+        <div className="tp-bar-track"><div className="tp-bar-fill" style={{width: pct+'%', background: corBarra}}></div></div>
       </div>
     </div>
   );
