@@ -5269,6 +5269,35 @@ function baixarRelatorioModulo(counts, sheetName, nomeArquivo){
   return {ok:true, filename};
 }
 
+// Mesmo pedido do cliente de sempre ("quero um botão de download..."),
+// agora pra "Endereços Pendentes" — formato próprio (não usa
+// `buildCountRows`/`baixarRelatorioModulo` porque o dado aqui é uma
+// PROPOSTA de endereço, não uma contagem: não tem saldo/diferença/
+// acuracidade, tem endereço anterior/informado e quem propôs).
+function buildEnderecoPropostoRows(lista){
+  return lista.map(e => ({
+    'Código': e.productCode,
+    'Descrição': e.descricao,
+    'Endereço Anterior': e.enderecoAnterior || '',
+    'Endereço Informado': e.enderecoInformado,
+    'Informado por': e.usuario,
+    'Data': e.data,
+    'Almoxarifado': e.almoxarifado || '',
+    'Status': e.status,
+  }));
+}
+
+function baixarRelatorioEnderecosPendentes(lista){
+  if(!window.XLSX) return {ok:false, erro:'A biblioteca de exportação não carregou (verifique a conexão com a internet).'};
+  if(!lista.length) return {ok:false, erro:'Nenhum endereço pendente para exportar.'};
+  const XLSX = window.XLSX;
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(buildEnderecoPropostoRows(lista)), 'Endereços Pendentes');
+  const filename = `GestaoEstoques_EnderecosPendentes_${hojeLocalStr()}.xlsx`;
+  XLSX.writeFile(wb, filename);
+  return {ok:true, filename};
+}
+
 // Exportador PRÓPRIO de "Solicitação ao Almoxarifado" (SA) pra "Aguardando
 // Aprovação" — pedido em 3 rodadas: 1º um PRINT da planilha real ("Em
 // aguardando aprovação, quero que ao gerar o excel venha neste formato"),
@@ -18429,11 +18458,28 @@ function AddressValidationPanel({enderecosPropostos=[], onResolve}){
     if(!res || !res.ok) setErros(prev=>({...prev, [id]: (res && res.erro) || 'Não foi possível salvar — tente novamente.'}));
   }
 
+  // Mesmo pedido de sempre do cliente ("quero um botão de download em
+  // todos os tipos de contagem"), agora aqui também — baixa só a lista de
+  // pendentes (o que esta tela mostra por padrão), ver baixarRelatorioEnderecosPendentes.
+  const [downloadMsg, setDownloadMsg] = useState('');
+  function handleDownload(){
+    const res = baixarRelatorioEnderecosPendentes(pendentes);
+    setDownloadMsg(res.ok ? ('Baixado: '+res.filename) : res.erro);
+  }
+
   return (
     <div className="panel">
-      <div className="section-title" style={{marginTop:0}}>
-        Aguardando confirmação
-        {pendentes.length>0 && <span className="badge" style={{position:'static',marginLeft:8}}>{pendentes.length}</span>}
+      <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexWrap:'wrap',gap:10}}>
+        <div className="section-title" style={{marginTop:0}}>
+          Aguardando confirmação
+          {pendentes.length>0 && <span className="badge" style={{position:'static',marginLeft:8}}>{pendentes.length}</span>}
+        </div>
+        <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:4}}>
+          <button type="button" className="btn btn-outline btn-sm" onClick={handleDownload} disabled={!pendentes.length} title="Baixar um relatório .xlsx só com os endereços pendentes">
+            <Ic>⬇</Ic> Baixar (.xlsx)
+          </button>
+          {downloadMsg && <div style={{fontSize:'var(--text-2xs)',color:'var(--ink-dim)',maxWidth:220,textAlign:'right'}}>{downloadMsg}</div>}
+        </div>
       </div>
       {enderecosPropostos.length===0 ? (
         <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>
