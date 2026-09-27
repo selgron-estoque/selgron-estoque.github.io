@@ -375,8 +375,11 @@
   .tp-stock-block.sem .num,.tp-stock-block.sem .lbl{color:var(--tpsemsaldo-ink);}
   .tp-stock-block.tp-stock-desatualizado svg{position:absolute;top:4px;right:4px;opacity:.65;}
   .tp-stock-block.tp-stock-desatualizado .num,.tp-stock-block.tp-stock-desatualizado .lbl{opacity:.6;}
-  .tp-card-bottom{display:flex;align-items:center;gap:8px;margin-top:10px;flex-shrink:0;}
-  .tp-bar-track{flex:1;height:7px;border-radius:99px;background:var(--tptrack);overflow:hidden;}
+  .tp-card-bottom{display:flex;flex-direction:column;gap:5px;margin-top:10px;flex-shrink:0;}
+  .tp-bar-header{display:flex;align-items:center;justify-content:space-between;gap:8px;font-family:var(--font-corp);}
+  .tp-bar-label{font-size:11px;font-weight:500;color:var(--tpink-dim);}
+  .tp-bar-pct{font-size:13px;font-weight:700;color:var(--tpink);}
+  .tp-bar-track{width:100%;height:7px;border-radius:99px;background:var(--tptrack);overflow:hidden;}
   .tp-bar-fill{height:100%;border-radius:99px;background:var(--tpfill);}
 
   /* ---- Pedidos de Compra (3ª tela do painel) — painel executivo, cores
@@ -2965,6 +2968,10 @@ function MaquinaCardTracking({m, corStripe}){
         </div>
       </div>
       <div className="tp-card-bottom">
+        <div className="tp-bar-header">
+          <span className="tp-bar-label">Disponibilidade de materiais</span>
+          <span className="tp-bar-pct">{pct}%</span>
+        </div>
         <div className="tp-bar-track"><div className="tp-bar-fill" style={{width: pct+'%'}}></div></div>
       </div>
     </div>
