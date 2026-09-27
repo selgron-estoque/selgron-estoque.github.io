@@ -1350,7 +1350,13 @@
     .pnl-hero-search{flex:1;min-width:0;}
     .pnl-hero-search .panel{margin-bottom:0;padding:0;border:none;box-shadow:none;background:transparent;}
     .pnl-hero-search .section-title{display:none;}
-    .pnl-hero-search .field{margin-bottom:0;}
+    /* !important — `SearchWithScanner` (componente reaproveitado em várias
+       outras telas) tem margin-bottom:14 inline no próprio JSX; sem vencer
+       isso aqui, sobrava um respiro extra abaixo do campo, deixando o campo
+       (48px) mais alto que a saudação ao lado (~46px) dentro da mesma linha
+       centralizada — o campo ficava puxado pra cima em vez de centralizado
+       com "Boa noite / Alisson Silva". */
+    .pnl-hero-search .field{margin-bottom:0 !important;}
     .pnl-hero-search .field label{display:none;}
     .pnl-hero-search .field input{padding:15px 14px;font-size:14px;}
 
@@ -8210,7 +8216,7 @@ function ItemStatusSearchPanel({counts, historicoConcluidas, user, goto}){
 
   return (
     <>
-      <div className="panel" style={{marginBottom:20}}>
+      <div className="panel">
         <div className="section-title" style={{marginTop:0}}>Consultar Status de um Item</div>
         <SearchWithScanner
           value={termo}
