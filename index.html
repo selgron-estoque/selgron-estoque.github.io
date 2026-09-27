@@ -11012,12 +11012,31 @@ function RandomCountFlow({inv, user, onRegisterCount, onFinish, onAddressPropose
     // identidade do array mudar.
   }, [inv, almoxarifadosFiltro ? almoxarifadosFiltro.join(',') : null, gruposExcluidos ? gruposExcluidos.join(',') : '']);
 
-  // Ao voltar para este inventário no meio da fila, retoma a partir de
-  // "contados" — mesmo padrão usado em ImportedListCountFlow — em vez de
-  // recomeçar do item 1 a cada re-entrada.
-  const jaContados = inv ? (inv.contados || 0) : 0;
-  const pendentes = useMemo(()=> allItems ? allItems.slice(jaContados) : [], [allItems, jaContados]);
+  // Bug real corrigido aqui — cliente reportou "finalizo o item 7, clico em
+  // Próximo, o sistema volta pro item 1" (fila de 20 itens). Causa raiz: a
+  // fila pendente era calculada cortando um PREFIXO de `allItems` do
+  // tamanho `inv.contados` (`allItems.slice(jaContados)`) — mas `inv` (vem
+  // de `flowState`, ver App()) é um retrato CONGELADO tirado na hora em que
+  // o operador entrou nesta tela, e nunca é atualizado depois (mesmo
+  // enquanto `setInventories` incrementa `contados` à parte, em outro
+  // estado). Sempre que este componente REMONTA no meio de uma rodada —
+  // `view`/`flowState` sobrevivem a um recarregamento de página
+  // (`usePersistedState`, ver App()), então um tablet que recarrega a aba
+  // (troca de app, Wi-Fi caindo, o WebView reciclando por memória — comum
+  // em chão de fábrica) volta pra ESTA MESMA tela, com o MESMO `inv`
+  // congelado, só que com `allItems`/a fila local (useCountQueue) do zero
+  // — `jaContados` ficava defasado (ex.: preso em 0), cortando o prefixo
+  // errado e reexibindo itens que já tinham contagem registrada de
+  // verdade. Corrigido excluindo os já contados por PERTENCIMENTO
+  // (`codigosJaContados`, o mesmo critério — "qualquer inventário/rodada,
+  // qualquer status" — já usado na priorização acima), não por posição:
+  // `counts` é sempre a fonte viva (prop de App(), atualizada a cada
+  // contagem/refetch), então a fila pendente fica correta mesmo depois de
+  // um remonte, sem depender de `inv.contados` nunca ficar sincronizado.
+  const codigosJaContadosAgora = useMemo(()=> new Set((counts||[]).map(c=>c.productCode)), [counts]);
+  const pendentes = useMemo(()=> allItems ? allItems.filter(p=>!codigosJaContadosAgora.has(p.codigo)) : [], [allItems, codigosJaContadosAgora]);
   const q = useCountQueue(pendentes);
+  const jaContadosCount = allItems ? allItems.length - pendentes.length : 0;
 
   if(!almoxarifadosFiltro){
     return <ArmazemGate onSelected={setArmazemAdHoc} />;
@@ -11057,7 +11076,7 @@ function RandomCountFlow({inv, user, onRegisterCount, onFinish, onAddressPropose
         user={user}
         inv={inv}
         counts={counts}
-        queueAtual={jaContados+q.idx+1}
+        queueAtual={jaContadosCount+q.idx+1}
         queueTotal={allItems.length}
         onAddressProposed={onAddressProposed}
         operadorVeSaldo={operadorVeSaldo}
@@ -11593,29 +11612,22 @@ function ImportedListCountFlow({inv, user, onRegisterCount, onFinish, onAddressP
       // Cuidado que não existia antes (Lista Importada nunca precisou disso,
       // já que sem reordenar a posição no array SEMPRE bateu com a ordem
       // original da planilha, estável entre remontagens): reordenar por
-      // endereço quebraria a retomada por posição (`jaContados = inv.
-      // contados`, mais abaixo) pra qualquer inventário JÁ parcialmente
-      // contado no momento deste deploy — os primeiros N itens da planilha
-      // (já contados sob a ordem antiga) não são necessariamente os
-      // primeiros N itens da nova ordem por endereço.
+      // endereço quebraria uma retomada baseada em POSIÇÃO no array pra
+      // qualquer inventário JÁ parcialmente contado no momento deste
+      // deploy — os primeiros N itens da planilha (já contados sob a ordem
+      // antiga) não são necessariamente os primeiros N itens da nova ordem
+      // por endereço. Por isso a retomada (mais abaixo, `pendentes`) filtra
+      // por PERTENCIMENTO a `counts`, nunca por posição/contagem de itens.
       //
-      // Resolvido separando por quem JÁ TEM contagem registrada NESTE
-      // inventário (dado real, `counts`, não posição no array) antes de
-      // ordenar — mas, AO CONTRÁRIO do padrão de `RandomCountFlow`
-      // (`codigosJaContados`, mais acima neste arquivo, que põe os NÃO
-      // contados primeiro pra priorizá-los dentro de um pool recém-buscado
-      // por RPC), aqui os JÁ CONTADOS precisam vir PRIMEIRO no array: `inv`
-      // (vindo de `flowState`) é um retrato congelado no momento da
-      // navegação — nunca muda de identidade durante a sessão — então
-      // `jaContados = inv.contados` (mais abaixo) fica FIXO por toda a
-      // sessão, e `pendentes = allItems.slice(jaContados)` só continua
-      // batendo exatamente com "os itens ainda não contados" se os
-      // primeiros `jaContados` elementos do array forem justamente os JÁ
-      // contados (removidos do início pelo slice), sobrando só os
-      // pendentes depois. Invertido isso (não contados primeiro), o slice
-      // cortaria itens NUNCA contados do início da fila e devolveria itens
-      // JÁ contados misturados nos pendentes — bug real, pego só ao testar
-      // o cenário de migração (ver harness_lista_importada_ordenar_endereco.js).
+      // Separa por quem JÁ TEM contagem registrada NESTE inventário (dado
+      // real, `counts`, não posição no array) antes de ordenar — a ordem
+      // em si (já contados primeiro) é só cosmética/histórica hoje; quem
+      // decide o que entra em `pendentes`, logo abaixo, é o PERTENCIMENTO a
+      // `codigosJaContadosNesteInv` (recalculado a cada render a partir de
+      // `counts`), não a posição no array. Ver o comentário grande perto de
+      // `pendentes`/`jaContadosCount`, abaixo, pro bug real que motivou
+      // trocar de "cortar um prefixo por posição" pra "filtrar por
+      // pertencimento".
       const codigosJaContadosNesteInv = new Set(
         (counts||[]).filter(c=>c.inventario===inv.id).map(c=>c.productCode)
       );
@@ -11626,16 +11638,35 @@ function ImportedListCountFlow({inv, user, onRegisterCount, onFinish, onAddressP
     return ()=>{ cancelado = true; };
   }, [inv]);
 
-  // `allItems` já vem ordenado por endereço (ver useEffect acima) — a
-  // ordem em si é estável entre remontagens (sort puro sobre dado que não
-  // muda), então ao voltar para este inventário depois de contar alguns
-  // itens, retoma exatamente de onde parou usando "contados" — sem isso,
-  // cada vez que a tela remonta a fila reiniciaria do item 1 (mesmo
-  // problema que a Contagem Aleatória já tem, mas aqui seria pior: o
-  // operador nunca chegaria ao 2º item da lista).
-  const jaContados = inv ? (inv.contados || 0) : 0;
-  const pendentes = useMemo(()=> allItems ? allItems.slice(jaContados) : [], [allItems, jaContados]);
+  // Bug real corrigido aqui — mesma causa raiz do RandomCountFlow (ver o
+  // comentário grande lá): a fila pendente era calculada cortando um
+  // PREFIXO de `allItems` do tamanho `inv.contados` (`allItems.
+  // slice(jaContados)`) — mas `inv` (de `flowState`) é um retrato
+  // CONGELADO, nunca atualizado depois que o operador entra nesta tela.
+  // `view`/`flowState` sobrevivem a um recarregamento de página
+  // (`usePersistedState`, ver App()) — um tablet que recarrega a aba no
+  // meio de uma rodada (troca de app, Wi-Fi caindo, WebView reciclando por
+  // memória) volta pra ESTA MESMA tela com o MESMO `inv` congelado, só que
+  // com a fila local (`allItems`/`useCountQueue`) do zero: `jaContados`
+  // ficava preso no valor de quando a tela abriu (ex.: 0), cortando o
+  // prefixo errado e reabrindo itens que já tinham contagem registrada de
+  // verdade — reportado pelo cliente como "finalizo um item, clico em
+  // Próximo, o sistema volta pro item 1". Corrigido filtrando por
+  // PERTENCIMENTO a `codigosJaContadosNesteInv` (mesmo critério de cima,
+  // recalculado a cada render a partir de `counts`, que é sempre a fonte
+  // viva) em vez de cortar por posição — a fila pendente fica correta
+  // mesmo depois de um remonte, sem depender de `inv.contados` nunca ficar
+  // sincronizado.
+  const codigosJaContadosNesteInvAgora = useMemo(
+    ()=> new Set((counts||[]).filter(c=>inv && c.inventario===inv.id).map(c=>c.productCode)),
+    [counts, inv]
+  );
+  const pendentes = useMemo(
+    ()=> allItems ? allItems.filter(p=>!codigosJaContadosNesteInvAgora.has(p.codigo)) : [],
+    [allItems, codigosJaContadosNesteInvAgora]
+  );
   const q = useCountQueue(pendentes);
+  const jaContadosCount = allItems ? allItems.length - pendentes.length : 0;
 
   if(allItems===null){
     return <div className="empty-state">Carregando itens da lista importada…</div>;
@@ -11668,7 +11699,7 @@ function ImportedListCountFlow({inv, user, onRegisterCount, onFinish, onAddressP
         user={user}
         inv={inv}
         counts={counts}
-        queueAtual={jaContados+q.idx+1}
+        queueAtual={jaContadosCount+q.idx+1}
         queueTotal={allItems.length}
         onAddressProposed={onAddressProposed}
         onSkip={()=>q.defer()}
