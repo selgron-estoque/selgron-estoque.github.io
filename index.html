@@ -403,21 +403,38 @@
     .um-right{width:100%;}
   }
 
-  /* "Configurações" — cards com "?" de ajuda (tooltip nativo via title) e
-     salvamento em bloco (edita local, só grava tudo ao clicar "Salvar
-     alterações" no rodapé) — pedido do cliente pra bater com um mockup de
-     referência, mesmo espírito minimalista/corporativo dos redesenhos
-     anteriores (Usuários, Editar Usuário). Escopado com prefixo cfg-. */
+  /* "Configurações" — pedido do cliente pra bater com um mockup de
+     referência (print enviado): abas (Geral/Contagem/Recontagens/
+     Segurança — só "Contagem" tem conteúdo real hoje, as outras 3 ficam
+     prontas pra receber configurações futuras), ícone colorido por card
+     (mesma linguagem visual dos cards de KPI da Home), toggle switch (não
+     mais checkbox) e salvamento em bloco (edita local, só grava tudo ao
+     clicar "Salvar alterações" no rodapé). Escopado com prefixo cfg-. */
+  .cfg-tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:24px;}
+  .cfg-tab{display:flex;align-items:center;gap:7px;padding:12px 16px;background:none;border:none;border-bottom:2px solid transparent;font:inherit;font-size:var(--text-sm);font-weight:600;color:var(--ink-dim);cursor:pointer;margin-bottom:-1px;}
+  .cfg-tab:hover{color:var(--ink);}
+  .cfg-tab.active{color:var(--safety);border-bottom-color:var(--safety);}
   .cfg-card{border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:16px;background:var(--panel);}
-  .cfg-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;}
-  .cfg-card-title{font-family:var(--font-display);font-size:var(--text-sm);font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--ink-dim);display:flex;align-items:center;gap:8px;flex:1;}
-  .cfg-card-title::after{content:'';flex:1;height:1px;background:var(--line);}
-  .cfg-card-desc{font-size:var(--text-sm);color:var(--ink-dim);margin-top:4px;line-height:1.5;max-width:640px;}
+  .cfg-card-head{display:flex;align-items:flex-start;gap:12px;}
+  .cfg-card-icon{flex-shrink:0;width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;}
+  .cfg-card-headtext{flex:1;min-width:0;}
+  .cfg-card-title{font-family:var(--font-display);font-size:var(--text-md);font-weight:700;color:var(--ink);}
+  .cfg-card-desc{font-size:var(--text-sm);color:var(--ink-dim);margin-top:2px;line-height:1.5;max-width:640px;}
   .cfg-help-btn{flex-shrink:0;width:24px;height:24px;border-radius:50%;border:1px solid var(--line);background:var(--panel);color:var(--ink-dim);display:flex;align-items:center;justify-content:center;font-size:var(--text-sm);font-weight:700;cursor:help;}
-  .cfg-check-row{display:flex;align-items:flex-start;gap:10px;margin-top:16px;cursor:pointer;}
-  .cfg-check-row input{width:18px;height:18px;margin-top:2px;flex-shrink:0;accent-color:var(--safety);}
+  .cfg-toggle-row{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-top:16px;padding-top:16px;border-top:1px solid var(--line);cursor:pointer;}
   .cfg-check-label{font-size:var(--text-md);font-weight:600;color:var(--ink);}
   .cfg-check-sub{font-size:var(--text-sm);color:var(--ink-dim);margin-top:2px;}
+  /* Mesma linguagem visual do switch de tema claro/escuro (`.theme-switch`)
+     — pedido do cliente foi "esse estilo", reaproveita o toggle que já
+     existe no app em vez de inventar um 2º padrão visual pra mesma coisa. */
+  .cfg-toggle{position:relative;width:44px;height:24px;border-radius:999px;border:none;background:var(--gray-200);flex-shrink:0;cursor:pointer;padding:0;transition:background-color .2s ease;}
+  .cfg-toggle.on{background:var(--safety);}
+  .cfg-toggle .knob{position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:var(--panel);box-shadow:0 1px 3px rgba(0,0,0,.3);transition:left .2s ease;}
+  .cfg-toggle.on .knob{left:22px;}
+  .cfg-search-row{display:flex;align-items:center;gap:8px;margin-top:16px;padding:9px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel-raised);}
+  .cfg-search-row svg{flex-shrink:0;color:var(--ink-dim);}
+  .cfg-search-row>div{flex:1;min-width:0;}
+  .cfg-search-row .chip-input{border:none;padding:0;}
   .cfg-timeout-row{display:flex;align-items:center;gap:10px;margin-top:16px;flex-wrap:wrap;}
   .cfg-timeout-row input{width:80px;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel-raised);color:var(--ink);font-size:var(--text-md);}
   .cfg-timeout-badge{display:flex;align-items:center;gap:6px;font-size:var(--text-sm);color:var(--ink-dim);margin-top:12px;}
@@ -7375,6 +7392,10 @@ const DICON_PATHS = {
   // Sol/lua — botão de alternar Modo Escuro (TopBar mobile/DesktopTopbar).
   sun: <><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.4"/><path d="M12 19.1v2.4"/><path d="M4.2 4.2l1.7 1.7"/><path d="M18.1 18.1l1.7 1.7"/><path d="M2.5 12h2.4"/><path d="M19.1 12h2.4"/><path d="M4.2 19.8l1.7-1.7"/><path d="M18.1 5.9l1.7-1.7"/></>,
   moon: <path d="M20.5 14.5A8.5 8.5 0 1 1 9.5 3.5a7 7 0 0 0 11 11Z"/>,
+  // Ícones da tela "Configurações" (abas + cards, ver comentário completo
+  // em Settings/`.cfg-*`).
+  eye: <><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></>,
+  users: <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></>,
 };
 
 function DIcon({name, size=18, strokeWidth=1.8, style}){
@@ -20408,6 +20429,18 @@ function Settings({role, currentUser, operadorVeSaldo, onSetOperadorVeSaldo, ope
   const [erro, setErro] = useState(null);
   const [salvo, setSalvo] = useState(false);
 
+  // Abas pedidas pelo cliente (mockup de referência) — só "Contagem" tem
+  // configuração de verdade hoje (as 4 desta tela, já existentes antes das
+  // abas); Geral/Recontagens/Segurança ficam com um estado vazio, prontas
+  // pra receber configurações futuras sem precisar de outro redesenho.
+  const ABAS_CONFIG = [
+    {id:'geral', label:'Geral', icon:'settings'},
+    {id:'contagem', label:'Contagem', icon:'box'},
+    {id:'recontagens', label:'Recontagens', icon:'repeat'},
+    {id:'seguranca', label:'Segurança', icon:'lock'},
+  ];
+  const [abaAtiva, setAbaAtiva] = useState('contagem');
+
   const gruposIguais = (a,b) => a.length===b.length && a.every(x=>b.includes(x));
   const timeoutAtual = sessionTimeoutMin ?? DEFAULT_SESSION_TIMEOUT_MIN;
   const timeoutNum = Number(timeoutInput);
@@ -20450,55 +20483,73 @@ function Settings({role, currentUser, operadorVeSaldo, onSetOperadorVeSaldo, ope
   return (
     <div>
       {isAdmin && (
+        <div className="cfg-tabs">
+          {ABAS_CONFIG.map(a=>(
+            <button key={a.id} type="button" className={'cfg-tab'+(abaAtiva===a.id?' active':'')} onClick={()=>setAbaAtiva(a.id)}>
+              <DIcon name={a.icon} size={15} />
+              {a.label}
+            </button>
+          ))}
+        </div>
+      )}
+      {isAdmin && abaAtiva==='contagem' && (
         <>
           <div className="cfg-card">
             <div className="cfg-card-head">
-              <div>
+              <span className="cfg-card-icon" style={{background:'var(--blue-bg)', color:'var(--blue)'}}><DIcon name="eye" size={17} /></span>
+              <div className="cfg-card-headtext">
                 <div className="cfg-card-title">Visibilidade do saldo na contagem</div>
-                <div className="cfg-card-desc">Controla se o operador vê o saldo do sistema (referência antes de digitar, card de comparação ao vivo) durante a contagem, em todos os modos.</div>
+                <div className="cfg-card-desc">Define se o operador pode visualizar o saldo do sistema durante a contagem.</div>
               </div>
               <span className="cfg-help-btn" title="Vale pra Aleatória, Manual, Rota, Lista Importada e Recontagem. Líder e administrador sempre veem o saldo, independente desta configuração — isso não muda a regra de aprovação automática/segunda contagem/análise do líder, só o que aparece na tela.">?</span>
             </div>
-            <label className="cfg-check-row" style={{cursor:'pointer'}}>
-              <input type="checkbox" checked={saldoLocal} onChange={e=>setSaldoLocal(e.target.checked)} />
+            <label className="cfg-toggle-row">
               <div>
-                <div className="cfg-check-label">Operador pode ver o saldo do sistema durante a contagem</div>
-                <div className="cfg-check-sub">Com a opção desligada, o operador conta "às cegas" — a comparação com o sistema só aparece depois, na análise do líder.</div>
+                <div className="cfg-check-label">Mostrar saldo do sistema para o operador</div>
+                <div className="cfg-check-sub">Quando desativado, o operador conta "às cegas" e a comparação com o sistema só aparece na análise do líder.</div>
               </div>
+              <button type="button" role="switch" aria-checked={saldoLocal} className={'cfg-toggle'+(saldoLocal?' on':'')} onClick={()=>setSaldoLocal(v=>!v)}><span className="knob"></span></button>
             </label>
           </div>
 
           <div className="cfg-card">
             <div className="cfg-card-head">
-              <div>
-                <div className="cfg-card-title">Visibilidade de valores em recontagens/divergentes</div>
-                <div className="cfg-card-desc">Configuração separada da acima — controla só o BLOCO EXTRA de cada card em "Recontagens".</div>
+              <span className="cfg-card-icon" style={{background:'var(--blue-bg)', color:'var(--blue)'}}><DIcon name="fileText" size={17} /></span>
+              <div className="cfg-card-headtext">
+                <div className="cfg-card-title">Visibilidade de valores em Recontagens/Divergentes</div>
+                <div className="cfg-card-desc">Define a exibição de informações extras nos cards de recontagens.</div>
               </div>
               <span className="cfg-help-btn" title="Bloco extra: armazém, endereço contado, motivo, observação, foto, valor divergente em R$ e quem contou. O quadro principal (Sistema/Físico/Diferença/%) continua visível pra qualquer perfil — essa configuração é só sobre o valor em R$ e os detalhes complementares.">?</span>
             </div>
-            <label className="cfg-check-row" style={{cursor:'pointer'}}>
-              <input type="checkbox" checked={valoresRecontagemLocal} onChange={e=>setValoresRecontagemLocal(e.target.checked)} />
+            <label className="cfg-toggle-row">
               <div>
-                <div className="cfg-check-label">Operador pode ver detalhes extras em Recontagens</div>
-                <div className="cfg-check-sub">Com a opção desligada (padrão), o operador não vê esse bloco extra — líder e administrador sempre veem, sem essa restrição.</div>
+                <div className="cfg-check-label">Mostrar detalhes extras para o operador</div>
+                <div className="cfg-check-sub">Quando desativado, o operador não vê o bloco extra. O líder e o administrador sempre visualizam.</div>
               </div>
+              <button type="button" role="switch" aria-checked={valoresRecontagemLocal} className={'cfg-toggle'+(valoresRecontagemLocal?' on':'')} onClick={()=>setValoresRecontagemLocal(v=>!v)}><span className="knob"></span></button>
             </label>
           </div>
 
           <div className="cfg-card">
             <div className="cfg-card-head">
-              <div>
+              <span className="cfg-card-icon" style={{background:'var(--blue-bg)', color:'var(--blue)'}}><DIcon name="users" size={17} /></span>
+              <div className="cfg-card-headtext">
                 <div className="cfg-card-title">Grupos excluídos da contagem automática</div>
-                <div className="cfg-card-desc">Grupos/famílias marcados aqui nunca entram sozinhos numa fila de contagem (Aleatória, Curva ABC, Rota de Endereço).</div>
+                <div className="cfg-card-desc">Grupos/famílias que nunca entram automaticamente na fila de contagem (Aleatória, Curva ABC, Rota de Endereço).</div>
               </div>
               <span className="cfg-help-btn" title="Também não aparecem pra seleção em 'Contagem por Grupo' — útil pra grupos cujo material não existe fisicamente no almoxarifado (só saldo remanescente no sistema). Esta configuração só afeta geração automática de fila.">?</span>
             </div>
             {gruposDisponiveis===null ? (
               <div className="empty-state empty-state--compact" style={{marginTop:14}}>Carregando grupos disponíveis…</div>
             ) : gruposDisponiveis.length===0 ? (
-              <div className="empty-state empty-state--compact" style={{marginTop:14}}>Nenhum grupo com saldo carregado ainda.</div>
+              <div className="empty-state empty-state--compact" style={{marginTop:14, display:'flex', flexDirection:'column', alignItems:'center', gap:6}}>
+                <DIcon name="users" size={22} />
+                <span>Nenhum grupo com saldo carregado ainda.</span>
+                <span style={{fontSize:'var(--text-xs)'}}>Grupos adicionados aqui não serão incluídos na contagem automática.</span>
+              </div>
             ) : (
-              <div style={{marginTop:14}}>
+              <div className="cfg-search-row">
+                <DIcon name="search" size={16} />
                 <GrupoMultiSelectField
                   grupos={gruposDisponiveis}
                   selecionados={gruposLocal}
@@ -20512,17 +20563,22 @@ function Settings({role, currentUser, operadorVeSaldo, onSetOperadorVeSaldo, ope
 
           <div className="cfg-card">
             <div className="cfg-card-head">
-              <div>
+              <span className="cfg-card-icon" style={{background:'var(--blue-bg)', color:'var(--blue)'}}><DIcon name="clock" size={17} /></span>
+              <div className="cfg-card-headtext">
                 <div className="cfg-card-title">Tempo de inatividade</div>
-                <div className="cfg-card-desc">Minutos sem nenhuma interação (toque, clique, tecla) até o logout automático — protege um tablet compartilhado esquecido logado no chão de fábrica.</div>
+                <div className="cfg-card-desc">Define o tempo sem interação para logout automático do sistema.</div>
               </div>
               <span className="cfg-help-btn" title="Cada evento de toque/clique/tecla reinicia a contagem. Vale em todos os aparelhos assim que salvo.">?</span>
             </div>
-            <div className="cfg-timeout-row">
-              <input type="number" min="1" step="1" value={timeoutInput} onChange={e=>setTimeoutInput(e.target.value)} onWheel={e=>e.target.blur()} />
-              <span style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>minutos</span>
+            <div style={{marginTop:16, paddingTop:16, borderTop:'1px solid var(--line)'}}>
+              <div className="cfg-check-label">Tempo de inatividade</div>
+              <div className="cfg-check-sub">Minutos sem nenhuma interação (toque, clique, tecla) até o logout automático.</div>
+              <div className="cfg-timeout-row">
+                <input type="number" min="1" step="1" value={timeoutInput} onChange={e=>setTimeoutInput(e.target.value)} onWheel={e=>e.target.blur()} />
+                <span style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>minutos</span>
+              </div>
+              <div className="cfg-timeout-badge">Valor atual: <strong>{timeoutAtual} minutos</strong></div>
             </div>
-            <div className="cfg-timeout-badge">Hoje: <strong>{timeoutAtual} minutos</strong></div>
           </div>
 
           {erro && <div className="login-error" style={{marginBottom:12}}>{erro}</div>}
@@ -20531,6 +20587,11 @@ function Settings({role, currentUser, operadorVeSaldo, onSetOperadorVeSaldo, ope
             <button type="button" className="btn btn-primary" disabled={!podeSalvar} onClick={salvarTudo}><DIcon name="checkCircle" size={16}/> {salvando ? 'Salvando…' : 'Salvar alterações'}</button>
           </div>
         </>
+      )}
+      {isAdmin && abaAtiva!=='contagem' && (
+        <div className="panel">
+          <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>Nenhuma configuração disponível nesta aba ainda.</div>
+        </div>
       )}
       {!isAdmin && (
         <div className="panel">
