@@ -14744,21 +14744,29 @@ function computeAcuracidadeItensRecorrentes(pool, dataInicioStr, dataFimStr){
       });
     });
   });
-  // A SÉRIE MENSAL (quais meses aparecem no gráfico/entram na média do
-  // card) nunca começa antes de `INICIO_ACUMULO_ITENS_RECORRENTES` — mesmo
-  // que `dataInicioStr` peça um intervalo mais largo (ex.: "ano atual"
-  // sempre começa em 1º de janeiro). Comparação de string funciona porque
-  // as duas datas já vêm no formato ISO 'YYYY-MM-DD' (ordem lexicográfica =
-  // ordem cronológica). Só afeta a MONTAGEM DO GRÁFICO — a elegibilidade
-  // "2+ documentos" (acima) continua sobre `pool` inteiro, sem nenhum
-  // corte de data.
-  const dataInicioEfetiva = dataInicioStr > INICIO_ACUMULO_ITENS_RECORRENTES ? dataInicioStr : INICIO_ACUMULO_ITENS_RECORRENTES;
-  const monthlyStats = computeMonthlyStats(elegiveis, dataInicioEfetiva, dataFimStr);
+  // Meses ANTERIORES a `INICIO_ACUMULO_ITENS_RECORRENTES` continuam
+  // aparecendo no eixo do gráfico (pedido do cliente: mostrar Jan-Ago como
+  // "sem medição", não escondê-los) — mas nunca com um valor real, mesmo
+  // que documentos elegíveis genuinamente existam nesses meses (ex.: item
+  // com 1ª contagem em fevereiro e 2ª em setembro — a 2ª já basta pra
+  // elegibilidade, mas a de fevereiro nunca deveria "contar" pro indicador
+  // oficial). Por isso: monta a série no intervalo PEDIDO por inteiro
+  // (nunca corta a chamada pra `computeMonthlyStats`), depois MASCARA pra
+  // `null`/`semMedicao:true` qualquer mês anterior ao início oficial —
+  // comparação pelas 2 primeiras partes da chave 'YYYY-MM' (mesmo formato
+  // de `INICIO_ACUMULO_ITENS_RECORRENTES` cortado pra 'YYYY-MM').
+  const inicioAcumuloChave = INICIO_ACUMULO_ITENS_RECORRENTES.slice(0,7);
+  const monthlyStats = computeMonthlyStats(elegiveis, dataInicioStr, dataFimStr).map(m =>
+    m.key < inicioAcumuloChave ? {...m, acuracidade:null, total:0, semMedicao:true} : m
+  );
   const mesesComDado = monthlyStats.filter(m=>m.acuracidade!=null);
   const acuracidadeMedia = mesesComDado.length>0
     ? mesesComDado.reduce((s,m)=>s+m.acuracidade,0)/mesesComDado.length
     : null;
-  const chavesDoGrafico = new Set(monthlyStats.map(m=>m.key));
+  // Drill-down só existe pros meses que o gráfico de fato mede — nunca um
+  // mês mascarado (`semMedicao`), mesmo que documentos elegíveis caiam
+  // nele (ver comentário acima).
+  const chavesDoGrafico = new Set(monthlyStats.filter(m=>!m.semMedicao).map(m=>m.key));
   const documentosPorMes = {};
   elegiveis.forEach(c=>{
     const {key} = getMonthInfo(c.data);
@@ -15087,7 +15095,23 @@ function WeeklyCountChart({weeks, meta=META_CONTAGENS_SEMANAL}){
 // fica ACIMA da barra — precisa de mais respiro entre o topo do SVG e a
 // grade de "100%" pra não ficar espremido.
 function MonthlyAccuracyBarChart({months, meta=META_ACURACIDADE_SEMANAL, colorByMeta=false, onMonthClick=null, mesParcialKey=null}){
-  const W = 760, H = 220, padL = 34, padR = 30, padT = 38, padB = 40;
+  // `semMedicao` (ver `computeAcuracidadeItensRecorrentes`) — mês que
+  // existe no eixo (pra dar contexto de "a série completa do ano"), mas
+  // nunca teve o indicador medido oficialmente (ex.: jan-ago/2026, antes
+  // de `INICIO_ACUMULO_ITENS_RECORRENTES`). Ganha mais altura (linha extra
+  // embaixo dos rótulos de mês) só quando existe pelo menos 1 — os outros
+  // usos deste gráfico (Indicadores) nunca têm esse campo, mantêm a altura
+  // compacta de sempre.
+  const indicesSemMedicao = months.map((m,i)=>m.semMedicao?i:-1).filter(i=>i>=0);
+  const temSemMedicao = indicesSemMedicao.length>0;
+  const temParcial = !!(mesParcialKey && months.some(m=>m.key===mesParcialKey));
+  // Linha extra embaixo dos rótulos de mês/ano — precisa dela pra caber a
+  // legenda "Sem medição deste indicador" (semMedicao) OU o selo "PARCIAL"
+  // (mesParcialKey), ou os dois ao mesmo tempo (cada um numa faixa de X
+  // diferente, sem se sobrepor). Sem nenhum dos dois, mantém a altura
+  // compacta original — é o caso do outro uso deste gráfico (Indicadores).
+  const precisaLinhaExtra = temSemMedicao || temParcial;
+  const W = 760, H = precisaLinhaExtra ? 244 : 220, padL = 34, padR = 30, padT = 38, padB = precisaLinhaExtra ? 64 : 40;
   const chartW = W - padL - padR, chartH = H - padT - padB;
   const n = months.length;
   const slot = chartW / n;
@@ -15117,18 +15141,41 @@ function MonthlyAccuracyBarChart({months, meta=META_ACURACIDADE_SEMANAL, colorBy
               </rect>
               <text x={x(i)} y={y(m.acuracidade)-8} textAnchor="middle" fontSize={11} fontWeight={700} fill={colorByMeta ? (m.acuracidade>=meta ? 'var(--ok)' : 'var(--danger)') : 'var(--ink)'} fontFamily="var(--font-mono)">
                 {Math.round(m.acuracidade)}%
-                {mesParcialKey===m.key && <tspan fontSize={8} fontWeight={600} fill="var(--ink-dim)"> · parcial</tspan>}
               </text>
             </>
+          ) : m.semMedicao ? (
+            <text x={x(i)} y={padT+chartH/2+4} textAnchor="middle" fontSize={14} fontWeight={700} fill="var(--ink-dim)" opacity={0.55}>
+              —
+              <title>{m.label} ({m.sublabel}): sem medição deste indicador</title>
+            </text>
           ) : (
             <rect x={x(i)-2} y={y(0)-3} width={4} height={3} fill="var(--ink-dim)" opacity={0.5}>
               <title>{m.label} ({m.sublabel}): sem contagens</title>
             </rect>
           )}
-          <text x={x(i)} y={H-24} textAnchor="middle" fontSize={10} fill="var(--ink-dim)" fontFamily="var(--font-mono)">{m.label}</text>
-          <text x={x(i)} y={H-11} textAnchor="middle" fontSize={10} fill="var(--ink-dim)" fontFamily="var(--font-mono)">{m.sublabel}</text>
+          <text x={x(i)} y={H-padB+24} textAnchor="middle" fontSize={10} fill="var(--ink-dim)" fontFamily="var(--font-mono)">{m.label}</text>
+          <text x={x(i)} y={H-padB+37} textAnchor="middle" fontSize={10} fill="var(--ink-dim)" fontFamily="var(--font-mono)">{m.sublabel}</text>
+          {mesParcialKey===m.key && (
+            <g>
+              <rect x={x(i)-26} y={H-padB+45} width={52} height={15} rx={7.5} fill="var(--line)" />
+              <text x={x(i)} y={H-padB+55} textAnchor="middle" fontSize={8} fontWeight={700} fill="var(--ink-dim)" fontFamily="var(--font-mono)" letterSpacing="0.5">PARCIAL</text>
+            </g>
+          )}
         </g>
       ))}
+      {temSemMedicao && (()=>{
+        const xIni = x(indicesSemMedicao[0]) - barW/2;
+        const xFim = x(indicesSemMedicao[indicesSemMedicao.length-1]) + barW/2;
+        const yLinha = H - padB + 50;
+        return (
+          <g opacity={0.7}>
+            <line x1={xIni} x2={xFim} y1={yLinha} y2={yLinha} stroke="var(--ink-dim)" strokeWidth={1} />
+            <line x1={xIni} x2={xIni} y1={yLinha-3} y2={yLinha+3} stroke="var(--ink-dim)" strokeWidth={1} />
+            <line x1={xFim} x2={xFim} y1={yLinha-3} y2={yLinha+3} stroke="var(--ink-dim)" strokeWidth={1} />
+            <text x={(xIni+xFim)/2} y={yLinha+13} textAnchor="middle" fontSize={10} fill="var(--ink-dim)" fontFamily="var(--font-mono)">Sem medição deste indicador</text>
+          </g>
+        );
+      })()}
     </svg>
   );
 }
@@ -16153,15 +16200,27 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
   // só porque o mês mudou, só porque ele genuinamente ganhou/perdeu um
   // documento (ver comentário completo em `computeAcuracidadeItensRecorrentes`).
   const acuracidadeRecorrentes = computeAcuracidadeItensRecorrentes(todasParaQualidade, anoAtualStr, hojeStr);
-  // Mês corrente — usado só pra marcar a última barra do gráfico como
-  // "parcial" (o mês ainda está em andamento, o resultado pode mudar até o
-  // fim dele). Não afeta o cálculo em si, só a apresentação.
-  const mesEmAndamentoKey = getMonthInfo(hojeStr).key;
+  // Mês corrente — usado só pra marcar a última barra do gráfico/os cards
+  // acima como "parcial" (o mês ainda está em andamento, o resultado pode
+  // mudar até o fim dele). Não afeta o cálculo em si, só a apresentação.
+  const mesEmAndamentoInfo = getMonthInfo(hojeStr);
+  const mesEmAndamentoKey = mesEmAndamentoInfo.key;
+  const mesEmAndamentoLabelUpper = mesEmAndamentoInfo.label.toUpperCase()+'/'+mesEmAndamentoInfo.sublabel;
   // Rótulo "set/2026" derivado de `INICIO_ACUMULO_ITENS_RECORRENTES` (nunca
-  // escrito à mão) — usado nas duas notas discretas abaixo (card + gráfico)
-  // sobre o início oficial da medição deste indicador.
+  // escrito à mão) — usado na nota discreta abaixo do gráfico sobre o
+  // início oficial da medição deste indicador.
   const inicioAcumuloInfo = getMonthInfo(INICIO_ACUMULO_ITENS_RECORRENTES);
   const inicioAcumuloLabel = inicioAcumuloInfo.label.toLowerCase() + '/' + inicioAcumuloInfo.sublabel;
+  // Estatística do mês corrente — alimenta o valor do 3º card ("Itens
+  // avaliados em..."). `null` enquanto o mês corrente ainda não tem nenhum
+  // item elegível avaliado (ex.: recém virou o mês, ninguém recontou nada
+  // ainda) — o card mostra 0 nesse caso, não esconde o card.
+  const mesAtualStats = acuracidadeRecorrentes.monthlyStats.find(m=>m.key===mesEmAndamentoKey) || null;
+  // O selo "SET/2026 · PARCIAL" no card de acuracidade só aparece quando o
+  // mês corrente JÁ contribui de verdade pra média mostrada (senão o selo
+  // apontaria pro mês corrente sem nenhum dado dele estar de fato refletido
+  // no número ao lado).
+  const mesAtualLabelUpper = (mesAtualStats && mesAtualStats.acuracidade!=null) ? mesEmAndamentoLabelUpper : null;
 
   // "Acuracidade Geral" — pedido do cliente: mostrar lado a lado com "Itens
   // Recorrentes" nesta mesma aba, pra deixar claro que são dois indicadores
@@ -16196,14 +16255,26 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
         <div className="ops-kpi-card">
           <div className="ops-kpi-head">
             <span className="ops-kpi-label">Acuracidade — Itens Recorrentes</span>
+            <span
+              className="ic"
+              title={`Indicador oficial desde ${inicioAcumuloLabel} — meses anteriores não possuem medição comparável.`}
+              style={{color:'var(--ink-dim)',display:'inline-flex',cursor:'help'}}
+            ><DIcon name="info" size={13} /></span>
             <span className="ops-kpi-icon" style={{background:'var(--purple-bg)', color:'var(--purple)'}}><DIcon name="percent" size={15} /></span>
           </div>
-          <div className="ops-kpi-value">{acuracidadeRecorrentes.acuracidadeMedia==null ? '—' : acuracidadeRecorrentes.acuracidadeMedia.toFixed(1)+'%'}</div>
+          <div style={{display:'flex',alignItems:'baseline',gap:8,flexWrap:'wrap'}}>
+            <div className="ops-kpi-value">{acuracidadeRecorrentes.acuracidadeMedia==null ? '—' : acuracidadeRecorrentes.acuracidadeMedia.toFixed(1)+'%'}</div>
+            {mesAtualLabelUpper && (
+              <span style={{fontSize:'var(--text-2xs)',fontWeight:700,color:'var(--ink-dim)',background:'var(--line)',borderRadius:6,padding:'3px 8px',fontFamily:'var(--font-mono)',letterSpacing:0.3}}>
+                {mesAtualLabelUpper} · PARCIAL
+              </span>
+            )}
+          </div>
           {acuracidadeRecorrentes.acuracidadeMedia==null ? (
-            <div className="ops-kpi-meta">sem dado no período em tela · itens com 2+ contagens concluídas · desde {inicioAcumuloLabel}</div>
+            <div className="ops-kpi-meta">sem dado no período em tela · itens com 2+ contagens concluídas</div>
           ) : (
             <div className={'ops-kpi-meta'+(acuracidadeRecorrentes.acuracidadeMedia<META_ACURACIDADE_SEMANAL ? ' danger' : '')}>
-              {(acuracidadeRecorrentes.acuracidadeMedia-META_ACURACIDADE_SEMANAL>=0?'+':'')}{(acuracidadeRecorrentes.acuracidadeMedia-META_ACURACIDADE_SEMANAL).toFixed(1)} p.p. da meta de {META_ACURACIDADE_SEMANAL}% · itens com 2+ contagens concluídas · desde {inicioAcumuloLabel}
+              {(acuracidadeRecorrentes.acuracidadeMedia-META_ACURACIDADE_SEMANAL>=0?'+':'')}{(acuracidadeRecorrentes.acuracidadeMedia-META_ACURACIDADE_SEMANAL).toFixed(1)} p.p. da meta de {META_ACURACIDADE_SEMANAL}% · itens com 2+ contagens concluídas
             </div>
           )}
         </div>
@@ -16212,8 +16283,8 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
             <span className="ops-kpi-label">Itens Recorrentes (2+ Documentos)</span>
             <span className="ops-kpi-icon" style={{background:'var(--teal-bg)', color:'var(--teal)'}}><DIcon name="repeat" size={15} /></span>
           </div>
-          <div className="ops-kpi-value">{acuracidadeRecorrentes.codigosElegiveis}</div>
-          <div className="ops-kpi-meta">{acuracidadeRecorrentes.totalDocumentos} documento(s) de contagem no histórico</div>
+          <div className="ops-kpi-value">{mesAtualStats ? mesAtualStats.total : 0}</div>
+          <div className="ops-kpi-meta">Itens avaliados em {mesEmAndamentoLabelUpper} (parcial)</div>
         </div>
       </div>
 
@@ -16223,12 +16294,12 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
           <span className="chart-meta-badge">Meta: {META_ACURACIDADE_SEMANAL}%</span>
         </div>
         <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginBottom:16}}>
-          Só itens já contados 2 vezes ou mais (entraram no Inventário Cíclico e foram recontados
-          pelo menos uma vez) — item contado só 1 vez fica de fora, não é fabricado como 100%/0%.
-          Cada mês usa a data do próprio documento de contagem. Indicador iniciado em {inicioAcumuloLabel} —
-          meses anteriores não possuem medição comparável para este indicador.
+          Somente itens com 2 ou mais contagens concluídas. Cada mês usa a data do próprio documento de contagem.
         </div>
         <MonthlyAccuracyBarChart months={acuracidadeRecorrentes.monthlyStats} meta={META_ACURACIDADE_SEMANAL} colorByMeta={true} onMonthClick={(m)=>setMesSelecionado(m.key)} mesParcialKey={mesEmAndamentoKey} />
+        <div style={{fontSize:'var(--text-2xs)',color:'var(--ink-dim)',textAlign:'center',marginTop:12}}>
+          Indicador iniciado em {inicioAcumuloLabel}. Meses anteriores não possuem medição comparável.
+        </div>
       </div>
 
       <AcuracidadeMesDetalheModal
