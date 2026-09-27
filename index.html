@@ -435,9 +435,9 @@
   .cfg-search-row svg{flex-shrink:0;color:var(--ink-dim);}
   .cfg-search-row>div{flex:1;min-width:0;}
   .cfg-search-row .chip-input{border:none;padding:0;}
-  .cfg-timeout-row{display:flex;align-items:center;gap:10px;margin-top:16px;flex-wrap:wrap;}
+  .cfg-timeout-row{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap;}
   .cfg-timeout-row input{width:80px;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel-raised);color:var(--ink);font-size:var(--text-md);}
-  .cfg-timeout-badge{display:flex;align-items:center;gap:6px;font-size:var(--text-sm);color:var(--ink-dim);margin-top:12px;}
+  .cfg-timeout-badge{display:flex;align-items:center;justify-content:flex-end;gap:6px;font-size:var(--text-sm);color:var(--ink-dim);margin-top:6px;}
   .cfg-timeout-badge strong{background:var(--panel-raised);border:1px solid var(--line);border-radius:6px;padding:4px 9px;color:var(--ink);}
   .cfg-note{display:flex;align-items:flex-start;gap:6px;font-size:var(--text-xs);color:var(--ink-dim);margin-top:10px;}
   .cfg-footer{display:flex;justify-content:flex-end;align-items:center;gap:12px;margin-top:8px;}
@@ -20570,14 +20570,18 @@ function Settings({role, currentUser, operadorVeSaldo, onSetOperadorVeSaldo, ope
               </div>
               <span className="cfg-help-btn" title="Cada evento de toque/clique/tecla reinicia a contagem. Vale em todos os aparelhos assim que salvo.">?</span>
             </div>
-            <div style={{marginTop:16, paddingTop:16, borderTop:'1px solid var(--line)'}}>
-              <div className="cfg-check-label">Tempo de inatividade</div>
-              <div className="cfg-check-sub">Minutos sem nenhuma interação (toque, clique, tecla) até o logout automático.</div>
-              <div className="cfg-timeout-row">
-                <input type="number" min="1" step="1" value={timeoutInput} onChange={e=>setTimeoutInput(e.target.value)} onWheel={e=>e.target.blur()} />
-                <span style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>minutos</span>
+            <div className="cfg-toggle-row" style={{alignItems:'center'}}>
+              <div>
+                <div className="cfg-check-label">Tempo de inatividade</div>
+                <div className="cfg-check-sub">Minutos sem nenhuma interação (toque, clique, tecla) até o logout automático.</div>
               </div>
-              <div className="cfg-timeout-badge">Valor atual: <strong>{timeoutAtual} minutos</strong></div>
+              <div style={{flexShrink:0}}>
+                <div className="cfg-timeout-row">
+                  <input type="number" min="1" step="1" value={timeoutInput} onChange={e=>setTimeoutInput(e.target.value)} onWheel={e=>e.target.blur()} />
+                  <span style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>minutos</span>
+                </div>
+                <div className="cfg-timeout-badge">Valor atual: <strong>{timeoutAtual} minutos</strong></div>
+              </div>
             </div>
           </div>
 
