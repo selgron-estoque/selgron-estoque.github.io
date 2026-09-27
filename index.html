@@ -745,12 +745,6 @@
   .cs-qty-status-icon.warn{background:var(--warn-bg);color:var(--warn);}
   .cs-qty-status-icon.danger{background:var(--danger-bg);color:var(--danger);}
 
-  .cs-mini-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
-  .cs-mini{background:var(--panel-raised);border-radius:var(--radius);padding:8px 10px;}
-  .cs-mini .k{font-family:var(--font-mono);font-size:var(--text-2xs);text-transform:uppercase;color:var(--ink-dim);letter-spacing:0.4px;}
-  .cs-mini .v{font-size:var(--text-sm);font-weight:600;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  @media (max-width:520px){ .cs-mini-grid{grid-template-columns:repeat(2,1fr);} }
-
   .cs-footer{position:sticky;bottom:0;background:var(--panel);border:1px solid var(--line);border-radius:16px 16px 0 0;box-shadow:0 -2px 10px rgba(0,0,0,.06);padding:12px 16px;}
   .cs-footer-row{display:flex;align-items:center;gap:14px;}
   .cs-footer-qtywrap{flex-shrink:0;}
@@ -10909,44 +10903,6 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
           {mostrarSaldo===false && hasSaldoLocal && !precisaAutorizarSaldo && !saldoAguardandoConfirmacao && user.perfil==='operador' && qty!=='' && (
             <div className="role-note" style={{marginBottom:0}}>Contagem cega — o saldo do sistema fica oculto pra você durante a contagem.</div>
           )}
-
-          <div className="cs-mini-grid">
-            <div className="cs-mini"><div className="k">Unidade</div><div className="v">{unidadeEfetiva || '—'}</div></div>
-            <div className="cs-mini"><div className="k">Família</div><div className="v">{product.familia || '—'}</div></div>
-            <div className="cs-mini"><div className="k">Almox</div><div className="v">{product.almoxarifado || '—'}</div></div>
-            <div className="cs-mini"><div className="k">Endereço</div><div className="v">{product.endereco || 'não cadastrado'}</div></div>
-            {/* Referência extra, só informativa — vem da consulta ao vivo da
-                Selgron (ver fetchSaldoConsultaSelgron acima). NÃO substitui
-                nem alimenta o fluxo de confirmação por QR Code (que continua
-                decidido só pelo cadastro local, `product.endereco`/
-                `enderecoCadastrado`) — é só pra o operador/líder ver, lado a
-                lado, se o cadastro local já bate com o que a consulta mostra
-                agora. Some sozinho se a consulta ainda não respondeu ou
-                falhou (sem endereço nenhum pra mostrar). */}
-            {liveConsulta && liveConsulta.endereco && (
-              <div className="cs-mini"><div className="k">Endereço (consulta Selgron)</div><div className="v">{liveConsulta.endereco}{liveConsulta.armazem ? ' · Armazém '+liveConsulta.armazem : ''}</div></div>
-            )}
-            {/* Mesma referência informativa, agora pra data de última
-                movimentação (vem do Kardex, buscado pela Edge Function em
-                paralelo com o resto da consulta) — confirma pro
-                operador/líder, na hora, que o "dias parado" que vai
-                aparecer depois em Itens Divergentes está vindo do dado mais
-                atual, não da planilha SB2 (que o cliente pretende parar de
-                subir). Some sozinho se o Kardex não respondeu/não achou
-                nenhuma movimentação pro código. */}
-            {liveConsulta && liveConsulta.ultimaMovimentacao && (
-              <div className="cs-mini"><div className="k">Última movimentação (Selgron)</div><div className="v">{fmtDataBR(liveConsulta.ultimaMovimentacao)}</div></div>
-            )}
-            {/* Mesma referência informativa, agora pro Valor Unitário (vem
-                do Kardex, mesma linha usada pra `ultimaMovimentacao` acima —
-                a movimentação mais recente) — confirma que o "Valor do
-                ajuste"/"Valor divergente" calculado a partir daqui já usa o
-                custo mais atual, não o congelado na última planilha SB2.
-                Some sozinho se o Kardex não trouxe um valor válido. */}
-            {liveConsulta && typeof liveConsulta.custoUnitario==='number' && liveConsulta.custoUnitario>0 && (
-              <div className="cs-mini"><div className="k">Valor Unitário (Selgron)</div><div className="v">R$ {liveConsulta.custoUnitario.toFixed(2)}</div></div>
-            )}
-          </div>
 
           {previousCount && (
             <div className="cs-top">
