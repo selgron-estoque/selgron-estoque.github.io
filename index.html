@@ -1261,13 +1261,11 @@
        visual de sistema corporativo executivo, não de dashboard comercial.
        Padding/margens reduzidos (menos altura), sombra de hover mais sutil
        (era 6px/16px blur — chamava atenção demais num card que é só
-       número+texto). */
-    .pnl-kpi{display:block;width:100%;text-align:left;font:inherit;background:var(--panel);border:1px solid var(--gray-200);border-radius:var(--radius);padding:14px 18px;box-shadow:0 1px 2px rgba(15,23,42,.03);transition:box-shadow .15s, transform .15s;}
+       número+texto). Sem ícone no topo (removido a pedido do cliente) —
+       padding vertical reduzido de novo pra compensar a altura do ícone
+       que saiu, mantendo o card baixo/compacto. */
+    .pnl-kpi{display:block;width:100%;text-align:left;font:inherit;background:var(--panel);border:1px solid var(--gray-200);border-radius:var(--radius);padding:12px 18px;box-shadow:0 1px 2px rgba(15,23,42,.03);transition:box-shadow .15s, transform .15s;}
     .pnl-kpi:hover{box-shadow:0 3px 8px rgba(15,23,42,.06);transform:translateY(-1px);}
-    .pnl-kpi-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}
-    /* Ícone reduzido e discreto (opacity) — é o elemento mais "decorativo"
-       do card, não deveria competir com o número. */
-    .pnl-kpi-icon{width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0;opacity:.85;}
     /* Número — o elemento mais importante do card, ganha peso extra (800)
        pra ficar ainda mais forte mesmo com o card mais baixo. */
     .pnl-kpi-value{font-family:var(--font-corp);font-size:32px;font-weight:800;color:var(--navy);line-height:1;margin-bottom:3px;}
@@ -8574,9 +8572,6 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], historic
         <div className="pnl-kpi-row" style={{'--kpi-cols':kpis.length-1}}>
           {kpis.map(k=>(
             <button key={k.key} className="pnl-kpi" onClick={k.onClick} style={{cursor:'pointer'}}>
-              <div className="pnl-kpi-top">
-                <span className="pnl-kpi-icon" style={{background:k.bg, color:k.color}}><DIcon name={k.icon} size={17} /></span>
-              </div>
               <div className={"pnl-kpi-value"+(k.big?' pnl-kpi-value-lg':'')}>{k.value}</div>
               {k.big ? (
                 <div className="pnl-kpi-label-row">
