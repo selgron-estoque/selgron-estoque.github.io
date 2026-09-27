@@ -1598,6 +1598,30 @@
   .modal-close-btn{background:none;border:none;cursor:pointer;color:var(--ink-dim);padding:4px;border-radius:6px;display:flex;flex-shrink:0;}
   .modal-close-btn:hover{background:var(--gray-100);color:var(--ink);}
 
+  /* Pesquisa global da Home (ItemStatusSearchPanel) sobreposta ao Dashboard —
+     pedido do cliente: era um painel embutido no fluxo normal da página
+     (empurrava tudo abaixo pra baixo ao digitar, ficava numa coluna estreita
+     com bastante espaço vazio); agora abre como modal por cima do Dashboard
+     (que continua visível, escurecido pelo `.modal-backdrop` já existente).
+     `width:min(74vw, 1100px)` sozinho já cobre a responsividade pedida — cresce
+     até ~1100px em monitor grande, encolhe proporcionalmente em telas menores,
+     sempre com a margem lateral de 20px que `.modal-backdrop` já garante. */
+  .modal-box-search{width:min(74vw, 1100px);max-width:none;padding:20px;}
+  .search-modal-head{display:flex;align-items:flex-start;gap:10px;}
+  .search-modal-head .field{flex:1;margin-bottom:0;}
+  .search-modal-head .field label{display:none;}
+  .search-modal-head input{font-size:15px;padding:14px 16px;}
+  .search-modal-head .modal-close-btn{margin-top:2px;}
+  .search-modal-count{font-family:var(--font-mono);font-size:var(--text-2xs);text-transform:uppercase;letter-spacing:1px;color:var(--ink-dim);font-weight:700;margin:18px 2px 8px;}
+  .search-modal-empty{padding:48px 20px;text-align:center;color:var(--ink-dim);font-size:var(--text-sm);}
+  .search-modal-empty-hint{font-size:var(--text-xs);margin-top:6px;}
+  .search-modal-list{display:flex;flex-direction:column;}
+  .search-modal-row{display:flex;align-items:center;gap:16px;padding:12px 2px;border-bottom:1px solid var(--line);flex-wrap:wrap;}
+  .search-modal-row:last-child{border-bottom:none;}
+  .search-modal-row-main{flex:1;min-width:160px;}
+  .search-modal-row-code{font-family:var(--font-mono);font-weight:700;font-size:var(--text-sm);color:var(--ink);}
+  .search-modal-row-desc{font-size:var(--text-xs);color:var(--ink-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px;}
+
   /* Drill-down "Acuracidade Mensal — Itens Recorrentes" (AcuracidadeMesDetalheModal)
      — redesenho pedido pelo cliente: 1 linha por PRODUTO, com as contagens desse
      produto (1ª/2ª/3ª) lado a lado como blocos, em vez de 1 linha por documento
@@ -7226,12 +7250,12 @@ function App(){
         {view==='manualCount' && <ManualCountFlow user={currentUser} counts={counts} inventories={inventories} onRegisterCount={registerFinishedCount} onAddressProposed={addAddressProposal} operadorVeSaldo={operadorVeSaldo} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
         {view==='routeCount' && <RouteCountFlow inv={flowState} user={currentUser} counts={counts} inventories={inventories} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} gruposExcluidos={gruposExcluidos} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
         {view==='importedListCount' && <ImportedListCountFlow inv={flowState} user={currentUser} counts={counts} inventories={inventories} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
-        {view==='recounts' && hasAccess(currentUser,'recounts') && <RecountsPanel counts={counts} inventories={inventories} role={role} currentUser={currentUser} users={users} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onToggleLiberarOriginal={toggleLiberarRecontagemOriginal} onEditarMotivoObservacao={editarMotivoObservacaoContagem} onAtribuir={atribuirContagem} operadorVeValoresRecontagem={operadorVeValoresRecontagem} />}
-        {view==='divergentes' && hasAccess(currentUser,'divergentes') && <DivergentItemsPanel counts={counts} inventories={inventories} role={role} goto={goto} onApprove={approveDivergence} onEnviarParaArmazem={enviarParaArmazem} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onEditarMotivoObservacao={editarMotivoObservacaoContagem} />}
-        {view==='solicitacaoArmazem' && hasAccess(currentUser,'solicitacaoArmazem') && <SolicitacaoArmazemPanel counts={counts} inventories={inventories} role={role} onEnviarParaDiretoria={enviarParaAprovacaoDiretoria} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onVoltarParaAnaliseLider={voltarParaAnaliseLider} />}
-        {view==='aprovacaoDiretoria' && hasAccess(currentUser,'aprovacaoDiretoria') && <DiretoriaApprovalPanel counts={counts} inventories={inventories} role={role} onApproveSA={aprovarAjusteDiretoria} onRejectSA={reprovarAjusteDiretoria} onToggleUrgente={toggleUrgente} />}
+        {view==='recounts' && hasAccess(currentUser,'recounts') && <RecountsPanel counts={counts} inventories={inventories} role={role} currentUser={currentUser} users={users} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onToggleLiberarOriginal={toggleLiberarRecontagemOriginal} onEditarMotivoObservacao={editarMotivoObservacaoContagem} onAtribuir={atribuirContagem} operadorVeValoresRecontagem={operadorVeValoresRecontagem} filtroInicial={typeof flowState==='string' ? flowState : ''} />}
+        {view==='divergentes' && hasAccess(currentUser,'divergentes') && <DivergentItemsPanel counts={counts} inventories={inventories} role={role} goto={goto} onApprove={approveDivergence} onEnviarParaArmazem={enviarParaArmazem} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onEditarMotivoObservacao={editarMotivoObservacaoContagem} filtroInicial={typeof flowState==='string' ? flowState : ''} />}
+        {view==='solicitacaoArmazem' && hasAccess(currentUser,'solicitacaoArmazem') && <SolicitacaoArmazemPanel counts={counts} inventories={inventories} role={role} onEnviarParaDiretoria={enviarParaAprovacaoDiretoria} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onVoltarParaAnaliseLider={voltarParaAnaliseLider} filtroInicial={typeof flowState==='string' ? flowState : ''} />}
+        {view==='aprovacaoDiretoria' && hasAccess(currentUser,'aprovacaoDiretoria') && <DiretoriaApprovalPanel counts={counts} inventories={inventories} role={role} onApproveSA={aprovarAjusteDiretoria} onRejectSA={reprovarAjusteDiretoria} onToggleUrgente={toggleUrgente} filtroInicial={typeof flowState==='string' ? flowState : ''} />}
         {view==='todasDivergencias' && <AllDivergencesPanel counts={counts} historicoConcluidas={historicoConcluidas} goto={goto} />}
-        {view==='concluidas' && hasAccess(currentUser,'concluidas') && <ConcludedCountsPanel counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} onDeleteCount={role==='admin' ? deleteCount : undefined} onReprovarAjusteHistorico={role==='admin' ? reprovarAjusteHistorico : undefined} onRefresh={refreshHistoricoConcluidas} onEditarMotivoObservacao={role==='admin' ? editarMotivoObservacaoContagem : undefined} />}
+        {view==='concluidas' && hasAccess(currentUser,'concluidas') && <ConcludedCountsPanel counts={counts} inventories={inventories} historicoConcluidas={historicoConcluidas} onDeleteCount={role==='admin' ? deleteCount : undefined} onReprovarAjusteHistorico={role==='admin' ? reprovarAjusteHistorico : undefined} onRefresh={refreshHistoricoConcluidas} onEditarMotivoObservacao={role==='admin' ? editarMotivoObservacaoContagem : undefined} filtroInicial={typeof flowState==='string' ? flowState : ''} />}
         {view==='contagensHoje' && <TodayCountsPanel counts={counts} inventories={inventories} />}
         {view==='programacaoSeparacao' && hasAccess(currentUser,'programacaoSeparacao') && <ProgramacaoSeparacaoPanel currentUser={currentUser} role={role} />}
         {view==='recount' && flowState && <RecountFlow original={flowState} user={currentUser} onAddressProposed={addAddressProposal} onFinish={(c)=>{registerFinishedCount(c); goto('recounts');}} operadorVeSaldo={operadorVeSaldo} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
@@ -8106,41 +8130,104 @@ function MobileHomeMenu({user, goto, badges={}}){
 // `.greet-title`, que nunca têm `display:none` em nenhum breakpoint — pra
 // aparecer em QUALQUER tamanho de tela, sem precisar duplicar o componente
 // uma vez pro desktop e outra pro celular.
+// Pesquisa global da Home — pedido do cliente: virar um MODAL sobreposto ao
+// Dashboard (antes era um painel embutido no fluxo normal da página, que
+// empurrava tudo abaixo pra baixo ao digitar e ficava numa coluna estreita
+// com bastante espaço vazio). O campo pequeno na linha da saudação
+// (`.pnl-hero-row`/`.pnl-hero-search`, JSX em `Home`) continua exatamente
+// como antes — mesmo `SearchWithScanner`, mesmo scanner inline — ele só
+// GANHA o gatilho pra abrir o modal (foco OU começar a digitar), sem perder
+// nada do que já fazia. O modal tem seu PRÓPRIO campo (mesmo `termo`,
+// autofoco), então digitar continua funcionando sem interrupção assim que
+// ele abre.
 function ItemStatusSearchPanel({counts, historicoConcluidas, user, goto}){
   const [termo, setTermo] = useState('');
+  const [modalAberto, setModalAberto] = useState(false);
   const termoLimpo = termo.trim();
-  const resultados = buscarStatusItens(termo, counts, historicoConcluidas);
+  // Só calcula resultados com o modal aberto — evita trabalho à toa toda vez
+  // que `termo` muda em repouso (não deveria acontecer, mas é grátis garantir).
+  const resultados = modalAberto ? buscarStatusItens(termo, counts, historicoConcluidas) : [];
+
+  function abrirModal(){ setModalAberto(true); }
+  // Fecha e limpa o termo — reabrir do zero sempre parte de um campo vazio
+  // (mesmo critério de "Dashboard volta exatamente como estava" aplicado
+  // também à própria pesquisa, não só ao que fica atrás dela).
+  function fecharModal(){ setModalAberto(false); setTermo(''); }
+
+  function abrirItem(destino, codigo){
+    fecharModal();
+    // Navega usando o CÓDIGO EXATO do item selecionado (nunca o termo digitado
+    // — pedido explícito do cliente: buscar "faca" e abrir tem que preencher
+    // "000.35553" no filtro da aba de destino, não "faca"). Reaproveita o
+    // mecanismo de navegação já existente (`goto(view, params)` — mesmo
+    // `flowState` que já carrega parâmetro pra outras telas, ver App()); a
+    // aba de destino lê esse valor como `filtroInicial` (ver RecountsPanel/
+    // DivergentItemsPanel/SolicitacaoArmazemPanel/DiretoriaApprovalPanel/
+    // ConcludedCountsPanel) e preenche o MESMO campo de busca que essas telas
+    // já tinham — nenhum campo/filtro novo foi criado.
+    goto(destino, codigo);
+  }
+
+  // ESC fecha o modal — só ouve enquanto ele está aberto.
+  useEffect(()=>{
+    if(!modalAberto) return;
+    function onKeyDown(e){ if(e.key==='Escape') fecharModal(); }
+    window.addEventListener('keydown', onKeyDown);
+    return ()=>window.removeEventListener('keydown', onKeyDown);
+  }, [modalAberto]);
+
   return (
-    <div className="panel" style={{marginBottom:20}}>
-      <div className="section-title" style={{marginTop:0}}>Consultar Status de um Item</div>
-      <SearchWithScanner value={termo} onChange={setTermo} placeholder="Código ou descrição do item" />
-      {termoLimpo && (
-        resultados.length===0 ? (
-          <div className="empty-state">Nenhuma contagem encontrada para "{termoLimpo}".</div>
-        ) : (
-          <div style={{display:'flex',flexDirection:'column',gap:8}}>
-            {resultados.map(c=>{
-              const st = resolverStatusParaBusca(c);
-              const podeAbrir = st.destino && hasAccess(user, st.destino);
-              return (
-                <div key={(c.id || '')+'|'+c.productCode+'|'+(c.data||'')} style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,flexWrap:'wrap',padding:'10px 12px',border:'1px solid var(--line)',borderRadius:'var(--radius)'}}>
-                  <div style={{minWidth:0,flex:1}}>
-                    <div style={{fontFamily:'var(--font-mono)',fontWeight:700,fontSize:'var(--text-sm)',color:'var(--ink)'}}>{c.productCode}</div>
-                    <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.descricao || 'Sem descrição'}</div>
-                  </div>
-                  <div style={{display:'flex',alignItems:'center',gap:10,flexShrink:0}}>
-                    <span className={'pnl-status '+st.level}><span className="dot"></span>{st.text}</span>
-                    {podeAbrir && (
-                      <button type="button" className="btn btn-outline btn-sm" onClick={()=>goto(st.destino)}>Abrir</button>
-                    )}
-                  </div>
+    <>
+      <div className="panel" style={{marginBottom:20}}>
+        <div className="section-title" style={{marginTop:0}}>Consultar Status de um Item</div>
+        <SearchWithScanner
+          value={termo}
+          onChange={v=>{ setTermo(v); if(v.trim()) abrirModal(); }}
+          onFocus={abrirModal}
+          placeholder="Código ou descrição do item"
+        />
+      </div>
+      {modalAberto && (
+        <div className="modal-backdrop" onClick={fecharModal}>
+          <div className="modal-box modal-box-search" onClick={e=>e.stopPropagation()}>
+            <div className="search-modal-head">
+              <SearchWithScanner value={termo} onChange={setTermo} placeholder="Código ou descrição do item" autoFocus />
+              <button type="button" className="modal-close-btn" onClick={fecharModal} title="Fechar"><DIcon name="x" size={18} /></button>
+            </div>
+            {!termoLimpo ? (
+              <div className="search-modal-empty">Pesquise por código ou descrição</div>
+            ) : resultados.length===0 ? (
+              <div className="search-modal-empty">
+                <div>Nenhum item encontrado</div>
+                <div className="search-modal-empty-hint">Verifique o código ou a descrição informada.</div>
+              </div>
+            ) : (
+              <>
+                <div className="search-modal-count">Resultados encontrados ({resultados.length})</div>
+                <div className="search-modal-list">
+                  {resultados.map(c=>{
+                    const st = resolverStatusParaBusca(c);
+                    const podeAbrir = st.destino && hasAccess(user, st.destino);
+                    return (
+                      <div key={(c.id || '')+'|'+c.productCode+'|'+(c.data||'')} className="search-modal-row">
+                        <div className="search-modal-row-main">
+                          <div className="search-modal-row-code">{c.productCode}</div>
+                          <div className="search-modal-row-desc">{c.descricao || 'Sem descrição'}</div>
+                        </div>
+                        <span className={'pnl-status '+st.level}><span className="dot"></span>{st.text}</span>
+                        {podeAbrir && (
+                          <button type="button" className="btn btn-outline btn-sm" onClick={()=>abrirItem(st.destino, c.productCode)}>Abrir</button>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
+              </>
+            )}
           </div>
-        )
+        </div>
       )}
-    </div>
+    </>
   );
 }
 
@@ -11908,7 +11995,7 @@ function StatusConcluidoFilterRow({tips, value, onChange}){
 // Barra de busca + botão "Scanner" (abre a câmera, ao detectar um código
 // preenche a busca — mesmo padrão já usado em ManualCountFlow/CountStep,
 // só reaproveitado aqui). Compartilhada pelas 3 telas.
-function SearchWithScanner({value, onChange, placeholder}){
+function SearchWithScanner({value, onChange, placeholder, onFocus, autoFocus=false}){
   const [scanning, setScanning] = useState(false);
   if(scanning){
     return <CameraScanner onDetected={text=>{ setScanning(false); onChange(text.trim()); }} onCancel={()=>setScanning(false)} />;
@@ -11922,7 +12009,7 @@ function SearchWithScanner({value, onChange, placeholder}){
           renderizada do input (que varia com padding/fonte), em vez de um
           valor fixo (44px) que ficava mais baixo que o input de verdade. */}
       <div style={{display:'flex',gap:8}}>
-        <input type="text" value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} style={{flex:1}} />
+        <input type="text" value={value} onChange={e=>onChange(e.target.value)} onFocus={onFocus} autoFocus={autoFocus} placeholder={placeholder} style={{flex:1}} />
         <button type="button" className="btn btn-secondary" title="Scanner" style={{width:48,padding:0,flexShrink:0}} onClick={()=>setScanning(true)}><ScanIcon /></button>
       </div>
     </div>
@@ -12024,7 +12111,7 @@ function SaAprovacaoDownloadButton({counts}){
   );
 }
 
-function RecountsPanel({counts, inventories, role, currentUser, users, goto, onDeleteCount, onToggleUrgente, onToggleLiberarOriginal, onEditarMotivoObservacao, onAtribuir, operadorVeValoresRecontagem}){
+function RecountsPanel({counts, inventories, role, currentUser, users, goto, onDeleteCount, onToggleUrgente, onToggleLiberarOriginal, onEditarMotivoObservacao, onAtribuir, operadorVeValoresRecontagem, filtroInicial}){
   const canMark = role==='lider' || role==='admin';
   // Escopo AJUSTADO (cliente pediu pra restringir depois de ver o resultado
   // inicial): o quadro Sistema/Físico/Diferença/% fica visível pra QUALQUER
@@ -12087,7 +12174,7 @@ function RecountsPanel({counts, inventories, role, currentUser, users, goto, onD
   // depender de rolar a lista inteira pra achar um item específico (pedido
   // do cliente). Mesmo padrão simples já usado em UserManagementPanel/
   // ManualCountFlow (case-insensitive, sem normalização de acento).
-  const [busca, setBusca] = useState('');
+  const [busca, setBusca] = useState(filtroInicial || '');
   const buscaNorm = busca.trim().toLowerCase();
   const porBusca = buscaNorm
     ? aguardandoSegundaNoPeriodo.filter(c => c.productCode.toLowerCase().includes(buscaNorm) || (c.descricao||'').toLowerCase().includes(buscaNorm) || (c.usuario||'').toLowerCase().includes(buscaNorm))
@@ -12447,7 +12534,7 @@ function RecountsPanel({counts, inventories, role, currentUser, users, goto, onD
 // aparecer só em "Recontagens". Visível pra todos os papéis (antes ficava
 // escondida inteira do operador) — mas as ações (aprovar/solicitar
 // recontagem) continuam só pra líder/admin, operador vê em modo leitura.
-function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onEnviarParaArmazem, onRequestRecount, onDeleteCount, onToggleUrgente, onEditarMotivoObservacao}){
+function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onEnviarParaArmazem, onRequestRecount, onDeleteCount, onToggleUrgente, onEditarMotivoObservacao, filtroInicial}){
   // Bug real corrigido aqui: faltava a mesma checagem de "ponta da
   // corrente" que RecountsPanel já tinha (`byOriginal`/`!byOriginal[c.id]`)
   // — sem isso, uma linha com status 'aguardando_analise_lider' continuava
@@ -12497,7 +12584,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onEnvi
   const { from: dataInicioStr, to: dataFimStr } = computeTrendRange(trendFilter.tipo, hojeStr, trendFilter.from, trendFilter.to);
   const aguardandoAnaliseNoPeriodo = aguardandoAnalise.filter(c=>c.data && c.data>=dataInicioStr && c.data<=dataFimStr);
 
-  const [busca, setBusca] = useState('');
+  const [busca, setBusca] = useState(filtroInicial || '');
   const buscaNorm = busca.trim().toLowerCase();
   const porBusca = buscaNorm
     ? aguardandoAnaliseNoPeriodo.filter(c => c.productCode.toLowerCase().includes(buscaNorm) || (c.descricao||'').toLowerCase().includes(buscaNorm) || (c.usuario||'').toLowerCase().includes(buscaNorm))
@@ -12804,7 +12891,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onEnvi
 // número que "libera" as duas decisões juntas, exatamente como o cliente
 // descreveu). Mesmo shell visual das outras telas de contagem (count-card/
 // SearchWithScanner/TrendFilterBar/result-grid-4col).
-function SolicitacaoArmazemPanel({counts, inventories, role, onEnviarParaDiretoria, onDeleteCount, onToggleUrgente, onVoltarParaAnaliseLider}){
+function SolicitacaoArmazemPanel({counts, inventories, role, onEnviarParaDiretoria, onDeleteCount, onToggleUrgente, onVoltarParaAnaliseLider, filtroInicial}){
   const canDecide = role==='lider' || role==='admin';
   const aguardandoArmazem = counts.filter(c=>c.statusAprovacao==='aguardando_solicitacao_armazem');
 
@@ -12815,7 +12902,7 @@ function SolicitacaoArmazemPanel({counts, inventories, role, onEnviarParaDiretor
   const { from: dataInicioStr, to: dataFimStr } = computeTrendRange(trendFilter.tipo, hojeStr, trendFilter.from, trendFilter.to);
   const aguardandoArmazemNoPeriodo = aguardandoArmazem.filter(c=>c.data && c.data>=dataInicioStr && c.data<=dataFimStr);
 
-  const [busca, setBusca] = useState('');
+  const [busca, setBusca] = useState(filtroInicial || '');
   const buscaNorm = busca.trim().toLowerCase();
   const porBusca = buscaNorm
     ? aguardandoArmazemNoPeriodo.filter(c => c.productCode.toLowerCase().includes(buscaNorm) || (c.descricao||'').toLowerCase().includes(buscaNorm) || (c.usuario||'').toLowerCase().includes(buscaNorm) || (c.solicitacaoAjuste||'').toLowerCase().includes(buscaNorm))
@@ -13048,7 +13135,7 @@ function SolicitacaoArmazemPanel({counts, inventories, role, onEnviarParaDiretor
 // manual, feito pelo próprio admin dentro do app (não existe perfil
 // "Diretoria" nem integração externa). Mesmo shell visual das outras telas
 // de contagem (count-card/SearchWithScanner/TrendFilterBar/result-grid-4col).
-function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejectSA, onToggleUrgente}){
+function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejectSA, onToggleUrgente, filtroInicial}){
   const canDecide = role==='admin';
   // "Marcar urgente" — mesmo padrão já usado em Recontagens/Itens
   // Divergentes, estendido aqui: essa também é uma fila de contagem já
@@ -13065,7 +13152,7 @@ function DiretoriaApprovalPanel({counts, inventories, role, onApproveSA, onRejec
   const { from: dataInicioStr, to: dataFimStr } = computeTrendRange(trendFilter.tipo, hojeStr, trendFilter.from, trendFilter.to);
   const aguardandoDiretoriaNoPeriodo = aguardandoDiretoria.filter(c=>c.data && c.data>=dataInicioStr && c.data<=dataFimStr);
 
-  const [busca, setBusca] = useState('');
+  const [busca, setBusca] = useState(filtroInicial || '');
   const buscaNorm = busca.trim().toLowerCase();
   const porBusca = buscaNorm
     ? aguardandoDiretoriaNoPeriodo.filter(c => c.productCode.toLowerCase().includes(buscaNorm) || (c.descricao||'').toLowerCase().includes(buscaNorm) || (c.usuario||'').toLowerCase().includes(buscaNorm) || (c.solicitacaoAjuste||'').toLowerCase().includes(buscaNorm))
@@ -13494,8 +13581,8 @@ function historicoRowToConcludedChain(h){
   return { chaveId: tip.id, tip, rodadas: [tip], houveAjuste };
 }
 
-function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDeleteCount, onReprovarAjusteHistorico, onRefresh, onEditarMotivoObservacao}){
-  const [busca, setBusca] = useState('');
+function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDeleteCount, onReprovarAjusteHistorico, onRefresh, onEditarMotivoObservacao, filtroInicial}){
+  const [busca, setBusca] = useState(filtroInicial || '');
   // Excluir virou uma ação do menu "⋮" no cabeçalho do card (mesmo padrão já
   // usado em RecountsPanel/DivergentItemsPanel/InventoryList), não mais um
   // botão solto dentro de cada rodada — como uma CADEIA pode ter mais de uma
