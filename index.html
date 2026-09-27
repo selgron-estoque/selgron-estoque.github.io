@@ -10025,21 +10025,21 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   const [enderecoEditadoManualmente, setEnderecoEditadoManualmente] = useState(false);
   const [qty, setQty] = useState('');
 
-  // "Pular contagem" — pedido do cliente: item não encontrado fisicamente
-  // ou sem endereço cadastrado (casos em que insistir custa tempo de chão de
-  // fábrica). Só existe quando o fluxo que chama `CountStep` passa `onSkip`
-  // (fluxos com FILA — Aleatória/Rota/Lista Importada; `ManualCountFlow`/
-  // `RecountFlow` não têm fila pra avançar, então nunca passam essa prop e o
-  // botão simplesmente não aparece ali). Pular NÃO grava nenhuma contagem
-  // nem incrementa `contados`/`inventarioConcluido` — decisão deliberada,
-  // mesmo espírito de simplicidade do resto do app: o item continua
-  // exatamente "pendente" (nem contado, nem perdido) e volta a aparecer
-  // normalmente na frente da fila na próxima vez que o inventário for
-  // reaberto (mesmo mecanismo que já existe hoje pra "retomar de onde
+  // "Próximo" (era "Pular contagem", com confirmação — pedido do cliente
+  // pra tirar a etapa extra: clicar já avança direto, sem perguntar) —
+  // item não encontrado fisicamente ou sem endereço cadastrado (casos em
+  // que insistir custa tempo de chão de fábrica). Só existe quando o fluxo
+  // que chama `CountStep` passa `onSkip` E há mais de 1 item na fila
+  // (`queueTotal>1` — pedido do cliente: não faz sentido "próximo" quando
+  // só tem esse 1 item, ex. busca manual avulsa). Pular NÃO grava nenhuma
+  // contagem nem incrementa `contados`/`inventarioConcluido` — decisão
+  // deliberada, mesmo espírito de simplicidade do resto do app: o item
+  // continua exatamente "pendente" (nem contado, nem perdido) e volta a
+  // aparecer normalmente na frente da fila na próxima vez que o inventário
+  // for reaberto (mesmo mecanismo que já existe hoje pra "retomar de onde
   // parou"), sem precisar de nenhuma coluna nova no Supabase pra rastrear
   // "item pulado". Dentro da MESMA sessão, o operador continua vendo os
   // itens seguintes normalmente (o pulo só avança o cursor local da fila).
-  const [skipConfirm, setSkipConfirm] = useState(false);
 
   // Reserva de item durante a contagem — trava real pra evitar dois
   // operadores contando o MESMO item ao mesmo tempo (cliente pediu depois
@@ -10730,23 +10730,10 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
       <div className="cs-operator-badge">
         <DIcon name="user" size={13} /> Contando como: <strong>{user.nome}</strong>{ROLE_LABELS[user.perfil] ? ' · '+ROLE_LABELS[user.perfil] : ''}
       </div>
-      {onSkip && !scanning && !scanningItem && (
-        skipConfirm ? (
-          <div className="divergence-alert" style={{marginBottom:14,flexDirection:'column',alignItems:'stretch',gap:10}}>
-            <div style={{display:'flex',gap:8,alignItems:'flex-start'}}>
-              <Ic>⚠</Ic>
-              <span>Pular este item? Ele continua pendente e volta a aparecer na fila mais tarde — nada é registrado como contado agora.</span>
-            </div>
-            <div className="btn-row">
-              <button type="button" className="btn btn-secondary" onClick={()=>setSkipConfirm(false)}>Voltar</button>
-              <button type="button" className="btn btn-danger" onClick={()=>onSkip('nao_encontrado')}>Confirmar — pular item</button>
-            </div>
-          </div>
-        ) : (
-          <button type="button" className="btn btn-outline" style={{width:'auto',padding:'6px 14px',fontSize:'var(--text-sm)',marginBottom:14}} onClick={()=>setSkipConfirm(true)}>
-            <DIcon name="chevronRight" size={16}/> Pular contagem (não encontrado / sem endereço)
-          </button>
-        )
+      {onSkip && queueTotal>1 && !scanning && !scanningItem && (
+        <button type="button" className="btn btn-outline" style={{width:'auto',padding:'6px 14px',fontSize:'var(--text-sm)',marginBottom:14}} onClick={()=>onSkip('nao_encontrado')}>
+          <DIcon name="chevronRight" size={16}/> Próximo
+        </button>
       )}
       {step!=='count' && (
         <div className="item-card" style={{marginBottom:14}}>
@@ -10834,7 +10821,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
 
           {mostrarSaldo && !precisaAutorizarSaldo && !saldoAguardandoConfirmacao && (
             <div className="cs-sistema-ref">
-              <div className="cs-sistema-k">Sistema{liveConsulta && liveConsulta.saldo!=null ? ' (ao vivo)' : ''}</div>
+              <div className="cs-sistema-k">Sistema</div>
               <div className="cs-sistema-v">{fmtQtyBR(saldoSistemaEfetivo)} {unidadeEfetiva || 'un.'}</div>
             </div>
           )}
