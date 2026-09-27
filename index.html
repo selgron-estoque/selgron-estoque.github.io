@@ -1245,13 +1245,27 @@
        de 1360px abaixo continuar conseguindo sobrescrever — `style` inline
        sempre venceria uma regra de media query. */
     .pnl-kpi-row{display:grid;grid-template-columns:1.25fr repeat(var(--kpi-cols,5),1fr);gap:16px;margin-bottom:24px;}
-    .pnl-kpi{display:block;width:100%;text-align:left;font:inherit;background:var(--panel);border:1px solid var(--gray-200);border-radius:var(--radius);padding:20px 22px;box-shadow:0 1px 2px rgba(15,23,42,.03);transition:box-shadow .15s, transform .15s;}
-    .pnl-kpi:hover{box-shadow:0 6px 16px rgba(15,23,42,.08);transform:translateY(-1px);}
-    .pnl-kpi-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
-    .pnl-kpi-icon{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
-    .pnl-kpi-value{font-family:var(--font-corp);font-size:34px;font-weight:700;color:var(--navy);line-height:1;margin-bottom:6px;}
-    .pnl-kpi-label{font-size:12px;color:var(--gray-500);font-weight:500;margin-bottom:6px;line-height:1.3;}
-    .pnl-kpi-trend{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:600;padding:3px 9px;border-radius:20px;}
+    /* Pedido do cliente: cards mais baixos e com "efeito" mais discreto —
+       visual de sistema corporativo executivo, não de dashboard comercial.
+       Padding/margens reduzidos (menos altura), sombra de hover mais sutil
+       (era 6px/16px blur — chamava atenção demais num card que é só
+       número+texto). */
+    .pnl-kpi{display:block;width:100%;text-align:left;font:inherit;background:var(--panel);border:1px solid var(--gray-200);border-radius:var(--radius);padding:14px 18px;box-shadow:0 1px 2px rgba(15,23,42,.03);transition:box-shadow .15s, transform .15s;}
+    .pnl-kpi:hover{box-shadow:0 3px 8px rgba(15,23,42,.06);transform:translateY(-1px);}
+    .pnl-kpi-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}
+    /* Ícone reduzido e discreto (opacity) — é o elemento mais "decorativo"
+       do card, não deveria competir com o número. */
+    .pnl-kpi-icon{width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0;opacity:.85;}
+    /* Número — o elemento mais importante do card, ganha peso extra (800)
+       pra ficar ainda mais forte mesmo com o card mais baixo. */
+    .pnl-kpi-value{font-family:var(--font-corp);font-size:32px;font-weight:800;color:var(--navy);line-height:1;margin-bottom:3px;}
+    /* Título — mesmo critério do número (mais forte: peso 600 + leve
+       letter-spacing), mas continua em cinza (nunca compete com o número
+       em intensidade de cor, só em peso). */
+    .pnl-kpi-label{font-size:11.5px;color:var(--gray-500);font-weight:600;letter-spacing:.1px;margin-bottom:4px;line-height:1.3;}
+    /* Selo de tendência ("vs. semana anterior"/"Requer atenção") — indicador
+       SECUNDÁRIO, reduzido (padding/fonte menores). */
+    .pnl-kpi-trend{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:20px;}
     /* Antes hex fixo (#ECFDF5/#FEF2F2) — só ficava certo no tema claro; no
        escuro virava um chip claro flutuando sobre card escuro, brigando com
        o resto do painel. Tokens já existem pros dois temas (ver
@@ -1268,11 +1282,11 @@
        ficam lado a lado (`.pnl-kpi-trends{flex-direction:row}`) em vez de
        empilhadas — usa a largura extra pra NÃO crescer em altura, continua
        um KPI (número+texto), nunca vira gráfico. */
-    .pnl-kpi-value.pnl-kpi-value-lg{font-size:39px;}
+    .pnl-kpi-value.pnl-kpi-value-lg{font-size:36px;}
     .pnl-kpi-label-row{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:4px;}
     .pnl-kpi-label-row .pnl-kpi-label{margin-bottom:0;}
-    .pnl-kpi-goal{font-size:12px;color:var(--gray-500);flex-shrink:0;}
-    .pnl-kpi-progress-track{width:100%;max-width:230px;height:5px;border-radius:20px;background:var(--gray-100);overflow:hidden;margin:2px 0 8px;}
+    .pnl-kpi-goal{font-size:11px;color:var(--gray-500);flex-shrink:0;}
+    .pnl-kpi-progress-track{width:100%;max-width:230px;height:4px;border-radius:20px;background:var(--gray-100);overflow:hidden;margin:2px 0 6px;}
     .pnl-kpi-progress-fill{height:100%;border-radius:20px;background:var(--gray-400);}
     .pnl-kpi-trends{display:flex;flex-direction:row;flex-wrap:wrap;gap:8px;align-items:center;}
 
