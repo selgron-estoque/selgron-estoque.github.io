@@ -15096,12 +15096,14 @@ function WeeklyCountChart({weeks, meta=META_CONTAGENS_SEMANAL}){
 // grade de "100%" pra não ficar espremido.
 function MonthlyAccuracyBarChart({months, meta=META_ACURACIDADE_SEMANAL, colorByMeta=false, onMonthClick=null, mesParcialKey=null, fonteGrande=false}){
   // `fonteGrande` — só o gráfico "Acuracidade Mensal — Itens Recorrentes"
-  // (Acuracidade) pede fonte maior/mais executiva; o outro uso deste
+  // (Acuracidade) usa este conjunto de tamanhos separado; o outro uso deste
   // componente (Indicadores) mantém os tamanhos originais — por isso um
   // prop explícito (default `false`), nunca um tamanho fixo mudado aqui
-  // pros dois usos.
+  // pros dois usos. Reduzido em 50% a pedido do cliente depois do 1º ajuste
+  // (ficou grande demais) — nome do prop mantido por simplicidade, mesmo
+  // não sendo mais literalmente "grande".
   const fs = fonteGrande
-    ? {eixoY:12, valor:13, tracoSemMedicao:16, mes:12, ano:11, parcial:10, legenda:12}
+    ? {eixoY:6, valor:6.5, tracoSemMedicao:8, mes:6, ano:5.5, parcial:5, legenda:6}
     : {eixoY:10, valor:11, tracoSemMedicao:14, mes:10, ano:10, parcial:8, legenda:10};
   // `semMedicao` (ver `computeAcuracidadeItensRecorrentes`) — mês que
   // existe no eixo (pra dar contexto de "a série completa do ano"), mas
