@@ -726,24 +726,24 @@
      pra ele em branco, por baixo. height:100% deixa ele de fato preencher
      as 2 linhas + o gap entre elas. */
   .cs-calc-key.equals{height:100%;background:var(--safety);color:#fff;font-size:26px;}
-  .cs-qty-input{width:100%;height:90px;font-family:var(--font-mono);font-size:48px;font-weight:700;text-align:center;background:var(--panel);border:2px solid var(--line);border-radius:16px;color:var(--ink);}
+  /* Pedido do cliente: o quadro grande Sistema/Informado/Diferença (com a
+     mensagem de texto embaixo) ficava grande demais pra um feedback que já
+     dava pra transmitir só com cor — removido. Fica só a borda do campo de
+     quantidade engrossada (3px, era 2px) na cor do resultado (ok/warn/
+     danger, mesmos tokens de sempre) + um selo com ícone (✓/✗) no canto do
+     campo. Os números (Sistema/Informado) continuam visíveis — "Sistema"
+     já aparece acima do campo, "Informado" é o que está digitado no
+     próprio campo. */
+  .cs-qty-input{width:100%;height:90px;font-family:var(--font-mono);font-size:48px;font-weight:700;text-align:center;background:var(--panel);border:3px solid var(--line);border-radius:16px;color:var(--ink);}
   .cs-qty-input:focus{outline:none;border-color:var(--accent2);}
   .cs-qty-input.ok{border-color:var(--ok);}
   .cs-qty-input.warn{border-color:var(--warn);}
   .cs-qty-input.danger{border-color:var(--danger);}
-
-  .cs-compare{border-radius:16px;padding:16px;border:1px solid;}
-  .cs-compare.ok{background:var(--ok-bg);border-color:var(--ok);}
-  .cs-compare.warn{background:var(--warn-bg);border-color:var(--warn);}
-  .cs-compare.danger{background:var(--danger-bg);border-color:var(--danger);}
-  .cs-compare-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;text-align:center;}
-  .cs-compare-cell .k{font-family:var(--font-mono);font-size:var(--text-2xs);text-transform:uppercase;color:var(--ink-dim);letter-spacing:0.4px;}
-  .cs-compare-cell .v{font-family:var(--font-mono);font-size:20px;font-weight:700;margin-top:2px;}
-  .cs-feedback{display:flex;align-items:center;gap:8px;font-size:var(--text-md);font-weight:600;margin-top:12px;}
-  .cs-compare.ok .cs-feedback, .cs-compare.ok .cs-compare-cell .v{color:var(--ok);}
-  .cs-compare.warn .cs-feedback, .cs-compare.warn .cs-compare-cell .v{color:var(--warn);}
-  .cs-compare.danger .cs-feedback, .cs-compare.danger .cs-compare-cell .v{color:var(--danger);}
-  .cs-dot{width:9px;height:9px;border-radius:50%;background:currentColor;flex-shrink:0;}
+  .cs-qty-input-wrap{position:relative;}
+  .cs-qty-status-icon{position:absolute;top:12px;right:12px;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;}
+  .cs-qty-status-icon.ok{background:var(--ok-bg);color:var(--ok);}
+  .cs-qty-status-icon.warn{background:var(--warn-bg);color:var(--warn);}
+  .cs-qty-status-icon.danger{background:var(--danger-bg);color:var(--danger);}
 
   .cs-mini-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
   .cs-mini{background:var(--panel-raised);border-radius:var(--radius);padding:8px 10px;}
@@ -10650,20 +10650,6 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
     onComplete(count);
   }
 
-  // Mensagem de feedback ao vivo, assim que existe um número digitado —
-  // mesmos níveis de `classifyDivergence` (ok/danger, mais o "warn" fixo de
-  // "sem saldo pra comparar"), que já é a regra de negócio real (aprovação
-  // automática/análise do líder) — não uma classificação nova só de
-  // exibição. Usa `classification.rule` direto (em vez de frase fixa) —
-  // desde que a classificação passou a ser só "bateu exato" ou "qualquer
-  // divergência" (sem eixo de valor/custo), não existe mais nenhum caso
-  // especial pra suprimir essa mensagem — ela sempre reflete o que
-  // realmente vai acontecer com a contagem.
-  const feedbackTexto = !hasSaldoLocal
-    ? classification.rule
-    : classification.level==='ok' ? 'Contagem confere com o sistema.'
-    : classification.rule;
-
   const progressoPct = (queueAtual && queueTotal) ? Math.round((queueAtual/queueTotal)*100) : null;
   const itensRestantes = (queueAtual && queueTotal) ? Math.max(queueTotal - queueAtual, 0) : null;
   // Prioridade da recontagem — deriva da MESMA classificação de severidade
@@ -10875,15 +10861,22 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
               <DIcon name="calculator" size={16} />
             </button>
           </div>
-          <input
-            className={"cs-qty-input"+(((mostrarSaldo || !hasSaldoLocal) && !precisaAutorizarSaldo && !saldoAguardandoConfirmacao && qty!=='') ? ' '+classification.level : '')}
-            type="text"
-            inputMode="decimal"
-            value={fmtQtyBR(qty)}
-            onChange={e=>setQty(sanitizeQtyInput(e.target.value))}
-            placeholder="0"
-            autoFocus
-          />
+          <div className="cs-qty-input-wrap">
+            <input
+              className={"cs-qty-input"+(((mostrarSaldo || !hasSaldoLocal) && !precisaAutorizarSaldo && !saldoAguardandoConfirmacao && qty!=='') ? ' '+classification.level : '')}
+              type="text"
+              inputMode="decimal"
+              value={fmtQtyBR(qty)}
+              onChange={e=>setQty(sanitizeQtyInput(e.target.value))}
+              placeholder="0"
+              autoFocus
+            />
+            {(mostrarSaldo || !hasSaldoLocal) && !precisaAutorizarSaldo && !saldoAguardandoConfirmacao && qty!=='' && (
+              <span className={"cs-qty-status-icon "+classification.level}>
+                <DIcon name={classification.level==='ok' ? 'checkCircle' : 'x'} size={18} />
+              </span>
+            )}
+          </div>
           {calcOpen && (
             <div className="cs-calc-panel">
               <div className="cs-calc-display">
@@ -10911,16 +10904,6 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
                 <button type="button" className="cs-calc-key" onClick={calcDot}>,</button>
               </div>
               <button type="button" className="btn btn-primary" style={{width:'100%',marginTop:10}} onClick={calcUsarValor}>Usar valor na quantidade</button>
-            </div>
-          )}
-          {mostrarSaldo && !precisaAutorizarSaldo && !saldoAguardandoConfirmacao && qty!=='' && (
-            <div className={"cs-compare "+classification.level}>
-              <div className="cs-compare-grid">
-                <div className="cs-compare-cell"><div className="k">Sistema</div><div className="v">{fmtQtyBR(saldoSistemaEfetivo)}</div></div>
-                <div className="cs-compare-cell"><div className="k">Informado</div><div className="v">{fmtQtyBR(qty)}</div></div>
-                <div className="cs-compare-cell"><div className="k">Diferença</div><div className="v">{(diffAbs>0?'+':'')+fmtQtyBR(diffAbs)}</div></div>
-              </div>
-              {feedbackTexto && <div className="cs-feedback"><span className="cs-dot"></span>{feedbackTexto}</div>}
             </div>
           )}
           {mostrarSaldo===false && hasSaldoLocal && !precisaAutorizarSaldo && !saldoAguardandoConfirmacao && user.perfil==='operador' && qty!=='' && (
