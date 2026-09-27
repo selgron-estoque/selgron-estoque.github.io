@@ -1302,24 +1302,27 @@
     .pnl-kpi-progress-fill{height:100%;border-radius:20px;background:var(--gray-400);}
     .pnl-kpi-trends{display:flex;flex-direction:row;flex-wrap:wrap;gap:8px;align-items:center;}
 
-    /* "O que precisa de atenção" — 3 blocos horizontais, mesmo shell de card
-       (.pnl-card) com um acento de cor discreto só na borda esquerda, nunca
-       o card inteiro colorido. */
+    /* "O que precisa de atenção" — 3 blocos horizontais, pedido do cliente
+       com imagem de referência: card inteiro clicável, ícone circular à
+       esquerda, valor grande ao lado do rótulo, meta ("X com mais de 7
+       dias") na mesma linha do valor, chevron alinhado à direita — acento
+       de cor só na borda esquerda + no ícone, nunca o card inteiro colorido. */
     /* auto-fit, não repeat(3,1fr) fixo — mesmo motivo do .pnl-kpi-row acima:
        Operador só vê 2 blocos (Divergentes/Recontagens, sem "Aguardando
        Aprovação", que é líder/admin), Líder/Admin veem os 3. */
-    .pnl-attention-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;margin-bottom:28px;}
-    /* `.pnl-card.pnl-attention-card` (composto) — só assim o padding menor
-       daqui vence o `padding:20px` de `.pnl-card` (mesma especificidade,
-       mas `.pnl-card` vem depois no arquivo e ganharia por ordem sozinho). */
-    .pnl-card.pnl-attention-card{display:flex;flex-direction:column;gap:8px;padding:22px 24px;border-left-width:3px;border-left-style:solid;}
+    .pnl-attention-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-bottom:28px;}
+    .pnl-attention-card{display:flex;align-items:center;gap:14px;text-align:left;padding:18px 20px;border-radius:12px;border:1px solid var(--gray-200);border-left-width:3px;border-left-style:solid;background:var(--panel);cursor:pointer;font:inherit;color:inherit;}
     .pnl-attention-card.danger{border-left-color:var(--danger);}
     .pnl-attention-card.warn{border-left-color:var(--warn);}
-    .pnl-attention-top{display:flex;align-items:baseline;justify-content:space-between;gap:8px;}
+    .pnl-attention-icon{width:40px;height:40px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;}
+    .pnl-attention-card.danger .pnl-attention-icon{background:var(--danger-bg);color:var(--danger);}
+    .pnl-attention-card.warn .pnl-attention-icon{background:var(--warn-bg);color:var(--warn);}
+    .pnl-attention-body{flex:1;min-width:0;}
+    .pnl-attention-label{font-size:13px;color:var(--gray-500);font-weight:500;margin-bottom:4px;}
+    .pnl-attention-value-row{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;}
     .pnl-attention-value{font-size:27px;font-weight:700;color:var(--navy);line-height:1;}
-    .pnl-attention-label{font-size:13px;color:var(--gray-500);font-weight:500;}
-    .pnl-attention-meta{font-size:12px;color:var(--gray-500);line-height:1.4;}
-    .pnl-attention-link{font-size:12px;font-weight:600;color:var(--accent2);background:none;border:none;padding:0;display:inline-flex;align-items:center;gap:4px;align-self:flex-start;margin-top:auto;}
+    .pnl-attention-meta{font-size:12px;color:var(--gray-500);line-height:1.4;display:inline-flex;align-items:center;gap:4px;}
+    .pnl-attention-chevron{flex-shrink:0;color:var(--gray-400);}
 
     /* Barra de acuracidade compacta dentro da tabela "Últimas Contagens" —
        menor que .pnl-bar-track (que é pra linhas de legenda/donut). */
@@ -1349,13 +1352,6 @@
     .pnl-hero-search .field{margin-bottom:0;}
     .pnl-hero-search .field label{display:none;}
     .pnl-hero-search .field input{padding:15px 14px;font-size:14px;}
-    /* Resultado da busca (quando o operador digita algo) continua no fluxo
-       normal, empurrando o que vem depois pra baixo — mesmo comportamento
-       de sempre deste componente; só acontece durante uma busca ativa, não
-       no estado padrão (em repouso) que a régua de 1080px cobre. */
-    .pnl-date-col{display:flex;align-items:center;gap:10px;flex-shrink:0;color:var(--gray-500);white-space:nowrap;}
-    .pnl-date-col .d1{font-size:12px;}
-    .pnl-date-col .d2{font-size:13px;font-weight:600;color:var(--navy);}
 
     /* Cards "Resumo da Operação" (Indicadores) — shell PRÓPRIO, separado de
        .pnl-kpi (que a Home usa nos 5 cards com trend/badge, ver kpis[] em
@@ -8492,9 +8488,9 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], historic
   const recontagemArr = counts.filter(c=>c.statusAprovacao==='aguardando_segunda' && !byOriginal[c.id]);
   const aguardandoDiretoriaArr = counts.filter(c=>c.statusAprovacao==='aguardando_aprovacao_diretoria');
   const atencaoBlocks = [
-    {key:'divergentes', label:'itens divergentes', icone:'alertTriangle', ...detalharFila(divergentesArr, 'divergentes', 'danger'), linkLabel:'Ver itens'},
-    {key:'recontagens', label:'recontagens pendentes', icone:'repeat', ...detalharFila(recontagemArr, 'recounts', 'warn'), linkLabel:'Ver recontagens'},
-    ...(role!=='operador' ? [{key:'aprovacao', label:'aguardando aprovação', icone:'clipboardList', ...detalharFila(aguardandoDiretoriaArr, 'aprovacaoDiretoria', 'warn'), linkLabel:'Ver aprovações'}] : []),
+    {key:'divergentes', label:'Itens divergentes', icone:'alertTriangle', ...detalharFila(divergentesArr, 'divergentes', 'danger'), linkLabel:'Ver itens'},
+    {key:'recontagens', label:'Recontagens pendentes', icone:'repeat', ...detalharFila(recontagemArr, 'recounts', 'warn'), linkLabel:'Ver recontagens'},
+    ...(role!=='operador' ? [{key:'aprovacao', label:'Aguardando aprovação', icone:'clipboardList', ...detalharFila(aguardandoDiretoriaArr, 'aprovacaoDiretoria', 'warn'), linkLabel:'Ver aprovações'}] : []),
   ].filter(b=>b.total>0);
 
   // "Últimas Contagens" — pedido do cliente com imagem de referência:
@@ -8533,13 +8529,6 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], historic
     // KPI de Indicadores acima.
     ...(hasAccess(user,'relatorios') ? [{icon:'fileText', label:'Relatórios', desc:'Exportar relatórios do inventário', onClick:()=>goto('relatorios'), bg:'var(--safety-bg)', color:'var(--safety)'}] : []),
   ];
-
-  // Data por extenso do cabeçalho (dia da semana + "24 de setembro de
-  // 2026") — só formatação de `new Date()`, nenhum dado novo.
-  const agora = new Date();
-  const diaSemanaExtenso = new Intl.DateTimeFormat('pt-BR', {weekday:'long'}).format(agora);
-  const diaSemanaCap = diaSemanaExtenso.charAt(0).toUpperCase() + diaSemanaExtenso.slice(1);
-  const dataExtenso = new Intl.DateTimeFormat('pt-BR', {day:'numeric', month:'long', year:'numeric'}).format(agora);
 
   const planejados = inventories.filter(i=>i.contados===0 && i.status!=='cancelado').length;
   const concluidosInv = inventories.filter(i=>i.qtdItens>0 && i.contados>=i.qtdItens).length;
@@ -8580,13 +8569,6 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], historic
           <div className="pnl-hero-search">
             <ItemStatusSearchPanel counts={counts} historicoConcluidas={historicoConcluidas} user={user} goto={goto} />
           </div>
-          <div className="pnl-date-col">
-            <DIcon name="calendar" size={15} />
-            <div>
-              <div className="d1">{diaSemanaCap}</div>
-              <div className="d2">{dataExtenso}</div>
-            </div>
-          </div>
         </div>
 
         <div className="pnl-kpi-row" style={{'--kpi-cols':kpis.length-1}}>
@@ -8616,21 +8598,23 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], historic
 
         {atencaoBlocks.length>0 && (
           <>
-            <div className="pnl-section-title" style={{marginBottom:14}}>O que precisa de atenção?</div>
+            <div className="pnl-section-head">
+              <div className="pnl-section-title">O que precisa de atenção?</div>
+              <button className="pnl-section-link" onClick={()=>goto(atencaoBlocks[0].destino)}>Ver todos <DIcon name="chevronRight" size={13} /></button>
+            </div>
             <div className="pnl-attention-row">
               {atencaoBlocks.map(b=>(
-                <div key={b.key} className={"pnl-card pnl-attention-card "+b.corClasse}>
-                  <div className="pnl-attention-top">
-                    <span className="pnl-attention-value">{b.total}</span>
-                    <DIcon name={b.icone} size={16} style={{color:b.corClasse==='danger'?'var(--danger)':'var(--warn)'}} />
+                <button key={b.key} type="button" className={"pnl-attention-card "+b.corClasse} onClick={()=>goto(b.destino)}>
+                  <span className="pnl-attention-icon"><DIcon name={b.icone} size={18} /></span>
+                  <div className="pnl-attention-body">
+                    <div className="pnl-attention-label">{b.label}</div>
+                    <div className="pnl-attention-value-row">
+                      <span className="pnl-attention-value">{b.total}</span>
+                      {b.antigos>0 && <span className="pnl-attention-meta"><DIcon name="clock" size={12} /> {b.antigos} com mais de 7 dias</span>}
+                    </div>
                   </div>
-                  <div className="pnl-attention-label">{b.label}</div>
-                  <div className="pnl-attention-meta">
-                    {b.novosHoje>0 && <div>{b.novosHoje} novo{b.novosHoje===1?'':'s'} hoje</div>}
-                    {b.antigos>0 && <div>{b.antigos} há mais de 7 dias</div>}
-                  </div>
-                  <button type="button" className="pnl-attention-link" onClick={()=>goto(b.destino)}>{b.linkLabel} <DIcon name="chevronRight" size={12} /></button>
-                </div>
+                  <DIcon name="chevronRight" size={16} className="pnl-attention-chevron" />
+                </button>
               ))}
             </div>
           </>
