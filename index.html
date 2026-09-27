@@ -1331,11 +1331,11 @@
     .pnl-quick-body{flex:1;min-width:0;}
     .pnl-quick-desc{font-size:var(--text-xs);color:var(--gray-500);margin-top:2px;font-weight:400;}
 
-    /* Uma linha só (saudação + busca de item + data) — correção do redesign
-       anterior, que empilhava saudação (bloco próprio) + busca + data em
-       ~220px de altura. Pedido do cliente: "a consulta de item deve ficar
-       na mesma linha da saudação/data... essa área inteira deve ocupar
-       aproximadamente 70px de altura". */
+    /* Uma linha só (saudação + busca de item) — correção do redesign
+       anterior, que empilhava saudação (bloco próprio) + busca em ~220px de
+       altura. Pedido do cliente: "a consulta de item deve ficar na mesma
+       linha da saudação... essa área inteira deve ocupar aproximadamente
+       70px de altura". */
     .pnl-hero-row{display:flex;align-items:center;gap:28px;margin-bottom:28px;}
     .pnl-hero-greet{flex-shrink:0;}
     .pnl-hero-greet .hg-label{font-family:var(--font-mono);font-size:11px;text-transform:uppercase;letter-spacing:2px;color:var(--safety);margin-bottom:3px;}
@@ -1343,8 +1343,11 @@
     /* Busca de item — mesmo componente `ItemStatusSearchPanel`/`SearchWithScanner`
        usado em outras telas, só que achatado aqui: sem o `.panel`
        (fundo/borda/padding) nem o título "Consultar Status de um Item",
-       campo só com o input+ícone de scanner, do tamanho de uma linha. */
-    .pnl-hero-search{flex:1;max-width:480px;min-width:0;}
+       campo só com o input+ícone de scanner, do tamanho de uma linha. Sem
+       max-width — a pedido do cliente, alarga até preencher o resto da
+       linha (antes ficava travado em 480px, sobrando espaço vazio depois
+       que a coluna de data saiu da linha). */
+    .pnl-hero-search{flex:1;min-width:0;}
     .pnl-hero-search .panel{margin-bottom:0;padding:0;border:none;box-shadow:none;background:transparent;}
     .pnl-hero-search .section-title{display:none;}
     .pnl-hero-search .field{margin-bottom:0;}
