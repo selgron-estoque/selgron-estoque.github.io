@@ -3897,32 +3897,42 @@ function App(){
 
   const [configModalAberto, setConfigModalAberto] = useState(false);
 
-  // Guardas (refs) do status mais recente de Pedidos de Compra/Tracking,
-  // só pra troca automática abaixo poder LER o valor atual sem precisar
-  // estar nas dependências do useEffect — se `statusPedidosCompra`/
-  // `statusTracking` estivessem lá, toda atualização em segundo plano
-  // (ex.: cada nova consulta de 5 em 5 min, depois que a tela já carregou
-  // pela 1ª vez) recriaria o efeito e reiniciaria a contagem do tempo
+  // Guarda (ref) do status mais recente de Tracking Picking, só pra troca
+  // automática abaixo (Indicadores → Tracking Picking) poder LER o valor
+  // atual sem precisar estar nas dependências do useEffect — se
+  // `statusTracking` estivesse lá, toda atualização em segundo plano (ex.:
+  // cada nova consulta de 5 em 5 min, depois que a tela já carregou pela
+  // 1ª vez) recriaria o efeito e reiniciaria a contagem do tempo
   // configurado do zero — a troca automática NUNCA aconteceria no tempo
   // certo. Com o ref, o efeito só olha o status quando o próprio timer
   // dispara, não toda vez que ele muda.
-  const statusPedidosCompraRef = useRef(statusPedidosCompra);
-  useEffect(() => { statusPedidosCompraRef.current = statusPedidosCompra; }, [statusPedidosCompra]);
   const statusTrackingRef = useRef(statusTracking);
   useEffect(() => { statusTrackingRef.current = statusTracking; }, [statusTracking]);
 
-  // TV sem ninguém mexendo — alterna sozinho entre as duas telas, pra dar
+  // TV sem ninguém mexendo — alterna sozinho entre as telas, pra dar
   // tempo de ler cada uma sem precisar de clique manual. "Painel
-  // Indicadores" tem um tempo FIXO (`temposConfig.segundosIndicadores`, sem
-  // sub-abas). "Tracking Picking" é diferente: tem 4 abas internas de linha
-  // (Elétrica/SEM/SSE/SEP + qualquer linha adicionada depois, ver
-  // `linhasProducao`) — pedido explícito
+  // Indicadores" e "Pedidos de Compra" têm um tempo FIXO
+  // (`temposConfig.segundosIndicadores`, sem sub-abas). "Tracking Picking" é
+  // diferente: tem 4 abas internas de linha (Elétrica/SEM/SSE/SEP + qualquer
+  // linha adicionada depois, ver `linhasProducao`) — pedido explícito
   // do cliente foi só trocar de tela DEPOIS de mostrar as 4 (ver
   // `onCicloCompleto` em `TrackingPicking`, que avisa quando isso
   // acontece), nunca num tempo fixo que poderia cortar no meio do ciclo
   // de linhas. Clicar numa aba continua trocando na hora (onChange
   // abaixo); os timers não resetam por causa disso, só seguem no próprio
   // ciclo.
+  //
+  // Ordem do rodízio: Indicadores → Tracking Picking → Pedidos de Compra →
+  // Link(s), se existir(em) → Indicadores de novo — bug real corrigido
+  // aqui (cliente reportou "aqui não está seguindo uma sequência lógica",
+  // print do cabeçalho): antes o rodízio ia Indicadores → Pedidos de
+  // Compra → Tracking Picking, na ORDEM ERRADA em relação às abas do
+  // cabeçalho (Indicadores, Tracking Picking, Pedidos de Compra, da
+  // esquerda pra direita) — as setas do controle remoto pulavam "pra
+  // trás" visualmente ao avançar de Indicadores direto pra Pedidos de
+  // Compra, pulando por cima da aba Tracking Picking. Agora o rodízio
+  // automático E a navegação por setas (`navegar`, mais abaixo) seguem a
+  // MESMA ordem visual do cabeçalho.
   //
   // A troca só acontece DEPOIS do tempo configurado E com o dado da
   // PRÓXIMA tela já resolvido (`status` != 'loading') — pedido do cliente:
@@ -3944,27 +3954,6 @@ function App(){
     function agendarTroca(delayMs){
       id = setTimeout(() => {
         if(cancelado) return;
-        if(statusPedidosCompraRef.current === 'loading'){ agendarTroca(1000); return; }
-        setTela('pedidosCompra');
-      }, delayMs);
-    }
-    agendarTroca(temposConfig.segundosIndicadores*1000);
-    return () => { cancelado = true; clearTimeout(id); };
-  }, [tela, temposConfig.segundosIndicadores]);
-
-  // "Pedidos de Compra" (3ª tela, sem sub-abas, mesmo critério de
-  // "Indicadores" acima, inclusive a espera pelo status da PRÓXIMA tela
-  // antes de trocar) — reaproveita o MESMO tempo configurado
-  // (`segundosIndicadores`) em vez de criar um campo de configuração novo
-  // só pra ela; dá pra separar depois se o cliente pedir um tempo
-  // diferente pra essa tela especificamente.
-  useEffect(() => {
-    if(tela !== 'pedidosCompra') return;
-    let cancelado = false;
-    let id;
-    function agendarTroca(delayMs){
-      id = setTimeout(() => {
-        if(cancelado) return;
         if(statusTrackingRef.current === 'loading'){ agendarTroca(1000); return; }
         setTela('picking');
       }, delayMs);
@@ -3973,13 +3962,34 @@ function App(){
     return () => { cancelado = true; clearTimeout(id); };
   }, [tela, temposConfig.segundosIndicadores]);
 
+  // "Pedidos de Compra" — agora a 3ª tela do rodízio (depois de Tracking
+  // Picking, ver comentário acima), sem sub-abas, tempo FIXO igual
+  // "Indicadores". Vai direto pro próximo link (ou de volta pra
+  // Indicadores, sem link nenhum cadastrado) — igual a
+  // `TrackingPicking.onCicloCompleto` já fazia antes desta mudança de
+  // ordem, sem precisar esperar o status de ninguém (Indicadores e Link já
+  // têm seu próprio "Carregando…" pra cobrir esse instante, se precisar).
+  useEffect(() => {
+    if(tela !== 'pedidosCompra') return;
+    let cancelado = false;
+    let id;
+    function agendarTroca(delayMs){
+      id = setTimeout(() => {
+        if(cancelado) return;
+        setTela(temLink ? 'link' : 'indicadores');
+      }, delayMs);
+    }
+    agendarTroca(temposConfig.segundosIndicadores*1000);
+    return () => { cancelado = true; clearTimeout(id); };
+  }, [tela, temposConfig.segundosIndicadores, temLink]);
+
   // (Não tem um efeito de tempo fixo aqui pra `tela==='link'` — desde que
   // virou lista de vários links, ela cicla do mesmo jeito que
   // TrackingPicking cicla as linhas: o próprio LinkExternoPanel controla seu
   // ciclo interno (60s por link) e avisa `onCicloCompleto` quando termina o
   // último, fechando o rodízio Indicadores → Elétrica/SEM/SSE/SEP →
-  // Link 1..N → Indicadores → ... Ver comentário completo em
-  // LinkExternoPanel.)
+  // Pedidos de Compra → Link 1..N → Indicadores → ... Ver comentário
+  // completo em LinkExternoPanel.)
 
   // TVs Samsung (Tizen) só entregam pro JavaScript da página as teclas do
   // controle físico que o app REGISTRAR explicitamente antes — por padrão,
@@ -4000,27 +4010,32 @@ function App(){
 
   // Controle remoto da TV — ArrowRight avança, ArrowLeft volta, andando
   // pela MESMA sequência de telas que a troca automática já percorre:
-  // Indicadores → Elétrica → SEM → SSE → SEP → (Link, se existir) →
-  // volta pra Indicadores, cíclico nos dois sentidos. Só troca
-  // `tela`/`linhaSelecionada` na hora — EXATAMENTE o que clicar numa aba
-  // já fazia antes — nunca cria timer novo nem mexe nos já existentes
-  // (acima, e o de 30s dentro de TrackingPicking): eles continuam rodando
-  // no próprio ciclo, do mesmo jeito que já ignoravam clique manual antes
-  // desta funcionalidade.
+  // Indicadores → Elétrica → SEM → SSE → SEP → Pedidos de Compra →
+  // (Link, se existir) → volta pra Indicadores, cíclico nos dois
+  // sentidos — MESMA ordem visual das abas do cabeçalho (Indicadores,
+  // Tracking Picking, Pedidos de Compra, da esquerda pra direita; ver
+  // bug real corrigido, comentário completo perto da troca automática
+  // acima). Só troca `tela`/`linhaSelecionada` na hora — EXATAMENTE o que
+  // clicar numa aba já fazia antes — nunca cria timer novo nem mexe nos já
+  // existentes (acima, e o de 30s dentro de TrackingPicking): eles
+  // continuam rodando no próprio ciclo, do mesmo jeito que já ignoravam
+  // clique manual antes desta funcionalidade.
   // Anda 1 posição pra frente/trás na MESMA sequência dinâmica que a troca
-  // automática já percorre (Indicadores → 4 linhas → 1 posição por link
-  // externo cadastrado, cíclico). Extraído numa função só (`useCallback`,
-  // pra dar uma referência estável e reaproveitável) porque agora tem 2
-  // formas de disparar a mesma navegação: as setas do controle remoto
-  // (efeito de `keydown` abaixo) E os botões ‹ › clicáveis na tela (pedido
-  // do cliente depois de confirmar que o controle físico dessa TV opera a
-  // página em modo ponteiro/mouse, não manda tecla nenhuma — ver
-  // BotaoNavegacao/PanelTabs). Nenhuma das duas fontes cria timer novo nem
-  // mexe nos já existentes — só troca `tela`/`linhaSelecionada`/`linkIndex`
-  // na hora, exatamente como clicar numa aba já fazia.
+  // automática já percorre (Indicadores → 4 linhas → Pedidos de Compra →
+  // 1 posição por link externo cadastrado, cíclico). Extraído numa função
+  // só (`useCallback`, pra dar uma referência estável e reaproveitável)
+  // porque agora tem 2 formas de disparar a mesma navegação: as setas do
+  // controle remoto (efeito de `keydown` abaixo) E os botões ‹ › clicáveis
+  // na tela (pedido do cliente depois de confirmar que o controle físico
+  // dessa TV opera a página em modo ponteiro/mouse, não manda tecla
+  // nenhuma — ver BotaoNavegacao/PanelTabs). Nenhuma das duas fontes cria
+  // timer novo nem mexe nos já existentes — só troca
+  // `tela`/`linhaSelecionada`/`linkIndex` na hora, exatamente como clicar
+  // numa aba já fazia.
   const navegar = useCallback((direita) => {
-    const posicoes = [{tela:'indicadores'}, {tela:'pedidosCompra'}];
+    const posicoes = [{tela:'indicadores'}];
     linhasProducao.forEach(l => posicoes.push({tela:'picking', linha:l.nome}));
+    posicoes.push({tela:'pedidosCompra'});
     linksExternos.forEach((l, i) => posicoes.push({tela:'link', linkIndex:i}));
     const idxAtual = posicoes.findIndex(p =>
       p.tela===tela &&
@@ -4094,7 +4109,7 @@ function App(){
       {tela==='picking' && (
         <TrackingPicking
           tela={tela} onChange={setTela} theme={theme} onToggleTheme={toggleTheme}
-          onCicloCompleto={() => setTela(temLink ? 'link' : 'indicadores')}
+          onCicloCompleto={() => setTela('pedidosCompra')}
           linhaSelecionada={linhaSelecionada} onChangeLinha={setLinhaSelecionada}
           segundosLinhaTracking={temposConfig.segundosLinhaTracking}
           status={statusTracking} maquinasEtp={maquinasEtpTracking} itens={itensTracking}
