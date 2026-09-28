@@ -19581,11 +19581,12 @@ async function voltarStatusMaquinaEmLote(maquina, itensDaMaquina, nomeUsuario, n
 // Card de 1 máquina — reaproveitado pelas 5 colunas de `SeparacaoPainelBoard`
 // (só variando `ordinal`/`mostrarReordenar`/os handlers de reordenar, que só
 // fazem sentido na coluna AGUARDANDO SEPARAÇÃO). Mostra só o essencial
-// pedido pelo cliente — ETP, Nome Fantasia, Chassi, Data de Separação — a
-// lista de itens da máquina nunca aparece aqui, só a contagem (mesma
-// decisão já confirmada: "Não preciso mais rastrear item nenhum"). O botão
-// de avançar SEMPRE age sobre TODOS os itens da ETP de uma vez (ver
-// `avancarStatusMaquinaEmLote`).
+// pedido pelo cliente — ETP, Nome Fantasia, Chassi, Data de Separação,
+// Entregue em (só aparece depois que a máquina termina o ciclo, ver
+// `entregueEm` em `computeMaquinasPainel`) — a lista de itens da máquina
+// nunca aparece aqui, só a contagem (mesma decisão já confirmada: "Não
+// preciso mais rastrear item nenhum"). O botão de avançar SEMPRE age sobre
+// TODOS os itens da ETP de uma vez (ver `avancarStatusMaquinaEmLote`).
 function MaquinaCard({m, canManage, podeAvancarStatus, isAdmin, ordinal, mostrarReordenar, podeSubir, podeDescer, busy, erro, onAvancar, onVoltar, onMoverCima, onMoverBaixo, onToggleUrgente, onExcluir, onEditar}){
   const [confirmandoExcluir, setConfirmandoExcluir] = useState(false);
   const [menuAbertoId, setMenuAbertoId] = useState(null);
@@ -19619,6 +19620,11 @@ function MaquinaCard({m, canManage, podeAvancarStatus, isAdmin, ordinal, mostrar
       {m.dataSeparacao && (
         <div className={m.atrasada ? 'sep-kanban-meta-line sep-kanban-data-atrasada' : 'sep-kanban-meta-line'}>
           {m.atrasada && <DIcon name="alertTriangle" size={12} />} Data de Separação: {new Date(m.dataSeparacao+'T00:00:00').toLocaleDateString('pt-BR')}
+        </div>
+      )}
+      {m.entregueEm && (
+        <div className="sep-kanban-meta-line">
+          Entregue em: {new Date(m.entregueEm).toLocaleDateString('pt-BR')} às {new Date(m.entregueEm).toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'})}
         </div>
       )}
       <div className="sep-kanban-foot">
