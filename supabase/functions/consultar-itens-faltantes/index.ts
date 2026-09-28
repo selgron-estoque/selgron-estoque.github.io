@@ -29,6 +29,9 @@
 //   D4_TRT=&DATA_EMISSAO_DE=&DATA_EMISSAO_ATE=&SALDO=SEM_SALDO&
 //   B1_GRUPO=0044%2C0090%2C0088%2C9900%2C9910%2C9930%2C9940%2C0016%2C1016&
 //   btn-confirmar=
+// (URL histórica, registrada como evidência de quando isso foi calibrado —
+// `GRUPOS_FIXOS`, logo abaixo, é que reflete o valor ATUAL, já com `0131`
+// adicionado depois.)
 //
 // SALDO passou a ser parametrizado (era fixo em SEM_SALDO) — pedido do
 // Tracking Picking (painel-indicadores.html, redesign visual): o card de
@@ -94,8 +97,11 @@ const ITENS_FALTANTES_URL = "https://consulta.selgron.com.br/itensfaltantes.php"
 // Mesmo conjunto de grupos do exemplo real mandado pelo cliente — ver
 // comentário do topo do arquivo. `SALDO` saiu daqui (era fixo em
 // SEM_SALDO) — agora é parâmetro de `montarUrl`, pra poder buscar os 2
-// estados (SEM_SALDO/COM_SALDO) da mesma ETP.
-const GRUPOS_FIXOS = "0044,0090,0088,9900,9910,9930,9940,0016,1016";
+// estados (SEM_SALDO/COM_SALDO) da mesma ETP. `0131` adicionado depois
+// (cliente incluiu esse grupo a mais na tela "Lista de Itens Faltantes" —
+// precisa redeploy manual desta function pra valer, não é lido de tabela
+// nenhuma no Supabase, ver comentário no topo do arquivo).
+const GRUPOS_FIXOS = "0044,0090,0088,9900,9910,9930,9940,0016,1016,0131";
 function montarUrl(etp: string, saldo: "SEM_SALDO" | "COM_SALDO"): string {
   return (
     `${ITENS_FALTANTES_URL}?C2_NTEP=${encodeURIComponent(etp)}` +
