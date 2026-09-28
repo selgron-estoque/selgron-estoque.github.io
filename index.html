@@ -1399,6 +1399,46 @@
     @media (max-width:1360px){ .ops-kpi-row{grid-template-columns:repeat(2,1fr);} }
     @media (max-width:640px){ .ops-kpi-row{grid-template-columns:1fr;gap:10px;} }
 
+    /* Tela Acuracidade — dois painéis espelhados lado a lado (pedido do
+       cliente com mockup de referência): "Itens Recorrentes" (azul) e
+       "Divergência Quantitativa" (teal), mesma população de itens, cada um
+       com seu próprio trio de cards + gráfico mensal. Radius/borda seguem
+       exatamente o valor pedido (--radius já é 10px, então reaproveitado;
+       borda em rgba solta — mais sutil que --gray-200 sólido — só pra
+       este par de painéis). */
+    .acc-dual-row{display:flex;gap:16px;margin-bottom:24px;align-items:stretch;}
+    .acc-panel{flex:1 1 0;min-width:0;background:var(--panel);border:1px solid rgba(148,163,184,0.16);border-radius:var(--radius);padding:16px;display:flex;flex-direction:column;}
+    .acc-panel-head{display:flex;align-items:stretch;gap:10px;margin-bottom:18px;}
+    .acc-panel-marker{width:4px;border-radius:2px;flex-shrink:0;}
+    .acc-panel-blue .acc-panel-marker{background:var(--blue);}
+    .acc-panel-teal .acc-panel-marker{background:var(--teal);}
+    .acc-panel-titlewrap{flex:1;min-width:0;}
+    .acc-panel-titlerow{display:flex;align-items:center;gap:6px;}
+    .acc-panel-title{font-size:16px;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.3px;}
+    .acc-panel-desc{font-size:13px;color:var(--ink-dim);margin-top:5px;line-height:1.4;}
+    /* Grid fixo 46/27/27 (não auto-fit) — os 2 painéis precisam manter a
+       MESMA proporção sempre, nunca reagir ao tamanho do conteúdo de um
+       card específico (regra de simetria do pedido do cliente). */
+    .acc-cards-row{display:grid;grid-template-columns:46% 27% 27%;gap:14px;margin-bottom:16px;}
+    .acc-card{background:var(--panel);border:1px solid var(--gray-200);border-radius:var(--radius);padding:16px;height:168px;display:flex;flex-direction:column;box-sizing:border-box;}
+    .acc-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:10px;}
+    .acc-card-label{font-family:var(--font-corp);font-size:var(--text-xs);font-weight:700;letter-spacing:0.5px;text-transform:uppercase;color:var(--gray-500);line-height:1.3;}
+    .acc-card-icon{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+    .acc-card-value{font-family:var(--font-corp);font-size:32px;font-weight:800;color:var(--navy);line-height:1;margin-bottom:8px;}
+    .acc-card-value.acc-card-value-lg{font-size:40px;}
+    .acc-card-badge{display:inline-block;font-size:var(--text-2xs);font-weight:700;color:var(--ink-dim);background:var(--line);border-radius:6px;padding:3px 8px;font-family:var(--font-mono);letter-spacing:.3px;margin-bottom:8px;align-self:flex-start;}
+    .acc-card-desc,.acc-card-meta{font-family:var(--font-corp);font-size:var(--text-xs);color:var(--gray-500);margin-top:auto;}
+    .acc-card-meta.danger{color:var(--danger);font-weight:600;}
+    .acc-chart-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px;}
+    .acc-chart-title{font-size:var(--text-md);font-weight:700;}
+    .acc-chart-desc{font-size:var(--text-sm);color:var(--ink-dim);margin-bottom:14px;}
+    .acc-chart-footer{font-size:var(--text-xs);color:var(--ink-dim);text-align:center;margin-top:10px;}
+    @media (max-width:1100px){
+      .acc-dual-row{flex-direction:column;}
+      .acc-cards-row{grid-template-columns:1fr 1fr 1fr;}
+    }
+    @media (max-width:640px){ .acc-cards-row{grid-template-columns:1fr;} .acc-card{height:auto;min-height:110px;} }
+
     .pnl-section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
     .pnl-section-title{font-size:18px;font-weight:700;color:var(--navy);}
     .pnl-section-link{font-size:13px;font-weight:600;color:var(--accent2);background:none;border:none;display:flex;align-items:center;gap:4px;}
@@ -14511,6 +14551,27 @@ function itemAcuracidade(c){
   return Math.max(0, 1 - Math.abs(c.diferenca)/c.saldoSistema);
 }
 
+// Acuracidade "Divergência Quantitativa" de UM documento — pedido explícito
+// do cliente pro 2º indicador da tela Acuracidade: mesma população de itens
+// recorrentes do indicador "Itens Recorrentes" (ver
+// `computeAcuracidadeDivergenciaQuantitativa`), mas como função PRÓPRIA e
+// independente de `itemAcuracidade` (nunca reaproveitada por trás), porque
+// o pedido foi por "duas métricas calculadas", nunca uma alias da mesma
+// conta. Exemplos confirmados pelo cliente: sistema=100/contagem=99 → 99%;
+// 100/95 → 95%; 100/100 → 100%; 100/80 → 80% — nunca 0% só por existir
+// divergência. Na prática, com os dados hoje disponíveis (só `diferenca`,
+// não uma "quantidade encontrada" separada — ver decisão abaixo), essa
+// conta bate matematicamente com `itemAcuracidade` na maioria dos casos: os
+// dois indicadores foram pedidos com a MESMA fórmula quantitativa
+// (1 - |sistema-físico|/sistema) sobre a MESMA população, então é esperado
+// que produzam números iguais ou muito próximos — não é bug.
+function itemAcuracidadeQuantitativa(c){
+  if(c.acuracidade!=null) return c.acuracidade;
+  if(c.saldoSistema==null || c.diferenca==null) return null;
+  if(c.saldoSistema===0) return c.diferenca===0 ? 1 : 0;
+  return Math.max(0, 1 - Math.abs(c.diferenca)/c.saldoSistema);
+}
+
 // Agrupa por MÊS civil (YYYY-MM) — mesma ideia de `getWeekInfo`, granularidade
 // maior. Usado pelo gráfico "Acuracidade Mensal".
 const NOMES_MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
@@ -14904,6 +14965,78 @@ function computeAcuracidadeItensRecorrentes(pool, dataInicioStr, dataFimStr){
   return { monthlyStats, codigosElegiveis, totalDocumentos: elegiveis.length, acuracidadeMedia, documentosPorMes };
 }
 
+// "Divergência Quantitativa (Recorrentes)" — 2º indicador da tela
+// Acuracidade, pedido explícito do cliente pra comparar lado a lado com
+// "Itens Recorrentes". MESMA população/elegibilidade de
+// `computeAcuracidadeItensRecorrentes` (itens com 2+ documentos de
+// contagem, elegibilidade avaliada sobre o histórico inteiro do código,
+// nunca recortada pelo período do gráfico) — decisão confirmada
+// explicitamente: "não quero dois conjuntos de itens diferentes... mesmos
+// itens → dois cálculos diferentes". A única diferença de verdade é a
+// função de acuracidade por documento (`itemAcuracidadeQuantitativa` em vez
+// de `itemAcuracidade` — ver comentário lá sobre as duas fórmulas serem
+// matematicamente equivalentes na prática). Meses antes de
+// `INICIO_ACUMULO_ITENS_RECORRENTES` também mascarados pra `semMedicao`,
+// mesma regra do indicador 1. Sem drill-down por mês (não pedido pro 2º
+// indicador) — por isso não monta `documentosPorMes`/`codigosElegiveis`
+// aqui; a tela usa os mesmos `codigosElegiveis`/`totalDocumentos` de
+// `computeAcuracidadeItensRecorrentes` pros cards 2/3 dos dois painéis
+// (garantindo, pela própria implementação, que a população nunca diverge
+// entre os dois indicadores).
+function computeAcuracidadeDivergenciaQuantitativa(pool, dataInicioStr, dataFimStr){
+  const porCodigo = {};
+  pool.forEach(c=>{
+    if(!c.data || !c.productCode) return;
+    (porCodigo[c.productCode] = porCodigo[c.productCode] || []).push(c);
+  });
+  const elegiveis = [];
+  Object.values(porCodigo).forEach(arr=>{
+    if(arr.length < 2) return; // mesma regra fundamental: só itens com 2+ documentos
+    elegiveis.push(...arr);
+  });
+  const inicioAcumuloChave = INICIO_ACUMULO_ITENS_RECORRENTES.slice(0,7);
+  const buckets = {};
+  const ordem = [];
+  let cursor = new Date(dataInicioStr + 'T00:00:00');
+  cursor.setDate(1);
+  const fim = new Date(dataFimStr + 'T00:00:00');
+  fim.setDate(1);
+  let guard = 0;
+  while(cursor <= fim && guard < 120){
+    const info = getMonthInfo(cursor.toISOString().slice(0,10));
+    if(!buckets[info.key]){
+      buckets[info.key] = {key:info.key, label:info.label, sublabel:info.sublabel, total:0, somaAcuracidade:0, comAcuracidade:0};
+      ordem.push(info.key);
+    }
+    cursor.setMonth(cursor.getMonth()+1);
+    guard++;
+  }
+  elegiveis.forEach(c=>{
+    if(!c.data) return;
+    const {key} = getMonthInfo(c.data);
+    if(!buckets[key]) return;
+    buckets[key].total += 1;
+    const acc = itemAcuracidadeQuantitativa(c);
+    if(acc!=null){
+      buckets[key].somaAcuracidade += acc;
+      buckets[key].comAcuracidade += 1;
+    }
+  });
+  const monthlyStats = ordem.map(key=>{
+    const w = buckets[key];
+    const m = {
+      key:w.key, label:w.label, sublabel:w.sublabel, total:w.total,
+      acuracidade: w.comAcuracidade>0 ? (w.somaAcuracidade/w.comAcuracidade)*100 : null,
+    };
+    return m.key < inicioAcumuloChave ? {...m, acuracidade:null, total:0, semMedicao:true} : m;
+  });
+  const mesesComDado = monthlyStats.filter(m=>m.acuracidade!=null);
+  const acuracidadeMedia = mesesComDado.length>0
+    ? mesesComDado.reduce((s,m)=>s+m.acuracidade,0)/mesesComDado.length
+    : null;
+  return { monthlyStats, acuracidadeMedia };
+}
+
 // Pool "Tendência" — TODA contagem/rodada registrada (inclui item ainda
 // pendente de decisão, NÃO deduplica por documento — se um item foi
 // recontado, as duas rodadas entram) — o mesmo conjunto que já alimenta
@@ -15204,7 +15337,15 @@ function WeeklyCountChart({weeks, meta=META_CONTAGENS_SEMANAL}){
 // 34) porque as colunas costumam bater perto de 100%, e o rótulo do valor
 // fica ACIMA da barra — precisa de mais respiro entre o topo do SVG e a
 // grade de "100%" pra não ficar espremido.
-function MonthlyAccuracyBarChart({months, meta=META_ACURACIDADE_SEMANAL, colorByMeta=false, onMonthClick=null, mesParcialKey=null, fonteGrande=false}){
+function MonthlyAccuracyBarChart({months, meta=META_ACURACIDADE_SEMANAL, colorByMeta=false, onMonthClick=null, mesParcialKey=null, fonteGrande=false, corBarra=null}){
+  // `corBarra` ('blue'|'teal'|null) — só os 2 painéis novos da tela
+  // Acuracidade usam isso (pedido do cliente: barra sempre azul à esquerda/
+  // teal à direita, cor fixa por painel, não por meta batida/não batida).
+  // `null` (padrão) preserva 100% o comportamento antigo — usado pelo outro
+  // lugar que chama este componente (Indicadores), que nunca deveria mudar
+  // aqui. Também liga o rótulo "95%" ao lado da linha de meta (pedido
+  // explícito só pros 2 painéis novos).
+  const corBarraFill = corBarra==='blue' ? 'var(--blue)' : corBarra==='teal' ? 'var(--teal)' : null;
   // `fonteGrande` — só o gráfico "Acuracidade Mensal — Itens Recorrentes"
   // (Acuracidade) usa este conjunto de tamanhos separado; o outro uso deste
   // componente (Indicadores) mantém os tamanhos originais — por isso um
@@ -15246,9 +15387,12 @@ function MonthlyAccuracyBarChart({months, meta=META_ACURACIDADE_SEMANAL, colorBy
           <text x={padL-8} y={y(t)+(fonteGrande?4:3.5)} textAnchor="end" fontSize={fs.eixoY} fill="var(--ink-dim)" fontFamily="var(--font-mono)">{t}%</text>
         </g>
       ))}
-      <line x1={padL} x2={W-padR} y1={y(meta)} y2={y(meta)} stroke={WEEKLY_CHART_COLOR} strokeWidth={1.5} strokeDasharray="5,4" opacity={0.65}>
+      <line x1={padL} x2={W-padR} y1={y(meta)} y2={y(meta)} stroke={corBarraFill || WEEKLY_CHART_COLOR} strokeWidth={corBarraFill?2:1.5} strokeDasharray="5,4" opacity={0.65}>
         <title>Meta: {meta}%</title>
       </line>
+      {corBarraFill && (
+        <text x={W-padR} y={y(meta)-5} textAnchor="end" fontSize={fs.eixoY} fontWeight={700} fill={corBarraFill} fontFamily="var(--font-mono)">{meta}%</text>
+      )}
       {months.map((m,i)=>(
         <g key={m.key}
           onClick={onMonthClick && m.total>0 ? ()=>onMonthClick(m) : undefined}
@@ -15256,7 +15400,7 @@ function MonthlyAccuracyBarChart({months, meta=META_ACURACIDADE_SEMANAL, colorBy
         >
           {m.acuracidade!=null ? (
             <>
-              <rect x={x(i)-barW/2} y={y(m.acuracidade)} width={barW} height={Math.max(0, y(0)-y(m.acuracidade))} rx={4} fill={colorByMeta && m.acuracidade>=meta ? 'var(--ok)' : WEEKLY_CHART_COLOR}>
+              <rect x={x(i)-barW/2} y={y(m.acuracidade)} width={barW} height={Math.max(0, y(0)-y(m.acuracidade))} rx={4} fill={corBarraFill || (colorByMeta && m.acuracidade>=meta ? 'var(--ok)' : WEEKLY_CHART_COLOR)}>
                 <title>{m.label} ({m.sublabel}): {m.acuracidade.toFixed(1)}% · {m.total} contagem(ns){colorByMeta ? (m.acuracidade>=meta ? ' · dentro da meta' : ' · abaixo da meta') : ''}{mesParcialKey===m.key ? ' · mês em andamento, resultado parcial' : ''}</title>
               </rect>
               <text x={x(i)} y={y(m.acuracidade)-8} textAnchor="middle" fontSize={fs.valor} fontWeight={700} fill={colorByMeta ? (m.acuracidade>=meta ? 'var(--ok)' : 'var(--danger)') : 'var(--ink)'} fontFamily="var(--font-mono)">
@@ -16331,6 +16475,12 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
   // só porque o mês mudou, só porque ele genuinamente ganhou/perdeu um
   // documento (ver comentário completo em `computeAcuracidadeItensRecorrentes`).
   const acuracidadeRecorrentes = computeAcuracidadeItensRecorrentes(todasParaQualidade, anoAtualStr, hojeStr);
+  // "Divergência Quantitativa (Recorrentes)" — 2º indicador, mostrado lado a
+  // lado com "Itens Recorrentes" (pedido do cliente com mockup de
+  // referência). MESMA população/pool/intervalo — só muda a fórmula de
+  // acuracidade por documento (ver comentário completo em
+  // `computeAcuracidadeDivergenciaQuantitativa`).
+  const divergenciaQuantitativa = computeAcuracidadeDivergenciaQuantitativa(todasParaQualidade, anoAtualStr, hojeStr);
   // Mês corrente — usado só pra marcar a última barra do gráfico/os cards
   // acima como "parcial" (o mês ainda está em andamento, o resultado pode
   // mudar até o fim dele). Não afeta o cálculo em si, só a apresentação.
@@ -16352,6 +16502,10 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
   // apontaria pro mês corrente sem nenhum dado dele estar de fato refletido
   // no número ao lado).
   const mesAtualLabelUpper = (mesAtualStats && mesAtualStats.acuracidade!=null) ? mesEmAndamentoLabelUpper : null;
+  // Mesmo selo, pro painel "Divergência Quantitativa" (mesma regra: só
+  // aparece quando o mês corrente já contribui de verdade pra média dele).
+  const mesAtualStatsQuant = divergenciaQuantitativa.monthlyStats.find(m=>m.key===mesEmAndamentoKey) || null;
+  const mesAtualLabelUpperQuant = (mesAtualStatsQuant && mesAtualStatsQuant.acuracidade!=null) ? mesEmAndamentoLabelUpper : null;
 
   // "Acuracidade Geral" — pedido do cliente: mostrar lado a lado com "Itens
   // Recorrentes" nesta mesma aba, pra deixar claro que são dois indicadores
@@ -16372,64 +16526,141 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
     <div>
       <div className="section-title">Acuracidade</div>
 
-      <div className="ops-kpi-row ops-kpi-row-auto">
-        <div className="ops-kpi-card">
-          <div className="ops-kpi-head">
-            <span className="ops-kpi-label">Acuracidade Geral</span>
-            <span className="ops-kpi-icon" style={{background:'var(--blue-bg)', color:'var(--blue)'}}><DIcon name="percent" size={15} /></span>
-          </div>
-          <div className="ops-kpi-value">{acuracidadeGeral.toFixed(1)+'%'}</div>
-          <div className={'ops-kpi-meta'+(acuracidadeGeral<META_ACURACIDADE_SEMANAL ? ' danger' : '')}>
-            {(acuracidadeGeral-META_ACURACIDADE_SEMANAL>=0?'+':'')}{(acuracidadeGeral-META_ACURACIDADE_SEMANAL).toFixed(1)} p.p. da meta de {META_ACURACIDADE_SEMANAL}% · todo item avaliado
-          </div>
+      {/* "Acuracidade Geral" — indicador independente dos dois painéis
+          abaixo (todo item já avaliado, não só recorrentes), mantido acima
+          deles sem alteração de cálculo — só saiu da fileira de 3 cards de
+          antes pra não competir visualmente com o par de painéis novo. */}
+      <div className="ops-kpi-card" style={{maxWidth:300, marginBottom:20}}>
+        <div className="ops-kpi-head">
+          <span className="ops-kpi-label">Acuracidade Geral</span>
+          <span className="ops-kpi-icon" style={{background:'var(--blue-bg)', color:'var(--blue)'}}><DIcon name="percent" size={15} /></span>
         </div>
-        <div className="ops-kpi-card">
-          <div className="ops-kpi-head">
-            <span className="ops-kpi-label">Acuracidade — Itens Recorrentes</span>
-            <span
-              className="ic"
-              title={`Indicador oficial desde ${inicioAcumuloLabel} — meses anteriores não possuem medição comparável.`}
-              style={{color:'var(--ink-dim)',display:'inline-flex',cursor:'help'}}
-            ><DIcon name="info" size={13} /></span>
-            <span className="ops-kpi-icon" style={{background:'var(--purple-bg)', color:'var(--purple)'}}><DIcon name="percent" size={15} /></span>
-          </div>
-          <div style={{display:'flex',alignItems:'baseline',gap:8,flexWrap:'wrap'}}>
-            <div className="ops-kpi-value">{acuracidadeRecorrentes.acuracidadeMedia==null ? '—' : acuracidadeRecorrentes.acuracidadeMedia.toFixed(1)+'%'}</div>
-            {mesAtualLabelUpper && (
-              <span style={{fontSize:'var(--text-2xs)',fontWeight:700,color:'var(--ink-dim)',background:'var(--line)',borderRadius:6,padding:'3px 8px',fontFamily:'var(--font-mono)',letterSpacing:0.3}}>
-                {mesAtualLabelUpper} · PARCIAL
-              </span>
-            )}
-          </div>
-          {acuracidadeRecorrentes.acuracidadeMedia==null ? (
-            <div className="ops-kpi-meta">sem dado no período em tela · itens com 2+ contagens concluídas</div>
-          ) : (
-            <div className={'ops-kpi-meta'+(acuracidadeRecorrentes.acuracidadeMedia<META_ACURACIDADE_SEMANAL ? ' danger' : '')}>
-              {(acuracidadeRecorrentes.acuracidadeMedia-META_ACURACIDADE_SEMANAL>=0?'+':'')}{(acuracidadeRecorrentes.acuracidadeMedia-META_ACURACIDADE_SEMANAL).toFixed(1)} p.p. da meta de {META_ACURACIDADE_SEMANAL}% · itens com 2+ contagens concluídas
-            </div>
-          )}
-        </div>
-        <div className="ops-kpi-card">
-          <div className="ops-kpi-head">
-            <span className="ops-kpi-label">Itens Recorrentes (2+ Documentos)</span>
-            <span className="ops-kpi-icon" style={{background:'var(--teal-bg)', color:'var(--teal)'}}><DIcon name="repeat" size={15} /></span>
-          </div>
-          <div className="ops-kpi-value">{mesAtualStats ? mesAtualStats.total : 0}</div>
-          <div className="ops-kpi-meta">Itens avaliados em {mesEmAndamentoLabelUpper} (parcial)</div>
+        <div className="ops-kpi-value">{acuracidadeGeral.toFixed(1)+'%'}</div>
+        <div className={'ops-kpi-meta'+(acuracidadeGeral<META_ACURACIDADE_SEMANAL ? ' danger' : '')}>
+          {(acuracidadeGeral-META_ACURACIDADE_SEMANAL>=0?'+':'')}{(acuracidadeGeral-META_ACURACIDADE_SEMANAL).toFixed(1)} p.p. da meta de {META_ACURACIDADE_SEMANAL}% · todo item avaliado
         </div>
       </div>
 
-      <div className="panel" style={{marginBottom:24}}>
-        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:4}}>
-          <div style={{fontSize:'var(--text-md)',fontWeight:700}}>Acuracidade Mensal — Itens Recorrentes (%)</div>
-          <span className="chart-meta-badge">Meta: {META_ACURACIDADE_SEMANAL}%</span>
+      {/* Dois painéis espelhados — "Itens Recorrentes" (azul) e "Divergência
+          Quantitativa" (teal). MESMA população de itens em ambos (pedido
+          explícito do cliente) — só a fórmula de acuracidade por documento
+          muda entre os dois (ver `itemAcuracidade` vs
+          `itemAcuracidadeQuantitativa`). Cards 2/3 de cada painel reaproveitam
+          `acuracidadeRecorrentes.codigosElegiveis`/`.totalDocumentos` nos
+          DOIS lados de propósito — garante que a população nunca diverge. */}
+      <div className="acc-dual-row">
+        <div className="acc-panel acc-panel-blue">
+          <div className="acc-panel-head">
+            <div className="acc-panel-marker"></div>
+            <div className="acc-panel-titlewrap">
+              <div className="acc-panel-titlerow">
+                <span className="acc-panel-title">Acuracidade — Itens Recorrentes</span>
+                <span
+                  className="ic"
+                  title={`Indicador oficial desde ${inicioAcumuloLabel} — meses anteriores não possuem medição comparável.`}
+                  style={{color:'var(--ink-dim)',display:'inline-flex',cursor:'help'}}
+                ><DIcon name="info" size={13} /></span>
+              </div>
+              <div className="acc-panel-desc">Somente itens com 2 ou mais contagens concluídas. Cada mês usa a data do próprio documento de contagem.</div>
+            </div>
+          </div>
+
+          <div className="acc-cards-row">
+            <div className="acc-card">
+              <div className="acc-card-head">
+                <span className="acc-card-label">Acuracidade</span>
+                <span className="acc-card-icon" style={{background:'var(--blue-bg)', color:'var(--blue)'}}><DIcon name="percent" size={14} /></span>
+              </div>
+              <div className="acc-card-value acc-card-value-lg">{acuracidadeRecorrentes.acuracidadeMedia==null ? '—' : acuracidadeRecorrentes.acuracidadeMedia.toFixed(1)+'%'}</div>
+              {mesAtualLabelUpper && <span className="acc-card-badge">{mesAtualLabelUpper} · PARCIAL</span>}
+              <div className={'acc-card-meta'+(acuracidadeRecorrentes.acuracidadeMedia!=null && acuracidadeRecorrentes.acuracidadeMedia<META_ACURACIDADE_SEMANAL ? ' danger' : '')}>
+                {acuracidadeRecorrentes.acuracidadeMedia==null
+                  ? 'sem dado no período em tela'
+                  : `${(acuracidadeRecorrentes.acuracidadeMedia-META_ACURACIDADE_SEMANAL>=0?'+':'')}${(acuracidadeRecorrentes.acuracidadeMedia-META_ACURACIDADE_SEMANAL).toFixed(1)} p.p. da meta de ${META_ACURACIDADE_SEMANAL}%`}
+              </div>
+            </div>
+            <div className="acc-card">
+              <div className="acc-card-head">
+                <span className="acc-card-label">Itens Considerados</span>
+                <span className="acc-card-icon" style={{background:'var(--blue-bg)', color:'var(--blue)'}}><DIcon name="fileText" size={14} /></span>
+              </div>
+              <div className="acc-card-value">{acuracidadeRecorrentes.codigosElegiveis}</div>
+              <div className="acc-card-desc">Itens com 2+ contagens</div>
+            </div>
+            <div className="acc-card">
+              <div className="acc-card-head">
+                <span className="acc-card-label">Total de Itens Recorrentes</span>
+                <span className="acc-card-icon" style={{background:'var(--blue-bg)', color:'var(--blue)'}}><DIcon name="repeat" size={14} /></span>
+              </div>
+              <div className="acc-card-value">{acuracidadeRecorrentes.totalDocumentos}</div>
+              <div className="acc-card-desc">No período</div>
+            </div>
+          </div>
+
+          <div className="acc-chart-head">
+            <div className="acc-chart-title">Acuracidade Mensal — Itens Recorrentes (%)</div>
+            <span className="chart-meta-badge">Meta: {META_ACURACIDADE_SEMANAL}%</span>
+          </div>
+          <div className="acc-chart-desc">Somente itens com 2 ou mais contagens concluídas. Cada mês usa a data do próprio documento de contagem.</div>
+          <MonthlyAccuracyBarChart months={acuracidadeRecorrentes.monthlyStats} meta={META_ACURACIDADE_SEMANAL} onMonthClick={(m)=>setMesSelecionado(m.key)} mesParcialKey={mesEmAndamentoKey} fonteGrande={true} corBarra="blue" />
+          <div className="acc-chart-footer">Indicador iniciado em {inicioAcumuloLabel}. Meses anteriores não possuem medição comparável.</div>
         </div>
-        <div style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)',marginBottom:16}}>
-          Somente itens com 2 ou mais contagens concluídas. Cada mês usa a data do próprio documento de contagem.
-        </div>
-        <MonthlyAccuracyBarChart months={acuracidadeRecorrentes.monthlyStats} meta={META_ACURACIDADE_SEMANAL} colorByMeta={true} onMonthClick={(m)=>setMesSelecionado(m.key)} mesParcialKey={mesEmAndamentoKey} fonteGrande={true} />
-        <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',textAlign:'center',marginTop:12}}>
-          Indicador iniciado em {inicioAcumuloLabel}. Meses anteriores não possuem medição comparável.
+
+        <div className="acc-panel acc-panel-teal">
+          <div className="acc-panel-head">
+            <div className="acc-panel-marker"></div>
+            <div className="acc-panel-titlewrap">
+              <div className="acc-panel-titlerow">
+                <span className="acc-panel-title">Acuracidade — Divergência Quantitativa (Recorrentes)</span>
+                <span
+                  className="ic"
+                  title="Mesma população de 'Itens Recorrentes' ao lado — calcula a acuracidade pela quantidade encontrada na recontagem (ex.: 99 de 100 = 99%)."
+                  style={{color:'var(--ink-dim)',display:'inline-flex',cursor:'help'}}
+                ><DIcon name="info" size={13} /></span>
+              </div>
+              <div className="acc-panel-desc">Somente itens com 2 ou mais contagens concluídas. Calcula a acuracidade pela quantidade encontrada na recontagem (ex.: 99 de 100 = 99%).</div>
+            </div>
+          </div>
+
+          <div className="acc-cards-row">
+            <div className="acc-card">
+              <div className="acc-card-head">
+                <span className="acc-card-label">Acuracidade</span>
+                <span className="acc-card-icon" style={{background:'var(--teal-bg)', color:'var(--teal)'}}><DIcon name="percent" size={14} /></span>
+              </div>
+              <div className="acc-card-value acc-card-value-lg">{divergenciaQuantitativa.acuracidadeMedia==null ? '—' : divergenciaQuantitativa.acuracidadeMedia.toFixed(1)+'%'}</div>
+              {mesAtualLabelUpperQuant && <span className="acc-card-badge">{mesAtualLabelUpperQuant} · PARCIAL</span>}
+              <div className={'acc-card-meta'+(divergenciaQuantitativa.acuracidadeMedia!=null && divergenciaQuantitativa.acuracidadeMedia<META_ACURACIDADE_SEMANAL ? ' danger' : '')}>
+                {divergenciaQuantitativa.acuracidadeMedia==null
+                  ? 'sem dado no período em tela'
+                  : `${(divergenciaQuantitativa.acuracidadeMedia-META_ACURACIDADE_SEMANAL>=0?'+':'')}${(divergenciaQuantitativa.acuracidadeMedia-META_ACURACIDADE_SEMANAL).toFixed(1)} p.p. da meta de ${META_ACURACIDADE_SEMANAL}%`}
+              </div>
+            </div>
+            <div className="acc-card">
+              <div className="acc-card-head">
+                <span className="acc-card-label">Itens Considerados</span>
+                <span className="acc-card-icon" style={{background:'var(--teal-bg)', color:'var(--teal)'}}><DIcon name="fileText" size={14} /></span>
+              </div>
+              <div className="acc-card-value">{acuracidadeRecorrentes.codigosElegiveis}</div>
+              <div className="acc-card-desc">Itens com 2+ contagens</div>
+            </div>
+            <div className="acc-card">
+              <div className="acc-card-head">
+                <span className="acc-card-label">Total de Itens Recorrentes</span>
+                <span className="acc-card-icon" style={{background:'var(--teal-bg)', color:'var(--teal)'}}><DIcon name="repeat" size={14} /></span>
+              </div>
+              <div className="acc-card-value">{acuracidadeRecorrentes.totalDocumentos}</div>
+              <div className="acc-card-desc">No período</div>
+            </div>
+          </div>
+
+          <div className="acc-chart-head">
+            <div className="acc-chart-title">Acuracidade Mensal — Divergência Quantitativa (%)</div>
+            <span className="chart-meta-badge">Meta: {META_ACURACIDADE_SEMANAL}%</span>
+          </div>
+          <div className="acc-chart-desc">Somente itens com 2 ou mais contagens concluídas. Calcula a acuracidade pela quantidade encontrada na recontagem (ex.: 99 de 100 = 99%).</div>
+          <MonthlyAccuracyBarChart months={divergenciaQuantitativa.monthlyStats} meta={META_ACURACIDADE_SEMANAL} mesParcialKey={mesEmAndamentoKey} fonteGrande={true} corBarra="teal" />
+          <div className="acc-chart-footer">Indicador iniciado em {inicioAcumuloLabel}. Meses anteriores não possuem medição comparável.</div>
         </div>
       </div>
 
