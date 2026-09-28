@@ -19426,15 +19426,16 @@ function bucketizeKanban(maquinas){
   // Entregue foge da regra acima de propósito: a fila manual (`ordem`) nem
   // participa mais desta etapa (ver `moverOrdemNaColuna`), então o que
   // importa aqui é QUANDO cada máquina terminou de ser entregue —
-  // `entregueEm` ascendente (a mais antiga primeiro, no topo; a mais
-  // recente por último, embaixo), exatamente a sequência real de entrega.
+  // `entregueEm` DESCENDENTE (a mais recente primeiro, no topo; a mais
+  // antiga por último, embaixo — corrigido a pedido do cliente, que queria
+  // a última entrega no topo, o oposto do que foi implementado antes).
   // Máquina sem `entregueEm` (dado legado, de antes deste campo existir)
   // vai pro fim, ETP como desempate final.
   buckets.entregue.sort((a,b)=>{
     if(a.entregueEm==null && b.entregueEm==null) return a.etp.localeCompare(b.etp);
     if(a.entregueEm==null) return 1;
     if(b.entregueEm==null) return -1;
-    if(a.entregueEm!==b.entregueEm) return a.entregueEm<b.entregueEm ? -1 : 1;
+    if(a.entregueEm!==b.entregueEm) return a.entregueEm>b.entregueEm ? -1 : 1;
     return a.etp.localeCompare(b.etp);
   });
   return buckets;
