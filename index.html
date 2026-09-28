@@ -14983,19 +14983,29 @@ function computeAcuracidadeItensRecorrentes(pool, dataInicioStr, dataFimStr){
 // "Itens Recorrentes". MESMA população/elegibilidade de
 // `computeAcuracidadeItensRecorrentes` (itens com 2+ documentos de
 // contagem, elegibilidade avaliada sobre o histórico inteiro do código,
-// nunca recortada pelo período do gráfico) — decisão confirmada
-// explicitamente: "não quero dois conjuntos de itens diferentes... mesmos
-// itens → dois cálculos diferentes". A única diferença de verdade é a
-// função de acuracidade por documento (`itemAcuracidadeQuantitativa` em vez
-// de `itemAcuracidade` — ver comentário lá sobre as duas fórmulas serem
-// matematicamente equivalentes na prática). Meses antes de
-// `INICIO_ACUMULO_ITENS_RECORRENTES` também mascarados pra `semMedicao`,
-// mesma regra do indicador 1. Sem drill-down por mês (não pedido pro 2º
-// indicador) — por isso não monta `documentosPorMes`/`codigosElegiveis`
-// aqui; a tela usa os mesmos `codigosElegiveis`/`totalDocumentos` de
-// `computeAcuracidadeItensRecorrentes` pros cards 2/3 dos dois painéis
-// (garantindo, pela própria implementação, que a população nunca diverge
-// entre os dois indicadores).
+// nunca recortada pelo período do gráfico, nunca uma única contagem por
+// item) — decisão confirmada explicitamente: "não quero dois conjuntos de
+// itens diferentes... mesmos itens → dois cálculos diferentes".
+//
+// A fórmula de acuracidade por documento (`itemAcuracidadeQuantitativa`) é
+// ALGEBRICAMENTE IDÊNTICA à de `itemAcuracidade` — o app grava
+// `diferenca` como `físico - sistema` no momento da contagem e nunca
+// mais mexe nesse campo depois (ver CountStep, `diffAbs`), então
+// `|diferenca| === |sistema-físico|` sempre. Por isso a diferença REAL
+// entre os dois indicadores não pode estar na fórmula por documento — está
+// em COMO os documentos se consolidam no número do mês, confirmado
+// explicitamente com o cliente: aqui pesa por ITEM (cada código conta uma
+// vez, é a média das suas próprias contagens no mês), não por documento
+// como o indicador 1 (cada contagem conta uma vez, direto). Um item com 3
+// recontagens no mês não teoricamente "pesa" 3x mais que um com 1 só.
+//
+// Meses antes de `INICIO_ACUMULO_ITENS_RECORRENTES` também mascarados pra
+// `semMedicao`, mesma regra do indicador 1. Sem drill-down por mês (não
+// pedido pro 2º indicador) — por isso não monta `documentosPorMes`/
+// `codigosElegiveis` aqui; a tela usa os mesmos `codigosElegiveis`/
+// `totalDocumentos` de `computeAcuracidadeItensRecorrentes` pros cards 2/3
+// dos dois painéis (garantindo, pela própria implementação, que a
+// população nunca diverge entre os dois indicadores).
 function computeAcuracidadeDivergenciaQuantitativa(pool, dataInicioStr, dataFimStr){
   const porCodigo = {};
   pool.forEach(c=>{
@@ -15018,7 +15028,9 @@ function computeAcuracidadeDivergenciaQuantitativa(pool, dataInicioStr, dataFimS
   while(cursor <= fim && guard < 120){
     const info = getMonthInfo(cursor.toISOString().slice(0,10));
     if(!buckets[info.key]){
-      buckets[info.key] = {key:info.key, label:info.label, sublabel:info.sublabel, total:0, somaAcuracidade:0, comAcuracidade:0};
+      // `porItem` acumula {soma, n} POR CÓDIGO dentro deste mês — é o que
+      // permite pesar por item (média das médias) em vez de por documento.
+      buckets[info.key] = {key:info.key, label:info.label, sublabel:info.sublabel, total:0, porItem:{}};
       ordem.push(info.key);
     }
     cursor.setMonth(cursor.getMonth()+1);
@@ -15030,16 +15042,21 @@ function computeAcuracidadeDivergenciaQuantitativa(pool, dataInicioStr, dataFimS
     if(!buckets[key]) return;
     buckets[key].total += 1;
     const acc = itemAcuracidadeQuantitativa(c);
-    if(acc!=null){
-      buckets[key].somaAcuracidade += acc;
-      buckets[key].comAcuracidade += 1;
-    }
+    if(acc==null) return;
+    const porItem = buckets[key].porItem;
+    if(!porItem[c.productCode]) porItem[c.productCode] = {soma:0, n:0};
+    porItem[c.productCode].soma += acc;
+    porItem[c.productCode].n += 1;
   });
   const monthlyStats = ordem.map(key=>{
     const w = buckets[key];
+    // Passo 1: média das próprias contagens de CADA item no mês. Passo 2:
+    // média dessas médias entre os itens — cada item vale 1 voto, não cada
+    // documento.
+    const mediasPorItem = Object.values(w.porItem).map(it=>it.soma/it.n);
     const m = {
       key:w.key, label:w.label, sublabel:w.sublabel, total:w.total,
-      acuracidade: w.comAcuracidade>0 ? (w.somaAcuracidade/w.comAcuracidade)*100 : null,
+      acuracidade: mediasPorItem.length>0 ? (mediasPorItem.reduce((s,v)=>s+v,0)/mediasPorItem.length)*100 : null,
     };
     return m.key < inicioAcumuloChave ? {...m, acuracidade:null, total:0, semMedicao:true} : m;
   });
@@ -16606,7 +16623,7 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
                   <span className="acc-panel-title">Acuracidade — Divergência Quantitativa (Recorrentes)</span>
                   <span
                     className="ic"
-                    title="Mesma população de 'Itens Recorrentes' ao lado — calcula a acuracidade pela quantidade encontrada na recontagem (ex.: 99 de 100 = 99%)."
+                    title="Mesma população de 'Itens Recorrentes' ao lado — calcula a acuracidade pela quantidade encontrada na recontagem (ex.: 99 de 100 = 99%). Consolidação por ITEM: cada código conta uma vez (média das suas próprias contagens no mês), não por documento."
                     style={{color:'var(--ink-dim)',display:'inline-flex',cursor:'help'}}
                   ><DIcon name="info" size={13} /></span>
                 </div>
