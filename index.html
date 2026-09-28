@@ -8498,7 +8498,7 @@ function Home({role, user, inventories, counts, historicoConcluidas=[], historic
       // Primeiro da fileira e visualmente maior (ver `big`/pnl-kpi-value-lg)
       // — pedido do cliente: "deve ser o KPI visualmente mais importante".
       key:'acuracidade', icon:'percent', bg:'var(--purple-bg)', color:'var(--purple)',
-      label:'Acuracidade do Estoque', value:hoje.acuracidade.toFixed(1).replace('.',',')+'%',
+      label:'Acuracidade do Estoque', value:hoje.acuracidade.toFixed(0)+'%',
       big:true,
       goal:<span className="pnl-kpi-goal">Meta: {META_ACURACIDADE_SEMANAL}%</span>,
       progressPct: Math.max(0, Math.min(100, hoje.acuracidade)),
