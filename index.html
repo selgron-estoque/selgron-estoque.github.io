@@ -14564,20 +14564,35 @@ function itemAcuracidade(c){
   return Math.max(0, 1 - Math.abs(c.diferenca)/c.saldoSistema);
 }
 
+// Acuracidade BINÁRIA de UM documento — só usada pelo indicador "Itens
+// Recorrentes" (painel ESQUERDO da tela Acuracidade, dentro de
+// `computeAcuracidadeItensRecorrentes`). Regra mandatória do cliente,
+// confirmada por escrito várias vezes: contagem que bate exatamente com o
+// sistema (diferenca===0) vale 100%; QUALQUER divergência, mesmo de 1
+// unidade (ex.: sistema 100 / achado 99), vale 0% — nunca graduada. Função
+// própria, separada de `itemAcuracidade` (a fórmula graduada) de propósito:
+// `itemAcuracidade` continua intocada e continua alimentando Home,
+// Dashboard, "Efeito dos Ajustes Aprovados" e o gráfico da aba Indicadores
+// — nenhum desses foi pedido pra mudar, só o indicador esquerdo desta
+// tela. O indicador DIREITO ("Divergência Quantitativa") usa
+// `itemAcuracidadeQuantitativa`, que continua graduada — é essa oposição
+// binária vs. graduada, sobre a MESMA população de itens recorrentes, que
+// o cliente pediu.
+function itemAcuracidadeBinaria(c){
+  if(c.diferenca==null) return null;
+  return c.diferenca===0 ? 1 : 0;
+}
+
 // Acuracidade "Divergência Quantitativa" de UM documento — pedido explícito
-// do cliente pro 2º indicador da tela Acuracidade: mesma população de itens
-// recorrentes do indicador "Itens Recorrentes" (ver
-// `computeAcuracidadeDivergenciaQuantitativa`), mas como função PRÓPRIA e
-// independente de `itemAcuracidade` (nunca reaproveitada por trás), porque
-// o pedido foi por "duas métricas calculadas", nunca uma alias da mesma
-// conta. Exemplos confirmados pelo cliente: sistema=100/contagem=99 → 99%;
-// 100/95 → 95%; 100/100 → 100%; 100/80 → 80% — nunca 0% só por existir
-// divergência. Na prática, com os dados hoje disponíveis (só `diferenca`,
-// não uma "quantidade encontrada" separada — ver decisão abaixo), essa
-// conta bate matematicamente com `itemAcuracidade` na maioria dos casos: os
-// dois indicadores foram pedidos com a MESMA fórmula quantitativa
-// (1 - |sistema-físico|/sistema) sobre a MESMA população, então é esperado
-// que produzam números iguais ou muito próximos — não é bug.
+// do cliente pro 2º indicador da tela Acuracidade (painel DIREITO): mesma
+// população de itens recorrentes do indicador "Itens Recorrentes" (ver
+// `computeAcuracidadeDivergenciaQuantitativa`), fórmula GRADUADA, nunca
+// binária. Exemplos confirmados pelo cliente: sistema=100/contagem=99 →
+// 99%; 100/95 → 95%; 100/100 → 100%; 100/80 → 80% — nunca 0% só por
+// existir divergência. Contraste MANDATÓRIO com o painel esquerdo, que usa
+// `itemAcuracidadeBinaria` (sistema=100/contagem=99 → 0% lá) — essa
+// oposição graduada-vs-binária é a diferença central pedida entre os dois
+// indicadores, confirmada por escrito várias vezes.
 function itemAcuracidadeQuantitativa(c){
   if(c.acuracidade!=null) return c.acuracidade;
   if(c.saldoSistema==null || c.diferenca==null) return null;
@@ -14940,9 +14955,48 @@ function computeAcuracidadeItensRecorrentes(pool, dataInicioStr, dataFimStr){
   // comparação pelas 2 primeiras partes da chave 'YYYY-MM' (mesmo formato
   // de `INICIO_ACUMULO_ITENS_RECORRENTES` cortado pra 'YYYY-MM').
   const inicioAcumuloChave = INICIO_ACUMULO_ITENS_RECORRENTES.slice(0,7);
-  const monthlyStats = computeMonthlyStats(elegiveis, dataInicioStr, dataFimStr).map(m =>
-    m.key < inicioAcumuloChave ? {...m, acuracidade:null, total:0, semMedicao:true} : m
-  );
+  // Monta a série mensal com `itemAcuracidadeBinaria` (nunca a
+  // `computeMonthlyStats` genérica, que usa a fórmula graduada
+  // `itemAcuracidade` — ela continua intocada pros outros usos: Home,
+  // Dashboard, Indicadores, "Efeito dos Ajustes Aprovados"). Mesmo
+  // esqueleto de meses (cursor mês a mês de `dataInicioStr` até
+  // `dataFimStr`) que `computeMonthlyStats` monta, só a pontuação por
+  // documento que muda.
+  const bucketsBin = {};
+  const ordemBin = [];
+  let cursorBin = new Date(dataInicioStr + 'T00:00:00');
+  cursorBin.setDate(1);
+  const fimBin = new Date(dataFimStr + 'T00:00:00');
+  fimBin.setDate(1);
+  let guardBin = 0;
+  while(cursorBin <= fimBin && guardBin < 120){
+    const info = getMonthInfo(cursorBin.toISOString().slice(0,10));
+    if(!bucketsBin[info.key]){
+      bucketsBin[info.key] = {key:info.key, label:info.label, sublabel:info.sublabel, total:0, somaAcuracidade:0, comAcuracidade:0};
+      ordemBin.push(info.key);
+    }
+    cursorBin.setMonth(cursorBin.getMonth()+1);
+    guardBin++;
+  }
+  elegiveis.forEach(c=>{
+    if(!c.data) return;
+    const {key} = getMonthInfo(c.data);
+    if(!bucketsBin[key]) return;
+    bucketsBin[key].total += 1;
+    const acc = itemAcuracidadeBinaria(c);
+    if(acc!=null){
+      bucketsBin[key].somaAcuracidade += acc;
+      bucketsBin[key].comAcuracidade += 1;
+    }
+  });
+  const monthlyStats = ordemBin.map(key=>{
+    const w = bucketsBin[key];
+    const m = {
+      key:w.key, label:w.label, sublabel:w.sublabel, total:w.total,
+      acuracidade: w.comAcuracidade>0 ? (w.somaAcuracidade/w.comAcuracidade)*100 : null,
+    };
+    return m.key < inicioAcumuloChave ? {...m, acuracidade:null, total:0, semMedicao:true} : m;
+  });
   const mesesComDado = monthlyStats.filter(m=>m.acuracidade!=null);
   const acuracidadeMedia = mesesComDado.length>0
     ? mesesComDado.reduce((s,m)=>s+m.acuracidade,0)/mesesComDado.length
@@ -14987,17 +15041,16 @@ function computeAcuracidadeItensRecorrentes(pool, dataInicioStr, dataFimStr){
 // item) — decisão confirmada explicitamente: "não quero dois conjuntos de
 // itens diferentes... mesmos itens → dois cálculos diferentes".
 //
-// A fórmula de acuracidade por documento (`itemAcuracidadeQuantitativa`) é
-// ALGEBRICAMENTE IDÊNTICA à de `itemAcuracidade` — o app grava
-// `diferenca` como `físico - sistema` no momento da contagem e nunca
-// mais mexe nesse campo depois (ver CountStep, `diffAbs`), então
-// `|diferenca| === |sistema-físico|` sempre. Por isso a diferença REAL
-// entre os dois indicadores não pode estar na fórmula por documento — está
-// em COMO os documentos se consolidam no número do mês, confirmado
-// explicitamente com o cliente: aqui pesa por ITEM (cada código conta uma
-// vez, é a média das suas próprias contagens no mês), não por documento
-// como o indicador 1 (cada contagem conta uma vez, direto). Um item com 3
-// recontagens no mês não teoricamente "pesa" 3x mais que um com 1 só.
+// Diferença MANDATÓRIA entre os dois indicadores, confirmada por escrito
+// várias vezes pelo cliente: o indicador 1 (esquerda) usa
+// `itemAcuracidadeBinaria` — sistema 100/achado 99 vale 0% (qualquer
+// divergência zera, só bate exato = 100%). Este indicador (direita) usa
+// `itemAcuracidadeQuantitativa` — sistema 100/achado 99 vale 99% (fórmula
+// graduada: 1 - |sistema-físico|/sistema). Além da fórmula, a consolidação
+// também difere: aqui pesa por ITEM (cada código conta uma vez, é a média
+// das suas próprias contagens no mês), não por documento como o indicador
+// 1 (cada contagem conta uma vez, direto). Um item com 3 recontagens no
+// mês não "pesa" 3x mais que um com 1 só.
 //
 // Meses antes de `INICIO_ACUMULO_ITENS_RECORRENTES` também mascarados pra
 // `semMedicao`, mesma regra do indicador 1. Sem drill-down por mês (não
@@ -16562,7 +16615,7 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
                   <span className="acc-panel-title">Acuracidade — Itens Recorrentes</span>
                   <span
                     className="ic"
-                    title={`Indicador oficial desde ${inicioAcumuloLabel} — meses anteriores não possuem medição comparável.`}
+                    title={`Indicador oficial desde ${inicioAcumuloLabel} — meses anteriores não possuem medição comparável. Contagem que bate exatamente com o sistema conta 100%; qualquer divergência, mesmo pequena, conta 0%.`}
                     style={{color:'var(--ink-dim)',display:'inline-flex',cursor:'help'}}
                   ><DIcon name="info" size={13} /></span>
                 </div>
