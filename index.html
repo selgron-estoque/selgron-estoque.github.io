@@ -16583,6 +16583,21 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
   // item elegível avaliado (ex.: recém virou o mês, ninguém recontou nada
   // ainda) — o card mostra 0 nesse caso, não esconde o card.
   const mesAtualStats = acuracidadeRecorrentes.monthlyStats.find(m=>m.key===mesEmAndamentoKey) || null;
+  // Cards 2/3 ("Itens Considerados"/"Total de Itens Recorrentes") — pedido
+  // do cliente: filtrar pelo MÊS corrente, não mostrar o acumulado do
+  // histórico inteiro. `totalDocumentosMes` já vem pronto de
+  // `mesAtualStats.total` (nº de documentos elegíveis QUE CAÍRAM neste mês
+  // — o mesmo campo que já alimentava o 3º card antes do redesign de dois
+  // painéis). `itensConsideradosMes` deriva de `documentosPorMes` (nº de
+  // CÓDIGOS distintos entre esses documentos do mês) — não existia como
+  // campo pronto, calculado aqui. Os dois usam SEMPRE `acuracidadeRecorrentes`
+  // (painel esquerdo) nos DOIS painéis — garante que a população mostrada
+  // nunca diverge entre os dois indicadores, mesma decisão já tomada pro
+  // acumulado antes.
+  const documentosMesAtual = acuracidadeRecorrentes.documentosPorMes[mesEmAndamentoKey] || [];
+  const itensConsideradosMes = new Set(documentosMesAtual.map(d=>d.productCode)).size;
+  const totalDocumentosMes = mesAtualStats ? mesAtualStats.total : 0;
+  const mesEmAndamentoLabelLower = mesEmAndamentoInfo.label.toLowerCase()+'/'+mesEmAndamentoInfo.sublabel;
   // O selo "SET/2026 · PARCIAL" no card de acuracidade só aparece quando o
   // mês corrente JÁ contribui de verdade pra média mostrada (senão o selo
   // apontaria pro mês corrente sem nenhum dado dele estar de fato refletido
@@ -16607,8 +16622,11 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
           explícito do cliente) — só a fórmula de acuracidade por documento
           muda entre os dois (ver `itemAcuracidade` vs
           `itemAcuracidadeQuantitativa`). Cards 2/3 de cada painel reaproveitam
-          `acuracidadeRecorrentes.codigosElegiveis`/`.totalDocumentos` nos
-          DOIS lados de propósito — garante que a população nunca diverge. */}
+          `itensConsideradosMes`/`totalDocumentosMes` (derivados de
+          `acuracidadeRecorrentes`, painel esquerdo) nos DOIS lados de
+          propósito — garante que a população nunca diverge. Filtrados pelo
+          MÊS corrente (pedido do cliente), não mais o acumulado do
+          histórico inteiro. */}
       <div className="acc-dual-row">
         <div className="acc-panel-group">
           <div className="acc-panel acc-panel-blue">
@@ -16646,16 +16664,16 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
                   <span className="acc-card-label">Itens Considerados</span>
                   <span className="acc-card-icon" style={{background:'var(--blue-bg)', color:'var(--blue)'}}><DIcon name="fileText" size={15} /></span>
                 </div>
-                <div className="acc-card-value">{acuracidadeRecorrentes.codigosElegiveis}</div>
-                <div className="acc-card-desc">Itens com 2+ contagens</div>
+                <div className="acc-card-value">{itensConsideradosMes}</div>
+                <div className="acc-card-desc">Itens com 2+ contagens · {mesEmAndamentoLabelLower}</div>
               </div>
               <div className="acc-card">
                 <div className="acc-card-head">
                   <span className="acc-card-label">Total de Itens Recorrentes</span>
                   <span className="acc-card-icon" style={{background:'var(--blue-bg)', color:'var(--blue)'}}><DIcon name="repeat" size={15} /></span>
                 </div>
-                <div className="acc-card-value">{acuracidadeRecorrentes.totalDocumentos}</div>
-                <div className="acc-card-desc">No período</div>
+                <div className="acc-card-value">{totalDocumentosMes}</div>
+                <div className="acc-card-desc">Em {mesEmAndamentoLabelLower}</div>
               </div>
             </div>
           </div>
@@ -16707,16 +16725,16 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
                   <span className="acc-card-label">Itens Considerados</span>
                   <span className="acc-card-icon" style={{background:'var(--teal-bg)', color:'var(--teal)'}}><DIcon name="fileText" size={15} /></span>
                 </div>
-                <div className="acc-card-value">{acuracidadeRecorrentes.codigosElegiveis}</div>
-                <div className="acc-card-desc">Itens com 2+ contagens</div>
+                <div className="acc-card-value">{itensConsideradosMes}</div>
+                <div className="acc-card-desc">Itens com 2+ contagens · {mesEmAndamentoLabelLower}</div>
               </div>
               <div className="acc-card">
                 <div className="acc-card-head">
                   <span className="acc-card-label">Total de Itens Recorrentes</span>
                   <span className="acc-card-icon" style={{background:'var(--teal-bg)', color:'var(--teal)'}}><DIcon name="repeat" size={15} /></span>
                 </div>
-                <div className="acc-card-value">{acuracidadeRecorrentes.totalDocumentos}</div>
-                <div className="acc-card-desc">No período</div>
+                <div className="acc-card-value">{totalDocumentosMes}</div>
+                <div className="acc-card-desc">Em {mesEmAndamentoLabelLower}</div>
               </div>
             </div>
           </div>
