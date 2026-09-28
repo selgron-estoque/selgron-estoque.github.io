@@ -2814,10 +2814,13 @@ async function fetchMaquinasEtpTracking(){
 // adicionada (ver "PROGRAMAÇÃO: MESMA ETP EM VÁRIAS LINHAS" no schema.sql)
 // — sem ela, um item não saberia a qual card ele pertence quando a mesma
 // ETP tem card em mais de uma linha, e apareceria duplicado nas duas.
+// `entregue_em` adicionada pra mostrar/ordenar a data de entrega no card
+// (ver `entregueEm` em `computeMaquinasPainelTracking`/`MaquinaCardTracking`
+// — mesmo dado que já aparece na tela real "Programação", index.html).
 async function fetchItensSeparacaoTracking(){
   if(!supabaseClient) return [];
   try{
-    const { data, error } = await supabaseClient.from('sequencia_separacao').select('id, etp, status, linha');
+    const { data, error } = await supabaseClient.from('sequencia_separacao').select('id, etp, status, linha, entregue_em');
     if(error) throw error;
     return data || [];
   }catch(err){
@@ -2913,6 +2916,13 @@ function computeMaquinasPainelTracking(itens, maquinasEtp, hojeStr){
     const status = maquina ? maquina.status : statusAgregadoMaquinaTracking(itensDaMaquina);
     const dataSeparacao = maquina ? maquina.dataSeparacao : null;
     const atrasada = !!(dataSeparacao && dataSeparacao<hojeStr && status!=='separada' && status!=='entregue');
+    // Mesma lógica de `entregueEm` em `computeMaquinasPainel` (index.html) —
+    // o `entregueEm` mais recente entre os itens da ETP (o instante em que
+    // o ÚLTIMO item terminou, já que o status só vira 'entregue' quando
+    // todos os itens estão). Usado pra ordenar a coluna Entregue
+    // (`bucketizeKanbanTracking`) e mostrar no card (`MaquinaCardTracking`).
+    let entregueEm = null;
+    itensDaMaquina.forEach(i=>{ if(i.entregue_em && (!entregueEm || i.entregue_em>entregueEm)) entregueEm = i.entregue_em; });
     return {
       etp, status,
       urgente: maquina ? maquina.urgente : false,
@@ -2925,7 +2935,7 @@ function computeMaquinasPainelTracking(itens, maquinasEtp, hojeStr){
       codigoProduto: maquina ? maquina.codigoProduto : null,
       descricao: maquina ? maquina.descricao : null,
       linha: maquina ? maquina.linha : null,
-      dataSeparacao, atrasada,
+      dataSeparacao, atrasada, entregueEm,
     };
   });
 
@@ -2951,6 +2961,17 @@ function bucketizeKanbanTracking(maquinas){
     else if(m.status==='separada') buckets.separada.push(m);
     else if(m.status==='entregue') buckets.entregue.push(m);
   });
+  // Mesma regra de `bucketizeKanban` (index.html): a coluna Entregue ordena
+  // por `entregueEm` ASCENDENTE (a mais antiga no topo, a mais recente
+  // embaixo) — não pela fila manual `ordem`. Máquina sem `entregueEm`
+  // (dado legado) vai pro fim, ETP como desempate final.
+  buckets.entregue.sort((a,b)=>{
+    if(a.entregueEm==null && b.entregueEm==null) return a.etp.localeCompare(b.etp);
+    if(a.entregueEm==null) return 1;
+    if(b.entregueEm==null) return -1;
+    if(a.entregueEm!==b.entregueEm) return a.entregueEm<b.entregueEm ? -1 : 1;
+    return a.etp.localeCompare(b.etp);
+  });
   return buckets;
 }
 
@@ -2963,7 +2984,9 @@ function bucketizeKanbanTracking(maquinas){
 // "Descrição"/observação destacada/Data de Separação — a spec pediu um
 // card fixo bem mais compacto (~134px) sem espaço pra essas linhas extras;
 // esse dado continua 100% preservado no banco e na tela real "Programação"
-// (index.html), só não aparece mais neste card da TV. Urgente/Atrasada
+// (index.html), só não aparece mais neste card da TV. Exceção: "Entregue
+// em" (pedido posterior do cliente) aparece SÓ no card de uma máquina já
+// entregue (`m.entregueEm`), mesma linha que a tela real mostra. Urgente/Atrasada
 // usam a MESMA linguagem visual discreta (borda 1px + selo pequeno) —
 // nunca o card inteiro fica vermelho; se as 2 coisas forem verdade ao
 // mesmo tempo, só o selo "Urgente" aparece (prioridade), pra não duplicar
@@ -3018,6 +3041,11 @@ function MaquinaCardTracking({m, corStripe}){
             <span className="tp-cliente">{m.cliente || 'Cliente não informado'}</span>
           </div>
           {metaChassiCodigo && <div className="tp-meta">{metaChassiCodigo}</div>}
+          {m.entregueEm && (
+            <div className="tp-meta">
+              Entregue em: {new Date(m.entregueEm).toLocaleDateString('pt-BR')} às {new Date(m.entregueEm).toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'})}
+            </div>
+          )}
         </div>
         <div className="tp-card-right">
           <div className={'tp-stock-block com' + (saldo.desatualizado ? ' tp-stock-desatualizado' : '')}>
