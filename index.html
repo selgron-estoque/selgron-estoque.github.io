@@ -1423,7 +1423,13 @@
     .acc-panel-titlewrap{flex:1;min-width:0;}
     .acc-panel-titlerow{display:flex;align-items:center;gap:6px;}
     .acc-panel-title{font-size:16px;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.3px;}
-    .acc-panel-desc{font-size:13px;color:var(--ink-dim);margin-top:5px;line-height:1.4;}
+    /* min-height reserva sempre 2 linhas — a descrição do painel teal é mais
+       longa que a do azul e quebra pra 2 linhas num painel largo o
+       suficiente onde a azul cabe numa linha só; sem isso os dois painéis
+       (que precisam ficar com a MESMA altura, pedido explícito do cliente)
+       ficavam alguns pixels desalinhados por causa só da diferença de
+       texto. */
+    .acc-panel-desc{font-size:13px;color:var(--ink-dim);margin-top:5px;line-height:1.4;min-height:36px;}
     /* Grid fixo 46/27/27 (não auto-fit) — os 2 painéis precisam manter a
        MESMA proporção sempre, nunca reagir ao tamanho do conteúdo de um
        card específico (regra de simetria do pedido do cliente). */
@@ -16515,16 +16521,6 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
   const mesAtualStatsQuant = divergenciaQuantitativa.monthlyStats.find(m=>m.key===mesEmAndamentoKey) || null;
   const mesAtualLabelUpperQuant = (mesAtualStatsQuant && mesAtualStatsQuant.acuracidade!=null) ? mesEmAndamentoLabelUpper : null;
 
-  // "Acuracidade Geral" — pedido do cliente: mostrar lado a lado com "Itens
-  // Recorrentes" nesta mesma aba, pra deixar claro que são dois indicadores
-  // com regra de cálculo independente (um considera TODO item já avaliado,
-  // o outro só os com 2+ contagens concluídas). Reaproveita
-  // `acuracidadeGeralAte` — a MESMA função que já alimenta "Acuracidade
-  // Geral" (Dashboard) e "Acuracidade do Estoque" (Home) — nunca uma
-  // lógica paralela; mesmo pool `todasParaQualidade` já deduplicado/só-
-  // concluído que o resto desta página usa.
-  const acuracidadeGeral = acuracidadeGeralAte(todasParaQualidade, hojeStr);
-
   // "Efeito dos Ajustes Aprovados" — mesmo pool deduplicado
   // (`todasParaQualidade`) e o mesmo intervalo de data do filtro desta
   // página (`dataInicioStr`/`dataFimStr`).
@@ -16533,21 +16529,6 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
   return (
     <div>
       <div className="section-title">Acuracidade</div>
-
-      {/* "Acuracidade Geral" — indicador independente dos dois painéis
-          abaixo (todo item já avaliado, não só recorrentes), mantido acima
-          deles sem alteração de cálculo — só saiu da fileira de 3 cards de
-          antes pra não competir visualmente com o par de painéis novo. */}
-      <div className="ops-kpi-card" style={{maxWidth:300, marginBottom:20}}>
-        <div className="ops-kpi-head">
-          <span className="ops-kpi-label">Acuracidade Geral</span>
-          <span className="ops-kpi-icon" style={{background:'var(--blue-bg)', color:'var(--blue)'}}><DIcon name="percent" size={15} /></span>
-        </div>
-        <div className="ops-kpi-value">{acuracidadeGeral.toFixed(1)+'%'}</div>
-        <div className={'ops-kpi-meta'+(acuracidadeGeral<META_ACURACIDADE_SEMANAL ? ' danger' : '')}>
-          {(acuracidadeGeral-META_ACURACIDADE_SEMANAL>=0?'+':'')}{(acuracidadeGeral-META_ACURACIDADE_SEMANAL).toFixed(1)} p.p. da meta de {META_ACURACIDADE_SEMANAL}% · todo item avaliado
-        </div>
-      </div>
 
       {/* Dois painéis espelhados — "Itens Recorrentes" (azul) e "Divergência
           Quantitativa" (teal). MESMA população de itens em ambos (pedido
