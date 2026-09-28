@@ -15134,32 +15134,36 @@ function buildPoolTendencia(counts, historicoParaTendencia){
   return [...counts, ...historicoComoContagem];
 }
 
-// "Acuracidade Geral" (Dashboard) / "Acuracidade do Estoque" (Home) — pedido
-// explícito do cliente depois de ver os dois números não baterem com a
-// média visível no gráfico "Acuracidade Mensal": "eu quero que a
-// acuracidade mensal seja referente as contagens e a acuracidade geral
-// seja referente a média mensal". Ou seja, este valor precisa ser
-// EXATAMENTE a média das barras que aparecem em "Acuracidade Mensal" — não
-// mais um cálculo independente sobre um pool deduplicado/só-concluído
-// (`acuracidadeMediaMensal`/`todasParaQualidade`, usado numa rodada
-// anterior — essa era a causa real da divergência, não bug de fórmula).
-// Mesmo recorte que o gráfico já usa: ano corrente até `dataLimiteStr`
-// (permite comparar "hoje" vs. "ontem" pro indicador de tendência do card,
-// sem quebrar esse recurso já existente).
-// Recebe um pool JÁ DEDUPLICADO por documento (ultimaContagemPorDocumento) —
-// antes recebia (counts, historicoParaTendencia) e montava o pool por conta
-// própria via buildPoolTendencia (sem dedup, cada rodada de uma recontagem
-// contava separado). Alinhado com AcuracidadePanel ("Acuracidade Geral do
-// Estoque") a pedido do cliente ("sim, alinhe") — mesma decisão já tomada
-// e justificada lá: "se houve uma contagem errada na primeira vez e na
-// recontagem foi contado e bateu, então a acuracidade não pode ser afetada
-// por um erro operacional" (Opção 1 — dedup só dentro do mesmo documento,
-// nunca entre documentos/inventários independentes do mesmo código).
+// "Acuracidade do Estoque" (Home) — único uso hoje (o card "Acuracidade
+// Geral" que existia na página Acuracidade foi removido a pedido do
+// cliente, e o gráfico "Acuracidade Mensal" de Indicadores usa
+// `computeMonthlyStats`/`itemAcuracidade` direto, sem passar por aqui).
+// Pedido MANDATÓRIO do cliente: este card usa a mesma regra BINÁRIA do
+// indicador "Itens Recorrentes" da página Acuracidade —
+// `itemAcuracidadeBinaria` (contagem que bate exatamente com o sistema =
+// 100%, qualquer divergência = 0%), nunca a fórmula graduada
+// (`itemAcuracidade`). ATENÇÃO — isso quebra de propósito o alinhamento
+// que existia antes com a média do gráfico "Acuracidade Mensal"
+// (Indicadores, que continua graduado): os dois números podem não bater
+// mais. Mesmo recorte de sempre: ano corrente até `dataLimiteStr` (permite
+// comparar "hoje" vs. "ontem" pro indicador de tendência do card), média
+// das médias mensais (mês sem nenhum documento elegível não entra na
+// conta). Recebe um pool JÁ DEDUPLICADO por documento
+// (ultimaContagemPorDocumento, ver `acumuladoAte`).
 function acuracidadeGeralAte(pool, dataLimiteStr){
   const anoStr = String(new Date(dataLimiteStr+'T00:00:00').getFullYear()) + '-01-01';
-  const monthly = computeMonthlyStats(pool, anoStr, dataLimiteStr);
-  const meses = monthly.filter(m=>m.acuracidade!=null);
-  return meses.length>0 ? (meses.reduce((s,m)=>s+m.acuracidade,0)/meses.length) : 100;
+  const porMes = {};
+  pool.forEach(c=>{
+    if(!c.data || c.data < anoStr || c.data > dataLimiteStr) return;
+    const {key} = getMonthInfo(c.data);
+    const acc = itemAcuracidadeBinaria(c);
+    if(acc==null) return;
+    if(!porMes[key]) porMes[key] = {soma:0, n:0};
+    porMes[key].soma += acc;
+    porMes[key].n += 1;
+  });
+  const mediasMensais = Object.values(porMes).map(m=>(m.soma/m.n)*100);
+  return mediasMensais.length>0 ? (mediasMensais.reduce((s,v)=>s+v,0)/mediasMensais.length) : 100;
 }
 
 // "Efeito dos Ajustes Aprovados" (Indicadores) — pedido de um coordenador
