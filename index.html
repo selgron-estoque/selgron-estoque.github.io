@@ -15359,13 +15359,12 @@ function MonthlyAccuracyBarChart({months, meta=META_ACURACIDADE_SEMANAL, colorBy
   // aqui. Também liga o rótulo "95%" ao lado da linha de meta (pedido
   // explícito só pros 2 painéis novos).
   const corBarraFill = corBarra==='blue' ? 'var(--blue)' : corBarra==='teal' ? 'var(--teal)' : null;
-  // `fonteGrande` — só o gráfico "Acuracidade Mensal — Itens Recorrentes"
-  // (Acuracidade) usa este conjunto de tamanhos separado; o outro uso deste
-  // componente (Indicadores) mantém os tamanhos originais — por isso um
-  // prop explícito (default `false`), nunca um tamanho fixo mudado aqui
-  // pros dois usos. Reduzido em 50% a pedido do cliente depois do 1º ajuste
-  // (ficou grande demais) — nome do prop mantido por simplicidade, mesmo
-  // não sendo mais literalmente "grande".
+  // `fonteGrande` — prop histórico (ficou sem uso ativo: os dois gráficos da
+  // tela Acuracidade pararam de passar `true` depois do cliente reportar
+  // que o texto tinha ficado pequeno/ilegível lá — hoje usam o MESMO
+  // tamanho padrão do gráfico de Indicadores, de propósito, pra ficarem
+  // igualmente legíveis). Mantido (default `false`) só por segurança, caso
+  // algum uso futuro precise de um tamanho menor de novo.
   const fs = fonteGrande
     ? {eixoY:6, valor:6.5, tracoSemMedicao:8, mes:6, ano:5.5, parcial:5, legenda:6}
     : {eixoY:10, valor:11, tracoSemMedicao:14, mes:10, ano:10, parcial:8, legenda:10};
@@ -16593,7 +16592,7 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
               <span className="chart-meta-badge">Meta: {META_ACURACIDADE_SEMANAL}%</span>
             </div>
             <div className="acc-chart-desc">Somente itens com 2 ou mais contagens concluídas. Cada mês usa a data do próprio documento de contagem.</div>
-            <MonthlyAccuracyBarChart months={acuracidadeRecorrentes.monthlyStats} meta={META_ACURACIDADE_SEMANAL} onMonthClick={(m)=>setMesSelecionado(m.key)} mesParcialKey={mesEmAndamentoKey} fonteGrande={true} corBarra="blue" />
+            <MonthlyAccuracyBarChart months={acuracidadeRecorrentes.monthlyStats} meta={META_ACURACIDADE_SEMANAL} onMonthClick={(m)=>setMesSelecionado(m.key)} mesParcialKey={mesEmAndamentoKey} corBarra="blue" />
             <div className="acc-chart-footer">Indicador iniciado em {inicioAcumuloLabel}. Meses anteriores não possuem medição comparável.</div>
           </div>
         </div>
@@ -16654,7 +16653,7 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
               <span className="chart-meta-badge">Meta: {META_ACURACIDADE_SEMANAL}%</span>
             </div>
             <div className="acc-chart-desc">Somente itens com 2 ou mais contagens concluídas. Calcula a acuracidade pela quantidade encontrada na recontagem (ex.: 99 de 100 = 99%).</div>
-            <MonthlyAccuracyBarChart months={divergenciaQuantitativa.monthlyStats} meta={META_ACURACIDADE_SEMANAL} mesParcialKey={mesEmAndamentoKey} fonteGrande={true} corBarra="teal" />
+            <MonthlyAccuracyBarChart months={divergenciaQuantitativa.monthlyStats} meta={META_ACURACIDADE_SEMANAL} mesParcialKey={mesEmAndamentoKey} corBarra="teal" />
             <div className="acc-chart-footer">Indicador iniciado em {inicioAcumuloLabel}. Meses anteriores não possuem medição comparável.</div>
           </div>
         </div>
