@@ -389,6 +389,15 @@
   .tp-bar-pct{font-size:13px;font-weight:700;color:var(--tpink);}
   .tp-bar-track{width:100%;height:4px;border-radius:99px;background:var(--tptrack);overflow:hidden;}
   .tp-bar-fill{height:100%;border-radius:99px;background:var(--tpfill);}
+  /* "Tudo entregue" — máquina sem NENHUM item faltante (COM SALDO e SEM
+     SALDO os dois zerados, ver `tudoEntregue` em `MaquinaCardTracking`).
+     Reaproveita os mesmos tokens verdes de `.tp-stock-block.com`
+     (--tpcomsaldo-bg/-ink), não uma cor nova. */
+  .tp-done-box{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;background:var(--tpcomsaldo-bg);margin-top:6px;}
+  .tp-done-icon{width:26px;height:26px;border-radius:50%;background:var(--tpcomsaldo-ink);color:var(--tpcard);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .tp-done-text{min-width:0;}
+  .tp-done-title{display:flex;align-items:center;gap:6px;font-family:var(--font-corp);font-size:12px;font-weight:700;color:var(--tpink);}
+  .tp-done-desc{font-family:var(--font-corp);font-size:10.5px;color:var(--tpink-dim);margin-top:1px;}
 
   /* ---- Pedidos de Compra (3ª tela do painel) — painel executivo, cores
      FIXAS (não seguem `--bg`/`--panel`/etc. do resto do app, nem o toggle
@@ -2730,6 +2739,10 @@ const DICON_PATHS_TRACKING = {
   alertTriangle: <><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></>,
   clock: <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></>,
   flame: <><path d="M12 22c4.4 0 7.5-3 7.5-7 0-3-1.7-5-3-6.7C15.8 10 15 11.3 14 11.3c-1 0-1-1.5-1-3 0-2.3-1.2-4.3-3-5.3C10.5 5 8 7.5 8 11c0-1 .3-2 .8-2.8C6.5 9.7 4.5 12.3 4.5 15c0 4 3.1 7 7.5 7Z"/></>,
+  // Só o traço do check (sem contorno de círculo) — usado DENTRO de um
+  // círculo preenchido própio (`.tp-done-icon`), não como ícone solto tipo
+  // os outros daqui — ver `MaquinaCardTracking`.
+  check: <path d="M20 6 9 17l-5-5"/>,
 };
 function DIconTracking({name, size=18, strokeWidth=1.8}){
   return (
@@ -3019,7 +3032,15 @@ function MaquinaCardTracking({m, corStripe}){
   else if(m.atrasada) classes.push('tp-atrasada');
   const saldo = m.saldo || {status:'loading'};
   const totalSaldo = saldo.status==='ok' ? (saldo.comSaldo + saldo.semSaldo) : 0;
-  const pct = totalSaldo>0 ? Math.round((saldo.comSaldo/totalSaldo)*100) : 0;
+  // Nenhum item faltante encontrado (COM SALDO e SEM SALDO os dois zerados,
+  // com a consulta já tendo respondido — `status==='ok'`) — não é "0% de
+  // disponibilidade" (o que a conta de baixo daria, enganoso), é o OPOSTO:
+  // não sobrou NADA pra separar dessa máquina. Pedido do cliente: nesse
+  // caso o card troca os 2 blocos COM SALDO/SEM SALDO (que só mostrariam
+  // "0"/"0", sem dizer nada de útil) por uma confirmação verde só, e a
+  // barra mostra 100% em vez do "0%" que a conta bruta daria.
+  const tudoEntregue = saldo.status==='ok' && totalSaldo===0;
+  const pct = tudoEntregue ? 100 : (totalSaldo>0 ? Math.round((saldo.comSaldo/totalSaldo)*100) : 0);
   // Pedido do cliente: a barra "Disponibilidade de materiais" muda de cor
   // por faixa — 95-100% verde, 80-94% amarelo, abaixo de 80% vermelho —
   // em vez de sempre verde não importa o valor.
@@ -3044,18 +3065,20 @@ function MaquinaCardTracking({m, corStripe}){
           </div>
           {metaChassiCodigo && <div className="tp-meta">{metaChassiCodigo}</div>}
         </div>
-        <div className="tp-card-right">
-          <div className={'tp-stock-block com' + (saldo.desatualizado ? ' tp-stock-desatualizado' : '')}>
-            {saldo.desatualizado && <DIconTracking name="clock" size={8} />}
-            <span className="num">{saldo.status==='ok' ? saldo.comSaldo : (saldo.status==='loading' ? '…' : '—')}</span>
-            <span className="lbl">COM SALDO</span>
+        {!tudoEntregue && (
+          <div className="tp-card-right">
+            <div className={'tp-stock-block com' + (saldo.desatualizado ? ' tp-stock-desatualizado' : '')}>
+              {saldo.desatualizado && <DIconTracking name="clock" size={8} />}
+              <span className="num">{saldo.status==='ok' ? saldo.comSaldo : (saldo.status==='loading' ? '…' : '—')}</span>
+              <span className="lbl">COM SALDO</span>
+            </div>
+            <div className={'tp-stock-block sem' + (saldo.desatualizado ? ' tp-stock-desatualizado' : '')}>
+              {saldo.desatualizado && <DIconTracking name="clock" size={8} />}
+              <span className="num">{saldo.status==='ok' ? saldo.semSaldo : (saldo.status==='loading' ? '…' : '—')}</span>
+              <span className="lbl">SEM SALDO</span>
+            </div>
           </div>
-          <div className={'tp-stock-block sem' + (saldo.desatualizado ? ' tp-stock-desatualizado' : '')}>
-            {saldo.desatualizado && <DIconTracking name="clock" size={8} />}
-            <span className="num">{saldo.status==='ok' ? saldo.semSaldo : (saldo.status==='loading' ? '…' : '—')}</span>
-            <span className="lbl">SEM SALDO</span>
-          </div>
-        </div>
+        )}
       </div>
       <div className="tp-card-bottom">
         <div className="tp-bar-header">
@@ -3063,6 +3086,18 @@ function MaquinaCardTracking({m, corStripe}){
           <span className="tp-bar-pct">{pct}%</span>
         </div>
         <div className="tp-bar-track"><div className="tp-bar-fill" style={{width: pct+'%', background: corBarra}}></div></div>
+        {tudoEntregue && (
+          <div className="tp-done-box">
+            <div className="tp-done-icon"><DIconTracking name="check" size={16} strokeWidth={3} /></div>
+            <div className="tp-done-text">
+              <div className="tp-done-title">
+                Todos os materiais foram entregues.
+                {saldo.desatualizado && <DIconTracking name="clock" size={11} />}
+              </div>
+              <div className="tp-done-desc">Nenhuma pendência no estoque ou para entrega.</div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
