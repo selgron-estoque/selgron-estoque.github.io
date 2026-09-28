@@ -2984,9 +2984,11 @@ function bucketizeKanbanTracking(maquinas){
 // "Descrição"/observação destacada/Data de Separação — a spec pediu um
 // card fixo bem mais compacto (~134px) sem espaço pra essas linhas extras;
 // esse dado continua 100% preservado no banco e na tela real "Programação"
-// (index.html), só não aparece mais neste card da TV. Exceção: "Entregue
-// em" (pedido posterior do cliente) aparece SÓ no card de uma máquina já
-// entregue (`m.entregueEm`), mesma linha que a tela real mostra. Urgente/Atrasada
+// (index.html), só não aparece mais neste card da TV — "Entregue em"
+// (`m.entregueEm`) foi tentado aqui também, mas removido a pedido do
+// cliente ("não do jeito que desejo", vai ser revisado depois); o campo
+// continua calculado (só usado pra ordenar a coluna Entregue, ver
+// `bucketizeKanbanTracking`), só não é mais exibido no card. Urgente/Atrasada
 // usam a MESMA linguagem visual discreta (borda 1px + selo pequeno) —
 // nunca o card inteiro fica vermelho; se as 2 coisas forem verdade ao
 // mesmo tempo, só o selo "Urgente" aparece (prioridade), pra não duplicar
@@ -3041,11 +3043,6 @@ function MaquinaCardTracking({m, corStripe}){
             <span className="tp-cliente">{m.cliente || 'Cliente não informado'}</span>
           </div>
           {metaChassiCodigo && <div className="tp-meta">{metaChassiCodigo}</div>}
-          {m.entregueEm && (
-            <div className="tp-meta">
-              Entregue em: {new Date(m.entregueEm).toLocaleDateString('pt-BR')} às {new Date(m.entregueEm).toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'})}
-            </div>
-          )}
         </div>
         <div className="tp-card-right">
           <div className={'tp-stock-block com' + (saldo.desatualizado ? ' tp-stock-desatualizado' : '')}>
