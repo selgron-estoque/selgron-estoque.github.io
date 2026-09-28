@@ -797,6 +797,19 @@ function itemAcuracidade(c){
   return Math.max(0, 1 - Math.abs(c.diferenca)/c.saldoSistema);
 }
 
+// Portado de index.html (`itemAcuracidadeBinaria`) — mesma regra
+// MANDATÓRIA do cliente pro indicador "Itens Recorrentes": contagem que
+// bate exatamente com o sistema (diferenca===0) vale 100%; QUALQUER
+// divergência, mesmo de 1 unidade, vale 0%. Só usada pelo card
+// "Acuracidade (itens recontados)" deste painel (`computeAcuracidadeItensRecorrentes`
+// abaixo) — `itemAcuracidade` (graduada) continua intocada e continua
+// alimentando os outros gráficos desta página (Acuracidade Semanal/Mensal
+// de tendência).
+function itemAcuracidadeBinaria(c){
+  if(c.diferenca==null) return null;
+  return c.diferenca===0 ? 1 : 0;
+}
+
 function localDateStr(d){
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
@@ -956,6 +969,13 @@ function buildPoolItensRecorrentes(counts, historicoParaTendencia){
 // fora por completo, nunca é fabricado como 100%/0%. Versão enxuta da
 // original (sem `documentosPorMes`/`evolucao` — esse drill-down não existe
 // aqui, só o card de KPI precisa do número mensal).
+//
+// Pontuação BINÁRIA (`itemAcuracidadeBinaria`, não `itemAcuracidade`/
+// `computeMonthlyStats` — regra mandatória do cliente, mesma correção já
+// portada pra index.html: bateu exato = 100%, qualquer divergência = 0%).
+// Bucketing mensal PRÓPRIO (não chama `computeMonthlyStats`, que
+// continua graduada — ainda alimenta o gráfico de tendência deste
+// painel, linha ~2229 — nunca deveria mudar aqui).
 function computeAcuracidadeItensRecorrentes(pool, dataInicioStr, dataFimStr){
   const porCodigo = {};
   pool.forEach(c=>{
@@ -967,7 +987,40 @@ function computeAcuracidadeItensRecorrentes(pool, dataInicioStr, dataFimStr){
     if(arr.length < 2) return; // regra fundamental: só itens com 2+ documentos
     elegiveis.push(...arr);
   });
-  const monthlyStats = computeMonthlyStats(elegiveis, dataInicioStr, dataFimStr);
+  const buckets = {};
+  const ordem = [];
+  let cursor = new Date(dataInicioStr + 'T00:00:00');
+  cursor.setDate(1);
+  const fim = new Date(dataFimStr + 'T00:00:00');
+  fim.setDate(1);
+  let guard = 0;
+  while(cursor <= fim && guard < 120){
+    const info = getMonthInfo(cursor.toISOString().slice(0,10));
+    if(!buckets[info.key]){
+      buckets[info.key] = {key:info.key, label:info.label, sublabel:info.sublabel, total:0, somaAcuracidade:0, comAcuracidade:0};
+      ordem.push(info.key);
+    }
+    cursor.setMonth(cursor.getMonth()+1);
+    guard++;
+  }
+  elegiveis.forEach(c=>{
+    if(!c.data) return;
+    const {key} = getMonthInfo(c.data);
+    if(!buckets[key]) return;
+    buckets[key].total += 1;
+    const acc = itemAcuracidadeBinaria(c);
+    if(acc!=null){
+      buckets[key].somaAcuracidade += acc;
+      buckets[key].comAcuracidade += 1;
+    }
+  });
+  const monthlyStats = ordem.map(key=>{
+    const w = buckets[key];
+    return {
+      key:w.key, label:w.label, sublabel:w.sublabel, total:w.total,
+      acuracidade: w.comAcuracidade>0 ? (w.somaAcuracidade/w.comAcuracidade)*100 : null,
+    };
+  });
   return { monthlyStats, elegiveis };
 }
 
