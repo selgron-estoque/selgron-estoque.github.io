@@ -16629,7 +16629,7 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
                   <span className="acc-card-label">Acuracidade</span>
                   <span className="acc-card-icon" style={{background:'var(--blue-bg)', color:'var(--blue)'}}><DIcon name="percent" size={15} /></span>
                 </div>
-                <div className="acc-card-value">{acuracidadeRecorrentes.acuracidadeMedia==null ? '—' : acuracidadeRecorrentes.acuracidadeMedia.toFixed(1)+'%'}</div>
+                <div className="acc-card-value">{acuracidadeRecorrentes.acuracidadeMedia==null ? '—' : acuracidadeRecorrentes.acuracidadeMedia.toFixed(0)+'%'}</div>
                 {mesAtualLabelUpper && <span className="acc-card-badge">{mesAtualLabelUpper} · PARCIAL</span>}
                 <div className={'acc-card-meta'+(acuracidadeRecorrentes.acuracidadeMedia!=null && acuracidadeRecorrentes.acuracidadeMedia<META_ACURACIDADE_SEMANAL ? ' danger' : '')}>
                   {acuracidadeRecorrentes.acuracidadeMedia==null
@@ -16690,7 +16690,7 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
                   <span className="acc-card-label">Acuracidade</span>
                   <span className="acc-card-icon" style={{background:'var(--teal-bg)', color:'var(--teal)'}}><DIcon name="percent" size={15} /></span>
                 </div>
-                <div className="acc-card-value">{divergenciaQuantitativa.acuracidadeMedia==null ? '—' : divergenciaQuantitativa.acuracidadeMedia.toFixed(1)+'%'}</div>
+                <div className="acc-card-value">{divergenciaQuantitativa.acuracidadeMedia==null ? '—' : divergenciaQuantitativa.acuracidadeMedia.toFixed(0)+'%'}</div>
                 {mesAtualLabelUpperQuant && <span className="acc-card-badge">{mesAtualLabelUpperQuant} · PARCIAL</span>}
                 <div className={'acc-card-meta'+(divergenciaQuantitativa.acuracidadeMedia!=null && divergenciaQuantitativa.acuracidadeMedia<META_ACURACIDADE_SEMANAL ? ' danger' : '')}>
                   {divergenciaQuantitativa.acuracidadeMedia==null
