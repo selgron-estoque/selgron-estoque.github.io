@@ -19359,6 +19359,15 @@ function computeMaquinasPainel(itens, maquinasEtp, hojeStr){
     // ciclo (nunca marca como atrasada algo já separado/entregue) — dado
     // só informativo agora, não decide mais ordenação nenhuma.
     const atrasada = !!(dataSeparacao && dataSeparacao<hojeStr && status!=='separada' && status!=='entregue');
+    // Timestamp de entrega da MÁQUINA = o `entregueEm` mais recente entre os
+    // itens dela — como o status só vira 'entregue' quando TODOS os itens já
+    // estão 'entregue' (ver `statusAgregadoMaquina`), esse é o instante em
+    // que o ÚLTIMO item terminou, ou seja, quando a máquina como um todo
+    // ficou pronta. Usado só pra ordenar a coluna Entregue do Kanban (ver
+    // `bucketizeKanban`) — null em máquina ainda não entregue, ou entregue
+    // via dado legado de antes deste campo existir.
+    let entregueEm = null;
+    itensDaMaquina.forEach(i=>{ if(i.entregueEm && (!entregueEm || i.entregueEm>entregueEm)) entregueEm = i.entregueEm; });
     return {
       etp,
       status,
@@ -19374,6 +19383,7 @@ function computeMaquinasPainel(itens, maquinasEtp, hojeStr){
       linha: maquina ? maquina.linha : null,
       dataSeparacao,
       atrasada,
+      entregueEm,
     };
   });
 
@@ -19401,7 +19411,9 @@ function computeMaquinasPainel(itens, maquinasEtp, hojeStr){
 // `status!=='separada' && status!=='entregue'` na origem, ver
 // `computeMaquinasPainel`) — cada máquina aparece em EXATAMENTE 1 coluna,
 // nunca duas. Ordem relativa dentro de cada bucket preserva a ordem de
-// entrada (já vem ordenada por `ordem`/ETP).
+// entrada (já vem ordenada por `ordem`/ETP) — EXCETO a coluna Entregue, que
+// é reordenada logo abaixo pela sequência real de entrega (pedido explícito
+// do cliente: "deixar na sequência de entrega de cima para baixo").
 function bucketizeKanban(maquinas){
   const buckets = {aguardando:[], emSeparacao:[], separada:[], atrasada:[], entregue:[]};
   maquinas.forEach(m=>{
@@ -19410,6 +19422,20 @@ function bucketizeKanban(maquinas){
     else if(m.status==='em_separacao') buckets.emSeparacao.push(m);
     else if(m.status==='separada') buckets.separada.push(m);
     else if(m.status==='entregue') buckets.entregue.push(m);
+  });
+  // Entregue foge da regra acima de propósito: a fila manual (`ordem`) nem
+  // participa mais desta etapa (ver `moverOrdemNaColuna`), então o que
+  // importa aqui é QUANDO cada máquina terminou de ser entregue —
+  // `entregueEm` ascendente (a mais antiga primeiro, no topo; a mais
+  // recente por último, embaixo), exatamente a sequência real de entrega.
+  // Máquina sem `entregueEm` (dado legado, de antes deste campo existir)
+  // vai pro fim, ETP como desempate final.
+  buckets.entregue.sort((a,b)=>{
+    if(a.entregueEm==null && b.entregueEm==null) return a.etp.localeCompare(b.etp);
+    if(a.entregueEm==null) return 1;
+    if(b.entregueEm==null) return -1;
+    if(a.entregueEm!==b.entregueEm) return a.entregueEm<b.entregueEm ? -1 : 1;
+    return a.etp.localeCompare(b.etp);
   });
   return buckets;
 }
