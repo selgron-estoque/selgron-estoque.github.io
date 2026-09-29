@@ -78,6 +78,20 @@ const TIMEOUT_CHAMADA_MS = 45000;
 const REGEX_RETRY_AFTER = /retry after (\d+)\s*ms/i;
 const MAX_TENTATIVAS = 3;
 
+// Pedido do cliente: uma ETP que já está "tudo entregue" (com_saldo=0 E
+// sem_saldo=0, a consulta não achou NENHUM item faltante) NUNCA MAIS é
+// reconsultada — skip permanente enquanto essa linha do cache existir.
+// Decisão explícita do cliente (confirmada depois de eu levantar o risco de
+// uma ETP feita pra estoque, zerada, ser vendida depois e ganhar itens
+// novos sem o card ser mexido): "vamos seguir que quando completa não
+// checa mais, caso precise eu adiciono o mesmo card com a mesma ETP" — ou
+// seja, o GATILHO pra voltar a checar é humano, nunca automático por tempo.
+// O MECANISMO exato desse gatilho no front-end (index.html — resetar
+// `saldo_etp_cache` ao excluir a máquina, ou ao readicionar a mesma
+// ETP+linha, ainda em discussão com o cliente) é um pedido SEPARADO, ainda
+// não implementado — sem ele, uma linha "tudo entregue" fica pulada pra
+// sempre, sem nenhum jeito de forçar uma nova checagem.
+
 function resposta(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
     status,
@@ -166,7 +180,25 @@ Deno.serve(async (_req: Request) => {
       const linha = r.linha || LINHA_PADRAO;
       paresMap.set(`${r.etp}|${linha}`, { etp: r.etp, linha });
     }
-    const pares = Array.from(paresMap.values());
+    const todosPares = Array.from(paresMap.values());
+
+    // Pula ETPs já "tudo entregue" (com_saldo=0 E sem_saldo=0) — skip
+    // PERMANENTE, ver comentário completo mais acima. Busca o cache ATUAL
+    // de todo mundo de uma vez (1 select), nunca por par — nunca vale a
+    // pena trocar isso por N consultas individuais.
+    const cacheRes = await supabase.from("saldo_etp_cache").select("etp,linha,com_saldo,sem_saldo,atualizado_em");
+    if (cacheRes.error) throw cacheRes.error;
+    const cachePorChave = new Map<string, { comSaldo: number | null; semSaldo: number | null; atualizadoEm: string | null }>();
+    for (const r of (cacheRes.data || []) as { etp: string; linha: string; com_saldo: number | null; sem_saldo: number | null; atualizado_em: string | null }[]) {
+      cachePorChave.set(`${r.etp}|${r.linha}`, { comSaldo: r.com_saldo, semSaldo: r.sem_saldo, atualizadoEm: r.atualizado_em });
+    }
+    const pares = todosPares.filter(({ etp, linha }) => {
+      const cache = cachePorChave.get(`${etp}|${linha}`);
+      if (!cache || !cache.atualizadoEm) return true; // nunca consultada com sucesso — sempre entra
+      const tudoEntregue = cache.comSaldo === 0 && cache.semSaldo === 0;
+      return !tudoEntregue; // tudo entregue → pula pra sempre; ainda pendente → sempre entra
+    });
+    const puladas = todosPares.length - pares.length;
 
     let sucesso = 0;
     let comErro = 0;
@@ -211,11 +243,14 @@ Deno.serve(async (_req: Request) => {
         status: "sucesso",
         itens_processados: sucesso,
         erro: comErro > 0 ? `${comErro} ETP(s) falharam nesta rodada (mantido o último valor bom, quando existia)` : null,
+        // `puladas` (ETPs já "tudo entregue", skip permanente) some do que
+        // fica gravado em `erro` de propósito — não é uma falha, registrar
+        // como se fosse ia confundir quem olhar o histórico depois.
         concluido_em: new Date().toISOString(),
       })
       .eq("id", logRow!.id);
 
-    return resposta(200, { ok: true, totalEtps: pares.length, sucesso, comErro });
+    return resposta(200, { ok: true, totalEtps: todosPares.length, consultadas: pares.length, puladas, sucesso, comErro });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     await supabase
