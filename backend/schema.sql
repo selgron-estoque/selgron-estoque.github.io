@@ -2871,12 +2871,26 @@ alter table saldo_etp_cache enable row level security;
 
 -- Leitura liberada pra qualquer autenticado (mesmo critério já usado em
 -- `painel_indicadores_config`) — só números de contagem, sem dado sensível
--- nenhum, não precisa do gate por tela. Sem policy nenhuma de
--- insert/update/delete pra usuário comum — só a Edge Function (que usa
--- SUPABASE_SERVICE_ROLE_KEY, ignora RLS) escreve aqui.
+-- nenhum, não precisa do gate por tela. Sem policy nenhuma de insert/update
+-- pra usuário comum — só a Edge Function (que usa SUPABASE_SERVICE_ROLE_KEY,
+-- ignora RLS) escreve os números de saldo aqui. Exceção: DELETE (logo
+-- abaixo), liberado pra "resetar" uma linha específica.
 drop policy if exists "leitura autenticada" on saldo_etp_cache;
 create policy "leitura autenticada" on saldo_etp_cache for select
   using (auth.role() = 'authenticated');
+
+-- Pedido do cliente: uma ETP marcada "tudo entregue" (com_saldo=0 E
+-- sem_saldo=0) para de ser reconsultada pra sempre pelo processo agendado
+-- (skip permanente, ver atualizar-cache-saldo-etp/index.ts) — o único jeito
+-- de "destravar" isso é humano: reabrir "Adicionar ETP" (index.html) pra
+-- essa mesma ETP+linha e salvar de novo. `upsertMaquinaEtp` deleta a linha
+-- correspondente daqui nesse fluxo, forçando o próximo ciclo do processo
+-- agendado a reconsultar do zero — sem essa policy, o DELETE do front-end
+-- (chave anon, não service role) seria bloqueado pela RLS em silêncio.
+-- Mesmo gate por tela já usado pra inserir/atualizar `maquinas_etp`.
+drop policy if exists "exclusao por tela" on saldo_etp_cache;
+create policy "exclusao por tela" on saldo_etp_cache for delete
+  using (tem_acesso_tela(auth.uid(), 'programacaoSeparacao'));
 
 -- Realtime — a TV atualiza sozinha assim que o processo agendado grava um
 -- resultado novo, sem esperar o próximo ciclo de 5 min nem dar F5. Bloco
