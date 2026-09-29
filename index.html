@@ -17660,6 +17660,28 @@ async function upsertMaquinaEtp(m, extra){
     if(extra && typeof extra.urgente==='boolean') patch.urgente = extra.urgente;
     const { error } = await supabaseClient.from('maquinas_etp').upsert(patch, {onConflict:'etp,linha'});
     if(error) throw error;
+    // `extra` só vem preenchido (ordem/urgente) numa máquina GENUINAMENTE
+    // NOVA (ver `AdicionarEtpModal.handleAdicionarEtp`) — `extra===undefined`
+    // aqui significa "Atualizar ETP" numa máquina que já existia (ou o passo
+    // de dados do rename, ver `renomearEtp`). Pedido do cliente: reabrir
+    // "Adicionar ETP" pra uma ETP que já está "tudo entregue" (skip
+    // permanente no processo agendado, ver atualizar-cache-saldo-etp) e
+    // salvar de novo precisa "destravar" essa ETP — apaga a linha
+    // correspondente de `saldo_etp_cache`, forçando o próximo ciclo do
+    // processo agendado a reconsultar do zero. Best-effort DE VERDADE: try/
+    // catch PRÓPRIO, separado do try/catch principal desta função — sem
+    // isso, uma falha (rede, RLS) nesta parte secundária faria o try/catch
+    // de fora tratar a função INTEIRA como falha, mesmo já tendo salvo a
+    // máquina com sucesso na linha acima (bug real pego pelos testes:
+    // `res.ok` voltava `false` num cenário que devia voltar `true`).
+    if(!extra){
+      try{
+        const { error: errCache } = await supabaseClient.from('saldo_etp_cache').delete().eq('etp', patch.etp).eq('linha', patch.linha);
+        if(errCache) console.warn('Falha ao resetar cache de saldo da ETP (não bloqueia o salvamento):', errCache);
+      }catch(errCacheThrow){
+        console.warn('Falha ao resetar cache de saldo da ETP (não bloqueia o salvamento):', errCacheThrow);
+      }
+    }
     return {ok:true};
   }catch(err){
     console.warn('Falha ao salvar cache de máquina (ETP):', err);
