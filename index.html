@@ -16651,7 +16651,10 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
   // app, ver CLAUDE.md "Persistência de Dados").
   const [itemDivergenciaSelecionado, setItemDivergenciaSelecionado] = useState(null);
   const [buscaDivergencia, setBuscaDivergencia] = useState('');
-  const [ordemDivergencia, setOrdemDivergencia] = useState({coluna:'divergentes', direcao:'desc'});
+  // Padrão pedido pelo cliente: ordenado por Última Divergência (mais
+  // recente primeiro) — item que divergiu há pouco tempo aparece no topo,
+  // antes de qualquer outro critério.
+  const [ordemDivergencia, setOrdemDivergencia] = useState({coluna:'ultimaDivergencia', direcao:'desc'});
   // Paginação da tabela — pedido do cliente depois de ver a lista crescer
   // pra mais de 100 itens (sem o filtro de período que limitava antes, ver
   // comentário em `dataInicioStr`/`dataFimStr` acima). 10 por página.
