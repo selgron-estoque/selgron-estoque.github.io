@@ -246,6 +246,29 @@
   .kpi-card-secondary .txt{font-size:12px;font-weight:400;color:var(--ink-dim);line-height:16px;}
   .kpi-card-secondary .trend-valor{font-size:14px;font-weight:700;line-height:18px;margin-top:6px;}
   .kpi-card-secondary .trend-texto{font-size:12px;font-weight:400;color:var(--ink-dim);line-height:16px;}
+  /* Layout "hero" — só o card de Divergências (`heroValor`/`heroLabel` em
+     `KpiCard`), pedido explícito do cliente com print: o número principal
+     (59) precisa dominar visualmente o card, muito mais que "36%"/"+269%"
+     — antes os três pareciam ter a mesma importância. Duas áreas lado a
+     lado (~45%/~55%, sem grid fixo em px — `flex-basis` em % resiste
+     melhor a título/período mais compridos puxando a largura do card todo
+     que um valor fixo faria), separadas por uma linha vertical bem sutil
+     (1px, cor `--line`, a mesma de qualquer borda discreta do resto do
+     app). Reaproveita `.kpi-card-secondary` (classe combinada, ver JSX)
+     pros estilos de `.pct`/`.txt`/`.trend-*` já existentes — só o que
+     muda aqui é o CONTAINER (width fixa de 158px vira flexível) e o
+     tamanho do `.pct` (ver abaixo). */
+  .kpi-card-hero-row{display:flex;align-items:stretch;height:100%;}
+  .kpi-card-hero-left{flex:0 0 45%;min-width:0;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;}
+  /* 46px/peso 800 — dentro da faixa pedida (42-48px), no limite superior
+     de peso (700 OU 800) pra maximizar o contraste com os números
+     secundários à direita, sem caixa/borda/fundo ao redor (pedido
+     explícito: nada de badge/glow/círculo, só tipografia+espaço). */
+  .kpi-card-hero-valor{font-family:var(--font-mono);font-size:46px;font-weight:800;line-height:1;color:var(--ink);}
+  .kpi-card-hero-label{font-size:11px;font-weight:700;letter-spacing:0.8px;color:var(--ink-dim);text-transform:uppercase;margin-top:6px;}
+  .kpi-card-hero-divider{width:1px;align-self:stretch;background:var(--line);margin:0 18px;flex-shrink:0;}
+  .kpi-card-hero-right.kpi-card-secondary{flex:1 1 auto;width:auto;min-width:0;}
+  .kpi-card-hero-right .pct{font-size:26px;line-height:28px;}
   /* Barra de progresso (só o Card 3/Contagens usa) — dentro do body, numa
      faixa própria no rodapé (`justify-content:space-between` do
      `.kpi-card-body` empurra ela pro fim, sempre dentro da altura fixa). */
@@ -1213,7 +1236,18 @@ function MonthlyAccuracyBarChart({months, meta=META_ACURACIDADE_SEMANAL}){
 // diferente do "rótulo ........ valor" dos outros 3 cards). `progresso`
 // (nó React) é a barra de progresso do card de Contagens, empurrada pro
 // rodapé do corpo via `justify-content:space-between` do `.kpi-card-body`.
-function KpiCard({icon, iconBg, iconColor, titulo, periodo, valor, corValor, meta, linhas, direitaCustom, progresso}){
+//
+// `heroValor`/`heroLabel` (opcionais, só o card de Divergências usa): pedido
+// explícito do cliente, com print, pra dar mais HIERARQUIA visual ao número
+// principal desse card específico — ele reclamou que "59"/"36%"/"+269%"
+// pareciam ter a mesma importância. Quando `heroValor` é passado, o corpo
+// usa um layout PRÓPRIO (`.kpi-card-hero-*`, ver CSS) — número grande à
+// esquerda (~45% da largura) + rótulo abaixo dele, linha divisória sutil,
+// `direitaCustom` à direita (~55%) — em vez do `.kpi-card-body-row`
+// genérico dos outros 3 cards (número + meta/linhas lado a lado, menores).
+// SEM `heroValor`, o comportamento é EXATAMENTE o de antes, intocado —
+// nenhum dos outros 3 cards passa essa prop.
+function KpiCard({icon, iconBg, iconColor, titulo, periodo, valor, corValor, meta, linhas, direitaCustom, progresso, heroValor, heroLabel}){
   return (
     <div className="kpi-card">
       <div className="kpi-card-content">
@@ -1223,20 +1257,31 @@ function KpiCard({icon, iconBg, iconColor, titulo, periodo, valor, corValor, met
           {periodo && <div className="kpi-card-periodo">{periodo}</div>}
         </div>
         <div className="kpi-card-body">
-          <div className="kpi-card-body-row">
-            <div className="kpi-card-primary">
-              <div className="kpi-card-valor" style={corValor ? {color:corValor} : undefined}>{valor}</div>
-              {meta!=null && <div className="kpi-card-meta">Meta: {meta}</div>}
+          {heroValor!=null ? (
+            <div className="kpi-card-hero-row">
+              <div className="kpi-card-hero-left">
+                <div className="kpi-card-hero-valor" style={corValor ? {color:corValor} : undefined}>{heroValor}</div>
+                {heroLabel && <div className="kpi-card-hero-label">{heroLabel}</div>}
+              </div>
+              <div className="kpi-card-hero-divider"></div>
+              <div className="kpi-card-hero-right kpi-card-secondary">{direitaCustom}</div>
             </div>
-            <div className="kpi-card-secondary">
-              {direitaCustom ? direitaCustom : (linhas||[]).map((l,i)=>(
-                <div key={i} className="kpi-card-info-row">
-                  <span>{l.rotulo}</span>
-                  <span className="v" style={l.cor ? {color:l.cor} : undefined}>{l.valor}</span>
-                </div>
-              ))}
+          ) : (
+            <div className="kpi-card-body-row">
+              <div className="kpi-card-primary">
+                <div className="kpi-card-valor" style={corValor ? {color:corValor} : undefined}>{valor}</div>
+                {meta!=null && <div className="kpi-card-meta">Meta: {meta}</div>}
+              </div>
+              <div className="kpi-card-secondary">
+                {direitaCustom ? direitaCustom : (linhas||[]).map((l,i)=>(
+                  <div key={i} className="kpi-card-info-row">
+                    <span>{l.rotulo}</span>
+                    <span className="v" style={l.cor ? {color:l.cor} : undefined}>{l.valor}</span>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
           {progresso}
         </div>
       </div>
@@ -2688,7 +2733,8 @@ function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfig,
           icon={IconDivergencias} iconBg="var(--danger-bg)" iconColor="var(--danger)"
           titulo="Divergências na semana"
           periodo={`Semana atual (${formatDDMM(semanaAtualInicio)} a ${formatDDMM(semanaAtualFim)})`}
-          valor={kpiDivergentes}
+          heroValor={kpiDivergentes}
+          heroLabel="DIVERGÊNCIAS"
           corValor="var(--danger)"
           direitaCustom={
             <>
