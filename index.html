@@ -16454,10 +16454,7 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
 // Recalcula, de forma independente (este componente não recebe nem
 // compartilha nenhum estado local de `Dashboard`), EXATAMENTE as mesmas
 // fórmulas já usadas lá antes desta extração — nenhuma regra de cálculo
-// foi alterada, só a localização. Tem seu próprio filtro de período
-// (`usePersistedState('acuracidadeTrendFilter', ...)`, chave diferente de
-// `'dashboardTrendFilter'`) — as duas páginas guardam a própria escolha de
-// período sem interferir uma na outra.
+// foi alterada, só a localização.
 
 // Drill-down modal de "Acuracidade Mensal — Itens Recorrentes": abre ao
 // clicar numa barra do gráfico em `AcuracidadePanel`, mostrando EXATAMENTE
@@ -16639,7 +16636,6 @@ function AcuracidadeMesDetalheModal({mes, itens, onClose}){
 }
 
 function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendencia=[], historicoCarregado=true}){
-  const [trendFilter, setTrendFilter] = usePersistedState('acuracidadeTrendFilter', {tipo:'30d', from:'', to:''});
   // Mês selecionado no gráfico "Acuracidade Mensal — Itens Recorrentes" pra
   // abrir o drill-down (`AcuracidadeMesDetalheModal`) — guarda só a `key`
   // ('YYYY-MM'), nunca o objeto do mês em si, pra sempre reler o dado mais
@@ -16656,6 +16652,11 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
   const [itemDivergenciaSelecionado, setItemDivergenciaSelecionado] = useState(null);
   const [buscaDivergencia, setBuscaDivergencia] = useState('');
   const [ordemDivergencia, setOrdemDivergencia] = useState({coluna:'divergentes', direcao:'desc'});
+  // Paginação da tabela — pedido do cliente depois de ver a lista crescer
+  // pra mais de 100 itens (sem o filtro de período que limitava antes, ver
+  // comentário em `dataInicioStr`/`dataFimStr` acima). 10 por página.
+  const [paginaDivergencia, setPaginaDivergencia] = useState(1);
+  const DIVERGENCIA_POR_PAGINA = 10;
   // Checklist "O que investigar" (painel de análise) — só um lembrete visual
   // de pontos a conferir, sem afirmar causa nenhuma (ver comentário completo
   // em `computeItensDivergenciaRecorrente`); marcar não grava em lugar
@@ -16700,11 +16701,16 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
     .filter(c => !OPEN_STATUSES.includes(c.statusAprovacao));
 
   const hojeStr = hojeLocalStr();
-  const trendRange = computeTrendRange(trendFilter.tipo, hojeStr, trendFilter.from, trendFilter.to);
-  let dataInicioStr = trendRange.from, dataFimStr = trendRange.to;
-  if(dataInicioStr > dataFimStr) dataInicioStr = dataFimStr;
-
   const anoAtualStr = String(new Date().getFullYear()) + '-01-01';
+  // "Itens com Divergência Recorrente" usava um filtro de período próprio
+  // ("Filtros", presets Hoje/Esta semana/.../Personalizado) — removido a
+  // pedido do cliente (achou redundante/poluído nesta tela). Passa a usar o
+  // MESMO intervalo fixo já usado pelos outros dois indicadores desta
+  // página (Itens Recorrentes/Divergência Quantitativa, logo abaixo): ano
+  // corrente inteiro até hoje — sem UI de filtro nenhuma, mesmo critério de
+  // "nunca diverge a população entre os indicadores da página" já seguido
+  // aqui.
+  const dataInicioStr = anoAtualStr, dataFimStr = hojeStr;
 
   // "Acuracidade dos Itens Recorrentes" — SUBSTITUI por completo o antigo
   // comparativo "Geral vs. Contados" (`AccuracyComparisonBarChart`), pedido
@@ -16801,7 +16807,22 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
     setOrdemDivergencia(prev => prev.coluna===coluna
       ? {coluna, direcao: prev.direcao==='asc' ? 'desc' : 'asc'}
       : {coluna, direcao:'desc'});
+    setPaginaDivergencia(1);
   }
+  function alterarBuscaDivergencia(v){
+    setBuscaDivergencia(v);
+    setPaginaDivergencia(1);
+  }
+  // Paginação — mesmo padrão já usado em `UserManagementPanel`
+  // (`currentPage = Math.min(page, totalPages)`, clampa sem precisar de
+  // efeito/setState no meio do render quando a busca/ordenação encolhe a
+  // lista abaixo da página em que o usuário estava).
+  const totalPaginasDivergencia = Math.max(1, Math.ceil(itensDivergenciaOrdenados.length / DIVERGENCIA_POR_PAGINA));
+  const paginaAtualDivergencia = Math.min(paginaDivergencia, totalPaginasDivergencia);
+  const itensDivergenciaPagina = itensDivergenciaOrdenados.slice(
+    (paginaAtualDivergencia-1)*DIVERGENCIA_POR_PAGINA,
+    paginaAtualDivergencia*DIVERGENCIA_POR_PAGINA,
+  );
   // Item selecionado pode ter saído da lista filtrada/mudado de conteúdo
   // (ex.: filtro de período mudou) — relê sempre do array atual pelo
   // código, nunca guarda o objeto em si (mesmo critério de `mesSelecionado`
@@ -16954,18 +16975,9 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
         onClose={()=>setMesSelecionado(null)}
       />
 
-      <TrendFilterBar
-        trendFilter={trendFilter}
-        setTrendFilter={setTrendFilter}
-        dataInicioStr={dataInicioStr}
-        dataFimStr={dataFimStr}
-        hojeStr={hojeStr}
-        subtitle="Período usado por 'Itens com Divergência Recorrente' abaixo"
-      />
-
       <div className="section-title">Itens com Divergência Recorrente</div>
       <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginBottom:16,maxWidth:720}}>
-        Itens contados 2 ou mais vezes dentro do período selecionado em "Filtros", com divergência
+        Itens contados 2 ou mais vezes no ano corrente, com divergência
         (qualquer diferença entre sistema e contagem física) em pelo menos uma dessas contagens —
         aponta item com possível problema estrutural (endereço, unidade de medida, cadastro,
         movimentação) pra investigar, sem afirmar qual é a causa.
@@ -17015,7 +17027,7 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
               <input
                 type="text"
                 value={buscaDivergencia}
-                onChange={e=>setBuscaDivergencia(e.target.value)}
+                onChange={e=>alterarBuscaDivergencia(e.target.value)}
                 placeholder="Buscar código ou descrição..."
               />
             </div>
@@ -17055,7 +17067,7 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
                   </tr>
                 </thead>
                 <tbody>
-                  {itensDivergenciaOrdenados.map((it)=>(
+                  {itensDivergenciaPagina.map((it)=>(
                     <tr
                       key={it.productCode}
                       className={'divrec-row'+(itemDivergenciaAtivo && itemDivergenciaAtivo.productCode===it.productCode ? ' selected' : '')}
@@ -17077,10 +17089,17 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
           {itensDivergenciaRecorrente.totalItens>0 && (
             <div className="divrec-footer">
               <span>
-                Mostrando {itensDivergenciaOrdenados.length} {itensDivergenciaOrdenados.length===1?'item':'itens'}
-                {buscaDivergenciaNorm ? ` de ${itensDivergenciaRecorrente.totalItens}` : ''}
-                {' · '}Considera apenas produtos com 2 ou mais contagens no período e com pelo menos uma divergência.
+                Mostrando {itensDivergenciaPagina.length} de {itensDivergenciaOrdenados.length} {itensDivergenciaOrdenados.length===1?'item':'itens'}
+                {buscaDivergenciaNorm ? ` (filtrado de ${itensDivergenciaRecorrente.totalItens})` : ''}
+                {' · '}Considera apenas produtos com 2 ou mais contagens no ano corrente e com pelo menos uma divergência.
               </span>
+              {totalPaginasDivergencia>1 && (
+                <div style={{display:'flex',alignItems:'center',gap:10}}>
+                  <button type="button" className="btn btn-outline" style={{width:'auto',padding:'6px 12px'}} disabled={paginaAtualDivergencia<=1} onClick={()=>setPaginaDivergencia(p=>p-1)}>‹ Anterior</button>
+                  <span style={{fontFamily:'var(--font-mono)'}}>{paginaAtualDivergencia} de {totalPaginasDivergencia}</span>
+                  <button type="button" className="btn btn-outline" style={{width:'auto',padding:'6px 12px'}} disabled={paginaAtualDivergencia>=totalPaginasDivergencia} onClick={()=>setPaginaDivergencia(p=>p+1)}>Próxima ›</button>
+                </div>
+              )}
             </div>
           )}
         </div>
