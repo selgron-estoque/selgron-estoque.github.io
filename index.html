@@ -783,43 +783,6 @@
      usado por "Divergência por Família/Grupo" nesta mesma tela, sem CSS
      próprio novo. */
 
-  /* Card "Saúde do Inventário" — pedido do cliente com imagem de referência
-     (selo + variação vs. período anterior + mini gráfico + acuracidade
-     atual em destaque). Cor de fundo/destaque muda por faixa de status
-     (Excelente/Bom/Atenção/Crítico), calculada em InventoryHealthCard.
-     Empilhado (coluna) é o padrão AGORA — cliente reportou (2x, com print de
-     tablet) o layout em linha (`flex-wrap:wrap`, breakpoint antigo só abaixo
-     de 640px) ficando espremido/colado no filtro "Filtros" logo abaixo em
-     larguras de tablet (640-1024px, onde a fileira ainda tentava caber tudo
-     lado a lado e sobrava pouco respiro). Empilhar por padrão e só voltar
-     pra lado a lado a partir de 1024px (mesmo raciocínio geral do resto do
-     app: card com bastante conteúdo, largura de tablet raramente sobra
-     espaço de sobra pra isso) resolve pra qualquer tela de celular/tablet
-     de uma vez, sem depender de acertar um breakpoint estreito específico. */
-  .health-card{display:flex;flex-direction:column;align-items:stretch;gap:16px;border-radius:18px;padding:22px 26px;margin-bottom:24px;}
-  .health-left{display:flex;align-items:flex-start;gap:14px;min-width:0;}
-  .health-icon{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
-  .health-eyebrow{font-family:var(--font-mono);font-size:var(--text-2xs);text-transform:uppercase;letter-spacing:1px;color:var(--ink-dim);margin-bottom:2px;}
-  .health-status{font-family:var(--font-display);font-size:22px;font-weight:700;line-height:1.2;}
-  .health-sub{font-size:var(--text-sm);font-weight:600;margin-top:1px;}
-  .health-desc{font-size:var(--text-sm);color:var(--ink-dim);margin-top:6px;max-width:340px;}
-  .health-chart{order:3;}
-  .health-current{background:var(--panel);border-radius:14px;padding:14px 22px;text-align:center;box-shadow:0 2px 10px rgba(0,0,0,.06);order:2;}
-  .health-current-value{font-family:var(--font-display);font-size:26px;font-weight:700;}
-  .health-current-label{font-size:var(--text-xs);color:var(--ink-dim);margin-top:2px;white-space:nowrap;}
-  @media (min-width:1024px){
-    .health-card{flex-direction:row;align-items:center;gap:24px;margin-bottom:18px;flex-wrap:wrap;}
-    .health-left{flex:1;min-width:220px;}
-    /* Antes flex:1.4/max-width:360px — sobrava muito espaço vazio ao redor
-       do mini-gráfico (cliente marcou com print). Cresce bem mais
-       (flex:3, sem teto de largura) pra ocupar praticamente toda a fileira
-       entre `.health-left` e `.health-current` — a altura acompanha
-       proporcionalmente sozinha (viewBox fixo do HealthSparkline,
-       width:100%/height:auto). */
-    .health-chart{flex:3;min-width:260px;order:0;}
-    .health-current{flex-shrink:0;order:0;}
-  }
-
   /* Painel "Filtros" do Dashboard — card premium estilo Power BI/Stripe
      Dashboard/Vercel (ver CLAUDE.md "Filtro de período vira painel Filtros
      estilo SaaS"). Cor de destaque (--tfb-teal) é a mesma já usada nos
@@ -834,8 +797,7 @@
   .tfb-title{font-family:var(--font-corp);font-size:var(--text-lg);font-weight:700;color:var(--navy);}
   .tfb-subtitle{font-family:var(--font-corp);font-size:var(--text-sm);color:var(--ink-dim);margin-top:2px;}
   /* Empilhado por padrão (largura total, chip+botão lado a lado mas numa
-     linha PRÓPRIA abaixo do título) — mesmo raciocínio do `.health-card`
-     acima: só volta a ficar espremido ao lado do título (`margin-left:auto`)
+     linha PRÓPRIA abaixo do título) — só volta a ficar espremido ao lado do título (`margin-left:auto`)
      a partir de telas realmente largas (≥1024px), ver media query no fim
      deste bloco. Cliente reportou (print de tablet) essa fileira ficando
      desorganizada/apertada em larguras intermediárias. */
@@ -1360,25 +1322,23 @@
     .pnl-hero-search .field label{display:none;}
     .pnl-hero-search .field input{padding:15px 14px;font-size:14px;}
 
-    /* Cards "Resumo da Operação" (Indicadores) — shell PRÓPRIO, separado de
-       .pnl-kpi (que a Home usa nos 5 cards com trend/badge, ver kpis[] em
-       Home) — layout pedido pelo cliente por imagem de referência: rótulo
-       maiúsculo pequeno + ícone circular na mesma linha do topo, valor
-       grande logo abaixo, e uma linha de contexto (ou barra de progresso,
-       só na Acuracidade) por último. Mais baixo que .pnl-kpi (padding e
-       fonte do valor menores) e empilha em 1 coluna só no celular — NUNCA
-       cai pra 2/4 colunas espremidas, que era o que "amontoava" o card
-       (rótulo+ícone+barra) numa tela estreita. */
+    /* Shell de card compacto de KPI — usado por várias telas (SAsAbertoPanel,
+       os painéis "Itens Recorrentes"/"Divergência Quantitativa" da página
+       Acuracidade, etc.), separado de .pnl-kpi (que a Home usa nos 5 cards
+       com trend/badge, ver kpis[] em Home). Layout: rótulo maiúsculo
+       pequeno + ícone circular na mesma linha do topo, valor grande logo
+       abaixo, e uma linha de contexto (ou barra de progresso) por último.
+       Mais baixo que .pnl-kpi (padding e fonte do valor menores) e empilha
+       em 1 coluna só no celular — NUNCA cai pra 2/4 colunas espremidas, que
+       era o que "amontoava" o card (rótulo+ícone+barra) numa tela estreita. */
     .ops-kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px;}
-    /* Modificador escopado só pro "Resumo da Operação" — depois que os 2
-       cards de Acuracidade viraram gráfico (ver AccuracyComparisonBarChart),
-       essa fileira ficou com só 3 cards, sobrando 1/4 de espaço vazio no
-       grid fixo de 4 colunas de sempre. Em vez de mexer no `.ops-kpi-row`
-       base (compartilhado por outras telas, ex. SAsAbertoPanel, que
-       continuam com o grid de 4 colunas de sempre), esse modificador usa
-       `auto-fit` — os cards existentes esticam pra preencher a linha toda,
-       em qualquer largura de tela, sem precisar de nenhum breakpoint extra
-       (auto-fit já colapsa sozinho pra menos colunas em tela estreita). */
+    /* Modificador `auto-fit` (em vez do grid fixo de 4 colunas de
+       `.ops-kpi-row` base) pra fileiras com menos de 4 cards — os cards
+       existentes esticam pra preencher a linha toda, em qualquer largura de
+       tela, sem precisar de nenhum breakpoint extra (auto-fit já colapsa
+       sozinho pra menos colunas em tela estreita). Ex.: os painéis
+       "Itens Recorrentes"/"Divergência Quantitativa" (Acuracidade), cada um
+       com só 3 cards. */
     .ops-kpi-row.ops-kpi-row-auto{grid-template-columns:repeat(auto-fit,minmax(200px,1fr));}
     .ops-kpi-card{background:var(--panel);border:1px solid var(--gray-200);border-radius:12px;padding:14px 16px;box-shadow:0 1px 2px rgba(15,23,42,.03);}
     .ops-kpi-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:10px;}
@@ -1389,13 +1349,6 @@
     .ops-kpi-meta.danger{color:var(--danger);font-weight:600;}
     .ops-kpi-bar-track{height:5px;border-radius:20px;background:var(--gray-100);overflow:hidden;margin-top:8px;}
     .ops-kpi-bar-fill{height:100%;border-radius:20px;background:linear-gradient(90deg,#6D5BD0,#2A6FD6);}
-    /* Detalhamento extra dentro de um card específico (ver "Itens
-       Divergentes") — registros totais vs. códigos distintos, já que um
-       mesmo produto pode ter mais de uma contagem/divergência registrada. */
-    .ops-kpi-subrow{margin-top:8px;padding-top:8px;border-top:1px solid var(--gray-100);display:flex;flex-wrap:wrap;align-items:baseline;gap:4px;}
-    .ops-kpi-subrow span{font-family:var(--font-corp);font-size:var(--text-2xs);color:var(--gray-500);white-space:nowrap;}
-    .ops-kpi-subrow span.sep{color:var(--gray-200);}
-    .ops-kpi-subrow strong{color:var(--navy);font-weight:700;}
     @media (max-width:1360px){ .ops-kpi-row{grid-template-columns:repeat(2,1fr);} }
     @media (max-width:640px){ .ops-kpi-row{grid-template-columns:1fr;gap:10px;} }
 
@@ -3606,10 +3559,11 @@ async function fetchUltimaAtualizacaoCatalogo(){
 }
 
 // Soma de valor/saldo por armazém, via função de banco (evita trazer 12 mil+
-// linhas pro navegador só pra somar) — usado pelos cards "Valor em Estoque"
-// do Dashboard. Retorna [] se a tabela ainda não foi populada ou a rede
-// falhar; quem chama mostra o empty-state (nenhum cache local pra cair de
-// volta, foi removido — ver CLAUDE.md "cache local removido").
+// linhas pro navegador só pra somar) — usado pela lista de armazéns dos
+// seletores em várias telas de contagem (Nova Contagem manual/Rota/Curva
+// ABC/Lista Importada). Retorna [] se a tabela ainda não foi populada ou a
+// rede falhar; quem chama mostra o empty-state (nenhum cache local pra cair
+// de volta, foi removido — ver CLAUDE.md "cache local removido").
 async function fetchEstoqueValorPorAlmoxarifado(){
   if(!supabaseClient) return [];
   try{
@@ -3619,64 +3573,6 @@ async function fetchEstoqueValorPorAlmoxarifado(){
   }catch(err){
     console.warn('Falha ao buscar valor em estoque do Supabase:', err);
     return [];
-  }
-}
-
-// "Valor em Estoque" do Armazém 01, AO VIVO — pedido do cliente: "este valor
-// em estoque contemple apenas o valor que temos de saldo no armazém 01
-// saldo x custo unitário, puxando do consulta... ao vivo assim como você
-// calcula os valores de divergências das contagens" — mesmo princípio
-// "ao vivo vence, cache local é só fallback" já usado em CountStep
-// (saldoSistemaEfetivo/custoUnitEfetivo) e EtiquetasPanel, agora aplicado
-// item a item pro armazém inteiro.
-//
-// A LISTA de códigos a percorrer vem do cache local (`estoque_saldo`
-// filtrado por almoxarifado='1', o mesmo dado da planilha SB2) — só o
-// VALOR de cada item (saldo/custo) é resolvido AO VIVO, um por vez, na
-// consulta interna da Selgron, exatamente como já acontece ao abrir 1 item
-// pra contar. NUNCA dispara sozinho — só quando o admin clica em
-// "Consultar ao vivo"/"Atualizar" (ver Dashboard) — confirmado com o
-// cliente via AskUserQuestion: essa ferramenta é pensada pra 1 lookup
-// manual de cada vez, não pra bulk; um armazém inteiro pode ter centenas/
-// milhares de códigos, então isso pode levar minutos — por isso o
-// `onProgress(feito, total)` alimenta uma barra de progresso visível.
-async function fetchValorEstoqueArmazem01AoVivo(onProgress){
-  if(!supabaseClient) return {ok:false, erro:'Supabase não configurado.'};
-  try{
-    const { data, error } = await supabaseClient
-      .from('estoque_saldo')
-      .select('produto_codigo, saldo, valor_financeiro')
-      .eq('almoxarifado', '1');
-    if(error) return {ok:false, erro:error.message};
-    const linhas = data || [];
-    let valorTotal = 0;
-    let falhas = 0;
-    for(let i=0; i<linhas.length; i++){
-      const row = linhas[i];
-      const saldoLocal = Number(row.saldo || 0);
-      const custoLocal = saldoLocal>0 ? arredondarCentavos(Number(row.valor_financeiro || 0) / saldoLocal) : 0;
-      let saldo = saldoLocal, custo = custoLocal;
-      try{
-        // Armazém sempre '1' aqui — a lista de códigos já vem filtrada por
-        // `almoxarifado='1'` (linha acima) — passar explícito evita o mesmo
-        // bug de pegar o saldo de OUTRO armazém quando o código existe em
-        // mais de um (ver fetchSaldoConsultaSelgron/CLAUDE.md).
-        const res = await fetchSaldoConsultaSelgron(row.produto_codigo, '1');
-        if(res && res.ok){
-          if(typeof res.saldo === 'number') saldo = res.saldo;
-          if(typeof res.custoUnitario === 'number' && res.custoUnitario > 0) custo = res.custoUnitario;
-        } else {
-          falhas++;
-        }
-      }catch(_e){
-        falhas++;
-      }
-      valorTotal += saldo * custo;
-      if(onProgress) onProgress({feito: i+1, total: linhas.length});
-    }
-    return {ok:true, valorTotal, itens: linhas.length, falhas};
-  }catch(err){
-    return {ok:false, erro:String(err && err.message || err)};
   }
 }
 
@@ -6601,8 +6497,7 @@ function App(){
   function refreshHistoricoConcluidas(){
     // Retorna a Promise combinada (não só fire-and-forget) — o botão
     // "Atualizar" do painel "Contagens Concluídas" espera essa promise pra
-    // saber quando parar de girar o ícone, mesmo padrão já usado pelo
-    // "Atualizar" do Dashboard (carregarEstoque).
+    // saber quando parar de girar o ícone.
     return Promise.all([
       fetchContagensHistoricoConcluidas().then(setHistoricoConcluidas),
       fetchContagensHistoricoParaTendencia().then(setHistoricoParaTendencia),
@@ -15505,8 +15400,9 @@ function WeeklyLineChart({weeks, meta=META_ACURACIDADE_SEMANAL}){
       })}
       {weeks.map((w,i)=>{
         // Rótulo do 1º/último ponto ancorado na PONTA (start/end) em vez de
-        // "middle" — mesmo padrão já usado em HealthSparkline. Aqui o
-        // problema não é a borda do viewBox (o 1º ponto fica em x=padL,
+        // "middle" (mesmo padrão já usado alhures pra rótulo de ponta em
+        // gráfico SVG deste app). Aqui o problema não é a borda do viewBox
+        // (o 1º ponto fica em x=padL,
         // bem dentro dele), é a colisão com o rótulo do eixo Y: com
         // "middle", metade do texto (ex: "86%") cai à ESQUERDA de x=padL,
         // exatamente onde o "100%" do eixo já está (x=padL-8, ancorado
@@ -15718,106 +15614,9 @@ function MonthlyAccuracyBarChart({months, meta=META_ACURACIDADE_SEMANAL, colorBy
   );
 }
 
-// Mini gráfico de linha, mais enxuto que WeeklyLineChart (sem meta, sem
-// rótulo "Sem N" em cima da data, sem % grande em cada ponto) — pensado pra
-// caber dentro do card "Saúde do Inventário", não como painel próprio.
-function HealthSparkline({pontos, color, bg='var(--panel)'}){
-  // W/H eram 320/92 (proporção ~3,5:1) — largura do card cresceu bastante
-  // (ver .health-chart, flex:3 sem teto de largura), e como o SVG escala
-  // width:100%/height:auto MANTENDO a proporção do viewBox, a altura
-  // crescia junto na mesma razão e ficava desproporcional/"gigante"
-  // (cliente reportou com print). Proporção bem mais alongada agora
-  // (~5,8:1) — pra uma largura renderizada equivalente, a altura fica bem
-  // mais baixa, sem precisar limitar a largura de novo.
-  const W = 760, H = 130, padL = 38, padR = 12, padT = 12, padB = 24;
-  const chartW = W-padL-padR, chartH = H-padT-padB;
-  const n = pontos.length;
-  const x = i => padL + (n>1 ? (i/(n-1))*chartW : chartW/2);
-  const y = v => padT + chartH - (v/100)*chartH;
-  const pts = pontos.map((p,i)=>`${x(i)},${y(p.acuracidade)}`).join(' ');
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'auto',display:'block'}} role="img" aria-label="Tendência recente de acuracidade">
-      {[0,25,50,75,100].map(t=>(
-        <text key={t} x={padL-6} y={y(t)+4} textAnchor="end" fontSize={12} fill="var(--ink-dim)" fontFamily="var(--font-mono)">{t}%</text>
-      ))}
-      <polyline points={pts} fill="none" stroke={color} strokeWidth={3} strokeLinejoin="round" strokeLinecap="round" />
-      {pontos.map((p,i)=>(
-        <circle key={p.key} cx={x(i)} cy={y(p.acuracidade)} r={5} fill={color} stroke={bg} strokeWidth={2}>
-          <title>{p.sublabel}: {p.acuracidade.toFixed(1)}%</title>
-        </circle>
-      ))}
-      {pontos.map((p,i)=>{
-        // Rótulo do 1º/último ponto ancorado na PONTA (start/end) em vez de
-        // "middle" — com "middle" nesses dois, metade do texto (ex: "13/07")
-        // cai fora do viewBox (0-W), e o SVG recorta silenciosamente o que
-        // passa da borda (overflow implícito da raiz `<svg>`), cortando a
-        // data pela metade ("13/0"). Só os pontos do meio continuam
-        // centralizados, onde não há risco de estourar a borda.
-        const anchor = i===0 ? 'start' : (i===pontos.length-1 ? 'end' : 'middle');
-        return (
-          <text key={p.key+'-lbl'} x={x(i)} y={H-6} textAnchor={anchor} fontSize={12} fill="var(--ink-dim)" fontFamily="var(--font-mono)">{p.sublabel}</text>
-        );
-      })}
-    </svg>
-  );
-}
-
-// Card "Saúde do Inventário" — pedido do cliente (mandou uma imagem de
-// referência: selo de status + variação vs. período anterior + mini
-// gráfico + acuracidade atual em destaque). Implementado 100% em cima de
-// dado real já calculado por `computeWeeklyStats` — sem inventar nenhuma
-// métrica nova: "atual" é a última semana com contagem de verdade dentro do
-// período filtrado, "variação" compara contra a semana anterior a essa
-// (também só entre semanas com dado real). Se ainda não existe nenhuma
-// semana com contagem no período escolhido, não renderiza nada (mesmo
-// critério de "não fabricar dado" já usado no resto do Dashboard) — quem
-// chama decide o que mostrar no lugar.
-function InventoryHealthCard({weeklyStats, meta=META_ACURACIDADE_SEMANAL}){
-  const comDado = weeklyStats.filter(w=>w.acuracidade!=null);
-  if(comDado.length===0) return null;
-  const atual = comDado[comDado.length-1];
-  const anterior = comDado.length>1 ? comDado[comDado.length-2] : null;
-  const variacao = anterior ? (atual.acuracidade - anterior.acuracidade) : null;
-
-  // 4 faixas de status, relativas à META (não valores fixos) — assim o
-  // rótulo continua fazendo sentido se o cliente um dia mudar a meta de 95%.
-  // As 4 faixas usam só tokens (nunca hex cru) — "Bom"/"Atenção"/"Crítico"
-  // reaproveitam --blue/--warn/--danger (mesmo papel semântico já existente,
-  // com valor de tema escuro já definido) em vez de cor solta — sem isso o
-  // card inteiro (background + textos, tudo via style inline) ficaria um
-  // bloco pastel claro cravado no meio de um painel escuro.
-  let tier;
-  if(atual.acuracidade >= meta) tier = {status:'Excelente', sub:'Você está dentro da meta!', color:'var(--teal)', bg:'var(--teal-bg)'};
-  else if(atual.acuracidade >= meta-10) tier = {status:'Bom', sub:'Perto da meta', color:'var(--blue)', bg:'var(--blue-bg)'};
-  else if(atual.acuracidade >= meta-25) tier = {status:'Atenção', sub:'Abaixo da meta', color:'var(--warn)', bg:'var(--warn-bg)'};
-  else tier = {status:'Crítico', sub:'Bem abaixo da meta', color:'var(--danger)', bg:'var(--danger-bg)'};
-
-  const pontos = comDado.slice(-6);
-
-  return (
-    <div className="health-card" style={{background:tier.bg}}>
-      <div className="health-left">
-        <div className="health-icon" style={{background:tier.bg}}><DIcon name="shieldCheck" size={22} style={{color:tier.color}} /></div>
-        <div className="health-text">
-          <div className="health-eyebrow">Saúde do Inventário</div>
-          <div className="health-status" style={{color:tier.color}}>{tier.status}</div>
-          <div className="health-sub" style={{color:tier.color}}>{tier.sub}</div>
-          {variacao!=null && (
-            <div className="health-desc">
-              A acuracidade está {Math.abs(variacao).toFixed(1)}% {variacao>=0?'acima':'abaixo'} do período anterior.
-              {variacao>=0 ? ' Continue assim.' : ''}
-            </div>
-          )}
-        </div>
-      </div>
-      <div className="health-chart"><HealthSparkline pontos={pontos} color={tier.color} bg={tier.bg} /></div>
-      <div className="health-current">
-        <div className="health-current-value" style={{color:tier.color}}>{atual.acuracidade.toFixed(1)}%</div>
-        <div className="health-current-label">Acuracidade da semana</div>
-      </div>
-    </div>
-  );
-}
+// `HealthSparkline`/`InventoryHealthCard` (card "Saúde do Inventário", que
+// usava esse mini-gráfico) removidos a pedido do cliente — ver JSX de
+// `Dashboard`.
 
 // Ícone linear (mesmo estilo Lucide-ish já usado no restante da moldura
 // corp) só pra identificar visualmente o controle de intervalo de datas —
@@ -16003,70 +15802,12 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   // diferente aqui do que na Home (que já excluía null corretamente via
   // acumuladoAte) — cliente reportou 3 cards de acuracidade com valores
   // diferentes.
+  // Ainda usado por `divergentesNoPeriodo` mais abaixo (alimenta outro
+  // ponto da tela) — os 3 cards de "Resumo da Operação" que liam
+  // `divergentes`/`valorDivergente`/`codigosDistintos*` diretamente foram
+  // removidos a pedido do cliente, junto com o card "Saúde do Inventário"
+  // (ver comentário no JSX, mais abaixo).
   const divergentes = todasParaQualidade.filter(c=>c.diferenca!==0 && c.diferenca!==null);
-  // `divergentes` continua binário de propósito — ainda alimenta o card
-  // "Itens Divergentes", que é uma pergunta diferente ("quantos itens
-  // tiveram QUALQUER divergência", não "qual a nota média").
-  //
-  // "Acuracidade Geral"/"Acuracidade dos Itens Contados" (o gráfico
-  // comparativo) NÃO são calculadas aqui — moraram nesta tela até virarem
-  // a página própria "Acuracidade" (ver `AcuracidadePanel`, logo depois do
-  // fim deste componente), a pedido do cliente. `monthlyStats` (usado pelo
-  // gráfico "Acuracidade Mensal", que continua aqui) ainda é calculado
-  // mais abaixo, sem mudança.
-  const valorDivergente = todasParaQualidade.reduce((s,c)=>s+Number(c.valorDivergente||0),0);
-  // Card "Itens Divergentes" (Resumo da Operação) — "itens"/"documentos" e
-  // "códigos distintos" voltaram a ser números potencialmente diferentes
-  // desde que `ultimaContagemPorDocumento` passou a considerar documentos
-  // independentes do mesmo item separadamente (ver comentário acima) — um
-  // código pode legitimamente aparecer mais de uma vez em `todasParaQualidade`
-  // agora (2 inventários sem relação um com o outro, cada um com sua própria
-  // acuracidade). Mesmo raciocínio pro "Divergências": nem todo registro
-  // divergente é um PRODUTO diferente.
-  const codigosDistintosContados = new Set(todasParaQualidade.map(c=>c.productCode)).size;
-  const codigosDistintosDivergentes = new Set(divergentes.map(c=>c.productCode)).size;
-
-  // Valor em estoque (TOTAL, todos os armazéns) — vem do Supabase
-  // (estoque_saldo, atualizado via upload manual da planilha SB2 em
-  // Configurações, ver StockSyncPanel). Continua alimentando só a % do
-  // card "Valor Divergente" (que compara contra o estoque TOTAL, não só o
-  // Armazém 01) — o painel "Valores por Armazém" (que mostrava essa soma
-  // detalhada por armazém) foi removido a pedido do cliente ("Elimine o
-  // indicador de valores por armazém"), então `estoqueRemoto`/
-  // `carregarEstoque` sobrevivem só por essa % e pelo botão "Atualizar" do
-  // painel "Filtros" (`TrendFilterBar onRefresh`).
-  const [estoqueRemoto, setEstoqueRemoto] = useState(null); // null = ainda carregando/não tentado
-  const [atualizando, setAtualizando] = useState(false);
-  const carregarEstoque = async () => {
-    setAtualizando(true);
-    try {
-      const rows = await fetchEstoqueValorPorAlmoxarifado();
-      setEstoqueRemoto(rows);
-    } finally {
-      setAtualizando(false);
-    }
-  };
-  useEffect(()=>{ carregarEstoque(); }, []);
-
-  const porArmazem = {};
-  (estoqueRemoto||[]).forEach(r=>{ porArmazem[r.almoxarifado || '—'] = Number(r.valor_total||0); });
-  const armazens = Object.keys(porArmazem).sort();
-  const valorTotalEstoque = armazens.reduce((s,k)=>s+porArmazem[k],0);
-  const fmtReais = v => 'R$ ' + Number(v).toLocaleString('pt-BR',{maximumFractionDigits:0});
-
-  // "Valor em Estoque" (card do Resumo da Operação) — pedido do cliente:
-  // "este valor em estoque contemple apenas o valor que temos de saldo no
-  // armazém 01 saldo x custo unitário, puxando do consulta... ao vivo
-  // assim como você calcula os valores de divergências das contagens".
-  // NUNCA busca sozinho (confirmado via AskUserQuestion) — só quando o
-  // admin clica no botão, com barra de progresso, já que percorre a
-  // consulta interna da Selgron item a item (pode levar minutos pra um
-  // armazém com muitos códigos). Ver `fetchValorEstoqueArmazem01AoVivo`.
-  const [valorArmazem01, setValorArmazem01] = useState(null); // {valorTotal, itens, falhas} | null
-  const [carregandoArmazem01, setCarregandoArmazem01] = useState(false);
-  const [progressoArmazem01, setProgressoArmazem01] = useState(null); // {feito, total} | null
-  const [erroArmazem01, setErroArmazem01] = useState('');
-  const armazem01RunIdRef = useRef(0);
 
   // Bug real corrigido aqui: sem esperar `historicoCarregado`, esta tela
   // calculava Qualidade/Acuracidade/Tendência com `historicoConcluidas`/
@@ -16082,20 +15823,6 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
       </div>
     );
   }
-
-  const atualizarValorArmazem01 = async () => {
-    const runId = ++armazem01RunIdRef.current;
-    setCarregandoArmazem01(true);
-    setErroArmazem01('');
-    setProgressoArmazem01({feito:0, total:0});
-    const res = await fetchValorEstoqueArmazem01AoVivo(p=>{
-      if(armazem01RunIdRef.current===runId) setProgressoArmazem01(p);
-    });
-    if(armazem01RunIdRef.current!==runId) return; // usuário navegou pra outra tela ou clicou de novo
-    setCarregandoArmazem01(false);
-    if(res.ok) setValorArmazem01(res);
-    else setErroArmazem01(res.erro || 'Falha ao buscar valor em estoque.');
-  };
 
   // "Tendência Semanal" usa um pool AINDA MAIS amplo que "Qualidade" — inclui
   // status "Pendente" do histórico (fora de escopo pro resto do app), porque
@@ -16235,85 +15962,14 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
 
   return (
     <div>
-      <div className="section-title">Resumo da Operação</div>
-      {/* A acuracidade saiu daqui — virou o gráfico de colunas logo abaixo
-          desta fileira (AccuracyComparisonBarChart), pedido do cliente pra
-          deixar de ser "um número dentro de um card". `ops-kpi-row-auto`
-          (modificador escopado só a esta fileira, ver CSS) faz os 3 cards
-          que sobraram ocuparem a largura toda, em vez de deixar 1/4 de
-          espaço vazio no grid fixo de 4 colunas usado nas outras fileiras
-          de KPI do app — sem mexer no `.ops-kpi-row` compartilhado. */}
-      <div className="ops-kpi-row ops-kpi-row-auto">
-        <div className="ops-kpi-card">
-          <div className="ops-kpi-head">
-            <span className="ops-kpi-label">Valor Divergente</span>
-            <span className="ops-kpi-icon" style={{background:'var(--danger-bg)', color:'var(--danger)'}}><DIcon name="circleDollar" size={15} /></span>
-          </div>
-          <div className="ops-kpi-value">{fmtReais(valorDivergente)}</div>
-          <div className="ops-kpi-meta danger">{valorTotalEstoque>0 ? (valorDivergente/valorTotalEstoque*100).toFixed(1).replace('.',',') : '0,0'}% do valor total em estoque</div>
-        </div>
-        <div className="ops-kpi-card">
-          <div className="ops-kpi-head">
-            <span className="ops-kpi-label">Itens Divergentes</span>
-            <span className="ops-kpi-icon" style={{background:'var(--warn-bg)', color:'var(--warn)'}}><DIcon name="alertTriangle" size={15} /></span>
-          </div>
-          <div className="ops-kpi-value">{divergentes.length}</div>
-          <div className="ops-kpi-meta">{todasParaQualidade.length>0 ? (divergentes.length/todasParaQualidade.length*100).toFixed(1).replace('.',',') : '0,0'}% do total de itens</div>
-          {/* "itens" (documentos, já deduplicados dentro da própria cadeia
-              de recontagem) vs. "códigos distintos" voltam a poder ser
-              números diferentes — um mesmo código pode ter mais de um
-              documento independente contribuindo pra acuracidade (ver
-              ultimaContagemPorDocumento). */}
-          <div className="ops-kpi-subrow">
-            <span><strong>{todasParaQualidade.length}</strong> itens</span>
-            <span className="sep">·</span>
-            <span><strong>{codigosDistintosContados}</strong> códigos</span>
-            <span className="sep">·</span>
-            <span><strong>{codigosDistintosDivergentes}</strong> divergentes (cód.)</span>
-          </div>
-        </div>
-        <div className="ops-kpi-card">
-          <div className="ops-kpi-head">
-            <span className="ops-kpi-label">Valor em Estoque — Armazém 01</span>
-            <span className="ops-kpi-icon" style={{background:'var(--blue-bg)', color:'var(--blue)'}}><DIcon name="box" size={15} /></span>
-          </div>
-          <div className="ops-kpi-value">{valorArmazem01 ? fmtReais(valorArmazem01.valorTotal) : '—'}</div>
-          <div className="ops-kpi-meta">
-            {carregandoArmazem01
-              ? ('Consultando ao vivo… ' + (progressoArmazem01 && progressoArmazem01.total>0 ? (progressoArmazem01.feito+' de '+progressoArmazem01.total) : ''))
-              : valorArmazem01
-                ? ('saldo × custo unitário, ao vivo · '+valorArmazem01.itens+' itens'+(valorArmazem01.falhas>0 ? (' · '+valorArmazem01.falhas+' sem resposta (usou cache)') : ''))
-                : 'Clique em "Consultar ao vivo" pra calcular'}
-          </div>
-          {erroArmazem01 && <div style={{fontSize:'var(--text-2xs)',color:'var(--danger)',marginTop:4}}>{erroArmazem01}</div>}
-          {carregandoArmazem01 && progressoArmazem01 && progressoArmazem01.total>0 && (
-            <div style={{marginTop:8,height:4,background:'var(--line)',borderRadius:2,overflow:'hidden'}}>
-              <div style={{height:'100%',width:(progressoArmazem01.feito/progressoArmazem01.total*100)+'%',background:'var(--blue)',transition:'width .2s'}} />
-            </div>
-          )}
-          <button
-            type="button"
-            className="btn btn-outline btn-sm"
-            style={{marginTop:8,width:'100%'}}
-            onClick={atualizarValorArmazem01}
-            disabled={carregandoArmazem01}
-            title="Percorre a consulta ao vivo da Selgron, item a item, pros códigos com saldo no Armazém 01 — pode levar alguns minutos"
-          >
-            {carregandoArmazem01 ? 'Consultando…' : (valorArmazem01 ? 'Atualizar (ao vivo)' : 'Consultar ao vivo')}
-          </button>
-        </div>
-      </div>
-
-      {/* O painel "Acuracidade (%)" (gráfico Geral vs. Contados) e a seção
-          "Efeito dos Ajustes Aprovados" saíram daqui — viraram a página
-          própria "Acuracidade" (Sidebar → Análise), pedido do cliente:
-          "Esses novos indicadores pode criar uma nova página chamada
-          Acuracidade e coloque lá dentro" (confirmado via AskUserQuestion:
-          "Gráfico novo + Efeito dos Ajustes" — "Acuracidade Semanal"/
-          "Acuracidade Mensal", mais abaixo nesta mesma tela, continuam
-          aqui em Indicadores). Ver função `AcuracidadePanel`, logo depois
-          do fim deste componente. */}
-      <InventoryHealthCard weeklyStats={weeklyStats} />
+      {/* "Resumo da Operação" (3 cards: Valor Divergente/Itens Divergentes/
+          Valor em Estoque — Armazém 01) e o card "Saúde do Inventário"
+          (InventoryHealthCard) removidos a pedido do cliente. O painel
+          "Acuracidade (%)" (gráfico Geral vs. Contados) e a seção "Efeito
+          dos Ajustes Aprovados" já tinham saído daqui antes, virando a
+          página própria "Acuracidade" (Sidebar → Análise) — "Acuracidade
+          Semanal"/"Acuracidade Mensal", logo abaixo, continuam aqui em
+          Indicadores, sem nenhuma mudança. */}
 
       <TrendFilterBar
         trendFilter={trendFilter}
@@ -16321,8 +15977,6 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
         dataInicioStr={dataInicioStr}
         dataFimStr={dataFimStr}
         hojeStr={hojeStr}
-        onRefresh={carregarEstoque}
-        refreshing={atualizando}
       />
 
       {/* Sempre aparece, mesmo sem nenhuma contagem ainda (ver computeWeeklyStats) —
