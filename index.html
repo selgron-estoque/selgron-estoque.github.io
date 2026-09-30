@@ -1452,6 +1452,65 @@
     .acc-chart-footer{font-size:var(--text-xs);color:var(--ink-dim);text-align:center;margin-top:10px;}
     @media (max-width:1100px){ .acc-dual-row{flex-direction:column;} }
 
+    /* "Itens com Divergência Recorrente" (Acuracidade) — mestre-detalhe:
+       tabela à esquerda (~68%) + painel de análise do item selecionado à
+       direita (~32%), pedido explícito do cliente com imagem de referência.
+       `minmax(0,...)` nas duas colunas evita que a tabela larga force o
+       grid a estourar (mesmo problema clássico de grid+overflow-x). Abaixo
+       de 1100px empilha (painel de análise vira bloco cheio, não drawer —
+       simplicidade: já funciona bem tocando a tela, sem componente novo). */
+    .divrec-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;align-items:start;}
+    .divrec-layout.has-detail{grid-template-columns:minmax(0,68%) minmax(0,32%);}
+    @media (max-width:1100px){ .divrec-layout.has-detail{grid-template-columns:minmax(0,1fr);} }
+    .divrec-table-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap;}
+    .divrec-table-title{font-size:var(--text-md);font-weight:700;}
+    .divrec-search{display:flex;align-items:center;gap:8px;background:var(--panel-raised);border:1px solid var(--line);border-radius:8px;padding:7px 10px;min-width:220px;color:var(--ink-dim);}
+    .divrec-search input{border:none;background:none;outline:none;color:var(--ink);font-size:var(--text-sm);width:100%;}
+    .divrec-search svg{flex-shrink:0;}
+    .divrec-th-btn{display:inline-flex;align-items:center;gap:3px;background:none;border:none;color:inherit;font:inherit;text-transform:inherit;letter-spacing:inherit;cursor:pointer;padding:0;}
+    .divrec-th-btn svg{opacity:.55;}
+    .divrec-th-btn.active svg{opacity:1;color:var(--accent2);}
+    .divrec-row{cursor:pointer;}
+    .divrec-row:hover td{background:var(--panel-raised);}
+    .divrec-row.selected td{background:var(--blue-bg);border-bottom-color:var(--blue);}
+    .divrec-pattern-tag{display:inline-block;font-size:var(--text-2xs);font-weight:700;padding:3px 8px;border-radius:6px;white-space:nowrap;letter-spacing:.2px;}
+    .divrec-empty{color:var(--ink-dim);font-size:var(--text-sm);}
+    .divrec-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px;flex-wrap:wrap;font-size:var(--text-xs);color:var(--ink-dim);}
+
+    /* Painel de análise do item (coluna direita) */
+    .divrec-detail{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px;position:sticky;top:12px;}
+    .divrec-detail-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:16px;}
+    .divrec-detail-code{font-family:var(--font-mono);font-size:var(--text-sm);font-weight:700;color:var(--ink-dim);}
+    .divrec-detail-desc{font-size:var(--text-md);font-weight:700;margin-top:2px;}
+    .divrec-detail-close{background:none;border:none;color:var(--ink-dim);cursor:pointer;padding:4px;flex-shrink:0;border-radius:6px;}
+    .divrec-detail-close:hover{background:var(--panel-raised);color:var(--ink);}
+    .divrec-detail-summary{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px;}
+    .divrec-summary-card{background:var(--panel-raised);border:1px solid var(--line);border-radius:10px;padding:12px;}
+    .divrec-summary-label{font-size:var(--text-2xs);color:var(--ink-dim);text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px;}
+    .divrec-summary-value{font-size:19px;font-weight:700;}
+    .divrec-detail-section-title{display:flex;align-items:center;gap:6px;font-size:var(--text-sm);font-weight:700;margin-bottom:4px;}
+    .divrec-detail-section-desc{font-size:var(--text-2xs);color:var(--ink-dim);margin-bottom:12px;}
+    /* Timeline vertical — linha contínua (::before da lista) com um ponto
+       colorido por evento (divergente=vermelho/conforme=verde), mesmo
+       espírito visual de qualquer timeline de histórico (trilho + marcador),
+       sem depender de nenhuma lib de gráfico pra isso. */
+    .divrec-timeline{list-style:none;margin:0 0 20px;padding:0 0 0 18px;position:relative;}
+    .divrec-timeline::before{content:'';position:absolute;left:4px;top:4px;bottom:4px;width:1px;background:var(--line);}
+    .divrec-timeline-item{position:relative;padding-bottom:14px;}
+    .divrec-timeline-item:last-child{padding-bottom:0;}
+    .divrec-timeline-dot{position:absolute;left:-18px;top:4px;width:9px;height:9px;border-radius:50%;border:2px solid var(--panel);}
+    .divrec-timeline-date{font-family:var(--font-mono);font-size:var(--text-xs);font-weight:700;margin-bottom:4px;}
+    .divrec-timeline-nums{display:flex;gap:14px;font-size:var(--text-xs);color:var(--ink-dim);margin-bottom:4px;flex-wrap:wrap;}
+    .divrec-timeline-nums b{color:var(--ink);font-family:var(--font-mono);}
+    .divrec-checklist-item{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-top:1px solid var(--line);}
+    .divrec-checklist-item:first-child{border-top:none;}
+    .divrec-checklist-icon{width:28px;height:28px;border-radius:8px;background:var(--panel-raised);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--ink-dim);}
+    .divrec-checklist-text{flex:1;min-width:0;}
+    .divrec-checklist-label{font-size:var(--text-xs);font-weight:700;margin-bottom:2px;}
+    .divrec-checklist-desc{font-size:var(--text-2xs);color:var(--ink-dim);line-height:1.4;}
+    .divrec-checklist-item input[type=checkbox]{width:17px;height:17px;flex-shrink:0;margin-top:2px;accent-color:var(--accent2);}
+    .divrec-detail-actions{display:flex;flex-direction:column;gap:8px;margin-top:18px;}
+
     .pnl-section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
     .pnl-section-title{font-size:18px;font-weight:700;color:var(--navy);}
     .pnl-section-link{font-size:13px;font-weight:600;color:var(--accent2);background:none;border:none;display:flex;align-items:center;gap:4px;}
@@ -7535,6 +7594,9 @@ const DICON_PATHS = {
   // em Settings/`.cfg-*`).
   eye: <><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></>,
   users: <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></>,
+  // Ícone do checklist "Unidade de Medida" (painel de análise, "Itens com
+  // Divergência Recorrente").
+  ruler: <><path d="M3.5 8.5 15.5 20.5a1.5 1.5 0 0 0 2.1 0l2.9-2.9a1.5 1.5 0 0 0 0-2.1L8.5 3.5a1.5 1.5 0 0 0-2.1 0l-2.9 2.9a1.5 1.5 0 0 0 0 2.1Z"/><path d="m7 9 1.5 1.5"/><path d="m10 12 1.5 1.5"/><path d="m13 15 1.5 1.5"/></>,
 };
 
 function DIcon({name, size=18, strokeWidth=1.8, style}){
@@ -15175,9 +15237,13 @@ function acuracidadeGeralAte(pool, dataLimiteStr){
 // (`diferenca===0` bate, qualquer valor diferente de 0 diverge — sem
 // gradação: 1 unidade de diferença conta igual a 100), mas agrupado por
 // CÓDIGO em vez de por documento, já que a pergunta é sobre o item ao longo
-// do tempo, não sobre uma contagem isolada. "Recorrente" exige 2+ contagens
-// divergentes dentro do período — item que só divergiu 1 vez é um evento
-// pontual, não um padrão a investigar.
+// do tempo, não sobre uma contagem isolada.
+//
+// Regra de elegibilidade (confirmada pelo cliente com tabela de exemplos):
+// contagens no período >= 2 E divergências no período >= 1 — um item com 2
+// contagens e só 1 divergente já entra (não precisa ter divergido em TODAS
+// nem duas vezes), só precisa ter sido contado mais de uma vez E ter
+// divergido pelo menos uma.
 //
 // `pool` já deve vir deduplicado por documento (mesmo `todasParaQualidade`
 // já usado pelo resto da página) — cada entrada é o veredito final de uma
@@ -15185,25 +15251,115 @@ function acuracidadeGeralAte(pool, dataLimiteStr){
 // (mesmo período do painel "Filtros" desta página) — diferente do antigo
 // `computeEfeitoAjustes`, que filtrava pela data do AJUSTE; aqui não há
 // ajuste nenhum envolvido na pergunta, só o histórico de contagens do item.
+//
+// Cada item carrega seu `historico` completo (mais recente primeiro — pro
+// painel de análise, que mostra uma timeline) e uma classificação de
+// `padrao`/`status` (ver `classificarPadraoDivergencia`/
+// `classificarStatusDivergencia` abaixo) — sinalização visual do
+// COMPORTAMENTO observado, nunca uma causa: a tela não afirma "é o
+// endereço" ou "é a unidade de medida", só aponta que o item merece
+// investigação e com que urgência.
+function classificarPadraoDivergencia(historicoAsc){
+  const total = historicoAsc.length;
+  const divergentes = historicoAsc.filter(h=>h.divergente).length;
+  if(divergentes===total) return 'diverge_todas';
+  const ultimasDuas = historicoAsc.slice(-2);
+  if(ultimasDuas.length===2 && ultimasDuas.every(h=>h.divergente)) return 'ultimas_duas';
+  // Limiar ESTRITO (>0.5, não >=0.5) — confirmado pelos exemplos do cliente:
+  // 4 contagens/3 divergências (75%) é "Recorrente", mas 4/2 (exatos 50%) é
+  // "Sem padrão". Metade exata das contagens divergindo não é considerado
+  // recorrente o bastante pra esse rótulo.
+  if(divergentes/total > 0.5) return 'recorrente';
+  return 'sem_padrao';
+}
+const PADRAO_DIVERGENCIA_INFO = {
+  diverge_todas: {label:'Diverge em todas', tone:'danger'},
+  ultimas_duas: {label:'Últimas 2 contagens', tone:'blue'},
+  recorrente: {label:'Recorrente', tone:'warn'},
+  sem_padrao: {label:'Sem padrão', tone:'neutral'},
+};
+// Urgência visual — 100% de divergência no período é sempre CRÍTICO; MAIS
+// DA METADE das contagens divergindo (mesmo limiar estrito >0.5 de
+// `classificarPadraoDivergencia`, pelo mesmo motivo) já é ATENÇÃO; metade
+// exata ou menos fica MONITORAR (ainda é recorrente o bastante pra entrar
+// na lista, mas com menos urgência que os outros dois).
+function classificarStatusDivergencia(taxaDivergencia){
+  if(taxaDivergencia>=1) return 'critico';
+  if(taxaDivergencia>0.5) return 'atencao';
+  return 'monitorar';
+}
+const STATUS_DIVERGENCIA_INFO = {
+  critico: {label:'Crítico', tone:'danger'},
+  atencao: {label:'Atenção', tone:'warn'},
+  monitorar: {label:'Monitorar', tone:'blue'},
+};
+// Tom → var() de fundo/cor — mesmo catálogo de 4 tons já usado em
+// `SeparacaoStatusTag` (ok/warn/danger cobertos por `.status-tag`/`StatusTag`,
+// "blue"/"neutral" via `style` inline reaproveitando tokens existentes,
+// nunca uma cor nova). Usado tanto pela tag de "padrão identificado" quanto
+// pela de status desta seção.
+const TOM_DIVERGENCIA_CSS = {
+  danger: {background:'var(--danger-bg)', color:'var(--danger)'},
+  warn: {background:'var(--warn-bg)', color:'var(--warn)'},
+  blue: {background:'var(--blue-bg)', color:'var(--blue)'},
+  neutral: {background:'var(--gray-200)', color:'var(--gray-500)'},
+};
+function PadraoDivergenciaTag({padrao}){
+  const info = PADRAO_DIVERGENCIA_INFO[padrao] || PADRAO_DIVERGENCIA_INFO.sem_padrao;
+  return <span className="divrec-pattern-tag" style={TOM_DIVERGENCIA_CSS[info.tone]}>{info.label}</span>;
+}
+function StatusDivergenciaTag({status}){
+  const info = STATUS_DIVERGENCIA_INFO[status] || STATUS_DIVERGENCIA_INFO.monitorar;
+  return <span className="status-tag" style={TOM_DIVERGENCIA_CSS[info.tone]}><span className="status-dot"></span>{info.label}</span>;
+}
+// Checklist "O que investigar" (painel de análise) — pontos de verificação
+// SUGERIDOS, nunca uma causa afirmada (pedido explícito do cliente: "a tela
+// NÃO deve afirmar automaticamente qual é a causa do problema"). Mesmos 3
+// pontos mais comuns já citados em toda a conversa sobre este indicador.
+const CHECKLIST_DIVERGENCIA_ITEMS = [
+  {chave:'endereco', icon:'mapPin', label:'Endereço', desc:'Conferir se o item está no endereço correto e se há itens em endereços alternativos.'},
+  {chave:'unidade', icon:'ruler', label:'Unidade de Medida', desc:'Verificar se a unidade utilizada na contagem confere com a unidade do sistema.'},
+  {chave:'cadastro', icon:'fileText', label:'Cadastro / Movimentações', desc:'Revisar cadastro e movimentações do período (entradas, saídas, transferências).'},
+];
 function computeItensDivergenciaRecorrente(pool, dataInicioStr, dataFimStr){
   const porCodigo = {};
   pool.forEach(c=>{
     if(!c.data || !c.productCode || c.diferenca==null) return;
     if(c.data<dataInicioStr || c.data>dataFimStr) return;
     const grupo = (porCodigo[c.productCode] = porCodigo[c.productCode] || {
-      productCode: c.productCode, descricao: c.descricao, total: 0, divergentes: 0, ultimaDivergencia: null,
+      productCode: c.productCode, descricao: c.descricao, historico: [],
     });
-    grupo.total += 1;
     if(c.descricao) grupo.descricao = c.descricao; // fica com a descrição mais recente vista
-    if(c.diferenca!==0){
-      grupo.divergentes += 1;
-      if(!grupo.ultimaDivergencia || c.data>grupo.ultimaDivergencia) grupo.ultimaDivergencia = c.data;
-    }
+    grupo.historico.push({
+      data: c.data,
+      saldoSistema: c.saldoSistema,
+      qtdContada: c.qtdContada,
+      diferenca: c.diferenca,
+      divergente: c.diferenca!==0,
+    });
   });
 
   const itens = Object.values(porCodigo)
-    .filter(g=>g.divergentes>=2)
-    .map(g=>({...g, taxaDivergencia: g.divergentes/g.total}));
+    .map(g=>{
+      const historicoAsc = [...g.historico].sort((a,b)=>a.data.localeCompare(b.data));
+      const total = historicoAsc.length;
+      const divergentes = historicoAsc.filter(h=>h.divergente).length;
+      const taxaDivergencia = total>0 ? divergentes/total : 0;
+      const historicoDesc = [...historicoAsc].reverse(); // mais recente primeiro, pra timeline
+      const ultimaDivergencia = historicoDesc.find(h=>h.divergente)?.data || null;
+      return {
+        productCode: g.productCode,
+        descricao: g.descricao,
+        total,
+        divergentes,
+        taxaDivergencia,
+        ultimaDivergencia,
+        historico: historicoDesc,
+        padrao: classificarPadraoDivergencia(historicoAsc),
+        status: classificarStatusDivergencia(taxaDivergencia),
+      };
+    })
+    .filter(it=>it.total>=2 && it.divergentes>=1);
 
   // Mais divergências primeiro (o problema mais frequente), desempatando
   // pela TAXA de divergência (item contado poucas vezes mas errando sempre
@@ -15214,7 +15370,17 @@ function computeItensDivergenciaRecorrente(pool, dataInicioStr, dataFimStr){
     || (b.ultimaDivergencia||'').localeCompare(a.ultimaDivergencia||'')
   );
 
-  return {itens, totalItens: itens.length};
+  // KPIs agregados pros cards do topo da seção — "taxa de recorrência"
+  // agregada é ponderada (soma de divergências / soma de contagens de
+  // TODOS os itens elegíveis), não a média simples das taxas individuais
+  // (que puxaria demais pros itens com poucas contagens).
+  const somaTotal = itens.reduce((s,it)=>s+it.total, 0);
+  const somaDivergentes = itens.reduce((s,it)=>s+it.divergentes, 0);
+  const taxaRecorrenciaAgregada = somaTotal>0 ? somaDivergentes/somaTotal : 0;
+  const itensCriticos = itens.filter(it=>it.status==='critico').length;
+  const ultimaDivergenciaGeral = itens.reduce((max,it)=> (it.ultimaDivergencia && (!max || it.ultimaDivergencia>max)) ? it.ultimaDivergencia : max, null);
+
+  return {itens, totalItens: itens.length, itensCriticos, taxaRecorrenciaAgregada, ultimaDivergenciaGeral};
 }
 
 // Gera ticks "redondos" (passo de 1/2/5 × potência de 10) pro eixo Y —
@@ -16481,6 +16647,27 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
   // enquanto o modal está aberto, ex. via Realtime).
   const [mesSelecionado, setMesSelecionado] = useState(null);
 
+  // Estado da seção "Itens com Divergência Recorrente" — item selecionado
+  // (abre o painel de análise à direita), busca por código/descrição, e
+  // ordenação da tabela (coluna + direção). Tudo local a esta tela, nunca
+  // persistido — reabrir a página sempre volta pro estado limpo (mesmo
+  // critério de qualquer filtro/seleção transitória já usado no resto do
+  // app, ver CLAUDE.md "Persistência de Dados").
+  const [itemDivergenciaSelecionado, setItemDivergenciaSelecionado] = useState(null);
+  const [buscaDivergencia, setBuscaDivergencia] = useState('');
+  const [ordemDivergencia, setOrdemDivergencia] = useState({coluna:'divergentes', direcao:'desc'});
+  // Checklist "O que investigar" (painel de análise) — só um lembrete visual
+  // de pontos a conferir, sem afirmar causa nenhuma (ver comentário completo
+  // em `computeItensDivergenciaRecorrente`); marcar não grava em lugar
+  // nenhum, é só uma ajuda de memória enquanto o líder investiga na própria
+  // tela. Chave é `codigo|item` pra cada produto ter seu próprio estado.
+  const [checklistDivergenciaMarcado, setChecklistDivergenciaMarcado] = useState({});
+  // Feedback textual de "código copiado" no painel de análise — some
+  // sozinho depois de 2s (setTimeout simples, sem lib de toast nenhuma:
+  // este app não tem um sistema de notificação global, não vale a pena
+  // criar um só pra isso).
+  const [codigoCopiadoFeedback, setCodigoCopiadoFeedback] = useState(false);
+
   // Bug real corrigido aqui: sem esperar `historicoCarregado`, esta tela
   // calculava toda a acuracidade com `historicoConcluidas` ainda vazio (a
   // 1ª renderização depois do login, antes do fetch no Supabase terminar)
@@ -16587,6 +16774,41 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
   // (`todasParaQualidade`) e o mesmo intervalo de data do filtro desta
   // página (`dataInicioStr`/`dataFimStr`).
   const itensDivergenciaRecorrente = computeItensDivergenciaRecorrente(todasParaQualidade, dataInicioStr, dataFimStr);
+  // Busca por código OU descrição (case/acento-insensível não é necessário
+  // aqui — código é sempre dígitos/pontos, descrição já vem em maiúsculas
+  // no cadastro) e ordenação por qualquer coluna numérica/data — aplicadas
+  // só na EXIBIÇÃO, nunca mudam quais itens são elegíveis (isso é sempre
+  // `computeItensDivergenciaRecorrente`).
+  const buscaDivergenciaNorm = buscaDivergencia.trim().toLowerCase();
+  const itensDivergenciaFiltrados = itensDivergenciaRecorrente.itens.filter(it =>
+    !buscaDivergenciaNorm
+    || reconstructNumericCode(it.productCode).toLowerCase().includes(buscaDivergenciaNorm)
+    || (it.descricao||'').toLowerCase().includes(buscaDivergenciaNorm)
+  );
+  const ORDEM_DIVERGENCIA_CAMPO = {
+    contagens: it=>it.total,
+    divergentes: it=>it.divergentes,
+    taxa: it=>it.taxaDivergencia,
+    ultimaDivergencia: it=>it.ultimaDivergencia||'',
+  };
+  const itensDivergenciaOrdenados = [...itensDivergenciaFiltrados].sort((a,b)=>{
+    const campo = ORDEM_DIVERGENCIA_CAMPO[ordemDivergencia.coluna] || ORDEM_DIVERGENCIA_CAMPO.divergentes;
+    const va = campo(a), vb = campo(b);
+    const cmp = va<vb ? -1 : va>vb ? 1 : 0;
+    return ordemDivergencia.direcao==='asc' ? cmp : -cmp;
+  });
+  function alternarOrdemDivergencia(coluna){
+    setOrdemDivergencia(prev => prev.coluna===coluna
+      ? {coluna, direcao: prev.direcao==='asc' ? 'desc' : 'asc'}
+      : {coluna, direcao:'desc'});
+  }
+  // Item selecionado pode ter saído da lista filtrada/mudado de conteúdo
+  // (ex.: filtro de período mudou) — relê sempre do array atual pelo
+  // código, nunca guarda o objeto em si (mesmo critério de `mesSelecionado`
+  // acima, já documentado).
+  const itemDivergenciaAtivo = itemDivergenciaSelecionado
+    ? itensDivergenciaRecorrente.itens.find(it=>it.productCode===itemDivergenciaSelecionado) || null
+    : null;
 
   return (
     <div>
@@ -16742,31 +16964,204 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
       />
 
       <div className="section-title">Itens com Divergência Recorrente</div>
-      <div className="panel">
-        <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginBottom:16,maxWidth:640}}>
-          Itens contados 2 ou mais vezes com divergência (qualquer diferença entre sistema e
-          contagem física, mesmo critério do indicador "Itens Recorrentes" acima) dentro do período
-          selecionado em "Filtros" — aponta item com problema estrutural (endereço, unidade de
-          medida, cadastro) em vez de um erro pontual de contagem.
+      <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginBottom:16,maxWidth:720}}>
+        Itens contados 2 ou mais vezes dentro do período selecionado em "Filtros", com divergência
+        (qualquer diferença entre sistema e contagem física) em pelo menos uma dessas contagens —
+        aponta item com possível problema estrutural (endereço, unidade de medida, cadastro,
+        movimentação) pra investigar, sem afirmar qual é a causa.
+      </div>
+
+      <div className="ops-kpi-row" style={{marginBottom:20}}>
+        <div className="ops-kpi-card">
+          <div className="ops-kpi-head">
+            <span className="ops-kpi-label">Itens Recorrentes</span>
+            <span className="ops-kpi-icon" style={{background:'var(--blue-bg)', color:'var(--blue)'}}><DIcon name="repeat" size={15} /></span>
+          </div>
+          <div className="ops-kpi-value">{itensDivergenciaRecorrente.totalItens}</div>
+          <div className="ops-kpi-meta">Produtos contados 2+ vezes com divergência no período</div>
         </div>
-        {itensDivergenciaRecorrente.itens.length===0 ? (
-          <div style={{color:'var(--ink-dim)',fontSize:'var(--text-sm)'}}>Nenhum item com divergência recorrente no período selecionado.</div>
-        ) : (
-          <div style={{overflowX:'auto'}}>
-            <table className="rank-table">
-              <thead><tr><th>Produto</th><th className="num">Contagens no período</th><th className="num">Divergências</th><th className="num">Taxa de divergência</th><th>Última divergência</th></tr></thead>
-              <tbody>
-                {itensDivergenciaRecorrente.itens.map((it)=>(
-                  <tr key={it.productCode}>
-                    <td><div style={{fontSize:'var(--text-xs)',fontWeight:700,color:'var(--ink-dim)'}}>{reconstructNumericCode(it.productCode)}</div><div>{it.descricao}</div></td>
-                    <td className="num">{it.total}</td>
-                    <td className="num">{it.divergentes}</td>
-                    <td className="num">{Math.round(it.taxaDivergencia*100)}%</td>
-                    <td>{it.ultimaDivergencia ? fmtDataBR(it.ultimaDivergencia) : '—'}</td>
+        <div className="ops-kpi-card">
+          <div className="ops-kpi-head">
+            <span className="ops-kpi-label">Críticos</span>
+            <span className="ops-kpi-icon" style={{background:'var(--danger-bg)', color:'var(--danger)'}}><DIcon name="alertTriangle" size={15} /></span>
+          </div>
+          <div className="ops-kpi-value">{itensDivergenciaRecorrente.itensCriticos}</div>
+          <div className="ops-kpi-meta danger">Divergiram em 100% das contagens do período</div>
+        </div>
+        <div className="ops-kpi-card">
+          <div className="ops-kpi-head">
+            <span className="ops-kpi-label">Taxa de Recorrência</span>
+            <span className="ops-kpi-icon" style={{background:'var(--warn-bg)', color:'var(--warn)'}}><DIcon name="percent" size={15} /></span>
+          </div>
+          <div className="ops-kpi-value">{(itensDivergenciaRecorrente.taxaRecorrenciaAgregada*100).toFixed(1).replace('.',',')}%</div>
+          <div className="ops-kpi-meta">Das contagens destes itens apresentaram divergência</div>
+        </div>
+        <div className="ops-kpi-card">
+          <div className="ops-kpi-head">
+            <span className="ops-kpi-label">Última Divergência</span>
+            <span className="ops-kpi-icon" style={{background:'var(--blue-bg)', color:'var(--blue)'}}><DIcon name="calendar" size={15} /></span>
+          </div>
+          <div className="ops-kpi-value">{itensDivergenciaRecorrente.ultimaDivergenciaGeral ? fmtDataBR(itensDivergenciaRecorrente.ultimaDivergenciaGeral) : '—'}</div>
+          <div className="ops-kpi-meta">Data mais recente encontrada no período</div>
+        </div>
+      </div>
+
+      <div className={'divrec-layout'+(itemDivergenciaAtivo ? ' has-detail' : '')}>
+        <div className="panel">
+          <div className="divrec-table-head">
+            <div className="divrec-table-title">Itens com divergência recorrente ({itensDivergenciaOrdenados.length})</div>
+            <div className="divrec-search">
+              <DIcon name="search" size={15} />
+              <input
+                type="text"
+                value={buscaDivergencia}
+                onChange={e=>setBuscaDivergencia(e.target.value)}
+                placeholder="Buscar código ou descrição..."
+              />
+            </div>
+          </div>
+          {itensDivergenciaRecorrente.totalItens===0 ? (
+            <div className="divrec-empty">Nenhum item com divergência recorrente no período selecionado.</div>
+          ) : itensDivergenciaOrdenados.length===0 ? (
+            <div className="divrec-empty">Nenhum item encontrado pra "{buscaDivergencia}".</div>
+          ) : (
+            <div style={{overflowX:'auto'}}>
+              <table className="rank-table">
+                <thead>
+                  <tr>
+                    <th>Produto</th>
+                    <th className="num">
+                      <button type="button" className={'divrec-th-btn'+(ordemDivergencia.coluna==='contagens'?' active':'')} onClick={()=>alternarOrdemDivergencia('contagens')}>
+                        Contagens <DIcon name={ordemDivergencia.coluna==='contagens'&&ordemDivergencia.direcao==='asc'?'arrowUp':'arrowDown'} size={11} />
+                      </button>
+                    </th>
+                    <th className="num">
+                      <button type="button" className={'divrec-th-btn'+(ordemDivergencia.coluna==='divergentes'?' active':'')} onClick={()=>alternarOrdemDivergencia('divergentes')}>
+                        Com Divergência <DIcon name={ordemDivergencia.coluna==='divergentes'&&ordemDivergencia.direcao==='asc'?'arrowUp':'arrowDown'} size={11} />
+                      </button>
+                    </th>
+                    <th className="num">
+                      <button type="button" className={'divrec-th-btn'+(ordemDivergencia.coluna==='taxa'?' active':'')} onClick={()=>alternarOrdemDivergencia('taxa')}>
+                        Taxa de Recorrência <DIcon name={ordemDivergencia.coluna==='taxa'&&ordemDivergencia.direcao==='asc'?'arrowUp':'arrowDown'} size={11} />
+                      </button>
+                    </th>
+                    <th>
+                      <button type="button" className={'divrec-th-btn'+(ordemDivergencia.coluna==='ultimaDivergencia'?' active':'')} onClick={()=>alternarOrdemDivergencia('ultimaDivergencia')}>
+                        Última Divergência <DIcon name={ordemDivergencia.coluna==='ultimaDivergencia'&&ordemDivergencia.direcao==='asc'?'arrowUp':'arrowDown'} size={11} />
+                      </button>
+                    </th>
+                    <th>Padrão Identificado</th>
+                    <th>Status</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {itensDivergenciaOrdenados.map((it)=>(
+                    <tr
+                      key={it.productCode}
+                      className={'divrec-row'+(itemDivergenciaAtivo && itemDivergenciaAtivo.productCode===it.productCode ? ' selected' : '')}
+                      onClick={()=>setItemDivergenciaSelecionado(it.productCode)}
+                    >
+                      <td><div style={{fontSize:'var(--text-xs)',fontWeight:700,color:'var(--ink-dim)'}}>{reconstructNumericCode(it.productCode)}</div><div>{it.descricao}</div></td>
+                      <td className="num">{it.total}</td>
+                      <td className="num">{it.divergentes}</td>
+                      <td className="num">{Math.round(it.taxaDivergencia*100)}%</td>
+                      <td>{it.ultimaDivergencia ? fmtDataBR(it.ultimaDivergencia) : '—'}</td>
+                      <td><PadraoDivergenciaTag padrao={it.padrao} /></td>
+                      <td><StatusDivergenciaTag status={it.status} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {itensDivergenciaRecorrente.totalItens>0 && (
+            <div className="divrec-footer">
+              <span>
+                Mostrando {itensDivergenciaOrdenados.length} {itensDivergenciaOrdenados.length===1?'item':'itens'}
+                {buscaDivergenciaNorm ? ` de ${itensDivergenciaRecorrente.totalItens}` : ''}
+                {' · '}Considera apenas produtos com 2 ou mais contagens no período e com pelo menos uma divergência.
+              </span>
+            </div>
+          )}
+        </div>
+
+        {itemDivergenciaAtivo && (
+          <div className="divrec-detail">
+            <div className="divrec-detail-head">
+              <div>
+                <div className="divrec-detail-code">{reconstructNumericCode(itemDivergenciaAtivo.productCode)}</div>
+                <div className="divrec-detail-desc">{itemDivergenciaAtivo.descricao}</div>
+              </div>
+              <button type="button" className="divrec-detail-close" onClick={()=>setItemDivergenciaSelecionado(null)} aria-label="Fechar">
+                <DIcon name="x" size={18} />
+              </button>
+            </div>
+
+            <div className="divrec-detail-summary">
+              <div className="divrec-summary-card">
+                <div className="divrec-summary-label">Total de Contagens</div>
+                <div className="divrec-summary-value">{itemDivergenciaAtivo.total}</div>
+              </div>
+              <div className="divrec-summary-card">
+                <div className="divrec-summary-label">Com Divergência</div>
+                <div className="divrec-summary-value" style={{color:'var(--danger)'}}>{itemDivergenciaAtivo.divergentes} ({Math.round(itemDivergenciaAtivo.taxaDivergencia*100)}%)</div>
+              </div>
+            </div>
+
+            <div className="divrec-detail-section-title"><DIcon name="calendar" size={14} /> Histórico da Divergência</div>
+            <ul className="divrec-timeline">
+              {itemDivergenciaAtivo.historico.map((h,idx)=>(
+                <li key={idx} className="divrec-timeline-item">
+                  <span className="divrec-timeline-dot" style={{background: h.divergente ? 'var(--danger)' : 'var(--ok)'}}></span>
+                  <div className="divrec-timeline-date">{fmtDataBR(h.data)}</div>
+                  <div className="divrec-timeline-nums">
+                    <span>Sistema: <b>{h.saldoSistema==null?'—':h.saldoSistema}</b></span>
+                    <span>Físico: <b>{h.qtdContada==null?'—':h.qtdContada}</b></span>
+                    <span>Diferença: <b>{h.diferenca==null?'—':(h.diferenca>0?'+':'')+h.diferenca}</b></span>
+                  </div>
+                  <StatusTag status={h.divergente?'danger':'ok'} text={h.divergente?'Divergente':'Conforme'} />
+                </li>
+              ))}
+            </ul>
+
+            <div className="divrec-detail-section-title"><DIcon name="info" size={14} /> O que Investigar</div>
+            <div className="divrec-detail-section-desc">Pontos de verificação para análise do item. Não indica causa definitiva.</div>
+            <div style={{marginBottom:4}}>
+              {CHECKLIST_DIVERGENCIA_ITEMS.map(item=>{
+                const chave = itemDivergenciaAtivo.productCode+'|'+item.chave;
+                return (
+                  <label key={item.chave} className="divrec-checklist-item">
+                    <span className="divrec-checklist-icon"><DIcon name={item.icon} size={15} /></span>
+                    <span className="divrec-checklist-text">
+                      <div className="divrec-checklist-label">{item.label}</div>
+                      <div className="divrec-checklist-desc">{item.desc}</div>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={!!checklistDivergenciaMarcado[chave]}
+                      onChange={e=>setChecklistDivergenciaMarcado(prev=>({...prev, [chave]: e.target.checked}))}
+                    />
+                  </label>
+                );
+              })}
+            </div>
+
+            <div className="divrec-detail-actions">
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={()=>{
+                  const codigo = reconstructNumericCode(itemDivergenciaAtivo.productCode);
+                  if(navigator.clipboard && navigator.clipboard.writeText){
+                    navigator.clipboard.writeText(codigo)
+                      .then(()=>{ setCodigoCopiadoFeedback(true); setTimeout(()=>setCodigoCopiadoFeedback(false), 2000); })
+                      .catch(()=>{});
+                  }
+                }}
+              >
+                {codigoCopiadoFeedback ? 'Código copiado ✓' : 'Copiar código pra buscar no Estoque'}
+              </button>
+            </div>
           </div>
         )}
       </div>
