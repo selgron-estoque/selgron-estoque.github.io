@@ -493,11 +493,33 @@ Deno.serve(async (req: Request) => {
       escolhido = candidatos.length === 1 ? candidatos[0] : null;
     }
 
-    const codigoRetornado = escolhido ? escolhido.codigo : null;
-    const descricao = escolhido ? escolhido.descricao : null;
-    const endereco = escolhido ? escolhido.endereco : null;
+    // URGENTE — ajuste no mesmo dia, reportado pelo cliente testando a
+    // correção acima: com `escolhido:null` (armazém não confirmado), a
+    // versão anterior escondia TUDO — inclusive descrição/endereço/unidade,
+    // que na prática NÃO são armazém-específicos (o campo "Armazem" aqui é
+    // mais uma marcação de propriedade/rateio do sistema do que um endereço
+    // físico diferente por armazém — confirmado com o produto real
+    // 121.040.00013: o mesmo endereço "001-B-5" aparecia tanto no bloco
+    // "Sem armazém" quanto na consulta direta que mostrava o saldo do
+    // armazém 01). Só o SALDO é genuinamente armazém-específico (é
+    // exatamente o dado que motivou toda essa correção) — nunca "empresta"
+    // de um bloco não confirmado. Texto (código/descrição/endereço/unidade)
+    // usa o primeiro valor não-nulo entre TODOS os blocos que bateram com o
+    // código, mesmo quando `escolhido` ficou null — trade-off aceito: um
+    // produto com endereços GENUINAMENTE diferentes por armazém pode
+    // mostrar o endereço de outro armazém aqui, mas isso é preferível a
+    // esconder um dado que na grande maioria dos casos está certo.
+    const achaTexto = (campo: "codigo" | "descricao" | "endereco" | "unidade"): string | null =>
+      blocosUnicos.find((b) => b[campo] != null && b[campo] !== "")?.[campo] ?? null;
+
+    const codigoRetornado = escolhido ? escolhido.codigo : achaTexto("codigo");
+    const descricao = escolhido ? escolhido.descricao : achaTexto("descricao");
+    const endereco = escolhido ? escolhido.endereco : achaTexto("endereco");
+    const unidade = escolhido ? escolhido.unidade : achaTexto("unidade");
+    // `armazem`/`saldo` continuam ESTRITAMENTE do bloco CONFIRMADO — nunca
+    // emprestam de outro bloco, é exatamente o dado que precisa estar
+    // certo pro armazém pedido.
     const armazem = escolhido ? escolhido.armazem : null;
-    const unidade = escolhido ? escolhido.unidade : null;
     const saldo = escolhido && escolhido.saldo != null ? escolhido.saldo : null;
 
     // Resolve o Kardex (já disparado em paralelo lá em cima) — nunca lança
