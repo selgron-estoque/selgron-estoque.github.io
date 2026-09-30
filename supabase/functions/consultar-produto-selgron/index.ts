@@ -362,16 +362,21 @@ Deno.serve(async (req: Request) => {
       return resposta(200, { ok: false, erro: "Código não encontrado na consulta Selgron.", naoEncontrado: true });
     }
 
-    // A PRÓPRIA página da Selgron declara quantos resultados encontrou
-    // ("Sua busca por X retornou N resultado(s)") — usamos isso como fonte
-    // da verdade sobre quantos resultados DISTINTOS existem de verdade,
-    // independente de quantos "blocos" nosso `dividirEmBlocos` (que
-    // depende só da repetição do rótulo "Código do Produto:" no HTML)
-    // conseguir separar. `null` quando o texto não bate com o padrão
-    // esperado (formato mudou) — nesse caso cai no comportamento de sempre
-    // mais abaixo, sem essa fonte extra de verdade.
-    const matchTotal = texto.match(/retornou\s+(\d+)\s+resultado/i);
-    const totalDeclarado = matchTotal ? Number(matchTotal[1]) : null;
+    // NÃO usamos "Sua busca por X retornou N resultado(s)" pra decidir nada
+    // — confirmado com o HTML real (View Source) da própria Selgron pro
+    // código 121.040.00013: a página declara "retornou 1 resultado(s)" mas
+    // a `<table>` tem 5 `<tr>` DE VERDADE, um por armazém (Sem armazém/01/
+    // 03/99/EX, saldos bem diferentes entre eles). Esse texto conta outra
+    // coisa (produto distinto, não linha de armazém) — nunca reflete
+    // quantos blocos/armazéns realmente existem na tabela. Uma versão
+    // anterior deste código usava esse número pra "fundir" blocos quando
+    // ele dizia "1" mas o parser separava mais de 1 — isso é o que causava
+    // o bug real reportado: os 5 armazéns eram fundidos num só (usando o
+    // 1º valor não-nulo de cada campo, que por acaso vinha do "Sem
+    // armazém"/saldo 0), perdendo de vista o bloco do armazém 01/saldo 294
+    // ANTES mesmo da lógica de desambiguação abaixo ter chance de achá-lo.
+    // A única fonte confiável de "quantos blocos existem" é a própria
+    // tabela (`dividirEmBlocos` abaixo) — nunca esse texto solto.
 
     // Divide a página em blocos (1 por resultado) ANTES de extrair qualquer
     // campo — ver `dividirEmBlocos` pro motivo (mesmo código pode aparecer
@@ -407,33 +412,6 @@ Deno.serve(async (req: Request) => {
           x.endereco === b.endereco,
       );
       if (!jaExiste) blocosUnicos.push(b);
-    }
-
-    // Quando a Selgron declara "retornou 1 resultado(s)" mas o parser (por
-    // alguma variação de marcação na página — dropdown/menu junto na mesma
-    // linha, célula de tabela sem quebra reconhecida etc.) mesmo assim
-    // separou em mais de um bloco pro MESMO código: em vez de tratar como
-    // ambíguo e devolver tudo `null` (perder um dado que existe e é
-    // inequívoco, só porque nosso parser tropeçou), FUNDE os blocos num só,
-    // pegando o primeiro valor não-nulo de cada campo entre eles — resgata
-    // o resultado real sem arriscar misturar armazéns quando eles
-    // genuinamente existem (só entra aqui quando a PRÓPRIA página confirma
-    // que é 1 resultado só; com 2+ resultados declarados, a ambiguidade é
-    // real e continua exigindo `armazem` pra desempatar, como sempre).
-    if (totalDeclarado === 1 && blocosUnicos.length > 1) {
-      const acha = <K extends keyof BlocoResultado>(campo: K): BlocoResultado[K] | null =>
-        blocosUnicos.find((b) => b[campo] != null && b[campo] !== "")?.[campo] ?? null;
-      const combinado: BlocoResultado = {
-        codigo: acha("codigo"),
-        descricao: acha("descricao"),
-        saldo: acha("saldo"),
-        saldoTextoBruto: acha("saldoTextoBruto"),
-        endereco: acha("endereco"),
-        armazem: acha("armazem"),
-        unidade: acha("unidade"),
-      };
-      blocosUnicos.length = 0;
-      blocosUnicos.push(combinado);
     }
 
     if (blocosUnicos.length === 1 && blocosUnicos[0].saldo == null) {
