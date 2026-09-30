@@ -457,20 +457,38 @@ Deno.serve(async (req: Request) => {
     }
 
     // Escolhe QUAL bloco usar, só entre os que já batem com o código exato.
-    // 1 resultado só -> sem ambiguidade nenhuma, usa ele (comportamento de
-    // sempre). Mais de 1 (o código existe em mais de 1 armazém) -> só
-    // resolve quando o armazém pedido bate com EXATAMENTE 1 bloco; senão
-    // (sem armazém informado, nenhum bloco bate, ou mais de um bate — nunca
-    // deveria acontecer) fica `null`: cada campo abaixo sai `null` nesse
-    // caso, sem adivinhar — o front-end (padrão "...Efetivo" em CountStep)
-    // já sabe cair pro saldo/endereço/etc. já em cache no Supabase quando um
-    // campo vem `null` daqui, exatamente o comportamento seguro desejado.
-    // Zero blocos (o código pedido não bateu com nenhum resultado exato —
-    // só variações de prefixo) também cai aqui, com `escolhido:null`.
+    //
+    // BUG REAL corrigido aqui (reportado pelo cliente com print da consulta
+    // real, produto 121.040.00013): quando a busca devolve EXATAMENTE 1
+    // bloco pro código, o código ANTERIOR usava esse bloco sem checar se o
+    // armazém dele batia com `armazemPedido` — "1 resultado só = sem
+    // ambiguidade nenhuma". Isso está ERRADO quando a Selgron devolve só o
+    // resultado de OUTRO armazém (ex.: "Sem armazém", saldo 0) pro mesmo
+    // código, sem trazer nenhum resultado do armazém 01 nessa busca — a
+    // function aceitava esse bloco de qualquer jeito e devolvia "saldo 0",
+    // mascarando o saldo real do armazém 01. Agora: com `armazemPedido`
+    // informado, o ÚNICO bloco só é aceito se o armazém dele bater —
+    // exatamente o mesmo critério que já valia pra 2+ blocos, estendido pro
+    // caso de 1 só. Sem `armazemPedido` (nenhum armazém conhecido pra
+    // desambiguar), o comportamento de sempre continua (usa o único bloco).
+    //
+    // 2+ blocos (o código existe em mais de 1 armazém) -> só resolve quando
+    // o armazém pedido bate com EXATAMENTE 1 bloco; senão (sem armazém
+    // informado, nenhum bloco bate, ou mais de um bate — nunca deveria
+    // acontecer) fica `null`. Em QUALQUER caso em que existe pelo menos 1
+    // bloco pro código mas não deu pra confirmar o do armazém certo, cada
+    // campo abaixo sai `null` e `ambiguo:true` — o front-end (padrão
+    // "...Efetivo" em CountStep) trava a confirmação em vez de assumir "0",
+    // exatamente o comportamento seguro desejado (ver `saldoIndisponivelAoVivo`/
+    // `saldoGenuinamenteAusente`, index.html). Zero blocos (o código pedido
+    // não bateu com nenhum resultado exato — só variações de prefixo)
+    // continua sendo o ÚNICO caso tratado como genuinamente ausente.
     let escolhido: BlocoResultado | null = null;
-    if (blocosUnicos.length <= 1) {
-      escolhido = blocosUnicos[0] || null;
-    } else if (armazemPedido) {
+    if (blocosUnicos.length === 1) {
+      const unico = blocosUnicos[0];
+      const bate = !armazemPedido || normalizarArmazem(unico.armazem) === armazemPedido;
+      escolhido = bate ? unico : null;
+    } else if (blocosUnicos.length > 1 && armazemPedido) {
       const candidatos = blocosUnicos.filter((b) => normalizarArmazem(b.armazem) === armazemPedido);
       escolhido = candidatos.length === 1 ? candidatos[0] : null;
     }
@@ -513,10 +531,16 @@ Deno.serve(async (req: Request) => {
       // bloco de saldo/endereço acima ficou ambíguo/sem match.
       ultimaMovimentacao,
       custoUnitario,
-      // Informativo só — o front-end não lê isto quando ok:true (cada campo
-      // acima já reflete `null` sozinho quando não deu pra resolver), mas
-      // ajuda a diagnosticar um "saldo sumiu" via log/DevTools no futuro.
-      ambiguo: blocosUnicos.length > 1 && !escolhido,
+      // Lido de verdade pelo front-end (`liveConsulta.ambiguo`, index.html)
+      // pra distinguir "código genuinamente sem saldo nesse armazém" (saldo
+      // 0 de verdade, `ambiguo:false`) de "código existe, só não deu pra
+      // confirmar QUAL bloco é do armazém pedido" (nunca assume 0, trava a
+      // confirmação pedindo autorização) — `blocosUnicos.length > 0` cobre
+      // tanto 2+ blocos sem match quanto o ÚNICO bloco não bater com
+      // `armazemPedido` (ver comentário grande acima, o bug corrigido
+      // agora). Só `blocosUnicos.length === 0` (código não achou NENHUM
+      // resultado exato) fica `false` — esse sim é genuinamente ausente.
+      ambiguo: blocosUnicos.length > 0 && !escolhido,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
