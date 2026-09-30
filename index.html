@@ -1374,8 +1374,8 @@
        cards de Acuracidade viraram gráfico (ver AccuracyComparisonBarChart),
        essa fileira ficou com só 3 cards, sobrando 1/4 de espaço vazio no
        grid fixo de 4 colunas de sempre. Em vez de mexer no `.ops-kpi-row`
-       base (compartilhado por "Efeito dos Ajustes Aprovados"/SAsAbertoPanel,
-       que continuam com o grid de 4 colunas de sempre), esse modificador usa
+       base (compartilhado por outras telas, ex. SAsAbertoPanel, que
+       continuam com o grid de 4 colunas de sempre), esse modificador usa
        `auto-fit` — os cards existentes esticam pra preencher a linha toda,
        em qualquer largura de tela, sem precisar de nenhum breakpoint extra
        (auto-fit já colapsa sozinho pra menos colunas em tela estreita). */
@@ -14572,8 +14572,8 @@ function itemAcuracidade(c){
 // unidade (ex.: sistema 100 / achado 99), vale 0% — nunca graduada. Função
 // própria, separada de `itemAcuracidade` (a fórmula graduada) de propósito:
 // `itemAcuracidade` continua intocada e continua alimentando Home,
-// Dashboard, "Efeito dos Ajustes Aprovados" e o gráfico da aba Indicadores
-// — nenhum desses foi pedido pra mudar, só o indicador esquerdo desta
+// Dashboard e o gráfico da aba Indicadores — nenhum desses foi pedido pra
+// mudar, só o indicador esquerdo desta
 // tela. O indicador DIREITO ("Divergência Quantitativa") usa
 // `itemAcuracidadeQuantitativa`, que continua graduada — é essa oposição
 // binária vs. graduada, sobre a MESMA população de itens recorrentes, que
@@ -14892,12 +14892,10 @@ function computeMonthlyStats(counts, dataInicioStr, dataFimStr){
 // Cada mês é atribuído pelo campo `.data` do PRÓPRIO documento de contagem
 // (via `computeMonthlyStats`/`getMonthInfo`) — nunca uma data de cadastro/
 // atualização de outra natureza.
-// Mesma tolerância/critério já usado por `computeEfeitoAjustes` (evita
-// "piorou"/"melhorou" por ruído de ponto flutuante) — extraído aqui como
-// função nomeada só porque `computeAcuracidadeItensRecorrentes` também
-// precisa dessa comparação (contra o documento anterior do MESMO código, não
-// contra "a próxima contagem depois de um ajuste" como em
-// `computeEfeitoAjustes` — mesma fórmula, uso diferente).
+// Tolerância de 0.001 evita "piorou"/"melhorou" por ruído de ponto
+// flutuante — extraído aqui como função nomeada pra uso em
+// `computeAcuracidadeItensRecorrentes` (compara contra o documento anterior
+// do MESMO código).
 function compararEvolucaoAcuracidade(accAntes, accDepois){
   if(accAntes==null || accDepois==null) return 'sem_dado';
   const diff = accDepois - accAntes;
@@ -14958,7 +14956,7 @@ function computeAcuracidadeItensRecorrentes(pool, dataInicioStr, dataFimStr){
   // Monta a série mensal com `itemAcuracidadeBinaria` (nunca a
   // `computeMonthlyStats` genérica, que usa a fórmula graduada
   // `itemAcuracidade` — ela continua intocada pros outros usos: Home,
-  // Dashboard, Indicadores, "Efeito dos Ajustes Aprovados"). Mesmo
+  // Dashboard, Indicadores). Mesmo
   // esqueleto de meses (cursor mês a mês de `dataInicioStr` até
   // `dataFimStr`) que `computeMonthlyStats` monta, só a pontuação por
   // documento que muda.
@@ -15166,81 +15164,57 @@ function acuracidadeGeralAte(pool, dataLimiteStr){
   return mediasMensais.length>0 ? (mediasMensais.reduce((s,v)=>s+v,0)/mediasMensais.length) : 100;
 }
 
-// "Efeito dos Ajustes Aprovados" (Indicadores) — pedido de um coordenador
-// de almoxarifado: "a acuracidade de itens que já tiveram contagens... está
-// tendo resultado os ajustes aprovados?". Não basta olhar a tendência geral
-// (isso o resto da seção "Tendência" já mostra) — a pergunta é sobre CADA
-// item que passou por um ajuste (SA de Ajuste ou Devolução, ambos via
-// `classificarStatusConcluido`): o problema físico que gerou aquele ajuste
-// foi resolvido de verdade? A única forma honesta de responder isso é
-// comparar a contagem que gerou o ajuste contra a PRÓXIMA vez que esse
-// MESMO código foi contado (em qualquer documento/inventário futuro, não só
-// dentro da mesma cadeia de recontagem — `contagemAnteriorId`/
-// `numeroContagem` só encadeiam recontagens de UM documento, nunca duas
-// contagens independentes do mesmo item ao longo do tempo).
+// "Itens com Divergência Recorrente" (página Acuracidade) — substituiu
+// "Efeito dos Ajustes Aprovados" (removido a pedido do cliente). Pergunta
+// diferente: não é "o ajuste resolveu o problema físico?", é "quais itens
+// erram toda vez que são contados?" — útil pra apontar item com problema
+// estrutural (endereço errado, unidade de medida trocada, cadastro
+// duvidoso) em vez de um erro pontual de operador.
+//
+// Mesmo critério BINÁRIO de divergência já usado em `itemAcuracidadeBinaria`
+// (`diferenca===0` bate, qualquer valor diferente de 0 diverge — sem
+// gradação: 1 unidade de diferença conta igual a 100), mas agrupado por
+// CÓDIGO em vez de por documento, já que a pergunta é sobre o item ao longo
+// do tempo, não sobre uma contagem isolada. "Recorrente" exige 2+ contagens
+// divergentes dentro do período — item que só divergiu 1 vez é um evento
+// pontual, não um padrão a investigar.
+//
 // `pool` já deve vir deduplicado por documento (mesmo `todasParaQualidade`
-// já usado por "Resumo da Operação"/"Itens Divergentes") — cada entrada
-// representa o veredito final de uma contagem, não uma rodada intermediária
-// já superada. `dataInicioStr`/`dataFimStr` filtram só a DATA DO AJUSTE
-// (mesmo período do painel "Filtros" já usado no resto desta seção) — a
-// busca pela "próxima contagem" sempre olha o pool inteiro, sem limite de
-// data, já que o resultado do ajuste pode só aparecer bem depois do período
-// escolhido.
-function computeEfeitoAjustes(pool, dataInicioStr, dataFimStr){
+// já usado pelo resto da página) — cada entrada é o veredito final de uma
+// contagem. `dataInicioStr`/`dataFimStr` filtram pela data da CONTAGEM
+// (mesmo período do painel "Filtros" desta página) — diferente do antigo
+// `computeEfeitoAjustes`, que filtrava pela data do AJUSTE; aqui não há
+// ajuste nenhum envolvido na pergunta, só o histórico de contagens do item.
+function computeItensDivergenciaRecorrente(pool, dataInicioStr, dataFimStr){
   const porCodigo = {};
   pool.forEach(c=>{
-    if(!c.data || !c.productCode) return;
-    (porCodigo[c.productCode] = porCodigo[c.productCode] || []).push(c);
-  });
-  Object.values(porCodigo).forEach(arr=>arr.sort((a,b)=> a.data===b.data ? 0 : (a.data<b.data ? -1 : 1)));
-
-  const itens = [];
-  Object.values(porCodigo).forEach(arr=>{
-    arr.forEach((c, i)=>{
-      const status = classificarStatusConcluido(c);
-      if(status!=='ajustado' && status!=='devolucao') return;
-      if(c.data<dataInicioStr || c.data>dataFimStr) return; // ajuste fora do período escolhido em "Filtros"
-      const prox = arr[i+1] || null;
-      const accAntes = itemAcuracidade(c);
-      const accDepois = prox ? itemAcuracidade(prox) : null;
-      let resultado;
-      if(!prox) resultado = 'aguardando';
-      else if(accAntes==null || accDepois==null) resultado = 'sem_dado';
-      else {
-        const diff = accDepois - accAntes;
-        resultado = diff>0.001 ? 'melhorou' : diff<-0.001 ? 'piorou' : 'manteve';
-      }
-      itens.push({
-        productCode: c.productCode,
-        descricao: c.descricao,
-        tipo: status==='devolucao' ? 'Devolução' : 'Ajuste (SA)',
-        dataAjuste: c.data,
-        accAntes,
-        dataProxima: prox ? prox.data : null,
-        accDepois,
-        resultado,
-      });
+    if(!c.data || !c.productCode || c.diferenca==null) return;
+    if(c.data<dataInicioStr || c.data>dataFimStr) return;
+    const grupo = (porCodigo[c.productCode] = porCodigo[c.productCode] || {
+      productCode: c.productCode, descricao: c.descricao, total: 0, divergentes: 0, ultimaDivergencia: null,
     });
+    grupo.total += 1;
+    if(c.descricao) grupo.descricao = c.descricao; // fica com a descrição mais recente vista
+    if(c.diferenca!==0){
+      grupo.divergentes += 1;
+      if(!grupo.ultimaDivergencia || c.data>grupo.ultimaDivergencia) grupo.ultimaDivergencia = c.data;
+    }
   });
 
-  const comparaveis = itens.filter(i=>i.resultado==='melhorou'||i.resultado==='piorou'||i.resultado==='manteve');
-  const melhoraram = itens.filter(i=>i.resultado==='melhorou').length;
-  const pioraram = itens.filter(i=>i.resultado==='piorou').length;
-  const mantiveram = itens.filter(i=>i.resultado==='manteve').length;
-  const aguardando = itens.filter(i=>i.resultado==='aguardando').length;
-  const semDado = itens.filter(i=>i.resultado==='sem_dado').length;
+  const itens = Object.values(porCodigo)
+    .filter(g=>g.divergentes>=2)
+    .map(g=>({...g, taxaDivergencia: g.divergentes/g.total}));
 
-  // Ordena pra chamar atenção primeiro pro que piorou/manteve (o que precisa
-  // de olhar de novo), depois o que melhorou, deixando aguardando/sem-dado
-  // por último — dentro do mesmo resultado, o ajuste mais recente primeiro.
-  const ORDEM_RESULTADO = {piorou:0, manteve:1, melhorou:2, sem_dado:3, aguardando:4};
-  itens.sort((a,b)=>{
-    const ra = ORDEM_RESULTADO[a.resultado], rb = ORDEM_RESULTADO[b.resultado];
-    if(ra!==rb) return ra-rb;
-    return b.dataAjuste.localeCompare(a.dataAjuste);
-  });
+  // Mais divergências primeiro (o problema mais frequente), desempatando
+  // pela TAXA de divergência (item contado poucas vezes mas errando sempre
+  // também merece atenção), e por último a divergência mais recente.
+  itens.sort((a,b)=>
+    b.divergentes-a.divergentes
+    || b.taxaDivergencia-a.taxaDivergencia
+    || (b.ultimaDivergencia||'').localeCompare(a.ultimaDivergencia||'')
+  );
 
-  return {itens, total: itens.length, comparaveis: comparaveis.length, melhoraram, pioraram, mantiveram, aguardando, semDado};
+  return {itens, totalItens: itens.length};
 }
 
 // Gera ticks "redondos" (passo de 1/2/5 × potência de 10) pro eixo Y —
@@ -15973,8 +15947,9 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   // gráfico sempre mostra o ano corrente inteiro até hoje.
   const anoAtualStr = String(new Date().getFullYear()) + '-01-01';
   const monthlyStats = computeMonthlyStats(poolTendencia, anoAtualStr, hojeStr);
-  // O indicador de acuracidade recorrente e "Efeito dos Ajustes Aprovados"
-  // saíram daqui — moram na página "Acuracidade" agora (ver
+  // O indicador de acuracidade recorrente e a seção de divergência por item
+  // (hoje "Itens com Divergência Recorrente", antes "Efeito dos Ajustes
+  // Aprovados") saíram daqui — moram na página "Acuracidade" agora (ver
   // `AcuracidadePanel`, que recalcula tudo de forma independente, sem
   // compartilhar estado com este componente). `monthlyStats` continua
   // aqui, intocado, só pra "Acuracidade Mensal".
@@ -16608,10 +16583,10 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
   const mesAtualStatsQuant = divergenciaQuantitativa.monthlyStats.find(m=>m.key===mesEmAndamentoKey) || null;
   const mesAtualLabelUpperQuant = (mesAtualStatsQuant && mesAtualStatsQuant.acuracidade!=null) ? mesEmAndamentoLabelUpper : null;
 
-  // "Efeito dos Ajustes Aprovados" — mesmo pool deduplicado
+  // "Itens com Divergência Recorrente" — mesmo pool deduplicado
   // (`todasParaQualidade`) e o mesmo intervalo de data do filtro desta
   // página (`dataInicioStr`/`dataFimStr`).
-  const efeitoAjustes = computeEfeitoAjustes(todasParaQualidade, dataInicioStr, dataFimStr);
+  const itensDivergenciaRecorrente = computeItensDivergenciaRecorrente(todasParaQualidade, dataInicioStr, dataFimStr);
 
   return (
     <div>
@@ -16763,78 +16738,33 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
         dataInicioStr={dataInicioStr}
         dataFimStr={dataFimStr}
         hojeStr={hojeStr}
-        subtitle="Período usado por 'Efeito dos Ajustes Aprovados' abaixo"
+        subtitle="Período usado por 'Itens com Divergência Recorrente' abaixo"
       />
 
-      <div className="section-title">Efeito dos Ajustes Aprovados</div>
+      <div className="section-title">Itens com Divergência Recorrente</div>
       <div className="panel">
         <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginBottom:16,maxWidth:640}}>
-          Para cada item com SA de Ajuste ou Devolução aprovada dentro do período selecionado em
-          "Filtros" acima, compara a acuracidade da contagem que gerou o ajuste contra a acuracidade
-          da PRÓXIMA vez que esse mesmo código foi contado — mostra se o problema físico foi
-          resolvido de verdade, não só se o ajuste foi aprovado.
+          Itens contados 2 ou mais vezes com divergência (qualquer diferença entre sistema e
+          contagem física, mesmo critério do indicador "Itens Recorrentes" acima) dentro do período
+          selecionado em "Filtros" — aponta item com problema estrutural (endereço, unidade de
+          medida, cadastro) em vez de um erro pontual de contagem.
         </div>
-        <div className="ops-kpi-row">
-          <div className="ops-kpi-card">
-            <div className="ops-kpi-head">
-              <span className="ops-kpi-label">Ajustes no Período</span>
-              <span className="ops-kpi-icon" style={{background:'var(--purple-bg)', color:'var(--purple)'}}><DIcon name="checkCircle" size={15} /></span>
-            </div>
-            <div className="ops-kpi-value">{efeitoAjustes.total}</div>
-            <div className="ops-kpi-meta">{efeitoAjustes.comparaveis} com contagem posterior pra comparar</div>
-          </div>
-          <div className="ops-kpi-card">
-            <div className="ops-kpi-head">
-              <span className="ops-kpi-label">Melhoraram</span>
-              <span className="ops-kpi-icon" style={{background:'var(--ok-bg)', color:'var(--ok)'}}><DIcon name="trendingUp" size={15} /></span>
-            </div>
-            <div className="ops-kpi-value">{efeitoAjustes.melhoraram}</div>
-            <div className="ops-kpi-meta">{efeitoAjustes.comparaveis>0 ? (efeitoAjustes.melhoraram/efeitoAjustes.comparaveis*100).toFixed(0) : '0'}% dos comparáveis</div>
-          </div>
-          <div className="ops-kpi-card">
-            <div className="ops-kpi-head">
-              <span className="ops-kpi-label">Pioraram</span>
-              <span className="ops-kpi-icon" style={{background:'var(--danger-bg)', color:'var(--danger)'}}><DIcon name="alertTriangle" size={15} /></span>
-            </div>
-            <div className="ops-kpi-value">{efeitoAjustes.pioraram}</div>
-            <div className="ops-kpi-meta danger">{efeitoAjustes.comparaveis>0 ? (efeitoAjustes.pioraram/efeitoAjustes.comparaveis*100).toFixed(0) : '0'}% dos comparáveis</div>
-          </div>
-          <div className="ops-kpi-card">
-            <div className="ops-kpi-head">
-              <span className="ops-kpi-label">Aguardando Confirmação</span>
-              <span className="ops-kpi-icon" style={{background:'var(--warn-bg)', color:'var(--warn)'}}><DIcon name="clock" size={15} /></span>
-            </div>
-            <div className="ops-kpi-value">{efeitoAjustes.aguardando}</div>
-            <div className="ops-kpi-meta">ainda sem contagem posterior desse código</div>
-          </div>
-        </div>
-        {efeitoAjustes.itens.length===0 ? (
-          <div style={{color:'var(--ink-dim)',fontSize:'var(--text-sm)'}}>Nenhum ajuste aprovado no período selecionado.</div>
+        {itensDivergenciaRecorrente.itens.length===0 ? (
+          <div style={{color:'var(--ink-dim)',fontSize:'var(--text-sm)'}}>Nenhum item com divergência recorrente no período selecionado.</div>
         ) : (
           <div style={{overflowX:'auto'}}>
             <table className="rank-table">
-              <thead><tr><th>Produto</th><th>Tipo</th><th>Ajuste em</th><th className="num">Acuracidade antes</th><th>Próxima contagem</th><th className="num">Acuracidade depois</th><th>Resultado</th></tr></thead>
+              <thead><tr><th>Produto</th><th className="num">Contagens no período</th><th className="num">Divergências</th><th className="num">Taxa de divergência</th><th>Última divergência</th></tr></thead>
               <tbody>
-                {efeitoAjustes.itens.map((it,idx)=>{
-                  const RESULTADO_TAG = {
-                    melhorou: {status:'ok', text:'Melhorou'},
-                    piorou: {status:'danger', text:'Piorou'},
-                    manteve: {status:'warn', text:'Manteve'},
-                    sem_dado: {status:'warn', text:'Sem dado p/ comparar'},
-                    aguardando: {status:'warn', text:'Aguardando confirmação'},
-                  }[it.resultado];
-                  return (
-                    <tr key={it.productCode+'-'+it.dataAjuste+'-'+idx}>
-                      <td><div style={{fontSize:'var(--text-xs)',fontWeight:700,color:'var(--ink-dim)'}}>{reconstructNumericCode(it.productCode)}</div><div>{it.descricao}</div></td>
-                      <td>{it.tipo}</td>
-                      <td>{fmtDataBR(it.dataAjuste)}</td>
-                      <td className="num">{it.accAntes==null ? '—' : Math.round(it.accAntes*100)+'%'}</td>
-                      <td>{it.dataProxima ? fmtDataBR(it.dataProxima) : '—'}</td>
-                      <td className="num">{it.accDepois==null ? '—' : Math.round(it.accDepois*100)+'%'}</td>
-                      <td><StatusTag status={RESULTADO_TAG.status} text={RESULTADO_TAG.text} /></td>
-                    </tr>
-                  );
-                })}
+                {itensDivergenciaRecorrente.itens.map((it)=>(
+                  <tr key={it.productCode}>
+                    <td><div style={{fontSize:'var(--text-xs)',fontWeight:700,color:'var(--ink-dim)'}}>{reconstructNumericCode(it.productCode)}</div><div>{it.descricao}</div></td>
+                    <td className="num">{it.total}</td>
+                    <td className="num">{it.divergentes}</td>
+                    <td className="num">{Math.round(it.taxaDivergencia*100)}%</td>
+                    <td>{it.ultimaDivergencia ? fmtDataBR(it.ultimaDivergencia) : '—'}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
