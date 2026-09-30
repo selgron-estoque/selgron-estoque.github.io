@@ -6352,6 +6352,18 @@ function App(){
   // lá a Sidebar sempre visível já cobre a navegação.
   const [navHistory, setNavHistory] = useState([]);
 
+  // Lembra em que página/posição de rolagem o operador estava na fila de
+  // Recontagens antes de abrir um item pra recontar — restaurado quando ele
+  // volta (`RecountFlow.onFinish`), pra não jogar a fila de volta pro topo
+  // da página 1 toda vez que ele conclui um item lá de baixo (pedido
+  // explícito do cliente: "quero que continue do ponto onde paramos").
+  // `useRef` (não state) de propósito — só RecountsPanel lê/escreve, não
+  // precisa causar re-render nenhum aqui em App(), é só uma "caixa de
+  // correio" entre um mount dela e o próximo. `goto()` (logo abaixo) já
+  // faz `window.scrollTo(0,0)` incondicional em TODA navegação — essa
+  // restauração roda DEPOIS disso, no mount seguinte de RecountsPanel.
+  const recontagensPosicaoRef = useRef(null);
+
   function goto(v, params){
     setNavHistory(prev=>[...prev, {view, flowState}]);
     setFlowState(params||null);
@@ -7400,7 +7412,7 @@ function App(){
         {view==='manualCount' && <ManualCountFlow user={currentUser} counts={counts} inventories={inventories} onRegisterCount={registerFinishedCount} onAddressProposed={addAddressProposal} operadorVeSaldo={operadorVeSaldo} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
         {view==='routeCount' && <RouteCountFlow inv={flowState} user={currentUser} counts={counts} inventories={inventories} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} gruposExcluidos={gruposExcluidos} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
         {view==='importedListCount' && <ImportedListCountFlow inv={flowState} user={currentUser} counts={counts} inventories={inventories} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
-        {view==='recounts' && hasAccess(currentUser,'recounts') && <RecountsPanel counts={counts} inventories={inventories} role={role} currentUser={currentUser} users={users} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onToggleLiberarOriginal={toggleLiberarRecontagemOriginal} onEditarMotivoObservacao={editarMotivoObservacaoContagem} onAtribuir={atribuirContagem} operadorVeValoresRecontagem={operadorVeValoresRecontagem} filtroInicial={typeof flowState==='string' ? flowState : ''} />}
+        {view==='recounts' && hasAccess(currentUser,'recounts') && <RecountsPanel counts={counts} inventories={inventories} role={role} currentUser={currentUser} users={users} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onToggleLiberarOriginal={toggleLiberarRecontagemOriginal} onEditarMotivoObservacao={editarMotivoObservacaoContagem} onAtribuir={atribuirContagem} operadorVeValoresRecontagem={operadorVeValoresRecontagem} filtroInicial={typeof flowState==='string' ? flowState : ''} posicaoRetomarRef={recontagensPosicaoRef} />}
         {view==='divergentes' && hasAccess(currentUser,'divergentes') && <DivergentItemsPanel counts={counts} inventories={inventories} role={role} goto={goto} onApprove={approveDivergence} onEnviarParaArmazem={enviarParaArmazem} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onEditarMotivoObservacao={editarMotivoObservacaoContagem} filtroInicial={typeof flowState==='string' ? flowState : ''} />}
         {view==='solicitacaoArmazem' && hasAccess(currentUser,'solicitacaoArmazem') && <SolicitacaoArmazemPanel counts={counts} inventories={inventories} role={role} onEnviarParaDiretoria={enviarParaAprovacaoDiretoria} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onVoltarParaAnaliseLider={voltarParaAnaliseLider} filtroInicial={typeof flowState==='string' ? flowState : ''} />}
         {view==='aprovacaoDiretoria' && hasAccess(currentUser,'aprovacaoDiretoria') && <DiretoriaApprovalPanel counts={counts} inventories={inventories} role={role} onApproveSA={aprovarAjusteDiretoria} onRejectSA={reprovarAjusteDiretoria} onToggleUrgente={toggleUrgente} filtroInicial={typeof flowState==='string' ? flowState : ''} />}
@@ -12167,8 +12179,8 @@ function SearchWithScanner({value, onChange, placeholder, onFocus, autoFocus=fal
 // memória (Realtime, sem paginação no fetch), então trocar de página não
 // bate no Supabase de novo, só corta o array antes de mapear pro JSX.
 const TAMANHOS_PAGINA_OPCOES = [50, 100, 200, 500];
-function usePaginacaoLista(lista, tamanhoPadrao=50){
-  const [pagina, setPagina] = useState(1);
+function usePaginacaoLista(lista, tamanhoPadrao=50, paginaInicial=1){
+  const [pagina, setPagina] = useState(paginaInicial);
   const [tamanhoPagina, setTamanhoPaginaState] = useState(tamanhoPadrao);
   // Trocar o tamanho da página sempre volta pra página 1 — senão dava pra
   // ficar numa página que não existe mais (ex: pág. 4 de 50 itens, muda pra
@@ -12249,7 +12261,7 @@ function SaAprovacaoDownloadButton({counts}){
   );
 }
 
-function RecountsPanel({counts, inventories, role, currentUser, users, goto, onDeleteCount, onToggleUrgente, onToggleLiberarOriginal, onEditarMotivoObservacao, onAtribuir, operadorVeValoresRecontagem, filtroInicial}){
+function RecountsPanel({counts, inventories, role, currentUser, users, goto, onDeleteCount, onToggleUrgente, onToggleLiberarOriginal, onEditarMotivoObservacao, onAtribuir, operadorVeValoresRecontagem, filtroInicial, posicaoRetomarRef}){
   const canMark = role==='lider' || role==='admin';
   // Escopo AJUSTADO (cliente pediu pra restringir depois de ver o resultado
   // inicial): o quadro Sistema/Físico/Diferença/% fica visível pra QUALQUER
@@ -12323,10 +12335,13 @@ function RecountsPanel({counts, inventories, role, currentUser, users, goto, onD
   // Ordenação escolhida pelo usuário: por código do produto (padrão) ou por
   // endereço — pedido do cliente, pra poder percorrer a fila na sequência que
   // fizer mais sentido pro trabalho físico (ex: seguir a rota de endereços em
-  // vez de pular de corredor em corredor pela ordem de código). `useState`
-  // puro (não persiste) — mesmo critério já usado pra `busca`/`severidade`
-  // nesta tela, é preferência de sessão, não configuração do admin.
-  const [ordenacao, setOrdenacao] = useState('codigo');
+  // vez de pular de corredor em corredor pela ordem de código). `usePersistedState`
+  // (localStorage) — pedido explícito do cliente: "quero que sempre salve
+  // minha última seleção até eu reordenar ou sair do app" — ANTES disso era
+  // `useState` puro (mesmo critério de `busca`/`severidade`), que se perdia
+  // a cada vez que o app remonta esta tela (ex.: abrir um item pra recontar
+  // e voltar). Default continua "código", como pedido.
+  const [ordenacao, setOrdenacao] = usePersistedState('recontagensOrdenacao', 'codigo');
   // Itens marcados como urgentes (líder/admin, ver toggleUrgente em App())
   // sempre aparecem primeiro, não importa a ordenação escolhida — sort
   // estável, preserva o critério de código/endereço como desempate dentro de
@@ -12345,7 +12360,29 @@ function RecountsPanel({counts, inventories, role, currentUser, users, goto, onD
     }
     return (a.productCode||'').localeCompare(b.productCode||'');
   });
-  const {pagina, setPagina, tamanhoPagina, setTamanhoPagina, listaPaginada, totalPaginas} = usePaginacaoLista(listaFiltrada, 50);
+  // Página/rolagem a retomar (ver `recontagensPosicaoRef` em App()) —
+  // preenchido só quando este mount é um RETORNO de ter concluído uma
+  // recontagem (ver botão "Recontar" mais abaixo, que grava a posição
+  // ANTES de navegar pra lá). Lido uma vez só (`useState` com inicializador
+  // de função — não `useRef.current` direto, que mudaria de valor ANTES do
+  // efeito de restauração de rolagem, abaixo, conseguir ler) e limpo logo
+  // em seguida, pra uma visita normal a esta tela (não vinda de concluir
+  // uma recontagem) nunca herdar uma posição de uma sessão anterior.
+  const [posicaoRetomada] = useState(()=>{
+    const pos = posicaoRetomarRef && posicaoRetomarRef.current;
+    if(posicaoRetomarRef) posicaoRetomarRef.current = null;
+    return pos;
+  });
+  const {pagina, setPagina, tamanhoPagina, setTamanhoPagina, listaPaginada, totalPaginas} = usePaginacaoLista(listaFiltrada, 50, posicaoRetomada ? posicaoRetomada.pagina : 1);
+  // `goto()` (App()) já fez `window.scrollTo(0,0)` incondicional só de
+  // trocar de tela — essa restauração precisa rodar DEPOIS disso, no
+  // próximo frame (`requestAnimationFrame`), senão o scrollTo(0,0) do
+  // `goto` roda por último e desfaz a restauração.
+  useEffect(()=>{
+    if(!posicaoRetomada) return;
+    const id = requestAnimationFrame(()=>window.scrollTo(0, posicaoRetomada.scrollY));
+    return ()=>cancelAnimationFrame(id);
+  }, []);
 
   const [urgenteBusyId, setUrgenteBusyId] = useState(null);
   const [urgenteErro, setUrgenteErro] = useState({});
@@ -12644,7 +12681,7 @@ function RecountsPanel({counts, inventories, role, currentUser, users, goto, onD
                   )}
                 </div>
                 <div className="count-card-actions-col">
-                  <button className="btn btn-primary" onClick={()=>goto('recount', c)}><Ic>↻</Ic> Recontar</button>
+                  <button className="btn btn-primary" onClick={()=>{ if(posicaoRetomarRef) posicaoRetomarRef.current = {pagina, scrollY: window.scrollY}; goto('recount', c); }}><Ic>↻</Ic> Recontar</button>
                   <button className="btn btn-outline" onClick={()=>toggleDetalhes(c.id)}><Ic>▤</Ic> {detalhesOcultosIds.has(c.id) ? 'Detalhes' : 'Ocultar'}</button>
                 </div>
               </div>
