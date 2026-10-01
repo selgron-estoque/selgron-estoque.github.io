@@ -220,7 +220,7 @@
   .kpi-card-titulo{font-size:14px;font-weight:600;line-height:18px;height:18px;color:var(--ink);white-space:nowrap;}
   .kpi-card-periodo{font-size:12px;line-height:16px;height:16px;color:var(--ink-dim);margin-top:2px;white-space:nowrap;}
   .kpi-card-body{grid-row:2;grid-column:2;min-height:0;display:flex;flex-direction:column;justify-content:space-between;padding-top:6px;box-sizing:border-box;}
-  .kpi-card-body-row{display:flex;gap:8px;}
+  .kpi-card-body-row{display:flex;gap:0;}
   /* `justify-content:center` — sem isso, um card SEM `meta` (ex.:
      Divergências, que só passa `direitaCustom`) tinha só 1 filho aqui (o
      valor), que ficava ancorado no TOPO (flex-start, padrão) enquanto
@@ -228,30 +228,35 @@
      "flutuando" desalinhado com o resto do card (reportado pelo cliente
      com print). Centralizar os dois lados pelo mesmo eixo resolve, e não
      muda nada nos cards COM `meta` (valor+meta continuam empilhados, só
-     centralizados como bloco em vez de colados no topo). */
-  /* `overflow:hidden` — bug real reportado pelo cliente com print: o valor
-     "100%" (3 dígitos, caso real do card "Acuracidade (itens recontados)")
-     não cabia na largura que sobrava pra esta coluna e vazava por cima da
+     centralizados como bloco em vez de colados no topo). `overflow:hidden`
+     — bug real reportado pelo cliente com print: o valor "100%" (3
+     dígitos, caso real do card "Acuracidade (itens recontados)") não
+     cabia na largura que sobrava pra esta coluna e vazava por cima da
      `.kpi-card-secondary` ao lado, sobrepondo o texto ("Itens avaliados"
      etc.) — `min-width:0` deixa a coluna ENCOLHER, mas sozinho não corta o
-     TEXTO que não coube; precisa das duas coisas juntas. Resolvido também
-     dando mais espaço pra esta coluna (`.kpi-card-secondary` mais estreita
-     + `gap` menor logo abaixo) — `overflow:hidden` aqui é o limite de
-     segurança pra qualquer valor futuro que ainda assim não couber, nunca
-     mais sobrepõe o vizinho. */
+     TEXTO que não coube; precisa das duas coisas juntas. */
   .kpi-card-primary{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;overflow:hidden;}
   /* Fonte maior (era 40px) — pedido do cliente pra dar mais destaque ao
      número principal do card, que é o dado mais importante ali. */
   .kpi-card-valor{font-family:var(--font-mono);font-size:48px;font-weight:700;line-height:48px;color:var(--ink);}
   .kpi-card-meta{font-size:14px;font-weight:600;line-height:18px;color:var(--ink);margin-top:2px;}
-  /* Largura reduzida de 158px pra 122px (e fonte/gap da coluna um pouco
-     menores logo abaixo) — parte da correção do bug de sobreposição
-     acima: dá mais espaço pro valor em destaque (48px) sem precisar
-     diminuí-lo, que era um pedido explícito do cliente. Testado com o
-     rótulo mais comprido ("Itens com divergência") + valor de até 3
-     dígitos — continua cabendo numa linha, sem reticência. */
-  .kpi-card-secondary{width:122px;flex-shrink:0;display:flex;flex-direction:column;justify-content:center;min-width:0;}
-  .kpi-card-info-row{display:flex;align-items:baseline;justify-content:space-between;gap:4px;font-size:11.5px;font-weight:400;color:var(--ink-dim);line-height:18px;white-space:nowrap;}
+  /* Refinamento "dashboard executivo" (pedido do cliente): os 4 cards de
+     KPI usavam 3 linguagens visuais diferentes — só o card de Divergências
+     tinha divisor vertical entre número e coluna lateral, os outros 3 só
+     um `gap`. Unificado num único `.kpi-card-divider` (ver abaixo),
+     reaproveitado pelos 2 layouts (padrão e "hero"). `width:124px` (era
+     158px, depois 122px na correção do bug de sobreposição) recalculada
+     junto com o divisor pra caber o rótulo mais comprido ("Itens com
+     divergência") + valor de até 3 dígitos, sem reticência e sem invadir
+     o número principal — testado com Playwright nos 3 cards padrão +
+     valores extremos (ver commit). */
+  .kpi-card-secondary{width:124px;flex-shrink:0;display:flex;flex-direction:column;justify-content:center;min-width:0;}
+  /* Divisor compartilhado pelos 2 layouts de card (padrão e "hero") — 1px,
+     cor `--line` (mesma de qualquer borda discreta do resto do app),
+     margem igual nos dois lados pra ficar com o mesmo "respiro" em
+     qualquer card, sem depender de quanto espaço sobra. */
+  .kpi-card-divider{width:1px;align-self:stretch;background:var(--line);margin:1px 6px;flex-shrink:0;}
+  .kpi-card-info-row{display:flex;align-items:baseline;justify-content:space-between;gap:4px;font-size:11.5px;font-weight:400;color:var(--ink-dim);line-height:20px;white-space:nowrap;}
   .kpi-card-info-row .v{font-size:13px;font-weight:600;color:var(--ink);white-space:nowrap;}
   /* Coluna secundária alternativa (card de Divergências: percentual em
      destaque + tendência, no lugar das 3 linhas rótulo/valor). */
@@ -265,12 +270,14 @@
      — antes os três pareciam ter a mesma importância. Duas áreas lado a
      lado (~45%/~55%, sem grid fixo em px — `flex-basis` em % resiste
      melhor a título/período mais compridos puxando a largura do card todo
-     que um valor fixo faria), separadas por uma linha vertical bem sutil
-     (1px, cor `--line`, a mesma de qualquer borda discreta do resto do
-     app). Reaproveita `.kpi-card-secondary` (classe combinada, ver JSX)
-     pros estilos de `.pct`/`.txt`/`.trend-*` já existentes — só o que
-     muda aqui é o CONTAINER (width fixa de 122px vira flexível) e o
-     tamanho do `.pct` (ver abaixo). */
+     que um valor fixo faria), separadas pelo mesmo `.kpi-card-divider`
+     compartilhado dos outros 3 cards (ver acima — antes era uma classe
+     própria, `.kpi-card-hero-divider`, com margem diferente; unificado
+     pro "mesmo espaçamento interno" pedido pelo cliente). Reaproveita
+     `.kpi-card-secondary` (classe combinada, ver JSX) pros estilos de
+     `.pct`/`.txt`/`.trend-*` já existentes — só o que muda aqui é o
+     CONTAINER (width fixa vira flexível) e o tamanho do `.pct` (ver
+     abaixo). */
   .kpi-card-hero-row{display:flex;align-items:stretch;height:100%;}
   .kpi-card-hero-left{flex:0 0 45%;min-width:0;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;}
   /* 46px/peso 800 — dentro da faixa pedida (42-48px), no limite superior
@@ -279,7 +286,6 @@
      explícito: nada de badge/glow/círculo, só tipografia+espaço). */
   .kpi-card-hero-valor{font-family:var(--font-mono);font-size:46px;font-weight:800;line-height:1;color:var(--ink);}
   .kpi-card-hero-label{font-size:11px;font-weight:700;letter-spacing:0.8px;color:var(--ink-dim);text-transform:uppercase;margin-top:6px;}
-  .kpi-card-hero-divider{width:1px;align-self:stretch;background:var(--line);margin:0 18px;flex-shrink:0;}
   .kpi-card-hero-right.kpi-card-secondary{flex:1 1 auto;width:auto;min-width:0;}
   .kpi-card-hero-right .pct{font-size:26px;line-height:28px;}
   /* Barra de progresso (só o Card 3/Contagens usa) — dentro do body, numa
@@ -1438,7 +1444,7 @@ function KpiCard({icon, iconBg, iconColor, titulo, periodo, valor, corValor, met
                 <div className="kpi-card-hero-valor" style={corValor ? {color:corValor} : undefined}>{heroValor}</div>
                 {heroLabel && <div className="kpi-card-hero-label">{heroLabel}</div>}
               </div>
-              <div className="kpi-card-hero-divider"></div>
+              <div className="kpi-card-divider"></div>
               <div className="kpi-card-hero-right kpi-card-secondary">{direitaCustom}</div>
             </div>
           ) : (
@@ -1447,6 +1453,7 @@ function KpiCard({icon, iconBg, iconColor, titulo, periodo, valor, corValor, met
                 <div className="kpi-card-valor" style={corValor ? {color:corValor} : undefined}>{valor}</div>
                 {meta!=null && <div className="kpi-card-meta">Meta: {meta}</div>}
               </div>
+              <div className="kpi-card-divider"></div>
               <div className="kpi-card-secondary">
                 {direitaCustom ? direitaCustom : (linhas||[]).map((l,i)=>(
                   <div key={i} className="kpi-card-info-row">
