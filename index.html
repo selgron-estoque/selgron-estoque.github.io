@@ -14558,20 +14558,22 @@ function itemAcuracidade(c){
   return Math.max(0, 1 - Math.abs(c.diferenca)/c.saldoSistema);
 }
 
-// Acuracidade BINÁRIA de UM documento — só usada pelo indicador "Itens
+// Acuracidade BINÁRIA de UM documento — usada pelo indicador "Itens
 // Recorrentes" (painel ESQUERDO da tela Acuracidade, dentro de
-// `computeAcuracidadeItensRecorrentes`). Regra mandatória do cliente,
+// `computeAcuracidadeItensRecorrentes`) e pelos cards "Acuracidade
+// Semanal/Mensal — Binária" de Indicadores (`Dashboard`, via `accFn` de
+// `computeWeeklyStats`/`computeMonthlyStats`). Regra mandatória do cliente,
 // confirmada por escrito várias vezes: contagem que bate exatamente com o
 // sistema (diferenca===0) vale 100%; QUALQUER divergência, mesmo de 1
 // unidade (ex.: sistema 100 / achado 99), vale 0% — nunca graduada. Função
 // própria, separada de `itemAcuracidade` (a fórmula graduada) de propósito:
-// `itemAcuracidade` continua intocada e continua alimentando Home,
-// Dashboard e o gráfico da aba Indicadores — nenhum desses foi pedido pra
-// mudar, só o indicador esquerdo desta
-// tela. O indicador DIREITO ("Divergência Quantitativa") usa
+// `itemAcuracidade` continua intocada e continua alimentando Home e os
+// cards graduados originais de Indicadores — nenhum desses foi alterado,
+// os binários entraram como cards NOVOS ao lado. O indicador DIREITO da
+// tela Acuracidade ("Divergência Quantitativa") usa
 // `itemAcuracidadeQuantitativa`, que continua graduada — é essa oposição
 // binária vs. graduada, sobre a MESMA população de itens recorrentes, que
-// o cliente pediu.
+// o cliente pediu lá.
 function itemAcuracidadeBinaria(c){
   if(c.diferenca==null) return null;
   return c.diferenca===0 ? 1 : 0;
@@ -14772,7 +14774,7 @@ function hojeLocalStr(){
 // vira `acuracidade:null` (não `0`) — 0% seria enganoso, pareceria "semana
 // péssima" em vez de "sem dado nenhum"; quem desenha o gráfico decide como
 // representar esse buraco (ver TrendLineChart).
-function computeWeeklyStats(counts, dataInicioStr, dataFimStr){
+function computeWeeklyStats(counts, dataInicioStr, dataFimStr, accFn=itemAcuracidade){
   const buckets = {};
   const ordem = [];
   let cursor = new Date(getWeekInfo(dataInicioStr).key + 'T00:00:00');
@@ -14805,7 +14807,7 @@ function computeWeeklyStats(counts, dataInicioStr, dataFimStr){
     const {key} = getWeekInfo(c.data);
     if(!buckets[key]) return; // fora do intervalo escolhido
     buckets[key].total += 1;
-    const acc = itemAcuracidade(c);
+    const acc = accFn(c);
     if(acc!=null){
       buckets[key].somaAcuracidade += acc;
       buckets[key].comAcuracidade += 1;
@@ -14822,7 +14824,7 @@ function computeWeeklyStats(counts, dataInicioStr, dataFimStr){
 
 // Mesma ideia de `computeWeeklyStats`, granularidade mensal — alimenta
 // "Acuracidade Mensal". `guard` corta em 120 meses (10 anos).
-function computeMonthlyStats(counts, dataInicioStr, dataFimStr){
+function computeMonthlyStats(counts, dataInicioStr, dataFimStr, accFn=itemAcuracidade){
   const buckets = {};
   const ordem = [];
   let cursor = new Date(dataInicioStr + 'T00:00:00');
@@ -14844,7 +14846,7 @@ function computeMonthlyStats(counts, dataInicioStr, dataFimStr){
     const {key} = getMonthInfo(c.data);
     if(!buckets[key]) return;
     buckets[key].total += 1;
-    const acc = itemAcuracidade(c);
+    const acc = accFn(c);
     if(acc!=null){
       buckets[key].somaAcuracidade += acc;
       buckets[key].comAcuracidade += 1;
@@ -15877,6 +15879,17 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   // gráfico sempre mostra o ano corrente inteiro até hoje.
   const anoAtualStr = String(new Date().getFullYear()) + '-01-01';
   const monthlyStats = computeMonthlyStats(poolTendencia, anoAtualStr, hojeStr);
+  // "Acuracidade Semanal/Mensal — Binária" — cards NOVOS, pedido do
+  // cliente: mesmos 2 indicadores de cima, só que com a nota BINÁRIA por
+  // item (`itemAcuracidadeBinaria`: bateu exato = 100%, qualquer
+  // divergência = 0%, nunca graduada — mesma regra já usada no indicador
+  // "Itens Recorrentes" da tela Acuracidade). Mesmo pool/janela de datas
+  // dos gráficos graduados acima (`poolTendencia`/`dataInicioStr`..
+  // `dataFimStr` pro semanal, `anoAtualStr`..`hojeStr` pro mensal) — os
+  // dois pares ficam comparáveis lado a lado, só a fórmula de nota muda.
+  // `weeklyStats`/`monthlyStats` (graduados) continuam intocados.
+  const weeklyStatsBinaria = computeWeeklyStats(poolTendencia, dataInicioStr, dataFimStr, itemAcuracidadeBinaria);
+  const monthlyStatsBinaria = computeMonthlyStats(poolTendencia, anoAtualStr, hojeStr, itemAcuracidadeBinaria);
   // O indicador de acuracidade recorrente e a seção de divergência por item
   // (hoje "Itens com Divergência Recorrente", antes "Efeito dos Ajustes
   // Aprovados") saíram daqui — moram na página "Acuracidade" agora (ver
@@ -16096,6 +16109,34 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
                 <span className="chart-meta-badge">Meta: {META_CONTAGENS_SEMANAL}</span>
               </div>
               <WeeklyCountChart weeks={weeklyStatsItensUnicos} meta={META_CONTAGENS_SEMANAL} />
+            </div>
+          </div>
+
+          {/* Fileira 4: Acuracidade Semanal/Mensal — Binária (nota 100% só
+              quando bate exato com o sistema, 0% em qualquer divergência —
+              ver comentário de `weeklyStatsBinaria`/`itemAcuracidadeBinaria`
+              acima). Mesmo layout/componentes dos gráficos graduados de
+              cima, só trocando a série de dados. */}
+          <div className="weekly-pair-row">
+            <div className="panel" style={{margin:0}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:16}}>
+                <div>
+                  <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Acuracidade Semanal — Binária (%)</div>
+                  <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:2}}>Bateu exato com o sistema = 100%, qualquer divergência = 0%.</div>
+                </div>
+                <span className="chart-meta-badge">Meta: {META_ACURACIDADE_SEMANAL}%</span>
+              </div>
+              <WeeklyLineChart weeks={weeklyStatsBinaria} meta={META_ACURACIDADE_SEMANAL} />
+            </div>
+            <div className="panel" style={{margin:0}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:16}}>
+                <div>
+                  <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Acuracidade Mensal — Binária (%)</div>
+                  <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:2}}>Todos os meses de {new Date().getFullYear()} com dado registrado</div>
+                </div>
+                <span className="chart-meta-badge">Meta: {META_ACURACIDADE_SEMANAL}%</span>
+              </div>
+              <MonthlyAccuracyBarChart months={monthlyStatsBinaria} meta={META_ACURACIDADE_SEMANAL} />
             </div>
           </div>
         </div>
