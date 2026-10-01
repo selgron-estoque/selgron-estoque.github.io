@@ -314,6 +314,17 @@
 
   .empty-msg{color:var(--ink-dim);font-size:var(--text-sm);padding:20px 0;text-align:center;}
 
+  /* Tabela genérica pros indicadores "Top 5 Maiores Divergências"/"Itens
+     com Divergência Recorrente" (portados de index.html, versão estática
+     de só-leitura — sem busca/ordenação clicável, TV não tem mouse). */
+  .pnl-table{width:100%;border-collapse:collapse;font-size:var(--text-sm);}
+  .pnl-table th{text-align:left;font-size:var(--text-xs);color:var(--ink-dim);text-transform:uppercase;letter-spacing:.3px;font-weight:600;padding:0 8px 8px;border-bottom:1px solid var(--line);}
+  .pnl-table th.num, .pnl-table td.num{text-align:right;}
+  .pnl-table td{padding:9px 8px;border-bottom:1px solid var(--line);color:var(--ink);}
+  .pnl-table tr:last-child td{border-bottom:none;}
+  .pnl-table td .sub{font-size:var(--text-xs);color:var(--ink-dim);font-weight:700;}
+  .pnl-status-tag{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;font-size:var(--text-xs);font-weight:600;white-space:nowrap;}
+
   /* ---- Tracking Picking: redesign visual (pedido do cliente, spec de 32
      seções + imagem de referência) — SÓ visual: lógica/dados/filtros/
      navegação/status continuam 100% os mesmos de antes (`TrackingPicking`/
@@ -720,6 +731,11 @@ function contagemRowToLocal(row){
     descricao: row.descricao,
     diferenca: row.diferenca,
     saldoSistema: row.saldo_sistema,
+    // `qtdContada`/`almoxarifado` só existem pelo indicador "Top 5 Maiores
+    // Divergências" (portado de index.html) — nenhum outro card/gráfico
+    // deste painel usa esses 2 campos.
+    qtdContada: row.qtd_contada,
+    almoxarifado: row.almoxarifado,
     familia: row.familia,
     contagemAnteriorId: row.contagem_anterior_id,
     data: row.data,
@@ -762,7 +778,7 @@ async function fetchContagensParaPainel(){
   if(!supabaseClient) return [];
   const data = await fetchTodasPaginado(() => supabaseClient
     .from('contagens')
-    .select('id, produto_codigo, descricao, diferenca, saldo_sistema, familia, contagem_anterior_id, data, status_aprovacao')
+    .select('id, produto_codigo, descricao, diferenca, saldo_sistema, qtd_contada, almoxarifado, familia, contagem_anterior_id, data, status_aprovacao')
     .order('criado_em', {ascending:false})
     .order('id', {ascending:true}));
   return data.map(contagemRowToLocal);
@@ -896,7 +912,7 @@ function computeTrendRangeFixo(hojeStr){
   return { from: d.toISOString().slice(0,10), to: hojeStr };
 }
 
-function computeWeeklyStats(counts, dataInicioStr, dataFimStr){
+function computeWeeklyStats(counts, dataInicioStr, dataFimStr, accFn=itemAcuracidade){
   const buckets = {};
   const ordem = [];
   let cursor = new Date(getWeekInfo(dataInicioStr).key + 'T00:00:00');
@@ -917,7 +933,7 @@ function computeWeeklyStats(counts, dataInicioStr, dataFimStr){
     const {key} = getWeekInfo(c.data);
     if(!buckets[key]) return;
     buckets[key].total += 1;
-    const acc = itemAcuracidade(c);
+    const acc = accFn(c);
     if(acc!=null){
       buckets[key].somaAcuracidade += acc;
       buckets[key].comAcuracidade += 1;
@@ -932,7 +948,7 @@ function computeWeeklyStats(counts, dataInicioStr, dataFimStr){
   });
 }
 
-function computeMonthlyStats(counts, dataInicioStr, dataFimStr){
+function computeMonthlyStats(counts, dataInicioStr, dataFimStr, accFn=itemAcuracidade){
   const buckets = {};
   const ordem = [];
   let cursor = new Date(dataInicioStr + 'T00:00:00');
@@ -954,7 +970,7 @@ function computeMonthlyStats(counts, dataInicioStr, dataFimStr){
     const {key} = getMonthInfo(c.data);
     if(!buckets[key]) return;
     buckets[key].total += 1;
-    const acc = itemAcuracidade(c);
+    const acc = accFn(c);
     if(acc!=null){
       buckets[key].somaAcuracidade += acc;
       buckets[key].comAcuracidade += 1;
@@ -1064,6 +1080,152 @@ function computeAcuracidadeItensRecorrentes(pool, dataInicioStr, dataFimStr){
     };
   });
   return { monthlyStats, elegiveis };
+}
+
+// Portado de index.html (`itemAcuracidadeQuantitativa`) — nota GRADUADA de
+// UM documento pro indicador "Acuracidade Mensal — Divergência
+// Quantitativa (%)" deste painel: sistema=100/contagem=99 → 99%; 100/95 →
+// 95%; só 100% quando bate exato. Mesma população de itens recorrentes de
+// `computeAcuracidadeItensRecorrentes` acima — contraste MANDATÓRIO com
+// `itemAcuracidadeBinaria` (onde a mesma diferença de 99/100 vale 0%), ver
+// comentário completo em index.html.
+function itemAcuracidadeQuantitativa(c){
+  if(c.acuracidade!=null) return c.acuracidade;
+  if(c.saldoSistema==null || c.diferenca==null) return null;
+  if(c.saldoSistema===0) return c.diferenca===0 ? 1 : 0;
+  return Math.max(0, 1 - Math.abs(c.diferenca)/c.saldoSistema);
+}
+
+// Portado de index.html (`computeAcuracidadeDivergenciaQuantitativa`) —
+// versão ENXUTA igual a `computeAcuracidadeItensRecorrentes` acima (sem a
+// máscara `INICIO_ACUMULO_ITENS_RECORRENTES`, que não existe neste
+// arquivo — só o card de KPI/gráfico mensal precisa do número, não o
+// drill-down completo da aba Acuracidade real).
+function computeAcuracidadeDivergenciaQuantitativa(pool, dataInicioStr, dataFimStr){
+  const porCodigo = {};
+  pool.forEach(c=>{
+    if(!c.data || !c.productCode) return;
+    (porCodigo[c.productCode] = porCodigo[c.productCode] || []).push(c);
+  });
+  const elegiveis = [];
+  Object.values(porCodigo).forEach(arr=>{
+    if(arr.length < 2) return;
+    elegiveis.push(...arr);
+  });
+  const buckets = {};
+  const ordem = [];
+  let cursor = new Date(dataInicioStr + 'T00:00:00');
+  cursor.setDate(1);
+  const fim = new Date(dataFimStr + 'T00:00:00');
+  fim.setDate(1);
+  let guard = 0;
+  while(cursor <= fim && guard < 120){
+    const info = getMonthInfo(cursor.toISOString().slice(0,10));
+    if(!buckets[info.key]){
+      buckets[info.key] = {key:info.key, label:info.label, sublabel:info.sublabel, total:0, porItem:{}};
+      ordem.push(info.key);
+    }
+    cursor.setMonth(cursor.getMonth()+1);
+    guard++;
+  }
+  elegiveis.forEach(c=>{
+    if(!c.data) return;
+    const {key} = getMonthInfo(c.data);
+    if(!buckets[key]) return;
+    buckets[key].total += 1;
+    const acc = itemAcuracidadeQuantitativa(c);
+    if(acc==null) return;
+    const porItem = buckets[key].porItem;
+    if(!porItem[c.productCode]) porItem[c.productCode] = {soma:0, n:0};
+    porItem[c.productCode].soma += acc;
+    porItem[c.productCode].n += 1;
+  });
+  const monthlyStats = ordem.map(key=>{
+    const w = buckets[key];
+    const mediasPorItem = Object.values(w.porItem).map(it=>it.soma/it.n);
+    return {
+      key:w.key, label:w.label, sublabel:w.sublabel, total:w.total,
+      acuracidade: mediasPorItem.length>0 ? (mediasPorItem.reduce((s,v)=>s+v,0)/mediasPorItem.length)*100 : null,
+    };
+  });
+  return { monthlyStats };
+}
+
+// Portado de index.html (`classificarPadraoDivergencia`/
+// `classificarStatusDivergencia`/`computeItensDivergenciaRecorrente`) —
+// mesmas funções e mesmos limiares, pro indicador "Itens com Divergência
+// Recorrente" deste painel. Versão ENXUTA: sem os componentes de tag
+// (`PadraoDivergenciaTag`/`StatusDivergenciaTag`, que dependem de
+// `DIcon`/classes só existentes em index.html) — o painel mostra o rótulo
+// como texto simples numa tabela estática (TV é só leitura, sem busca/
+// ordenação clicável como a aba real).
+function classificarPadraoDivergencia(historicoAsc){
+  const total = historicoAsc.length;
+  const divergentes = historicoAsc.filter(h=>h.divergente).length;
+  if(divergentes===total) return 'diverge_todas';
+  const ultimasDuas = historicoAsc.slice(-2);
+  if(ultimasDuas.length===2 && ultimasDuas.every(h=>h.divergente)) return 'ultimas_duas';
+  if(divergentes/total > 0.5) return 'recorrente';
+  return 'sem_padrao';
+}
+const PADRAO_DIVERGENCIA_INFO = {
+  diverge_todas: {label:'Diverge em todas', tone:'danger'},
+  ultimas_duas: {label:'Últimas 2 contagens', tone:'blue'},
+  recorrente: {label:'Recorrente', tone:'warn'},
+  sem_padrao: {label:'Sem padrão', tone:'neutral'},
+};
+function classificarStatusDivergencia(taxaDivergencia){
+  if(taxaDivergencia>=1) return 'critico';
+  if(taxaDivergencia>0.5) return 'atencao';
+  return 'monitorar';
+}
+const STATUS_DIVERGENCIA_INFO = {
+  critico: {label:'Crítico', tone:'danger'},
+  atencao: {label:'Atenção', tone:'warn'},
+  monitorar: {label:'Monitorar', tone:'blue'},
+};
+const TOM_DIVERGENCIA_CSS = {
+  danger: {background:'var(--danger-bg)', color:'var(--danger)'},
+  warn: {background:'var(--warn-bg)', color:'var(--warn)'},
+  blue: {background:'var(--blue-bg)', color:'var(--blue)'},
+  neutral: {background:'var(--gray-200)', color:'var(--gray-500)'},
+};
+function computeItensDivergenciaRecorrente(pool, dataInicioStr, dataFimStr){
+  const porCodigo = {};
+  pool.forEach(c=>{
+    if(!c.data || !c.productCode || c.diferenca==null) return;
+    if(c.data<dataInicioStr || c.data>dataFimStr) return;
+    const grupo = (porCodigo[c.productCode] = porCodigo[c.productCode] || {
+      productCode: c.productCode, descricao: c.descricao, historico: [],
+    });
+    if(c.descricao) grupo.descricao = c.descricao;
+    grupo.historico.push({ data: c.data, diferenca: c.diferenca, divergente: c.diferenca!==0 });
+  });
+  const itens = Object.values(porCodigo)
+    .map(g=>{
+      const historicoAsc = [...g.historico].sort((a,b)=>a.data.localeCompare(b.data));
+      const total = historicoAsc.length;
+      const divergentes = historicoAsc.filter(h=>h.divergente).length;
+      const taxaDivergencia = total>0 ? divergentes/total : 0;
+      const ultimaDivergencia = [...historicoAsc].reverse().find(h=>h.divergente)?.data || null;
+      return {
+        productCode: g.productCode, descricao: g.descricao, total, divergentes, taxaDivergencia, ultimaDivergencia,
+        padrao: classificarPadraoDivergencia(historicoAsc),
+        status: classificarStatusDivergencia(taxaDivergencia),
+      };
+    })
+    .filter(it=>it.total>=2 && it.divergentes>=1);
+  itens.sort((a,b)=>
+    b.divergentes-a.divergentes
+    || b.taxaDivergencia-a.taxaDivergencia
+    || (b.ultimaDivergencia||'').localeCompare(a.ultimaDivergencia||'')
+  );
+  const somaTotal = itens.reduce((s,it)=>s+it.total, 0);
+  const somaDivergentes = itens.reduce((s,it)=>s+it.divergentes, 0);
+  const taxaRecorrenciaAgregada = somaTotal>0 ? somaDivergentes/somaTotal : 0;
+  const itensCriticos = itens.filter(it=>it.status==='critico').length;
+  const ultimaDivergenciaGeral = itens.reduce((max,it)=> (it.ultimaDivergencia && (!max || it.ultimaDivergencia>max)) ? it.ultimaDivergencia : max, null);
+  return {itens, totalItens: itens.length, itensCriticos, taxaRecorrenciaAgregada, ultimaDivergenciaGeral};
 }
 
 function niceAxisTicks(maxVal, targetTicks){
@@ -1354,6 +1516,28 @@ const DEMO_FAMILIA = [
 ];
 const DEMO_PIZZA = {total:1883, divergentes:530, semDivergencia:1353};
 
+// Exemplo pro indicador "Top 5 Maiores Divergências" — mesmo shape do
+// `topDivergentesNoPeriodo` calculado em `calc` (ver `PainelIndicadores`).
+const DEMO_TOP_DIVERGENTES = [
+  {productCode:'000.45570', descricao:'PARAFUSO SEXTAVADO M12', almoxarifado:'01', saldoSistema:120, qtdContada:48, diferenca:-72},
+  {productCode:'000.12883', descricao:'ROLAMENTO 6205-2RS', almoxarifado:'02', saldoSistema:30, qtdContada:72, diferenca:42},
+  {productCode:'000.78214', descricao:'CORREIA DENTADA 8M-1200', almoxarifado:'01', saldoSistema:64, qtdContada:40, diferenca:-24},
+  {productCode:'000.33109', descricao:'DISCO DE CORTE 7"', almoxarifado:'03', saldoSistema:200, qtdContada:182, diferenca:-18},
+  {productCode:'000.90456', descricao:'LUVA DE SEGURANÇA NITRÍLICA', almoxarifado:'01', saldoSistema:85, qtdContada:98, diferenca:13},
+];
+
+// Exemplo pro indicador "Itens com Divergência Recorrente" — mesmo shape
+// do retorno de `computeItensDivergenciaRecorrente`.
+const DEMO_DIVREC = {
+  totalItens: 14, itensCriticos: 3, taxaRecorrenciaAgregada: 0.62, ultimaDivergenciaGeral: '2026-09-28',
+  itens: [
+    {productCode:'000.45570', descricao:'PARAFUSO SEXTAVADO M12', total:5, divergentes:5, taxaDivergencia:1, ultimaDivergencia:'2026-09-28', padrao:'diverge_todas', status:'critico'},
+    {productCode:'000.12883', descricao:'ROLAMENTO 6205-2RS', total:4, divergentes:3, taxaDivergencia:0.75, ultimaDivergencia:'2026-09-25', padrao:'recorrente', status:'atencao'},
+    {productCode:'000.78214', descricao:'CORREIA DENTADA 8M-1200', total:3, divergentes:2, taxaDivergencia:0.67, ultimaDivergencia:'2026-09-20', padrao:'ultimas_duas', status:'atencao'},
+    {productCode:'000.33109', descricao:'DISCO DE CORTE 7"', total:6, divergentes:3, taxaDivergencia:0.5, ultimaDivergencia:'2026-09-14', padrao:'sem_padrao', status:'monitorar'},
+  ],
+};
+
 // Números de EXEMPLO pros 4 cards de KPI (1ª linha) — só aparecem quando
 // não há sessão/dado ao vivo, mesmo critério de todo `DEMO_*` acima.
 const DEMO_KPI = {
@@ -1588,14 +1772,20 @@ function PanelTabs({tela, onChange, onAbrirConfig, links, linkIndex, onSeleciona
   );
 }
 
-// Catálogo dos 6 gráficos que o Painel já calcula hoje (nomes/ids internos
-// — nunca mostrados na tela, só usados como chave da seleção/ordem salva em
-// `painel_indicadores_config`). Ver comentário completo da decisão de
-// produto no schema.sql ("PAINEL INDICADORES: CONFIGURAÇÃO..."): isto NÃO é
-// um cadastro dinâmico, é só uma seleção/ordem sobre os gráficos que já
-// existem — a tela "Indicadores" (index.html) nunca é consultada aqui, nem
-// precisa mudar. A ORDEM desta lista é a ordem padrão (mostrar tudo, na
-// ordem em que o Painel sempre mostrou).
+// Catálogo dos gráficos/tabelas que o Painel já calcula hoje (nomes/ids
+// internos — nunca mostrados na tela, só usados como chave da seleção/ordem
+// salva em `painel_indicadores_config`). Ver comentário completo da decisão
+// de produto no schema.sql ("PAINEL INDICADORES: CONFIGURAÇÃO..."): isto
+// NÃO é um cadastro dinâmico, é só uma seleção/ordem sobre os indicadores
+// que já existem — a tela "Indicadores" (index.html) nunca é consultada
+// aqui, nem precisa mudar. A ORDEM desta lista é a ordem padrão. Os 6
+// últimos (pedido do cliente: "quero que todos os indicadores apareçam
+// nesta tela, todos os indicadores do site") replicam lógica que em
+// index.html mora em 2 telas diferentes — `Dashboard`/aba Indicadores
+// (as 2 "Binária" + "Top 5 Maiores Divergências") e `AcuracidadePanel`/aba
+// Acuracidade (os 2 "Itens Recorrentes"/"Divergência Quantitativa" +
+// "Itens com Divergência Recorrente") — cada cálculo portado 1:1, mesma
+// decisão de arquitetura de sempre (sem módulo compartilhado com o app).
 const INDICADORES_CATALOGO = [
   {id:'acuracidadeSemanal', label:'Acuracidade Semanal (%)'},
   {id:'contagensSemana', label:'Contagens na Semana'},
@@ -1603,6 +1793,12 @@ const INDICADORES_CATALOGO = [
   {id:'divergenciaFamilia', label:'Divergência por Família/Grupo (Top 7)'},
   {id:'contadosDivergencias', label:'Contados × Divergências'},
   {id:'itensContadosSemana', label:'Itens Contados na Semana'},
+  {id:'acuracidadeSemanalBinaria', label:'Acuracidade Semanal — Binária (%)'},
+  {id:'acuracidadeMensalBinaria', label:'Acuracidade Mensal — Binária (%)'},
+  {id:'acuracidadeItensRecorrentes', label:'Acuracidade Mensal — Itens Recorrentes (%)'},
+  {id:'acuracidadeDivergenciaQuantitativa', label:'Acuracidade Mensal — Divergência Quantitativa (%)'},
+  {id:'top5Divergencias', label:'Top 5 Maiores Divergências'},
+  {id:'itensDivergenciaRecorrente', label:'Itens com Divergência Recorrente'},
 ];
 const INDICADORES_PADRAO = INDICADORES_CATALOGO.map(c=>c.id);
 
@@ -2447,8 +2643,40 @@ function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfig,
     const recorrentesDivergentesMes = recorrentesElegiveisMesAtual.filter(c=>c.diferenca!==0 && c.diferenca!=null).length;
     const recorrentesAcuracidadeMes = statsRecorrentesMesAtual ? statsRecorrentesMesAtual.acuracidade : null;
 
+    // "Acuracidade Semanal/Mensal — Binária" (cards novos, mesmo pedido já
+    // atendido em index.html/Dashboard) — nota BINÁRIA por item
+    // (`itemAcuracidadeBinaria`) sobre `poolTendenciaDedup` (rodada FINAL
+    // de cada item, não o pool cru) — mesma correção aplicada em
+    // index.html depois do cliente reportar o card batendo diferente de
+    // "Contados × Divergências" do mesmo mês (ver CLAUDE.md/histórico):
+    // contar cada rodada separada (como os gráficos GRADUADOS acima fazem,
+    // de propósito) duplicaria item recontado numa nota binária.
+    const weeklyStatsBinaria = computeWeeklyStats(poolTendenciaDedup, dataInicioStr, dataFimStr, itemAcuracidadeBinaria);
+    const monthlyStatsBinaria = computeMonthlyStats(poolTendenciaDedup, anoAtualStr, hojeStr, itemAcuracidadeBinaria);
+
+    // "Acuracidade Mensal — Divergência Quantitativa (%)" — 2º gráfico da
+    // aba Acuracidade (index.html), mesma população de itens recorrentes
+    // de `acuracidadeRecorrentes` acima (`poolItensRecorrentes`), só que
+    // GRADUADA (`itemAcuracidadeQuantitativa`) em vez de binária.
+    const divergenciaQuantitativa = computeAcuracidadeDivergenciaQuantitativa(poolItensRecorrentes, anoAtualStr, hojeStr);
+
+    // "Top 5 Maiores Divergências" — portado de index.html/Dashboard, mesmo
+    // pool (`todasParaQualidade`, deduplicado por documento) e mesmo
+    // período (`dataInicioStr`/`dataFimStr`) dos outros gráficos desta
+    // seção, ordenado por |diferença| absoluta.
+    const todasParaQualidadeNoPeriodo = todasParaQualidade.filter(c=>c.data && c.data>=dataInicioStr && c.data<=dataFimStr);
+    const topDivergentesNoPeriodo = [...todasParaQualidadeNoPeriodo].sort((a,b)=>Math.abs(b.diferenca||0)-Math.abs(a.diferenca||0)).slice(0,5);
+
+    // "Itens com Divergência Recorrente" — portado de index.html/
+    // AcuracidadePanel, mesmo pool/período de "Top 5" acima.
+    const itensDivergenciaRecorrente = computeItensDivergenciaRecorrente(todasParaQualidade, dataInicioStr, dataFimStr);
+
     return {
       dataInicioStr, dataFimStr, weeklyStats, weeklyStatsItensUnicos, monthlyStats,
+      weeklyStatsBinaria, monthlyStatsBinaria,
+      itensRecorrentesMonthlyStats: acuracidadeRecorrentes.monthlyStats,
+      divergenciaQuantitativaMonthlyStats: divergenciaQuantitativa.monthlyStats,
+      topDivergentesNoPeriodo, itensDivergenciaRecorrente,
       pizzaTotalContado, pizzaDivergentes, pizzaSemDivergencia, porFamilia,
       semanaAtualInicio, semanaAtualFim,
       kpiItensAvaliados, kpiCorretos, kpiDivergentes, kpiAcuracidade, kpiDivergenciaVariacaoPercent,
@@ -2489,6 +2717,17 @@ function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfig,
   // quando não há nenhuma semana/mês com dado real ainda (não inventa).
   const ultimaSemanaComDado = [...weeklyStats].reverse().find(w=>w.acuracidade!=null) || null;
   const ultimoMesComDado = [...monthlyStats].reverse().find(m=>m.acuracidade!=null) || null;
+  // Indicadores novos (binários + itens recorrentes + divergência
+  // quantitativa + tabelas) — mesmo padrão `calc ? calc.X : DEMO_X` de
+  // cima, caem pro exemplo quando não há sessão/dado ao vivo.
+  const weeklyStatsBinaria = calc ? calc.weeklyStatsBinaria : DEMO_WEEKLY;
+  const monthlyStatsBinaria = calc ? calc.monthlyStatsBinaria : DEMO_MONTHLY;
+  const ultimaSemanaComDadoBinaria = [...weeklyStatsBinaria].reverse().find(w=>w.acuracidade!=null) || null;
+  const ultimoMesComDadoBinaria = [...monthlyStatsBinaria].reverse().find(m=>m.acuracidade!=null) || null;
+  const itensRecorrentesMonthlyStats = calc ? calc.itensRecorrentesMonthlyStats : DEMO_MONTHLY;
+  const divergenciaQuantitativaMonthlyStats = calc ? calc.divergenciaQuantitativaMonthlyStats : DEMO_MONTHLY;
+  const topDivergentesNoPeriodo = calc ? calc.topDivergentesNoPeriodo : DEMO_TOP_DIVERGENTES;
+  const itensDivergenciaRecorrente = calc ? calc.itensDivergenciaRecorrente : DEMO_DIVREC;
   const porFamilia = calc ? calc.porFamilia : DEMO_FAMILIA;
   const maxFamilia = Math.max(1, ...porFamilia.map(([,n])=>n));
   const pizzaTotalContado = calc ? calc.pizzaTotalContado : DEMO_PIZZA.total;
@@ -2532,7 +2771,7 @@ function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfig,
   const IconDivergencias = <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>;
 
   // Catálogo id→JSX de cada painel — construído a cada render (barato,
-  // são só 6 nós) a partir dos mesmos dados/cálculos já existentes acima,
+  // são só 12 nós) a partir dos mesmos dados/cálculos já existentes acima,
   // NUNCA duplicados. `ordemVisivel` (config salva, ver useEffect acima)
   // decide só quais entram e em que ordem — o cálculo é sempre o mesmo,
   // rode ou não o gráfico correspondente.
@@ -2626,6 +2865,113 @@ function PainelIndicadores({tela, onChange, theme, onToggleTheme, onAbrirConfig,
           <span className="chart-meta-badge">Meta: {META_CONTAGENS_SEMANAL}</span>
         </div>
         <WeeklyCountChart weeks={weeklyStatsItensUnicos} meta={META_CONTAGENS_SEMANAL} />
+      </div>
+    ),
+    // Indicadores novos — mesma nota BINÁRIA por item (bateu exato = 100%,
+    // qualquer divergência = 0%) dos cards equivalentes em index.html/
+    // Dashboard, ver comentário completo em `weeklyStatsBinaria` acima.
+    acuracidadeSemanalBinaria: (
+      <div className="panel" style={{margin:0}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:16}}>
+          <div>
+            <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Acuracidade Semanal — Binária (%)</div>
+            <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:2}}>Bateu exato com o sistema = 100%, qualquer divergência = 0%.</div>
+          </div>
+          <span className="chart-meta-badge" style={{maxWidth:230,overflow:'hidden',textOverflow:'ellipsis'}}>
+            {ultimaSemanaComDadoBinaria ? `Última semana: ${Math.round(ultimaSemanaComDadoBinaria.acuracidade)}% | ` : ''}Meta: {META_ACURACIDADE_SEMANAL}%
+          </span>
+        </div>
+        <WeeklyLineChart weeks={weeklyStatsBinaria} meta={META_ACURACIDADE_SEMANAL} />
+      </div>
+    ),
+    acuracidadeMensalBinaria: (
+      <div className="panel" style={{margin:0}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:16}}>
+          <div>
+            <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Acuracidade Mensal — Binária (%)</div>
+            <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:2}}>Todos os meses de {new Date().getFullYear()} com dado registrado</div>
+          </div>
+          <span className="chart-meta-badge" style={{maxWidth:230,overflow:'hidden',textOverflow:'ellipsis'}}>
+            {ultimoMesComDadoBinaria ? `Último mês: ${Math.round(ultimoMesComDadoBinaria.acuracidade)}% | ` : ''}Meta: {META_ACURACIDADE_SEMANAL}%
+          </span>
+        </div>
+        <MonthlyAccuracyBarChart months={monthlyStatsBinaria} meta={META_ACURACIDADE_SEMANAL} />
+      </div>
+    ),
+    acuracidadeItensRecorrentes: (
+      <div className="panel" style={{margin:0}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:16}}>
+          <div>
+            <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Acuracidade Mensal — Itens Recorrentes (%)</div>
+            <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:2}}>Só itens com 2+ contagens no ano, nota binária.</div>
+          </div>
+          <span className="chart-meta-badge">Meta: {META_ACURACIDADE_SEMANAL}%</span>
+        </div>
+        <MonthlyAccuracyBarChart months={itensRecorrentesMonthlyStats} meta={META_ACURACIDADE_SEMANAL} />
+      </div>
+    ),
+    acuracidadeDivergenciaQuantitativa: (
+      <div className="panel" style={{margin:0}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:16}}>
+          <div>
+            <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Acuracidade Mensal — Divergência Quantitativa (%)</div>
+            <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:2}}>Mesmos itens recorrentes, nota graduada (ex.: sistema 100/achado 99 = 99%).</div>
+          </div>
+          <span className="chart-meta-badge">Meta: {META_ACURACIDADE_SEMANAL}%</span>
+        </div>
+        <MonthlyAccuracyBarChart months={divergenciaQuantitativaMonthlyStats} meta={META_ACURACIDADE_SEMANAL} />
+      </div>
+    ),
+    top5Divergencias: (
+      <div className="panel" style={{margin:0}}>
+        <div style={{fontSize:'var(--text-sm)',fontWeight:700,marginBottom:16}}>Top 5 Maiores Divergências</div>
+        {topDivergentesNoPeriodo.length===0 ? (
+          <div className="empty-msg">Nenhuma contagem com divergência no período.</div>
+        ) : (
+          <table className="pnl-table">
+            <thead><tr><th>Produto</th><th>Almox.</th><th className="num">Esperado</th><th className="num">Encontrado</th><th className="num">Diferença</th></tr></thead>
+            <tbody>
+              {topDivergentesNoPeriodo.map(c=>(
+                <tr key={c.productCode}>
+                  <td><div className="sub">{c.productCode}</div>{c.descricao}</td>
+                  <td>{c.almoxarifado || '—'}</td>
+                  <td className="num">{c.saldoSistema==null ? '—' : c.saldoSistema}</td>
+                  <td className="num">{c.qtdContada==null ? '—' : c.qtdContada}</td>
+                  <td className="num" style={{color:c.diferenca===0?'var(--ok)':'var(--danger)',fontWeight:700}}>{c.diferenca>0?'+':''}{c.diferenca==null?'—':c.diferenca}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    ),
+    itensDivergenciaRecorrente: (
+      <div className="panel" style={{margin:0}}>
+        <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Itens com Divergência Recorrente</div>
+        <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:2,marginBottom:14}}>Itens contados 2+ vezes no período, divergentes em pelo menos uma.</div>
+        <div style={{display:'flex',gap:20,marginBottom:14,flexWrap:'wrap'}}>
+          <div><span className="chart-meta-badge">{itensDivergenciaRecorrente.totalItens} itens</span></div>
+          <div><span className="chart-meta-badge" style={{background:'var(--danger-bg)',color:'var(--danger)'}}>{itensDivergenciaRecorrente.itensCriticos} críticos</span></div>
+          <div><span className="chart-meta-badge">{(itensDivergenciaRecorrente.taxaRecorrenciaAgregada*100).toFixed(1).replace('.',',')}% de recorrência</span></div>
+        </div>
+        {itensDivergenciaRecorrente.totalItens===0 ? (
+          <div className="empty-msg">Nenhum item com divergência recorrente no período.</div>
+        ) : (
+          <table className="pnl-table">
+            <thead><tr><th>Produto</th><th className="num">Contagens</th><th className="num">Divergentes</th><th className="num">Taxa</th><th>Status</th></tr></thead>
+            <tbody>
+              {itensDivergenciaRecorrente.itens.slice(0,8).map(it=>(
+                <tr key={it.productCode}>
+                  <td><div className="sub">{it.productCode}</div>{it.descricao}</td>
+                  <td className="num">{it.total}</td>
+                  <td className="num">{it.divergentes}</td>
+                  <td className="num">{Math.round(it.taxaDivergencia*100)}%</td>
+                  <td><span className="pnl-status-tag" style={TOM_DIVERGENCIA_CSS[STATUS_DIVERGENCIA_INFO[it.status].tone]}>{STATUS_DIVERGENCIA_INFO[it.status].label}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     ),
   };
