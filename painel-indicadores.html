@@ -220,7 +220,7 @@
   .kpi-card-titulo{font-size:14px;font-weight:600;line-height:18px;height:18px;color:var(--ink);white-space:nowrap;}
   .kpi-card-periodo{font-size:12px;line-height:16px;height:16px;color:var(--ink-dim);margin-top:2px;white-space:nowrap;}
   .kpi-card-body{grid-row:2;grid-column:2;min-height:0;display:flex;flex-direction:column;justify-content:space-between;padding-top:6px;box-sizing:border-box;}
-  .kpi-card-body-row{display:flex;gap:0;}
+  .kpi-card-body-row{display:flex;}
   /* `justify-content:center` — sem isso, um card SEM `meta` (ex.:
      Divergências, que só passa `direitaCustom`) tinha só 1 filho aqui (o
      valor), que ficava ancorado no TOPO (flex-start, padrão) enquanto
@@ -228,74 +228,50 @@
      "flutuando" desalinhado com o resto do card (reportado pelo cliente
      com print). Centralizar os dois lados pelo mesmo eixo resolve, e não
      muda nada nos cards COM `meta` (valor+meta continuam empilhados, só
-     centralizados como bloco em vez de colados no topo). `overflow:hidden`
-     — bug real reportado pelo cliente com print: o valor "100%" (3
-     dígitos, caso real do card "Acuracidade (itens recontados)") não
-     cabia na largura que sobrava pra esta coluna e vazava por cima da
-     `.kpi-card-secondary` ao lado, sobrepondo o texto ("Itens avaliados"
-     etc.) — `min-width:0` deixa a coluna ENCOLHER, mas sozinho não corta o
-     TEXTO que não coube; precisa das duas coisas juntas. */
-  .kpi-card-primary{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;overflow:hidden;}
+     centralizados como bloco em vez de colados no topo).
+
+     SEM `min-width:0`/`overflow:hidden` aqui de propósito (3ª rodada —
+     as 2 primeiras tentaram resolver sobreposição ENCOLHENDO esta coluna
+     + cortando o excesso, e isso tinha um efeito colateral sério: com
+     `min-width:0`, um `.kpi-card-primary{flex:1}` pode ser espremido até
+     perto de ZERO quando a coluna secundária pede espaço — e já que
+     `.kpi-card-valor` herda `align-items:stretch` (padrão do flex-column),
+     o NÚMERO ia junto, visualmente cortado/comprimido ("100%" sumindo).
+     Sem `min-width:0`, o item nunca encolhe abaixo do conteúdo que tem
+     dentro (`white-space:nowrap` no valor garante que esse conteúdo é
+     sempre a largura cheia do texto) — o número NUNCA é cortado nem
+     comprimido, custe o que custar pro layout (ver `.kpi-card-secondary`
+     abaixo, dimensionada pra nunca precisar disputar espaço com isto). */
+  .kpi-card-primary{flex:1;display:flex;flex-direction:column;justify-content:center;}
   /* Fonte maior (era 40px) — pedido do cliente pra dar mais destaque ao
-     número principal do card, que é o dado mais importante ali. */
-  .kpi-card-valor{font-family:var(--font-mono);font-size:48px;font-weight:700;line-height:48px;color:var(--ink);}
-  .kpi-card-meta{font-size:14px;font-weight:600;line-height:18px;color:var(--ink);margin-top:2px;}
-  /* Refinamento "dashboard executivo" (pedido do cliente): os 4 cards de
-     KPI usavam 3 linguagens visuais diferentes — só o card de Divergências
-     tinha divisor vertical entre número e coluna lateral, os outros 3 só
-     um `gap`. Unificado num único `.kpi-card-divider` (ver abaixo),
-     reaproveitado pelos 2 layouts (padrão e "hero").
-
-     2ª rodada (cliente reportou "não teve mudança" — um divisor de 1px
-     sozinho é sutil DEMAIS, quase some num print/numa TV): acrescenta uma
-     "zona" de fundo (`background:var(--panel)`, mais clara que
-     `--panel-raised` do card) com cantos arredondados pra coluna
-     secundária ficar visualmente distinta, não só separada por uma linha
-     fina. `box-sizing:content-box` + `padding`/`margin` negativa
-     EXATAMENTE cancelando o padding é o truque: a caixa cresce
-     visualmente (fundo/cantos) sem tirar largura de TEXTO disponível.
-
-     `width:140px` (era 158px → 122px na correção do PR #152 → 124px no
-     refinamento inicial desta rodada) — essa 3ª medida saiu de um bug que
-     o próprio refinamento desta rodada expôs: ao adicionar
-     `overflow:hidden` no RÓTULO como limite de segurança (ver
-     `.kpi-card-info-row` abaixo), "Itens com divergência" + qualquer
-     valor de 2+ dígitos passou a cortar com reticência aos 124px — antes
-     (122/124px) só não dava pra PERCEBER o corte porque nada limitava o
-     rótulo de verdade, ele só "vazava" por cima de espaço vazio ao lado
-     sem ninguém notar. 140px é o menor valor que passa limpo (sem
-     reticência, sem sobrepor o número principal) pro pior caso realista
-     (rótulo mais comprido + valor de 3 dígitos) — verificado com
-     Playwright medindo `scrollWidth`/`clientWidth` do próprio rótulo
-     (não só a borda da linha), que é o teste que de fato pega esse tipo
-     de corte. */
-  .kpi-card-secondary{
-    width:140px;
-    flex-shrink:0;
-    display:flex;
-    flex-direction:column;
-    justify-content:center;
-    min-width:0;
-    box-sizing:content-box;
-    background:var(--panel);
-    border-radius:8px;
-    padding:6px 10px;
-    margin:-6px -10px -6px -4px;
-  }
-  /* Divisor compartilhado pelos 2 layouts de card (padrão e "hero") — 1px,
-     cor `--line` (mesma de qualquer borda discreta do resto do app),
-     margem igual nos dois lados pra ficar com o mesmo "respiro" em
-     qualquer card, sem depender de quanto espaço sobra. */
-  .kpi-card-divider{width:1px;align-self:stretch;background:var(--line);margin:1px 6px;flex-shrink:0;}
+     número principal do card, que é o dado mais importante ali.
+     `white-space:nowrap` — nunca permite quebra de linha nem compressão,
+     ver comentário de `.kpi-card-primary`. */
+  .kpi-card-valor{font-family:var(--font-mono);font-size:48px;font-weight:700;line-height:48px;color:var(--ink);white-space:nowrap;}
+  .kpi-card-meta{font-size:14px;font-weight:600;line-height:18px;color:var(--ink);margin-top:2px;white-space:nowrap;}
+  /* Divisor vertical sutil entre o KPI principal e as informações
+     secundárias — mesma classe pros 2 layouts de card (padrão e "hero"),
+     mesma margem nos 2 lados em todo card, pra ficar com o mesmo
+     "respiro" sempre. SEM caixa/fundo/cantos ao redor da coluna
+     secundária (pedido explícito do cliente: "não crie caixas internas,
+     cards dentro de cards ou backgrounds adicionais" — uma tentativa
+     anterior tinha feito isso achando que deixaria mais perceptível, mas
+     não era isso que tinha sido pedido; revertido). */
+  .kpi-card-divider{width:1px;align-self:stretch;background:var(--line);margin:1px 8px;flex-shrink:0;}
+  /* `width:136px` — largura FIXA e igual nos 4 cards (inclusive o
+     "hero"/Divergências, ver `.kpi-card-hero-right` abaixo), calculada
+     pro pior caso real: rótulo mais comprido ("Itens com divergência") +
+     valor de até 3 dígitos, cabendo numa linha só, sem caixa, sem
+     reticência — verificado com Playwright medindo a posição real de
+     cada elemento (não só se "cabe dentro da própria caixa", que foi o
+     que mascarou o bug da rodada anterior) contra a borda do card e
+     contra o KPI principal ao lado. SEM `min-width:0` (não precisa
+     encolher — tem largura própria fixa) e `flex-shrink:0` (nunca cede
+     espaço pro KPI principal — é sempre o contrário: se algo tiver que
+     ceder espaço nalgum caso extremo, é esta coluna, nunca o número). */
+  .kpi-card-secondary{width:136px;flex-shrink:0;display:flex;flex-direction:column;justify-content:center;}
   .kpi-card-info-row{display:flex;align-items:baseline;justify-content:space-between;gap:4px;font-size:11.5px;font-weight:400;color:var(--ink-dim);line-height:20px;white-space:nowrap;}
-  /* Limite de segurança (mesmo espírito do `overflow:hidden` do PR #152):
-     se algum rótulo/valor futuro ainda assim não couber, o RÓTULO
-     encolhe com reticência primeiro — o VALOR (o dado em si) nunca fica
-     escondido nem empurrado pra fora do card. Não deveria disparar nos
-     casos reais de hoje (testado, ver comentário de `.kpi-card-secondary`
-     acima), mas é mais seguro que deixar sem nenhum limite. */
-  .kpi-card-info-row > span:first-child{overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1;}
-  .kpi-card-info-row .v{font-size:13px;font-weight:600;color:var(--ink);white-space:nowrap;flex-shrink:0;}
+  .kpi-card-info-row .v{font-size:13px;font-weight:600;color:var(--ink);white-space:nowrap;}
   /* Coluna secundária alternativa (card de Divergências: percentual em
      destaque + tendência, no lugar das 3 linhas rótulo/valor). */
   .kpi-card-secondary .pct{font-size:20px;font-weight:700;line-height:22px;color:var(--ink);}
@@ -304,33 +280,21 @@
   .kpi-card-secondary .trend-texto{font-size:12px;font-weight:400;color:var(--ink-dim);line-height:16px;}
   /* Layout "hero" — só o card de Divergências (`heroValor`/`heroLabel` em
      `KpiCard`), pedido explícito do cliente com print: o número principal
-     (59) precisa dominar visualmente o card, muito mais que "36%"/"+269%"
-     — antes os três pareciam ter a mesma importância. Duas áreas lado a
-     lado (~45%/~55%, sem grid fixo em px — `flex-basis` em % resiste
-     melhor a título/período mais compridos puxando a largura do card todo
-     que um valor fixo faria), separadas pelo mesmo `.kpi-card-divider`
-     compartilhado dos outros 3 cards (ver acima — antes era uma classe
-     própria, `.kpi-card-hero-divider`, com margem diferente; unificado
-     pro "mesmo espaçamento interno" pedido pelo cliente). Reaproveita
-     `.kpi-card-secondary` (classe combinada, ver JSX) pros estilos de
-     `.pct`/`.txt`/`.trend-*` já existentes — só o que muda aqui é o
-     CONTAINER (width fixa vira flexível) e o tamanho do `.pct` (ver
-     abaixo). */
+     precisa dominar visualmente o card, mais que os outros 3 — por isso
+     `.kpi-card-hero-valor` continua com fonte própria (46px/peso 800,
+     contra 48px/700 do padrão). Fora isso, a ESTRUTURA de colunas agora é
+     IDÊNTICA aos outros 3 cards (pedido desta rodada: "os quatro cards
+     continuam utilizando estruturas internas diferentes" — eram 45%/55%
+     em proporção flexível aqui, contra coluna fixa+flex:1 nos outros 3):
+     `.kpi-card-hero-left` vira `flex:1` (mesmo papel de
+     `.kpi-card-primary`) e `.kpi-card-hero-right` usa a MESMA largura
+     fixa de `.kpi-card-secondary` (136px) — as colunas batem nos 4
+     cards agora, só o conteúdo dentro delas muda. */
   .kpi-card-hero-row{display:flex;align-items:stretch;height:100%;}
-  .kpi-card-hero-left{flex:0 0 45%;min-width:0;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;}
-  /* 46px/peso 800 — dentro da faixa pedida (42-48px), no limite superior
-     de peso (700 OU 800) pra maximizar o contraste com os números
-     secundários à direita, sem caixa/borda/fundo ao redor (pedido
-     explícito: nada de badge/glow/círculo, só tipografia+espaço). */
-  .kpi-card-hero-valor{font-family:var(--font-mono);font-size:46px;font-weight:800;line-height:1;color:var(--ink);}
-  .kpi-card-hero-label{font-size:11px;font-weight:700;letter-spacing:0.8px;color:var(--ink-dim);text-transform:uppercase;margin-top:6px;}
-  /* `box-sizing:border-box` de volta aqui (a declaração padrão acima vira
-     `content-box` pro truque da "zona de fundo") — este card já tem
-     largura flexível/generosa (~55% do card), não precisa do mesmo
-     truque, e manter `content-box` aqui faria a caixa SOMAR padding à
-     largura flexível em vez de só redistribuir, mudando a proporção
-     visual 45/55 pedida pelo cliente. */
-  .kpi-card-hero-right.kpi-card-secondary{flex:1 1 auto;width:auto;min-width:0;box-sizing:border-box;}
+  .kpi-card-hero-left{flex:1;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;}
+  .kpi-card-hero-valor{font-family:var(--font-mono);font-size:46px;font-weight:800;line-height:1;color:var(--ink);white-space:nowrap;}
+  .kpi-card-hero-label{font-size:11px;font-weight:700;letter-spacing:0.8px;color:var(--ink-dim);text-transform:uppercase;margin-top:6px;white-space:nowrap;}
+  .kpi-card-hero-right.kpi-card-secondary{width:136px;flex-shrink:0;}
   .kpi-card-hero-right .pct{font-size:26px;line-height:28px;}
   /* Barra de progresso (só o Card 3/Contagens usa) — dentro do body, numa
      faixa própria no rodapé (`justify-content:space-between` do
