@@ -15883,13 +15883,20 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
   // cliente: mesmos 2 indicadores de cima, só que com a nota BINÁRIA por
   // item (`itemAcuracidadeBinaria`: bateu exato = 100%, qualquer
   // divergência = 0%, nunca graduada — mesma regra já usada no indicador
-  // "Itens Recorrentes" da tela Acuracidade). Mesmo pool/janela de datas
-  // dos gráficos graduados acima (`poolTendencia`/`dataInicioStr`..
-  // `dataFimStr` pro semanal, `anoAtualStr`..`hojeStr` pro mensal) — os
-  // dois pares ficam comparáveis lado a lado, só a fórmula de nota muda.
-  // `weeklyStats`/`monthlyStats` (graduados) continuam intocados.
-  const weeklyStatsBinaria = computeWeeklyStats(poolTendencia, dataInicioStr, dataFimStr, itemAcuracidadeBinaria);
-  const monthlyStatsBinaria = computeMonthlyStats(poolTendencia, anoAtualStr, hojeStr, itemAcuracidadeBinaria);
+  // "Itens Recorrentes" da tela Acuracidade). Usa `poolTendenciaDedup`
+  // (rodada FINAL de cada item/cadeia de recontagem), não `poolTendencia`
+  // cru — cliente reportou que o card bateu 70% contra 72% da pizza
+  // "Contados × Divergências" do mesmo mês: a versão graduada conta cada
+  // RODADA separada de propósito (mede "o quão perto cada rodada chega"),
+  // mas numa nota binária isso duplica item recontado (uma rodada 0% +
+  // uma rodada 100% pro mesmo item, diluindo a média) — deduplicar faz
+  // esses cards baterem exatamente com "Sem divergência" da pizza, mesmo
+  // critério de item "resolvido" que ela já usa. Mesma janela de datas dos
+  // gráficos graduados acima (`dataInicioStr`..`dataFimStr` pro semanal,
+  // `anoAtualStr`..`hojeStr` pro mensal). `weeklyStats`/`monthlyStats`
+  // (graduados, pool cru) continuam intocados.
+  const weeklyStatsBinaria = computeWeeklyStats(poolTendenciaDedup, dataInicioStr, dataFimStr, itemAcuracidadeBinaria);
+  const monthlyStatsBinaria = computeMonthlyStats(poolTendenciaDedup, anoAtualStr, hojeStr, itemAcuracidadeBinaria);
   // O indicador de acuracidade recorrente e a seção de divergência por item
   // (hoje "Itens com Divergência Recorrente", antes "Efeito dos Ajustes
   // Aprovados") saíram daqui — moram na página "Acuracidade" agora (ver
