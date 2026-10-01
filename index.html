@@ -16003,7 +16003,15 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
           não precisa de guard condicional aqui. */}
       <div>
         <div className="weekly-charts-grid">
-          {/* Fileira 1: Acuracidade Semanal (esquerda) + Contagens na Semana (direita). */}
+          {/* Separado por TIPO DE CÁLCULO (pedido do cliente) — as 4
+              "Acuracidade" % agora ficam em 2 fileiras próprias, uma por
+              fórmula (graduada vs. binária), cada uma com seu próprio
+              `section-title`, em vez de misturadas com "Contagens na
+              Semana"/"Divergência por Família" como antes. Os 2 pares que
+              sobraram (Contagens na Semana+Divergência por Família,
+              Contados×Divergências+Itens Contados na Semana) continuam
+              juntos logo abaixo, sem mudança de cálculo nenhuma. */}
+          <div className="section-title" style={{margin:'0 0 12px 0'}}>Acuracidade — Cálculo Graduado (%)</div>
           <div className="weekly-pair-row">
             <div className="panel" style={{margin:0}}>
               <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:16}}>
@@ -16014,17 +16022,6 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
             </div>
             <div className="panel" style={{margin:0}}>
               <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:16}}>
-                <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Contagens na Semana</div>
-                <span className="chart-meta-badge">Meta: {META_CONTAGENS_SEMANAL}</span>
-              </div>
-              <WeeklyCountChart weeks={weeklyStats} meta={META_CONTAGENS_SEMANAL} />
-            </div>
-          </div>
-
-          {/* Fileira 2: Acuracidade Mensal (esquerda) + Divergência por Família/Grupo (direita). */}
-          <div className="weekly-pair-row">
-            <div className="panel" style={{margin:0}}>
-              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:16}}>
                 <div>
                   <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Acuracidade Mensal (%)</div>
                   <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:2}}>Todos os meses de {new Date().getFullYear()} com dado registrado</div>
@@ -16033,19 +16030,52 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
               </div>
               <MonthlyAccuracyBarChart months={monthlyStats} meta={META_ACURACIDADE_SEMANAL} />
             </div>
+          </div>
+
+          <div className="section-title">Acuracidade — Cálculo Binário (%)</div>
+          <div className="weekly-pair-row">
+            <div className="panel" style={{margin:0}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:16}}>
+                <div>
+                  <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Acuracidade Semanal — Binária (%)</div>
+                  <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:2}}>Bateu exato com o sistema = 100%, qualquer divergência = 0%.</div>
+                </div>
+                <span className="chart-meta-badge">Meta: {META_ACURACIDADE_SEMANAL}%</span>
+              </div>
+              <WeeklyLineChart weeks={weeklyStatsBinaria} meta={META_ACURACIDADE_SEMANAL} />
+            </div>
+            <div className="panel" style={{margin:0}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:16}}>
+                <div>
+                  <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Acuracidade Mensal — Binária (%)</div>
+                  <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:2}}>Todos os meses de {new Date().getFullYear()} com dado registrado</div>
+                </div>
+                <span className="chart-meta-badge">Meta: {META_ACURACIDADE_SEMANAL}%</span>
+              </div>
+              <MonthlyAccuracyBarChart months={monthlyStatsBinaria} meta={META_ACURACIDADE_SEMANAL} />
+            </div>
+          </div>
+
+          <div className="section-title">Outros Indicadores</div>
+          {/* Fileira: Contagens na Semana (esquerda) + Divergência por Família/Grupo (direita). */}
+          <div className="weekly-pair-row">
+            <div className="panel" style={{margin:0}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:16}}>
+                <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Contagens na Semana</div>
+                <span className="chart-meta-badge">Meta: {META_CONTAGENS_SEMANAL}</span>
+              </div>
+              <WeeklyCountChart weeks={weeklyStats} meta={META_CONTAGENS_SEMANAL} />
+            </div>
             {/* .weekly-pair-row estica os dois painéis pra mesma altura
-                (align-items:stretch do grid) — "Acuracidade Mensal" cresce
-                proporcionalmente com a largura da coluna (SVG de aspect
-                ratio fixo), enquanto este painel (7 linhas de barra) tem
-                altura quase fixa. Em telas largas isso sobra um vão vazio
-                grudado embaixo (cliente marcou com print); em telas
-                estreitas o SVG encolhe e o vão muda de tamanho/some — daí
-                "de um jeito numa tela grande, de outro numa tela menor".
-                Em vez de tentar casar a altura dos dois (frágil, muda com
-                a largura real e com quantas famílias existem), o painel
-                virou flex-column com o conteúdo centralizado verticalmente
-                no espaço que sobrar — funciona pra qualquer tamanho de
-                vão, sem ficar "solto" grudado numa borda. */}
+                (align-items:stretch do grid) — o painel parceiro (7 linhas
+                de barra no máximo) tem altura quase fixa, bem menor que a
+                do gráfico de linha ao lado em telas largas. Em vez de tentar
+                casar a altura dos dois (frágil, muda com a largura real e
+                com quantas famílias existem), o painel virou flex-column
+                com o conteúdo centralizado verticalmente no espaço que
+                sobrar — funciona pra qualquer tamanho de vão, sem ficar
+                "solto" grudado numa borda (mesma solução de antes, só que
+                agora pareado com um gráfico diferente). */}
             <div className="panel" style={{margin:0,display:'flex',flexDirection:'column'}}>
               <div style={{fontSize:'var(--text-sm)',fontWeight:700,marginBottom:16}}>Divergência por Família/Grupo (Top 7)</div>
               <div style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'center'}}>
@@ -16072,7 +16102,7 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
             </div>
           </div>
 
-          {/* Fileira 3: "Contados × Divergências" (pizza, esquerda) +
+          {/* Fileira: "Contados × Divergências" (pizza, esquerda) +
               "Itens Contados na Semana" (direita, novo) — pedido do
               cliente: "mesma formatação de Contagens da Semana, mas que
               mostre a quantidade de itens contado semanalmente". Virou
@@ -16116,34 +16146,6 @@ function Dashboard({counts, inventories, historicoConcluidas=[], historicoParaTe
                 <span className="chart-meta-badge">Meta: {META_CONTAGENS_SEMANAL}</span>
               </div>
               <WeeklyCountChart weeks={weeklyStatsItensUnicos} meta={META_CONTAGENS_SEMANAL} />
-            </div>
-          </div>
-
-          {/* Fileira 4: Acuracidade Semanal/Mensal — Binária (nota 100% só
-              quando bate exato com o sistema, 0% em qualquer divergência —
-              ver comentário de `weeklyStatsBinaria`/`itemAcuracidadeBinaria`
-              acima). Mesmo layout/componentes dos gráficos graduados de
-              cima, só trocando a série de dados. */}
-          <div className="weekly-pair-row">
-            <div className="panel" style={{margin:0}}>
-              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:16}}>
-                <div>
-                  <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Acuracidade Semanal — Binária (%)</div>
-                  <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:2}}>Bateu exato com o sistema = 100%, qualquer divergência = 0%.</div>
-                </div>
-                <span className="chart-meta-badge">Meta: {META_ACURACIDADE_SEMANAL}%</span>
-              </div>
-              <WeeklyLineChart weeks={weeklyStatsBinaria} meta={META_ACURACIDADE_SEMANAL} />
-            </div>
-            <div className="panel" style={{margin:0}}>
-              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,marginBottom:16}}>
-                <div>
-                  <div style={{fontSize:'var(--text-sm)',fontWeight:700}}>Acuracidade Mensal — Binária (%)</div>
-                  <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:2}}>Todos os meses de {new Date().getFullYear()} com dado registrado</div>
-                </div>
-                <span className="chart-meta-badge">Meta: {META_ACURACIDADE_SEMANAL}%</span>
-              </div>
-              <MonthlyAccuracyBarChart months={monthlyStatsBinaria} meta={META_ACURACIDADE_SEMANAL} />
             </div>
           </div>
         </div>
