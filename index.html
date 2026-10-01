@@ -10458,7 +10458,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
         setLiveConsulta(res);
       } else {
         if(res.erro) console.warn('Consulta ao vivo (Selgron) falhou:', res.erro);
-        setLiveConsultaErro(res.erro || 'Consulta ao vivo indisponível.');
+        setLiveConsultaErro(res.erro || 'Consulta à Selgron indisponível.');
       }
     });
     return ()=>{ cancelado = true; };
@@ -10835,9 +10835,9 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
           <Ic>⚿</Ic>
           <span>
             {liveConsultaErro
-              ? <>Não foi possível confirmar isso ao vivo na Selgron ({liveConsultaErro}).</>
-              : <>A consulta ao vivo respondeu, mas {mensagemSemConfirmar}.</>
-            }{' '}{mensagemFinal || <>Continuar usando só o cadastro local (planilha SB2) sem confirmação ao vivo não é
+              ? <>Não foi possível confirmar isso na Selgron ({liveConsultaErro}).</>
+              : <>A consulta à Selgron respondeu, mas {mensagemSemConfirmar}.</>
+            }{' '}{mensagemFinal || <>Continuar usando só o cadastro local (planilha SB2) sem confirmar na Selgron não é
             seguro — a contagem não pode seguir até isso ser resolvido.</>}
           </span>
         </div>
@@ -10914,16 +10914,16 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
             <input type="text" value={enderecoInformado} onChange={e=>{ setEnderecoEditadoManualmente(true); setEnderecoInformado(formatEnderecoInput(e.target.value)); }} placeholder="Ex: 035-A-1" maxLength={7} />
           </div>
           {enderecoVeioDaConsulta && (
-            <div style={{fontSize:'var(--text-xs)',color:'var(--ok)',marginTop:-10,marginBottom:12}}>✓ Endereço confirmado pela consulta ao vivo.</div>
+            <div style={{fontSize:'var(--text-xs)',color:'var(--ok)',marginTop:-10,marginBottom:12}}>✓ Endereço confirmado pela consulta à Selgron.</div>
           )}
           {enderecoNaoEncontrado && (
             <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginTop:-10,marginBottom:12}}>✗ Endereço não encontrado.</div>
           )}
           {enderecoSoCadastro && (
-            <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:-10,marginBottom:12}}>ℹ Consulta ao vivo não confirmou este endereço — mostrando o cadastro local, que pode estar desatualizado.</div>
+            <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:-10,marginBottom:12}}>ℹ A consulta à Selgron não confirmou este endereço — mostrando o cadastro local, que pode estar desatualizado.</div>
           )}
           {enderecoAguardandoConfirmacao && !precisaAutorizarEndereco && (
-            <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:-10,marginBottom:12}}>Consultando endereço ao vivo na Selgron…</div>
+            <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:-10,marginBottom:12}}>Consultando endereço na Selgron…</div>
           )}
           {precisaAutorizarEndereco && painelBloqueioConsultaAoVivo(
             'não confirmou nenhum endereço para este código/armazém',
@@ -10989,12 +10989,12 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
           )}
           {mostrarSaldo && !precisaAutorizarSaldo && !saldoAguardandoConfirmacao && <div className="cs-sistema-arrow"><DIcon name="arrowDown" size={18} /></div>}
           {saldoAguardandoConfirmacao && !precisaAutorizarSaldo && (
-            <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginBottom:12,textAlign:'center'}}>Consultando saldo ao vivo na Selgron…</div>
+            <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginBottom:12,textAlign:'center'}}>Consultando saldo na Selgron…</div>
           )}
           {precisaAutorizarSaldo && painelBloqueioConsultaAoVivo(
             'não confirmou o saldo do sistema para este item/armazém',
             ()=>setAutorizouSaldoLocal(true),
-            <>Prosseguir sem o saldo confirmado ao vivo não é seguro — a contagem não pode seguir até isso ser
+            <>Prosseguir sem o saldo confirmado na Selgron não é seguro — a contagem não pode seguir até isso ser
             resolvido. Autorizando, o item segue sem saldo pra comparar (vai direto pra análise do líder).</>,
             'Autorizar sem saldo confirmado'
           )}
@@ -11476,7 +11476,7 @@ function ManualCountFlow({user, onRegisterCount, onAddressProposed, counts, oper
         <input type="text" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Ex: 000.35310 ou parafuso" />
       </div>
       {loading && !buscandoAoVivo && <div className="empty-state">Buscando no catálogo…</div>}
-      {buscandoAoVivo && <div className="empty-state">Não achei no catálogo local — consultando ao vivo na Selgron (pode ser um item recém-cadastrado)…</div>}
+      {buscandoAoVivo && <div className="empty-state">Não achei no catálogo local — consultando na Selgron (pode ser um item recém-cadastrado)…</div>}
       {!loading && results.length===0 && !liveFallback && query && <div className="empty-state">Nenhum item encontrado.</div>}
       {results.map(p=>(
         <div key={p.codigo} className="list-row" onClick={()=>setSelected(p)}>
@@ -11493,7 +11493,7 @@ function ManualCountFlow({user, onRegisterCount, onAddressProposed, counts, oper
             <div className="lr-title">{liveFallback.descricao}</div>
             <div className="lr-sub">
               {liveFallback.codigo}{liveFallback.enderecoCadastrado ? ' · '+liveFallback.endereco : ''}
-              <br/><span style={{color:'var(--safety)'}}>Encontrado ao vivo na Selgron — ainda não está no catálogo local</span>
+              <br/><span style={{color:'var(--safety)'}}>Encontrado na Selgron — ainda não está no catálogo local</span>
             </div>
           </div>
           <span className="chevron"><Ic>›</Ic></span>
@@ -18889,7 +18889,7 @@ function EtiquetasPanel({currentUser}){
       </div>
 
       {loading && !buscandoAoVivo && <div className="empty-state">Buscando…</div>}
-      {buscandoAoVivo && <div className="empty-state">Não achei no catálogo local — consultando ao vivo na Selgron (pode ser um item recém-cadastrado)…</div>}
+      {buscandoAoVivo && <div className="empty-state">Não achei no catálogo local — consultando na Selgron (pode ser um item recém-cadastrado)…</div>}
       {!loading && query && results.length===0 && !resultadoAoVivo && <div className="empty-state">Nenhum resultado encontrado.</div>}
 
       {!selecionado && results.map(item=>(
@@ -18913,7 +18913,7 @@ function EtiquetasPanel({currentUser}){
             <div className="lr-title">{resultadoAoVivo.descricao}</div>
             <div className="lr-sub">
               {resultadoAoVivo.codigo}{resultadoAoVivo.enderecoCadastrado ? ' · '+resultadoAoVivo.endereco : ''}
-              <br/><span style={{color:'var(--safety)'}}>Encontrado ao vivo na Selgron — ainda não está no catálogo local</span>
+              <br/><span style={{color:'var(--safety)'}}>Encontrado na Selgron — ainda não está no catálogo local</span>
             </div>
           </div>
           <span className="chevron"><Ic>›</Ic></span>
