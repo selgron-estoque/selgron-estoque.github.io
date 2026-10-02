@@ -454,6 +454,8 @@
   .tp-maquina-cliente .tp-cliente{font-weight:500;font-size:14px;color:var(--tpink-dim);}
   .tp-maquina-cliente .tp-sep-txt{color:var(--tpsep);font-weight:400;margin:0 5px;}
   .tp-meta{font-family:var(--font-corp);font-size:11px;font-weight:400;color:var(--tpink-dim);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .tp-obs-destaque{display:inline;margin-top:5px;background:#FFEB3B;color:#3A2F00;font-family:var(--font-corp);font-size:11px;font-weight:700;padding:2px 6px;border-radius:3px;box-decoration-break:clone;-webkit-box-decoration-break:clone;}
+  .tp-obs-destaque-wrap{margin-top:5px;line-height:1.5;}
   .tp-card-right{display:flex;gap:6px;flex-shrink:0;}
   /* Pedido do cliente: blocos COM SALDO/SEM SALDO como informação
      SECUNDÁRIA — o destaque do card é ETP → descrição → status →
@@ -3445,10 +3447,16 @@ function bucketizeKanbanTracking(maquinas){
 // ETP/Máquina|Cliente/Chassi+Código à esquerda, os 2 blocos "COM SALDO"/
 // "SEM SALDO" à direita, barra de progresso + "N itens" embaixo. O card
 // NUNCA repete o texto do status (a coluna já mostra) e NÃO mostra mais
-// "Descrição"/observação destacada/Data de Separação — a spec pediu um
-// card fixo bem mais compacto (~134px) sem espaço pra essas linhas extras;
-// esse dado continua 100% preservado no banco e na tela real "Programação"
-// (index.html), só não aparece mais neste card da TV — "Entregue em"
+// "Descrição"/Data de Separação — a spec original pediu um card fixo bem
+// mais compacto (~134px) sem espaço pra essas linhas extras; esse dado
+// continua 100% preservado no banco e na tela real "Programação"
+// (index.html), só não aparece mais neste card da TV. A observação
+// destacada (`m.observacao`, mesmo marca-texto amarelo de lá — ver
+// `.sep-kanban-obs-destaque`) voltou a aparecer aqui (pedido do cliente:
+// "não aparece a informação que fica destacada em amarelo na tela de
+// programação") — `.tp-card` usa `min-height`, não `height` fixa, então o
+// card só cresce além de 134px quando a máquina tem observação; as demais
+// continuam do mesmo tamanho de sempre. "Entregue em"
 // (`m.entregueEm`) foi tentado aqui também, mas removido a pedido do
 // cliente ("não do jeito que desejo", vai ser revisado depois); o campo
 // continua calculado (só usado pra ordenar a coluna Entregue, ver
@@ -3515,6 +3523,11 @@ function MaquinaCardTracking({m, corStripe}){
             <span className="tp-cliente">{m.cliente || 'Cliente não informado'}</span>
           </div>
           {metaChassiCodigo && <div className="tp-meta">{metaChassiCodigo}</div>}
+          {m.observacao && (
+            <div className="tp-obs-destaque-wrap">
+              <span className="tp-obs-destaque">{m.observacao}</span>
+            </div>
+          )}
         </div>
         {!tudoEntregue && (
           <div className="tp-card-right">
