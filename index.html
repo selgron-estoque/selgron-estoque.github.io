@@ -836,11 +836,19 @@
      pra esta tela — não mexe no CSS base de `.trend-filter-bar`/`.field`/
      `SeverityFilterRow`, que continuam idênticos nas outras telas que os
      usam (Itens Divergentes, Aguardando Aprovação, etc.). */
-  .recount-filtros-panel{background:var(--panel);border:1px solid var(--gray-200);border-radius:18px;box-shadow:0 8px 30px rgba(0,0,0,.05);margin-bottom:24px;overflow:hidden;}
-  .recount-filtros-panel .trend-filter-bar{margin-bottom:0;border:none;border-radius:0;box-shadow:none;}
-  .rfp-search-row{padding:20px 24px;border-top:1px solid var(--gray-100);}
+  .recount-filtros-panel{background:var(--panel);border:1px solid var(--gray-200);border-radius:18px;box-shadow:0 8px 30px rgba(0,0,0,.05);margin-bottom:24px;overflow:hidden;padding-bottom:14px;}
+  /* Cada seção abaixo do cabeçalho ganha padding só do lado de CIMA (nunca
+     embaixo) — é o que evita o espaço em branco dobrado que sobrava aqui
+     (bottom de uma seção + top da seguinte somando até ~40px); com um lado
+     só, o espaço entre seções fica igual à borda/divisória + um único
+     padding, nunca os dois empilhados. `padding-bottom:0` no
+     `.trend-filter-bar` zera o padding de 24px que ele already tem por
+     padrão (outras telas que o usam continuam com os 24px originais,
+     intocados — este override só vale dentro de `.recount-filtros-panel`). */
+  .recount-filtros-panel .trend-filter-bar{margin-bottom:0;border:none;border-radius:0;box-shadow:none;padding-bottom:0;}
+  .rfp-search-row{padding:14px 24px 0;border-top:1px solid var(--gray-100);}
   .rfp-search-row .field{margin-bottom:0;}
-  .rfp-status-row{display:flex;align-items:center;justify-content:space-between;gap:16px 20px;flex-wrap:wrap;padding:16px 24px;border-top:1px solid var(--gray-100);}
+  .rfp-status-row{display:flex;align-items:center;justify-content:space-between;gap:12px 20px;flex-wrap:wrap;padding:12px 24px 0;border-top:1px solid var(--gray-100);}
   .rfp-status-left{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
   /* `SeverityFilterRow` nasce com `marginBottom:14` inline (pensado pra
      quando é o último elemento solto da tela, nas outras telas que a usam)
