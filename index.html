@@ -19739,14 +19739,31 @@ function computeMaquinasPainel(itens, maquinasEtp, hojeStr){
 // entrada (já vem ordenada por `ordem`/ETP) — EXCETO a coluna Entregue, que
 // é reordenada logo abaixo pela sequência real de entrega (pedido explícito
 // do cliente: "deixar na sequência de entrega de cima para baixo").
-function bucketizeKanban(maquinas){
+function bucketizeKanban(maquinas, hojeStr){
   const buckets = {aguardando:[], emSeparacao:[], separada:[], atrasada:[], entregue:[]};
+  // Pedido do cliente: máquina entregue há 1 semana ou mais some da coluna
+  // Entregue — o Kanban é pra acompanhar separação em andamento, não um
+  // histórico sem fim; entregas antigas só poluem a coluna. Comparação por
+  // STRING 'YYYY-MM-DD' (mesmo critério de `atrasada` acima, em
+  // `computeMaquinasPainel`), nunca por milissegundos — evita qualquer
+  // diferença de fuso/horário fazendo uma entrega de "exatamente 7 dias
+  // atrás" sumir ou aparecer de forma inconsistente ao longo do dia.
+  const limiteOcultarEntregue = (() => {
+    const d = new Date(hojeStr + 'T00:00:00');
+    d.setDate(d.getDate() - 7);
+    return localDateStr(d);
+  })();
   maquinas.forEach(m=>{
     if(m.atrasada){ buckets.atrasada.push(m); return; }
     if(m.status==='aguardando') buckets.aguardando.push(m);
     else if(m.status==='em_separacao') buckets.emSeparacao.push(m);
     else if(m.status==='separada') buckets.separada.push(m);
-    else if(m.status==='entregue') buckets.entregue.push(m);
+    else if(m.status==='entregue'){
+      const dataEntrega = m.entregueEm ? m.entregueEm.slice(0,10) : null;
+      // `>` estrito (não `>=`) — entregue há EXATAMENTE 7 dias já conta como
+      // "há 1 semana" (pedido do cliente) e deve sumir, não só a partir do 8º dia.
+      if(dataEntrega==null || dataEntrega>limiteOcultarEntregue) buckets.entregue.push(m);
+    }
   });
   // Entregue foge da regra acima de propósito: a fila manual (`ordem`) nem
   // participa mais desta etapa (ver `moverOrdemNaColuna`), então o que
@@ -20123,7 +20140,7 @@ function SeparacaoPainelBoard({itens, maquinasEtp, canManage, podeAvancarStatus,
   const porEtpItens = {};
   itens.forEach(i=>{ if(!i.etp) return; if(!porEtpItens[i.etp]) porEtpItens[i.etp] = []; porEtpItens[i.etp].push(i); });
 
-  const buckets = bucketizeKanban(maquinas);
+  const buckets = bucketizeKanban(maquinas, hojeStr);
 
   // Filtro "Somente Urgentes"/busca/período — de propósito, o modo "Ordenar
   // sequência" fica desabilitado enquanto QUALQUER um deles está ativo:
