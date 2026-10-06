@@ -1822,11 +1822,11 @@
   /* Estado vazio "tudo em dia" da coluna Atrasada — pedido do cliente: em
      vez de uma caixa vazia, transmitir claramente que não há problema
      nenhum (mesma mensagem de sempre, `col.vazio`, só com tratamento
-     visual: ícone + título + explicação numa linha). */
+     visual: ícone + título). Tinha uma 2ª linha de legenda ("Tudo em
+     dia.") — removida a pedido do cliente, o título já basta. */
   .sep-kanban-empty-ok{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;flex:1;padding:30px 16px;color:var(--ink-dim);gap:9px;}
   .sep-kanban-empty-ok-icon{width:44px;height:44px;border-radius:50%;background:var(--ok-bg);color:var(--ok);display:flex;align-items:center;justify-content:center;}
   .sep-kanban-empty-ok-title{font-size:13px;font-weight:700;color:var(--ink);}
-  .sep-kanban-empty-ok-sub{font-size:12px;}
 
   .sep-kanban-card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 13px;box-shadow:0 1px 2px rgba(0,0,0,.04);position:relative;}
   .sep-kanban-card-head{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
@@ -19985,7 +19985,7 @@ const SEP_KANBAN_COLUNAS = [
   {chave:'aguardando', titulo:'Aguardando Separação', desc:'Na fila para iniciar', icone:'clock', cor:'--progcol-aguardando-ink', corBg:'--progcol-aguardando-bg', vazio:'Nenhuma máquina aguardando.'},
   {chave:'emSeparacao', titulo:'Em Separação', desc:'Máquinas sendo separadas', icone:'refreshCw', cor:'--progcol-emsep-ink', corBg:'--progcol-emsep-bg', vazio:'Nenhuma máquina em separação no momento.'},
   {chave:'separada', titulo:'Separada', desc:'Aguardando conferência/entrega', icone:'box', cor:'--progcol-separada-ink', corBg:'--progcol-separada-bg', vazio:'Nenhuma máquina separada ainda.'},
-  {chave:'atrasada', titulo:'Atrasada', desc:'Fora do prazo', icone:'alertTriangle', cor:'--progcol-atrasada-ink', corBg:'--progcol-atrasada-bg', vazio:'Nenhuma máquina atrasada', vazioSub:'Tudo em dia.'},
+  {chave:'atrasada', titulo:'Atrasada', desc:'Fora do prazo', icone:'alertTriangle', cor:'--progcol-atrasada-ink', corBg:'--progcol-atrasada-bg', vazio:'Nenhuma máquina atrasada', vazioDestaque:true},
   {chave:'entregue', titulo:'Entregue', desc:'Máquinas finalizadas', icone:'checkCircle', cor:'--progcol-entregue-ink', corBg:'--progcol-entregue-bg', vazio:'Nenhuma máquina entregue ainda.'},
 ];
 
@@ -20161,11 +20161,10 @@ function SeparacaoPainelBoard({itens, maquinasEtp, canManage, podeAvancarStatus,
                 <span className="sep-kanban-col-count">{listaBruta.length}</span>
               </div>
               <div className="sep-kanban-col-body">
-                {lista.length===0 && col.vazioSub ? (
+                {lista.length===0 && col.vazioDestaque ? (
                   <div className="sep-kanban-empty-ok">
                     <span className="sep-kanban-empty-ok-icon"><DIcon name="calendar" size={20} /></span>
                     <div className="sep-kanban-empty-ok-title">{col.vazio}</div>
-                    <div className="sep-kanban-empty-ok-sub">{col.vazioSub}</div>
                   </div>
                 ) : lista.length===0 ? (
                   <div className="empty-state" style={{margin:0}}>{col.vazio}</div>
