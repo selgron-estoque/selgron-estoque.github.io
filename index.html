@@ -1795,9 +1795,12 @@
        elegante" em vez de neon, mantendo a mesma identidade de cor.
        `--progbtn-aguardando` foi ajustado de novo depois — a 1ª versão
        (#8A5D16) tinha ficado tão escura que o botão parecia DESABILITADO
-       (pedido do cliente: "está com aparência de desativado"), mesmo sem
-       estar — veio pra #B87708, um meio-termo com mais contraste. */
-    --progbtn-aguardando:#B87708; --progbtn-emsep:#1F6E7D;
+       (pedido do cliente: "está com aparência de desativado"), passou pra
+       #B87708 (meio-termo), e por fim pedido do cliente pra igualar
+       exatamente a cor do chip "Acessórios" (`.prog-chip.active`,
+       `var(--safety)`) — reaproveita o token direto, em vez de mais um
+       hex fixo, já que é a MESMA cor de propósito agora, não só parecida. */
+    --progbtn-aguardando:var(--safety); --progbtn-emsep:#1F6E7D;
     --progbtn-separada:#277A48; --progbtn-atrasada:#9C3F3F;
   }
   /* Kanban de "Programação" (Gestão de Separação) — 5 colunas sempre
@@ -1839,9 +1842,17 @@
      `m.urgente` que já decide o selo/realce de urgência em todo o resto do
      app) exibidos como badge, pra ficar perceptível sem ler o card inteiro
      — nunca um 3º nível "Alta" inventado sem dado real por trás. */
-  .prog-priority-badge{margin-left:auto;font-size:10px;font-weight:800;letter-spacing:0.4px;padding:3px 8px;border-radius:5px;text-transform:uppercase;flex-shrink:0;}
+  .prog-priority-badge{margin-left:auto;font-size:10px;font-weight:800;letter-spacing:0.4px;padding:3px 8px;border-radius:5px;text-transform:uppercase;flex-shrink:0;border:none;}
   .prog-priority-badge.urgente{background:var(--danger-bg);color:var(--danger);}
   .prog-priority-badge.normal{background:var(--panel-raised);color:var(--ink-dim);border:1px solid var(--line);}
+  /* Badge clicável (só líder/admin, `canManage` — mesma permissão que já
+     controlava "Marcar urgente" no menu "⋮") — pedido do cliente: alternar
+     Normal/Urgente direto no badge, sem abrir menu nenhum. Continua
+     reaproveitando `onToggleUrgente`/`busy` já existentes (mesma chamada
+     que o menu "⋮" já fazia), só um 2º jeito de disparar a mesma ação.*/
+  .prog-priority-badge-btn{cursor:pointer;}
+  .prog-priority-badge-btn:hover:not(:disabled){filter:brightness(1.15);}
+  .prog-priority-badge-btn:disabled{opacity:.55;cursor:default;}
   .sep-kanban-nome{font-size:14.5px;font-weight:700;color:var(--ink);line-height:1.3;margin-bottom:5px;display:flex;justify-content:space-between;align-items:baseline;gap:8px;}
   .sep-kanban-nome .sep-kanban-cliente-txt{font-weight:500;color:var(--ink-dim);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .sep-kanban-meta-line{font-size:11.5px;color:var(--ink-dim);margin-bottom:2px;display:flex;align-items:center;gap:5px;}
@@ -19925,8 +19936,22 @@ function MaquinaCard({m, canManage, podeAvancarStatus, isAdmin, ordinal, mostrar
         <span className="sep-kanban-etp">{m.etp}</span>
         {/* Badge de prioridade — só 2 níveis reais (Urgente/Normal, o mesmo
             `m.urgente` já usado em todo o resto do app pra esse sinal),
-            nunca um 3º nível "Alta" sem dado de verdade por trás. */}
-        <span className={'prog-priority-badge ' + (m.urgente ? 'urgente' : 'normal')}>{m.urgente ? 'Urgente' : 'Normal'}</span>
+            nunca um 3º nível "Alta" sem dado de verdade por trás. Clicável
+            pra quem pode gerenciar (mesma permissão do "Marcar urgente" no
+            menu "⋮") — alterna na hora, sem abrir nada. */}
+        {canManage ? (
+          <button
+            type="button"
+            className={'prog-priority-badge prog-priority-badge-btn ' + (m.urgente ? 'urgente' : 'normal')}
+            disabled={busy}
+            onClick={onToggleUrgente}
+            title={m.urgente ? 'Clique para remover a urgência' : 'Clique para marcar como urgente'}
+          >
+            {m.urgente ? 'Urgente' : 'Normal'}
+          </button>
+        ) : (
+          <span className={'prog-priority-badge ' + (m.urgente ? 'urgente' : 'normal')}>{m.urgente ? 'Urgente' : 'Normal'}</span>
+        )}
       </div>
       <div className="sep-kanban-nome">
         {m.obs && <span>{m.obs}</span>}
