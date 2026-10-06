@@ -1830,9 +1830,11 @@
      vez de uma caixa vazia, transmitir claramente que não há problema
      nenhum (mesma mensagem de sempre, `col.vazio`, só com tratamento
      visual: ícone + título). Tinha uma 2ª linha de legenda ("Tudo em
-     dia.") — removida a pedido do cliente, o título já basta. */
+     dia.") — removida a pedido do cliente, o título já basta. Ícone
+     NEUTRO de propósito (não verde/`--ok`) — pedido do cliente: "este
+     calendário não é pra ser colorido". */
   .sep-kanban-empty-ok{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;flex:1;padding:30px 16px;color:var(--ink-dim);gap:9px;}
-  .sep-kanban-empty-ok-icon{width:44px;height:44px;border-radius:50%;background:var(--ok-bg);color:var(--ok);display:flex;align-items:center;justify-content:center;}
+  .sep-kanban-empty-ok-icon{width:44px;height:44px;border-radius:50%;background:var(--panel-raised);color:var(--ink-dim);display:flex;align-items:center;justify-content:center;}
   .sep-kanban-empty-ok-title{font-size:13px;font-weight:700;color:var(--ink);}
 
   .sep-kanban-card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 13px;box-shadow:0 1px 2px rgba(0,0,0,.04);position:relative;}
