@@ -6053,37 +6053,6 @@ function usePersistedState(key, initialValue){
   return [state, setState];
 }
 
-// Mesma ideia de `usePersistedState`, só que em `sessionStorage` — sobrevive
-// a um F5 (pedido do cliente pra `view`/`flowState`, ver comentário em
-// App()), mas fica isolado POR ABA, do mesmo jeito que a sessão de login já
-// funciona (ver `supabaseClient` com `auth:{storage:window.sessionStorage}`).
-// `localStorage` é compartilhado por TODAS as abas do mesmo navegador — como
-// `view`/`flowState` usavam `usePersistedState` (localStorage) antes, abrir
-// mais de uma aba do sistema (ou até só deixar uma aba em segundo plano
-// tempo suficiente pro navegador descartá-la e recarregar sozinha) fazia uma
-// aba "roubar" a navegação da outra: cada F5 caía sempre na ÚLTIMA tela
-// visitada em QUALQUER aba do aparelho, nunca na da própria aba.
-function useSessionPersistedState(key, initialValue){
-  const fullKey = 'stock360:'+STORAGE_VERSION+':'+key;
-  const [state, setState] = useState(()=>{
-    try{
-      const raw = window.sessionStorage.getItem(fullKey);
-      return raw==null ? initialValue : JSON.parse(raw);
-    } catch(err){
-      return initialValue;
-    }
-  });
-  useEffect(()=>{
-    try{
-      window.sessionStorage.setItem(fullKey, JSON.stringify(state));
-    } catch(err){
-      // sessionStorage indisponível (modo privado, cota cheia, etc.) — ignora
-      // silenciosamente, o app continua funcionando só sem persistir.
-    }
-  }, [fullKey, state]);
-  return [state, setState];
-}
-
 /* ---------------- APP SHELL ---------------- */
 
 const DEFAULT_SESSION_TIMEOUT_MIN = 15; // valor de fábrica, usado se o admin nunca mexer na configuração
@@ -6150,13 +6119,12 @@ function App(){
   // Dados que o app gera ficam salvos no localStorage (ver usePersistedState
   // acima) — sobrevivem a recarregar/fechar o navegador neste aparelho, e
   // são compartilhados por qualquer aba/janela aberta nele (é isso que se
-  // quer pra usuários/inventários/contagens). Navegação (view/flowState) e
-  // sessão de login (currentUserId) usam sessionStorage em vez disso — ver
-  // `useSessionPersistedState` e `supabaseClient` (auth.storage) — sobrevivem
-  // a um F5, mas ficam isoladas POR ABA, nunca vazando de uma aba pra outra
-  // aberta ao mesmo tempo no mesmo aparelho. Sessão de login expira de
-  // verdade por inatividade real (15 min, ver efeito mais abaixo) ou logout
-  // manual.
+  // quer pra usuários/inventários/contagens). Navegação (view/flowState) NÃO
+  // persiste — ver comentário completo em `view`/`flowState` mais abaixo.
+  // Sessão de login (currentUserId) usa sessionStorage (`supabaseClient`,
+  // auth.storage) — sobrevive a um F5, isolada POR ABA. Sessão de login
+  // expira de verdade por inatividade real (15 min, ver efeito mais abaixo)
+  // ou logout manual.
   const [users, setUsers] = usePersistedState('users', USERS_SEED);
   const [currentUserId, setCurrentUserId] = useState(null);
   // Evita mostrar a tela de login por uma fração de segundo antes de
@@ -6209,21 +6177,19 @@ function App(){
     return ()=>{ cancelled = true; };
   }, [currentUserId]);
 
-  // Navegação (view/flowState) sobrevive a recarregar a página — pedido do
-  // cliente, que estava sendo jogado de volta pra Home a cada F5 no meio de
-  // uma análise (ex: na tela Indicadores). `flowState` é sempre um objeto
-  // simples (o inventário sendo contado, a contagem original de uma
-  // recontagem, etc.), serializa sem problema. `logout()` já força
-  // `view:'home'`/`flowState:null` de volta, então isso não "vaza" contexto
-  // de um usuário pro próximo login no mesmo aparelho.
-  // `useSessionPersistedState` (sessionStorage), não `usePersistedState`
-  // (localStorage) — mesmo storage já usado pra sessão de login, isolado POR
-  // ABA: sobrevive ao F5 pedido pelo cliente, mas sem uma aba "roubar" a
-  // navegação de outra aba aberta ao mesmo tempo no mesmo aparelho (era
-  // localStorage antes, compartilhado por todas as abas — cada F5, em
-  // qualquer aba, caía sempre na última tela visitada em QUALQUER aba).
-  const [view, setView] = useSessionPersistedState('view', 'home');
-  const [flowState, setFlowState] = useSessionPersistedState('flowState', null); // params passed into a flow
+  // Navegação (view/flowState) NÃO persiste de propósito — reabrir o app
+  // (ou recarregar a página) sempre cai no Início, nunca retoma a última
+  // tela visitada. Isso já tinha sido trocado uma vez pra persistir em
+  // sessionStorage (pedido de um cliente que era jogado de volta pra Home a
+  // cada F5 no meio de uma análise), mas foi REVERTIDO: um operador que
+  // nunca chegava a deslogar de verdade (sessão do Supabase ainda válida)
+  // sempre reabria o app direto na última tela em que tinha ficado — nesse
+  // caso, "Inventários Pendentes" — parecendo que o app tinha "travado"
+  // ali, sem nenhum jeito óbvio de voltar pro Início. Cliente decidiu que
+  // ninguém (nem líder/admin) deve mais retomar a última tela — sempre
+  // Início, como já era documentado no CLAUDE.md deste projeto.
+  const [view, setView] = useState('home');
+  const [flowState, setFlowState] = useState(null); // params passed into a flow
   // Esconder sidebar (desktop/tablet: começa aberta e empurra o conteúdo; celular
   // <768px: começa fechada, vira painel flutuante — ver CSS ".sidebar" no <style>).
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => typeof window!=='undefined' && window.innerWidth < 768);
