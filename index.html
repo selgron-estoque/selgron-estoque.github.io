@@ -14096,9 +14096,6 @@ function ConcludedCountsPanel({counts, inventories, historicoConcluidas=[], onDe
 
         <div className="fp-filters-row">
           <SeverityFilterRow counts={cadeiasPorBusca.map(cd=>cd.tip)} value={severidade} onChange={setSeveridade} />
-        </div>
-
-        <div className="fp-filters-row">
           <StatusConcluidoFilterRow tips={cadeiasPorBusca.map(cd=>cd.tip)} value={statusFiltro} onChange={setStatusFiltro} />
         </div>
 
