@@ -1769,6 +1769,24 @@
   .prog-filtros-menu label{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink);cursor:pointer;padding:5px 2px;}
   .prog-controlbar-right{display:flex;align-items:center;gap:8px;margin-left:auto;}
 
+  /* Paleta operacional dos 5 status do Kanban de "Programação" — valores
+     exatos pedidos pelo cliente (accent + fundo do cabeçalho), FIXOS nos
+     2 temas de propósito (não usam `--warn`/`--teal`/`--ok`/`--danger`/
+     `--blue`, que mudam de tom entre claro/escuro) — mesma razão de
+     `--safety` já ser theme-invariant: cor é sinal de STATUS aqui, precisa
+     significar a mesma coisa não importa o tema. Nomes próprios
+     (`--progcol-*`, nunca `--warn`/`--ok`/etc. reaproveitados) pra nunca
+     colidir com classe global nenhuma — intoxicou um bug real antes (ver
+     histórico: `.btn-ok` reaproveitado aqui tinha sobrescrito o `.btn-ok`
+     já usado pelo botão "Aprovado" noutra tela, mesmo nome mesma
+     especificidade). */
+  :root{
+    --progcol-aguardando-ink:#F59E0B; --progcol-aguardando-bg:#3A2A08;
+    --progcol-emsep-ink:#06B6D4; --progcol-emsep-bg:#073A3D;
+    --progcol-separada-ink:#22C55E; --progcol-separada-bg:#073B27;
+    --progcol-atrasada-ink:#EF4444; --progcol-atrasada-bg:#421414;
+    --progcol-entregue-ink:#3B82F6; --progcol-entregue-bg:#102D4D;
+  }
   /* Kanban de "Programação" (Gestão de Separação) — 5 colunas sempre
      visíveis, pensado pra ficar numa TV vista de longe (fonte grande no
      essencial — ETP/Nome Fantasia —, respiro generoso, sem precisar de
@@ -1840,17 +1858,21 @@
   .sep-kanban-foot .count-card-menu{flex-shrink:0;}
   .sep-kanban-foot .count-card-menu-btn{width:28px;height:28px;padding:0;border-radius:7px;border:1px solid var(--line);background:transparent;color:var(--ink-dim);display:flex;align-items:center;justify-content:center;}
   .sep-kanban-foot .count-card-menu-btn:hover{background:var(--panel-raised);color:var(--ink);}
-  /* Botão de ação principal colorido por STATUS DA COLUNA — mesmos hex já
-     usados em `--warn`/`--teal`/`--ok` no tema CLARO, só que fixos (não
-     trocam no escuro), igual já acontece com `--safety`/`--safety-ink` do
-     `.btn-primary`: esses tokens MUDAM de tom entre os 2 temas (pensados
-     pra texto sobre fundo escuro), então usá-los tal qual de fundo sólido
-     com texto branco ficaria sem contraste no tema escuro — por isso cada
-     variante fixa sua própria cor, igual ao padrão que `--safety` já
-     estabelece, em vez de inventar paleta nova. */
-  .btn-warn{background:#A35F00;color:#fff;}
-  .btn-teal{background:#0D9488;color:#fff;}
-  .btn-ok{background:#1E8E4F;color:#fff;}
+  /* Botão de ação principal colorido por STATUS DA COLUNA — paleta exata
+     pedida pelo cliente (mesmo accent dos cabeçalhos, `--progcol-*-ink`),
+     fixa nos 2 temas de propósito (cor de status, não decoração — mesma
+     razão de `--safety` ser theme-invariant). Texto ESCURO só no botão
+     âmbar (`--safety-ink`, mesmo tom já usado pelo `.btn-primary` sobre
+     fundo claro/quente); os outros 3 (ciano/verde/vermelho) usam texto
+     branco. Nomes de classe PRÓPRIOS (`.btn-prog-*`, nunca reaproveitando
+     `.btn-warn`/`.btn-teal`/`.btn-ok` genéricos) — a versão anterior usava
+     `.btn-ok`, que por acaso já existia globalmente (botão "Aprovado" de
+     outra tela) e teve sua cor sobrescrita sem querer por essa duplicata;
+     nome dedicado elimina esse risco de colisão de vez. */
+  .btn-prog-aguardando{background:var(--progcol-aguardando-ink);color:var(--safety-ink);}
+  .btn-prog-emsep{background:var(--progcol-emsep-ink);color:#fff;}
+  .btn-prog-separada{background:var(--progcol-separada-ink);color:#fff;}
+  .btn-prog-atrasada{background:var(--progcol-atrasada-ink);color:#fff;}
 
   /* Cartão compacto — só na coluna Entregue (histórico, sem ação
      pendente): mesmos campos, só com respiro/fonte reduzidos, igual já
@@ -19386,7 +19408,7 @@ const SEPARACAO_STATUS_ACAO_ICONE = {aguardando:'play', em_separacao:'checkCircl
 // "Atrasada" não entra aqui: é um bucket derivado (`m.atrasada`), nunca um
 // `m.status` de verdade — o card decide esse caso à parte, na hora de
 // montar a classe (ver `MaquinaCard`).
-const SEPARACAO_STATUS_BTN_CLASSE = {aguardando:'btn-warn', em_separacao:'btn-teal', separada:'btn-ok'};
+const SEPARACAO_STATUS_BTN_CLASSE = {aguardando:'btn-prog-aguardando', em_separacao:'btn-prog-emsep', separada:'btn-prog-separada'};
 // "D-N"/"D+N" — contador de dias até `dataSeparacao`, calculado só na hora
 // de exibir o card (nunca persistido, nunca usado por nenhuma lógica de
 // ordenação/status — é puramente informativo, ao lado da data já exibida).
@@ -19416,7 +19438,7 @@ function SeparacaoStatusTag({status}){
   if(status==='aguardando') return <StatusTag status="warn" text={label} />;
   if(status==='separada') return <StatusTag status="ok" text={label} />;
   if(status==='em_separacao') return <span className="status-tag" style={{background:'var(--teal-bg)',color:'var(--teal)'}}><span className="status-dot"></span>{label}</span>;
-  if(status==='entregue') return <span className="status-tag" style={{background:'var(--blue-bg)',color:'var(--blue)'}}><span className="status-dot"></span>{label}</span>;
+  if(status==='entregue') return <span className="status-tag" style={{background:'var(--progcol-entregue-bg)',color:'var(--progcol-entregue-ink)'}}><span className="status-dot"></span>{label}</span>;
   return <StatusTag status="warn" text={label} />;
 }
 
@@ -19833,7 +19855,7 @@ function MaquinaCard({m, canManage, podeAvancarStatus, isAdmin, ordinal, mostrar
   // Cor do botão: segue o status da coluna — exceto quando a máquina está
   // atrasada (bucket derivado, não um `m.status` de verdade), que sempre
   // vence e vira vermelho, mesma cor da coluna Atrasada.
-  const acaoBtnClasse = m.atrasada ? 'btn-danger' : (SEPARACAO_STATUS_BTN_CLASSE[m.status] || 'btn-primary');
+  const acaoBtnClasse = m.atrasada ? 'btn-prog-atrasada' : (SEPARACAO_STATUS_BTN_CLASSE[m.status] || 'btn-primary');
   const temProximo = !!SEPARACAO_STATUS_PROXIMO[m.status];
   // "Voltar" (opção nova no menu "⋮") — pedido do cliente: "alguém colocou
   // um card como EM SEPARAÇÃO, porém, não foi iniciada". Não aparece no
@@ -19951,11 +19973,11 @@ function MaquinaCard({m, canManage, podeAvancarStatus, isAdmin, ordinal, mostrar
 // já usa pros 4 estágios reais), nunca uma cor nova. `chave` bate com as
 // chaves devolvidas por `bucketizeKanban`.
 const SEP_KANBAN_COLUNAS = [
-  {chave:'aguardando', titulo:'Aguardando Separação', desc:'Na fila para iniciar', icone:'clock', cor:'--warn', corBg:'--warn-bg', vazio:'Nenhuma máquina aguardando.'},
-  {chave:'emSeparacao', titulo:'Em Separação', desc:'Máquinas sendo separadas', icone:'refreshCw', cor:'--teal', corBg:'--teal-bg', vazio:'Nenhuma máquina em separação no momento.'},
-  {chave:'separada', titulo:'Separada', desc:'Aguardando conferência/entrega', icone:'box', cor:'--ok', corBg:'--ok-bg', vazio:'Nenhuma máquina separada ainda.'},
-  {chave:'atrasada', titulo:'Atrasada', desc:'Fora do prazo', icone:'alertTriangle', cor:'--danger', corBg:'--danger-bg', vazio:'Nenhuma máquina atrasada', vazioSub:'Tudo em dia.'},
-  {chave:'entregue', titulo:'Entregue', desc:'Máquinas finalizadas', icone:'checkCircle', cor:'--blue', corBg:'--blue-bg', vazio:'Nenhuma máquina entregue ainda.'},
+  {chave:'aguardando', titulo:'Aguardando Separação', desc:'Na fila para iniciar', icone:'clock', cor:'--progcol-aguardando-ink', corBg:'--progcol-aguardando-bg', vazio:'Nenhuma máquina aguardando.'},
+  {chave:'emSeparacao', titulo:'Em Separação', desc:'Máquinas sendo separadas', icone:'refreshCw', cor:'--progcol-emsep-ink', corBg:'--progcol-emsep-bg', vazio:'Nenhuma máquina em separação no momento.'},
+  {chave:'separada', titulo:'Separada', desc:'Aguardando conferência/entrega', icone:'box', cor:'--progcol-separada-ink', corBg:'--progcol-separada-bg', vazio:'Nenhuma máquina separada ainda.'},
+  {chave:'atrasada', titulo:'Atrasada', desc:'Fora do prazo', icone:'alertTriangle', cor:'--progcol-atrasada-ink', corBg:'--progcol-atrasada-bg', vazio:'Nenhuma máquina atrasada', vazioSub:'Tudo em dia.'},
+  {chave:'entregue', titulo:'Entregue', desc:'Máquinas finalizadas', icone:'checkCircle', cor:'--progcol-entregue-ink', corBg:'--progcol-entregue-bg', vazio:'Nenhuma máquina entregue ainda.'},
 ];
 
 function SeparacaoPainelBoard({itens, maquinasEtp, canManage, podeAvancarStatus, isAdmin, onAvancarStatus, onVoltarStatus, onMoverOrdem, onToggleUrgente, onExcluirMaquina, onAdicionarEtpClick, onEditarMaquina, linhasProducao, linhaSelecionada, onSelecionarLinha, onGerenciarLinhas}){
