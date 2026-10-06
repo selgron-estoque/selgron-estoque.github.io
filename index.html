@@ -19855,7 +19855,18 @@ async function voltarStatusMaquinaEmLote(maquina, itensDaMaquina, nomeUsuario, n
 // TODOS os itens da ETP de uma vez (ver `avancarStatusMaquinaEmLote`).
 function MaquinaCard({m, canManage, podeAvancarStatus, isAdmin, ordinal, mostrarReordenar, podeSubir, podeDescer, busy, erro, onAvancar, onVoltar, onMoverCima, onMoverBaixo, onToggleUrgente, onExcluir, onEditar}){
   const [confirmandoExcluir, setConfirmandoExcluir] = useState(false);
+  // Menu "⋮" — mesmo padrão "click outside" já usado em Recontagens/Itens
+  // Divergentes/Aguardando Aprovação (ver `.count-card-menu`): sem isso o
+  // menu só fechava clicando nos 3 pontinhos de novo, nunca clicando fora.
   const [menuAbertoId, setMenuAbertoId] = useState(null);
+  useEffect(()=>{
+    if(!menuAbertoId) return;
+    function handleClickOutside(e){
+      if(!e.target.closest('.count-card-menu')) setMenuAbertoId(null);
+    }
+    document.addEventListener('click', handleClickOutside);
+    return ()=>document.removeEventListener('click', handleClickOutside);
+  }, [menuAbertoId]);
   const classes = ['sep-kanban-card'];
   if(m.urgente) classes.push('sep-urgente-maquina');
   if(m.status==='entregue') classes.push('entregue-compact');
