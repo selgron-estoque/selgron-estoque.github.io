@@ -19739,15 +19739,19 @@ function computeMaquinasPainel(itens, maquinasEtp, hojeStr){
 // entrada (já vem ordenada por `ordem`/ETP) — EXCETO a coluna Entregue, que
 // é reordenada logo abaixo pela sequência real de entrega (pedido explícito
 // do cliente: "deixar na sequência de entrega de cima para baixo").
-function bucketizeKanban(maquinas, hojeStr){
+function bucketizeKanban(maquinas, hojeStr, ocultarEntreguesAntigas=true){
   const buckets = {aguardando:[], emSeparacao:[], separada:[], atrasada:[], entregue:[]};
   // Pedido do cliente: máquina entregue há 1 semana ou mais some da coluna
-  // Entregue — o Kanban é pra acompanhar separação em andamento, não um
-  // histórico sem fim; entregas antigas só poluem a coluna. Comparação por
-  // STRING 'YYYY-MM-DD' (mesmo critério de `atrasada` acima, em
-  // `computeMaquinasPainel`), nunca por milissegundos — evita qualquer
-  // diferença de fuso/horário fazendo uma entrega de "exatamente 7 dias
-  // atrás" sumir ou aparecer de forma inconsistente ao longo do dia.
+  // Entregue por padrão — o Kanban é pra acompanhar separação em andamento,
+  // não um histórico sem fim; entregas antigas só poluem a coluna. Nenhum
+  // dado é apagado, só escondido daqui — o checkbox "Mostrar entregas
+  // antigas" (ver `SeparacaoPainelBoard`) chama esta função com
+  // `ocultarEntreguesAntigas:false` pra trazer tudo de volta quando alguém
+  // precisar consultar. Comparação por STRING 'YYYY-MM-DD' (mesmo critério
+  // de `atrasada` acima, em `computeMaquinasPainel`), nunca por
+  // milissegundos — evita qualquer diferença de fuso/horário fazendo uma
+  // entrega de "exatamente 7 dias atrás" sumir ou aparecer de forma
+  // inconsistente ao longo do dia.
   const limiteOcultarEntregue = (() => {
     const d = new Date(hojeStr + 'T00:00:00');
     d.setDate(d.getDate() - 7);
@@ -19762,7 +19766,7 @@ function bucketizeKanban(maquinas, hojeStr){
       const dataEntrega = m.entregueEm ? m.entregueEm.slice(0,10) : null;
       // `>` estrito (não `>=`) — entregue há EXATAMENTE 7 dias já conta como
       // "há 1 semana" (pedido do cliente) e deve sumir, não só a partir do 8º dia.
-      if(dataEntrega==null || dataEntrega>limiteOcultarEntregue) buckets.entregue.push(m);
+      if(!ocultarEntreguesAntigas || dataEntrega==null || dataEntrega>limiteOcultarEntregue) buckets.entregue.push(m);
     }
   });
   // Entregue foge da regra acima de propósito: a fila manual (`ordem`) nem
@@ -20126,6 +20130,14 @@ const SEP_KANBAN_COLUNAS = [
 function SeparacaoPainelBoard({itens, maquinasEtp, canManage, podeAvancarStatus, isAdmin, onAvancarStatus, onVoltarStatus, onMoverOrdem, onToggleUrgente, onExcluirMaquina, onAdicionarEtpClick, onEditarMaquina, linhasProducao, linhaSelecionada, onSelecionarLinha, onGerenciarLinhas}){
   const [modoReordenar, setModoReordenar] = useState(false);
   const [somenteUrgentes, setSomenteUrgentes] = useState(false);
+  // "Mostrar entregas antigas" — desliga o corte de 7 dias de
+  // `bucketizeKanban` pra consultar entregas já escondidas da coluna
+  // Entregue (nenhum dado é apagado, só fica fora da visão padrão — ver
+  // comentário em `bucketizeKanban`). `useState` puro, não persistido —
+  // mesmo critério de `somenteUrgentes`: a tela volta ao padrão (oculto) a
+  // cada vez que remonta, pra não esconder sem querer que o corte de 7 dias
+  // está desligado numa visita futura.
+  const [mostrarEntreguesAntigas, setMostrarEntreguesAntigas] = useState(false);
   // Busca/período — refinamento visual do Kanban: filtros 100% client-side
   // em cima da lista que `computeMaquinasPainel` já calculou, nenhum dado
   // novo buscado no Supabase, nenhuma regra de ordenação/status tocada.
@@ -20140,7 +20152,7 @@ function SeparacaoPainelBoard({itens, maquinasEtp, canManage, podeAvancarStatus,
   const porEtpItens = {};
   itens.forEach(i=>{ if(!i.etp) return; if(!porEtpItens[i.etp]) porEtpItens[i.etp] = []; porEtpItens[i.etp].push(i); });
 
-  const buckets = bucketizeKanban(maquinas, hojeStr);
+  const buckets = bucketizeKanban(maquinas, hojeStr, !mostrarEntreguesAntigas);
 
   // Filtro "Somente Urgentes"/busca/período — de propósito, o modo "Ordenar
   // sequência" fica desabilitado enquanto QUALQUER um deles está ativo:
@@ -20256,14 +20268,18 @@ function SeparacaoPainelBoard({itens, maquinasEtp, canManage, podeAvancarStatus,
           </select>
         </div>
         <div className="prog-filtros-wrap">
-          <button type="button" className={'prog-filtros-btn'+(somenteUrgentes ? ' active' : '')} onClick={()=>setFiltrosAbertos(v=>!v)}>
-            <DIcon name="filter" size={13} /> Filtros{somenteUrgentes ? ' (1)' : ''}
+          <button type="button" className={'prog-filtros-btn'+((somenteUrgentes||mostrarEntreguesAntigas) ? ' active' : '')} onClick={()=>setFiltrosAbertos(v=>!v)}>
+            <DIcon name="filter" size={13} /> Filtros{(somenteUrgentes?1:0)+(mostrarEntreguesAntigas?1:0) > 0 ? ` (${(somenteUrgentes?1:0)+(mostrarEntreguesAntigas?1:0)})` : ''}
           </button>
           {filtrosAbertos && (
             <div className="prog-filtros-menu" onMouseLeave={()=>setFiltrosAbertos(false)}>
               <label>
                 <input type="checkbox" checked={somenteUrgentes} onChange={e=>setSomenteUrgentes(e.target.checked)} />
                 <DIcon name="flame" size={13} /> Somente urgentes
+              </label>
+              <label>
+                <input type="checkbox" checked={mostrarEntreguesAntigas} onChange={e=>setMostrarEntreguesAntigas(e.target.checked)} />
+                <DIcon name="truck" size={13} /> Mostrar entregas antigas (+ de 7 dias)
               </label>
             </div>
           )}
