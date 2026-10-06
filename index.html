@@ -12318,8 +12318,15 @@ function RecountsPanel({counts, inventories, role, currentUser, users, goto, onD
   // indicador de Acuracidade, não só `counts` — senão um item cujas
   // divergências anteriores já foram arquivadas em `historicoConcluidas`
   // nunca seria classificado como recorrente aqui, embora já o seja lá.
+  // Bug real corrigido aqui: faltava `ultimaContagemPorDocumento` antes de
+  // contar — sem isso, uma recontagem dentro do MESMO documento (1ª rodada
+  // divergente + 2ª rodada, ainda divergente ou já corrigida) contava como
+  // 2 documentos divergentes independentes, marcando "Recorrente" um item
+  // que na verdade só tem 1 documento de contagem (com recontagem). Mesmo
+  // dedup já usado pra alimentar a página Acuracidade (ver `todasParaQualidade`
+  // em `AcuracidadePanel`/`Dashboard`) — critério idêntico, nunca reinterpretado.
   const historicoComoContagemRecorrencia = useMemo(()=>(historicoConcluidas||[]).map(historicoRowToCountLike).filter(Boolean), [historicoConcluidas]);
-  const codigosRecorrentes = useMemo(()=>computeCodigosRecorrentes([...counts, ...historicoComoContagemRecorrencia]), [counts, historicoComoContagemRecorrencia]);
+  const codigosRecorrentes = useMemo(()=>computeCodigosRecorrentes(ultimaContagemPorDocumento([...counts, ...historicoComoContagemRecorrencia])), [counts, historicoComoContagemRecorrencia]);
   // Escopo AJUSTADO (cliente pediu pra restringir depois de ver o resultado
   // inicial): o quadro Sistema/Físico/Diferença/% fica visível pra QUALQUER
   // perfil, sempre — só o toggle "Detalhes"/"Ocultar" (pessoal, todo mundo
@@ -12770,9 +12777,10 @@ function RecountsPanel({counts, inventories, role, currentUser, users, goto, onD
 function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onEnviarParaArmazem, onRequestRecount, onDeleteCount, onToggleUrgente, onEditarMotivoObservacao, filtroInicial, historicoConcluidas=[]}){
   // Badge "Recorrente" (pedido do cliente — ver `computeCodigosRecorrentes`):
   // mesmo pool completo (contagens ao vivo + histórico concluído) usado pelo
-  // indicador de Acuracidade, mesmo motivo/comentário de `RecountsPanel`.
+  // indicador de Acuracidade, mesmo motivo/comentário de `RecountsPanel`
+  // (`ultimaContagemPorDocumento` incluído — mesma correção de bug).
   const historicoComoContagemRecorrencia = useMemo(()=>(historicoConcluidas||[]).map(historicoRowToCountLike).filter(Boolean), [historicoConcluidas]);
-  const codigosRecorrentes = useMemo(()=>computeCodigosRecorrentes([...counts, ...historicoComoContagemRecorrencia]), [counts, historicoComoContagemRecorrencia]);
+  const codigosRecorrentes = useMemo(()=>computeCodigosRecorrentes(ultimaContagemPorDocumento([...counts, ...historicoComoContagemRecorrencia])), [counts, historicoComoContagemRecorrencia]);
   // Bug real corrigido aqui: faltava a mesma checagem de "ponta da
   // corrente" que RecountsPanel já tinha (`byOriginal`/`!byOriginal[c.id]`)
   // — sem isso, uma linha com status 'aguardando_analise_lider' continuava
