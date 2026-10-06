@@ -1792,8 +1792,12 @@
        enorme saturada quando usado como preenchimento de um botão
        inteiro — por isso o botão usa uma versão mais escura e dessaturada
        do MESMO tom (nunca uma cor diferente), que lê como "operacional
-       elegante" em vez de neon, mantendo a mesma identidade de cor. */
-    --progbtn-aguardando:#8A5D16; --progbtn-emsep:#1F6E7D;
+       elegante" em vez de neon, mantendo a mesma identidade de cor.
+       `--progbtn-aguardando` foi ajustado de novo depois — a 1ª versão
+       (#8A5D16) tinha ficado tão escura que o botão parecia DESABILITADO
+       (pedido do cliente: "está com aparência de desativado"), mesmo sem
+       estar — veio pra #B87708, um meio-termo com mais contraste. */
+    --progbtn-aguardando:#B87708; --progbtn-emsep:#1F6E7D;
     --progbtn-separada:#277A48; --progbtn-atrasada:#9C3F3F;
   }
   /* Kanban de "Programação" (Gestão de Separação) — 5 colunas sempre
@@ -19858,15 +19862,47 @@ function MaquinaCard({m, canManage, podeAvancarStatus, isAdmin, ordinal, mostrar
   // Menu "⋮" — mesmo padrão "click outside" já usado em Recontagens/Itens
   // Divergentes/Aguardando Aprovação (ver `.count-card-menu`): sem isso o
   // menu só fechava clicando nos 3 pontinhos de novo, nunca clicando fora.
+  //
+  // Renderizado via PORTAL pra `document.body` (não como filho normal do
+  // card) — correção de um bug real reportado pelo cliente: `.sep-kanban-
+  // col-body` tem `overflow-y:auto` (rolagem própria de cada coluna), e
+  // isso CORTA qualquer conteúdo que extrapole sua área visível, mesmo
+  // `position:absolute` com z-index alto — um card perto do fim de uma
+  // coluna curta (como a referência enviada, só 1 card em "Aguardando")
+  // abria o menu e as opções ficavam cortadas/invisíveis logo abaixo do
+  // botão "Iniciar separação", nunca de verdade escondidas atrás de outro
+  // elemento, só fora da "janela" que a coluna deixa rolar. Portal pra
+  // `document.body` com `position:fixed` (posição calculada a partir do
+  // retângulo real do botão, `menuBtnRef`) escapa de QUALQUER ancestral
+  // com overflow — a única forma confiável de garantir isso em CSS puro.
   const [menuAbertoId, setMenuAbertoId] = useState(null);
+  const [menuPos, setMenuPos] = useState(null);
+  const menuBtnRef = useRef(null);
+  function toggleMenu(){
+    if(menuAbertoId===m.etp){ setMenuAbertoId(null); return; }
+    const rect = menuBtnRef.current.getBoundingClientRect();
+    setMenuPos({top: rect.bottom + 4, right: window.innerWidth - rect.right});
+    setMenuAbertoId(m.etp);
+  }
   useEffect(()=>{
-    if(!menuAbertoId) return;
+    if(menuAbertoId!==m.etp) return;
     function handleClickOutside(e){
-      if(!e.target.closest('.count-card-menu')) setMenuAbertoId(null);
+      if(!e.target.closest('.count-card-menu') && !e.target.closest('.count-card-menu-dropdown-portal')) setMenuAbertoId(null);
     }
+    // Fecha ao rolar (a coluna, a página, qualquer scroll container) — o
+    // menu agora é `position:fixed` em coordenadas de viewport, calculadas
+    // na hora de abrir; se o card rolar por baixo dele sem fechar, o menu
+    // ficaria "flutuando" desalinhado do botão que o abriu. `capture:true`
+    // pra pegar o scroll de QUALQUER container (o scroll de `.sep-kanban-
+    // col-body` não borbulha até `document` na fase normal).
+    function handleScroll(){ setMenuAbertoId(null); }
     document.addEventListener('click', handleClickOutside);
-    return ()=>document.removeEventListener('click', handleClickOutside);
-  }, [menuAbertoId]);
+    document.addEventListener('scroll', handleScroll, true);
+    return ()=>{
+      document.removeEventListener('click', handleClickOutside);
+      document.removeEventListener('scroll', handleScroll, true);
+    };
+  }, [menuAbertoId, m.etp]);
   const classes = ['sep-kanban-card'];
   if(m.urgente) classes.push('sep-urgente-maquina');
   if(m.status==='entregue') classes.push('entregue-compact');
@@ -19942,9 +19978,9 @@ function MaquinaCard({m, canManage, podeAvancarStatus, isAdmin, ordinal, mostrar
           )}
           {canManage && (
             <div className="count-card-menu">
-              <button type="button" className="count-card-menu-btn" onClick={()=>setMenuAbertoId(menuAbertoId===m.etp ? null : m.etp)} title="Mais opções"><DIcon name="moreVertical" size={16} /></button>
-              {menuAbertoId===m.etp && (
-                <div className="count-card-menu-dropdown" style={{minWidth:'180px'}}>
+              <button type="button" ref={menuBtnRef} className="count-card-menu-btn" onClick={toggleMenu} title="Mais opções"><DIcon name="moreVertical" size={16} /></button>
+              {menuAbertoId===m.etp && menuPos && ReactDOM.createPortal(
+                <div className="count-card-menu-dropdown count-card-menu-dropdown-portal" style={{position:'fixed', top:menuPos.top, right:menuPos.right, margin:0, minWidth:'180px', zIndex:60}}>
                   {temAnterior && (
                     <button type="button" disabled={busy} onClick={()=>{ onVoltar(); setMenuAbertoId(null); }} title="Voltar pro estágio anterior">
                       <DIcon name="chevronLeft" size={16}/> Voltar
@@ -19961,7 +19997,8 @@ function MaquinaCard({m, canManage, podeAvancarStatus, isAdmin, ordinal, mostrar
                       <Ic>⌫</Ic> Excluir
                     </button>
                   )}
-                </div>
+                </div>,
+                document.body
               )}
             </div>
           )}
