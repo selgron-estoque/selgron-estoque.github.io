@@ -826,6 +826,30 @@
     .tfb-period-row{flex-direction:row;align-items:center;}
     .tfb-custom-row{flex-direction:row;align-items:flex-end;}
   }
+  /* Painel único de Filtros da tela Recontagens (pedido do cliente: os
+     mesmos controles que já existiam — TrendFilterBar, busca, chips de
+     severidade/recorrentes, ordenação, download — viviam em blocos soltos,
+     cada um com sua própria margem/alinhamento, dando impressão de telas
+     "desmontadas". Refinamento 100% visual: mesmos componentes, mesmas
+     props, mesmos handlers, só agrupados num único cartão com divisórias
+     sutis em vez de gaps grandes entre blocos independentes. Escopado só
+     pra esta tela — não mexe no CSS base de `.trend-filter-bar`/`.field`/
+     `SeverityFilterRow`, que continuam idênticos nas outras telas que os
+     usam (Itens Divergentes, Aguardando Aprovação, etc.). */
+  .recount-filtros-panel{background:var(--panel);border:1px solid var(--gray-200);border-radius:18px;box-shadow:0 8px 30px rgba(0,0,0,.05);margin-bottom:24px;overflow:hidden;}
+  .recount-filtros-panel .trend-filter-bar{margin-bottom:0;border:none;border-radius:0;box-shadow:none;}
+  .rfp-search-row{padding:20px 24px;border-top:1px solid var(--gray-100);}
+  .rfp-search-row .field{margin-bottom:0;}
+  .rfp-status-row{display:flex;align-items:center;justify-content:space-between;gap:16px 20px;flex-wrap:wrap;padding:16px 24px;border-top:1px solid var(--gray-100);}
+  .rfp-status-left{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  /* `SeverityFilterRow` nasce com `marginBottom:14` inline (pensado pra
+     quando é o último elemento solto da tela, nas outras telas que a usam)
+     — aqui ela é só mais um item da mesma linha, então o !important (em
+     regra de stylesheet, não inline) neutraliza isso só dentro deste
+     painel, sem tocar no componente compartilhado. */
+  .rfp-status-left > div{margin-bottom:0 !important;}
+  .rfp-pendentes-count{font-size:var(--text-sm);color:var(--ink-dim);white-space:nowrap;flex-shrink:0;}
+  .rfp-status-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
   .kpi{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;}
   .kpi .kv{font-family:var(--font-mono);font-size:26px;font-weight:700;}
   .kpi .kl{font-size:var(--text-xs);color:var(--ink-dim);margin-top:4px;text-transform:uppercase;letter-spacing:0.4px;}
@@ -12572,36 +12596,38 @@ function RecountsPanel({counts, inventories, role, currentUser, users, goto, onD
           <Ic>◎</Ic> Você tem {aguardandoSegunda.length===1 ? 'uma recontagem atribuída' : `${aguardandoSegunda.length} recontagens atribuídas`} especificamente a você — as demais ficam ocultas até você concluir {aguardandoSegunda.length===1 ? 'esta' : 'estas'}.
         </div>
       )}
-      <TrendFilterBar
-        trendFilter={trendFilter}
-        setTrendFilter={setTrendFilter}
-        dataInicioStr={dataInicioStr}
-        dataFimStr={dataFimStr}
-        hojeStr={hojeStr}
-        subtitle="Selecione o período para filtrar a fila de recontagem"
-      />
+      <div className="recount-filtros-panel">
+        <TrendFilterBar
+          trendFilter={trendFilter}
+          setTrendFilter={setTrendFilter}
+          dataInicioStr={dataInicioStr}
+          dataFimStr={dataFimStr}
+          hojeStr={hojeStr}
+          subtitle="Selecione o período para filtrar a fila de recontagem"
+        />
 
-      <SearchWithScanner value={busca} onChange={setBusca} placeholder="Código, descrição ou operador" />
+        <div className="rfp-search-row">
+          <SearchWithScanner value={busca} onChange={setBusca} placeholder="Código, descrição ou operador" />
+        </div>
 
-      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8,marginBottom:10}}>
-        <span style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)'}}>
-          <strong style={{color:'var(--ink)'}}>{aguardandoSegunda.length}</strong> pendentes
-          {aguardandoSegundaNoPeriodo.length!==aguardandoSegunda.length && <> · <strong style={{color:'var(--ink)'}}>{aguardandoSegundaNoPeriodo.length}</strong> no período selecionado</>}
-        </span>
-        <ModuloDownloadButton counts={listaFiltrada} sheetName="Recontagens" nomeArquivo="Recontagens" />
-      </div>
-
-      <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-        <SeverityFilterRow counts={porBusca} value={severidade} onChange={setSeveridade} />
-        <button type="button" className={'btn '+(somenteRecorrentes?'btn-primary':'btn-outline')+' btn-sm'} style={somenteRecorrentes?{}:{color:'var(--danger)',borderColor:'var(--danger)'}} onClick={()=>setSomenteRecorrentes(v=>!v)}>
-          Recorrentes ({porBusca.filter(c=>codigosRecorrentes.has(c.productCode)).length})
-        </button>
-      </div>
-
-      <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginBottom:14}}>
-        <span style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)',display:'flex',alignItems:'center',gap:4}}><DIcon name="arrowsUpDown" size={14}/> Ordenar por:</span>
-        <button type="button" className={'btn '+(ordenacao==='codigo'?'btn-primary':'btn-outline')+' btn-sm'} onClick={()=>setOrdenacao('codigo')}>Código</button>
-        <button type="button" className={'btn '+(ordenacao==='endereco'?'btn-primary':'btn-outline')+' btn-sm'} onClick={()=>setOrdenacao('endereco')}>Endereço</button>
+        <div className="rfp-status-row">
+          <div className="rfp-status-left">
+            <span className="rfp-pendentes-count">
+              <strong style={{color:'var(--ink)'}}>{aguardandoSegunda.length}</strong> pendentes
+              {aguardandoSegundaNoPeriodo.length!==aguardandoSegunda.length && <> · <strong style={{color:'var(--ink)'}}>{aguardandoSegundaNoPeriodo.length}</strong> no período selecionado</>}
+            </span>
+            <SeverityFilterRow counts={porBusca} value={severidade} onChange={setSeveridade} />
+            <button type="button" className={'btn '+(somenteRecorrentes?'btn-primary':'btn-outline')+' btn-sm'} style={somenteRecorrentes?{}:{color:'var(--danger)',borderColor:'var(--danger)'}} onClick={()=>setSomenteRecorrentes(v=>!v)}>
+              Recorrentes ({porBusca.filter(c=>codigosRecorrentes.has(c.productCode)).length})
+            </button>
+          </div>
+          <div className="rfp-status-right">
+            <span style={{fontSize:'var(--text-sm)',color:'var(--ink-dim)',display:'flex',alignItems:'center',gap:4}}><DIcon name="arrowsUpDown" size={14}/> Ordenar por:</span>
+            <button type="button" className={'btn '+(ordenacao==='codigo'?'btn-primary':'btn-outline')+' btn-sm'} onClick={()=>setOrdenacao('codigo')}>Código</button>
+            <button type="button" className={'btn '+(ordenacao==='endereco'?'btn-primary':'btn-outline')+' btn-sm'} onClick={()=>setOrdenacao('endereco')}>Endereço</button>
+            <ModuloDownloadButton counts={listaFiltrada} sheetName="Recontagens" nomeArquivo="Recontagens" />
+          </div>
+        </div>
       </div>
 
       {listaFiltrada.length===0 ? (
