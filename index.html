@@ -1829,10 +1829,28 @@
   .prog-dday-badge{font-size:10.5px;font-weight:800;padding:3px 7px;border-radius:5px;background:var(--warn-bg);color:var(--warn);flex-shrink:0;white-space:nowrap;}
   .prog-dday-badge.atrasado{background:var(--danger-bg);color:var(--danger);}
   .prog-dday-badge.hoje{background:var(--ok-bg);color:var(--ok);}
-  .sep-kanban-foot{display:flex;align-items:center;gap:8px;}
-  .sep-kanban-foot .btn{flex:1;}
-  /* Posiciona o menu de 3 pontinhos no canto superior direito da máquina card */
-  .sep-kanban-card .count-card-menu{position:absolute;top:10px;right:10px;}
+  /* Rodapé do card: botão de ação principal + menu "⋮", lado a lado na
+     MESMA linha (correção explícita do cliente — antes o menu ficava
+     `position:absolute` no canto superior do card, de quando ele vivia
+     fora do rodapé; sobrava escondido atrás do badge de prioridade). O
+     botão ocupa a largura disponível (`flex:1`), o menu só o espaço do
+     seu próprio ícone (`flex-shrink:0`) — nunca o inverso. */
+  .sep-kanban-foot{display:flex;align-items:center;gap:6px;}
+  .sep-kanban-foot .btn{flex:1;min-width:0;height:32px;padding:0 10px;font-size:12px;gap:6px;}
+  .sep-kanban-foot .count-card-menu{flex-shrink:0;}
+  .sep-kanban-foot .count-card-menu-btn{width:30px;height:30px;padding:0;border-radius:7px;border:1px solid var(--line);background:var(--panel-raised);color:var(--ink-dim);display:flex;align-items:center;justify-content:center;font-size:15px;line-height:1;}
+  .sep-kanban-foot .count-card-menu-btn:hover{background:var(--panel);color:var(--ink);}
+  /* Botão de ação principal colorido por STATUS DA COLUNA — mesmos hex já
+     usados em `--warn`/`--teal`/`--ok` no tema CLARO, só que fixos (não
+     trocam no escuro), igual já acontece com `--safety`/`--safety-ink` do
+     `.btn-primary`: esses tokens MUDAM de tom entre os 2 temas (pensados
+     pra texto sobre fundo escuro), então usá-los tal qual de fundo sólido
+     com texto branco ficaria sem contraste no tema escuro — por isso cada
+     variante fixa sua própria cor, igual ao padrão que `--safety` já
+     estabelece, em vez de inventar paleta nova. */
+  .btn-warn{background:#A35F00;color:#fff;}
+  .btn-teal{background:#0D9488;color:#fff;}
+  .btn-ok{background:#1E8E4F;color:#fff;}
 
   /* Cartão compacto — só na coluna Entregue (histórico, sem ação
      pendente): mesmos campos, só com respiro/fonte reduzidos, igual já
@@ -7575,13 +7593,6 @@ const DICON_PATHS = {
   // Ícone do checklist "Unidade de Medida" (painel de análise, "Itens com
   // Divergência Recorrente").
   ruler: <><path d="M3.5 8.5 15.5 20.5a1.5 1.5 0 0 0 2.1 0l2.9-2.9a1.5 1.5 0 0 0 0-2.1L8.5 3.5a1.5 1.5 0 0 0-2.1 0l-2.9 2.9a1.5 1.5 0 0 0 0 2.1Z"/><path d="m7 9 1.5 1.5"/><path d="m10 12 1.5 1.5"/><path d="m13 15 1.5 1.5"/></>,
-  // 3 ícones novos da tela "Programação" (refinamento visual do Kanban):
-  // "play" (botão Iniciar separação), "check" (Marcar separada, sem
-  // círculo — já existe `checkCircle` com círculo pra outro uso) e "truck"
-  // (Confirmar entrega).
-  play: <path d="M6 4.5v15l13-7.5Z"/>,
-  check: <path d="M20 6 9 17l-5-5"/>,
-  truck: <><rect x="1" y="7" width="13" height="10" rx="1.5"/><path d="M14 10h4l3 3.2V17a1 1 0 0 1-1 1h-1"/><circle cx="6.5" cy="18.5" r="1.8"/><circle cx="16.5" cy="18.5" r="1.8"/><path d="M8.3 18.5h6.9"/></>,
   filter: <path d="M4 5h16l-6.5 7.5V19l-3 2v-8.5Z"/>,
 };
 
@@ -19351,9 +19362,13 @@ const SEPARACAO_STATUS_ICON = {aguardando:'clock', em_separacao:'repeat', separa
 // item; 'entregue' não tem entrada (é o estágio final, sem próximo).
 const SEPARACAO_STATUS_PROXIMO = {aguardando:'em_separacao', em_separacao:'separada', separada:'entregue'};
 const SEPARACAO_STATUS_ACAO_LABEL = {aguardando:'Iniciar separação', em_separacao:'Marcar separada', separada:'Confirmar entrega'};
-// Ícone do botão de ação principal do card (refinamento visual do Kanban) —
-// só decoração ao lado do mesmo texto/ação de sempre, nenhum status/rótulo novo.
-const SEPARACAO_STATUS_ACAO_ICONE = {aguardando:'play', em_separacao:'check', separada:'truck'};
+// Botão de ação principal do card colorido por status — reaproveita a
+// MESMA cor que o cabeçalho da coluna correspondente já usa (ver
+// `SEP_KANBAN_COLUNAS`), nunca laranja genérico pra todas as etapas.
+// "Atrasada" não entra aqui: é um bucket derivado (`m.atrasada`), nunca um
+// `m.status` de verdade — o card decide esse caso à parte, na hora de
+// montar a classe (ver `MaquinaCard`).
+const SEPARACAO_STATUS_BTN_CLASSE = {aguardando:'btn-warn', em_separacao:'btn-teal', separada:'btn-ok'};
 // "D-N"/"D+N" — contador de dias até `dataSeparacao`, calculado só na hora
 // de exibir o card (nunca persistido, nunca usado por nenhuma lógica de
 // ordenação/status — é puramente informativo, ao lado da data já exibida).
@@ -19796,7 +19811,13 @@ function MaquinaCard({m, canManage, podeAvancarStatus, isAdmin, ordinal, mostrar
   if(m.urgente) classes.push('sep-urgente-maquina');
   if(m.status==='entregue') classes.push('entregue-compact');
   const acaoLabel = SEPARACAO_STATUS_ACAO_LABEL[m.status];
-  const acaoIcone = SEPARACAO_STATUS_ACAO_ICONE[m.status];
+  // Mesmo ícone que o cabeçalho da coluna de status já usa
+  // (`SEPARACAO_STATUS_ICON`, pré-existente) — nunca um ícone novo.
+  const acaoIcone = SEPARACAO_STATUS_ICON[m.status];
+  // Cor do botão: segue o status da coluna — exceto quando a máquina está
+  // atrasada (bucket derivado, não um `m.status` de verdade), que sempre
+  // vence e vira vermelho, mesma cor da coluna Atrasada.
+  const acaoBtnClasse = m.atrasada ? 'btn-danger' : (SEPARACAO_STATUS_BTN_CLASSE[m.status] || 'btn-primary');
   const temProximo = !!SEPARACAO_STATUS_PROXIMO[m.status];
   // "Voltar" (opção nova no menu "⋮") — pedido do cliente: "alguém colocou
   // um card como EM SEPARAÇÃO, porém, não foi iniciada". Não aparece no
@@ -19857,8 +19878,8 @@ function MaquinaCard({m, canManage, podeAvancarStatus, isAdmin, ordinal, mostrar
       {!confirmandoExcluir && (podeAvancarStatus || canManage) && (temProximo || canManage) && (
         <div className="sep-kanban-foot">
           {podeAvancarStatus && temProximo && (
-            <button type="button" className="btn btn-primary" disabled={busy} onClick={onAvancar}>
-              <DIcon name={acaoIcone} size={14} /> {busy ? 'Salvando…' : acaoLabel}
+            <button type="button" className={'btn ' + acaoBtnClasse} disabled={busy} onClick={onAvancar}>
+              <DIcon name={acaoIcone} size={13} /> {busy ? 'Salvando…' : acaoLabel}
             </button>
           )}
           {canManage && (
