@@ -12395,7 +12395,13 @@ function RecountsPanel({counts, inventories, role, currentUser, users, goto, onD
     : aguardandoSegundaNoPeriodo;
 
   const [severidade, setSeveridade] = useState('todos');
-  const listaFiltradaSemOrdenar = severidade==='todos' ? porBusca : porBusca.filter(c=>classifySeverity4(severidadeDe(c)).level===severidade);
+  // "Recorrentes" — pedido do cliente logo depois do badge "Recorrente"
+  // (ver `codigosRecorrentes`, acima): filtro independente da severidade,
+  // combina em AND com ela (mesmo critério já usado entre severidade/status
+  // em outras telas, nunca um substituindo o outro).
+  const [somenteRecorrentes, setSomenteRecorrentes] = useState(false);
+  const porSeveridade = severidade==='todos' ? porBusca : porBusca.filter(c=>classifySeverity4(severidadeDe(c)).level===severidade);
+  const listaFiltradaSemOrdenar = somenteRecorrentes ? porSeveridade.filter(c=>codigosRecorrentes.has(c.productCode)) : porSeveridade;
   // Ordenação escolhida pelo usuário: por código do produto (padrão) ou por
   // endereço — pedido do cliente, pra poder percorrer a fila na sequência que
   // fizer mais sentido pro trabalho físico (ex: seguir a rota de endereços em
@@ -12587,6 +12593,9 @@ function RecountsPanel({counts, inventories, role, currentUser, users, goto, onD
 
       <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
         <SeverityFilterRow counts={porBusca} value={severidade} onChange={setSeveridade} />
+        <button type="button" className={'btn '+(somenteRecorrentes?'btn-primary':'btn-outline')+' btn-sm'} style={somenteRecorrentes?{}:{color:'var(--danger)',borderColor:'var(--danger)'}} onClick={()=>setSomenteRecorrentes(v=>!v)}>
+          Recorrentes ({porBusca.filter(c=>codigosRecorrentes.has(c.productCode)).length})
+        </button>
       </div>
 
       <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginBottom:14}}>
@@ -12837,7 +12846,11 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onEnvi
     : aguardandoAnaliseNoPeriodo;
 
   const [severidade, setSeveridade] = useState('todos');
-  const listaFiltradaSemOrdenar = severidade==='todos' ? porBusca : porBusca.filter(c=>classifySeverity4(severidadeDe(c)).level===severidade);
+  // "Recorrentes" — mesmo filtro/comentário já usado em RecountsPanel,
+  // independente da severidade (AND entre os dois).
+  const [somenteRecorrentes, setSomenteRecorrentes] = useState(false);
+  const porSeveridade = severidade==='todos' ? porBusca : porBusca.filter(c=>classifySeverity4(severidadeDe(c)).level===severidade);
+  const listaFiltradaSemOrdenar = somenteRecorrentes ? porSeveridade.filter(c=>codigosRecorrentes.has(c.productCode)) : porSeveridade;
   // Itens marcados como urgentes sempre aparecem primeiro — mesmo critério
   // já usado em RecountsPanel.
   const listaFiltrada = [...listaFiltradaSemOrdenar].sort((a,b)=>(b.urgente?1:0)-(a.urgente?1:0));
@@ -12931,6 +12944,9 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onEnvi
 
       <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
         <SeverityFilterRow counts={porBusca} value={severidade} onChange={setSeveridade} />
+        <button type="button" className={'btn '+(somenteRecorrentes?'btn-primary':'btn-outline')+' btn-sm'} style={somenteRecorrentes?{}:{color:'var(--danger)',borderColor:'var(--danger)'}} onClick={()=>setSomenteRecorrentes(v=>!v)}>
+          Recorrentes ({porBusca.filter(c=>codigosRecorrentes.has(c.productCode)).length})
+        </button>
       </div>
 
       {listaFiltrada.length===0 ? (
