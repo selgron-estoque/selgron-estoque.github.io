@@ -1786,6 +1786,15 @@
     --progcol-separada-ink:#22C55E; --progcol-separada-bg:#073B27;
     --progcol-atrasada-ink:#EF4444; --progcol-atrasada-bg:#421414;
     --progcol-entregue-ink:#3B82F6; --progcol-entregue-bg:#102D4D;
+    /* Fundo do BOTÃO de cada status — pedido do cliente: "ficou muito
+       neon". O accent puro acima (`--progcol-*-ink`) funciona bem como
+       texto/ícone pequeno sobre o cabeçalho escuro, mas vira uma lâmina
+       enorme saturada quando usado como preenchimento de um botão
+       inteiro — por isso o botão usa uma versão mais escura e dessaturada
+       do MESMO tom (nunca uma cor diferente), que lê como "operacional
+       elegante" em vez de neon, mantendo a mesma identidade de cor. */
+    --progbtn-aguardando:#8A5D16; --progbtn-emsep:#1F6E7D;
+    --progbtn-separada:#277A48; --progbtn-atrasada:#9C3F3F;
   }
   /* Kanban de "Programação" (Gestão de Separação) — 5 colunas sempre
      visíveis, pensado pra ficar numa TV vista de longe (fonte grande no
@@ -1869,10 +1878,10 @@
      `.btn-ok`, que por acaso já existia globalmente (botão "Aprovado" de
      outra tela) e teve sua cor sobrescrita sem querer por essa duplicata;
      nome dedicado elimina esse risco de colisão de vez. */
-  .btn-prog-aguardando{background:var(--progcol-aguardando-ink);color:var(--safety-ink);}
-  .btn-prog-emsep{background:var(--progcol-emsep-ink);color:#fff;}
-  .btn-prog-separada{background:var(--progcol-separada-ink);color:#fff;}
-  .btn-prog-atrasada{background:var(--progcol-atrasada-ink);color:#fff;}
+  .btn-prog-aguardando{background:var(--progbtn-aguardando);color:var(--safety-ink);}
+  .btn-prog-emsep{background:var(--progbtn-emsep);color:#fff;}
+  .btn-prog-separada{background:var(--progbtn-separada);color:#fff;}
+  .btn-prog-atrasada{background:var(--progbtn-atrasada);color:#fff;}
 
   /* Cartão compacto — só na coluna Entregue (histórico, sem ação
      pendente): mesmos campos, só com respiro/fonte reduzidos, igual já
