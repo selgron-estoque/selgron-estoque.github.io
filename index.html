@@ -7449,8 +7449,8 @@ function App(){
         {view==='manualCount' && <ManualCountFlow user={currentUser} counts={counts} inventories={inventories} onRegisterCount={registerFinishedCount} onAddressProposed={addAddressProposal} operadorVeSaldo={operadorVeSaldo} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
         {view==='routeCount' && <RouteCountFlow inv={flowState} user={currentUser} counts={counts} inventories={inventories} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} gruposExcluidos={gruposExcluidos} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
         {view==='importedListCount' && <ImportedListCountFlow inv={flowState} user={currentUser} counts={counts} inventories={inventories} onRegisterCount={registerFinishedCount} onFinish={()=>goto('inventories')} onAddressProposed={addAddressProposal} setInventories={setInventories} operadorVeSaldo={operadorVeSaldo} onReservarItem={reservarItem} onLiberarItemReserva={liberarItemReserva} />}
-        {view==='recounts' && hasAccess(currentUser,'recounts') && <RecountsPanel counts={counts} inventories={inventories} role={role} currentUser={currentUser} users={users} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onToggleLiberarOriginal={toggleLiberarRecontagemOriginal} onEditarMotivoObservacao={editarMotivoObservacaoContagem} onAtribuir={atribuirContagem} operadorVeValoresRecontagem={operadorVeValoresRecontagem} filtroInicial={typeof flowState==='string' ? flowState : ''} posicaoRetomarRef={recontagensPosicaoRef} />}
-        {view==='divergentes' && hasAccess(currentUser,'divergentes') && <DivergentItemsPanel counts={counts} inventories={inventories} role={role} goto={goto} onApprove={approveDivergence} onEnviarParaArmazem={enviarParaArmazem} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onEditarMotivoObservacao={editarMotivoObservacaoContagem} filtroInicial={typeof flowState==='string' ? flowState : ''} />}
+        {view==='recounts' && hasAccess(currentUser,'recounts') && <RecountsPanel counts={counts} inventories={inventories} role={role} currentUser={currentUser} users={users} goto={goto} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onToggleLiberarOriginal={toggleLiberarRecontagemOriginal} onEditarMotivoObservacao={editarMotivoObservacaoContagem} onAtribuir={atribuirContagem} operadorVeValoresRecontagem={operadorVeValoresRecontagem} filtroInicial={typeof flowState==='string' ? flowState : ''} posicaoRetomarRef={recontagensPosicaoRef} historicoConcluidas={historicoConcluidas} />}
+        {view==='divergentes' && hasAccess(currentUser,'divergentes') && <DivergentItemsPanel counts={counts} inventories={inventories} role={role} goto={goto} onApprove={approveDivergence} onEnviarParaArmazem={enviarParaArmazem} onRequestRecount={requestRecountFromOperator} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onEditarMotivoObservacao={editarMotivoObservacaoContagem} filtroInicial={typeof flowState==='string' ? flowState : ''} historicoConcluidas={historicoConcluidas} />}
         {view==='solicitacaoArmazem' && hasAccess(currentUser,'solicitacaoArmazem') && <SolicitacaoArmazemPanel counts={counts} inventories={inventories} role={role} onEnviarParaDiretoria={enviarParaAprovacaoDiretoria} onDeleteCount={role==='admin' ? deleteCount : undefined} onToggleUrgente={toggleUrgente} onVoltarParaAnaliseLider={voltarParaAnaliseLider} filtroInicial={typeof flowState==='string' ? flowState : ''} />}
         {view==='aprovacaoDiretoria' && hasAccess(currentUser,'aprovacaoDiretoria') && <DiretoriaApprovalPanel counts={counts} inventories={inventories} role={role} onApproveSA={aprovarAjusteDiretoria} onRejectSA={reprovarAjusteDiretoria} onToggleUrgente={toggleUrgente} filtroInicial={typeof flowState==='string' ? flowState : ''} />}
         {view==='todasDivergencias' && <AllDivergencesPanel counts={counts} historicoConcluidas={historicoConcluidas} goto={goto} />}
@@ -12311,8 +12311,15 @@ function SaAprovacaoDownloadButton({counts}){
   );
 }
 
-function RecountsPanel({counts, inventories, role, currentUser, users, goto, onDeleteCount, onToggleUrgente, onToggleLiberarOriginal, onEditarMotivoObservacao, onAtribuir, operadorVeValoresRecontagem, filtroInicial, posicaoRetomarRef}){
+function RecountsPanel({counts, inventories, role, currentUser, users, goto, onDeleteCount, onToggleUrgente, onToggleLiberarOriginal, onEditarMotivoObservacao, onAtribuir, operadorVeValoresRecontagem, filtroInicial, posicaoRetomarRef, historicoConcluidas=[]}){
   const canMark = role==='lider' || role==='admin';
+  // Badge "Recorrente" (pedido do cliente — ver `computeCodigosRecorrentes`):
+  // mesmo pool completo (contagens ao vivo + histórico concluído) usado pelo
+  // indicador de Acuracidade, não só `counts` — senão um item cujas
+  // divergências anteriores já foram arquivadas em `historicoConcluidas`
+  // nunca seria classificado como recorrente aqui, embora já o seja lá.
+  const historicoComoContagemRecorrencia = useMemo(()=>(historicoConcluidas||[]).map(historicoRowToCountLike).filter(Boolean), [historicoConcluidas]);
+  const codigosRecorrentes = useMemo(()=>computeCodigosRecorrentes([...counts, ...historicoComoContagemRecorrencia]), [counts, historicoComoContagemRecorrencia]);
   // Escopo AJUSTADO (cliente pediu pra restringir depois de ver o resultado
   // inicial): o quadro Sistema/Físico/Diferença/% fica visível pra QUALQUER
   // perfil, sempre — só o toggle "Detalhes"/"Ocultar" (pessoal, todo mundo
@@ -12603,6 +12610,7 @@ function RecountsPanel({counts, inventories, role, currentUser, users, goto, onD
                   ? <span className="severity-chip" style={{background:'var(--danger-bg)',color:'var(--danger)'}}><Ic>⚠</Ic> Rejeitada</span>
                   : <span className="severity-chip" style={{background:sev.bg,color:sev.color}}><Ic>{sev.icon}</Ic> {sev.label}</span>}
                 {c.recontagemLiberadaParaOriginal && <span className="category-chip"><DIcon name="lock" size={13}/> Liberado p/ {c.usuario}</span>}
+                {codigosRecorrentes.has(c.productCode) && <span className="category-chip" style={{background:'var(--danger-bg)',color:'var(--danger)'}} title="Este item já divergiu em 2 ou mais contagens no histórico completo">Recorrente</span>}
               </div>
               <div className="count-card-head-right">
                 <span className="category-chip">{categoriaDoInventario(c, inventories)}</span>
@@ -12759,7 +12767,12 @@ function RecountsPanel({counts, inventories, role, currentUser, users, goto, onD
 // aparecer só em "Recontagens". Visível pra todos os papéis (antes ficava
 // escondida inteira do operador) — mas as ações (aprovar/solicitar
 // recontagem) continuam só pra líder/admin, operador vê em modo leitura.
-function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onEnviarParaArmazem, onRequestRecount, onDeleteCount, onToggleUrgente, onEditarMotivoObservacao, filtroInicial}){
+function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onEnviarParaArmazem, onRequestRecount, onDeleteCount, onToggleUrgente, onEditarMotivoObservacao, filtroInicial, historicoConcluidas=[]}){
+  // Badge "Recorrente" (pedido do cliente — ver `computeCodigosRecorrentes`):
+  // mesmo pool completo (contagens ao vivo + histórico concluído) usado pelo
+  // indicador de Acuracidade, mesmo motivo/comentário de `RecountsPanel`.
+  const historicoComoContagemRecorrencia = useMemo(()=>(historicoConcluidas||[]).map(historicoRowToCountLike).filter(Boolean), [historicoConcluidas]);
+  const codigosRecorrentes = useMemo(()=>computeCodigosRecorrentes([...counts, ...historicoComoContagemRecorrencia]), [counts, historicoComoContagemRecorrencia]);
   // Bug real corrigido aqui: faltava a mesma checagem de "ponta da
   // corrente" que RecountsPanel já tinha (`byOriginal`/`!byOriginal[c.id]`)
   // — sem isso, uma linha com status 'aguardando_analise_lider' continuava
@@ -12933,6 +12946,7 @@ function DivergentItemsPanel({counts, inventories, role, goto, onApprove, onEnvi
                     : <span className="severity-chip" style={{background:sev.bg,color:sev.color}}><Ic>{sev.icon}</Ic> {sev.label}</span>}
                   <span className="category-chip">{categoriaDoInventario(c, inventories)}</span>
                   {c.numeroContagem>1 && <span className="category-chip">{c.numeroContagem}ª contagem</span>}
+                  {codigosRecorrentes.has(c.productCode) && <span className="category-chip" style={{background:'var(--danger-bg)',color:'var(--danger)'}} title="Este item já divergiu em 2 ou mais contagens no histórico completo">Recorrente</span>}
                 </div>
                 <div className="count-card-head-right">
                   <span className="count-card-date">{c.data}</span>
@@ -15061,6 +15075,29 @@ function compararEvolucaoAcuracidade(accAntes, accDepois){
 // `documentosPorMes` é construído a partir do MESMO array `elegiveis` (nunca
 // uma consulta/filtro separado) e só inclui meses que já existem em
 // `monthlyStats` — nunca um mês "extra" que o gráfico não mostraria.
+// "Recorrente" (item já divergiu em 2 ou mais contagens no histórico
+// completo) — mesmo critério de elegibilidade/limiar usado dentro de
+// `computeAcuracidadeItensRecorrentes` abaixo (ver `recorrenciaDivergencia`),
+// extraído aqui como helper leve (só o conjunto de códigos, sem montar as
+// séries mensais) pra uso nos cards de Recontagens/Itens Divergentes —
+// pedido do cliente: "sem essa informação, eu só sei que caiu no indicador
+// de recorrente depois de concluído". NUNCA reinterpreta o critério já
+// aprovado (2+ documentos divergentes no histórico inteiro do código) — só
+// reaproveita o mesmo cálculo pra uma exibição antecipada.
+function computeCodigosRecorrentes(pool){
+  const porCodigo = {};
+  pool.forEach(c=>{
+    if(!c.data || !c.productCode) return;
+    (porCodigo[c.productCode] = porCodigo[c.productCode] || []).push(c);
+  });
+  const codigos = new Set();
+  Object.keys(porCodigo).forEach(codigo=>{
+    const divergenciasNoHistorico = porCodigo[codigo].filter(c=>c.diferenca!=null && c.diferenca!==0).length;
+    if(porCodigo[codigo].length >= 2 && divergenciasNoHistorico >= 2) codigos.add(codigo);
+  });
+  return codigos;
+}
+
 function computeAcuracidadeItensRecorrentes(pool, dataInicioStr, dataFimStr){
   const porCodigo = {};
   pool.forEach(c=>{
