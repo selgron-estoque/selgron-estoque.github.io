@@ -3544,12 +3544,16 @@ async function replaceEstoqueSaldoInSupabase(linhas, onProgress){
 // posição sempre "0") foge completamente da numeração normal (001-075 no
 // resto da planilha), mas o cliente confirmou que é um endereço real —
 // mantido como veio, sem tentar encaixar no formato de 3 dígitos.
+// **2ª exceção deliberada**: "CJTO-N-N" (prefixo fixo "CJTO" + 2 dígitos de
+// 1 casa) — mesmo raciocínio do "10000-X-0" acima, endereço real de uma
+// área à parte (ver ENDERECO_REGEX) — mantido como veio, nunca reinterpretado.
 function normalizeEnderecoCatalogo(raw){
   if(!raw) return null;
   const e = String(raw).trim().toUpperCase();
   if(!e) return null;
   if(/^\d{3}-[A-Z]-\d$/.test(e)) return e;
   if(/^\d{5}-[A-Z]-\d+$/.test(e)) return e;
+  if(/^CJTO-\d-\d$/.test(e)) return e;
   let m = e.match(/^(\d{1,2})-([A-Z])-(\d+)$/);
   if(m) return m[1].padStart(3,'0')+'-'+m[2]+'-'+m[3];
   m = e.match(/^(\d{3})-([A-Z])-0(\d)$/);
@@ -5031,10 +5035,34 @@ function normalizarCodigoAlmox(v){
 // 1 número (ex: 035-A-1). Aplica a máscara enquanto o operador digita —
 // insere os traços automaticamente e só aceita dígito/letra na posição
 // certa — pra evitar erro de digitação num campo que hoje é obrigatório.
-const ENDERECO_REGEX = /^\d{3}-[A-Z]-\d$/;
+// **2º padrão aceito** (pedido do cliente): endereços do "CJTO" (prefixo
+// FIXO, sempre essa palavra — não qualquer sequência de letras), seguido de
+// 2 números de 1 dígito cada (ex: CJTO-0-0) — formato de área à parte, que
+// convive com o padrão normal (nunca o substitui). Mesmo espírito da
+// exceção "10000-X-0" já aceita em `normalizeEnderecoCatalogo` — endereço
+// real fora da numeração comum, documentado aqui em vez de escondido numa
+// regra genérica.
+const ENDERECO_REGEX = /^(\d{3}-[A-Z]-\d|CJTO-\d-\d)$/;
 
 function formatEnderecoInput(value){
   const raw = String(value||'').toUpperCase().replace(/[^0-9A-Z]/g, '');
+  // Modo "CJTO-N-N": só entra aqui se o que já foi digitado é compatível
+  // com ser um PREFIXO de "CJTO" (C, CJ, CJT, CJTO, ou CJTO+dígitos) — uma
+  // letra digitada que não bate com esse prefixo (ex.: "A035...") cai no
+  // modo padrão abaixo, igual sempre caiu (letra fora de posição é
+  // descartada, nunca vira erro).
+  if(raw && 'CJTO'.startsWith(raw.slice(0, Math.min(raw.length,4))) && /^[A-Z]/.test(raw)){
+    const prefixo = raw.slice(0,4);
+    let d1 = '', d2 = '';
+    for(const ch of raw.slice(4)){
+      if(d1.length<1){ if(/[0-9]/.test(ch)) d1 += ch; }
+      else if(d2.length<1){ if(/[0-9]/.test(ch)) d2 += ch; }
+    }
+    let out = prefixo;
+    if(prefixo==='CJTO' && d1) out += '-' + d1;
+    if(d2) out += '-' + d2;
+    return out;
+  }
   let numPart = '', letterPart = '', lastPart = '';
   for(const ch of raw){
     if(numPart.length < 3){
@@ -11107,7 +11135,7 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
       {step==='enderecoManual' && (
         <div>
           <div className="field">
-            <input type="text" value={enderecoInformado} onChange={e=>{ setEnderecoEditadoManualmente(true); setEnderecoInformado(formatEnderecoInput(e.target.value)); }} placeholder="Ex: 035-A-1" maxLength={7} />
+            <input type="text" value={enderecoInformado} onChange={e=>{ setEnderecoEditadoManualmente(true); setEnderecoInformado(formatEnderecoInput(e.target.value)); }} placeholder="Ex: 035-A-1 ou CJTO-0-0" maxLength={8} />
           </div>
           {enderecoVeioDaConsulta && (
             <div style={{fontSize:'var(--text-xs)',color:'var(--ok)',marginTop:-10,marginBottom:12}}>✓ Endereço confirmado pela consulta à Selgron.</div>
