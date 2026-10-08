@@ -7591,6 +7591,85 @@ function App(){
     };
   }, [currentUser]);
 
+  // ---- Presença em tempo real — "quem está contando agora" ----
+  // Pedido do cliente: no card do inventário pendente, mostrar o nome de
+  // quem está com a tela de contagem ABERTA NESTE INSTANTE (não um histórico
+  // de quem contou por último — some assim que o operador sai da tela,
+  // mesmo sem terminar). Usa o recurso de Presence do Supabase Realtime (um
+  // canal só, compartilhado por todo mundo logado) em vez de uma tabela —
+  // não precisa persistir nada: a própria conexão aberta do navegador JÁ é
+  // o sinal de "está aqui agora", e some sozinha se a aba fechar/cair sem
+  // avisar (o Supabase detecta a desconexão do socket).
+  //
+  // `presencaChaveRef` é único por ABA/sessão de navegador, não por usuário
+  // — de propósito: o mesmo usuário pode estar logado em 2 aparelhos (ou 2
+  // abas) ao mesmo tempo, e cada uma precisa da sua própria entrada de
+  // presença (senão a 2ª aba a entrar "roubaria" a chave da 1ª no estado do
+  // Presence, e sair de uma delas apagaria a presença da outra, que ainda
+  // está contando).
+  const presencaChaveRef = useRef(Math.random().toString(36).slice(2));
+  // Espelha `view`/`flowState` mais recentes num ref — o canal de presença
+  // só é recriado quando `currentUser` muda (login/logout), então a função
+  // que chama `.track()` precisa ler o valor ATUAL de `view`/`flowState` em
+  // qualquer momento depois (na reconexão do canal, por exemplo), não o que
+  // existia quando o canal foi criado.
+  const viewFlowRef = useRef({view, flowState});
+  useEffect(()=>{ viewFlowRef.current = {view, flowState}; }, [view, flowState]);
+  const presenceTrackFnRef = useRef(null);
+  const [presencaContagem, setPresencaContagem] = useState({}); // inventarioId -> [{nome}]
+  useEffect(()=>{
+    if(!currentUser || !supabaseClient) return;
+    const canal = supabaseClient.channel('presence:contagem-ativa', {
+      config: { presence: { key: presencaChaveRef.current } },
+    });
+    let subscrito = false;
+    function sincronizarPresenca(){
+      const estado = canal.presenceState();
+      const porInventario = {};
+      Object.values(estado).forEach(entradas=>{
+        entradas.forEach(e=>{
+          if(!e.inventarioId) return;
+          if(!porInventario[e.inventarioId]) porInventario[e.inventarioId] = [];
+          // Mesmo nome pode aparecer 2x (2 abas do mesmo usuário no mesmo
+          // inventário) — mostra só uma vez.
+          if(!porInventario[e.inventarioId].some(p=>p.nome===e.nome)) porInventario[e.inventarioId].push({nome: e.nome});
+        });
+      });
+      setPresencaContagem(porInventario);
+    }
+    // Views das 3 telas de contagem ligadas a um inventário pendente
+    // específico (`flowState` = o próprio `inv`, ver `goto(destino, inv)`
+    // em InventoryList) — `ManualCountFlow`/`RecountFlow` não contam aqui,
+    // nenhuma das duas está presa a um `inv.id` de um inventário pendente.
+    function trackAtual(){
+      if(!subscrito) return;
+      const { view: v, flowState: fs } = viewFlowRef.current;
+      const emTelaDeContagem = (v==='randomCount' || v==='routeCount' || v==='importedListCount') && fs && fs.id;
+      if(emTelaDeContagem) canal.track({inventarioId: fs.id, nome: currentUser.nome});
+      else canal.untrack();
+    }
+    presenceTrackFnRef.current = trackAtual;
+    canal
+      .on('presence', {event:'sync'}, sincronizarPresenca)
+      .subscribe(status=>{
+        if(status!=='SUBSCRIBED') return;
+        subscrito = true;
+        trackAtual();
+      });
+    return ()=>{
+      presenceTrackFnRef.current = null;
+      supabaseClient.removeChannel(canal);
+    };
+  }, [currentUser]);
+  // Reage a toda troca de tela/inventário (entrar numa contagem, terminar,
+  // voltar) — chama a MESMA função do efeito acima (via ref, criada de novo
+  // a cada reconexão do canal) pra atualizar o `.track()`/`.untrack()` sem
+  // esperar o próximo re-render do efeito de cima (que só depende de
+  // `currentUser`).
+  useEffect(()=>{
+    if(presenceTrackFnRef.current) presenceTrackFnRef.current();
+  }, [view, flowState]);
+
   // Evita mostrar a tela de login por uma fração de segundo pra quem já tem
   // sessão válida — `getSession()` é assíncrono (ver useEffect acima), então
   // sem essa checagem o primeiro render sempre cairia em "não logado" antes
@@ -7648,7 +7727,7 @@ function App(){
       {view!=='home' && !COUNT_SCREEN_VIEWS.includes(view) && <SubBar view={view} goto={goto} />}
       <div className="content">
         {view==='home' && hasAccess(currentUser,'home') && <Home role={role} user={currentUser} inventories={inventories} counts={counts} historicoConcluidas={historicoConcluidas} historicoCarregado={historicoCarregado} enderecosPropostos={enderecosPropostos} goto={goto} />}
-        {view==='inventories' && hasAccess(currentUser,'inventories') && <InventoryList inventories={inventories} goto={goto} role={role} counts={counts} users={users} currentUser={currentUser} onDelete={deleteInventory} onCancel={cancelInventory} onToggleUrgente={toggleInventarioUrgente} onRemoverItemPendente={role==='admin' ? removerItemPendenteDaLista : undefined} onAtribuir={atribuirInventario} />}
+        {view==='inventories' && hasAccess(currentUser,'inventories') && <InventoryList inventories={inventories} goto={goto} role={role} counts={counts} users={users} currentUser={currentUser} onDelete={deleteInventory} onCancel={cancelInventory} onToggleUrgente={toggleInventarioUrgente} onRemoverItemPendente={role==='admin' ? removerItemPendenteDaLista : undefined} onAtribuir={atribuirInventario} presencaContagem={presencaContagem} />}
         {view==='pickCountType' && hasAccess(currentUser,'pickCountType') && <PickCountType role={role} goto={goto} inventories={inventories} gruposExcluidos={gruposExcluidos} onCreate={async(inv)=>{
           const res = await saveInventarioToSupabase(inv);
           if(res.ok){ setInventories(prev=>[inv,...prev]); goto('inventories'); }
@@ -9276,7 +9355,7 @@ function inventariosPendentesVisiveis(inventories, role, nomeUsuario){
   return filtrarPorAtribuicao(inventories.filter(inv=>!inventarioConcluido(inv)), role, nomeUsuario);
 }
 
-function InventoryList({inventories, goto, role, counts, users, currentUser, onDelete, onCancel, onToggleUrgente, onRemoverItemPendente, onAtribuir}){
+function InventoryList({inventories, goto, role, counts, users, currentUser, onDelete, onCancel, onToggleUrgente, onRemoverItemPendente, onAtribuir, presencaContagem}){
   const canMark = role==='lider' || role==='admin';
   const [urgenteBusyId, setUrgenteBusyId] = useState(null);
   const [urgenteErro, setUrgenteErro] = useState({});
@@ -9472,6 +9551,19 @@ function InventoryList({inventories, goto, role, counts, users, currentUser, onD
         </div>
         <div style={{padding:'14px 18px'}}>
           {urgenteErro[inv.id] && <div className="divergence-alert" style={{marginBottom:10}} onClick={e=>e.stopPropagation()}><Ic>⚠</Ic><span>{urgenteErro[inv.id]}</span></div>}
+          {/* "Contando agora" — presença em tempo real (ver useEffect de
+              `presencaContagem` em App()), não um histórico de quem contou
+              por último: só aparece enquanto o operador está DE FATO com a
+              tela de contagem deste inventário aberta, e some sozinho assim
+              que ele sai (ou a aba cai). Independente de `inv.atribuidoA`
+              (atribuição manual do líder) — os dois podem aparecer juntos,
+              com nomes diferentes, sem conflito nenhum. */}
+          {presencaContagem && presencaContagem[inv.id] && presencaContagem[inv.id].length>0 && (
+            <div style={{fontSize:'var(--text-xs)',color:'var(--ok)',fontWeight:700,marginBottom:6,display:'flex',alignItems:'center',gap:7}}>
+              <span className="status-dot"></span>
+              Contando agora: {presencaContagem[inv.id].map(p=>p.nome).join(', ')}
+            </div>
+          )}
           {inv.atribuidoA && (
             <div style={{fontSize:'var(--text-xs)',color:'var(--safety)',fontWeight:700,marginBottom:6}}><Ic>◎</Ic> Atribuído a: {inv.atribuidoA}</div>
           )}
