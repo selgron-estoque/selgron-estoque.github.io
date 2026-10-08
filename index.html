@@ -1945,8 +1945,8 @@
   .sep-kanban-empty-ok-title{font-size:13px;font-weight:700;color:var(--ink);}
 
   .sep-kanban-card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 13px;box-shadow:0 1px 2px rgba(0,0,0,.04);position:relative;}
-  .sep-kanban-card-head{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
-  .sep-kanban-etp{font-family:var(--font-mono);font-weight:800;font-size:var(--text-md);color:var(--ink);}
+  .sep-kanban-card-head{display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;margin-bottom:6px;}
+  .sep-kanban-etp{font-family:var(--font-mono);font-weight:800;font-size:var(--text-md);color:var(--ink);white-space:nowrap;flex-shrink:0;}
   /* Prioridade do card — só 2 níveis de verdade (Urgente/Normal, o mesmo
      `m.urgente` que já decide o selo/realce de urgência em todo o resto do
      app) exibidos como badge, pra ficar perceptível sem ler o card inteiro
@@ -1970,23 +1970,26 @@
      (não usa token de tema) pra sempre parecer um marcador amarelo por cima
      do texto, em qualquer modo claro/escuro. */
   .sep-kanban-obs-destaque{display:inline;background:#FFEB3B;color:#3A2F00;font-weight:700;padding:2px 6px;border-radius:3px;box-decoration-break:clone;-webkit-box-decoration-break:clone;}
-  /* COM SALDO/SEM SALDO — indicador discreto no canto superior direito do
-     cabeçalho do card (pedido do cliente: "não devem competir visualmente
-     com o ETP ou com a barra de disponibilidade" — nada de caixa/fundo/
-     bloco, só ponto colorido + número). `.sep-kanban-head-right` agrupa o
-     indicador e o badge de prioridade (que já empurrava a si mesmo pro
-     canto via `margin-left:auto` própria, ver `.prog-priority-badge`) num
-     único cluster à direita do cabeçalho — a MESMA linha do ETP. Dado
-     continua vindo do cache compartilhado `saldo_etp_cache` (nunca uma
-     consulta ao vivo daqui — ver `fetchSaldoEtpCache`), só a apresentação
-     visual mudou (antes eram 2 blocos grandes com fundo verde/vermelho
-     entre a observação e a barra — ver histórico deste arquivo). */
+  /* COM SALDO/SEM SALDO — indicador no canto superior direito do cabeçalho
+     do card (pedido do cliente, com imagem de referência): 2 chips
+     pequenos e arredondados, número em cima + rótulo embaixo, fundo
+     tingido na cor do indicador — bem menores que os blocos originais,
+     nunca competindo visualmente com o ETP/a barra de disponibilidade.
+     `.sep-kanban-head-right` agrupa o indicador e o badge de prioridade
+     (que já empurrava a si mesmo pro canto via `margin-left:auto` própria,
+     ver `.prog-priority-badge`) num único cluster à direita do cabeçalho —
+     a MESMA linha do ETP. Dado continua vindo do cache compartilhado
+     `saldo_etp_cache` (nunca uma consulta ao vivo daqui — ver
+     `fetchSaldoEtpCache`), só a apresentação visual mudou. */
   .sep-kanban-head-right{margin-left:auto;display:flex;align-items:center;gap:8px;flex-shrink:0;}
-  .sep-saldo-dots{display:flex;align-items:center;gap:7px;}
-  .sep-saldo-dot{display:inline-flex;align-items:center;gap:4px;font-family:var(--font-mono);font-size:11px;font-weight:700;color:var(--ink-dim);white-space:nowrap;}
-  .sep-saldo-dot .dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;}
-  .sep-saldo-dot.com .dot{background:var(--ok);}
-  .sep-saldo-dot.sem .dot{background:var(--danger);}
+  .sep-saldo-chips{display:flex;align-items:center;gap:5px;flex-shrink:0;}
+  .sep-saldo-chip{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:34px;padding:2px 6px;border-radius:6px;line-height:1.15;}
+  .sep-saldo-chip .num{font-family:var(--font-mono);font-size:13px;font-weight:800;display:flex;align-items:center;white-space:nowrap;}
+  .sep-saldo-chip .lbl{font-size:6px;font-weight:700;letter-spacing:0.2px;text-transform:uppercase;margin-top:1px;white-space:nowrap;}
+  .sep-saldo-chip.com{background:var(--ok-bg);}
+  .sep-saldo-chip.com .num,.sep-saldo-chip.com .lbl{color:var(--ok);}
+  .sep-saldo-chip.sem{background:var(--danger-bg);}
+  .sep-saldo-chip.sem .num,.sep-saldo-chip.sem .lbl{color:var(--danger);}
   /* "Disponibilidade de materiais" — barra preservada exatamente como
      estava (pedido do cliente: "não altere... barra de disponibilidade"). */
   .sep-saldo-bar-wrap{margin:6px 0 10px;}
@@ -20681,20 +20684,25 @@ function MaquinaCard({m, canManage, podeAvancarStatus, isAdmin, ordinal, mostrar
         {ordinal!=null && <span className="sep-ordem-num">{ordinal}</span>}
         <span className="sep-kanban-etp">{m.etp}</span>
         <div className="sep-kanban-head-right">
-          {/* COM SALDO/SEM SALDO — pedido do cliente: indicador discreto no
-              canto superior direito do card, junto do cabeçalho, nunca
-              competindo visualmente com o ETP/a barra de disponibilidade
-              (ver comentário completo acima de `saldo`/`pctSaldo`). Só
-              ponto colorido + número, sem caixa/fundo — a mesma conta de
-              antes, só reposicionada e simplificada visualmente. */}
+          {/* COM SALDO/SEM SALDO — pedido do cliente (imagem de referência):
+              2 chips pequenos e arredondados, número em cima/rótulo embaixo,
+              fundo tingido na cor do indicador — no canto superior direito
+              do card, mesma linha do ETP, nunca competindo com o ETP/a barra
+              de disponibilidade (ver comentário completo acima de
+              `saldo`/`pctSaldo`). Mesma conta de sempre, só a apresentação
+              visual. */}
           {!tudoEntregueSaldo && (
-            <span className="sep-saldo-dots">
-              <span className="sep-saldo-dot com" title="Com saldo">
-                <span className="dot"></span>{saldo.status==='ok' ? saldo.comSaldo : (saldo.status==='loading' ? '…' : '—')}
+            <span className="sep-saldo-chips">
+              <span className="sep-saldo-chip com" title="Com saldo">
+                <span className="num">{saldo.status==='ok' ? saldo.comSaldo : (saldo.status==='loading' ? '…' : '—')}</span>
+                <span className="lbl">Com saldo</span>
               </span>
-              <span className="sep-saldo-dot sem" title="Sem saldo">
-                <span className="dot"></span>{saldo.status==='ok' ? saldo.semSaldo : (saldo.status==='loading' ? '…' : '—')}
-                {saldo.desatualizado && <DIcon name="clock" size={9} style={{marginLeft:2,opacity:.7}} />}
+              <span className="sep-saldo-chip sem" title="Sem saldo">
+                <span className="num">
+                  {saldo.status==='ok' ? saldo.semSaldo : (saldo.status==='loading' ? '…' : '—')}
+                  {saldo.desatualizado && <DIcon name="clock" size={9} style={{marginLeft:3,opacity:.7}} />}
+                </span>
+                <span className="lbl">Sem saldo</span>
               </span>
             </span>
           )}
