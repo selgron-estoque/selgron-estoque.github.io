@@ -1261,3 +1261,23 @@ bastante — sem rotina de limpeza no banco).
 **Não testado contra Postgres real** (mesma limitação de sempre) — a
 correção em si (trocar Presence por tabela) segue o padrão já usado e
 testado em produção pelas outras tabelas deste schema.
+
+### 16.4 — "Parou de mostrar novamente" (regressão intermitente)
+
+Depois da troca pra tabela, o indicador funcionou e depois voltou a não
+aparecer — intermitente, diferente do `CLOSED` permanente do Presence.
+Causa provável: o canal Realtime (`realtime:contagem_presenca`) de quem
+está OLHANDO a lista "Inventários Pendentes" cai silenciosamente (sem
+erro, sem reconectar) em cenários comuns de tablet — tela trava, app vai
+pra segundo plano, blip de rede — e o front-end não tinha como notar:
+`contagemPresencaRows` fica "congelado" enquanto o relógio continua
+andando, até que o filtro de `PRESENCA_EXPIRA_MS` (2min) faz os nomes
+desaparecerem mesmo que a linha no banco continue sendo renovada
+normalmente pelo heartbeat de quem está contando.
+
+Correção: polling de segurança (`setInterval`, 30s) que busca
+`contagem_presenca` direto, em paralelo ao canal Realtime, independente
+do estado dele — mesmo padrão de resiliência já usado em outros pontos do
+app pra sincronização pendente. Não substitui o Realtime (que ainda dá a
+atualização quase instantânea no caso comum), só garante que a lista
+nunca fica mais de ~30s desatualizada mesmo se o canal cair sem avisar.

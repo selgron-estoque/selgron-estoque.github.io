@@ -7678,7 +7678,20 @@ function App(){
         fetchContagemPresenca().then(rows=>{ if(!cancelado) setContagemPresencaRows(rows); });
       });
 
-    return ()=>{ cancelado = true; supabaseClient.removeChannel(canal); };
+    // Rede de segurança: tablets travam a tela, perdem rede ou trocam de
+    // abas em segundo plano com frequência, e o canal Realtime acima pode
+    // cair (ou nunca reconectar) silenciosamente nesses casos — sem lançar
+    // nenhum erro, só parando de entregar eventos. Sem isso, a lista de
+    // presença trava "no tempo" e os nomes somem (pelo filtro de
+    // `PRESENCA_EXPIRA_MS` abaixo) mesmo que a tabela ainda esteja sendo
+    // atualizada normalmente. Resolve buscando a tabela direto por polling,
+    // independente do estado do canal — mesmo padrão de resiliência já
+    // usado em outros pontos do app pra sincronização pendente.
+    const polling = setInterval(()=>{
+      fetchContagemPresenca().then(rows=>{ if(!cancelado) setContagemPresencaRows(rows); });
+    }, 30000);
+
+    return ()=>{ cancelado = true; clearInterval(polling); supabaseClient.removeChannel(canal); };
   }, [currentUser]);
   // Deriva o mapa inventarioId → [{nome}] a partir das linhas cruas, já
   // filtrando linhas "velhas" (aba fechada/travada sem avisar nunca grava um
