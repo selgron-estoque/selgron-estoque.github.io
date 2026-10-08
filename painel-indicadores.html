@@ -3444,19 +3444,22 @@ function bucketizeKanbanTracking(maquinas){
 // Card de 1 máquina — versão SOMENTE LEITURA, redesign visual (pedido do
 // cliente, spec de 32 seções + imagem de referência): card horizontal
 // compacto, faixa colorida à esquerda (`corStripe`, cor da coluna),
-// ETP/Máquina|Cliente/Chassi+Código à esquerda, os 2 blocos "COM SALDO"/
-// "SEM SALDO" à direita, barra de progresso + "N itens" embaixo. O card
-// NUNCA repete o texto do status (a coluna já mostra) e NÃO mostra mais
-// "Descrição"/Data de Separação — a spec original pediu um card fixo bem
-// mais compacto (~134px) sem espaço pra essas linhas extras; esse dado
-// continua 100% preservado no banco e na tela real "Programação"
-// (index.html), só não aparece mais neste card da TV. A observação
+// ETP/Máquina|Cliente/Chassi/Código/Descrição à esquerda, os 2 blocos "COM
+// SALDO"/"SEM SALDO" à direita, barra de progresso embaixo. O card NUNCA
+// repete o texto do status (a coluna já mostra). Chassi/Código do
+// Produto/Descrição ficaram ausentes por um tempo (spec original pedia um
+// card bem mais compacto, ~134px, sem essas linhas) — voltaram a pedido do
+// cliente, cada campo na própria linha (`.tp-meta`), pra bater com o mesmo
+// layout já usado na tela "Programação" (`.sep-kanban-meta-line`,
+// index.html) — mesmo texto/rótulo, mesma ordem (Chassi/Código do
+// Produto/Descrição). `.tp-card` usa `min-height`, não `height` fixa, então
+// o card só cresce além do tamanho mínimo quando a máquina tem esses
+// campos preenchidos (ou observação, ver abaixo); uma ETP sem nenhum deles
+// continua do mesmo tamanho compacto de sempre. A observação
 // destacada (`m.observacao`, mesmo marca-texto amarelo de lá — ver
 // `.sep-kanban-obs-destaque`) voltou a aparecer aqui (pedido do cliente:
 // "não aparece a informação que fica destacada em amarelo na tela de
-// programação") — `.tp-card` usa `min-height`, não `height` fixa, então o
-// card só cresce além de 134px quando a máquina tem observação; as demais
-// continuam do mesmo tamanho de sempre. "Entregue em"
+// programação"). "Entregue em"
 // (`m.entregueEm`) foi tentado aqui também, mas removido a pedido do
 // cliente ("não do jeito que desejo", vai ser revisado depois); o campo
 // continua calculado (só usado pra ordenar a coluna Entregue, ver
@@ -3504,10 +3507,6 @@ function MaquinaCardTracking({m, corStripe}){
   // por faixa — 95-100% verde, 80-94% amarelo, abaixo de 80% vermelho —
   // em vez de sempre verde não importa o valor.
   const corBarra = pct>=95 ? 'var(--ok)' : pct>=80 ? 'var(--warn)' : 'var(--danger)';
-  const metaChassiCodigo = [
-    m.chassi ? `Chassi: ${m.chassi}` : null,
-    m.codigoProduto ? `Cód: ${m.codigoProduto}` : null,
-  ].filter(Boolean).join(' • ');
   return (
     <div className={classes.join(' ')} style={{'--tp-stripe':corStripe}}>
       <div className="tp-card-top">
@@ -3522,7 +3521,9 @@ function MaquinaCardTracking({m, corStripe}){
             {m.obs && <span className="tp-sep-txt">|</span>}
             <span className="tp-cliente">{m.cliente || 'Cliente não informado'}</span>
           </div>
-          {metaChassiCodigo && <div className="tp-meta">{metaChassiCodigo}</div>}
+          {m.chassi && <div className="tp-meta">Chassi: {m.chassi}</div>}
+          {m.codigoProduto && <div className="tp-meta">Código do Produto: {m.codigoProduto}</div>}
+          {m.descricao && <div className="tp-meta">Descrição: {m.descricao}</div>}
           {m.observacao && (
             <div className="tp-obs-destaque-wrap">
               <span className="tp-obs-destaque">{m.observacao}</span>
