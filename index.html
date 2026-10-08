@@ -931,6 +931,31 @@
   .pedido-bottom-bar{display:flex;align-items:center;justify-content:flex-end;gap:14px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;margin-top:14px;}
   .pedido-bottom-bar .pbb-count{font-size:var(--text-sm);color:var(--ink-dim);margin-right:auto;}
 
+  /* Etiquetas — abas "Produto"/"Endereço": mesma ideia de cards bem
+     definidos já usada na aba "Pedido" (ver .pedido-* acima) — card de
+     busca separado do resultado, resultado em 2 colunas (dado do item +
+     modelo de etiqueta), config de impressão num card próprio. Só
+     estrutura/visual — reaproveita os mesmos tokens, a lógica de
+     busca/seleção/impressão por trás (EtiquetasPanel) não muda nada aqui. */
+  .etq-search-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:14px;}
+  .etq-search-card .field{margin-bottom:0;}
+  .etq-search-input-wrap{position:relative;flex:1;display:flex;}
+  .etq-search-input-wrap input{padding-right:36px;}
+  .etq-clear-btn{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:26px;height:26px;display:flex;align-items:center;justify-content:center;background:none;border:none;color:var(--ink-dim);font-size:18px;line-height:1;cursor:pointer;border-radius:50%;}
+  .etq-clear-btn:hover{color:var(--ink);background:var(--panel-raised);}
+
+  .etq-result-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;display:flex;gap:20px;flex-wrap:wrap;}
+  .etq-result-main{flex:2 1 240px;}
+  .etq-result-side{flex:1 1 180px;border-left:1px solid var(--line);padding-left:20px;}
+  .etq-result-side label{display:block;font-family:var(--font-mono);font-size:var(--text-xs);text-transform:uppercase;letter-spacing:0.8px;color:var(--ink-dim);margin-bottom:9px;}
+  @media (max-width:680px){
+    .etq-result-side{border-left:none;padding-left:0;border-top:1px solid var(--line);padding-top:14px;margin-top:2px;}
+  }
+
+  .etq-config-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-top:14px;}
+  .etq-config-row{display:flex;gap:14px;flex-wrap:wrap;}
+  .etq-config-row .field{flex:1;min-width:160px;margin-bottom:0;}
+
   /* BOTTOM NAV */
   .bottom-nav{position:fixed;bottom:0;left:0;right:0;background:var(--panel);border-top:1px solid var(--line);display:flex;max-width:900px;margin:0 auto;z-index:20;}
   .nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 4px 12px;background:none;border:none;color:var(--ink-dim);font-size:var(--text-2xs);font-family:var(--font-mono);text-transform:uppercase;letter-spacing:0.3px;}
@@ -19506,9 +19531,29 @@ function EtiquetasPanel({currentUser}){
       )}
 
       {aba!=='pedido' && (<>
-      <div className="field" style={{marginBottom:8}}>
-        <label>{aba==='endereco' ? 'Buscar endereço' : 'Buscar produto (código ou descrição)'}</label>
-        <input type="text" value={query} onChange={e=>{ setQuery(e.target.value); setSelecionado(null); setSucessoImpressao(false); }} placeholder={aba==='endereco' ? 'Ex: 035-A-1' : 'Ex: 000.35310 ou parafuso'} />
+      {/* Card de busca — visualmente separado do resultado (pedido do
+          cliente), mesmo card já usado na aba "Pedido" (ver .etq-search-card/
+          .pedido-search-card). A busca continua 100% ao vivo/debounced (ver
+          efeito de `query` mais acima) — o botão "Buscar" não dispara
+          nenhuma consulta nova, só reforça visualmente a ação e tira o
+          teclado da tela em tablet (bom pro uso no almoxarifado). O "×"
+          dentro do campo limpa a busca com o mesmo reset que já rodava ao
+          apagar o texto manualmente. */}
+      <div className="etq-search-card">
+        <div className="field">
+          <label>{aba==='endereco' ? 'Buscar endereço' : 'Buscar produto (código ou descrição)'}</label>
+          <div style={{display:'flex',gap:8}}>
+            <div className="etq-search-input-wrap">
+              <input type="text" value={query} onChange={e=>{ setQuery(e.target.value); setSelecionado(null); setSucessoImpressao(false); }} placeholder={aba==='endereco' ? 'Ex: 035-A-1' : 'Ex: 000.35310 ou parafuso'} style={{flex:1}} />
+              {query && (
+                <button type="button" className="etq-clear-btn" title="Limpar busca" onClick={()=>{ setQuery(''); setSelecionado(null); setSucessoImpressao(false); }}>×</button>
+              )}
+            </div>
+            <button type="button" className="btn btn-primary btn-sm" disabled={!query.trim()} onClick={()=>{ if(document.activeElement && document.activeElement.blur) document.activeElement.blur(); }}>
+              <Ic>🔍</Ic> Buscar
+            </button>
+          </div>
+        </div>
       </div>
 
       {loading && !buscandoAoVivo && <div className="empty-state">Buscando…</div>}
@@ -19544,101 +19589,110 @@ function EtiquetasPanel({currentUser}){
       )}
 
       {selecionado && (
-        <div style={{background:'var(--panel)',border:'1px solid var(--line)',borderRadius:'var(--radius)',padding:16,marginTop:4}}>
-          {/* Código é o principal meio de identificação — fonte bem maior
-              que o padrão de `.item-code` (pedido do cliente). "Enviar para
-              Fila" voltou pra fileira de baixo, junto de Voltar/Imprimir —
-              com a tela mais baixa agora (textos removidos, campos numa
-              linha só), não precisa mais ficar perto do topo pra evitar
-              rolagem. */}
-          <div className="item-code" style={{fontSize:26,fontWeight:700}}>{selecionado.codigo}</div>
-          {aba==='produto' && <div className="item-desc">{descricaoEfetivaEtiqueta}</div>}
-          {/* Mostra a unidade que VAI pra etiqueta antes de imprimir — "(ao
-              vivo)" só quando veio da consulta Selgron de verdade (nunca
-              afirma isso sem ter checado), mesmo critério de `CountStep`. */}
-          {aba==='produto' && modeloEtiqueta==='recebimento' && (
-            <div className="lr-sub" style={{marginTop:4}}>
-              Unidade: <strong>{unidadeEfetivaEtiqueta || 'UN (padrão, sem cadastro)'}</strong>
+        <div style={{marginTop:14}}>
+          {/* Resultado em 2 colunas: dado do item à esquerda (código em
+              destaque — mesmo `.item-code`/`.item-desc` de sempre),
+              "Modelo de etiqueta" à direita (só pra "Produto"; "Endereço"
+              não tem modelo nenhum, mostra só o item mesmo). */}
+          <div className="etq-result-card">
+            <div className="etq-result-main">
+              <div className="item-code" style={{fontSize:26,fontWeight:700}}>{selecionado.codigo}</div>
+              {aba==='produto' && <div className="item-desc">{descricaoEfetivaEtiqueta}</div>}
+              {/* Mostra a unidade que VAI pra etiqueta antes de imprimir —
+                  "(ao vivo)" só quando veio da consulta Selgron de verdade
+                  (nunca afirma isso sem ter checado), mesmo critério de
+                  `CountStep`. */}
+              {aba==='produto' && modeloEtiqueta==='recebimento' && (
+                <div className="lr-sub" style={{marginTop:4}}>
+                  Unidade: <strong>{unidadeEfetivaEtiqueta || 'UN (padrão, sem cadastro)'}</strong>
+                </div>
+              )}
+              {/* Mesmo padrão da Unidade acima — mostra o endereço que VAI
+                  pra etiqueta antes de imprimir. Corrige o caso reportado:
+                  alterar o endereço (Selgron/Protheus) e a etiqueta
+                  continuar puxando o cadastro local antigo. A dica "(ao
+                  vivo)" foi removida por pedido do cliente — a PRIORIDADE
+                  (consulta ao vivo vence o cadastro local, ver
+                  `enderecoEfetivaEtiqueta`/`unidadeEfetivaEtiqueta` mais
+                  acima) não mudou, só o texto que anunciava a fonte na
+                  tela. */}
+              {aba==='produto' && modeloEtiqueta==='recebimento' && (
+                <div className="lr-sub" style={{marginTop:4}}>
+                  Endereço: <strong>{enderecoEfetivaEtiqueta || 'sem cadastro'}</strong>
+                </div>
+              )}
+              {aba==='endereco' && selecionado.almoxarifado && <div className="lr-sub" style={{marginTop:4}}>Armazém {selecionado.almoxarifado}</div>}
             </div>
-          )}
-          {/* Mesmo padrão da Unidade acima — mostra o endereço que VAI pra
-              etiqueta antes de imprimir. Corrige o caso reportado: alterar
-              o endereço (Selgron/Protheus) e a etiqueta continuar puxando o
-              cadastro local antigo. A dica "(ao vivo)" foi removida por
-              pedido do cliente — a PRIORIDADE (consulta ao vivo vence o
-              cadastro local, ver `enderecoEfetivaEtiqueta`/
-              `unidadeEfetivaEtiqueta` mais acima) não mudou, só o texto que
-              anunciava a fonte na tela. */}
-          {aba==='produto' && modeloEtiqueta==='recebimento' && (
-            <div className="lr-sub" style={{marginTop:4}}>
-              Endereço: <strong>{enderecoEfetivaEtiqueta || 'sem cadastro'}</strong>
-            </div>
-          )}
-          {aba==='endereco' && selecionado.almoxarifado && <div className="lr-sub" style={{marginTop:4}}>Armazém {selecionado.almoxarifado}</div>}
-          {aba==='produto' && (
-            <div style={{marginTop:12}}>
-              <label>Modelo de etiqueta</label>
-              <div style={{display:'flex',gap:8,marginTop:4}}>
-                <button className={'btn '+(modeloEtiqueta==='recebimento'?'btn-primary':'btn-outline')+' btn-sm'} onClick={()=>setModeloEtiqueta('recebimento')}>Recebimento</button>
-                <button className={'btn '+(modeloEtiqueta==='prateleira'?'btn-primary':'btn-outline')+' btn-sm'} onClick={()=>setModeloEtiqueta('prateleira')}>Prateleira/Caixa</button>
+            {aba==='produto' && (
+              <div className="etq-result-side">
+                <label>Modelo de etiqueta</label>
+                <div style={{display:'flex',gap:8}}>
+                  <button className={'btn '+(modeloEtiqueta==='recebimento'?'btn-primary':'btn-outline')+' btn-sm'} onClick={()=>setModeloEtiqueta('recebimento')}>Recebimento</button>
+                  <button className={'btn '+(modeloEtiqueta==='prateleira'?'btn-primary':'btn-outline')+' btn-sm'} onClick={()=>setModeloEtiqueta('prateleira')}>Prateleira/Caixa</button>
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
+
           {/* Pedido do cliente: "Quantidade Recebida e de etiqueta pode ser
               uma ao lado da outra e pode justificar o campo de data" — os 3
-              campos numa linha só (eram 2 linhas: Recebida+Data, depois
-              Etiquetas sozinha) — reduz bastante a altura da tela. Só o
+              campos numa linha só, agora num card próprio ("Configurar
+              impressão de etiquetas"), separado do card do item. Só o
               modelo "Recebimento" tem esses 3 campos; "Prateleira/Caixa" só
-              tem Quantidade de Etiquetas (bloco próprio logo abaixo). */}
+              tem Quantidade de Etiquetas. */}
           {aba==='produto' && modeloEtiqueta==='recebimento' && (
-            <div style={{display:'flex',gap:10,marginTop:12,flexWrap:'wrap'}}>
-              <div className="field" style={{flex:1,minWidth:110,marginBottom:0}}>
-                <label>Quantidade por etiqueta</label>
-                <input type="text" inputMode="numeric" value={quantidade} onChange={e=>setQuantidade(e.target.value.replace(/[^0-9]/g,''))} onKeyDown={e=>{ if(e.key==='Enter'){ e.preventDefault(); quantidadeEtiquetasRef.current && quantidadeEtiquetasRef.current.focus(); } }} placeholder="Ex: 50" />
-              </div>
-              <div className="field" style={{flex:1,minWidth:110,marginBottom:0}}>
-                <label>Quantidade de etiquetas</label>
-                <input ref={quantidadeEtiquetasRef} type="text" inputMode="numeric" value={quantidadeEtiquetas} onChange={e=>setQuantidadeEtiquetas(e.target.value.replace(/[^0-9]/g,''))} placeholder="Ex: 10" />
-              </div>
-              <div className="field" style={{flex:1,minWidth:110,marginBottom:0}}>
-                <label>Data de recebimento{!dataDesbloqueada && <span style={{fontWeight:400,textTransform:'none',letterSpacing:0}}> — toque 2x</span>}</label>
-                <input
-                  type="date"
-                  value={dataRecebimento}
-                  readOnly={!dataDesbloqueada}
-                  onDoubleClick={()=>setDataDesbloqueada(true)}
-                  onChange={e=>{ if(dataDesbloqueada) setDataRecebimento(e.target.value); }}
-                  style={!dataDesbloqueada ? {background:'var(--gray-100)',cursor:'not-allowed',color:'var(--ink-dim)'} : undefined}
-                  title={!dataDesbloqueada ? 'Toque duas vezes pra liberar a edição' : ''}
-                />
+            <div className="etq-config-card">
+              <div className="section-title" style={{marginTop:0}}>Configurar impressão de etiquetas</div>
+              <div className="etq-config-row">
+                <div className="field">
+                  <label>Quantidade por etiqueta</label>
+                  <input type="text" inputMode="numeric" value={quantidade} onChange={e=>setQuantidade(e.target.value.replace(/[^0-9]/g,''))} onKeyDown={e=>{ if(e.key==='Enter'){ e.preventDefault(); quantidadeEtiquetasRef.current && quantidadeEtiquetasRef.current.focus(); } }} placeholder="Ex: 50" />
+                </div>
+                <div className="field">
+                  <label>Quantidade de etiquetas</label>
+                  <input ref={quantidadeEtiquetasRef} type="text" inputMode="numeric" value={quantidadeEtiquetas} onChange={e=>setQuantidadeEtiquetas(e.target.value.replace(/[^0-9]/g,''))} placeholder="Ex: 10" />
+                </div>
+                <div className="field">
+                  <label>Data de recebimento{!dataDesbloqueada && <span style={{fontWeight:400,textTransform:'none',letterSpacing:0}}> — toque 2x</span>}</label>
+                  <input
+                    type="date"
+                    value={dataRecebimento}
+                    readOnly={!dataDesbloqueada}
+                    onDoubleClick={()=>setDataDesbloqueada(true)}
+                    onChange={e=>{ if(dataDesbloqueada) setDataRecebimento(e.target.value); }}
+                    style={!dataDesbloqueada ? {background:'var(--gray-100)',cursor:'not-allowed',color:'var(--ink-dim)'} : undefined}
+                    title={!dataDesbloqueada ? 'Toque duas vezes pra liberar a edição' : ''}
+                  />
+                </div>
               </div>
             </div>
           )}
           {aba==='produto' && modeloEtiqueta==='prateleira' && (
-            <div style={{marginTop:12}}>
-              <div className="field" style={{maxWidth:200,marginBottom:0}}>
+            <div className="etq-config-card">
+              <div className="section-title" style={{marginTop:0}}>Configurar impressão de etiquetas</div>
+              <div className="field" style={{maxWidth:220,marginBottom:0}}>
                 <label>Quantidade de etiquetas</label>
                 <input ref={quantidadeEtiquetasRef} type="text" inputMode="numeric" value={quantidadeEtiquetas} onChange={e=>setQuantidadeEtiquetas(e.target.value.replace(/[^0-9]/g,''))} placeholder="Ex: 10" />
               </div>
               {Number(quantidadeEtiquetas)>1 && (
-                <div className="lr-sub" style={{marginTop:6}}>{Math.max(1,parseInt(quantidadeEtiquetas,10)||1)} etiquetas idênticas (mesmo código/descrição em cada uma)</div>
+                <div className="lr-sub" style={{marginTop:8}}>{Math.max(1,parseInt(quantidadeEtiquetas,10)||1)} etiquetas idênticas (mesmo código/descrição em cada uma)</div>
               )}
             </div>
           )}
           {erroImpressao && (
-            <div className="divergence-alert" style={{margin:'10px 0'}}><Ic>⚠</Ic><span>{erroImpressao}</span></div>
+            <div className="divergence-alert" style={{margin:'14px 0 0'}}><Ic>⚠</Ic><span>{erroImpressao}</span></div>
           )}
           {sucessoImpressao && (
-            <div className="divergence-alert" style={{margin:'10px 0',background:'var(--ok-bg)',borderColor:'var(--ok)',color:'var(--ok)'}}><Ic>✓</Ic><span>Etiqueta enviada pra impressora.</span></div>
+            <div className="divergence-alert" style={{margin:'14px 0 0',background:'var(--ok-bg)',borderColor:'var(--ok)',color:'var(--ok)'}}><Ic>✓</Ic><span>Etiqueta enviada pra impressora.</span></div>
           )}
           {erroFilaEnvio && (
-            <div className="divergence-alert" style={{margin:'10px 0'}}><Ic>⚠</Ic><span>{erroFilaEnvio}</span></div>
+            <div className="divergence-alert" style={{margin:'14px 0 0'}}><Ic>⚠</Ic><span>{erroFilaEnvio}</span></div>
           )}
           {sucessoFilaEnvio && (
-            <div className="divergence-alert" style={{margin:'10px 0',background:'var(--ok-bg)',borderColor:'var(--ok)',color:'var(--ok)'}}><Ic>✓</Ic><span>Enviada para a fila — imprima do PC ligado na impressora.</span></div>
+            <div className="divergence-alert" style={{margin:'14px 0 0',background:'var(--ok-bg)',borderColor:'var(--ok)',color:'var(--ok)'}}><Ic>✓</Ic><span>Enviada para a fila — imprima do PC ligado na impressora.</span></div>
           )}
           <div className="btn-row" style={{marginTop:14}}>
-            <button className="btn btn-secondary" onClick={()=>{ setSelecionado(null); setSucessoImpressao(false); setSucessoFilaEnvio(false); setErroFilaEnvio(null); }}>Voltar</button>
+            <button className="btn btn-outline" onClick={()=>{ setSelecionado(null); setSucessoImpressao(false); setSucessoFilaEnvio(false); setErroFilaEnvio(null); }}><DIcon name="chevronLeft" size={16}/> Voltar</button>
             <button className="btn btn-outline" disabled={enviandoParaFila} onClick={handleEnviarParaFila}>
               <DIcon name="clock" size={16}/> {enviandoParaFila ? 'Enviando…' : 'Enviar para Fila'}
             </button>
