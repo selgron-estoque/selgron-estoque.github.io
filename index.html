@@ -7652,9 +7652,23 @@ function App(){
     canal
       .on('presence', {event:'sync'}, sincronizarPresenca)
       .subscribe(status=>{
-        if(status!=='SUBSCRIBED') return;
-        subscrito = true;
-        trackAtual();
+        // Log de diagnóstico — Presence é a 1ª vez que este projeto usa
+        // canal de Presence/Broadcast (todo o resto do app usa só
+        // `postgres_changes`, ver `supabase_realtime` publication em
+        // schema.sql); se o projeto Supabase tiver "Realtime Authorization"
+        // habilitado (exige RLS em `realtime.messages` pra canal privado),
+        // a inscrição cai em erro/timeout sem travar a tela — só sem
+        // sincronizar nunca. Fica só um `console.warn`, nunca interrompe o
+        // usuário nem mostra alerta — "quem está contando agora" é
+        // informação auxiliar, não crítica.
+        if(status==='SUBSCRIBED'){
+          subscrito = true;
+          trackAtual();
+          return;
+        }
+        if(status==='CHANNEL_ERROR' || status==='TIMED_OUT' || status==='CLOSED'){
+          console.warn('Presença "contando agora" não conectou (canal Realtime):', status);
+        }
       });
     return ()=>{
       presenceTrackFnRef.current = null;
