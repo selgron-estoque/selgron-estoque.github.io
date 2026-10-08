@@ -19060,6 +19060,13 @@ function EtiquetasPanel({currentUser}){
   const [enviandoPedidoParaFila, setEnviandoPedidoParaFila] = useState(false);
   const [erroFilaPedido, setErroFilaPedido] = useState(null);
   const [sucessoFilaPedido, setSucessoFilaPedido] = useState(false);
+  // Impressão INDIVIDUAL (botão por linha, pedido do cliente: "caso eu
+  // queira imprimir etiquetas uma a uma") — `Set`, não um único id, mesmo
+  // padrão já usado em `imprimindoFilaIds` (fila de impressão), já que mais
+  // de uma linha pode estar imprimindo ao mesmo tempo em teoria (não trava
+  // as outras enquanto uma está em andamento).
+  const [imprimindoItemIds, setImprimindoItemIds] = useState(()=>new Set());
+  const [errosItemPedido, setErrosItemPedido] = useState({});
 
   // Mesmo raciocínio do efeito "trocar de aba limpa a busca" (acima, pras
   // abas Produto/Endereço) — separado num 2º efeito em vez de somado àquele
@@ -19076,6 +19083,8 @@ function EtiquetasPanel({currentUser}){
     setErroImpressaoPedido(null);
     setSucessoFilaPedido(false);
     setErroFilaPedido(null);
+    setImprimindoItemIds(new Set());
+    setErrosItemPedido({});
   }, [aba]);
 
   async function handleBuscarPedido(){
@@ -19115,6 +19124,7 @@ function EtiquetasPanel({currentUser}){
         codigo: p.produto || '',
         descricao: p.descricao || (local && local.descricao) || p.produto || '',
         quantidade: p.quantidade!=null ? String(p.quantidade) : '',
+        quantidadeEtiquetas: '1',
         unidade: local ? local.unidade : null,
         endereco: (local && local.enderecoCadastrado) ? local.endereco : null,
         incluir: true,
@@ -19123,39 +19133,59 @@ function EtiquetasPanel({currentUser}){
     setBuscandoPedido(false);
     setFornecedorPedido(doPedido[0].fornecedor || null);
     setItensPedido(itens);
+    setErrosItemPedido({});
   }
 
   function handleChangeItemPedido(id, campo, valor){
     setItensPedido(prev => prev.map(it => it.id===id ? {...it, [campo]: valor} : it));
   }
 
+  // "Quantidade por Etiqueta" vai IGUAL em cada cópia impressa deste item;
+  // "Quantidade de Etiquetas" é quantas cópias IDÊNTICAS sair — mesmo
+  // raciocínio já usado no modelo "Recebimento" da aba Produto (ver
+  // `montarItensParaImprimir` abaixo), agora por item do pedido.
+  function itemPedidoParaImprimir(it){
+    const n = Math.max(1, parseInt(it.quantidadeEtiquetas, 10) || 1);
+    return Array.from({length:n}, ()=>({
+      tipo: 'produto',
+      codigo: it.codigo,
+      descricao: it.descricao,
+      quantidade: it.quantidade,
+      dataRecebimento,
+      endereco: it.endereco,
+      unidade: it.unidade,
+    }));
+  }
+
   // Só os itens marcados `incluir` E com quantidade preenchida viram
   // etiqueta — item sem quantidade (ex.: linha do pedido que o recebimento
   // decidiu não etiquetar agora) fica de fora sem precisar desmarcar.
+  function itensPedidoIncluidos(){
+    return (itensPedido||[]).filter(it => it.incluir && it.quantidade.trim());
+  }
   function itensPedidoParaImprimir(){
-    return (itensPedido||[])
-      .filter(it => it.incluir && it.quantidade.trim())
-      .map(it => ({
-        tipo: 'produto',
-        codigo: it.codigo,
-        descricao: it.descricao,
-        quantidade: it.quantidade,
-        dataRecebimento,
-        endereco: it.endereco,
-        unidade: it.unidade,
-      }));
+    return itensPedidoIncluidos().flatMap(itemPedidoParaImprimir);
   }
 
   async function handleImprimirPedido(){
-    const itens = itensPedidoParaImprimir();
+    const incluidos = itensPedidoIncluidos();
+    const itens = incluidos.flatMap(itemPedidoParaImprimir);
     if(itens.length===0) return;
     setImprimindoPedido(true);
     setErroImpressaoPedido(null);
     setSucessoImpressaoPedido(false);
     const res = itens.length>1 ? imprimirLoteEtiquetas(itens) : imprimirEtiquetaViaNavegador(itens[0]);
     setImprimindoPedido(false);
-    if(res.ok) setSucessoImpressaoPedido(true);
-    else setErroImpressaoPedido(res.erro);
+    if(res.ok){
+      setSucessoImpressaoPedido(true);
+      // Pedido do cliente: item já impresso sai da lista — mesmo
+      // comportamento da impressão individual (ver `handleImprimirItemPedido`),
+      // aplicado aqui a todos os itens que entraram nesta impressão em lote.
+      const idsImpressos = new Set(incluidos.map(it=>it.id));
+      setItensPedido(prev => (prev||[]).filter(it => !idsImpressos.has(it.id)));
+    } else {
+      setErroImpressaoPedido(res.erro);
+    }
   }
 
   async function handleEnviarPedidoParaFila(){
@@ -19172,6 +19202,25 @@ function EtiquetasPanel({currentUser}){
     setEnviandoPedidoParaFila(false);
     if(!erro) setSucessoFilaPedido(true);
     else setErroFilaPedido(erro);
+  }
+
+  // Imprime só UM item do pedido (botão da própria linha) — pedido do
+  // cliente: "caso eu queira imprimir etiquetas uma a uma e depois as que
+  // eu já imprimi sai da lista". Funciona independente do checkbox
+  // `incluir` (esse continua só controlando a impressão EM LOTE) — só
+  // precisa ter "Quantidade por Etiqueta" preenchida.
+  async function handleImprimirItemPedido(it){
+    if(!it.quantidade.trim() || imprimindoItemIds.has(it.id)) return;
+    setImprimindoItemIds(prev => new Set(prev).add(it.id));
+    setErrosItemPedido(prev => ({...prev, [it.id]: null}));
+    const itens = itemPedidoParaImprimir(it);
+    const res = itens.length>1 ? imprimirLoteEtiquetas(itens) : imprimirEtiquetaViaNavegador(itens[0]);
+    setImprimindoItemIds(prev => { const next = new Set(prev); next.delete(it.id); return next; });
+    if(res.ok){
+      setItensPedido(prev => (prev||[]).filter(x => x.id!==it.id));
+    } else {
+      setErrosItemPedido(prev => ({...prev, [it.id]: res.erro}));
+    }
   }
 
   // Pra tipo 'produto', gera N itens (N = quantidadeEtiquetas). Endereço
@@ -19582,6 +19631,32 @@ function EtiquetasPanel({currentUser}){
               {' · '}{itensPedido.length} {itensPedido.length===1 ? 'item' : 'itens'}
             </div>
 
+            {/* Botões no TOPO (pedido do cliente: "trazer os botões de
+                imprimir para cima, para agilizar a impressão") — antes
+                ficavam só depois da lista inteira, obrigando rolar a tela
+                num pedido com muitos itens. */}
+            <div className="btn-row" style={{marginBottom:14}}>
+              <button className="btn btn-outline" disabled={enviandoPedidoParaFila || itensPedidoIncluidos().length===0} onClick={handleEnviarPedidoParaFila}>
+                <DIcon name="clock" size={16}/> {enviandoPedidoParaFila ? 'Enviando…' : 'Enviar para Fila'}
+              </button>
+              <button className="btn btn-primary" disabled={imprimindoPedido || itensPedidoIncluidos().length===0} onClick={handleImprimirPedido}>
+                <DIcon name="printer" size={16}/> {imprimindoPedido ? 'Imprimindo…' : `Imprimir ${itensPedidoParaImprimir().length} ${itensPedidoParaImprimir().length===1 ? 'etiqueta' : 'etiquetas'}`}
+              </button>
+            </div>
+
+            {erroImpressaoPedido && (
+              <div className="divergence-alert" style={{marginBottom:14}}><Ic>⚠</Ic><span>{erroImpressaoPedido}</span></div>
+            )}
+            {sucessoImpressaoPedido && (
+              <div className="divergence-alert" style={{marginBottom:14,background:'var(--ok-bg)',borderColor:'var(--ok)',color:'var(--ok)'}}><Ic>✓</Ic><span>Etiquetas enviadas pra impressora.</span></div>
+            )}
+            {erroFilaPedido && (
+              <div className="divergence-alert" style={{marginBottom:14}}><Ic>⚠</Ic><span>{erroFilaPedido}</span></div>
+            )}
+            {sucessoFilaPedido && (
+              <div className="divergence-alert" style={{marginBottom:14,background:'var(--ok-bg)',borderColor:'var(--ok)',color:'var(--ok)'}}><Ic>✓</Ic><span>Enviadas para a fila — imprima do PC ligado na impressora.</span></div>
+            )}
+
             <div className="field" style={{maxWidth:220,marginBottom:14}}>
               <label>Data de recebimento{!dataDesbloqueada && <span style={{fontWeight:400,textTransform:'none',letterSpacing:0}}> — toque 2x</span>}</label>
               <input
@@ -19595,43 +19670,35 @@ function EtiquetasPanel({currentUser}){
               />
             </div>
 
+            {/* Checkbox decide se o item entra na impressão EM LOTE (botão
+                "Imprimir N etiquetas" acima) — o botão "Imprimir" da própria
+                linha funciona independente dele (pedido do cliente: imprimir
+                uma a uma), só precisa de "Quantidade por Etiqueta"
+                preenchida. Item impresso (em lote ou individual) sai da
+                lista — ver `handleImprimirPedido`/`handleImprimirItemPedido`. */}
             {itensPedido.map(it=>(
-              <div key={it.id} className="list-row" style={{cursor:'default',flexWrap:'wrap',opacity: it.incluir ? 1 : 0.5}}>
+              <div key={it.id} className="list-row" style={{cursor:'default',flexWrap:'wrap',gap:10}}>
                 <div style={{display:'flex',alignItems:'center',gap:10,flex:1,minWidth:200}}>
-                  <input type="checkbox" checked={it.incluir} onChange={e=>handleChangeItemPedido(it.id, 'incluir', e.target.checked)} />
+                  <input type="checkbox" checked={it.incluir} onChange={e=>handleChangeItemPedido(it.id, 'incluir', e.target.checked)} title="Incluir na impressão em lote" />
                   <div>
                     <div className="lr-title">{it.descricao}</div>
                     <div className="lr-sub">{it.codigo}{it.endereco ? ' · '+it.endereco : ' · sem endereço cadastrado'}</div>
+                    {errosItemPedido[it.id] && <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginTop:4}}>{errosItemPedido[it.id]}</div>}
                   </div>
                 </div>
-                <div className="field" style={{width:110,marginBottom:0}}>
-                  <label>Quantidade</label>
-                  <input type="text" inputMode="numeric" disabled={!it.incluir} value={it.quantidade} onChange={e=>handleChangeItemPedido(it.id, 'quantidade', e.target.value.replace(/[^0-9]/g,''))} placeholder="Ex: 10" />
+                <div className="field" style={{width:100,marginBottom:0}}>
+                  <label>Qtd. por etiqueta</label>
+                  <input type="text" inputMode="numeric" value={it.quantidade} onChange={e=>handleChangeItemPedido(it.id, 'quantidade', e.target.value.replace(/[^0-9]/g,''))} placeholder="Ex: 10" />
                 </div>
+                <div className="field" style={{width:90,marginBottom:0}}>
+                  <label>Qtd. etiquetas</label>
+                  <input type="text" inputMode="numeric" value={it.quantidadeEtiquetas} onChange={e=>handleChangeItemPedido(it.id, 'quantidadeEtiquetas', e.target.value.replace(/[^0-9]/g,''))} placeholder="Ex: 1" />
+                </div>
+                <button type="button" className="btn btn-outline btn-sm" style={{width:'auto',flexShrink:0,alignSelf:'flex-end'}} disabled={!it.quantidade.trim() || imprimindoItemIds.has(it.id)} onClick={()=>handleImprimirItemPedido(it)}>
+                  <DIcon name="printer" size={14}/> {imprimindoItemIds.has(it.id) ? 'Imprimindo…' : 'Imprimir'}
+                </button>
               </div>
             ))}
-
-            {erroImpressaoPedido && (
-              <div className="divergence-alert" style={{margin:'10px 0'}}><Ic>⚠</Ic><span>{erroImpressaoPedido}</span></div>
-            )}
-            {sucessoImpressaoPedido && (
-              <div className="divergence-alert" style={{margin:'10px 0',background:'var(--ok-bg)',borderColor:'var(--ok)',color:'var(--ok)'}}><Ic>✓</Ic><span>Etiquetas enviadas pra impressora.</span></div>
-            )}
-            {erroFilaPedido && (
-              <div className="divergence-alert" style={{margin:'10px 0'}}><Ic>⚠</Ic><span>{erroFilaPedido}</span></div>
-            )}
-            {sucessoFilaPedido && (
-              <div className="divergence-alert" style={{margin:'10px 0',background:'var(--ok-bg)',borderColor:'var(--ok)',color:'var(--ok)'}}><Ic>✓</Ic><span>Enviadas para a fila — imprima do PC ligado na impressora.</span></div>
-            )}
-
-            <div className="btn-row" style={{marginTop:14}}>
-              <button className="btn btn-outline" disabled={enviandoPedidoParaFila || itensPedidoParaImprimir().length===0} onClick={handleEnviarPedidoParaFila}>
-                <DIcon name="clock" size={16}/> {enviandoPedidoParaFila ? 'Enviando…' : 'Enviar para Fila'}
-              </button>
-              <button className="btn btn-primary" disabled={imprimindoPedido || itensPedidoParaImprimir().length===0} onClick={handleImprimirPedido}>
-                <DIcon name="printer" size={16}/> {imprimindoPedido ? 'Imprimindo…' : `Imprimir ${itensPedidoParaImprimir().length} ${itensPedidoParaImprimir().length===1 ? 'etiqueta' : 'etiquetas'}`}
-              </button>
-            </div>
           </div>
         )}
       </>)}
