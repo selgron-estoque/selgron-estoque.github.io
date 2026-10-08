@@ -20176,7 +20176,7 @@ function SeparacaoStatusTag({status}){
   if(status==='aguardando') return <StatusTag status="warn" text={label} />;
   if(status==='separada') return <StatusTag status="ok" text={label} />;
   if(status==='em_separacao') return <span className="status-tag" style={{background:'var(--teal-bg)',color:'var(--teal)'}}><span className="status-dot"></span>{label}</span>;
-  if(status==='entregue') return <span className="status-tag" style={{background:'var(--progcol-entregue-bg)',color:'var(--progcol-entregue-ink)'}}><span className="status-dot"></span>{label}</span>;
+  if(status==='entregue') return <StatusTag status="ok" text={label} />;
   return <StatusTag status="warn" text={label} />;
 }
 
@@ -20754,12 +20754,17 @@ function MaquinaCard({m, canManage, podeAvancarStatus, isAdmin, ordinal, mostrar
       {m.status==='entregue' ? (
         <div className="prog-card-date-row">
           <div>
+            <div className="prog-card-date-label">Data de Separação</div>
+            <div className="prog-card-date-value">
+              {m.dataSeparacao ? new Date(m.dataSeparacao+'T00:00:00').toLocaleDateString('pt-BR') : '—'}
+            </div>
+          </div>
+          <div>
             <div className="prog-card-date-label">Data de Entrega</div>
             <div className="prog-card-date-value">
               {m.entregueEm ? new Date(m.entregueEm).toLocaleDateString('pt-BR') : '—'}
             </div>
           </div>
-          <SeparacaoStatusTag status={m.status} />
         </div>
       ) : (
         <div className="prog-card-date-row">
@@ -20786,6 +20791,12 @@ function MaquinaCard({m, canManage, podeAvancarStatus, isAdmin, ordinal, mostrar
               <DIcon name={acaoIcone} size={13} /> {busy ? 'Salvando…' : acaoLabel}
             </button>
           )}
+          {/* "Entregue" não tem botão de avançar (é o estágio final, ver
+              `temProximo`) — pedido do cliente: o selo "ENTREGUE" (antes
+              ficava na linha de data, ver acima) vem pra cá, direto do lado
+              do menu "⋮", que antes ficava sozinho/deslocado à esquerda
+              nesse caso. */}
+          {m.status==='entregue' && <SeparacaoStatusTag status={m.status} />}
           {canManage && (
             <div className="count-card-menu">
               <button type="button" ref={menuBtnRef} className="count-card-menu-btn" onClick={toggleMenu} title="Mais opções"><DIcon name="moreVertical" size={16} /></button>
