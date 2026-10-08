@@ -2905,3 +2905,65 @@ begin
     alter publication supabase_realtime add table saldo_etp_cache;
   end if;
 end $$;
+
+-- ---------------------------------------------------------------------
+-- contagem_presenca — "Inventários Pendentes": quem está contando cada
+-- inventário NESTE INSTANTE (não um histórico de quem contou por último —
+-- pedido explícito do cliente, confirmado via pergunta direta). Primeira
+-- tentativa foi um canal de Presence do Supabase Realtime (sem tabela
+-- nenhuma) — fechava (`CLOSED`) sem nunca conectar nesse projeto
+-- (confirmado pelo cliente via console do navegador), provavelmente por
+-- autorização do Realtime pra canais de Presence/Broadcast não estar
+-- liberada aqui. Trocado por este mecanismo — tabela + Realtime via
+-- `postgres_changes` — por ser o MESMO padrão já comprovado funcionando em
+-- toda tabela deste schema (contagens/inventarios/maquinas_etp/etc.), em
+-- vez de depender de uma peça nova (Presence) sem precedente neste
+-- projeto.
+--
+-- Uma linha por ABA/sessão de navegador (`chave_sessao`, gerada no
+-- front-end, nunca por usuário — o mesmo operador pode estar em 2
+-- aparelhos ao mesmo tempo, cada aba com sua própria linha).
+-- `inventario_id` nulo = essa sessão não está contando nada agora (a linha
+-- continua existindo, só não aparece pra ninguém — evita INSERT/DELETE a
+-- cada entrada/saída de tela de contagem, só um UPDATE). `atualizado_em` é
+-- renovado por um heartbeat periódico enquanto a tela de contagem está
+-- aberta (ver index.html) — uma aba fechada/travada sem avisar só para de
+-- renovar, e o front-end ignora qualquer linha com `atualizado_em` mais
+-- velha que alguns minutos (nunca precisa de rotina de limpeza no banco).
+create table if not exists contagem_presenca (
+  chave_sessao text primary key,
+  inventario_id text,
+  nome text not null,
+  atualizado_em timestamptz not null default now()
+);
+
+alter table contagem_presenca enable row level security;
+
+-- Sem dado sensível (só "fulano está contando tal inventário agora") — leitura
+-- e escrita liberadas pra qualquer autenticado, mesmo critério já usado em
+-- `saldo_etp_cache`/`painel_indicadores_config` pra tabela sem gate por tela.
+drop policy if exists "leitura autenticada" on contagem_presenca;
+create policy "leitura autenticada" on contagem_presenca for select
+  using (auth.role() = 'authenticated');
+
+drop policy if exists "escrita autenticada" on contagem_presenca;
+create policy "escrita autenticada" on contagem_presenca for insert
+  with check (auth.role() = 'authenticated');
+
+drop policy if exists "atualizacao autenticada" on contagem_presenca;
+create policy "atualizacao autenticada" on contagem_presenca for update
+  using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+
+drop policy if exists "exclusao autenticada" on contagem_presenca;
+create policy "exclusao autenticada" on contagem_presenca for delete
+  using (auth.role() = 'authenticated');
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and tablename = 'contagem_presenca'
+  ) then
+    alter publication supabase_realtime add table contagem_presenca;
+  end if;
+end $$;

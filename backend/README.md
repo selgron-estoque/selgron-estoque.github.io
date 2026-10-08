@@ -1218,3 +1218,46 @@ sandbox sem acesso de rede ao Supabase) — testado com um harness que simula
 o banco (upsert com merge parcial de colunas, união das 2 tabelas fonte sem
 duplicar, nunca sobrescrever um valor bom numa falha) e o `fetch()` pra
 `consultar-itens-faltantes`.
+
+## 16. "Inventários Pendentes": quem está contando cada um agora
+
+Card do inventário pendente mostra "Contando agora: Fulano" — presença em
+tempo real (some assim que o operador sai da tela de contagem, mesmo sem
+terminar), não um histórico de última contagem.
+
+### 16.1 — Rodar o SQL
+
+Só a tabela nova `contagem_presenca` (com RLS + Realtime) — o resto do
+schema já estava aplicado. Cole o bloco a partir de `-- contagem_presenca —`
+(final de `schema.sql`) no SQL Editor do Supabase, ou rode `schema.sql`
+inteiro de novo (todo bloco é `create table if not exists`/`drop policy if
+exists`, idempotente — não duplica nem quebra o que já existe).
+
+### 16.2 — Por que não é Presence do Realtime
+
+A 1ª versão usava o recurso de **Presence** do Supabase Realtime (canal
+`presence:contagem-ativa`, sem tabela nenhuma) — testado em produção pelo
+cliente, o canal fechava (`CLOSED`) sem nunca conectar, bloqueado por algo
+na configuração de autorização do Realtime deste projeto (Presence/
+Broadcast exigem policy própria em `realtime.messages`, diferente de
+`postgres_changes`). Em vez de investigar a fundo uma peça sem nenhum
+precedente neste projeto, a solução virou tabela + `postgres_changes` — o
+MESMO mecanismo já comprovado funcionando em toda tabela deste schema.
+
+### 16.3 — Como funciona
+
+Cada aparelho grava uma linha em `contagem_presenca` chaveada por
+`chave_sessao` (gerada no front-end, por ABA/sessão de navegador — não por
+usuário, pra o mesmo operador poder estar em 2 aparelhos ao mesmo tempo sem
+uma sessão "roubar" a presença da outra). `inventario_id` fica preenchido
+enquanto a aba está numa das 3 telas de contagem ligadas a um inventário
+pendente (RandomCountFlow/RouteCountFlow/ImportedListCountFlow), e volta a
+`null` ao sair. Um heartbeat (`setInterval`, ~20s) renova `atualizado_em`
+enquanto a tela de contagem continua aberta; o front-end ignora qualquer
+linha com `atualizado_em` velha (aba fechada/travada sem avisar nunca
+escreve um DELETE, só para de aparecer sozinha depois de ficar velha o
+bastante — sem rotina de limpeza no banco).
+
+**Não testado contra Postgres real** (mesma limitação de sempre) — a
+correção em si (trocar Presence por tabela) segue o padrão já usado e
+testado em produção pelas outras tabelas deste schema.
