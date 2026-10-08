@@ -2003,16 +2003,21 @@
   .prog-card-date-row{display:flex;align-items:flex-end;justify-content:space-between;gap:8px;margin-bottom:9px;}
   .prog-card-date-label{font-size:10px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;color:var(--ink-dim);margin-bottom:2px;}
   .prog-card-date-value{font-size:13px;font-weight:700;color:var(--ink);}
-  /* Card "Entregue" — Separação/Entrega numa linha só (pedido do cliente),
-     rótulo e valor lado a lado em vez de empilhados. */
+  /* Rótulo + valor lado a lado em vez de empilhados ("Separação: dd/mm/aaaa"
+     numa linha só) — MESMO padrão em todos os status do card (pedido do
+     cliente: "sem padrão definido" entre o card Entregue, já nesse formato,
+     e os demais, que ainda usavam o rótulo em cima/valor embaixo). */
   .prog-card-date-row-inline{align-items:baseline;flex-wrap:wrap;justify-content:flex-start;gap:5px 14px;}
   .prog-card-date-inline{display:flex;align-items:baseline;gap:4px;white-space:nowrap;}
   .prog-card-date-row-inline .prog-card-date-label{margin-bottom:0;white-space:nowrap;}
   .prog-card-date-row-inline .prog-card-date-label::after{content:':';}
-  /* Selo "ENTREGUE" + menu "⋮" direto do lado das datas, empurrados pro
-     canto direito da MESMA linha (pedido do cliente — antes ficavam soltos
-     num rodapé separado embaixo). */
+  /* Selo "ENTREGUE"/menu "⋮" direto do lado das datas, empurrados pro canto
+     direito da MESMA linha (pedido do cliente — antes ficavam soltos num
+     rodapé separado embaixo). */
   .prog-card-date-row-actions{margin-left:auto;display:flex;align-items:center;gap:8px;flex-shrink:0;}
+  /* Selo "D-N" — mesma posição de sempre (canto direito da linha), só o
+     rótulo da esquerda mudou de formato. */
+  .prog-card-date-row-inline .prog-dday-badge{margin-left:auto;}
   /* Selo "D-N" — só um contador de dias até `dataSeparacao` calculado na
      hora de exibir (nunca persistido, nunca usado por nenhuma lógica de
      ordenação/status) — "D+N" quando já passou. */
@@ -20811,13 +20816,13 @@ function MaquinaCard({m, canManage, podeAvancarStatus, isAdmin, ordinal, mostrar
           </span>
         </div>
       ) : (
-        <div className="prog-card-date-row">
-          <div>
-            <div className="prog-card-date-label">Data de Separação</div>
-            <div className={m.atrasada ? 'prog-card-date-value sep-kanban-data-atrasada' : 'prog-card-date-value'}>
+        <div className="prog-card-date-row prog-card-date-row-inline">
+          <span className="prog-card-date-inline">
+            <span className="prog-card-date-label">Separação</span>
+            <span className={m.atrasada ? 'prog-card-date-value sep-kanban-data-atrasada' : 'prog-card-date-value'}>
               {m.atrasada && <DIcon name="alertTriangle" size={12} />} {m.dataSeparacao ? new Date(m.dataSeparacao+'T00:00:00').toLocaleDateString('pt-BR') : '—'}
-            </div>
-          </div>
+            </span>
+          </span>
           {dday && <span className={'prog-dday-badge ' + dday.tom}>{dday.texto}</span>}
         </div>
       )}
