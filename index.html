@@ -3135,6 +3135,54 @@ async function fetchInventoriesFromSupabase(){
   }
 }
 
+// "Contando agora" (Inventários Pendentes) — ver comentário completo em
+// `backend/schema.sql`/`backend/README.md` seção 16. 1 linha por ABA/sessão
+// de navegador (`chaveSessao`), nunca por usuário. `inventarioId` nulo =
+// essa sessão não está numa tela de contagem agora (a linha continua
+// existindo, só não aparece pra ninguém). Trocou um canal de Presence do
+// Realtime (sem tabela, mas fechava sem conectar neste projeto — ver
+// histórico de commits) por este mecanismo — tabela + `postgres_changes`,
+// o MESMO padrão já comprovado em toda tabela deste schema.
+function contagemPresencaRowToLocal(row){
+  return {
+    chaveSessao: row.chave_sessao,
+    inventarioId: row.inventario_id || null,
+    nome: row.nome,
+    atualizadoEm: row.atualizado_em,
+  };
+}
+async function fetchContagemPresenca(){
+  if(!supabaseClient) return [];
+  try{
+    const { data, error } = await supabaseClient.from('contagem_presenca').select('*');
+    if(error) throw error;
+    return (data||[]).map(contagemPresencaRowToLocal);
+  }catch(err){
+    console.warn('Falha ao buscar presença de contagem:', err);
+    return [];
+  }
+}
+// Upsert (nunca INSERT/DELETE a cada entrada/saída de tela — só atualiza a
+// MESMA linha da sessão, ver `chaveSessao`) — chamado tanto ao entrar/sair
+// de uma tela de contagem quanto pelo heartbeat periódico (ver App()), pra
+// `atualizadoEm` nunca ficar "velho" enquanto o operador continua na tela.
+async function upsertContagemPresenca({chaveSessao, inventarioId, nome}){
+  if(!supabaseClient) return {ok:false};
+  try{
+    const { error } = await supabaseClient.from('contagem_presenca').upsert({
+      chave_sessao: chaveSessao,
+      inventario_id: inventarioId,
+      nome,
+      atualizado_em: new Date().toISOString(),
+    });
+    if(error) throw error;
+    return {ok:true};
+  }catch(err){
+    console.warn('Falha ao gravar presença de contagem:', err);
+    return {ok:false, erro:String(err && err.message || err)};
+  }
+}
+
 // ---- Usuários — login via Supabase Auth de verdade ----
 // Senha não mora mais aqui (vive só em `auth.users`, gerenciada pela Edge
 // Function `usuarios-admin` via Admin API) — `usuarios` agora é só o
@@ -7591,98 +7639,93 @@ function App(){
     };
   }, [currentUser]);
 
-  // ---- Presença em tempo real — "quem está contando agora" ----
+  // ---- "Quem está contando agora" (Inventários Pendentes) ----
   // Pedido do cliente: no card do inventário pendente, mostrar o nome de
   // quem está com a tela de contagem ABERTA NESTE INSTANTE (não um histórico
-  // de quem contou por último — some assim que o operador sai da tela,
-  // mesmo sem terminar). Usa o recurso de Presence do Supabase Realtime (um
-  // canal só, compartilhado por todo mundo logado) em vez de uma tabela —
-  // não precisa persistir nada: a própria conexão aberta do navegador JÁ é
-  // o sinal de "está aqui agora", e some sozinha se a aba fechar/cair sem
-  // avisar (o Supabase detecta a desconexão do socket).
+  // de quem contou por último — confirmado via pergunta direta ao cliente).
+  // 1ª tentativa foi um canal de Presence do Supabase Realtime (sem tabela
+  // nenhuma) — fechava (`CLOSED`) sem nunca conectar, confirmado em produção
+  // pelo cliente via console do navegador (provavelmente autorização do
+  // Realtime pra Presence/Broadcast não liberada neste projeto). Trocado por
+  // uma tabela (`contagem_presenca`) + Realtime via `postgres_changes` — o
+  // MESMO mecanismo já comprovado funcionando em toda tabela deste app (ver
+  // backend/schema.sql/README.md seção 16).
   //
   // `presencaChaveRef` é único por ABA/sessão de navegador, não por usuário
   // — de propósito: o mesmo usuário pode estar logado em 2 aparelhos (ou 2
-  // abas) ao mesmo tempo, e cada uma precisa da sua própria entrada de
-  // presença (senão a 2ª aba a entrar "roubaria" a chave da 1ª no estado do
-  // Presence, e sair de uma delas apagaria a presença da outra, que ainda
-  // está contando).
+  // abas) ao mesmo tempo, cada uma com sua própria linha na tabela (senão a
+  // 2ª aba a entrar "roubaria" a linha da 1ª, e sair de uma apagaria a
+  // presença da outra, que ainda está contando).
   const presencaChaveRef = useRef(Math.random().toString(36).slice(2));
-  // Espelha `view`/`flowState` mais recentes num ref — o canal de presença
-  // só é recriado quando `currentUser` muda (login/logout), então a função
-  // que chama `.track()` precisa ler o valor ATUAL de `view`/`flowState` em
-  // qualquer momento depois (na reconexão do canal, por exemplo), não o que
-  // existia quando o canal foi criado.
-  const viewFlowRef = useRef({view, flowState});
-  useEffect(()=>{ viewFlowRef.current = {view, flowState}; }, [view, flowState]);
-  const presenceTrackFnRef = useRef(null);
-  const [presencaContagem, setPresencaContagem] = useState({}); // inventarioId -> [{nome}]
+  const [contagemPresencaRows, setContagemPresencaRows] = useState([]);
   useEffect(()=>{
     if(!currentUser || !supabaseClient) return;
-    const canal = supabaseClient.channel('presence:contagem-ativa', {
-      config: { presence: { key: presencaChaveRef.current } },
-    });
-    let subscrito = false;
-    function sincronizarPresenca(){
-      const estado = canal.presenceState();
-      const porInventario = {};
-      Object.values(estado).forEach(entradas=>{
-        entradas.forEach(e=>{
-          if(!e.inventarioId) return;
-          if(!porInventario[e.inventarioId]) porInventario[e.inventarioId] = [];
-          // Mesmo nome pode aparecer 2x (2 abas do mesmo usuário no mesmo
-          // inventário) — mostra só uma vez.
-          if(!porInventario[e.inventarioId].some(p=>p.nome===e.nome)) porInventario[e.inventarioId].push({nome: e.nome});
-        });
-      });
-      setPresencaContagem(porInventario);
-    }
-    // Views das 3 telas de contagem ligadas a um inventário pendente
-    // específico (`flowState` = o próprio `inv`, ver `goto(destino, inv)`
-    // em InventoryList) — `ManualCountFlow`/`RecountFlow` não contam aqui,
-    // nenhuma das duas está presa a um `inv.id` de um inventário pendente.
-    function trackAtual(){
-      if(!subscrito) return;
-      const { view: v, flowState: fs } = viewFlowRef.current;
-      const emTelaDeContagem = (v==='randomCount' || v==='routeCount' || v==='importedListCount') && fs && fs.id;
-      if(emTelaDeContagem) canal.track({inventarioId: fs.id, nome: currentUser.nome});
-      else canal.untrack();
-    }
-    presenceTrackFnRef.current = trackAtual;
-    canal
-      .on('presence', {event:'sync'}, sincronizarPresenca)
-      .subscribe(status=>{
-        // Log de diagnóstico — Presence é a 1ª vez que este projeto usa
-        // canal de Presence/Broadcast (todo o resto do app usa só
-        // `postgres_changes`, ver `supabase_realtime` publication em
-        // schema.sql); se o projeto Supabase tiver "Realtime Authorization"
-        // habilitado (exige RLS em `realtime.messages` pra canal privado),
-        // a inscrição cai em erro/timeout sem travar a tela — só sem
-        // sincronizar nunca. Fica só um `console.warn`, nunca interrompe o
-        // usuário nem mostra alerta — "quem está contando agora" é
-        // informação auxiliar, não crítica.
-        if(status==='SUBSCRIBED'){
-          subscrito = true;
-          trackAtual();
+    let cancelado = false;
+    fetchContagemPresenca().then(rows=>{ if(!cancelado) setContagemPresencaRows(rows); });
+
+    const canal = supabaseClient
+      .channel('realtime:contagem_presenca')
+      .on('postgres_changes', {event:'*', schema:'public', table:'contagem_presenca'}, payload=>{
+        if(payload.eventType==='DELETE'){
+          setContagemPresencaRows(prev=>prev.filter(r=>r.chaveSessao!==payload.old.chave_sessao));
           return;
         }
-        if(status==='CHANNEL_ERROR' || status==='TIMED_OUT' || status==='CLOSED'){
-          console.warn('Presença "contando agora" não conectou (canal Realtime):', status);
-        }
+        const row = contagemPresencaRowToLocal(payload.new);
+        setContagemPresencaRows(prev=>[...prev.filter(r=>r.chaveSessao!==row.chaveSessao), row]);
+      })
+      .subscribe(status=>{
+        if(status!=='SUBSCRIBED') return;
+        fetchContagemPresenca().then(rows=>{ if(!cancelado) setContagemPresencaRows(rows); });
       });
-    return ()=>{
-      presenceTrackFnRef.current = null;
-      supabaseClient.removeChannel(canal);
-    };
+
+    return ()=>{ cancelado = true; supabaseClient.removeChannel(canal); };
   }, [currentUser]);
-  // Reage a toda troca de tela/inventário (entrar numa contagem, terminar,
-  // voltar) — chama a MESMA função do efeito acima (via ref, criada de novo
-  // a cada reconexão do canal) pra atualizar o `.track()`/`.untrack()` sem
-  // esperar o próximo re-render do efeito de cima (que só depende de
-  // `currentUser`).
+  // Deriva o mapa inventarioId → [{nome}] a partir das linhas cruas, já
+  // filtrando linhas "velhas" (aba fechada/travada sem avisar nunca grava um
+  // DELETE — só para de renovar `atualizadoEm` pelo heartbeat abaixo) e
+  // linhas sem `inventarioId` (sessão que não está numa tela de contagem
+  // agora). Mesmo nome pode aparecer 2x (2 abas do mesmo usuário no mesmo
+  // inventário) — mostra só uma vez. Recalculado a cada mudança nas linhas
+  // OU a cada novo render (o corte por "velha" depende da hora atual) — leve
+  // o bastante (poucas dezenas de linhas, no máximo) pra não precisar de
+  // memoização.
+  const PRESENCA_EXPIRA_MS = 2*60*1000; // 2min — bem mais que o heartbeat de 20s abaixo
+  const presencaContagem = (()=>{
+    const agora = Date.now();
+    const porInventario = {};
+    contagemPresencaRows.forEach(r=>{
+      if(!r.inventarioId) return;
+      if(!r.atualizadoEm || (agora - new Date(r.atualizadoEm).getTime())>PRESENCA_EXPIRA_MS) return;
+      if(!porInventario[r.inventarioId]) porInventario[r.inventarioId] = [];
+      if(!porInventario[r.inventarioId].some(p=>p.nome===r.nome)) porInventario[r.inventarioId].push({nome: r.nome});
+    });
+    return porInventario;
+  })();
+  // Grava a presença desta aba ao entrar/sair de uma tela de contagem ligada
+  // a um inventário pendente específico (`flowState` = o próprio `inv`, ver
+  // `goto(destino, inv)` em InventoryList — `ManualCountFlow`/`RecountFlow`
+  // não contam aqui, nenhuma das duas está presa a um `inv.id` de um
+  // inventário pendente) — e de novo a cada ~20s (heartbeat) enquanto
+  // continuar na tela, só pra `atualizadoEm` nunca ficar "velho" (ver
+  // `PRESENCA_EXPIRA_MS` acima) numa contagem demorada. `ultimoInventarioRef`
+  // evita um UPDATE (e um evento Realtime pra todo mundo) a cada navegação
+  // SEM relação nenhuma com contagem (home, configurações, etc.) — só grava
+  // de novo quando o inventário "ativo" desta aba de fato muda.
+  const ultimoInventarioRef = useRef(undefined);
   useEffect(()=>{
-    if(presenceTrackFnRef.current) presenceTrackFnRef.current();
-  }, [view, flowState]);
+    if(!currentUser || !supabaseClient) return;
+    const emTelaDeContagem = (view==='randomCount' || view==='routeCount' || view==='importedListCount') && flowState && flowState.id;
+    const inventarioAtivo = emTelaDeContagem ? flowState.id : null;
+    if(inventarioAtivo!==ultimoInventarioRef.current){
+      ultimoInventarioRef.current = inventarioAtivo;
+      upsertContagemPresenca({chaveSessao: presencaChaveRef.current, inventarioId: inventarioAtivo, nome: currentUser.nome});
+    }
+    if(!emTelaDeContagem) return;
+    const heartbeat = setInterval(()=>{
+      upsertContagemPresenca({chaveSessao: presencaChaveRef.current, inventarioId: flowState.id, nome: currentUser.nome});
+    }, 20000);
+    return ()=>clearInterval(heartbeat);
+  }, [view, flowState, currentUser]);
 
   // Evita mostrar a tela de login por uma fração de segundo pra quem já tem
   // sessão válida — `getSession()` é assíncrono (ver useEffect acima), então
