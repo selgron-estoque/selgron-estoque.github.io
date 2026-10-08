@@ -1970,26 +1970,25 @@
      (não usa token de tema) pra sempre parecer um marcador amarelo por cima
      do texto, em qualquer modo claro/escuro. */
   .sep-kanban-obs-destaque{display:inline;background:#FFEB3B;color:#3A2F00;font-weight:700;padding:2px 6px;border-radius:3px;box-decoration-break:clone;-webkit-box-decoration-break:clone;}
-  /* COM SALDO/SEM SALDO + "Disponibilidade de materiais" — mesmo dado/
-     cache do painel de TV (painel-indicadores.html, `MaquinaCardTracking`/
-     `.tp-stock-block`/`.tp-bar-*`), portado aqui pra tela real
-     "Programação" reaproveitando os TOKENS do tema do app (--ok/--danger/
-     --warn/--panel-raised), não a paleta fixa só-escura `--tp*` da TV — os
-     2 blocos e a barra seguem claro/escuro normalmente aqui, diferente da
-     TV (que é sempre escura por decisão de produto só daquela tela).
-     Números continuam sempre lidos do cache compartilhado `saldo_etp_cache`
-     (nunca uma consulta ao vivo daqui — ver `fetchSaldoEtpCache`). */
-  .sep-saldo-stats{display:flex;gap:8px;margin:8px 0;}
-  .sep-saldo-stat{flex:1;border-radius:7px;padding:6px 8px;display:flex;flex-direction:column;align-items:center;justify-content:center;}
-  .sep-saldo-stat .num{font-family:var(--font-mono);font-size:17px;font-weight:700;line-height:1.1;}
-  .sep-saldo-stat .lbl{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.3px;margin-top:2px;}
-  .sep-saldo-stat.com{background:var(--ok-bg);}
-  .sep-saldo-stat.com .num,.sep-saldo-stat.com .lbl{color:var(--ok);}
-  .sep-saldo-stat.sem{background:var(--danger-bg);}
-  .sep-saldo-stat.sem .num,.sep-saldo-stat.sem .lbl{color:var(--danger);}
-  .sep-saldo-stat.desatualizado{position:relative;}
-  .sep-saldo-stat.desatualizado .num,.sep-saldo-stat.desatualizado .lbl{opacity:.6;}
-  .sep-saldo-stat .desatualizado-ic{position:absolute;top:4px;right:5px;opacity:.7;}
+  /* COM SALDO/SEM SALDO — indicador discreto no canto superior direito do
+     cabeçalho do card (pedido do cliente: "não devem competir visualmente
+     com o ETP ou com a barra de disponibilidade" — nada de caixa/fundo/
+     bloco, só ponto colorido + número). `.sep-kanban-head-right` agrupa o
+     indicador e o badge de prioridade (que já empurrava a si mesmo pro
+     canto via `margin-left:auto` própria, ver `.prog-priority-badge`) num
+     único cluster à direita do cabeçalho — a MESMA linha do ETP. Dado
+     continua vindo do cache compartilhado `saldo_etp_cache` (nunca uma
+     consulta ao vivo daqui — ver `fetchSaldoEtpCache`), só a apresentação
+     visual mudou (antes eram 2 blocos grandes com fundo verde/vermelho
+     entre a observação e a barra — ver histórico deste arquivo). */
+  .sep-kanban-head-right{margin-left:auto;display:flex;align-items:center;gap:8px;flex-shrink:0;}
+  .sep-saldo-dots{display:flex;align-items:center;gap:7px;}
+  .sep-saldo-dot{display:inline-flex;align-items:center;gap:4px;font-family:var(--font-mono);font-size:11px;font-weight:700;color:var(--ink-dim);white-space:nowrap;}
+  .sep-saldo-dot .dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;}
+  .sep-saldo-dot.com .dot{background:var(--ok);}
+  .sep-saldo-dot.sem .dot{background:var(--danger);}
+  /* "Disponibilidade de materiais" — barra preservada exatamente como
+     estava (pedido do cliente: "não altere... barra de disponibilidade"). */
   .sep-saldo-bar-wrap{margin:6px 0 10px;}
   .sep-saldo-bar-header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px;}
   .sep-saldo-bar-label{font-size:10.5px;color:var(--ink-dim);}
@@ -20681,24 +20680,43 @@ function MaquinaCard({m, canManage, podeAvancarStatus, isAdmin, ordinal, mostrar
       <div className="sep-kanban-card-head">
         {ordinal!=null && <span className="sep-ordem-num">{ordinal}</span>}
         <span className="sep-kanban-etp">{m.etp}</span>
-        {/* Badge de prioridade — só 2 níveis reais (Urgente/Normal, o mesmo
-            `m.urgente` já usado em todo o resto do app pra esse sinal),
-            nunca um 3º nível "Alta" sem dado de verdade por trás. Clicável
-            pra quem pode gerenciar (mesma permissão do "Marcar urgente" no
-            menu "⋮") — alterna na hora, sem abrir nada. */}
-        {canManage ? (
-          <button
-            type="button"
-            className={'prog-priority-badge prog-priority-badge-btn ' + (m.urgente ? 'urgente' : 'normal')}
-            disabled={busy}
-            onClick={onToggleUrgente}
-            title={m.urgente ? 'Clique para remover a urgência' : 'Clique para marcar como urgente'}
-          >
-            {m.urgente ? 'Urgente' : 'Normal'}
-          </button>
-        ) : (
-          <span className={'prog-priority-badge ' + (m.urgente ? 'urgente' : 'normal')}>{m.urgente ? 'Urgente' : 'Normal'}</span>
-        )}
+        <div className="sep-kanban-head-right">
+          {/* COM SALDO/SEM SALDO — pedido do cliente: indicador discreto no
+              canto superior direito do card, junto do cabeçalho, nunca
+              competindo visualmente com o ETP/a barra de disponibilidade
+              (ver comentário completo acima de `saldo`/`pctSaldo`). Só
+              ponto colorido + número, sem caixa/fundo — a mesma conta de
+              antes, só reposicionada e simplificada visualmente. */}
+          {!tudoEntregueSaldo && (
+            <span className="sep-saldo-dots">
+              <span className="sep-saldo-dot com" title="Com saldo">
+                <span className="dot"></span>{saldo.status==='ok' ? saldo.comSaldo : (saldo.status==='loading' ? '…' : '—')}
+              </span>
+              <span className="sep-saldo-dot sem" title="Sem saldo">
+                <span className="dot"></span>{saldo.status==='ok' ? saldo.semSaldo : (saldo.status==='loading' ? '…' : '—')}
+                {saldo.desatualizado && <DIcon name="clock" size={9} style={{marginLeft:2,opacity:.7}} />}
+              </span>
+            </span>
+          )}
+          {/* Badge de prioridade — só 2 níveis reais (Urgente/Normal, o mesmo
+              `m.urgente` já usado em todo o resto do app pra esse sinal),
+              nunca um 3º nível "Alta" sem dado de verdade por trás. Clicável
+              pra quem pode gerenciar (mesma permissão do "Marcar urgente" no
+              menu "⋮") — alterna na hora, sem abrir nada. */}
+          {canManage ? (
+            <button
+              type="button"
+              className={'prog-priority-badge prog-priority-badge-btn ' + (m.urgente ? 'urgente' : 'normal')}
+              disabled={busy}
+              onClick={onToggleUrgente}
+              title={m.urgente ? 'Clique para remover a urgência' : 'Clique para marcar como urgente'}
+            >
+              {m.urgente ? 'Urgente' : 'Normal'}
+            </button>
+          ) : (
+            <span className={'prog-priority-badge ' + (m.urgente ? 'urgente' : 'normal')}>{m.urgente ? 'Urgente' : 'Normal'}</span>
+          )}
+        </div>
       </div>
       <div className="sep-kanban-nome">
         {m.obs && <span>{m.obs}</span>}
@@ -20710,20 +20728,6 @@ function MaquinaCard({m, canManage, podeAvancarStatus, isAdmin, ordinal, mostrar
       {m.observacao && (
         <div className="sep-kanban-meta-line" style={{marginTop:4,marginBottom:2}}>
           <span className="sep-kanban-obs-destaque">{m.observacao}</span>
-        </div>
-      )}
-      {!tudoEntregueSaldo && (
-        <div className="sep-saldo-stats">
-          <div className={'sep-saldo-stat com' + (saldo.desatualizado ? ' desatualizado' : '')}>
-            {saldo.desatualizado && <DIcon name="clock" size={10} style={{position:'absolute',top:4,right:5,opacity:.7}} />}
-            <span className="num">{saldo.status==='ok' ? saldo.comSaldo : (saldo.status==='loading' ? '…' : '—')}</span>
-            <span className="lbl">Com saldo</span>
-          </div>
-          <div className={'sep-saldo-stat sem' + (saldo.desatualizado ? ' desatualizado' : '')}>
-            {saldo.desatualizado && <DIcon name="clock" size={10} style={{position:'absolute',top:4,right:5,opacity:.7}} />}
-            <span className="num">{saldo.status==='ok' ? saldo.semSaldo : (saldo.status==='loading' ? '…' : '—')}</span>
-            <span className="lbl">Sem saldo</span>
-          </div>
         </div>
       )}
       <div className="sep-saldo-bar-wrap">
