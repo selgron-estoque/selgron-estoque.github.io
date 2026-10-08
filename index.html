@@ -3190,6 +3190,36 @@ async function fetchSaldoConsultaSelgron(codigo, armazem){
   }
 }
 
+// Mesma Edge Function já usada em painel-indicadores.html (tela "Pedidos de
+// Compra" da TV) — proxy pra pedido_compra_aberto.php na Selgron/Protheus,
+// devolve TODOS os pedidos de compra em aberto (não filtra por número no
+// servidor). Reaproveitada aqui pra "Etiquetas → Pedido": o recebimento
+// digita o número, e o front-end filtra a lista pelo número informado (ver
+// `handleBuscarPedido` em EtiquetasPanel). ATENÇÃO (mesmo aviso de
+// `consultar-pedidos-compra-selgron`): o parser desta função foi calibrado
+// só a partir de um print da tela real, nunca testado contra a página de
+// verdade — se `pedidos` vier vazio mesmo com pedido real, o mais provável
+// é a estrutura da tabela ter vindo diferente do esperado.
+async function fetchPedidosCompraSelgron(){
+  if(!supabaseClient) return {ok:false, erro:'Não configurado.'};
+  try{
+    const { data, error } = await supabaseClient.functions.invoke('consultar-pedidos-compra-selgron');
+    if(error){
+      let erro = error.message;
+      if(error.context && typeof error.context.json==='function'){
+        try{
+          const corpo = await error.context.json();
+          if(corpo && corpo.erro) erro = corpo.erro;
+        }catch(_e){ /* corpo não era JSON — mantém a mensagem genérica */ }
+      }
+      return {ok:false, erro};
+    }
+    return data;
+  }catch(err){
+    return {ok:false, erro:String(err && err.message || err)};
+  }
+}
+
 // `patch` usa nomes de campo em camelCase (mesmo formato do objeto local) —
 // convertido pra snake_case aqui dentro. Único uso real que sobra hoje:
 // gravar `ultimoAcesso` (ver attemptLogin) — a coluna é a única liberada
@@ -19010,6 +19040,140 @@ function EtiquetasPanel({currentUser}){
   })();
   const enderecoEfetivaEtiqueta = selecionado ? (liveEnderecoValidoEtiqueta || selecionado.endereco || null) : null;
 
+  // ---- Aba "Pedido" — pedido do cliente: "o recebimento vai digitar o
+  // número do pedido e vai sair as etiquetas com o código de barras", uma
+  // etiqueta por item do pedido (em vez de buscar/imprimir item por item).
+  // Reaproveita `fetchPedidosCompraSelgron` (mesma Edge Function já usada em
+  // painel-indicadores.html) — ela devolve TODOS os pedidos em aberto, sem
+  // filtro no servidor, então o filtro pelo número digitado é feito aqui.
+  // `itensPedido` nasce `null` (nunca buscou); vira `[]` quando a busca
+  // respondeu mas não achou esse número — essa distinção é o que decide a
+  // mensagem "Buscando…" x "Nenhum pedido encontrado com esse número".
+  const [numeroPedido, setNumeroPedido] = useState('');
+  const [buscandoPedido, setBuscandoPedido] = useState(false);
+  const [erroBuscaPedido, setErroBuscaPedido] = useState(null);
+  const [itensPedido, setItensPedido] = useState(null);
+  const [fornecedorPedido, setFornecedorPedido] = useState(null);
+  const [imprimindoPedido, setImprimindoPedido] = useState(false);
+  const [erroImpressaoPedido, setErroImpressaoPedido] = useState(null);
+  const [sucessoImpressaoPedido, setSucessoImpressaoPedido] = useState(false);
+  const [enviandoPedidoParaFila, setEnviandoPedidoParaFila] = useState(false);
+  const [erroFilaPedido, setErroFilaPedido] = useState(null);
+  const [sucessoFilaPedido, setSucessoFilaPedido] = useState(false);
+
+  // Mesmo raciocínio do efeito "trocar de aba limpa a busca" (acima, pras
+  // abas Produto/Endereço) — separado num 2º efeito em vez de somado àquele
+  // porque este estado só existe mais abaixo neste componente (declará-lo
+  // antes do outro efeito reintroduziria o bug de referenciar `useState`
+  // antes de declarar, já visto neste projeto).
+  useEffect(()=>{
+    setNumeroPedido('');
+    setBuscandoPedido(false);
+    setErroBuscaPedido(null);
+    setItensPedido(null);
+    setFornecedorPedido(null);
+    setSucessoImpressaoPedido(false);
+    setErroImpressaoPedido(null);
+    setSucessoFilaPedido(false);
+    setErroFilaPedido(null);
+  }, [aba]);
+
+  async function handleBuscarPedido(){
+    const numero = numeroPedido.trim();
+    if(!numero) return;
+    setBuscandoPedido(true);
+    setErroBuscaPedido(null);
+    setItensPedido(null);
+    setFornecedorPedido(null);
+    setSucessoImpressaoPedido(false);
+    setErroImpressaoPedido(null);
+    setSucessoFilaPedido(false);
+    setErroFilaPedido(null);
+    const resp = await fetchPedidosCompraSelgron();
+    if(!resp || !resp.ok){
+      setBuscandoPedido(false);
+      setErroBuscaPedido((resp && resp.erro) || 'Não foi possível consultar os pedidos de compra.');
+      return;
+    }
+    const doPedido = (resp.pedidos||[]).filter(p => (p.numero||'').trim()===numero);
+    if(doPedido.length===0){
+      setBuscandoPedido(false);
+      setItensPedido([]);
+      return;
+    }
+    // A consulta de pedido de compra não traz endereço (não existe nessa
+    // tela da Selgron) — enriquece com o catálogo local, mesmo lookup em
+    // lote já usado pra Lista Importada/colagem de códigos
+    // (`fetchProdutosByCodigos`), nunca uma consulta ao vivo por item (N
+    // chamadas seria pesado pra um pedido com vários itens).
+    const codigos = doPedido.map(p=>p.produto).filter(Boolean);
+    const mapaProdutos = await fetchProdutosByCodigos(codigos, armazemEtiqueta);
+    const itens = doPedido.map((p, idx)=>{
+      const local = p.produto ? mapaProdutos.get(p.produto) : null;
+      return {
+        id: idx,
+        codigo: p.produto || '',
+        descricao: p.descricao || (local && local.descricao) || p.produto || '',
+        quantidade: p.quantidade!=null ? String(p.quantidade) : '',
+        unidade: local ? local.unidade : null,
+        endereco: (local && local.enderecoCadastrado) ? local.endereco : null,
+        incluir: true,
+      };
+    });
+    setBuscandoPedido(false);
+    setFornecedorPedido(doPedido[0].fornecedor || null);
+    setItensPedido(itens);
+  }
+
+  function handleChangeItemPedido(id, campo, valor){
+    setItensPedido(prev => prev.map(it => it.id===id ? {...it, [campo]: valor} : it));
+  }
+
+  // Só os itens marcados `incluir` E com quantidade preenchida viram
+  // etiqueta — item sem quantidade (ex.: linha do pedido que o recebimento
+  // decidiu não etiquetar agora) fica de fora sem precisar desmarcar.
+  function itensPedidoParaImprimir(){
+    return (itensPedido||[])
+      .filter(it => it.incluir && it.quantidade.trim())
+      .map(it => ({
+        tipo: 'produto',
+        codigo: it.codigo,
+        descricao: it.descricao,
+        quantidade: it.quantidade,
+        dataRecebimento,
+        endereco: it.endereco,
+        unidade: it.unidade,
+      }));
+  }
+
+  async function handleImprimirPedido(){
+    const itens = itensPedidoParaImprimir();
+    if(itens.length===0) return;
+    setImprimindoPedido(true);
+    setErroImpressaoPedido(null);
+    setSucessoImpressaoPedido(false);
+    const res = itens.length>1 ? imprimirLoteEtiquetas(itens) : imprimirEtiquetaViaNavegador(itens[0]);
+    setImprimindoPedido(false);
+    if(res.ok) setSucessoImpressaoPedido(true);
+    else setErroImpressaoPedido(res.erro);
+  }
+
+  async function handleEnviarPedidoParaFila(){
+    const itens = itensPedidoParaImprimir();
+    if(itens.length===0) return;
+    setEnviandoPedidoParaFila(true);
+    setErroFilaPedido(null);
+    setSucessoFilaPedido(false);
+    let erro = null;
+    for(const item of itens){
+      const res = await salvarEtiquetaNaFila({...item, criadoPor: currentUser ? currentUser.nome : null});
+      if(!res.ok){ erro = res.erro; break; }
+    }
+    setEnviandoPedidoParaFila(false);
+    if(!erro) setSucessoFilaPedido(true);
+    else setErroFilaPedido(erro);
+  }
+
   // Pra tipo 'produto', gera N itens (N = quantidadeEtiquetas). Endereço
   // nunca divide (não tem quantidade). `endereco` usa
   // `enderecoEfetivaEtiqueta` (consulta ao vivo Selgron/Protheus vence
@@ -19171,13 +19335,16 @@ function EtiquetasPanel({currentUser}){
         <div style={{display:'flex',gap:8}}>
           <button className={'btn '+(aba==='produto'?'btn-primary':'btn-outline')+' btn-sm'} onClick={()=>setAba('produto')}>Produto</button>
           <button className={'btn '+(aba==='endereco'?'btn-primary':'btn-outline')+' btn-sm'} onClick={()=>setAba('endereco')}>Endereço</button>
+          <button className={'btn '+(aba==='pedido'?'btn-primary':'btn-outline')+' btn-sm'} onClick={()=>setAba('pedido')}>Pedido</button>
         </div>
         <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
           {/* Armazém usado pra desambiguar a consulta ao vivo — ver
               comentário de `armazemEtiqueta`/`liveConsultaEtiqueta` mais
               acima. Só faz sentido pra "Produto" (a busca de "Endereço"
-              não passa pela consulta ao vivo Selgron/Protheus). */}
-          {aba==='produto' && (
+              não passa pela consulta ao vivo Selgron/Protheus) e "Pedido"
+              (usado pra enriquecer os itens com o catálogo local, ver
+              `handleBuscarPedido`). */}
+          {(aba==='produto' || aba==='pedido') && (
             <select
               value={armazemEtiqueta}
               onChange={e=>setArmazemEtiqueta(e.target.value)}
@@ -19240,6 +19407,7 @@ function EtiquetasPanel({currentUser}){
         </div>
       )}
 
+      {aba!=='pedido' && (<>
       <div className="field" style={{marginBottom:8}}>
         <label>{aba==='endereco' ? 'Buscar endereço' : 'Buscar produto (código ou descrição)'}</label>
         <input type="text" value={query} onChange={e=>{ setQuery(e.target.value); setSelecionado(null); setSucessoImpressao(false); }} placeholder={aba==='endereco' ? 'Ex: 035-A-1' : 'Ex: 000.35310 ou parafuso'} />
@@ -19380,6 +19548,93 @@ function EtiquetasPanel({currentUser}){
           </div>
         </div>
       )}
+      </>)}
+
+      {/* Aba "Pedido" — busca pedido de compra na Selgron/Protheus pelo
+          número e lista os itens pra conferência antes de imprimir (pedido
+          explícito do cliente: ver comentário de `itensPedido` acima). */}
+      {aba==='pedido' && (<>
+        <div className="field" style={{marginBottom:8}}>
+          <label>Número do pedido</label>
+          <div style={{display:'flex',gap:8}}>
+            <input type="text" inputMode="numeric" value={numeroPedido} onChange={e=>setNumeroPedido(e.target.value)} onKeyDown={e=>{ if(e.key==='Enter'){ e.preventDefault(); handleBuscarPedido(); } }} placeholder="Ex: 136144" style={{flex:1}} />
+            <button type="button" className="btn btn-primary" style={{width:'auto',flexShrink:0}} disabled={!numeroPedido.trim() || buscandoPedido} onClick={handleBuscarPedido}>
+              {buscandoPedido ? 'Buscando…' : 'Buscar'}
+            </button>
+          </div>
+        </div>
+
+        {buscandoPedido && <div className="empty-state">Consultando pedidos de compra na Selgron…</div>}
+
+        {erroBuscaPedido && (
+          <div className="divergence-alert" style={{marginBottom:10}}><Ic>⚠</Ic><span>{erroBuscaPedido}</span></div>
+        )}
+
+        {!buscandoPedido && itensPedido && itensPedido.length===0 && (
+          <div className="empty-state">Nenhum pedido em aberto encontrado com o número "{numeroPedido.trim()}".</div>
+        )}
+
+        {itensPedido && itensPedido.length>0 && (
+          <div>
+            <div className="lr-sub" style={{marginBottom:10}}>
+              Pedido <strong style={{color:'var(--ink)'}}>{numeroPedido.trim()}</strong>
+              {fornecedorPedido && <> · {fornecedorPedido}</>}
+              {' · '}{itensPedido.length} {itensPedido.length===1 ? 'item' : 'itens'}
+            </div>
+
+            <div className="field" style={{maxWidth:220,marginBottom:14}}>
+              <label>Data de recebimento{!dataDesbloqueada && <span style={{fontWeight:400,textTransform:'none',letterSpacing:0}}> — toque 2x</span>}</label>
+              <input
+                type="date"
+                value={dataRecebimento}
+                readOnly={!dataDesbloqueada}
+                onDoubleClick={()=>setDataDesbloqueada(true)}
+                onChange={e=>{ if(dataDesbloqueada) setDataRecebimento(e.target.value); }}
+                style={!dataDesbloqueada ? {background:'var(--gray-100)',cursor:'not-allowed',color:'var(--ink-dim)'} : undefined}
+                title={!dataDesbloqueada ? 'Toque duas vezes pra liberar a edição' : ''}
+              />
+            </div>
+
+            {itensPedido.map(it=>(
+              <div key={it.id} className="list-row" style={{cursor:'default',flexWrap:'wrap',opacity: it.incluir ? 1 : 0.5}}>
+                <div style={{display:'flex',alignItems:'center',gap:10,flex:1,minWidth:200}}>
+                  <input type="checkbox" checked={it.incluir} onChange={e=>handleChangeItemPedido(it.id, 'incluir', e.target.checked)} />
+                  <div>
+                    <div className="lr-title">{it.descricao}</div>
+                    <div className="lr-sub">{it.codigo}{it.endereco ? ' · '+it.endereco : ' · sem endereço cadastrado'}</div>
+                  </div>
+                </div>
+                <div className="field" style={{width:110,marginBottom:0}}>
+                  <label>Quantidade</label>
+                  <input type="text" inputMode="numeric" disabled={!it.incluir} value={it.quantidade} onChange={e=>handleChangeItemPedido(it.id, 'quantidade', e.target.value.replace(/[^0-9]/g,''))} placeholder="Ex: 10" />
+                </div>
+              </div>
+            ))}
+
+            {erroImpressaoPedido && (
+              <div className="divergence-alert" style={{margin:'10px 0'}}><Ic>⚠</Ic><span>{erroImpressaoPedido}</span></div>
+            )}
+            {sucessoImpressaoPedido && (
+              <div className="divergence-alert" style={{margin:'10px 0',background:'var(--ok-bg)',borderColor:'var(--ok)',color:'var(--ok)'}}><Ic>✓</Ic><span>Etiquetas enviadas pra impressora.</span></div>
+            )}
+            {erroFilaPedido && (
+              <div className="divergence-alert" style={{margin:'10px 0'}}><Ic>⚠</Ic><span>{erroFilaPedido}</span></div>
+            )}
+            {sucessoFilaPedido && (
+              <div className="divergence-alert" style={{margin:'10px 0',background:'var(--ok-bg)',borderColor:'var(--ok)',color:'var(--ok)'}}><Ic>✓</Ic><span>Enviadas para a fila — imprima do PC ligado na impressora.</span></div>
+            )}
+
+            <div className="btn-row" style={{marginTop:14}}>
+              <button className="btn btn-outline" disabled={enviandoPedidoParaFila || itensPedidoParaImprimir().length===0} onClick={handleEnviarPedidoParaFila}>
+                <DIcon name="clock" size={16}/> {enviandoPedidoParaFila ? 'Enviando…' : 'Enviar para Fila'}
+              </button>
+              <button className="btn btn-primary" disabled={imprimindoPedido || itensPedidoParaImprimir().length===0} onClick={handleImprimirPedido}>
+                <DIcon name="printer" size={16}/> {imprimindoPedido ? 'Imprimindo…' : `Imprimir ${itensPedidoParaImprimir().length} ${itensPedidoParaImprimir().length===1 ? 'etiqueta' : 'etiquetas'}`}
+              </button>
+            </div>
+          </div>
+        )}
+      </>)}
 
       {filaPendente.length>0 && (
         <div style={{marginTop:14,marginBottom:14}}>
