@@ -20506,6 +20506,22 @@ function statusAgregadoMaquina(itensDaMaquina){
 // primeiro" de forma mais direta que um badge solto, e `dataSeparacao`
 // deixou de ser o critério de prioridade (virou `ordem`, a fila manual
 // reordenável por botão ↑/↓).
+// Compara duas máquinas por um campo de data (string 'YYYY-MM-DD' ou ISO —
+// comparação lexicográfica já é cronológica nos dois formatos) — mais antiga
+// primeiro, sem data vai pro fim, ETP como desempate final estável. Mesmo
+// critério reaproveitado no desempate por data de `computeMaquinasPainel`
+// (fila manual sem `ordem`) e na ordenação própria da coluna Entregue
+// (`bucketizeKanban`, por `entregueEm`) — pedido do cliente: "todos os
+// cards... o mais antigo em cima, do mais antigo para o mais novo".
+function compararPorDataOuEtp(a, b, campo){
+  const da = a[campo], db = b[campo];
+  if(da==null && db==null) return a.etp.localeCompare(b.etp);
+  if(da==null) return 1;
+  if(db==null) return -1;
+  if(da!==db) return da<db ? -1 : 1;
+  return a.etp.localeCompare(b.etp);
+}
+
 function computeMaquinasPainel(itens, maquinasEtp, hojeStr){
   const porEtp = {};
   itens.forEach(i=>{
@@ -20559,16 +20575,19 @@ function computeMaquinasPainel(itens, maquinasEtp, hojeStr){
     };
   });
 
-  // Ordena por `ordem` ascendente — máquina sem `ordem` conhecida
-  // (recém-adicionada, ainda não passou por nenhuma reordenação manual) vai
-  // pro fim; ETP como desempate final, só pra manter uma ordem estável
-  // entre duas máquinas com `ordem` igual ou as duas nula.
+  // Ordena por `ordem` ascendente (fila manual, setas ↑/↓ — ver
+  // `moverOrdemNaColuna`) — uma vez que uma máquina é reordenada manualmente,
+  // essa posição se mantém até o fim (pedido do cliente). Máquina sem
+  // `ordem` conhecida (recém-adicionada, nunca reordenada manualmente) cai
+  // pro default: data de separação mais antiga primeiro, de cima pra baixo
+  // (`compararPorDataOuEtp`) — tanto no desempate entre duas sem `ordem`
+  // quanto entre duas com `ordem` igual.
   lista.sort((a,b)=>{
-    if(a.ordem==null && b.ordem==null) return a.etp.localeCompare(b.etp);
+    if(a.ordem==null && b.ordem==null) return compararPorDataOuEtp(a,b,'dataSeparacao');
     if(a.ordem==null) return 1;
     if(b.ordem==null) return -1;
     if(a.ordem!==b.ordem) return a.ordem-b.ordem;
-    return a.etp.localeCompare(b.etp);
+    return compararPorDataOuEtp(a,b,'dataSeparacao');
   });
 
   return lista;
@@ -20625,13 +20644,7 @@ function bucketizeKanban(maquinas, hojeStr, ocultarEntreguesAntigas=true){
   // antigo para o mais novo, de cima para baixo"). Máquina sem `entregueEm`
   // (dado legado, de antes deste campo existir) vai pro fim, ETP como
   // desempate final.
-  buckets.entregue.sort((a,b)=>{
-    if(a.entregueEm==null && b.entregueEm==null) return a.etp.localeCompare(b.etp);
-    if(a.entregueEm==null) return 1;
-    if(b.entregueEm==null) return -1;
-    if(a.entregueEm!==b.entregueEm) return a.entregueEm<b.entregueEm ? -1 : 1;
-    return a.etp.localeCompare(b.etp);
-  });
+  buckets.entregue.sort((a,b)=>compararPorDataOuEtp(a,b,'entregueEm'));
   return buckets;
 }
 
