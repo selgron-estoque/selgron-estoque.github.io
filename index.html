@@ -2009,6 +2009,10 @@
   .prog-card-date-inline{display:flex;align-items:baseline;gap:4px;white-space:nowrap;}
   .prog-card-date-row-inline .prog-card-date-label{margin-bottom:0;white-space:nowrap;}
   .prog-card-date-row-inline .prog-card-date-label::after{content:':';}
+  /* Selo "ENTREGUE" + menu "⋮" direto do lado das datas, empurrados pro
+     canto direito da MESMA linha (pedido do cliente — antes ficavam soltos
+     num rodapé separado embaixo). */
+  .prog-card-date-row-actions{margin-left:auto;display:flex;align-items:center;gap:8px;flex-shrink:0;}
   /* Selo "D-N" — só um contador de dias até `dataSeparacao` calculado na
      hora de exibir (nunca persistido, nunca usado por nenhuma lógica de
      ordenação/status) — "D+N" quando já passou. */
@@ -20771,6 +20775,40 @@ function MaquinaCard({m, canManage, podeAvancarStatus, isAdmin, ordinal, mostrar
               {m.entregueEm ? new Date(m.entregueEm).toLocaleDateString('pt-BR') : '—'}
             </span>
           </span>
+          {/* Selo "ENTREGUE" + menu "⋮" direto do lado das datas, na MESMA
+              linha (pedido do cliente) — "Entregue" não tem botão de
+              avançar (é o estágio final, ver `temProximo`), então o rodapé
+              (`.sep-kanban-foot`, mais abaixo) nem chega a renderizar pra
+              esse status; o menu é o mesmo de sempre, só a posição mudou. */}
+          <span className="prog-card-date-row-actions">
+            <SeparacaoStatusTag status={m.status} />
+            {canManage && !confirmandoExcluir && (
+              <div className="count-card-menu">
+                <button type="button" ref={menuBtnRef} className="count-card-menu-btn" onClick={toggleMenu} title="Mais opções"><DIcon name="moreVertical" size={16} /></button>
+                {menuAbertoId===m.etp && menuPos && ReactDOM.createPortal(
+                  <div className="count-card-menu-dropdown count-card-menu-dropdown-portal" style={{position:'fixed', top:menuPos.top, right:menuPos.right, margin:0, minWidth:'180px', zIndex:60}}>
+                    {temAnterior && (
+                      <button type="button" disabled={busy} onClick={()=>{ onVoltar(); setMenuAbertoId(null); }} title="Voltar pro estágio anterior">
+                        <DIcon name="chevronLeft" size={16}/> Voltar
+                      </button>
+                    )}
+                    <button type="button" disabled={busy} onClick={()=>{ onToggleUrgente(); setMenuAbertoId(null); }}>
+                      <Ic>※</Ic> {m.urgente ? 'Remover urgência' : 'Marcar urgente'}
+                    </button>
+                    <button type="button" disabled={busy} onClick={()=>{ onEditar && onEditar(m); setMenuAbertoId(null); }} title="Editar máquina">
+                      <DIcon name="edit" size={16}/> Editar
+                    </button>
+                    {isAdmin && (
+                      <button type="button" className="menu-item-danger" disabled={busy} onClick={()=>{setConfirmandoExcluir(true); setMenuAbertoId(null);}} title="Excluir máquina">
+                        <Ic>⌫</Ic> Excluir
+                      </button>
+                    )}
+                  </div>,
+                  document.body
+                )}
+              </div>
+            )}
+          </span>
         </div>
       ) : (
         <div className="prog-card-date-row">
@@ -20790,19 +20828,17 @@ function MaquinaCard({m, canManage, podeAvancarStatus, isAdmin, ordinal, mostrar
           <button type="button" disabled={!podeDescer || busy} onClick={onMoverBaixo} title="Mover pra baixo na fila"><DIcon name="arrowDown" size={14} /></button>
         </div>
       )}
-      {!confirmandoExcluir && (podeAvancarStatus || canManage) && (temProximo || canManage) && (
+      {/* "Entregue" não tem botão de avançar (é o estágio final, ver
+          `temProximo`) e o menu "⋮" dela mora na linha de data agora (ver
+          acima, ao lado do selo "ENTREGUE") — esse rodapé nem renderiza
+          pra esse status, pra não sobrar um rodapé vazio no card. */}
+      {!confirmandoExcluir && m.status!=='entregue' && (podeAvancarStatus || canManage) && (temProximo || canManage) && (
         <div className="sep-kanban-foot">
           {podeAvancarStatus && temProximo && (
             <button type="button" className={'btn ' + acaoBtnClasse} disabled={busy} onClick={onAvancar}>
               <DIcon name={acaoIcone} size={13} /> {busy ? 'Salvando…' : acaoLabel}
             </button>
           )}
-          {/* "Entregue" não tem botão de avançar (é o estágio final, ver
-              `temProximo`) — pedido do cliente: o selo "ENTREGUE" (antes
-              ficava na linha de data, ver acima) vem pra cá, direto do lado
-              do menu "⋮", que antes ficava sozinho/deslocado à esquerda
-              nesse caso. */}
-          {m.status==='entregue' && <SeparacaoStatusTag status={m.status} />}
           {canManage && (
             <div className="count-card-menu">
               <button type="button" ref={menuBtnRef} className="count-card-menu-btn" onClick={toggleMenu} title="Mais opções"><DIcon name="moreVertical" size={16} /></button>
