@@ -3419,13 +3419,32 @@ function computeMaquinasPainelTracking(itens, maquinasEtp, hojeStr){
 // tem 4 colunas/4 cores) — `atrasada` não é mais uma coluna própria, cada
 // máquina cai na coluna do seu status REAL de qualquer jeito, e o destaque
 // de atraso vira só borda+selo no card (ver `MaquinaCardTracking`).
+//
+// Entregue há 1 semana ou mais some da coluna por padrão — mesmo corte de 7
+// dias já usado em `bucketizeKanban` (index.html, tela "Programação"):
+// cliente reportou o painel mostrando MAIS cards que a Programação porque
+// esse filtro nunca tinha sido replicado aqui (a TV mostrava TODA entrega
+// desde sempre). Sem toggle "mostrar entregas antigas" aqui — a TV é só
+// leitura, sem controles de filtro — ao contrário da Programação, esse
+// corte não tem como ser desligado nesta tela.
 function bucketizeKanbanTracking(maquinas){
   const buckets = {aguardando:[], emSeparacao:[], separada:[], entregue:[]};
+  const limiteOcultarEntregue = (() => {
+    const d = new Date(hojeLocalStr() + 'T00:00:00');
+    d.setDate(d.getDate() - 7);
+    return localDateStr(d);
+  })();
   maquinas.forEach(m=>{
     if(m.status==='aguardando') buckets.aguardando.push(m);
     else if(m.status==='em_separacao') buckets.emSeparacao.push(m);
     else if(m.status==='separada') buckets.separada.push(m);
-    else if(m.status==='entregue') buckets.entregue.push(m);
+    else if(m.status==='entregue'){
+      const dataEntrega = m.entregueEm ? m.entregueEm.slice(0,10) : null;
+      // `>` estrito (não `>=`) — mesmo critério de `bucketizeKanban`
+      // (index.html): entregue há EXATAMENTE 7 dias já conta como "há 1
+      // semana" e deve sumir, não só a partir do 8º dia.
+      if(dataEntrega==null || dataEntrega>limiteOcultarEntregue) buckets.entregue.push(m);
+    }
   });
   // Mesma regra de `bucketizeKanban` (index.html): a coluna Entregue ordena
   // por `entregueEm` ASCENDENTE (a mais antiga no topo, a mais recente
