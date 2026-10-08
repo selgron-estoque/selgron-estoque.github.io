@@ -286,6 +286,39 @@ function extrairDadosKardex(html: string): { ultimaMovimentacao: string | null; 
   return { ultimaMovimentacao, custoUnitario };
 }
 
+// Reportado pelo cliente: durante um inventário com VÁRIOS aparelhos
+// contando ao mesmo tempo, o bloqueio "não confirmou o saldo do sistema"
+// (`precisaAutorizarSaldo`, index.html) passou a aparecer o tempo todo —
+// nunca aconteceu assim com 1 operador só. `consulta.selgron.com.br` é uma
+// ferramenta interna pensada pra 1 consulta manual de cada vez (ver
+// comentário no topo deste arquivo), não pra aguentar vários aparelhos
+// batendo nela ao mesmo tempo — sob essa concorrência, é esperado que uma
+// fração das chamadas estoure o timeout de 8s (`AbortSignal.timeout`)
+// mesmo com a Selgron no ar, por puro congestionamento momentâneo do lado
+// de lá. Sem retry, CADA timeout vira erro pro operador imediatamente.
+// Uma única tentativa extra (com uma pausa curta antes) já resolve a
+// maioria dos casos de contenção transitória, sem fazer o operador esperar
+// muito mais na falha genuína (Selgron fora do ar de verdade continua
+// estourando as duas tentativas, erro final idêntico a antes).
+async function consultarProdutoComRetry(auth: string, codigo: string): Promise<Response> {
+  const tentar = () =>
+    fetch(CONSULTA_URL, {
+      method: "POST",
+      headers: {
+        Authorization: auth,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: "busca=" + encodeURIComponent(codigo),
+      signal: AbortSignal.timeout(8000),
+    });
+  try {
+    return await tentar();
+  } catch {
+    await new Promise((r) => setTimeout(r, 600));
+    return await tentar();
+  }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS_HEADERS });
 
@@ -328,18 +361,12 @@ Deno.serve(async (req: Request) => {
       { method: "GET", headers: { Authorization: auth }, signal: AbortSignal.timeout(8000) },
     ).catch(() => null);
 
-    const resp = await fetch(CONSULTA_URL, {
-      method: "POST",
-      headers: {
-        Authorization: auth,
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: "busca=" + encodeURIComponent(codigo),
-      // Nunca deixa o operador esperando indefinidamente se a consulta
-      // interna ficar lenta/travada — cai pro saldo já em cache (Supabase)
-      // que CountStep já usa hoje.
-      signal: AbortSignal.timeout(8000),
-    });
+    // Nunca deixa o operador esperando indefinidamente se a consulta
+    // interna ficar lenta/travada — cai pro saldo já em cache (Supabase)
+    // que CountStep já usa hoje. `consultarProdutoComRetry` já cobre o
+    // timeout de 8s com 1 tentativa extra antes de desistir de vez (ver
+    // comentário na função, acima).
+    const resp = await consultarProdutoComRetry(auth, codigo);
 
     // Erros "esperados" (senha errada, código não encontrado, formato
     // mudou) sempre voltam com status 200 e `ok:false` no corpo — mesma
