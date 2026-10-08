@@ -1970,6 +1970,33 @@
      (não usa token de tema) pra sempre parecer um marcador amarelo por cima
      do texto, em qualquer modo claro/escuro. */
   .sep-kanban-obs-destaque{display:inline;background:#FFEB3B;color:#3A2F00;font-weight:700;padding:2px 6px;border-radius:3px;box-decoration-break:clone;-webkit-box-decoration-break:clone;}
+  /* COM SALDO/SEM SALDO + "Disponibilidade de materiais" — mesmo dado/
+     cache do painel de TV (painel-indicadores.html, `MaquinaCardTracking`/
+     `.tp-stock-block`/`.tp-bar-*`), portado aqui pra tela real
+     "Programação" reaproveitando os TOKENS do tema do app (--ok/--danger/
+     --warn/--panel-raised), não a paleta fixa só-escura `--tp*` da TV — os
+     2 blocos e a barra seguem claro/escuro normalmente aqui, diferente da
+     TV (que é sempre escura por decisão de produto só daquela tela).
+     Números continuam sempre lidos do cache compartilhado `saldo_etp_cache`
+     (nunca uma consulta ao vivo daqui — ver `fetchSaldoEtpCache`). */
+  .sep-saldo-stats{display:flex;gap:8px;margin:8px 0;}
+  .sep-saldo-stat{flex:1;border-radius:7px;padding:6px 8px;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+  .sep-saldo-stat .num{font-family:var(--font-mono);font-size:17px;font-weight:700;line-height:1.1;}
+  .sep-saldo-stat .lbl{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.3px;margin-top:2px;}
+  .sep-saldo-stat.com{background:var(--ok-bg);}
+  .sep-saldo-stat.com .num,.sep-saldo-stat.com .lbl{color:var(--ok);}
+  .sep-saldo-stat.sem{background:var(--danger-bg);}
+  .sep-saldo-stat.sem .num,.sep-saldo-stat.sem .lbl{color:var(--danger);}
+  .sep-saldo-stat.desatualizado{position:relative;}
+  .sep-saldo-stat.desatualizado .num,.sep-saldo-stat.desatualizado .lbl{opacity:.6;}
+  .sep-saldo-stat .desatualizado-ic{position:absolute;top:4px;right:5px;opacity:.7;}
+  .sep-saldo-bar-wrap{margin:6px 0 10px;}
+  .sep-saldo-bar-header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px;}
+  .sep-saldo-bar-label{font-size:10.5px;color:var(--ink-dim);}
+  .sep-saldo-bar-pct{font-size:11.5px;font-weight:700;color:var(--ink);}
+  .sep-saldo-bar-track{width:100%;height:4px;border-radius:99px;background:var(--panel-raised);overflow:hidden;}
+  .sep-saldo-bar-fill{height:100%;border-radius:99px;}
+  .sep-saldo-done{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:7px;background:var(--ok-bg);color:var(--ok);font-size:11.5px;font-weight:700;margin:8px 0;}
   .prog-card-divider{height:1px;background:var(--line);margin:8px 0;}
   .prog-card-date-row{display:flex;align-items:flex-end;justify-content:space-between;gap:8px;margin-bottom:9px;}
   .prog-card-date-label{font-size:10px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;color:var(--ink-dim);margin-bottom:2px;}
@@ -18105,6 +18132,40 @@ async function fetchMaquinasEtp(){
   }
 }
 
+// COM SALDO/SEM SALDO — mesmo cache compartilhado `saldo_etp_cache` já
+// usado pelo painel de TV (painel-indicadores.html, `TrackingPicking`): um
+// processo agendado no Supabase consulta a Selgron por ETP a cada poucos
+// minutos e grava o resultado aqui, cobrindo TODAS as linhas de uma vez
+// (ver supabase/functions/atualizar-cache-saldo-etp/index.ts e
+// backend/README.md seção 15). A tela "Programação" (aqui) NUNCA consulta a
+// Selgron sozinha — só lê o que já está pronto neste cache, mesmo critério
+// que levou a TV a parar de consultar ao vivo (card travado/timeout sob
+// concorrência, ver histórico de commits de `fetchSaldoEtpCache` em
+// painel-indicadores.html). Mapa `"etp|linha"` → `{comSaldo, semSaldo,
+// ultimoErro, atualizadoEm}` — `comSaldo`/`semSaldo` nulos = o cache existe
+// mas nunca teve um valor bom ainda (ver uso em `SeparacaoPainelBoard`).
+function saldoEtpCacheRowToLocal(row){
+  return {
+    comSaldo: row.com_saldo===null ? null : Number(row.com_saldo),
+    semSaldo: row.sem_saldo===null ? null : Number(row.sem_saldo),
+    ultimoErro: row.ultimo_erro || null,
+    atualizadoEm: row.atualizado_em || null,
+  };
+}
+async function fetchSaldoEtpCache(){
+  if(!supabaseClient) return new Map();
+  try{
+    const { data, error } = await supabaseClient.from('saldo_etp_cache').select('*');
+    if(error) throw error;
+    const mapa = new Map();
+    (data||[]).forEach(row => { mapa.set(`${row.etp}|${row.linha}`, saldoEtpCacheRowToLocal(row)); });
+    return mapa;
+  }catch(err){
+    console.warn('Falha ao buscar cache de saldo (ETP):', err);
+    return new Map();
+  }
+}
+
 // Chamada pelo `AdicionarEtpModal` (Gestão de Separação → Programação →
 // botão "Adicionar ETP") ao confirmar o formulário — `m` é sempre
 // `{...campoEtp, etp: etpTrimmed}`, o estado EDITÁVEL do modal, preenchido
@@ -20601,6 +20662,20 @@ function MaquinaCard({m, canManage, podeAvancarStatus, isAdmin, ordinal, mostrar
   // estágio inicial (Aguardando), que não tem anterior nenhum pra voltar.
   const temAnterior = !!SEPARACAO_STATUS_ANTERIOR[m.status];
   const dday = m.status!=='entregue' ? calcularDDayCard(m.dataSeparacao, hojeLocalStr()) : null;
+  // COM SALDO/SEM SALDO + barra "Disponibilidade de materiais" — mesma
+  // conta/critério já usado pela TV (`MaquinaCardTracking`, ver comentário
+  // completo lá): nunca mostra um número enquanto `status` não é 'ok' (nem
+  // um "0" que pareceria resultado real) — "…" enquanto `status==='loading'`
+  // (processo agendado ainda não chegou nessa ETP), "—" quando o cache
+  // existe mas nunca teve um valor bom. "Tudo entregue" (COM SALDO e SEM
+  // SALDO os dois zerados, com `status==='ok'`) troca os 2 blocos por uma
+  // confirmação verde, e a barra mostra 100% em vez do "0%" que a conta
+  // bruta daria.
+  const saldo = m.saldo || {status:'loading'};
+  const totalSaldo = saldo.status==='ok' ? (saldo.comSaldo + saldo.semSaldo) : 0;
+  const tudoEntregueSaldo = saldo.status==='ok' && totalSaldo===0;
+  const pctSaldo = tudoEntregueSaldo ? 100 : (totalSaldo>0 ? Math.round((saldo.comSaldo/totalSaldo)*100) : 0);
+  const corBarraSaldo = pctSaldo>=95 ? 'var(--ok)' : pctSaldo>=80 ? 'var(--warn)' : 'var(--danger)';
   return (
     <div className={classes.join(' ')}>
       <div className="sep-kanban-card-head">
@@ -20635,6 +20710,32 @@ function MaquinaCard({m, canManage, podeAvancarStatus, isAdmin, ordinal, mostrar
       {m.observacao && (
         <div className="sep-kanban-meta-line" style={{marginTop:4,marginBottom:2}}>
           <span className="sep-kanban-obs-destaque">{m.observacao}</span>
+        </div>
+      )}
+      {!tudoEntregueSaldo && (
+        <div className="sep-saldo-stats">
+          <div className={'sep-saldo-stat com' + (saldo.desatualizado ? ' desatualizado' : '')}>
+            {saldo.desatualizado && <DIcon name="clock" size={10} style={{position:'absolute',top:4,right:5,opacity:.7}} />}
+            <span className="num">{saldo.status==='ok' ? saldo.comSaldo : (saldo.status==='loading' ? '…' : '—')}</span>
+            <span className="lbl">Com saldo</span>
+          </div>
+          <div className={'sep-saldo-stat sem' + (saldo.desatualizado ? ' desatualizado' : '')}>
+            {saldo.desatualizado && <DIcon name="clock" size={10} style={{position:'absolute',top:4,right:5,opacity:.7}} />}
+            <span className="num">{saldo.status==='ok' ? saldo.semSaldo : (saldo.status==='loading' ? '…' : '—')}</span>
+            <span className="lbl">Sem saldo</span>
+          </div>
+        </div>
+      )}
+      <div className="sep-saldo-bar-wrap">
+        <div className="sep-saldo-bar-header">
+          <span className="sep-saldo-bar-label">Disponibilidade de materiais</span>
+          <span className="sep-saldo-bar-pct">{pctSaldo}%</span>
+        </div>
+        <div className="sep-saldo-bar-track"><div className="sep-saldo-bar-fill" style={{width:pctSaldo+'%',background:corBarraSaldo}}></div></div>
+      </div>
+      {tudoEntregueSaldo && (
+        <div className="sep-saldo-done">
+          <DIcon name="checkCircle" size={14}/> Todos os materiais foram entregues.
         </div>
       )}
       <div className="prog-card-divider"></div>
@@ -20734,7 +20835,7 @@ const SEP_KANBAN_COLUNAS = [
   {chave:'entregue', titulo:'Entregue', desc:'Máquinas finalizadas', icone:'checkCircle', cor:'--progcol-entregue-ink', corBg:'--progcol-entregue-bg', vazio:'Nenhuma máquina entregue ainda.'},
 ];
 
-function SeparacaoPainelBoard({itens, maquinasEtp, canManage, podeAvancarStatus, isAdmin, onAvancarStatus, onVoltarStatus, onMoverOrdem, onToggleUrgente, onExcluirMaquina, onAdicionarEtpClick, onEditarMaquina, linhasProducao, linhaSelecionada, onSelecionarLinha, onGerenciarLinhas}){
+function SeparacaoPainelBoard({itens, maquinasEtp, canManage, podeAvancarStatus, isAdmin, onAvancarStatus, onVoltarStatus, onMoverOrdem, onToggleUrgente, onExcluirMaquina, onAdicionarEtpClick, onEditarMaquina, linhasProducao, linhaSelecionada, onSelecionarLinha, onGerenciarLinhas, saldoEtpCache}){
   const [modoReordenar, setModoReordenar] = useState(false);
   const [somenteUrgentes, setSomenteUrgentes] = useState(false);
   // "Mostrar entregas antigas" — desliga o corte de 7 dias de
@@ -20755,7 +20856,23 @@ function SeparacaoPainelBoard({itens, maquinasEtp, canManage, podeAvancarStatus,
   const [errosEtp, setErrosEtp] = useState({});
 
   const hojeStr = hojeLocalStr();
-  const maquinas = computeMaquinasPainel(itens, maquinasEtp, hojeStr);
+  const maquinasSemSaldo = computeMaquinasPainel(itens, maquinasEtp, hojeStr);
+  // COM SALDO/SEM SALDO — lido direto de `saldoEtpCache` (ver comentário
+  // completo em `fetchSaldoEtpCache`), mesmo critério já usado pela TV
+  // (`TrackingPicking`, painel-indicadores.html): sem cache pra essa
+  // (etp,linha) ainda — 'loading' (o processo agendado ainda não chegou
+  // nela, ou é uma ETP nova de agora). Cache existe mas nunca teve um valor
+  // bom (`comSaldo`/`semSaldo` nulos) — 'erro'. Tem valor bom — 'ok', com
+  // `desatualizado` quando a ÚLTIMA tentativa falhou mas um valor bom
+  // anterior foi mantido.
+  const maquinas = maquinasSemSaldo.map(m=>{
+    const cache = saldoEtpCache.get(`${m.etp}|${m.linha}`);
+    if(!cache) return {...m, saldo:{status:'loading'}};
+    if(cache.comSaldo===null || cache.semSaldo===null){
+      return {...m, saldo:{status:'erro', erro:cache.ultimoErro || 'Falha ao consultar saldo.'}};
+    }
+    return {...m, saldo:{status:'ok', comSaldo:cache.comSaldo, semSaldo:cache.semSaldo, desatualizado: !!cache.ultimoErro}};
+  });
   const porEtpItens = {};
   itens.forEach(i=>{ if(!i.etp) return; if(!porEtpItens[i.etp]) porEtpItens[i.etp] = []; porEtpItens[i.etp].push(i); });
 
@@ -21409,6 +21526,33 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
     return ()=>{ cancelado = true; supabaseClient.removeChannel(canal); };
   }, []);
 
+  // COM SALDO/SEM SALDO — mesmo cache compartilhado `saldo_etp_cache` já
+  // usado pela TV (ver comentário completo em `fetchSaldoEtpCache`), agora
+  // também lido aqui. Mesmo padrão de fetch-ao-montar +
+  // reconciliação-ao-conectar/reconectar já usado acima pra
+  // `itens`/`maquinasEtp` — refetch completo (não merge por linha, mesma
+  // razão de `linhasProducao` logo abaixo: poucas linhas na tabela, uma por
+  // (etp,linha), não vale a complexidade de tratar INSERT/UPDATE/DELETE
+  // separadamente aqui).
+  const [saldoEtpCache, setSaldoEtpCache] = useState(() => new Map());
+  useEffect(()=>{
+    if(!supabaseClient) return;
+    let cancelado = false;
+    fetchSaldoEtpCache().then(mapa=>{ if(!cancelado) setSaldoEtpCache(mapa); });
+
+    const canal = supabaseClient
+      .channel('realtime:saldo_etp_cache')
+      .on('postgres_changes', {event:'*', schema:'public', table:'saldo_etp_cache'}, ()=>{
+        fetchSaldoEtpCache().then(mapa=>{ if(!cancelado) setSaldoEtpCache(mapa); });
+      })
+      .subscribe(status=>{
+        if(status!=='SUBSCRIBED') return;
+        fetchSaldoEtpCache().then(mapa=>{ if(!cancelado) setSaldoEtpCache(mapa); });
+      });
+
+    return ()=>{ cancelado = true; supabaseClient.removeChannel(canal); };
+  }, []);
+
   // Abas desta tela (Elétrica/SEM/SSE/SEP + qualquer linha adicionada depois)
   // — mesmo padrão de fetch-ao-montar + reconciliação-ao-conectar/reconectar
   // já usado acima, só que SEMPRE um refetch completo em vez de merge por
@@ -21578,6 +21722,7 @@ function ProgramacaoSeparacaoPanel({currentUser, role}){
         linhaSelecionada={linhaSelecionada}
         onSelecionarLinha={setLinhaSelecionada}
         onGerenciarLinhas={()=>setModalLinhasAberto(true)}
+        saldoEtpCache={saldoEtpCache}
       />
 
       <AdicionarEtpModal
