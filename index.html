@@ -2003,6 +2003,12 @@
   .prog-card-date-row{display:flex;align-items:flex-end;justify-content:space-between;gap:8px;margin-bottom:9px;}
   .prog-card-date-label{font-size:10px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;color:var(--ink-dim);margin-bottom:2px;}
   .prog-card-date-value{font-size:13px;font-weight:700;color:var(--ink);}
+  /* Card "Entregue" — Separação/Entrega numa linha só (pedido do cliente),
+     rótulo e valor lado a lado em vez de empilhados. */
+  .prog-card-date-row-inline{align-items:baseline;flex-wrap:wrap;justify-content:flex-start;gap:5px 14px;}
+  .prog-card-date-inline{display:flex;align-items:baseline;gap:4px;white-space:nowrap;}
+  .prog-card-date-row-inline .prog-card-date-label{margin-bottom:0;white-space:nowrap;}
+  .prog-card-date-row-inline .prog-card-date-label::after{content:':';}
   /* Selo "D-N" — só um contador de dias até `dataSeparacao` calculado na
      hora de exibir (nunca persistido, nunca usado por nenhuma lógica de
      ordenação/status) — "D+N" quando já passou. */
@@ -20752,19 +20758,19 @@ function MaquinaCard({m, canManage, podeAvancarStatus, isAdmin, ordinal, mostrar
       )}
       <div className="prog-card-divider"></div>
       {m.status==='entregue' ? (
-        <div className="prog-card-date-row">
-          <div>
-            <div className="prog-card-date-label">Data de Separação</div>
-            <div className="prog-card-date-value">
+        <div className="prog-card-date-row prog-card-date-row-inline">
+          <span className="prog-card-date-inline">
+            <span className="prog-card-date-label">Separação</span>
+            <span className="prog-card-date-value">
               {m.dataSeparacao ? new Date(m.dataSeparacao+'T00:00:00').toLocaleDateString('pt-BR') : '—'}
-            </div>
-          </div>
-          <div>
-            <div className="prog-card-date-label">Data de Entrega</div>
-            <div className="prog-card-date-value">
+            </span>
+          </span>
+          <span className="prog-card-date-inline">
+            <span className="prog-card-date-label">Entrega</span>
+            <span className="prog-card-date-value">
               {m.entregueEm ? new Date(m.entregueEm).toLocaleDateString('pt-BR') : '—'}
-            </div>
-          </div>
+            </span>
+          </span>
         </div>
       ) : (
         <div className="prog-card-date-row">
