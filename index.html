@@ -20775,13 +20775,13 @@ function MaquinaCard({m, canManage, podeAvancarStatus, isAdmin, ordinal, mostrar
               {m.entregueEm ? new Date(m.entregueEm).toLocaleDateString('pt-BR') : '—'}
             </span>
           </span>
-          {/* Selo "ENTREGUE" + menu "⋮" direto do lado das datas, na MESMA
-              linha (pedido do cliente) — "Entregue" não tem botão de
+          {/* Menu "⋮" direto do lado das datas, no canto direito da MESMA
+              linha (pedido do cliente — sem o selo "ENTREGUE" ao lado,
+              removido por pedido explícito) — "Entregue" não tem botão de
               avançar (é o estágio final, ver `temProximo`), então o rodapé
               (`.sep-kanban-foot`, mais abaixo) nem chega a renderizar pra
               esse status; o menu é o mesmo de sempre, só a posição mudou. */}
           <span className="prog-card-date-row-actions">
-            <SeparacaoStatusTag status={m.status} />
             {canManage && !confirmandoExcluir && (
               <div className="count-card-menu">
                 <button type="button" ref={menuBtnRef} className="count-card-menu-btn" onClick={toggleMenu} title="Mais opções"><DIcon name="moreVertical" size={16} /></button>
