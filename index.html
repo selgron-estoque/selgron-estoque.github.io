@@ -11199,12 +11199,28 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   // armazém pedido. Único caso seguro pra assumir saldo real 0.
   const saldoGenuinamenteAusente = !!(liveConsulta && !saldoConfirmadoAoVivo && !liveConsulta.ambiguo);
   // Consulta respondeu mas ficou ambígua (item existe, só não deu pra saber
-  // QUAL valor é o certo), OU a consulta falhou de verdade (rede/
-  // credencial/timeout — sem essa checagem, um erro de rede também caía
-  // silenciosamente em "0", mascarando saldo real do mesmo jeito). Nunca
-  // finge 0 aqui — precisa travar a confirmação (`precisaAutorizarSaldo`
-  // mais abaixo), a menos que um líder/admin autorize.
-  const saldoIndisponivelAoVivo = !!(liveConsulta && !saldoConfirmadoAoVivo && liveConsulta.ambiguo) || !!liveConsultaErro;
+  // QUAL valor é o certo) — nunca finge 0 aqui, trava a confirmação
+  // (`precisaAutorizarSaldo` mais abaixo) até um líder/admin autorizar ou a
+  // ambiguidade ser resolvida (ex.: operador troca o armazém).
+  //
+  // Erro de CONEXÃO/timeout NÃO trava mais (revertido — cliente pediu o
+  // bloqueio original pra qualquer erro, inclusive rede, mas voltou a
+  // reportar a contagem travando direto por timeout sob concorrência de
+  // vários aparelhos: "minha contagem não pode ficar travada por que ele
+  // não conseguiu fazer a consulta do item". Confirmado explicitamente que
+  // NÃO é pra cair no cadastro local SB2 ("esquece essa merda de cadastro
+  // local, não estamos mais usando isso") — por isso aqui só precisa
+  // DEIXAR DE TRAVAR: sem a checagem de `liveConsultaErro`,
+  // `saldoSistemaEfetivo` abaixo já cai naturalmente em `null` (nem
+  // `saldoConfirmadoAoVivo` nem `saldoGenuinamenteAusente` — os dois
+  // exigem `liveConsulta` preenchido, que só existe quando a consulta
+  // RESPONDEU; erro de rede nunca preenche `liveConsulta`), e
+  // `hasSaldoLocal` vira `false` — mesmo caminho de "sem saldo pra
+  // comparar" que já existia (vai direto pra análise do líder), só que
+  // automático, sem precisar de autorização manual. Ambiguidade real
+  // continua travando — é o único caso em que existe um dado "errado"
+  // específico que poderia ser usado sem querer.
+  const saldoIndisponivelAoVivo = !!(liveConsulta && !saldoConfirmadoAoVivo && liveConsulta.ambiguo);
   const saldoSistemaEfetivo = saldoConfirmadoAoVivo
     ? liveConsulta.saldo
     : (saldoGenuinamenteAusente ? 0 : null);
@@ -11693,6 +11709,15 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
           {mostrarSaldo && !precisaAutorizarSaldo && !saldoAguardandoConfirmacao && <div className="cs-sistema-arrow"><DIcon name="arrowDown" size={18} /></div>}
           {saldoAguardandoConfirmacao && !precisaAutorizarSaldo && (
             <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginBottom:12,textAlign:'center'}}>Consultando saldo na Selgron…</div>
+          )}
+          {/* Erro de conexão (nunca ambiguidade — essa ainda trava, ver
+              `precisaAutorizarSaldo`/`painelBloqueioConsultaAoVivo` abaixo)
+              não bloqueia mais a contagem (pedido do cliente), mas o
+              operador merece saber POR QUE não apareceu nenhum saldo do
+              sistema pra comparar — sem isso pareceria um bug silencioso,
+              não uma falha de conexão real. */}
+          {liveConsultaErro && !precisaAutorizarSaldo && (
+            <div style={{fontSize:'var(--text-xs)',color:'var(--warn)',marginBottom:12,textAlign:'center'}}>Não foi possível confirmar o saldo na Selgron (erro de conexão) — segue sem comparação automática, vai pra análise do líder.</div>
           )}
           {precisaAutorizarSaldo && painelBloqueioConsultaAoVivo(
             'não confirmou o saldo do sistema para este item/armazém',
