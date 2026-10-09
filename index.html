@@ -5749,12 +5749,40 @@ function buildDivergenciaRecorrenteRows(itens){
     'Status': (STATUS_DIVERGENCIA_INFO[it.status] || STATUS_DIVERGENCIA_INFO.monitorar).label,
   }));
 }
+// Pedido do cliente (depois de ver a 1ª versão do export): a aba resumo
+// acima só mostra "4 contagens, 3 divergências" — sem o COMPARATIVO de
+// verdade (cada contagem, com sua data e os números confrontados). Esta 2ª
+// aba traz 1 LINHA POR CONTAGEM (`it.historico`, já calculado em
+// `computeItensDivergenciaRecorrente` — mesmo dado usado na timeline do
+// painel de análise desta tela), pra dar pra comparar visualmente a
+// evolução de cada item contagem a contagem, não só o total agregado.
+// Mais recente primeiro (mesma ordem de `historico`, igual à timeline da
+// tela).
+function buildDivergenciaRecorrenteHistoricoRows(itens){
+  const linhas = [];
+  itens.forEach(it => {
+    const codigo = reconstructNumericCode(it.productCode);
+    (it.historico||[]).forEach(h => {
+      linhas.push({
+        'Código': codigo,
+        'Descrição': it.descricao || '',
+        'Data da Contagem': h.data ? fmtDataBR(h.data) : '',
+        'Saldo Sistema': h.saldoSistema,
+        'Quantidade Contada': h.qtdContada,
+        'Diferença': h.diferenca,
+        'Divergente': h.divergente ? 'Sim' : 'Não',
+      });
+    });
+  });
+  return linhas;
+}
 function baixarRelatorioDivergenciaRecorrente(itens){
   if(!window.XLSX) return {ok:false, erro:'A biblioteca de exportação não carregou (verifique a conexão com a internet).'};
   if(!itens.length) return {ok:false, erro:'Nenhum item com divergência recorrente para exportar.'};
   const XLSX = window.XLSX;
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(buildDivergenciaRecorrenteRows(itens)), 'Divergência Recorrente');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(buildDivergenciaRecorrenteHistoricoRows(itens)), 'Comparativo por Contagem');
   const filename = `GestaoEstoques_DivergenciaRecorrente_${hojeLocalStr()}.xlsx`;
   XLSX.writeFile(wb, filename);
   return {ok:true, filename};
@@ -17429,7 +17457,7 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
               />
             </div>
             <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:4}}>
-              <button type="button" className="btn btn-outline btn-sm" onClick={handleDownloadDivergencia} disabled={!itensDivergenciaOrdenados.length} title="Baixar os itens com divergência recorrente (com a busca atual) em .xlsx">
+              <button type="button" className="btn btn-outline btn-sm" onClick={handleDownloadDivergencia} disabled={!itensDivergenciaOrdenados.length} title="Baixar os itens com divergência recorrente (com a busca atual) em .xlsx — inclui o comparativo contagem a contagem, com data">
                 <Ic>⬇</Ic> Exportar Excel
               </button>
               {downloadDivergenciaMsg && <span style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)'}}>{downloadDivergenciaMsg}</span>}
