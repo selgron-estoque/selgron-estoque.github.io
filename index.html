@@ -5728,6 +5728,38 @@ function baixarRelatorioEnderecosPendentes(lista){
   return {ok:true, filename};
 }
 
+// Pedido do cliente: botão de exportar Excel pros "Itens com Divergência
+// Recorrente" (aba Acuracidade). Mesmas colunas já mostradas na tabela da
+// tela (`AcuracidadePanel`) — Padrão/Status viram o RÓTULO legível
+// (PADRAO_DIVERGENCIA_INFO/STATUS_DIVERGENCIA_INFO), nunca a chave interna
+// ('diverge_todas'/'critico'), e o código usa `reconstructNumericCode`
+// (mesmo formato exibido na tela, não o `productCode` cru). Recebe a lista
+// já ORDENADA/FILTRADA pela busca da tela no momento do clique (mesmo
+// critério de "baixa o que está sendo mostrado" já usado em
+// `baixarRelatorioModulo`/`baixarRelatorioEnderecosPendentes`).
+function buildDivergenciaRecorrenteRows(itens){
+  return itens.map(it => ({
+    'Código': reconstructNumericCode(it.productCode),
+    'Descrição': it.descricao || '',
+    'Contagens': it.total,
+    'Com Divergência': it.divergentes,
+    'Taxa de Recorrência (%)': Math.round(it.taxaDivergencia*100),
+    'Última Divergência': it.ultimaDivergencia ? fmtDataBR(it.ultimaDivergencia) : '',
+    'Padrão Identificado': (PADRAO_DIVERGENCIA_INFO[it.padrao] || PADRAO_DIVERGENCIA_INFO.sem_padrao).label,
+    'Status': (STATUS_DIVERGENCIA_INFO[it.status] || STATUS_DIVERGENCIA_INFO.monitorar).label,
+  }));
+}
+function baixarRelatorioDivergenciaRecorrente(itens){
+  if(!window.XLSX) return {ok:false, erro:'A biblioteca de exportação não carregou (verifique a conexão com a internet).'};
+  if(!itens.length) return {ok:false, erro:'Nenhum item com divergência recorrente para exportar.'};
+  const XLSX = window.XLSX;
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(buildDivergenciaRecorrenteRows(itens)), 'Divergência Recorrente');
+  const filename = `GestaoEstoques_DivergenciaRecorrente_${hojeLocalStr()}.xlsx`;
+  XLSX.writeFile(wb, filename);
+  return {ok:true, filename};
+}
+
 // Exportador PRÓPRIO de "Solicitação ao Almoxarifado" (SA) pra "Aguardando
 // Aprovação" — pedido em 3 rodadas: 1º um PRINT da planilha real ("Em
 // aguardando aprovação, quero que ao gerar o excel venha neste formato"),
@@ -17021,6 +17053,10 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
   // este app não tem um sistema de notificação global, não vale a pena
   // criar um só pra isso).
   const [codigoCopiadoFeedback, setCodigoCopiadoFeedback] = useState(false);
+  // Feedback textual do botão "Exportar Excel" (nome do arquivo baixado, ou
+  // erro) — mesmo padrão simples (sem lib de toast) já usado em
+  // `EnderecoPendenteValidacaoPanel.handleDownload`.
+  const [downloadDivergenciaMsg, setDownloadDivergenciaMsg] = useState('');
 
   // Bug real corrigido aqui: sem esperar `historicoCarregado`, esta tela
   // calculava toda a acuracidade com `historicoConcluidas` ainda vazio (a
@@ -17176,6 +17212,14 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
     (paginaAtualDivergencia-1)*DIVERGENCIA_POR_PAGINA,
     paginaAtualDivergencia*DIVERGENCIA_POR_PAGINA,
   );
+  // Exporta a mesma lista ORDENADA/FILTRADA que está na tela no momento do
+  // clique (busca + ordenação já aplicadas) — não a lista bruta/paginada,
+  // mesmo critério de "baixa o que está sendo mostrado" já usado em
+  // `EnderecoPendenteValidacaoPanel.handleDownload`.
+  function handleDownloadDivergencia(){
+    const res = baixarRelatorioDivergenciaRecorrente(itensDivergenciaOrdenados);
+    setDownloadDivergenciaMsg(res.ok ? ('Baixado: '+res.filename) : res.erro);
+  }
   // Item selecionado pode ter saído da lista filtrada/mudado de conteúdo
   // (ex.: filtro de período mudou) — relê sempre do array atual pelo
   // código, nunca guarda o objeto em si (mesmo critério de `mesSelecionado`
@@ -17383,6 +17427,12 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
                 onChange={e=>alterarBuscaDivergencia(e.target.value)}
                 placeholder="Buscar código ou descrição..."
               />
+            </div>
+            <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:4}}>
+              <button type="button" className="btn btn-outline btn-sm" onClick={handleDownloadDivergencia} disabled={!itensDivergenciaOrdenados.length} title="Baixar os itens com divergência recorrente (com a busca atual) em .xlsx">
+                <Ic>⬇</Ic> Exportar Excel
+              </button>
+              {downloadDivergenciaMsg && <span style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)'}}>{downloadDivergenciaMsg}</span>}
             </div>
           </div>
           {itensDivergenciaRecorrente.totalItens===0 ? (
