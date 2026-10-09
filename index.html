@@ -5729,60 +5729,83 @@ function baixarRelatorioEnderecosPendentes(lista){
 }
 
 // Pedido do cliente: botão de exportar Excel pros "Itens com Divergência
-// Recorrente" (aba Acuracidade). Mesmas colunas já mostradas na tabela da
-// tela (`AcuracidadePanel`) — Padrão/Status viram o RÓTULO legível
-// (PADRAO_DIVERGENCIA_INFO/STATUS_DIVERGENCIA_INFO), nunca a chave interna
-// ('diverge_todas'/'critico'), e o código usa `reconstructNumericCode`
-// (mesmo formato exibido na tela, não o `productCode` cru). Recebe a lista
-// já ORDENADA/FILTRADA pela busca da tela no momento do clique (mesmo
-// critério de "baixa o que está sendo mostrado" já usado em
-// `baixarRelatorioModulo`/`baixarRelatorioEnderecosPendentes`).
-function buildDivergenciaRecorrenteRows(itens){
-  return itens.map(it => ({
-    'Código': reconstructNumericCode(it.productCode),
-    'Descrição': it.descricao || '',
-    'Contagens': it.total,
-    'Com Divergência': it.divergentes,
-    'Taxa de Recorrência (%)': Math.round(it.taxaDivergencia*100),
-    'Última Divergência': it.ultimaDivergencia ? fmtDataBR(it.ultimaDivergencia) : '',
-    'Padrão Identificado': (PADRAO_DIVERGENCIA_INFO[it.padrao] || PADRAO_DIVERGENCIA_INFO.sem_padrao).label,
-    'Status': (STATUS_DIVERGENCIA_INFO[it.status] || STATUS_DIVERGENCIA_INFO.monitorar).label,
-  }));
-}
-// Pedido do cliente (depois de ver a 1ª versão do export): a aba resumo
-// acima só mostra "4 contagens, 3 divergências" — sem o COMPARATIVO de
-// verdade (cada contagem, com sua data e os números confrontados). Esta 2ª
-// aba traz 1 LINHA POR CONTAGEM (`it.historico`, já calculado em
-// `computeItensDivergenciaRecorrente` — mesmo dado usado na timeline do
-// painel de análise desta tela), pra dar pra comparar visualmente a
-// evolução de cada item contagem a contagem, não só o total agregado.
-// Mais recente primeiro (mesma ordem de `historico`, igual à timeline da
-// tela).
-function buildDivergenciaRecorrenteHistoricoRows(itens){
-  const linhas = [];
-  itens.forEach(it => {
+// Recorrente" (aba Acuracidade). 1ª versão saiu em 2 abas (resumo +
+// comparativo) — cliente pediu voltar pra UMA planilha só: "bater o olho
+// no item e identificar na hora onde foi a divergência e quando". Agora é
+// 1 sheet só, AGRUPADO por item (mesmo espírito de `buildSaAprovacaoWorkbook`
+// logo abaixo — linha de cabeçalho em cinza por grupo, linha em branco
+// separando grupos): a 1ª linha de cada item traz o resumo (Contagens/
+// Divergências/Taxa/Última Divergência/Padrão/Status, mesmo rótulo legível
+// de PADRAO_DIVERGENCIA_INFO/STATUS_DIVERGENCIA_INFO — nunca a chave
+// interna), e logo abaixo dela, 1 linha POR CONTAGEM (`it.historico`, mesmo
+// dado/ordem — mais recente primeiro — já usado na timeline do painel de
+// análise desta tela) com a Data/Saldo Sistema/Quantidade Contada/
+// Diferença daquela contagem específica. Contagem DIVERGENTE vem com a
+// linha inteira pintada de vermelho claro — é o que permite bater o olho
+// e achar na hora, sem precisar ler célula por célula. Usa
+// `window.XLSXStyled` (fork xlsx-js-style) quando disponível, mesmo
+// critério de robustez de `buildSaAprovacaoWorkbook` (cai pro XLSX puro,
+// sem estilo, se o CDN do fork não carregar — nunca trava a exportação).
+// Código usa `reconstructNumericCode` (mesmo formato exibido na tela).
+// Recebe a lista já ORDENADA/FILTRADA pela busca da tela no momento do
+// clique (mesmo critério de sempre, ver `baixarRelatorioModulo`).
+const DIVREC_COLS = ['Código','Descrição','Data da Contagem','Saldo Sistema','Quantidade Contada','Diferença','Resultado','Contagens (Total)','Com Divergência (Total)','Taxa de Recorrência (%)','Última Divergência','Padrão Identificado','Status'];
+const DIVREC_COR_DIVERGENTE = 'FDE2E1'; // vermelho claro — mesma família do --danger-bg usado na tela
+const DIVREC_COR_CABECALHO_ITEM = 'F2F2F2'; // cinza claro — mesmo espírito do cabeçalho de grupo da SA
+function buildDivergenciaRecorrenteWorkbook(itens){
+  const XLSX = window.XLSXStyled || window.XLSX;
+  if(!XLSX) return {ok:false, erro:'A biblioteca de exportação não carregou (verifique a conexão com a internet).'};
+  if(!itens.length) return {ok:false, erro:'Nenhum item com divergência recorrente para exportar.'};
+
+  const aoa = [DIVREC_COLS];
+  const estilos = {};
+  const setEstilo = (r, c, style) => { estilos[r+','+c] = style; };
+  DIVREC_COLS.forEach((_,c)=>{
+    setEstilo(0, c, {font:{name:'Calibri', sz:10, bold:true}, alignment:{horizontal:'center', vertical:'center'}, fill:{patternType:'solid', fgColor:{rgb:'E5E5E5'}}});
+  });
+
+  itens.forEach((it, itIdx)=>{
+    if(itIdx>0) aoa.push([]); // linha em branco separando cada item
     const codigo = reconstructNumericCode(it.productCode);
-    (it.historico||[]).forEach(h => {
-      linhas.push({
-        'Código': codigo,
-        'Descrição': it.descricao || '',
-        'Data da Contagem': h.data ? fmtDataBR(h.data) : '',
-        'Saldo Sistema': h.saldoSistema,
-        'Quantidade Contada': h.qtdContada,
-        'Diferença': h.diferenca,
-        'Divergente': h.divergente ? 'Sim' : 'Não',
-      });
+    const padraoLabel = (PADRAO_DIVERGENCIA_INFO[it.padrao] || PADRAO_DIVERGENCIA_INFO.sem_padrao).label;
+    const statusLabelDivrec = (STATUS_DIVERGENCIA_INFO[it.status] || STATUS_DIVERGENCIA_INFO.monitorar).label;
+
+    const rCabecalho = aoa.length;
+    aoa.push([
+      codigo, it.descricao || '', null, null, null, null, null,
+      it.total, it.divergentes, Math.round(it.taxaDivergencia*100),
+      it.ultimaDivergencia ? fmtDataBR(it.ultimaDivergencia) : '', padraoLabel, statusLabelDivrec,
+    ]);
+    for(let c=0; c<DIVREC_COLS.length; c++){
+      setEstilo(rCabecalho, c, {font:{name:'Calibri', sz:10, bold:true}, alignment:{horizontal: c<2 ? 'left' : 'center', vertical:'center'}, fill:{patternType:'solid', fgColor:{rgb:DIVREC_COR_CABECALHO_ITEM}}});
+    }
+
+    (it.historico||[]).forEach(h=>{
+      const r = aoa.length;
+      aoa.push([
+        codigo, null,
+        h.data ? fmtDataBR(h.data) : null, h.saldoSistema, h.qtdContada, h.diferenca,
+        h.divergente ? 'Divergente' : 'Conforme',
+        null, null, null, null, null, null,
+      ]);
+      for(let c=0; c<DIVREC_COLS.length; c++){
+        const style = {font:{name:'Calibri', sz:10}, alignment:{horizontal: c<2 ? 'left' : 'center', vertical:'center'}};
+        if(h.divergente) style.fill = {patternType:'solid', fgColor:{rgb:DIVREC_COR_DIVERGENTE}};
+        setEstilo(r, c, style);
+      }
     });
   });
-  return linhas;
-}
-function baixarRelatorioDivergenciaRecorrente(itens){
-  if(!window.XLSX) return {ok:false, erro:'A biblioteca de exportação não carregou (verifique a conexão com a internet).'};
-  if(!itens.length) return {ok:false, erro:'Nenhum item com divergência recorrente para exportar.'};
-  const XLSX = window.XLSX;
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  Object.keys(estilos).forEach(k=>{
+    const [r,c] = k.split(',').map(Number);
+    const addr = XLSX.utils.encode_cell({r, c});
+    if(ws[addr]) ws[addr].s = estilos[k];
+  });
+  ws['!cols'] = [12,32,13,11,13,10,11,11,13,13,13,16,11].map(wch=>({wch}));
+
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(buildDivergenciaRecorrenteRows(itens)), 'Divergência Recorrente');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(buildDivergenciaRecorrenteHistoricoRows(itens)), 'Comparativo por Contagem');
+  XLSX.utils.book_append_sheet(wb, ws, 'Divergência Recorrente');
   const filename = `GestaoEstoques_DivergenciaRecorrente_${hojeLocalStr()}.xlsx`;
   XLSX.writeFile(wb, filename);
   return {ok:true, filename};
@@ -17245,7 +17268,7 @@ function AcuracidadePanel({counts, historicoConcluidas=[], historicoParaTendenci
   // mesmo critério de "baixa o que está sendo mostrado" já usado em
   // `EnderecoPendenteValidacaoPanel.handleDownload`.
   function handleDownloadDivergencia(){
-    const res = baixarRelatorioDivergenciaRecorrente(itensDivergenciaOrdenados);
+    const res = buildDivergenciaRecorrenteWorkbook(itensDivergenciaOrdenados);
     setDownloadDivergenciaMsg(res.ok ? ('Baixado: '+res.filename) : res.erro);
   }
   // Item selecionado pode ter saído da lista filtrada/mudado de conteúdo
