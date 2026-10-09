@@ -11059,11 +11059,11 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   // Confirmar sem mudar nada (cadastro já bate) não gera proposta nenhuma —
   // evita repropor o mesmo endereço a cada contagem do mesmo item.
   function confirmEnderecoManual(){
-    // Mesmo guard do botão (disabled), replicado aqui de propósito — defesa
-    // extra contra confirmar um endereço que só veio do cadastro local
-    // (SB2), sem confirmação ao vivo nem autorização de líder/admin (ver
-    // painelBloqueioConsultaAoVivo, mais abaixo).
-    if(precisaAutorizarEndereco || enderecoAguardandoConfirmacao) return;
+    // Mesmo guard do botão (disabled), replicado aqui de propósito — só
+    // evita confirmar ENQUANTO a consulta ainda está em andamento (campo
+    // pode trocar de valor sozinho a qualquer momento); terminada a
+    // consulta (sucesso ou erro), nunca mais bloqueia — ver `enderecoNaoConfirmado`.
+    if(enderecoAguardandoConfirmacao) return;
     const enderecoFinal = enderecoInformado.toUpperCase();
     const divergeDoCadastro = !!product.enderecoCadastrado && enderecoFinal !== (product.endereco||'').toUpperCase();
     if(onAddressProposed && ENDERECO_REGEX.test(enderecoInformado) && (needsAddressInput || divergeDoCadastro)){
@@ -11108,16 +11108,12 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   // mesmo que a consulta já soubesse de algo mais recente). Ver o efeito
   // logo abaixo de `descricaoEfetiva`.
   const [liveConsulta, setLiveConsulta] = useState(null);
-  // Erro real (rede/credencial/timeout) da consulta ao vivo — antes disso
-  // existia só um `console.warn`, e a tela seguia usando o cadastro local
-  // (SB2) pra sempre, sem nenhum aviso nem bloqueio. Bug real reportado
-  // pelo cliente: "Esse erro é grave, não mostrar a quantidade ao vivo ele
-  // não deveria nem seguir a contagem. Não pode puxar da planilha SB2 sem
-  // autorização." — ver os dois blocos de bloqueio mais abaixo
-  // (`precisaAutorizarEndereco`/`precisaAutorizarSaldo`), que passaram a
-  // travar a confirmação de endereço/quantidade sempre que a única fonte
-  // disponível é o cadastro local SEM confirmação ao vivo, exigindo ou uma
-  // nova tentativa (retry) ou autorização explícita de líder/admin.
+  // Erro real (rede/credencial/timeout) da consulta ao vivo — usado só pra
+  // avisar o operador (endereço: `enderecoNaoConfirmado`; saldo: mensagem
+  // amarela não-bloqueante perto do campo Sistema) e pro bloqueio que
+  // ainda existe pra saldo AMBÍGUO (`saldoIndisponivelAoVivo`/
+  // `precisaAutorizarSaldo`, mais abaixo — endereço não bloqueia mais nada,
+  // ver `enderecoNaoConfirmado`).
   const [liveConsultaErro, setLiveConsultaErro] = useState(null);
   // Incrementado pelo botão "Tentar novamente" (nos blocos de bloqueio
   // abaixo) — entra no array de dependências do efeito, forçando ele rodar
@@ -11190,9 +11186,9 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   // sequência, no mesmo dia: primeiro "Item sem saldo voltou aparecer --
   // invés de 0" (a correção anterior, certa); depois "porque diabos está
   // puxando zerado se tem saldo?????" (este bug, a mesma correção sendo
-  // grande demais). Mesmo raciocínio já aplicado ao ENDEREÇO
-  // (`enderecoSoCadastro`/`precisaAutorizarEndereco`, mais abaixo) — nunca
-  // "adivinhar"/fabricar valor pra um dado que existe mas está ambíguo.
+  // grande demais) — nunca "adivinhar"/fabricar valor pra um dado que
+  // existe mas está ambíguo (endereço não tem esse risco — é texto livre
+  // editável pelo operador, ver `enderecoNaoConfirmado` mais abaixo).
   const saldoConfirmadoAoVivo = !!(liveConsulta && liveConsulta.saldo!=null);
   // Consulta respondeu (ok:true) sem confirmar saldo nenhum, e SEM
   // ambiguidade — o código genuinamente não bate com nenhum resultado pro
@@ -11307,44 +11303,29 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   // o que está na tela é o dado mais atual, não um cadastro potencialmente
   // desatualizado.
   const enderecoVeioDaConsulta = !!(liveEnderecoValido && enderecoInformado && liveEnderecoValido === enderecoInformado);
-  // `liveConsulta` só é setado quando `res.ok===true` (ver useEffect acima)
-  // — nunca em caso de falha/timeout — então os dois avisos abaixo só
-  // ligam quando a consulta genuinamente RESPONDEU, nunca quando
-  // simplesmente não deu pra checar (rede/credencial).
-  // Vermelho: consulta respondeu sem endereço válido E o item também não
-  // tem cadastro local pra cair de volta — o campo fica vazio de verdade,
-  // sem nenhum valor pra mostrar.
-  const enderecoNaoEncontrado = !!(liveConsulta && !liveEnderecoValido && !product.enderecoCadastrado);
-  // Neutro: consulta respondeu sem confirmar nada pro código, mas o item
-  // TEM cadastro local — o campo mostra o cadastro como fallback, só que
-  // sem a garantia de que está atualizado. É exatamente o cenário que o
-  // cliente não queria mais deixar escondido: "se houve uma atualização...
-  // ele não vai mostrar" — agora, quando a consulta não confirma nada, o
-  // operador é avisado de que está vendo só o cadastro, não um dado
-  // checado ao vivo.
-  const enderecoSoCadastro = !!(liveConsulta && !liveEnderecoValido && product.enderecoCadastrado);
+  // Endereço NUNCA mais bloqueia a contagem (revertido — pedido explícito
+  // do cliente: "deve apenas aparecer a mensagem pequena 'Endereço não
+  // confirmado.' E deixar a pessoa digitar o endereço caso seja diferente
+  // do que trás e deixar seguir"). Antes, não confirmar ao vivo (consulta
+  // sem endereço válido, OU erro de rede/timeout) travava o "Confirmar e
+  // continuar" até um líder/admin autorizar — mesma trava que existia pro
+  // saldo, já revertida por lá pelo mesmo motivo (ver `saldoIndisponivelAoVivo`
+  // acima). Pra endereço o risco é ainda menor que o do saldo: o campo é
+  // SEMPRE um texto editável pelo próprio operador (`enderecoInformado`,
+  // `step==='enderecoManual'` abaixo) — ele já pode digitar o valor certo
+  // na hora se o que apareceu (cadastro local, ou nada) estiver errado, o
+  // bloqueio só atrapalhava sem proteger nada que o operador já não
+  // pudesse corrigir sozinho. Único aviso que resta é informativo, nunca
+  // trava o botão.
+  const enderecoNaoConfirmado = !!((liveConsulta || liveConsultaErro) && !enderecoVeioDaConsulta);
 
-  // BLOQUEIO REAL — pedido explícito e urgente do cliente ("Esse erro é
-  // grave, não mostrar a quantidade ao vivo ele não deveria nem seguir a
-  // contagem. Não pode puxar da planilha SB2 sem autorização."). Até aqui
-  // a consulta ao vivo era só uma MELHORIA — falhando ou não confirmando
-  // nada, a tela sempre seguia em frente silenciosamente usando o cadastro
-  // local (que, tanto pra endereço quanto pra saldo, tem a MESMA origem
-  // antiga: upload manual da planilha SB2/"Descrição de Produtos"). Agora
-  // isso trava de verdade: só é permitido confirmar endereço/quantidade
-  // usando um valor que NUNCA foi confirmado ao vivo se um líder/admin
-  // autorizar explicitamente (`podeAutorizarDadosLocais`/`autorizouX`) —
-  // ou o operador tentar de novo até a consulta responder de verdade
-  // (`liveConsultaTentativa`, botão "Tentar novamente" nos painéis de
-  // bloqueio, mais abaixo). Continua SEM bloquear quando não existe dado
-  // local nenhum que pudesse ser usado por engano (1ª captura de endereço
-  // — `enderecoNaoEncontrado` — ou item genuinamente sem saldo em lugar
-  // nenhum) — nesses casos não há "SB2 sendo usada sem autorização", só
-  // falta dado mesmo, e o app já trata isso normalmente.
+  // Ainda usado pro bloqueio de SALDO ambíguo (`saldoIndisponivelAoVivo`
+  // acima, `painelBloqueioConsultaAoVivo` mais abaixo) — esse sim continua
+  // travando, único caso em que existe um valor "errado" específico (não
+  // um texto livre que o operador já controla) que poderia ser usado sem
+  // querer.
   const podeAutorizarDadosLocais = user.perfil==='lider' || user.perfil==='admin';
-  const [autorizouEnderecoLocal, setAutorizouEnderecoLocal] = useState(false);
   const [autorizouSaldoLocal, setAutorizouSaldoLocal] = useState(false);
-  const precisaAutorizarEndereco = (enderecoSoCadastro || (!!liveConsultaErro && product.enderecoCadastrado)) && !autorizouEnderecoLocal;
 
   // Mesmo bloqueio de cima, agora pro SALDO — `saldoConfirmadoAoVivo`/
   // `saldoGenuinamenteAusente`/`saldoIndisponivelAoVivo` já foram calculados
@@ -11541,9 +11522,10 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
   // espera, então não bloqueia.
   const enderecoAguardandoConfirmacao = !liveConsulta && !liveConsultaErro && product.enderecoCadastrado;
 
-  // Painel de bloqueio compartilhado pelas 2 etapas (endereço/quantidade) —
-  // função simples que devolve JSX, NÃO um componente (evita o app remontar
-  // o bloco a cada render só por causa de uma função redefinida dentro de
+  // Painel de bloqueio — hoje só usado pro SALDO ambíguo (endereço não
+  // bloqueia mais nada, ver `enderecoNaoConfirmado` acima). Função simples
+  // que devolve JSX, NÃO um componente (evita o app remontar o bloco a
+  // cada render só por causa de uma função redefinida dentro de
   // `CountStep`). `onAutorizar` só é passado quando `podeAutorizarDadosLocais`
   // é true — líder/admin autoriza usando o cadastro local mesmo sem
   // confirmação ao vivo; operador só vê a opção de tentar de novo.
@@ -11635,24 +11617,17 @@ function CountStep({product, user, onComplete, onAddressProposed, inv, expectAdd
           {enderecoVeioDaConsulta && (
             <div style={{fontSize:'var(--text-xs)',color:'var(--ok)',marginTop:-10,marginBottom:12}}>✓ Endereço confirmado pela consulta à Selgron.</div>
           )}
-          {enderecoNaoEncontrado && (
-            <div style={{fontSize:'var(--text-xs)',color:'var(--danger)',marginTop:-10,marginBottom:12}}>✗ Endereço não encontrado.</div>
+          {enderecoNaoConfirmado && (
+            <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:-10,marginBottom:12}}>Endereço não confirmado.</div>
           )}
-          {enderecoSoCadastro && (
-            <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:-10,marginBottom:12}}>ℹ A consulta à Selgron não confirmou este endereço — mostrando o cadastro local, que pode estar desatualizado.</div>
-          )}
-          {enderecoAguardandoConfirmacao && !precisaAutorizarEndereco && (
+          {enderecoAguardandoConfirmacao && (
             <div style={{fontSize:'var(--text-xs)',color:'var(--ink-dim)',marginTop:-10,marginBottom:12}}>Consultando endereço na Selgron…</div>
-          )}
-          {precisaAutorizarEndereco && painelBloqueioConsultaAoVivo(
-            'não confirmou nenhum endereço para este código/armazém',
-            ()=>setAutorizouEnderecoLocal(true)
           )}
           {scanning ? (
             <CameraScanner onDetected={handleEnderecoManualScanDetected} onCancel={()=>setScanning(false)} />
           ) : (
             <div style={{display:'flex',gap:8}}>
-              <button className="btn btn-primary" style={{flex:1}} disabled={!ENDERECO_REGEX.test(enderecoInformado) || enderecoAguardandoConfirmacao || precisaAutorizarEndereco} onClick={confirmEnderecoManual}>Confirmar e continuar</button>
+              <button className="btn btn-primary" style={{flex:1}} disabled={!ENDERECO_REGEX.test(enderecoInformado) || enderecoAguardandoConfirmacao} onClick={confirmEnderecoManual}>Confirmar e continuar</button>
               <button type="button" className="btn btn-primary" style={{flex:'0 0 auto',width:56,padding:0}} title="Escanear código do endereço" aria-label="Escanear código do endereço" onClick={()=>setScanning(true)}>
                 <Ic size={20}>◫</Ic>
               </button>
