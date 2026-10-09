@@ -5729,55 +5729,129 @@ function baixarRelatorioEnderecosPendentes(lista){
 }
 
 // Pedido do cliente: botão de exportar Excel pros "Itens com Divergência
-// Recorrente" (aba Acuracidade). 1ª versão saiu em 2 abas (resumo +
-// comparativo) — cliente pediu voltar pra UMA planilha só: "bater o olho
-// no item e identificar na hora onde foi a divergência e quando". Agora é
-// 1 sheet só, AGRUPADO por item (mesmo espírito de `buildSaAprovacaoWorkbook`
-// logo abaixo — linha de cabeçalho em cinza por grupo, linha em branco
-// separando grupos): a 1ª linha de cada item traz o resumo (Contagens/
-// Divergências/Taxa/Última Divergência/Padrão/Status, mesmo rótulo legível
-// de PADRAO_DIVERGENCIA_INFO/STATUS_DIVERGENCIA_INFO — nunca a chave
-// interna), e logo abaixo dela, 1 linha POR CONTAGEM (`it.historico`, mesmo
-// dado/ordem — mais recente primeiro — já usado na timeline do painel de
-// análise desta tela) com a Data/Saldo Sistema/Quantidade Contada/
-// Diferença daquela contagem específica. Contagem DIVERGENTE vem com a
-// linha inteira pintada de vermelho claro — é o que permite bater o olho
-// e achar na hora, sem precisar ler célula por célula. Usa
-// `window.XLSXStyled` (fork xlsx-js-style) quando disponível, mesmo
-// critério de robustez de `buildSaAprovacaoWorkbook` (cai pro XLSX puro,
-// sem estilo, se o CDN do fork não carregar — nunca trava a exportação).
-// Código usa `reconstructNumericCode` (mesmo formato exibido na tela).
-// Recebe a lista já ORDENADA/FILTRADA pela busca da tela no momento do
-// clique (mesmo critério de sempre, ver `baixarRelatorioModulo`).
-const DIVREC_COLS = ['Código','Descrição','Data da Contagem','Saldo Sistema','Quantidade Contada','Diferença','Resultado','Contagens (Total)','Com Divergência (Total)','Taxa de Recorrência (%)','Última Divergência','Padrão Identificado','Status'];
-const DIVREC_COR_DIVERGENTE = 'FDE2E1'; // vermelho claro — mesma família do --danger-bg usado na tela
-const DIVREC_COR_CABECALHO_ITEM = 'F2F2F2'; // cinza claro — mesmo espírito do cabeçalho de grupo da SA
+// Recorrente" (aba Acuracidade) — 3ª rodada deste exportador (1ª: 2 abas
+// separadas; 2ª: 1 aba, linha inteira vermelha; 3ª, esta: reformulação
+// completa pedida com spec de 7 seções + imagem de referência — título +
+// 3 indicadores compactos, 2 níveis visuais por item, cores
+// corporativas/destaque só nas células relevantes, AutoFilter, larguras
+// ajustadas). `window.XLSXStyled` (fork xlsx-js-style) quando disponível,
+// mesmo critério de robustez de `buildSaAprovacaoWorkbook` logo abaixo
+// (cai pro XLSX puro, sem estilo, se o CDN do fork não carregar).
+//
+// LIMITAÇÃO DE BIBLIOTECA (não dá pra contornar): "congelar painéis"
+// (freeze panes) só existe pra LEITURA no SheetJS community (o mesmo
+// `xlsx`/`xlsx-js-style` já usado em todo o app) — `ws['!freeze']`/
+// qualquer variação testada é silenciosamente ignorada na ESCRITA,
+// confirmado inspecionando o XML gerado (`<sheetViews>` sai sem `<pane>`
+// nenhum). É recurso só da versão paga (SheetJS Pro). AutoFilter
+// (dropdown de filtro em cada coluna) funciona normalmente e cobre o
+// pedido de filtros — só o "congelar cabeçalho ao rolar" mesmo que não dá
+// pra entregar com esta biblioteca.
+const DIVREC_COLS = ['Código','Descrição','Data da Contagem','Saldo Sistema','Qtd. Contada','Diferença','Resultado','Nº de Contagens','Contagens Divergentes','Taxa de Recorrência (%)','Última Divergência','Padrão Identificado','Classificação'];
+const DIVREC_VERDE = '1E5631';           // verde-escuro corporativo — título + cabeçalho da tabela
+const DIVREC_CINZA_ITEM = 'F2F2F2';      // cinza-claro — linha de identificação do produto
+const DIVREC_VERMELHO_BG = 'FDE2E1';     // vermelho-claro — só a célula de Diferença divergente/Resultado
+const DIVREC_VERMELHO_TXT = 'B71C1C';    // vermelho-escuro — texto da célula divergente
+const DIVREC_VERDE_BG = 'E8F5E9';        // verde-claro discreto — célula de Resultado conforme
+const DIVREC_VERDE_TXT = '2E7D32';
+const DIVREC_CRITICO_BG = 'F6C8C6';      // vermelho moderado — só a célula de Classificação "Crítico"
+const DIVREC_MONITORAR_BG = 'E0E0E0';    // cinza neutro — só a célula de Classificação "Monitorar"
+const DIVREC_ATENCAO_BG = 'FBE4C8';      // mesma família do --warn-bg da tela, "Atenção" (não coberto pelo spec, mantém consistência)
+const DIVREC_BORDA = {style:'thin', color:{rgb:'D9D9D9'}};
+const DIVREC_BORDA_TODAS = {top:DIVREC_BORDA, bottom:DIVREC_BORDA, left:DIVREC_BORDA, right:DIVREC_BORDA};
+// Classificação → cor de destaque só daquela célula (Crítico/Monitorar
+// citados no spec; Atenção mantém a mesma família de cor já usada na tela
+// pra não inventar um 4º tom sem pedido explícito).
+const DIVREC_CLASSIFICACAO_BG = {critico:DIVREC_CRITICO_BG, atencao:DIVREC_ATENCAO_BG, monitorar:DIVREC_MONITORAR_BG};
 function buildDivergenciaRecorrenteWorkbook(itens){
   const XLSX = window.XLSXStyled || window.XLSX;
   if(!XLSX) return {ok:false, erro:'A biblioteca de exportação não carregou (verifique a conexão com a internet).'};
   if(!itens.length) return {ok:false, erro:'Nenhum item com divergência recorrente para exportar.'};
+  const N = DIVREC_COLS.length;
 
-  const aoa = [DIVREC_COLS];
+  const aoa = [];
   const estilos = {};
+  const merges = [];
   const setEstilo = (r, c, style) => { estilos[r+','+c] = style; };
-  DIVREC_COLS.forEach((_,c)=>{
-    setEstilo(0, c, {font:{name:'Calibri', sz:10, bold:true}, alignment:{horizontal:'center', vertical:'center'}, fill:{patternType:'solid', fgColor:{rgb:'E5E5E5'}}});
+  const linhaVazia = () => new Array(N).fill(null);
+
+  // --- Linha 1: título ---------------------------------------------------
+  aoa.push(linhaVazia());
+  aoa[0][0] = 'DIVERGÊNCIA RECORRENTE';
+  merges.push({s:{r:0,c:0}, e:{r:0,c:N-1}});
+  setEstilo(0, 0, {font:{name:'Calibri', sz:16, bold:true, color:{rgb:'FFFFFF'}}, fill:{patternType:'solid', fgColor:{rgb:DIVREC_VERDE}}, alignment:{horizontal:'left', vertical:'center', indent:1}});
+
+  // --- Linhas 2-3: indicadores (calculados agora, a partir de `itens` —
+  // sempre batem com o conteúdo exportado, nunca um número "preso" de uma
+  // exportação anterior) --------------------------------------------------
+  // "Divergência na Última Contagem" é DIFERENTE de "Itens Críticos" de
+  // propósito (pedido explícito do cliente, seção 5: "não confunda o
+  // resultado da última contagem com o histórico de recorrência") — o 1º
+  // olha só a contagem MAIS RECENTE de cada item (`historico[0]`, já vem
+  // mais recente primeiro); o 2º é a classificação AGREGADA de sempre
+  // (`status==='critico'`, taxa de divergência no período inteiro). Um
+  // item pode ter divergido várias vezes no passado (crítico) e estar
+  // conforme agora, ou vice-versa — os 2 indicadores respondem perguntas
+  // diferentes, nenhum substitui o outro.
+  const totalItens = itens.length;
+  const divergenteUltimaContagem = itens.filter(it => it.historico && it.historico[0] && it.historico[0].divergente).length;
+  const itensCriticos = itens.filter(it => it.status==='critico').length;
+  const kpis = [
+    {label:'ITENS ANALISADOS', valor:totalItens, cor:DIVREC_VERDE},
+    {label:'DIVERGÊNCIA NA ÚLTIMA CONTAGEM', valor:divergenteUltimaContagem, cor:DIVREC_VERMELHO_TXT},
+    {label:'ITENS CRÍTICOS', valor:itensCriticos, cor:DIVREC_VERMELHO_TXT},
+  ];
+  aoa.push(linhaVazia());
+  aoa.push(linhaVazia());
+  const rKpiLabel = 1, rKpiValor = 2;
+  const faixaTam = Math.floor(N/3);
+  kpis.forEach((kpi, i)=>{
+    const c0 = i*faixaTam;
+    const c1 = i===kpis.length-1 ? N-1 : c0+faixaTam-1;
+    aoa[rKpiLabel][c0] = kpi.label;
+    aoa[rKpiValor][c0] = kpi.valor;
+    merges.push({s:{r:rKpiLabel,c:c0}, e:{r:rKpiLabel,c:c1}});
+    merges.push({s:{r:rKpiValor,c:c0}, e:{r:rKpiValor,c:c1}});
+    for(let c=c0; c<=c1; c++){
+      setEstilo(rKpiLabel, c, {font:{name:'Calibri', sz:9, bold:true, color:{rgb:'757575'}}, alignment:{horizontal:'left', vertical:'center', indent:1}, border:{top:DIVREC_BORDA, left:DIVREC_BORDA, right:DIVREC_BORDA}});
+      setEstilo(rKpiValor, c, {font:{name:'Calibri', sz:18, bold:true, color:{rgb:kpi.cor}}, alignment:{horizontal:'left', vertical:'center', indent:1}, border:{bottom:DIVREC_BORDA, left:DIVREC_BORDA, right:DIVREC_BORDA}});
+    }
   });
 
+  aoa.push(linhaVazia()); // linha 4: respiro entre os indicadores e a tabela
+
+  // --- Linha 5: cabeçalho da tabela ---------------------------------------
+  const rHeader = aoa.length;
+  aoa.push(DIVREC_COLS.slice());
+  DIVREC_COLS.forEach((_,c)=>{
+    setEstilo(rHeader, c, {font:{name:'Calibri', sz:10, bold:true, color:{rgb:'FFFFFF'}}, fill:{patternType:'solid', fgColor:{rgb:DIVREC_VERDE}}, alignment:{horizontal:'center', vertical:'center'}, border:DIVREC_BORDA_TODAS});
+  });
+
+  // --- Dados: Nível 1 (resumo do item, cinza-claro/negrito) + Nível 2
+  // (1 linha por contagem, `it.historico` — mesmo dado/ordem, mais recente
+  // primeiro, já usado na timeline do painel de análise desta tela) -------
+  // Destaque só nas CÉLULAS relevantes (pedido explícito: "não pinte
+  // linhas inteiras de vermelho") — nunca a linha inteira.
+  const alinhamentoCol = (c) => (c===1 ? 'left' : c===0 ? 'left' : (c===2 || c===10) ? 'center' : (c===6 || c===11 || c===12) ? 'center' : 'right');
   itens.forEach((it, itIdx)=>{
-    if(itIdx>0) aoa.push([]); // linha em branco separando cada item
+    if(itIdx>0) aoa.push(linhaVazia()); // linha em branco separando cada item
     const codigo = reconstructNumericCode(it.productCode);
     const padraoLabel = (PADRAO_DIVERGENCIA_INFO[it.padrao] || PADRAO_DIVERGENCIA_INFO.sem_padrao).label;
-    const statusLabelDivrec = (STATUS_DIVERGENCIA_INFO[it.status] || STATUS_DIVERGENCIA_INFO.monitorar).label;
+    const classificacaoLabel = (STATUS_DIVERGENCIA_INFO[it.status] || STATUS_DIVERGENCIA_INFO.monitorar).label;
 
-    const rCabecalho = aoa.length;
+    const rResumo = aoa.length;
     aoa.push([
       codigo, it.descricao || '', null, null, null, null, null,
       it.total, it.divergentes, Math.round(it.taxaDivergencia*100),
-      it.ultimaDivergencia ? fmtDataBR(it.ultimaDivergencia) : '', padraoLabel, statusLabelDivrec,
+      it.ultimaDivergencia ? fmtDataBR(it.ultimaDivergencia) : '', padraoLabel, classificacaoLabel,
     ]);
-    for(let c=0; c<DIVREC_COLS.length; c++){
-      setEstilo(rCabecalho, c, {font:{name:'Calibri', sz:10, bold:true}, alignment:{horizontal: c<2 ? 'left' : 'center', vertical:'center'}, fill:{patternType:'solid', fgColor:{rgb:DIVREC_COR_CABECALHO_ITEM}}});
+    for(let c=0; c<N; c++){
+      const estiloBase = {font:{name:'Calibri', sz:10, bold:true}, alignment:{horizontal:alinhamentoCol(c), vertical:'center'}, fill:{patternType:'solid', fgColor:{rgb:DIVREC_CINZA_ITEM}}, border:DIVREC_BORDA_TODAS};
+      if(c===12){ // Classificação — destaque moderado só nesta célula
+        const bg = DIVREC_CLASSIFICACAO_BG[it.status];
+        if(bg) estiloBase.fill = {patternType:'solid', fgColor:{rgb:bg}};
+      }
+      setEstilo(rResumo, c, estiloBase);
     }
 
     (it.historico||[]).forEach(h=>{
@@ -5788,21 +5862,41 @@ function buildDivergenciaRecorrenteWorkbook(itens){
         h.divergente ? 'Divergente' : 'Conforme',
         null, null, null, null, null, null,
       ]);
-      for(let c=0; c<DIVREC_COLS.length; c++){
-        const style = {font:{name:'Calibri', sz:10}, alignment:{horizontal: c<2 ? 'left' : 'center', vertical:'center'}};
-        if(h.divergente) style.fill = {patternType:'solid', fgColor:{rgb:DIVREC_COR_DIVERGENTE}};
+      for(let c=0; c<N; c++){
+        const style = {font:{name:'Calibri', sz:10}, alignment:{horizontal:alinhamentoCol(c), vertical:'center'}, border:DIVREC_BORDA_TODAS};
+        if(c===5 && h.divergente){ // Diferença — só a célula, quando divergente
+          style.fill = {patternType:'solid', fgColor:{rgb:DIVREC_VERMELHO_BG}};
+          style.font.color = {rgb:DIVREC_VERMELHO_TXT};
+          style.font.bold = true;
+        }
+        if(c===6){ // Resultado — vermelho/verde-claro conforme o valor
+          style.fill = {patternType:'solid', fgColor:{rgb: h.divergente ? DIVREC_VERMELHO_BG : DIVREC_VERDE_BG}};
+          style.font.color = {rgb: h.divergente ? DIVREC_VERMELHO_TXT : DIVREC_VERDE_TXT};
+          style.font.bold = true;
+        }
         setEstilo(r, c, style);
       }
     });
   });
 
+  const ultimaLinha = aoa.length - 1;
   const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!merges'] = merges;
   Object.keys(estilos).forEach(k=>{
     const [r,c] = k.split(',').map(Number);
     const addr = XLSX.utils.encode_cell({r, c});
     if(ws[addr]) ws[addr].s = estilos[k];
   });
-  ws['!cols'] = [12,32,13,11,13,10,11,11,13,13,13,16,11].map(wch=>({wch}));
+  // Larguras ajustadas pra não cortar texto/data/número (conferido contra
+  // o conteúdo real: "Taxa de Recorrência (%)"/"Contagens Divergentes" são
+  // os cabeçalhos mais longos da tabela).
+  ws['!cols'] = [12,34,15,12,11,10,12,13,17,16,15,18,13].map(wch=>({wch}));
+  ws['!rows'] = [{hpt:22}, {hpt:16}, {hpt:24}];
+  // AutoFilter na linha do cabeçalho da tabela (nunca no título/
+  // indicadores) — cobre TODAS as colunas pedidas (Código/Descrição,
+  // Resultado, Padrão Identificado, Classificação, Data da Contagem),
+  // cada uma ganha o dropdown de filtro automaticamente.
+  ws['!autofilter'] = {ref: XLSX.utils.encode_range({s:{r:rHeader, c:0}, e:{r:ultimaLinha, c:N-1}})};
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Divergência Recorrente');
